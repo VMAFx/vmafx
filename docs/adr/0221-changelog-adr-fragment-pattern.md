@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 MD036 -->
 # ADR-0221: CHANGELOG + ADR-index fragment-file pattern
 
 - **Status**: Accepted
@@ -18,7 +17,9 @@ conflicts in two consolidated files:
 When two PRs branch off the same merge base and each adds its own row, the
 merge in the second PR fails because both touch the same `### Added`
 sub-section header line or the same end-of-table row. Sister PRs #195,
-#202, #190, #194, #193, #181 all required manual rebase passes solely to
+
+\#202, #190, #194, #193, #181 all required manual rebase passes solely to
+
 move bullets and rows past one another. The actual code review on each
 ran in seconds; the merge bookkeeping cost minutes.
 
@@ -77,7 +78,7 @@ fragment files instead of editing the consolidated outputs directly.
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - New PRs add files instead of editing two consolidated 3500/250-line
   files → near-zero merge conflict surface for the changelog/ADR index
@@ -88,7 +89,7 @@ fragment files instead of editing the consolidated outputs directly.
 - `--check` lane catches drift between fragments and rendered output
   immediately; release-please runs `--write` at release-tag time.
 
-**Negative**
+#### Negative
 
 - Two new conventions for contributors to learn (one fragment file per
   PR, plus one `_order.txt` line for ADRs). Mitigated by PR template
@@ -102,7 +103,7 @@ fragment files instead of editing the consolidated outputs directly.
   and release-please will roll them into a versioned section at the next
   release tag.
 
-**Neutral / follow-ups**
+#### Neutral / follow-ups
 
 - The release-please workflow (`.github/workflows/release.yml`) gains a
   `--write` step before its CHANGELOG patch so the rendered Unreleased

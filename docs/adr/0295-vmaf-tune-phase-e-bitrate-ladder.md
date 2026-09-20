@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0295: vmaf-tune Phase E — per-title bitrate-ladder generator
 
 - **Status**: Accepted
@@ -57,7 +56,7 @@ job), and live MCP exposure (Phase F).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Pareto-then-upper-convex-hull (chosen)** | Mirrors Netflix per-title paper exactly; produces strictly monotonic, diminishing-returns ladder; small inline implementation (~30 LOC); ABR clients see no inversions when stepping rungs | Two-pass; sensitive to floating-point ties on bitrate (handled by tie-break sort + dedup) | Gold standard for per-title ladders; everything else is a degraded approximation |
 | Apple HLS authoring-spec fixed rungs | Trivial; broad client compatibility | Same ladder for every title regardless of content complexity — defeats the point of per-title encoding; the audit explicitly calls fixed ladders out as the worst option | Rejected — defeats the entire premise |
 | Geometric (×2) bitrate ladder | Simple; matches HLS spec recommendations; no encoding required | Ignores the source's R-D curve; cartoons need fewer bits than sports at the same rung; same as fixed authoring spec, just parameterised | Rejected — same fundamental flaw as fixed rungs |

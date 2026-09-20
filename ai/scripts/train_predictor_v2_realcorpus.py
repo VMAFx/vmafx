@@ -87,12 +87,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # ---------------------------------------------------------------------
 # ADR-0303 production-flip gate constants
@@ -539,64 +540,40 @@ def evaluate_gate(
 # ---------------------------------------------------------------------
 
 
-def train_codec_loso(
-    codec: str,
-    rows: Sequence[dict],
-    *,
-    epochs: int = 200,
-    seed: int = 42,
-) -> CodecResult:
-    """Run 5-fold LOSO + gate evaluation for one codec.
+def _untrainable_codec_result(codec: str, rows: Sequence[dict], n_sources: int) -> CodecResult:
+    missing = not rows
+    reason = (
+        "no rows in corpus for this codec"
+        if missing
+        else f"need >= {LOSO_FOLD_COUNT} distinct sources; have {n_sources}"
+    )
+    return CodecResult(
+        codec=codec,
+        status="missing-rows" if missing else "insufficient-sources",
+        folds=(),
+        mean_plcc=0.0,
+        plcc_spread=0.0,
+        mean_srocc=0.0,
+        mean_rmse=float("nan"),
+        n_rows_total=len(rows),
+        n_distinct_sources=n_sources,
+        failure_reasons=(reason,),
+        corpus_provenance=tuple(
+            sorted({r["_source_corpus"] for r in rows if "_source_corpus" in r})
+        ),
+    )
 
-    Defers per-fold training to ``_train_one_fold`` (which in turn
-    requires ``vmaftune.predictor_train``). When the row count is
-    insufficient for 5-fold LOSO, returns a CodecResult with
-    ``status='insufficient-sources'`` so the caller can mark the
-    model card accordingly without crashing the batch.
-    """
-    if not rows:
-        return CodecResult(
-            codec=codec,
-            status="missing-rows",
-            folds=(),
-            mean_plcc=0.0,
-            plcc_spread=0.0,
-            mean_srocc=0.0,
-            mean_rmse=float("nan"),
-            n_rows_total=0,
-            n_distinct_sources=0,
-            failure_reasons=("no rows in corpus for this codec",),
-            corpus_provenance=(),
-        )
 
-    n_sources = source_count(rows)
-    folds_split = loso_folds(rows, LOSO_FOLD_COUNT, seed=seed)
-    if not folds_split:
-        return CodecResult(
-            codec=codec,
-            status="insufficient-sources",
-            folds=(),
-            mean_plcc=0.0,
-            plcc_spread=0.0,
-            mean_srocc=0.0,
-            mean_rmse=float("nan"),
-            n_rows_total=len(rows),
-            n_distinct_sources=n_sources,
-            failure_reasons=(f"need >= {LOSO_FOLD_COUNT} distinct sources; have {n_sources}",),
-            corpus_provenance=tuple(
-                sorted({r["_source_corpus"] for r in rows if "_source_corpus" in r})
-            ),
-        )
-
-    fold_results: list[FoldResult] = []
-    for i, (train_rows, val_rows) in enumerate(folds_split):
-        held = tuple(sorted({row_source(r) for r in val_rows}))
+def _train_codec_folds(codec: str, folds_split, *, epochs: int, seed: int) -> list[FoldResult]:
+    results: list[FoldResult] = []
+    for index, (train_rows, val_rows) in enumerate(folds_split):
+        held = tuple(sorted({row_source(row) for row in val_rows}))
         plcc, srocc, rmse = _train_one_fold(
-            codec, train_rows, val_rows, epochs=epochs, seed=seed + i
+            codec, train_rows, val_rows, epochs=epochs, seed=seed + index
         )
-        fold_results.append(
+        results.append(
             FoldResult(
-                fold_index=i,
+                fold_index=index,
                 held_out_sources=held,
                 plcc=plcc,
                 srocc=srocc,
@@ -605,7 +582,24 @@ def train_codec_loso(
                 n_val=len(val_rows),
             )
         )
+    return results
 
+
+def train_codec_loso(
+    codec: str,
+    rows: Sequence[dict],
+    *,
+    epochs: int = 200,
+    seed: int = 42,
+) -> CodecResult:
+    """Run five-fold source-held-out training and gate evaluation for one codec."""
+    n_sources = source_count(rows)
+    if not rows:
+        return _untrainable_codec_result(codec, rows, n_sources)
+    folds_split = loso_folds(rows, LOSO_FOLD_COUNT, seed=seed)
+    if not folds_split:
+        return _untrainable_codec_result(codec, rows, n_sources)
+    fold_results = _train_codec_folds(codec, folds_split, epochs=epochs, seed=seed)
     passed, reasons = evaluate_gate(codec, fold_results)
     plccs = [f.plcc for f in fold_results]
     return CodecResult(
@@ -694,10 +688,7 @@ def render_human_summary(report: dict) -> str:
         f"Per-fold min:        >= {gate['per_fold_min']:.4f}",
         f"Fold count:          {gate['loso_fold_count']}",
         "",
-        (
-            f"{'codec':<14} {'status':<22} {'mean_plcc':>9} {'spread':>7} "
-            f"{'rows':>6} {'srcs':>5}"
-        ),
+        (f"{'codec':<14} {'status':<22} {'mean_plcc':>9} {'spread':>7} {'rows':>6} {'srcs':>5}"),
     ]
     for codec_payload in report["codecs"]:
         codec = codec_payload["codec"]
@@ -707,7 +698,7 @@ def render_human_summary(report: dict) -> str:
         rows = codec_payload["n_rows_total"]
         srcs = codec_payload["n_distinct_sources"]
         lines.append(
-            f"{codec:<14} {status:<22} {mean_plcc:>9.4f} {spread:>7.4f} " f"{rows:>6} {srcs:>5}"
+            f"{codec:<14} {status:<22} {mean_plcc:>9.4f} {spread:>7.4f} {rows:>6} {srcs:>5}"
         )
         if codec_payload["failure_reasons"]:
             for reason in codec_payload["failure_reasons"]:
@@ -767,6 +758,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=42,
         help="Trainer base seed (each fold offsets by fold-index).",
     )
+    _add_report_arguments(parser)
+    return parser
+
+
+def _add_report_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--report-out",
         type=Path,
@@ -789,7 +785,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "by ``run_predictor_v2_training.sh`` to render an honest "
         "diagnostic when the operator has not yet generated corpora.",
     )
-    return parser
 
 
 def _resolve_corpora(args: argparse.Namespace) -> list[CorpusFile]:
@@ -812,66 +807,64 @@ def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict]:
     return rows
 
 
-def main(argv: Iterable[str] | None = None) -> int:
-    parser = _build_arg_parser()
-    raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
-
+def _resolve_run(args: argparse.Namespace, parser) -> tuple[tuple[str, ...], list[CorpusFile]]:
     codecs = tuple(args.codec) if args.codec else CODECS
-    unknown = [c for c in codecs if c not in CODECS]
+    unknown = [codec for codec in codecs if codec not in CODECS]
     if unknown:
         parser.error(f"unknown codec(s): {unknown}; supported: {list(CODECS)}")
-
     corpus_files = [] if args.synthetic_smoke else _resolve_corpora(args)
     if not corpus_files and not args.synthetic_smoke and not args.allow_empty:
         parser.error(
             "no corpora discovered. Pass --corpus PATH, --corpus-root DIR, "
-            f"populate one of {[str(p) for p in DEFAULT_CORPUS_ROOTS]}, "
+            f"populate one of {[str(path) for path in DEFAULT_CORPUS_ROOTS]}, "
             "or use --synthetic-smoke / --allow-empty for a diagnostic run."
         )
+    return codecs, corpus_files
 
-    print(f"[predictor-v2] codecs:        {list(codecs)}", flush=True)
-    print(f"[predictor-v2] corpus files:  {[str(c.path) for c in corpus_files]}", flush=True)
-    print(f"[predictor-v2] synthetic:     {args.synthetic_smoke}", flush=True)
 
+def _trainer_unavailable_result(codec: str, rows: Sequence[dict], exc: RuntimeError) -> CodecResult:
+    return CodecResult(
+        codec=codec,
+        status="missing-rows",
+        folds=(),
+        mean_plcc=0.0,
+        plcc_spread=0.0,
+        mean_srocc=0.0,
+        mean_rmse=float("nan"),
+        n_rows_total=len(rows),
+        n_distinct_sources=source_count(rows),
+        failure_reasons=(f"trainer unavailable: {exc}",),
+        corpus_provenance=(),
+    )
+
+
+def _train_codecs(codecs, corpus_files, args: argparse.Namespace) -> list[CodecResult]:
     results: list[CodecResult] = []
     for codec in codecs:
-        if args.synthetic_smoke:
-            rows = _synthetic_rows_for_codec(codec)
-        else:
-            rows = load_rows(corpus_files, codec)
-        print(f"  {codec}: {len(rows)} rows / " f"{source_count(rows)} sources", flush=True)
+        rows = (
+            _synthetic_rows_for_codec(codec)
+            if args.synthetic_smoke
+            else load_rows(corpus_files, codec)
+        )
+        print(f"  {codec}: {len(rows)} rows / {source_count(rows)} sources", flush=True)
         try:
             result = train_codec_loso(codec, rows, epochs=args.epochs, seed=args.seed)
         except RuntimeError as exc:
-            # vmaftune.predictor_train missing — render a diagnostic
-            # row rather than crashing the whole batch.
-            result = CodecResult(
-                codec=codec,
-                status="missing-rows",
-                folds=(),
-                mean_plcc=0.0,
-                plcc_spread=0.0,
-                mean_srocc=0.0,
-                mean_rmse=float("nan"),
-                n_rows_total=len(rows),
-                n_distinct_sources=source_count(rows),
-                failure_reasons=(f"trainer unavailable: {exc}",),
-                corpus_provenance=(),
-            )
+            result = _trainer_unavailable_result(codec, rows, exc)
         results.append(result)
-        verdict = result.status.upper()
         if result.folds:
             print(
-                f"    {verdict}: mean_PLCC={result.mean_plcc:.4f} "
-                f"spread={result.plcc_spread:.4f} "
-                f"mean_RMSE={result.mean_rmse:.3f}",
+                f"    {result.status.upper()}: mean_PLCC={result.mean_plcc:.4f} "
+                f"spread={result.plcc_spread:.4f} mean_RMSE={result.mean_rmse:.3f}",
                 flush=True,
             )
         else:
             reasons = "; ".join(result.failure_reasons) or "(no folds)"
-            print(f"    {verdict}: {reasons}", flush=True)
+            print(f"    {result.status.upper()}: {reasons}", flush=True)
+    return results
 
+
+def _write_run_report(results, corpus_files, args, raw_argv) -> dict:
     report = render_report(results, corpus_files=corpus_files)
     report["run_provenance"] = build_run_provenance(
         entrypoint=SCRIPT_PATH,
@@ -881,11 +874,27 @@ def main(argv: Iterable[str] | None = None) -> int:
         inputs={
             "explicit_corpus_files": args.corpus or [],
             "corpus_roots": args.corpus_root or list(DEFAULT_CORPUS_ROOTS),
-            "resolved_corpus_files": [c.path for c in corpus_files],
+            "resolved_corpus_files": [corpus.path for corpus in corpus_files],
         },
         outputs={"report_target": str(args.report_out)},
     )
     write_manifest_json(args.report_out, report)
+    return report
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    parser = _build_arg_parser()
+    raw_argv = collect_cli_argv(argv)
+    args = parser.parse_args(raw_argv)
+
+    codecs, corpus_files = _resolve_run(args, parser)
+
+    print(f"[predictor-v2] codecs:        {list(codecs)}", flush=True)
+    print(f"[predictor-v2] corpus files:  {[str(c.path) for c in corpus_files]}", flush=True)
+    print(f"[predictor-v2] synthetic:     {args.synthetic_smoke}", flush=True)
+
+    results = _train_codecs(codecs, corpus_files, args)
+    report = _write_run_report(results, corpus_files, args, raw_argv)
     print("", flush=True)
     print(render_human_summary(report), flush=True)
     print("", flush=True)

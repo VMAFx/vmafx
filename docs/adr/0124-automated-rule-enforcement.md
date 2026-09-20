@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0124: Automate enforcement of process ADRs (0100 / 0105 / 0106 / 0108)
 
 - **Status**: Accepted
@@ -85,7 +84,7 @@ surface as PR comments for the reviewer to weigh.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | One PR per ADR (four separate PRs) | Smallest reviewable unit per PR | Four rounds of six-deliverable overhead; four rebases against master; the four gates share enough CI / docs scaffolding that splitting duplicates setup | Rejected per prior user preference for bundled refactor PRs in shared surfaces (validated on the ADR file-per-decision migration) |
 | Make all three jobs blocking | Strongest signal | False-positive rate on `doc-substance` and `adr-backfill` would block real work — the "user-discoverable" predicate is fuzzy (e.g. internal `feature/*.c` refactor), and the decision-keyword scan catches refactor commits that don't warrant an ADR | Rejected — prefer advisory comments over noisy blocks; escalate specific jobs to blocking after evidence |
 | Skip ADR-0106 automation entirely | Zero false-positive risk | Rule remains purely session-discipline; regressions possible when an agent spins up with stale context | Rejected per user's explicit directive to close all four gaps; advisory comment is the lowest-noise compromise |

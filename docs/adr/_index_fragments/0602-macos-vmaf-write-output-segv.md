@@ -1,1 +1,5 @@
-| [ADR-0602](0602-macos-vmaf-write-output-segv.md) | macOS SIGSEGV in vmaf_write_output — pic_cnt underflow + missing vmaf NULL guard | Accepted | bugfix, macos, output, portability, correctness, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0602](0602-macos-vmaf-write-output-segv.md) | macOS SIGSEGV in vmaf_write_output — pic_cnt underflow + missing vmaf NULL guard | Accepted | `bugfix`, `macos`, `output`, `portability`, `correctness`, `fork-local` |

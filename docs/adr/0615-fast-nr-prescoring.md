@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0615: Fast NR Pre-Scoring for CRF Bisect Acceleration
 
 - **Status**: Proposed
@@ -30,7 +29,7 @@ logic; the seam is the existing backend selector.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | A — NR-only bisect + FR confirm on final CRF | Maximum speedup (3–6×) | Risk of selecting wrong CRF on NR-biased content | Correctness risk too high without calibration validation |
 | B — NR early elimination (chosen) | Correct by construction at boundary; 2–4× speedup | Two-model invocation; requires calibrating δ_fast | — |
 | C — conformal-calibrated NR threshold | Principled UQ; lowest false-pass rate | 1–2 weeks extra for conformal calibration | Deferred as V2 upgrade path |
@@ -56,7 +55,7 @@ logic; the seam is the existing backend selector.
 ## Implementation phases
 
 | Phase | Description | Effort |
-|-------|-------------|--------|
+| ------- | ------------- | -------- |
 | P1 | `NRProxyBackend` in `score_backend.py`; unit tests with stub NR model | 1 day |
 | P2 | Calibration sweep script against Netflix corpus; compute and record `δ_fast` | 1 day |
 | P3 | Wire `NRProxyBackend` into Phase B bisect as opt-in `--fast-nr` flag | 0.5 day |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0367: LSVQ corpus ingestion for `nr_metric_v1`
 
 - **Status**: Accepted
@@ -66,7 +65,7 @@ lands in a separate PR.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | KonViD-150k only | Smallest surface; one ingestion adapter; one license review. | Cannot benchmark against the LSVQ_test / LSVQ_test_1080p leaderboards every modern NR-VQA paper publishes; content distribution narrower than the field's de-facto training corpus. | The fork has the LSVQ Hugging Face mirror available and the KonViD-150k adapter shape ports trivially; not using it leaves measured signal on the table. |
 | KonViD-150k + LSVQ | Adds the canonical NR-VQA corpus; the leaderboards we want to publish against use LSVQ_test; CC-BY-4.0 is permissively redistributable for derived weights. | Working set ~500 GB; CSV column-name drift across mirrors; partial-corpus runs need explicit operator opt-in. | **Chosen.** The marginal infra (one adapter mirroring KonViD-150k Phase 2 + tests + a `--max-rows` / `--full` CLI knob) is small. |
 | KonViD-150k + LSVQ + LIVE-VQC + YouTube-UGC | Largest possible training corpus; broadest content; matches the exact union DOVER trains on. | LIVE-VQC redistribution licence is research-only-non-commercial; YouTube-UGC clip URLs degrade over time; LOSO partition explodes; ADR-0287 already showed marginal ensemble gains past two-corpus regime. | Premature without a clean KonViD-150k + LSVQ measurement. The two-public-shard regime is the next step; broader corpora work returns when (and if) the two-shard run leaves PLCC headroom. |

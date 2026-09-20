@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Changing the default VMAF model
 
 When a caller names no model, the fork scores with one default. This page is

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0841: Environment variable reference page and canonical naming
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ implemented.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Maintain per-surface env-var tables only (existing state) | No new page to maintain | Discovery requires opening 5+ docs; still no list for C vars | Discoverability gap too costly for operators |
 | Auto-generate from source via a Meson script | Always up-to-date | Requires a build step in CI just for docs; complex to format nicely | Overkill for a stable-ish surface |
 | Deprecate `VMAF_SYCL_NO_GRAPH` silently (no warning) | Zero code change | Operators keep using it indefinitely; tech debt compounds | Warning costs 3 lines of C++ and catches the migration early |

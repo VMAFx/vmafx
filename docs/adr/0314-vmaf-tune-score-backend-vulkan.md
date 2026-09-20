@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0314: vmaf-tune `--score-backend=vulkan` (vendor-neutral GPU scoring)
 
 - **Status**: Accepted
@@ -55,7 +54,7 @@ Concretely:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Extend argparse choices to include `vulkan` (chosen) | One-line argparse change; reuses existing `score_backend.py` probe infrastructure; matches libvmaf CLI vocabulary 1:1; consistent with `cuda` / `sycl` precedent. | Inherits the existing strict-mode UX for non-auto values (no silent CPU downgrade) — operators without a Vulkan host must opt into `auto` or pin `cpu`. | — chosen. |
 | Ship a SDR-only Vulkan flag (e.g. `--vulkan-sdr`) | Avoids exposing all three GPU backends symmetrically; smaller decision surface. | Asymmetric with the existing `--score-backend cuda` pattern; users would need to learn a second flag for the vendor-neutral path; libvmaf already gates HDR support via the `--backend` selector itself, so a SDR-only flag would lie about the binary's capability. | Rejected — symmetry beats specialness. |
 | Defer to direct libvmaf invocation (no change) | Zero code; vmaf-tune stays small. | Locks AMD / Intel Arc / MoltenVK users out of the harness. Breaks the Phase A → Phase B → Phase C corpus pipeline for non-NVIDIA developer boxes. Regresses the user's ADR-0299 commitment to "the fastest available backend" on the majority of contributor hardware. | Rejected — the harness exists to insulate users from the hand-rolled CLI. |

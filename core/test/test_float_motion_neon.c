@@ -87,12 +87,6 @@
 #if ARCH_AARCH64
 #include "feature/arm64/float_motion_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Widest line the sweep allocates, plus room for the unaligned-start
  * offsets (0..3 floats) the sweep applies to both operands. */
 #define MAX_W 2048
@@ -179,7 +173,7 @@ static char *test_float_sad_line_neon_matches_scalar(void)
 
     float *a_buf = simd_test_aligned_malloc((size_t)(MAX_W + PAD) * sizeof(float), 32);
     float *b_buf = simd_test_aligned_malloc((size_t)(MAX_W + PAD) * sizeof(float), 32);
-    mu_assert("aligned allocation failed", a_buf != NULL && b_buf != NULL);
+    mu_assert("aligned allocation failed", a_buf != VMAF_NULLPTR && b_buf != VMAF_NULLPTR);
 
     int mismatches = 0;
     int per_fixture[FIX_COUNT] = {0};
@@ -227,7 +221,7 @@ static char *test_float_sad_line_neon_matches_scalar(void)
                           4 * (40 + n_wide));
     }
     mu_assert("float_sad_line_neon diverges from the scalar reference", mismatches == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Pins the claim in the comment above compute_motion_simd(): the per-line
@@ -248,7 +242,7 @@ static char *test_neon_frame_sad_matches_vmaf_image_sad_c(void)
 
         float *a = simd_test_aligned_malloc((size_t)stride * h * sizeof(float), 32);
         float *b = simd_test_aligned_malloc((size_t)stride * h * sizeof(float), 32);
-        mu_assert("aligned allocation failed", a != NULL && b != NULL);
+        mu_assert("aligned allocation failed", a != VMAF_NULLPTR && b != VMAF_NULLPTR);
 
         uint32_t state = 0xC0FFEE00u ^ (uint32_t)(w * 31 + h);
         for (int i = 0; i < stride * h; ++i) {
@@ -271,7 +265,7 @@ static char *test_neon_frame_sad_matches_vmaf_image_sad_c(void)
             return (char *)"NEON frame SAD diverges from vmaf_image_sad_c";
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* ARCH_AARCH64 */
 
@@ -283,7 +277,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: float_sad_line_neon is aarch64-only\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

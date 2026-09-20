@@ -42,12 +42,6 @@
 #include "feature/feature_extractor.h"
 #include "feature/feature_collector.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Deterministic xorshift32 — the same generator the other SIMD parity tests use.
  * The libc generator is forbidden here (.semgrep.yml rule vmaf-no-system-rand),
  * and it would be wrong on the merits anyway: its sequence differs between
@@ -95,7 +89,7 @@ static int motion_sad_under_mask(unsigned w, unsigned h, unsigned bpc, unsigned 
         return -1;
 
     VmafFeatureExtractorContext *fex_ctx;
-    int err = vmaf_feature_extractor_context_create(&fex_ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(&fex_ctx, fex, VMAF_NULLPTR);
     if (err)
         return err;
 
@@ -119,14 +113,16 @@ static int motion_sad_under_mask(unsigned w, unsigned h, unsigned bpc, unsigned 
         return err;
 
     /* Frame 0 primes prev_ref; the score under test comes from frame 1. */
-    err = vmaf_feature_extractor_context_extract(fex_ctx, &prev_pic, NULL, &prev_pic, NULL, 0, vfc);
+    err = vmaf_feature_extractor_context_extract(fex_ctx, &prev_pic, VMAF_NULLPTR, &prev_pic,
+                                                 VMAF_NULLPTR, 0, vfc);
     if (err)
         return err;
 
     if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
         fex_ctx->fex->prev_ref = prev_pic;
 
-    err = vmaf_feature_extractor_context_extract(fex_ctx, &cur_pic, NULL, &cur_pic, NULL, 1, vfc);
+    err = vmaf_feature_extractor_context_extract(fex_ctx, &cur_pic, VMAF_NULLPTR, &cur_pic,
+                                                 VMAF_NULLPTR, 1, vfc);
     if (err)
         return err;
 
@@ -165,7 +161,7 @@ static char *compare_one(unsigned w, unsigned h, unsigned bpc, unsigned seed)
     mu_assert("NEON motion SAD must bit-exactly match the scalar reference at "
               "every geometry and bit depth",
               scalar_score == neon_score);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_pipeline_neon_matches_scalar(void)
@@ -193,13 +189,11 @@ static char *test_motion_pipeline_neon_matches_scalar(void)
     }
 
     vmaf_set_cpu_flags_mask(~0u);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion_pipeline_neon_matches_scalar);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

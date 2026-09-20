@@ -1,1 +1,5 @@
-| [ADR-0431](0431-fr-from-nr-cuda-feature-split.md) | Split FR-from-NR CUDA extraction into an explicit CUDA pass plus CPU residual pass. CHUG/K150K local FULL_FEATURES materialisation keeps the same parquet schema while avoiding the mixed all-feature `--backend cuda` path that can fail on 10-bit clips with duplicate feature-key writes and CUDA context synchronization errors. | Accepted | ai, cuda, training-data, corpus, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0431](0431-fr-from-nr-cuda-feature-split.md) | Split CUDA and CPU Feature Passes for FR-from-NR Extraction | Accepted | ai, cuda, training-data, corpus, fork-local |

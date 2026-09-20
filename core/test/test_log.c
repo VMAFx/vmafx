@@ -17,10 +17,19 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 
 #include "test.h"
 #include "log.h"
 #include "libvmaf/libvmaf.h"
+
+static enum VmafLogLevel log_level_from_raw(int raw)
+{
+    _Static_assert(sizeof(enum VmafLogLevel) == sizeof(int), "enum ABI must match int");
+    enum VmafLogLevel value;
+    (void)memcpy(&value, &raw, sizeof(value));
+    return value;
+}
 
 static char *test_vmaf_log()
 {
@@ -32,14 +41,14 @@ static char *test_vmaf_log()
     vmaf_log(VMAF_LOG_LEVEL_INFO, "this is an example %s log\n", "info");
     vmaf_log(VMAF_LOG_LEVEL_DEBUG, "this is an example %s log\n", "debug");
 
-    vmaf_log(VMAF_LOG_LEVEL_DEBUG + 1, "this should log nothing\n");
-    vmaf_log(VMAF_LOG_LEVEL_NONE - 1, "this should log nothing\n");
+    vmaf_log(log_level_from_raw(VMAF_LOG_LEVEL_DEBUG + 1), "this should log nothing\n");
+    vmaf_log(log_level_from_raw(VMAF_LOG_LEVEL_NONE - 1), "this should log nothing\n");
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_vmaf_log);
-    return NULL;
+    return VMAF_NULLPTR;
 }

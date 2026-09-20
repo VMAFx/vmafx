@@ -87,7 +87,7 @@ def test_run_encode_with_stats_attaches_parsed_frames(tmp_path: Path):
         calls.append(list(cmd))
         # Pass-1 invocation: drop the canned stats file at the
         # path the wrapper expects (``<prefix>-0.log``).
-        if "-pass" in cmd and "1" == cmd[cmd.index("-pass") + 1]:
+        if "-pass" in cmd and cmd[cmd.index("-pass") + 1] == "1":
             prefix = Path(cmd[cmd.index("-passlogfile") + 1])
             log = prefix.parent / f"{prefix.name}-0.log"
             log.write_text(_X264_STATS_FIXTURE)

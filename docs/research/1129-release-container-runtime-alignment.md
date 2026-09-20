@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Research-1129: Release container runtime alignment
 
 ## Question

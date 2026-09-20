@@ -26,6 +26,9 @@ from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(
     __file__,
     include_repo_root=True,
@@ -34,8 +37,6 @@ _SCRIPT_PATHS = bootstrap_ai_script(
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 SaliencyFn = Callable[..., Any]
@@ -414,8 +415,7 @@ def _mean_var(mask: Any) -> tuple[float, float]:
     return (float(arr.mean()), float(arr.var()))
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = make_argument_parser(description=__doc__)
+def _add_saliency_table_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--input", type=Path, required=True, help="Input .jsonl or .parquet table")
     parser.add_argument(
         "--output", type=Path, required=True, help="Output .jsonl or .parquet table"
@@ -430,6 +430,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ffmpeg-bin", default="ffmpeg")
     parser.add_argument("--ffprobe-bin", default="ffprobe")
     parser.add_argument("--model-path", type=Path, default=None)
+
+
+def _add_saliency_inference_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model-id",
         default=None,
@@ -455,6 +458,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--overwrite", action="store_true", help="Recompute existing saliency columns"
     )
+
+
+def _add_saliency_metadata_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--status-column",
         default="saliency_status",
@@ -493,13 +499,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "cannot determine it (e.g. raw YUV corpora). 0 = no fallback."
         ),
     )
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = make_argument_parser(description=__doc__)
+    _add_saliency_table_args(parser)
+    _add_saliency_inference_args(parser)
+    _add_saliency_metadata_args(parser)
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    args = _parse_args(raw_argv)
-    cfg = SaliencyMaterializeConfig(
+def _config_from_args(args: argparse.Namespace) -> SaliencyMaterializeConfig:
+    return SaliencyMaterializeConfig(
         path_column=args.path_column,
         width_column=args.width_column,
         height_column=args.height_column,
@@ -520,38 +531,46 @@ def main(argv: list[str] | None = None) -> int:
         default_width=args.default_width,
         default_height=args.default_height,
     )
+
+
+def _write_audit(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    cfg: SaliencyMaterializeConfig,
+    summary: MaterializeSummary,
+) -> None:
+    config = asdict(cfg)
+    for key in ("root", "model_path"):
+        if config[key] is not None:
+            config[key] = str(config[key])
+    write_manifest_json(
+        args.audit_json,
+        {
+            "input": str(args.input),
+            "output": str(args.output),
+            "config": config,
+            "summary": asdict(summary),
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"input": args.input, "root": args.root, "model_path": args.model_path},
+                outputs={"output": str(args.output), "audit_json": str(args.audit_json)},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    cfg = _config_from_args(args)
     rows = read_table(args.input)
     enriched, summary = materialize_rows(rows, cfg)
     write_table(args.output, enriched)
     if args.audit_json is not None:
-        config = asdict(cfg)
-        for key in ("root", "model_path"):
-            if config[key] is not None:
-                config[key] = str(config[key])
-        write_manifest_json(
-            args.audit_json,
-            {
-                "input": str(args.input),
-                "output": str(args.output),
-                "config": config,
-                "summary": asdict(summary),
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={
-                        "input": args.input,
-                        "root": args.root,
-                        "model_path": args.model_path,
-                    },
-                    outputs={
-                        "output": str(args.output),
-                        "audit_json": str(args.audit_json),
-                    },
-                ),
-            },
-        )
+        _write_audit(args, raw_argv, cfg, summary)
     print(
         "saliency materialize: "
         f"total={summary.total} ok={summary.ok} "

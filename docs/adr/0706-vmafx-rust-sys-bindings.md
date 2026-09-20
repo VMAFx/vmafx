@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0706: Rust `vmafx-sys` FFI bindings crate
 
 - **Status**: Accepted
@@ -8,16 +7,17 @@
 
 ## Context
 
-Phase 4 of the VMAFX modernisation plan introduces Rust as a first-class language in
-the repository. The initial deliverable is a low-level FFI crate (`vmafx-sys`) that
-exposes the libvmaf C API to Rust callers.
+Phase 4 of the VMAFX modernisation plan introduces Rust as a first-class
+language in the repository. The initial deliverable is a low-level FFI crate
+(`vmafx-sys`) that exposes the libvmaf C API to Rust callers.
 
-The C API surface is stable and header-documented; manually writing bindings would
-create drift risk every time a public header changes. A build-time code-generation
-approach avoids that risk entirely.
+The C API surface is stable and header-documented; manually writing bindings
+would create drift risk every time a public header changes. A build-time
+code-generation approach avoids that risk entirely.
 
-The crate must satisfy two downstream consumers: a forthcoming higher-level `vmafx`
-crate (Phase 4 follow-on) and a Rust-based feature extractor pilot (sibling PR).
+The crate must satisfy two downstream consumers: a forthcoming higher-level
+`vmafx` crate (Phase 4 follow-on) and a Rust-based feature extractor pilot
+(sibling PR).
 
 ## Decision
 
@@ -37,20 +37,20 @@ We introduce `bindings/rust/vmafx-sys` with the following design:
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
-| Hand-written bindings | No bindgen dep | Drift risk; maintenance burden per header change | Rejected — 15+ public functions in libvmaf.h; drift is certain |
-| `cc` crate only (no bindgen) | Simpler build script | Still requires hand-written `extern "C"` blocks | Same drift problem as hand-written |
-| bindgen 0.72 (latest) | Newer feature set | Introduced breaking API changes after 0.70; crate ecosystem not fully caught up | Conservative choice; upgrade to 0.72 in a follow-on PR |
-| `cbindgen` (inverse direction) | Auto-generates C from Rust | Wrong direction — we are wrapping C, not exposing Rust to C | Not applicable |
+| Option                         | Pros                       | Cons                                                                            | Why not chosen                                                 |
+| ------------------------------ | -------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Hand-written bindings          | No bindgen dep             | Drift risk; maintenance burden per header change                                | Rejected — 15+ public functions in libvmaf.h; drift is certain |
+| `cc` crate only (no bindgen)   | Simpler build script       | Still requires hand-written `extern "C"` blocks                                 | Same drift problem as hand-written                             |
+| bindgen 0.72 (latest)          | Newer feature set          | Introduced breaking API changes after 0.70; crate ecosystem not fully caught up | Conservative choice; upgrade to 0.72 in a follow-on PR         |
+| `cbindgen` (inverse direction) | Auto-generates C from Rust | Wrong direction — we are wrapping C, not exposing Rust to C                     | Not applicable                                                 |
 
 ## Consequences
 
 - **Positive**: Rust callers get idiomatic access to libvmaf with no manual
   binding maintenance. The safe layer gives a `Result`-based API that works
   naturally with `?`.
-- **Positive**: Future crates (`vmafx`, feature-extractor pilot) can depend
-  on `vmafx-sys` without re-implementing the FFI surface.
+- **Positive**: Future crates (`vmafx`, feature-extractor pilot) can depend on
+  `vmafx-sys` without re-implementing the FFI surface.
 - **Negative**: `libclang` must be present on every developer machine and CI
   runner that builds `vmafx-sys`. This is standard on Linux; macOS / Windows
   need minor setup (documented in `docs/development/rust.md`).

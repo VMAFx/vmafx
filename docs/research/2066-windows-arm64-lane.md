@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2066 — Windows on ARM64: what the runner offers, which toolchain, what broke
 

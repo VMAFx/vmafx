@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0453: PSNR `enable_chroma` option parity across all GPU backends
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ non-YUV400 sources.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-backend opt-out stub returning `-ENOTSUP` | Simple, no GPU geometry change | Silences the option rather than honouring it; caller still sees divergent output | Masks the bug rather than fixing it |
 | Add all five CPU options at once (`enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse`) | Closes more parity gaps in one PR | Wider scope; `enable_apsnr` needs temporal accumulation buffers on the GPU that are not yet in place; `min_sse` needs per-plane max recomputation | Defer multi-option expansion to follow-up PRs per the SCOPE GUARD |
 

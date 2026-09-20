@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2039 — Why the code-scanning alerts never clear
 

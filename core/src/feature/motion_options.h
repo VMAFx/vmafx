@@ -16,8 +16,6 @@
  *
  */
 
-#pragma once
-
 #ifndef MOTION_OPTIONS_H_
 #define MOTION_OPTIONS_H_
 

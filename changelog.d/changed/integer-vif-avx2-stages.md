@@ -1,1 +1,5 @@
-- Refactor integer VIF AVX2 filters into bounded private stages, remove overwritten initial stores and preserve bit-exact scores with direct scalar/SIMD regression coverage.
+# Changelog fragment
+
+- Refactor integer VIF AVX2 filters into bounded private stages, remove
+  overwritten initial stores and preserve bit-exact scores with direct
+  scalar/SIMD regression coverage.

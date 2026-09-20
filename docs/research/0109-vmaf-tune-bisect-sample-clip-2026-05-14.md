@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0109: `vmaf-tune` Bisect Sample-Clip Wiring
 
 ## Question
@@ -25,7 +24,7 @@ sample-clip encode and score primitives already exist.
 ## Alternatives Considered
 
 | Option | Decision | Reason |
-|---|---|---|
+| --- | --- | --- |
 | Materialise clipped reference YUV files before each bisect | Rejected | Adds disk I/O and cleanup without improving alignment; ADR-0301 already selected scorer frame skips as the zero-copy path. |
 | Encode the first `N` seconds when source duration is unknown | Rejected | `compare` documents centre samples. Without duration there is no centre anchor, so falling back to full-source mode matches corpus semantics. |
 | Add a separate `vmaf-tune bisect` CLI first | Rejected | The shipped user surface is `compare`; a standalone command remains a separate backlog item. |

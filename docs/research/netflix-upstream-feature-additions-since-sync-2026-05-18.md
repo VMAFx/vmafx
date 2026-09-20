@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest: Netflix Upstream Feature Additions — CUDA Twin Gap Audit (2026-05-18)
 
 **Task**: Identify which C-side sub-features consumed by the Netflix HDR VMAF
@@ -74,7 +73,7 @@ correct porting strategy for each.
 ## Summary Table
 
 | Feature | CPU location | CUDA status | Action |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `aim` | `float_adm.c` / `adm.c` | **Missing** | Ported — ADR-0574 |
 | `adm3` | `float_adm.c` | **Missing** | Ported — ADR-0574 |
 | `motion3` | `integer_motion.c` | Already done (ADR-0219) | None |

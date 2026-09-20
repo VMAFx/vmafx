@@ -33,6 +33,8 @@
  *  readback bundle holds only the single int64 SAD accumulator.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -56,9 +58,9 @@
 
 #include "../../hip/hip_handle.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
@@ -207,13 +209,13 @@ static int mv2_hip_module_load(MotionV2StateHip *s)
     rc = hipModuleGetFunction(&s->funcbpc8, s->module, "motion_v2_kernel_8bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return mv2_hip_rc(rc);
     }
     rc = hipModuleGetFunction(&s->funcbpc16, s->module, "motion_v2_kernel_16bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return mv2_hip_rc(rc);
     }
     return 0;
@@ -229,20 +231,20 @@ static int mv2_hip_bufs_alloc(MotionV2StateHip *s)
     return (rc == hipSuccess) ? 0 : -ENOMEM;
 }
 
-/* Free ping-pong buffers and unload the module. Safe with NULL handles. */
+/* Free ping-pong buffers and unload the module. Safe with VMAF_NULLPTR handles. */
 static void mv2_hip_bufs_free(MotionV2StateHip *s)
 {
-    if (s->pix[1] != NULL) {
+    if (s->pix[1] != VMAF_NULLPTR) {
         (void)hipFree(s->pix[1]);
-        s->pix[1] = NULL;
+        s->pix[1] = VMAF_NULLPTR;
     }
-    if (s->pix[0] != NULL) {
+    if (s->pix[0] != VMAF_NULLPTR) {
         (void)hipFree(s->pix[0]);
-        s->pix[0] = NULL;
+        s->pix[0] = VMAF_NULLPTR;
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
 }
 
@@ -272,11 +274,12 @@ static int mv2_hip_launch_kernel(MotionV2StateHip *s, unsigned cur_idx, unsigned
                       (void *)&h,           (void *)&bpc};
     const bool is8 = (s->bpc == 8u);
     return mv2_hip_rc(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, MV2H_BX,
-                                            MV2H_BY, 1, 0, str, is8 ? args8 : args16, NULL));
+                                            MV2H_BY, 1, 0, str, is8 ? args8 : args16,
+                                            VMAF_NULLPTR));
 }
 
 /* Per-frame submit: HtoD copy, optional kernel launch, event/DtoH copy. */
-static int mv2_hip_launch(MotionV2StateHip *s, VmafPicture *ref_pic, unsigned index)
+static int mv2_hip_launch(MotionV2StateHip *s, const VmafPicture *ref_pic, unsigned index)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
@@ -338,13 +341,13 @@ static int mv2_hip_release(MotionV2StateHip *s)
     int err = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0)
         rc = err;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -385,7 +388,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -393,8 +396,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return err;
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)dist_pic;
     (void)ref_pic_90;
@@ -568,7 +572,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
-                                          "VMAF_integer_feature_motion3_v2_score", NULL};
+                                          "VMAF_integer_feature_motion3_v2_score", VMAF_NULLPTR};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;` in
@@ -578,7 +582,6 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_sc
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_integer_motion_v2_cuda` in
  * `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip = {
     .name = "motion_v2_hip",
     .init = init_fex_hip,
@@ -598,5 +601,3 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

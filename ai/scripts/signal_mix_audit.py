@@ -21,12 +21,13 @@ from typing import Any
 import numpy as np
 from _script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 TARGET_CANDIDATES: tuple[str, ...] = (
     "vmaf",
@@ -383,6 +384,119 @@ def _family_label(key: str) -> str:
     return key
 
 
+def _classify_families(
+    columns: list[str],
+    signal_columns: list[str],
+    column_stats: dict[str, dict[str, float]],
+    min_finite_ratio: float,
+) -> tuple[dict[str, list[str]], dict[str, dict[str, Any]], list[str], list[str]]:
+    family_columns = {
+        family.key: [column for column in columns if family.matches(column)]
+        for family in SIGNAL_FAMILIES
+    }
+    family_health: dict[str, dict[str, Any]] = {}
+    missing_families: list[str] = []
+    weak_families: list[str] = []
+    for family in SIGNAL_FAMILIES:
+        matched = family_columns[family.key]
+        numeric = [column for column in matched if column in signal_columns]
+        healthy = [
+            column
+            for column in numeric
+            if column_stats[column]["finite_ratio"] >= min_finite_ratio
+            and not math.isnan(column_stats[column]["std"])
+            and column_stats[column]["std"] > 1e-12
+        ]
+        status = "covered"
+        if not matched:
+            missing_families.append(family.key)
+            status = "missing"
+        elif not healthy:
+            weak_families.append(family.key)
+            status = "weak"
+        family_health[family.key] = {
+            "status": status,
+            "matched_columns": matched,
+            "numeric_columns": numeric,
+            "healthy_columns": healthy,
+            "candidate_metrics": list(family.candidate_metrics),
+            "recommendation": family.recommendation,
+        }
+    return family_columns, family_health, missing_families, weak_families
+
+
+def _target_correlations(df, signal_columns: list[str], target: str | None) -> list[dict[str, Any]]:
+    if target is None:
+        return []
+    correlations: list[dict[str, Any]] = []
+    for column in signal_columns:
+        pearson = _pearson_corr(df[column], df[target])
+        spearman = _spearman_corr(df[column], df[target])
+        if math.isnan(pearson) and math.isnan(spearman):
+            continue
+        correlations.append(
+            {
+                "column": column,
+                "family": _primary_family(column),
+                "pearson": pearson,
+                "spearman": spearman,
+                "abs_pearson": abs(pearson) if not math.isnan(pearson) else float("nan"),
+            }
+        )
+    correlations.sort(
+        key=lambda item: (
+            math.isnan(item["abs_pearson"]),
+            -item["abs_pearson"] if not math.isnan(item["abs_pearson"]) else 0.0,
+        )
+    )
+    return correlations
+
+
+def _pair_correlations(
+    df,
+    signal_columns: list[str],
+    target_correlations: list[dict[str, Any]],
+    redundancy_threshold: float,
+    complement_threshold: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    redundant: list[dict[str, Any]] = []
+    intersections: list[dict[str, Any]] = []
+    ranked = {
+        item["column"]: item
+        for item in target_correlations
+        if not math.isnan(item["abs_pearson"]) and item["abs_pearson"] >= 0.20
+    }
+    for index, left in enumerate(signal_columns):
+        for right in signal_columns[index + 1 :]:
+            corr = _pearson_corr(df[left], df[right])
+            if math.isnan(corr):
+                continue
+            pair = {
+                "left": left,
+                "right": right,
+                "left_family": _primary_family(left),
+                "right_family": _primary_family(right),
+                "pearson": corr,
+                "abs_pearson": abs(corr),
+            }
+            if abs(corr) >= redundancy_threshold:
+                redundant.append(pair)
+            if pair["left_family"] != pair["right_family"] and abs(corr) <= complement_threshold:
+                if left in ranked and right in ranked:
+                    intersections.append(
+                        {
+                            **pair,
+                            "left_target_abs_pearson": ranked[left]["abs_pearson"],
+                            "right_target_abs_pearson": ranked[right]["abs_pearson"],
+                        }
+                    )
+    redundant.sort(key=lambda item: -item["abs_pearson"])
+    intersections.sort(
+        key=lambda item: -(item["left_target_abs_pearson"] + item["right_target_abs_pearson"])
+    )
+    return redundant, intersections
+
+
 def audit_table(
     label: str,
     path: Path,
@@ -399,107 +513,17 @@ def audit_table(
     numeric_columns = [c for c in columns if c in df and _is_numeric_series(df[c])]
     signal_columns = [c for c in numeric_columns if _is_signal_numeric(c, inferred_target)]
 
-    family_columns: dict[str, list[str]] = {family.key: [] for family in SIGNAL_FAMILIES}
-    for column in columns:
-        for family in SIGNAL_FAMILIES:
-            if family.matches(column):
-                family_columns[family.key].append(column)
-
     column_stats = {column: _finite_stats(df[column]) for column in signal_columns}
-    family_health: dict[str, dict[str, Any]] = {}
-    missing_families: list[str] = []
-    weak_families: list[str] = []
-    for family in SIGNAL_FAMILIES:
-        matched = family_columns[family.key]
-        numeric = [c for c in matched if c in signal_columns]
-        healthy = [
-            c
-            for c in numeric
-            if column_stats[c]["finite_ratio"] >= min_finite_ratio
-            and not math.isnan(column_stats[c]["std"])
-            and column_stats[c]["std"] > 1e-12
-        ]
-        if not matched:
-            missing_families.append(family.key)
-            status = "missing"
-        elif not healthy:
-            weak_families.append(family.key)
-            status = "weak"
-        else:
-            status = "covered"
-        family_health[family.key] = {
-            "status": status,
-            "matched_columns": matched,
-            "numeric_columns": numeric,
-            "healthy_columns": healthy,
-            "candidate_metrics": list(family.candidate_metrics),
-            "recommendation": family.recommendation,
-        }
-
-    target_correlations: list[dict[str, Any]] = []
-    if inferred_target and inferred_target in numeric_columns:
-        for column in signal_columns:
-            pearson = _pearson_corr(df[column], df[inferred_target])
-            spearman = _spearman_corr(df[column], df[inferred_target])
-            if math.isnan(pearson) and math.isnan(spearman):
-                continue
-            target_correlations.append(
-                {
-                    "column": column,
-                    "family": _primary_family(column),
-                    "pearson": pearson,
-                    "spearman": spearman,
-                    "abs_pearson": abs(pearson) if not math.isnan(pearson) else float("nan"),
-                }
-            )
-        target_correlations.sort(
-            key=lambda item: (
-                math.isnan(item["abs_pearson"]),
-                -item["abs_pearson"] if not math.isnan(item["abs_pearson"]) else 0.0,
-            )
-        )
-
-    redundant_pairs: list[dict[str, Any]] = []
-    intersections: list[dict[str, Any]] = []
-    ranked_by_target = {
-        item["column"]: item
-        for item in target_correlations
-        if not math.isnan(item["abs_pearson"]) and item["abs_pearson"] >= 0.20
-    }
-    for i, left in enumerate(signal_columns):
-        for right in signal_columns[i + 1 :]:
-            corr = _pearson_corr(df[left], df[right])
-            if math.isnan(corr):
-                continue
-            left_family = _primary_family(left)
-            right_family = _primary_family(right)
-            pair = {
-                "left": left,
-                "right": right,
-                "left_family": left_family,
-                "right_family": right_family,
-                "pearson": corr,
-                "abs_pearson": abs(corr),
-            }
-            if abs(corr) >= redundancy_threshold:
-                redundant_pairs.append(pair)
-            if (
-                left_family != right_family
-                and abs(corr) <= complement_threshold
-                and left in ranked_by_target
-                and right in ranked_by_target
-            ):
-                intersections.append(
-                    {
-                        **pair,
-                        "left_target_abs_pearson": ranked_by_target[left]["abs_pearson"],
-                        "right_target_abs_pearson": ranked_by_target[right]["abs_pearson"],
-                    }
-                )
-
-    redundant_pairs.sort(key=lambda item: -item["abs_pearson"])
-    intersections.sort(
-        key=lambda item: -(item["left_target_abs_pearson"] + item["right_target_abs_pearson"])
+    family_data = _classify_families(columns, signal_columns, column_stats, min_finite_ratio)
+    family_columns, family_health, missing_families, weak_families = family_data
+    target_for_corr = inferred_target if inferred_target in numeric_columns else None
+    target_correlations = _target_correlations(df, signal_columns, target_for_corr)
+    redundant_pairs, intersections = _pair_correlations(
+        df,
+        signal_columns,
+        target_correlations,
+        redundancy_threshold,
+        complement_threshold,
     )
 
     return TableAudit(
@@ -547,19 +571,21 @@ def _format_float(value: float) -> str:
     return f"{value:.3f}"
 
 
-def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
-    lines: list[str] = [
-        "# Signal-mix audit",
-        "",
-        "This report audits extracted VQA tables for signal-family coverage,",
-        "target correlation, redundancy, complementary intersections, and blind spots.",
-        "It is advisory: use it to choose the next metrics/models to wire or retrain.",
-        "",
-        "## Inputs",
-        "",
-        "| Table | Rows | Columns | Target | Signal columns |",
-        "|---|---:|---:|---|---:|",
-    ]
+def _render_inputs_and_coverage(lines: list[str], audits: list[TableAudit]) -> None:
+    lines.extend(
+        [
+            "# Signal-mix audit",
+            "",
+            "This report audits extracted VQA tables for signal-family coverage,",
+            "target correlation, redundancy, complementary intersections, and blind spots.",
+            "It is advisory: use it to choose the next metrics/models to wire or retrain.",
+            "",
+            "## Inputs",
+            "",
+            "| Table | Rows | Columns | Target | Signal columns |",
+            "|---|---:|---:|---|---:|",
+        ]
+    )
     for audit in audits:
         lines.append(
             f"| `{audit.label}` | {audit.rows} | {len(audit.columns)} | "
@@ -587,6 +613,8 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             f"{', '.join(family.candidate_metrics)} |"
         )
 
+
+def _render_target_signals(lines: list[str], audits: list[TableAudit], top_k: int) -> None:
     lines.extend(["", "## Strongest Target Signals", ""])
     for audit in audits:
         lines.extend(
@@ -611,6 +639,8 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             )
         lines.append("")
 
+
+def _render_intersections(lines: list[str], audits: list[TableAudit], top_k: int) -> None:
     lines.extend(["## Complementary Intersections", ""])
     any_intersection = False
     for audit in audits:
@@ -644,6 +674,8 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             ]
         )
 
+
+def _render_redundant_pairs(lines: list[str], audits: list[TableAudit], top_k: int) -> None:
     lines.extend(["## Redundant Pairs", ""])
     any_redundant = False
     for audit in audits:
@@ -668,6 +700,8 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
     if not any_redundant:
         lines.extend(["No redundant pairs crossed the configured threshold.", ""])
 
+
+def _render_blind_spots(lines: list[str], audits: list[TableAudit]) -> None:
     lines.extend(["## Blind Spots", ""])
     for audit in audits:
         missing = [_family_label(key) for key in audit.missing_families]
@@ -683,6 +717,8 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             lines.append("- Weak signal families: none.")
         lines.append("")
 
+
+def _render_recommendations(lines: list[str], audits: list[TableAudit]) -> None:
     lines.extend(["## Recommended Next Actions", ""])
     seen: set[str] = set()
     for audit in audits:
@@ -695,6 +731,16 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
     if not seen:
         lines.append("- No missing or weak signal families detected at the configured thresholds.")
     lines.append("")
+
+
+def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
+    lines: list[str] = []
+    _render_inputs_and_coverage(lines, audits)
+    _render_target_signals(lines, audits, top_k)
+    _render_intersections(lines, audits, top_k)
+    _render_redundant_pairs(lines, audits, top_k)
+    _render_blind_spots(lines, audits)
+    _render_recommendations(lines, audits)
     return "\n".join(lines)
 
 

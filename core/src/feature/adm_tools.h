@@ -25,227 +25,225 @@
 #define M_PI 3.14159265358979323846264338327
 #endif
 
-#pragma once
-
 #ifndef ADM_TOOLS_H_
 #define ADM_TOOLS_H_
 
 // i = 0, j = 0: indices y: 1,0,1, x: 1,0,1
 #define ADM_CM_THRESH_S_0_0(angles, flt_angles, src_px_stride, accum, w, h, i, j)                  \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            sum += flt_ptr[src_px_stride + 1];                                                     \
+            sum += flt_ptr[(src_px_stride) + 1];                                                   \
             sum += flt_ptr[src_px_stride];                                                         \
-            sum += flt_ptr[src_px_stride + 1];                                                     \
+            sum += flt_ptr[(src_px_stride) + 1];                                                   \
             sum += flt_ptr[1];                                                                     \
             sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[0]);                                            \
             sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[src_px_stride + 1];                                                     \
+            sum += flt_ptr[(src_px_stride) + 1];                                                   \
             sum += flt_ptr[src_px_stride];                                                         \
-            sum += flt_ptr[src_px_stride + 1];                                                     \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(src_px_stride) + 1];                                                   \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = 0, j = w-1: indices y: 1,0,1, x: w-2, w-1, w-1
 #define ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, src_px_stride, accum, w, h, i, j)              \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            sum += flt_ptr[src_px_stride + w - 2];                                                 \
-            sum += flt_ptr[src_px_stride + w - 1];                                                 \
-            sum += flt_ptr[src_px_stride + w - 1];                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[w - 1]);                                        \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[src_px_stride + w - 2];                                                 \
-            sum += flt_ptr[src_px_stride + w - 1];                                                 \
-            sum += flt_ptr[src_px_stride + w - 1];                                                 \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(src_px_stride) + (w) - 2];                                             \
+            sum += flt_ptr[(src_px_stride) + (w) - 1];                                             \
+            sum += flt_ptr[(src_px_stride) + (w) - 1];                                             \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[(w) - 1]);                                      \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(src_px_stride) + (w) - 2];                                             \
+            sum += flt_ptr[(src_px_stride) + (w) - 1];                                             \
+            sum += flt_ptr[(src_px_stride) + (w) - 1];                                             \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = 0, j = 1, ..., w-2: indices y: 1,0,1, x: j-1,j,j+1
 #define ADM_CM_THRESH_S_0_J(angles, flt_angles, src_px_stride, accum, w, h, i, j)                  \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            sum += flt_ptr[src_px_stride + j - 1];                                                 \
-            sum += flt_ptr[src_px_stride + j];                                                     \
-            sum += flt_ptr[src_px_stride + j + 1];                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
+            sum += flt_ptr[(src_px_stride) + (j) - 1];                                             \
+            sum += flt_ptr[(src_px_stride) + (j)];                                                 \
+            sum += flt_ptr[(src_px_stride) + (j) + 1];                                             \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[j]);                                            \
-            sum += flt_ptr[j + 1];                                                                 \
-            sum += flt_ptr[src_px_stride + j - 1];                                                 \
-            sum += flt_ptr[src_px_stride + j];                                                     \
-            sum += flt_ptr[src_px_stride + j + 1];                                                 \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(j) + 1];                                                               \
+            sum += flt_ptr[(src_px_stride) + (j) - 1];                                             \
+            sum += flt_ptr[(src_px_stride) + (j)];                                                 \
+            sum += flt_ptr[(src_px_stride) + (j) + 1];                                             \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = h-1, j = 0: indices y: h-2,h-1,h-1, x: 1,0,1
 #define ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, src_px_stride, accum, w, h, i, j)              \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            src_ptr += (src_px_stride * (h - 2));                                                  \
-            flt_ptr += (src_px_stride * (h - 2));                                                  \
+            src_ptr += ((src_px_stride) * ((h) - 2));                                              \
+            flt_ptr += ((src_px_stride) * ((h) - 2));                                              \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
             sum += flt_ptr[1];                                                                     \
             sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[0]);                                            \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            *accum += sum;                                                                         \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = h-1, j = w-1: indices y: h-2,h-1,h-1, x: w-2, w-1, w-1
 #define ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, src_px_stride, accum, w, h, i, j)          \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            src_ptr += (src_px_stride * (h - 2));                                                  \
-            flt_ptr += (src_px_stride * (h - 2));                                                  \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[w - 1]);                                        \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((src_px_stride) * ((h) - 2));                                              \
+            flt_ptr += ((src_px_stride) * ((h) - 2));                                              \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[(w) - 1]);                                      \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = h-1, j = 1, ..., w-2: indices y: h-2,h-1,h-1, x: j-1,j,j+1
 #define ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, src_px_stride, accum, w, h, i, j)              \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            src_ptr += (src_px_stride * (h - 2));                                                  \
-            flt_ptr += (src_px_stride * (h - 2));                                                  \
-            sum += flt_ptr[j - 1];                                                                 \
+            src_ptr += ((src_px_stride) * ((h) - 2));                                              \
+            flt_ptr += ((src_px_stride) * ((h) - 2));                                              \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
-            sum += flt_ptr[j - 1];                                                                 \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[j]);                                            \
-            sum += flt_ptr[j + 1];                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
+            sum += flt_ptr[(j) + 1];                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(j) + 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = 1,..,h-2, j = 1,..,w-2: indices y: i-1,i,i+1, x: j-1,j,j+1
 #define ADM_CM_THRESH_S_I_J(angles, flt_angles, src_px_stride, accum, w, h, i, j)                  \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            src_ptr += (src_px_stride * (i - 1));                                                  \
-            flt_ptr += (src_px_stride * (i - 1));                                                  \
-            sum += flt_ptr[j - 1];                                                                 \
+            src_ptr += ((src_px_stride) * ((i) - 1));                                              \
+            flt_ptr += ((src_px_stride) * ((i) - 1));                                              \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
-            sum += flt_ptr[j - 1];                                                                 \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[j]);                                            \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
-            sum += flt_ptr[j - 1];                                                                 \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
+            sum += flt_ptr[(j) - 1];                                                               \
             sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(j) + 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = 1,..,h-2, j = 0: indices y: i-1,i,i+1, x: 1,0,1
 #define ADM_CM_THRESH_S_I_0(angles, flt_angles, src_px_stride, accum, w, h, i, j)                  \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            src_ptr += (src_px_stride * (i - 1));                                                  \
-            flt_ptr += (src_px_stride * (i - 1));                                                  \
+            src_ptr += ((src_px_stride) * ((i) - 1));                                              \
+            flt_ptr += ((src_px_stride) * ((i) - 1));                                              \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
             sum += flt_ptr[1];                                                                     \
             sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[0]);                                            \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            *accum += sum;                                                                         \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
 // i = 1,..,h-2, j = w-1: indices y: i-1,i,i+1, x: w-2,w-1,w-1
 #define ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, src_px_stride, accum, w, h, i, j)              \
     {                                                                                              \
-        *accum = 0;                                                                                \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            const float *src_ptr = angles[theta];                                                  \
-            const float *flt_ptr = flt_angles[theta];                                              \
+            const float *src_ptr = (angles)[theta];                                                \
+            const float *flt_ptr = (flt_angles)[theta];                                            \
             float sum = 0;                                                                         \
-            src_ptr += (src_px_stride * (i - 1));                                                  \
-            flt_ptr += (src_px_stride * (i - 1));                                                  \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[w - 1]);                                        \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_px_stride;                                                              \
-            flt_ptr += src_px_stride;                                                              \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((src_px_stride) * ((i) - 1));                                              \
+            flt_ptr += ((src_px_stride) * ((i) - 1));                                              \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[(w) - 1]);                                      \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_px_stride);                                                            \
+            flt_ptr += (src_px_stride);                                                            \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
     }
 
@@ -262,9 +260,6 @@ typedef struct adm_dwt_band_t_d {
     double *band_h; /* High-pass V + low-pass H. */
     double *band_d; /* High-pass V + high-pass H. */
 } adm_dwt_band_t_d;
-
-float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_factor,
-                     double adm_p_norm);
 
 void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
                     const adm_dwt_band_t_s *r, const adm_dwt_band_t_s *a, int w, int h,

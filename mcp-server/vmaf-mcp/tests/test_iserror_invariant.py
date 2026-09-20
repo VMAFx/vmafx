@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -517,12 +518,9 @@ def test_main_anyio_dispatch_routes_to_anyio_run(monkeypatch) -> None:
 #    (skipped when optional deps are missing)
 # ---------------------------------------------------------------------------
 
-_HT_DEPS_AVAILABLE = True
-try:
-    import aiohttp  # noqa: F401
-    import prometheus_client  # noqa: F401
-except ImportError:  # pragma: no cover — base install
-    _HT_DEPS_AVAILABLE = False
+_HT_DEPS_AVAILABLE = all(
+    find_spec(module) is not None for module in ("aiohttp", "prometheus_client")
+)
 
 ht_skip = pytest.mark.skipif(
     not _HT_DEPS_AVAILABLE,

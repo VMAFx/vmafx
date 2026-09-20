@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0279: vmaf-tune codec adapter — libaom-av1
 
 - **Status**: Accepted
@@ -45,7 +44,7 @@ the search loop.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Skip libaom; rely on SVT-AV1 alone for AV1 coverage | One adapter to maintain; SVT-AV1 is faster and the obvious "default" AV1 encoder | Loses the high-quality archive operating point; predictors can't pick the better encoder per-source | Half the AV1 design space is invisible to the corpus |
 | Expose `cpu-used` as the integer knob directly (no preset names) | One-to-one with libaom's CLI; no mapping table to maintain | Search loop's preset axis becomes per-codec, breaking the "single sweep covers all codecs" property | Defeats the codec-adapter contract |
 | Wire libaom's full encoder argv (`-row-mt`, `-tile-columns`, `-aq-mode`, ...) inline now | Single landing for all libaom expressivity | Out of scope for an adapter scaffold; couples Phase A landing to argument-design churn | Phase B+ owns the wider argv surface; adapter exposes the metadata only |

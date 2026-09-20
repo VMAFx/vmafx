@@ -1,1 +1,5 @@
-| [ADR-0426](0426-chug-hdr-corpus-ingestion.md) | Add CHUG as a local-only UGC-HDR MOS-corpus ingestion path. The adapter downloads/probes CHUG videos under `.workingdir2/chug/`, preserves raw CHUG MOS and HDR ladder metadata, maps trainer-facing MOS onto `[1, 5]`, and keeps all CHUG media / labels out of git under the dataset's non-commercial/share-alike license posture. | Accepted | ai, hdr, corpus, mos |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0426](0426-chug-hdr-corpus-ingestion.md) | CHUG HDR corpus ingestion | Accepted | ai, hdr, corpus, mos, training, license |

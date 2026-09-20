@@ -21,9 +21,11 @@
  * than the AVX2 `vshufps + vpermpd` chain.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -121,11 +123,10 @@ void ssimulacra2_multiply_3plane_avx512(const float *a, const float *b, float *m
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void ssimulacra2_linear_rgb_to_xyb_avx512(const float *lin, float *xyb, unsigned w, unsigned h)
 {
-    assert(lin != NULL);
-    assert(xyb != NULL);
+    assert(lin != VMAF_NULLPTR);
+    assert(xyb != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
     const size_t plane_sz = (size_t)w * (size_t)h;
     const float *rp = lin;
@@ -272,7 +273,6 @@ void ssimulacra2_downsample_2x2_avx512(const float *in, unsigned iw, unsigned ih
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void ssimulacra2_ssim_map_avx512(const float *m1, const float *m2, const float *s11,
                                  const float *s22, const float *s12, unsigned w, unsigned h,
                                  double plane_averages[6])
@@ -384,7 +384,6 @@ void ssimulacra2_edge_diff_map_avx512(const float *img1, const float *mu1, const
 }
 
 /* ADR-0141 carve-out: gather loads + 3-pole IIR + scalar-store scatter. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 static void hblur_16rows_avx512(const float rg_n2[3], const float rg_d1[3], int rg_radius,
                                 const float *in, float *out, unsigned w, unsigned y_base,
                                 unsigned row_count)
@@ -448,7 +447,6 @@ static void hblur_16rows_avx512(const float rg_n2[3], const float rg_d1[3], int 
 }
 
 /* ADR-0141 carve-out: SIMD main loop + scalar tail share IIR state. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 static void vblur_simd_16cols_avx512(const float rg_n2[3], const float rg_d1[3], int rg_radius,
                                      float *col_state, const float *in, float *out, unsigned w,
                                      unsigned h)
@@ -475,9 +473,9 @@ static void vblur_simd_16cols_avx512(const float rg_n2[3], const float rg_d1[3],
     for (ptrdiff_t n = -N + 1; n < ysize; n++) {
         const ptrdiff_t left = n - N - 1;
         const ptrdiff_t right = n + N - 1;
-        const float *lrow = (left >= 0) ? (in + (size_t)left * xsize) : NULL;
-        const float *rrow = (right < ysize) ? (in + (size_t)right * xsize) : NULL;
-        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : NULL;
+        const float *lrow = (left >= 0) ? (in + (size_t)left * xsize) : VMAF_NULLPTR;
+        const float *rrow = (right < ysize) ? (in + (size_t)right * xsize) : VMAF_NULLPTR;
+        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : VMAF_NULLPTR;
 
         size_t x = 0;
         for (; x + 16 <= xsize; x += 16) {
@@ -531,10 +529,10 @@ void ssimulacra2_blur_plane_avx512(const float rg_n2[3], const float rg_d1[3], i
                                    float *col_state, const float *in, float *out, float *scratch,
                                    unsigned w, unsigned h)
 {
-    assert(col_state != NULL);
-    assert(in != NULL);
-    assert(out != NULL);
-    assert(scratch != NULL);
+    assert(col_state != VMAF_NULLPTR);
+    assert(in != VMAF_NULLPTR);
+    assert(out != VMAF_NULLPTR);
+    assert(scratch != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
 
     unsigned y = 0;
@@ -644,7 +642,7 @@ static inline void compute_matrix_coefs_avx512(int yuv_matrix, float *kr_out, fl
  * reference is enforced by ADR-0138/ADR-0139. Splitting the body into
  * helpers would perturb register allocation and the chroma-reconstruction
  * reduction order, which has been observed to introduce ULP drift in
- * `/cross-backend-diff` runs. The NOLINT below is the load-bearing
+ * `/cross-backend-diff` runs. The lint rationale below is the load-bearing
  * suppression mandated by ADR-0141.
  *
  * Caller contract: `planes` must hold three `simd_plane_t` planes laid
@@ -654,12 +652,11 @@ static inline void compute_matrix_coefs_avx512(int yuv_matrix, float *kr_out, fl
  * (8 / 10 / 12); peak / scaling derive from it. `yuv_matrix` selects
  * BT.601/709/2020 coefficients via `compute_matrix_coefs_avx512`.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void ssimulacra2_picture_to_linear_rgb_avx512(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
                                               const simd_plane_t planes[3], float *out)
 {
-    assert(planes != NULL);
-    assert(out != NULL);
+    assert(planes != VMAF_NULLPTR);
+    assert(out != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
 
     const size_t plane_sz = (size_t)w * (size_t)h;
@@ -777,5 +774,3 @@ void ssimulacra2_picture_to_linear_rgb_avx512(int yuv_matrix, unsigned bpc, unsi
         }
     }
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

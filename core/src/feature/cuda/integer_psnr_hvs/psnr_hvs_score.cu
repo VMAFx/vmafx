@@ -25,8 +25,6 @@
 #define BLOCK_DIM 8
 #define BLOCK_SIZE (BLOCK_DIM * BLOCK_DIM)
 
-extern "C" {
-
 /* Per-plane CSF tables — same constants as csf_y / csf_cb420 /
  * csf_cr420 in third_party/xiph/psnr_hvs.c. */
 __device__ static const float CSF_TABLES[3][64] = {
@@ -190,6 +188,115 @@ __device__ static inline int sample_to_int(float v, int bpc)
     return (int)(v * 16.0f + 0.5f);
 }
 
+__device__ static void compute_masking_variances(const int ref[64], const int dist[64],
+                                                 float *ref_gvar, float *dist_gvar)
+{
+    float ref_means[4] = {0.f, 0.f, 0.f, 0.f};
+    float dist_means[4] = {0.f, 0.f, 0.f, 0.f};
+    float ref_vars[4] = {0.f, 0.f, 0.f, 0.f};
+    float dist_vars[4] = {0.f, 0.f, 0.f, 0.f};
+    float ref_gmean = 0.f, dist_gmean = 0.f;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            ref_gmean += (float)ref[i * 8 + j];
+            dist_gmean += (float)dist[i * 8 + j];
+            ref_means[sub] += (float)ref[i * 8 + j];
+            dist_means[sub] += (float)dist[i * 8 + j];
+        }
+    }
+    ref_gmean /= 64.f;
+    dist_gmean /= 64.f;
+    for (int i = 0; i < 4; i++)
+        ref_means[i] /= 16.f;
+    for (int i = 0; i < 4; i++)
+        dist_means[i] /= 16.f;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            const float ref_delta = (float)ref[i * 8 + j] - ref_gmean;
+            const float dist_delta = (float)dist[i * 8 + j] - dist_gmean;
+            *ref_gvar += ref_delta * ref_delta;
+            *dist_gvar += dist_delta * dist_delta;
+            const float ref_quad = (float)ref[i * 8 + j] - ref_means[sub];
+            const float dist_quad = (float)dist[i * 8 + j] - dist_means[sub];
+            ref_vars[sub] += ref_quad * ref_quad;
+            dist_vars[sub] += dist_quad * dist_quad;
+        }
+    }
+    *ref_gvar *= 1.f / 63.f * 64.f;
+    *dist_gvar *= 1.f / 63.f * 64.f;
+    for (int i = 0; i < 4; i++)
+        ref_vars[i] *= 1.f / 15.f * 16.f;
+    for (int i = 0; i < 4; i++)
+        dist_vars[i] *= 1.f / 15.f * 16.f;
+    if (*ref_gvar > 0.f)
+        *ref_gvar = (ref_vars[0] + ref_vars[1] + ref_vars[2] + ref_vars[3]) / *ref_gvar;
+    if (*dist_gvar > 0.f)
+        *dist_gvar = (dist_vars[0] + dist_vars[1] + dist_vars[2] + dist_vars[3]) / *dist_gvar;
+}
+
+__device__ static void build_psnr_hvs_mask(float mask[64], int plane)
+{
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const float weighted = CSF_TABLES[plane][i * 8 + j] * 0.3885746225901003f;
+            mask[i * 8 + j] = weighted * weighted;
+        }
+    }
+}
+
+__device__ static float masking_energy(const int dct[64], const float mask[64])
+{
+    float energy = 0.f;
+    for (int i = 0; i < 8; i++) {
+        const int first_column = (i == 0) ? 1 : 0;
+        for (int j = first_column; j < 8; j++) {
+            const int square = dct[i * 8 + j] * dct[i * 8 + j];
+            energy += (float)square * mask[i * 8 + j];
+        }
+    }
+    return energy;
+}
+
+__device__ static float masked_error(const int ref_dct[64], const int dist_dct[64],
+                                     const float mask[64], float threshold, int plane)
+{
+    float result = 0.f;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const float csf = CSF_TABLES[plane][i * 8 + j];
+            float error = fabsf((float)ref_dct[i * 8 + j] - (float)dist_dct[i * 8 + j]);
+            if (i != 0 || j != 0) {
+                const float masked_threshold = threshold / mask[i * 8 + j];
+                error = error < masked_threshold ? 0.f : error - masked_threshold;
+            }
+            result += (error * csf) * (error * csf);
+        }
+    }
+    return result;
+}
+
+__device__ static void load_psnr_hvs_sample(VmafCudaBuffer ref_in, VmafCudaBuffer dist_in,
+                                            int ref[64], int dist[64], int ref_dct[64],
+                                            int dist_dct[64], unsigned local_idx, unsigned x,
+                                            unsigned y, unsigned width, bool valid, int bpc)
+{
+    const float *__restrict__ ref_buf = reinterpret_cast<const float *>(ref_in.data);
+    const float *__restrict__ dist_buf = reinterpret_cast<const float *>(dist_in.data);
+    int ref_sample = 0;
+    int dist_sample = 0;
+    if (valid) {
+        const unsigned source_index = y * width + x;
+        ref_sample = sample_to_int(__ldg(&ref_buf[source_index]), bpc);
+        dist_sample = sample_to_int(__ldg(&dist_buf[source_index]), bpc);
+    }
+    ref[local_idx] = ref_sample;
+    dist[local_idx] = dist_sample;
+    ref_dct[local_idx] = ref_sample;
+    dist_dct[local_idx] = dist_sample;
+}
+
 /* psnr_hvs kernel: one CUDA block per output 8×8 image block.
  * Cooperative load (64 threads), then thread 0 runs the float
  * means / variances in CPU's exact i,j summation order. The first
@@ -199,7 +306,7 @@ __device__ static inline int sample_to_int(float v, int bpc)
  *
  * __launch_bounds__(64): hints nvcc to budget registers for
  * 64-thread blocks (8×8); per ADR-0764 / ADR-0754 precedent. */
-__launch_bounds__(64) __global__
+extern "C" __launch_bounds__(64) __global__
     void psnr_hvs(VmafCudaBuffer ref_in, VmafCudaBuffer dist_in, VmafCudaBuffer partials_out,
                   unsigned width, unsigned height, unsigned num_blocks_x, unsigned num_blocks_y,
                   int plane, int bpc)
@@ -222,80 +329,13 @@ __launch_bounds__(64) __global__
     const bool valid_block =
         (blk_x < num_blocks_x && blk_y < num_blocks_y && x0 + 7u < width && y0 + 7u < height);
 
-    /* Extract raw __restrict__ pointers once before the tile load so
-     * the compiler can route all 64 reads through the read-only
-     * texture cache path via __ldg().  Passing VmafCudaBuffer by value
-     * hides the pointer from the compiler's non-coherent-load analysis;
-     * the extraction makes the alias-free invariant visible (ADR-0764). */
-    const float *__restrict__ ref_buf = reinterpret_cast<const float *>(ref_in.data);
-    const float *__restrict__ dist_buf = reinterpret_cast<const float *>(dist_in.data);
-
-    int my_ref = 0;
-    int my_dist = 0;
-    if (valid_block) {
-        const unsigned sx = x0 + lx;
-        const unsigned sy = y0 + ly;
-        const unsigned src_idx = sy * width + sx;
-        my_ref = sample_to_int(__ldg(&ref_buf[src_idx]), bpc);
-        my_dist = sample_to_int(__ldg(&dist_buf[src_idx]), bpc);
-    }
-    s_ref[local_idx] = my_ref;
-    s_dist[local_idx] = my_dist;
-    dct_s[local_idx] = my_ref;
-    dct_d[local_idx] = my_dist;
+    load_psnr_hvs_sample(ref_in, dist_in, s_ref, s_dist, dct_s, dct_d, local_idx, x0 + lx, y0 + ly,
+                         width, valid_block, bpc);
     __syncthreads();
 
-    float s_means[4] = {0.f, 0.f, 0.f, 0.f};
-    float d_means[4] = {0.f, 0.f, 0.f, 0.f};
-    float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
-    float d_vars[4] = {0.f, 0.f, 0.f, 0.f};
-    float s_gmean = 0.f, d_gmean = 0.f;
     float s_gvar = 0.f, d_gvar = 0.f;
-    float s_mc = 0.f, d_mc = 0.f;
-
-    if (local_idx == 0u) {
-        /* Pass 1: means. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                s_gmean += (float)s_ref[i * 8 + j];
-                d_gmean += (float)s_dist[i * 8 + j];
-                s_means[sub] += (float)s_ref[i * 8 + j];
-                d_means[sub] += (float)s_dist[i * 8 + j];
-            }
-        }
-        s_gmean /= 64.f;
-        d_gmean /= 64.f;
-        for (int i = 0; i < 4; i++)
-            s_means[i] /= 16.f;
-        for (int i = 0; i < 4; i++)
-            d_means[i] /= 16.f;
-
-        /* Pass 2: variances. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                const float ds = (float)s_ref[i * 8 + j] - s_gmean;
-                const float dd = (float)s_dist[i * 8 + j] - d_gmean;
-                s_gvar += ds * ds;
-                d_gvar += dd * dd;
-                const float qs = (float)s_ref[i * 8 + j] - s_means[sub];
-                const float qd = (float)s_dist[i * 8 + j] - d_means[sub];
-                s_vars[sub] += qs * qs;
-                d_vars[sub] += qd * qd;
-            }
-        }
-        s_gvar *= 1.f / 63.f * 64.f;
-        d_gvar *= 1.f / 63.f * 64.f;
-        for (int i = 0; i < 4; i++)
-            s_vars[i] *= 1.f / 15.f * 16.f;
-        for (int i = 0; i < 4; i++)
-            d_vars[i] *= 1.f / 15.f * 16.f;
-        if (s_gvar > 0.f)
-            s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
-        if (d_gvar > 0.f)
-            d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
-    }
+    if (local_idx == 0u)
+        compute_masking_variances(s_ref, s_dist, &s_gvar, &d_gvar);
 
     /* Integer DCT in place, parallel across the first eight threads. */
     od_bin_fdct8x8_parallel(dct_s, z_s, local_idx);
@@ -304,53 +344,20 @@ __launch_bounds__(64) __global__
     if (local_idx != 0u)
         return;
 
-    /* Pass 3: per-coefficient mask·dct² accumulation, skipping DC. */
     float mask[64];
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const float c = CSF_TABLES[plane][i * 8 + j];
-            const float m = c * 0.3885746225901003f;
-            mask[i * 8 + j] = m * m;
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        const int j0 = (i == 0) ? 1 : 0;
-        for (int j = j0; j < 8; j++) {
-            const int sq = dct_s[i * 8 + j] * dct_s[i * 8 + j];
-            s_mc += (float)sq * mask[i * 8 + j];
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        const int j0 = (i == 0) ? 1 : 0;
-        for (int j = j0; j < 8; j++) {
-            const int sq = dct_d[i * 8 + j] * dct_d[i * 8 + j];
-            d_mc += (float)sq * mask[i * 8 + j];
-        }
-    }
+    build_psnr_hvs_mask(mask, plane);
+    const float s_mc = masking_energy(dct_s, mask);
+    const float d_mc = masking_energy(dct_d, mask);
     float sm = sqrtf(s_mc * s_gvar) / 32.f;
     const float dm = sqrtf(d_mc * d_gvar) / 32.f;
     if (dm > sm)
         sm = dm;
     const float thresh = sm;
 
-    /* Pass 4: per-coefficient masked-error contribution. */
-    float ret = 0.f;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const float c = CSF_TABLES[plane][i * 8 + j];
-            float err = fabsf((float)dct_s[i * 8 + j] - (float)dct_d[i * 8 + j]);
-            if (i != 0 || j != 0) {
-                const float t = thresh / mask[i * 8 + j];
-                err = err < t ? 0.f : err - t;
-            }
-            ret += (err * c) * (err * c);
-        }
-    }
+    float ret = masked_error(dct_s, dct_d, mask, thresh, plane);
     if (!valid_block)
         ret = 0.f;
 
     const unsigned slot = blk_y * num_blocks_x + blk_x;
     reinterpret_cast<float *>(partials_out.data)[slot] = ret;
 }
-
-} /* extern "C" */

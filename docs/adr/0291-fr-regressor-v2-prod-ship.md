@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0291: fr_regressor_v2 — flip from smoke to production
 
 - **Status**: Accepted
@@ -37,7 +36,7 @@ to `smoke: false`, ship the trained ONNX (sha256
 ## Alternatives considered
 
 | Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
+| -------- | ------ | ------ | --------- |
 | Ship at LOSO PLCC 0.9681 (chosen) | Clears 0.95 gate; ready now; corpus available | OldTownCross outlier (0.9183); SW encoders not in training set | Selected — gate cleared, caveats documented |
 | Wait for SW-encoder corpus | Wider generalisation | Blocks vmaf-tune Phase B until SW-sweep ships (~hours) | Rejected — gate clears now, SW sweep tracked as T-FR-V2-SW-CORPUS |
 | Larger MLP (64-64-64-1) | Higher in-sample fit | Marginal LOSO gain on 216 cells; overfit risk | Rejected — 32-32-32 fits 0.95 with margin |

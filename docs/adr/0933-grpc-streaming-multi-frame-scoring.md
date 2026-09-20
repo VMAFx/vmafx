@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0933: gRPC streaming for multi-frame scoring (`ScoreStream`)
 
 - **Status**: Accepted
@@ -89,7 +88,7 @@ single-file case (with the network surface unchanged).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Bidirectional `stream → stream` (chosen)** | Per-frame latency, gRPC flow control in both directions, terminal aggregate fits naturally on the response side, future-proof for HDR / variable frame rate. | Schema is more complex (`oneof` request + `oneof` response). | This is the only shape that covers both live-encode monitoring and large-clip-without-inflation. |
 | Server-streaming only (unary request -> stream response) | Simpler schema, request carries paths. | Doesn't solve the in-memory raw-pixel case; still needs huge upload of frames before scoring begins. | Half the motivating workloads (live monitoring) are unsolved. |
 | Client-streaming only (stream request -> unary response) | Solves the upload case. | Loses per-frame visibility — server has to wait for client EOF to return any score. | Live encode monitoring needs per-frame results during the stream, not at EOF. |

@@ -1,6 +1,9 @@
+# Changelog fragment
+
 ## perf(cuda): VIF filter1d horizontal kernel register pressure and cache routing
 
-`filter1d_8_horizontal_kernel_2_17_9` (scale-0, 8-bit, 17-tap horizontal VIF pass):
+`filter1d_8_horizontal_kernel_2_17_9` (scale-0, 8-bit, 17-tap horizontal VIF
+pass):
 
 - Added `__launch_bounds__(128, 10)` to the kernel instantiation macro, reducing
   register count from 56 to 48 per thread on sm_89 (RTX 4090). Theoretical

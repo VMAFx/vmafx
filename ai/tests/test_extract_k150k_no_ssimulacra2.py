@@ -2,15 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Test that K150K extraction schema does not include ssimulacra2."""
 
-import sys
-from pathlib import Path
-
-# Ensure ai package is importable
-repo_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(repo_root / "ai" / "scripts"))
-
-# noinspection PyUnresolvedReference
-import extract_k150k_features as extractor  # noqa: E402
+import extract_k150k_features as extractor
 
 
 def test_feature_names_excludes_ssimulacra2() -> None:

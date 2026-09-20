@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # GPU backend kernel coverage audit — 2026-05-30
 
 ## Scope
@@ -25,7 +24,7 @@ find core/test -name '*test*cuda*' -o -name '*test*hip*' \
 ## Pre-PR coverage (master tip `bbcaa8d127`)
 
 | Backend | Registered extractors | Parity-tested | Coverage % |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | CUDA | 17 | 2 (`motion_cuda`, `vif_cuda`) | 12 % |
 | HIP | 18 | 2 (`motion_hip`, `adm_hip`) | 11 % |
 | SYCL | 17 | 2 (`motion_sycl`, `cambi_sycl`) | 12 % |
@@ -34,7 +33,7 @@ find core/test -name '*test*cuda*' -o -name '*test*hip*' \
 ## Post-PR coverage (this branch)
 
 | Backend | Registered | Parity-tested | Δ | New |
-|---|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | --- |
 | CUDA | 17 | 4 | +2 | `psnr_cuda`, `ciede_cuda` |
 | HIP | 18 | 4 | +2 | `psnr_hip`, `vif_hip` |
 | SYCL | 17 | 4 | +2 | `psnr_sycl`, `vif_sycl` |

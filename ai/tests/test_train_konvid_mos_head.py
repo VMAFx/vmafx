@@ -33,18 +33,21 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
+try:
+    import numpy as np
+
+    import_module("torch")
+except ImportError:
+    pytest.skip("NumPy/PyTorch dependencies are not installed", allow_module_level=True)
+
+import train_konvid_mos_head as trainer
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
-
-np = pytest.importorskip("numpy")
-torch = pytest.importorskip("torch")
-
-import train_konvid_mos_head as trainer  # noqa: E402
-
 _CHUG_SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "train_chug_hdr_mos_head.py"
 _CHUG_SPEC = importlib.util.spec_from_file_location("train_chug_hdr_mos_head", _CHUG_SCRIPT_PATH)
 assert _CHUG_SPEC is not None and _CHUG_SPEC.loader is not None

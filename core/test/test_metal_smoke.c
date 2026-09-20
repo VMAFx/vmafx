@@ -27,12 +27,6 @@
 #include "metal/dispatch_strategy.h"
 #include "metal/kernel_template.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /*
  * Helper: try to grab a real context. Sets `*ctx_out` to the context
  * (on Apple-Family-7+) or NULL (on Intel Macs / no GPU). Returns the
@@ -41,7 +35,7 @@
  */
 static int try_get_ctx(VmafMetalContext **ctx_out)
 {
-    *ctx_out = NULL;
+    *ctx_out = VMAF_NULLPTR;
     return vmaf_metal_context_new(ctx_out, -1);
 }
 
@@ -49,16 +43,16 @@ static int try_get_ctx(VmafMetalContext **ctx_out)
 
 static char *test_context_new_rejects_null_out(void)
 {
-    const int rc = vmaf_metal_context_new(NULL, 0);
+    const int rc = vmaf_metal_context_new(VMAF_NULLPTR, 0);
     mu_assert("NULL out -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_context_destroy_null_is_noop(void)
 {
     /* No assertion needed — must not crash. */
-    vmaf_metal_context_destroy(NULL);
-    return NULL;
+    vmaf_metal_context_destroy(VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_context_default_device_or_skip(void)
@@ -66,17 +60,18 @@ static char *test_context_default_device_or_skip(void)
     /* -1 selects the system default device. On Apple Silicon CI
      * runners this succeeds; on Intel Mac CI lanes (if ever added)
      * this returns -ENODEV. */
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", rc == 0 || rc == -ENODEV);
     if (rc != 0) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     /* Bridge accessors must return non-NULL when context_new succeeded. */
-    mu_assert("context exposes device handle", vmaf_metal_context_device_handle(ctx) != NULL);
-    mu_assert("context exposes queue handle", vmaf_metal_context_queue_handle(ctx) != NULL);
+    mu_assert("context exposes device handle",
+              vmaf_metal_context_device_handle(ctx) != VMAF_NULLPTR);
+    mu_assert("context exposes queue handle", vmaf_metal_context_queue_handle(ctx) != VMAF_NULLPTR);
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_device_count_nonnegative(void)
@@ -85,7 +80,7 @@ static char *test_device_count_nonnegative(void)
      * to the process; 0 on Intel Macs and non-Apple hosts. */
     const int n = vmaf_metal_device_count();
     mu_assert("device_count is non-negative", n >= 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- Public C-API (libvmaf/include/libvmaf/libvmaf_metal.h) ---- */
@@ -96,45 +91,45 @@ static char *test_available_reports_built(void)
      * binary only links when -Denable_metal=enabled, so we expect 1. */
     const int avail = vmaf_metal_available();
     mu_assert("vmaf_metal_available returns 1 when built with Metal", avail == 1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_state_init_succeeds_or_enodev(void)
 {
     VmafMetalConfiguration cfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *state = NULL;
+    VmafMetalState *state = VMAF_NULLPTR;
     const int rc = vmaf_metal_state_init(&state, cfg);
     if (rc == 0) {
-        mu_assert("on success the state pointer must be populated", state != NULL);
+        mu_assert("on success the state pointer must be populated", state != VMAF_NULLPTR);
         vmaf_metal_state_free(&state);
-        mu_assert("state_free clears the slot", state == NULL);
+        mu_assert("state_free clears the slot", state == VMAF_NULLPTR);
     } else {
         mu_assert("state_init failure must be -ENODEV (non-Apple-7+ host)", rc == -ENODEV);
-        mu_assert("on failure the state pointer must stay NULL", state == NULL);
+        mu_assert("on failure the state pointer must stay NULL", state == VMAF_NULLPTR);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_state_init_rejects_bad_flags(void)
 {
     VmafMetalConfiguration cfg = {.device_index = -1, .flags = 0xDEAD};
-    VmafMetalState *state = NULL;
+    VmafMetalState *state = VMAF_NULLPTR;
     const int rc = vmaf_metal_state_init(&state, cfg);
     mu_assert("non-zero flags -> -EINVAL", rc == -EINVAL);
-    mu_assert("bad-flags leaves out-pointer at NULL", state == NULL);
-    return NULL;
+    mu_assert("bad-flags leaves out-pointer at NULL", state == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_state_free_null_is_noop(void)
 {
     /* Must not crash on NULL pointer-to-pointer. */
-    vmaf_metal_state_free(NULL);
+    vmaf_metal_state_free(VMAF_NULLPTR);
 
     /* Must not crash and must clear the slot on a NULL value. */
-    VmafMetalState *state = NULL;
+    VmafMetalState *state = VMAF_NULLPTR;
     vmaf_metal_state_free(&state);
-    mu_assert("state_free leaves slot at NULL", state == NULL);
-    return NULL;
+    mu_assert("state_free leaves slot at NULL", state == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_list_devices_nonnegative(void)
@@ -143,7 +138,7 @@ static char *test_list_devices_nonnegative(void)
      * device). 0 on non-Apple-7+ hosts is fine. */
     const int rc = vmaf_metal_list_devices();
     mu_assert("list_devices returns a non-negative count", rc >= 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- Kernel-template helpers (T8-1b runtime / ADR-0420) ---- */
@@ -153,11 +148,11 @@ static char *test_kernel_lifecycle_init_runs_or_skips(void)
     /* Init requires a valid context. On hosts without Apple-Family-7+
      * the test short-circuits when try_get_ctx returns -ENODEV; the
      * input-validation tests below still run unconditionally. */
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int ctx_rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", ctx_rc == 0 || ctx_rc == -ENODEV);
     if (ctx_rc != 0) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafMetalKernelLifecycle lc = {0};
     int rc = vmaf_metal_kernel_lifecycle_init(&lc, ctx);
@@ -168,42 +163,42 @@ static char *test_kernel_lifecycle_init_runs_or_skips(void)
     rc = vmaf_metal_kernel_lifecycle_close(&lc, ctx);
     mu_assert("kernel_lifecycle_close succeeds", rc == 0);
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kernel_lifecycle_init_rejects_null_lc(void)
 {
-    const int rc = vmaf_metal_kernel_lifecycle_init(NULL, NULL);
+    const int rc = vmaf_metal_kernel_lifecycle_init(VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("NULL lc -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kernel_buffer_alloc_runs_or_skips(void)
 {
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int ctx_rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", ctx_rc == 0 || ctx_rc == -ENODEV);
     if (ctx_rc != 0) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafMetalKernelBuffer buf = {0};
     const int rc = vmaf_metal_kernel_buffer_alloc(&buf, ctx, 4096);
     mu_assert("kernel_buffer_alloc succeeds on real context", rc == 0);
     mu_assert("MTLBuffer slot is non-zero after alloc", buf.buffer != 0);
-    mu_assert("host_view is non-NULL (Shared storage)", buf.host_view != NULL);
+    mu_assert("host_view is non-NULL (Shared storage)", buf.host_view != VMAF_NULLPTR);
     mu_assert("byte count is recorded", buf.bytes == 4096);
     const int free_rc = vmaf_metal_kernel_buffer_free(&buf, ctx);
     mu_assert("kernel_buffer_free succeeds", free_rc == 0);
     mu_assert("buffer slot cleared after free", buf.buffer == 0);
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kernel_buffer_alloc_rejects_null(void)
 {
-    const int rc = vmaf_metal_kernel_buffer_alloc(NULL, NULL, 1);
+    const int rc = vmaf_metal_kernel_buffer_alloc(VMAF_NULLPTR, VMAF_NULLPTR, 1);
     mu_assert("NULL buf -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kernel_lifecycle_close_zero_handles_is_noop(void)
@@ -212,18 +207,18 @@ static char *test_kernel_lifecycle_close_zero_handles_is_noop(void)
      * twin's "safe to call on a partially-initialised lifecycle"
      * contract). */
     VmafMetalKernelLifecycle lc = {0};
-    const int rc = vmaf_metal_kernel_lifecycle_close(&lc, NULL);
+    const int rc = vmaf_metal_kernel_lifecycle_close(&lc, VMAF_NULLPTR);
     mu_assert("kernel_lifecycle_close returns 0 on zero handles", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kernel_buffer_free_zero_handles_is_noop(void)
 {
     /* Same partially-allocated contract as the lifecycle close. */
     VmafMetalKernelBuffer buf = {0};
-    const int rc = vmaf_metal_kernel_buffer_free(&buf, NULL);
+    const int rc = vmaf_metal_kernel_buffer_free(&buf, VMAF_NULLPTR);
     mu_assert("kernel_buffer_free returns 0 on zero handles", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- First consumer extractor registration (T8-1 / ADR-0361) ---- */
@@ -236,38 +231,38 @@ static char *test_motion_v2_metal_extractor_registered(void)
      * arrives in T8-1c; this test stays "extractor is registered" and
      * does NOT yet tighten to "init returns 0 with a real device". */
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2_metal");
-    mu_assert("motion_v2_metal extractor must be registered", fex != NULL);
+    mu_assert("motion_v2_metal extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("motion_v2_metal extractor name matches", strcmp(fex->name, "motion_v2_metal") == 0);
     mu_assert("motion_v2_metal extractor must carry the TEMPORAL flag",
               (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_dispatch_strategy_rejects_null_and_unknown(void)
 {
     mu_assert("NULL context is unsupported",
-              vmaf_metal_dispatch_supports(NULL, "float_psnr_metal") == 0);
+              vmaf_metal_dispatch_supports(VMAF_NULLPTR, "float_psnr_metal") == 0);
 
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int ctx_rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", ctx_rc == 0 || ctx_rc == -ENODEV);
     if (ctx_rc != 0) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
-    mu_assert("NULL feature is unsupported", vmaf_metal_dispatch_supports(ctx, NULL) == 0);
+    mu_assert("NULL feature is unsupported", vmaf_metal_dispatch_supports(ctx, VMAF_NULLPTR) == 0);
     mu_assert("unknown feature is unsupported",
               vmaf_metal_dispatch_supports(ctx, "definitely_not_metal") == 0);
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_dispatch_strategy_supports_landed_kernels_or_skips(void)
 {
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int ctx_rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", ctx_rc == 0 || ctx_rc == -ENODEV);
     if (ctx_rc != 0) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("extractor name is supported",
               vmaf_metal_dispatch_supports(ctx, "float_psnr_metal") == 1);
@@ -278,7 +273,7 @@ static char *test_dispatch_strategy_supports_landed_kernels_or_skips(void)
     mu_assert("ms-ssim provided feature key is supported",
               vmaf_metal_dispatch_supports(ctx, "float_ms_ssim") == 1);
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- T8-IOS impl contract (ADR-0423) ---- */
@@ -297,47 +292,47 @@ static char *test_iosurface_state_init_external_default_device_or_enodev(void)
      * Apple-Family-7+ hosts that succeeds; everywhere else it
      * surfaces as -ENODEV. */
     VmafMetalExternalHandles h = {.device = 0, .command_queue = 0};
-    VmafMetalState *state = NULL;
+    VmafMetalState *state = VMAF_NULLPTR;
     const int rc = vmaf_metal_state_init_external(&state, h);
     mu_assert("default-device init returns 0 or -ENODEV", rc == 0 || rc == -ENODEV);
     if (rc == 0) {
-        mu_assert("state populated on success", state != NULL);
+        mu_assert("state populated on success", state != VMAF_NULLPTR);
         vmaf_metal_state_free(&state);
-        mu_assert("state_free clears the slot", state == NULL);
+        mu_assert("state_free clears the slot", state == VMAF_NULLPTR);
     } else {
-        mu_assert("state stays NULL on -ENODEV", state == NULL);
+        mu_assert("state stays NULL on -ENODEV", state == VMAF_NULLPTR);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iosurface_state_init_external_rejects_null_out(void)
 {
     VmafMetalExternalHandles h = {.device = 0, .command_queue = 0};
-    const int rc = vmaf_metal_state_init_external(NULL, h);
+    const int rc = vmaf_metal_state_init_external(VMAF_NULLPTR, h);
     mu_assert("NULL out -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iosurface_picture_import_rejects_null_state(void)
 {
     /* NULL state is a caller bug; -EINVAL before we touch any IO. */
-    const int rc = vmaf_metal_picture_import(NULL, 0, 0, 1920, 1080, 8, 1, 0);
+    const int rc = vmaf_metal_picture_import(VMAF_NULLPTR, 0, 0, 1920, 1080, 8, 1, 0);
     mu_assert("NULL state -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iosurface_wait_compute_rejects_null_state(void)
 {
-    const int rc = vmaf_metal_wait_compute(NULL);
+    const int rc = vmaf_metal_wait_compute(VMAF_NULLPTR);
     mu_assert("NULL state -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iosurface_read_imported_pictures_rejects_null_ctx(void)
 {
-    const int rc = vmaf_metal_read_imported_pictures(NULL, 0);
+    const int rc = vmaf_metal_read_imported_pictures(VMAF_NULLPTR, 0);
     mu_assert("NULL ctx -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 typedef char *(*test_fn)(void);
@@ -378,7 +373,5 @@ char *run_tests(void)
     for (size_t i = 0; i < test_table_len; ++i) {
         mu_run_test(test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,5 +1,7 @@
-- **master CI: ThreadSanitizer link failure and ARM golden drift fixed**.
-  Two regressions that rode into `master` via the admin-merge batch (per-PR CI
+# Changelog fragment
+
+- **master CI: ThreadSanitizer link failure and ARM golden drift fixed**. Two
+  regressions that rode into `master` via the admin-merge batch (per-PR CI
   bypassed) are corrected: (1) the R2-9 OOM-injection test
   (`test_gpu_dispatch_env_oom.cpp`) replaced the global `operator new` /
   `operator delete`, which collides with the sanitizer allocator interceptors

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1113: Vendor the Pelorus interop ABI as a pinned read-only mirror
 
 - **Status**: Accepted
@@ -45,7 +44,7 @@ fork-local edit that would break byte-identity.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Pinned read-only vendor + sync guard (chosen)** | Single source of truth stays in Pelorus; vmafx build is self-contained and Vulkan-free; drift is mechanically detected; conformance fixture proves byte-compat | A re-sync step on every ABI-minor bump; vendored files need lint-exclusion plumbing | Best balance: zero build coupling, loud drift detection, provable byte-compat |
 | **git submodule of pelorus** | No copy; always in lock-step | Pulls Pelorus's full build (Vulkan/shader deps vmafx rejects); submodule UX is poor in CI / release tarballs / worktrees; ABI is a tiny slice of a large repo | Drags in the exact toolchain coupling the integration plan forbids |
 | **meson subproject (wrap)** | Meson-native; builds only what's referenced | Still couples to Pelorus's meson graph + its option matrix; network fetch at configure time unless vendored-as-tarball; heavier than a 6-file mirror | Overkill for a flat, dependency-free ABI; configure-time fetch is a release-pipeline liability |

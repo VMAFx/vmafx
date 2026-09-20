@@ -31,9 +31,11 @@
  *     scalars or to "no salience" (weight 1.0), never to a crash.
  */
 
+#include "vmaf_nullptr.h"
+
 #include "feature/perceptual_weight.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -88,10 +90,10 @@ static int locate_image(const uint8_t *blob, size_t len, const uint8_t **image, 
 {
     PelorusSideData hdr;
 
-    /* Callers (vmaf_perceptual_weight_ingest) already reject a NULL blob;
+    /* Callers (vmaf_perceptual_weight_ingest) already reject a VMAF_NULLPTR blob;
      * the out-params are stack locals. Pin those invariants. */
-    assert(blob != NULL);
-    assert(image != NULL && image_len != NULL);
+    assert(blob != VMAF_NULLPTR);
+    assert(image != VMAF_NULLPTR && image_len != VMAF_NULLPTR);
 
     if (!pel_blob_is_present(blob, len)) {
         /* Distinguish "not ours" from "ours but wrong ABI major": is_present
@@ -182,14 +184,14 @@ static double mean_f32_cell_map(const uint8_t *image, size_t image_len, uint32_t
 static double banding_salience(const uint8_t *blob, size_t blob_len, const uint8_t *image,
                                size_t image_len, uint32_t n_cells)
 {
-    const void *ptr = NULL;
+    const void *ptr = VMAF_NULLPTR;
     size_t got = 0;
     PelorusBandingSection b;
     double banding = -1.0;
 
     if (pel_blob_find_section(blob, blob_len, PEL_SEC_BANDING, sizeof(PelorusBandingSection), &ptr,
                               &got) != PEL_OK ||
-        ptr == NULL) {
+        ptr == VMAF_NULLPTR) {
         return -1.0;
     }
 
@@ -216,14 +218,14 @@ static double banding_salience(const uint8_t *blob, size_t blob_len, const uint8
 static double variance_activity(const uint8_t *blob, size_t blob_len, const uint8_t *image,
                                 size_t image_len, uint32_t n_cells)
 {
-    const void *ptr = NULL;
+    const void *ptr = VMAF_NULLPTR;
     size_t got = 0;
     PelorusVarianceSection v;
     double activity = -1.0;
 
     if (pel_blob_find_section(blob, blob_len, PEL_SEC_VARIANCE, sizeof(PelorusVarianceSection),
                               &ptr, &got) != PEL_OK ||
-        ptr == NULL) {
+        ptr == VMAF_NULLPTR) {
         return -1.0;
     }
 
@@ -268,7 +270,7 @@ static double variance_activity(const uint8_t *blob, size_t blob_len, const uint
  */
 static double complexity_modulation(const uint8_t *blob, size_t blob_len)
 {
-    const void *ptr = NULL;
+    const void *ptr = VMAF_NULLPTR;
     size_t got = 0;
     PelorusComplexitySection cx;
     double complexity;
@@ -276,7 +278,7 @@ static double complexity_modulation(const uint8_t *blob, size_t blob_len)
 
     if (pel_blob_find_section(blob, blob_len, PEL_SEC_COMPLEXITY, sizeof(PelorusComplexitySection),
                               &ptr, &got) != PEL_OK ||
-        ptr == NULL) {
+        ptr == VMAF_NULLPTR) {
         return 1.0; /* no complexity section -> no modulation (legacy behaviour) */
     }
 
@@ -312,7 +314,7 @@ static double derive_salience(const uint8_t *blob, size_t blob_len, const uint8_
 
     /* locate_image has already validated framing and that `image` lies
      * UUID_LEN bytes into `blob`. */
-    assert(blob != NULL && image != NULL);
+    assert(blob != VMAF_NULLPTR && image != VMAF_NULLPTR);
     assert(image == blob + PELORUS_SIDEDATA_UUID_LEN);
 
     read_header(image, &hdr);
@@ -361,7 +363,7 @@ static int ensure_capacity(VmafPerceptualWeightStore *store, unsigned pic_index)
     size_t new_cap;
     VmafPerceptualFrameSummary *grown;
 
-    assert(store != NULL);
+    assert(store != VMAF_NULLPTR);
 
     if (needed <= store->capacity) {
         return 0;
@@ -385,7 +387,7 @@ static int ensure_capacity(VmafPerceptualWeightStore *store, unsigned pic_index)
     }
 
     grown = realloc(store->summaries, new_cap * sizeof(*grown));
-    if (grown == NULL) {
+    if (grown == VMAF_NULLPTR) {
         return -ENOMEM;
     }
     /* Zero the freshly added tail. */
@@ -397,23 +399,23 @@ static int ensure_capacity(VmafPerceptualWeightStore *store, unsigned pic_index)
 
 void vmaf_perceptual_weight_store_destroy(VmafPerceptualWeightStore *store)
 {
-    if (store == NULL) {
+    if (store == VMAF_NULLPTR) {
         return;
     }
     free(store->summaries);
-    store->summaries = NULL;
+    store->summaries = VMAF_NULLPTR;
     store->capacity = 0;
 }
 
 int vmaf_perceptual_weight_ingest(VmafPerceptualWeightStore *store, const uint8_t *blob, size_t len,
                                   unsigned pic_index)
 {
-    const uint8_t *image = NULL;
+    const uint8_t *image = VMAF_NULLPTR;
     size_t image_len = 0;
     double salience;
     int err;
 
-    if (store == NULL || blob == NULL) {
+    if (store == VMAF_NULLPTR || blob == VMAF_NULLPTR) {
         return -EINVAL;
     }
 
@@ -436,7 +438,7 @@ int vmaf_perceptual_weight_ingest(VmafPerceptualWeightStore *store, const uint8_
 
 bool vmaf_perceptual_weight_active(const VmafPerceptualWeightStore *store)
 {
-    if (store == NULL || !store->enabled || store->summaries == NULL) {
+    if (store == VMAF_NULLPTR || !store->enabled || store->summaries == VMAF_NULLPTR) {
         return false;
     }
     /* Strength 0 makes the weighting an identity even when summaries exist. */
@@ -461,7 +463,7 @@ double vmaf_perceptual_weight_at_index(const VmafPerceptualWeightStore *store, u
     double weight;
 
     /* Golden-gate default: any disabled / empty / absent path returns 1.0. */
-    if (store == NULL || !store->enabled || store->summaries == NULL) {
+    if (store == VMAF_NULLPTR || !store->enabled || store->summaries == VMAF_NULLPTR) {
         return 1.0;
     }
     if ((size_t)pic_index >= store->capacity) {
@@ -490,5 +492,3 @@ double vmaf_perceptual_weight_at_index(const VmafPerceptualWeightStore *store, u
     assert(isfinite(weight) && weight > 0.0);
     return weight;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

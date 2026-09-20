@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0719 — vmaf-tune cache strict JSON metadata
 
 ## Question
@@ -26,7 +25,7 @@ metadata values as a miss during `get()`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Convert all cache JSON uses | Uniform helper use | Changes cache-key digest construction risk | Rejected |
 | Leave metadata on raw `json.dump()` | Smallest diff | Cache sidecars can contain non-standard JSON tokens | Rejected |
 | Strict sidecars, digest unchanged, null score as miss | Portable metadata and stable keys | Bad entries are recomputed on next access | Chosen |

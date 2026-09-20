@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0499: vmaf-tune ladder must decode container/Y4M references before scoring
 
 - **Status**: Accepted
@@ -57,7 +56,7 @@ path the binary cannot parse.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add `_maybe_decode_reference` (chosen) | Mirrors existing distorted-leg helper; one decode per sweep; consistent with bisect's already-shipping approach. | Two helpers cover similar work — see `_decode_source_to_yuv` shared building block. | Default. |
 | Pre-decode in CLI before constructing the job | One decode call, no helper; obvious to users. | Couples the CLI to encode-time concerns; breaks the corpus library's "give me a source path, I'll handle it" contract; complicates per-shot / ladder / compare entry points which all build their own jobs. | Coupling cost too high. |
 | Teach libvmaf CLI to accept `.y4m` properly when `--width` is set | Removes the need for any decode wrapper for Y4M. | Out of scope for a vmaf-tune-side fix; would still need decode for `.mp4` / `.mkv`; gates on a separate libvmaf PR. | Doesn't close the blocker. |

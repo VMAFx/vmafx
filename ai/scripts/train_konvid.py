@@ -37,15 +37,16 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+from vmaf_train.data.frame_dataset import FrameMOSDataset, PairedFrameDataset
+from vmaf_train.data.splits import split_keys
+from vmaf_train.models import LearnedFilter, NRMetric
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
-from vmaf_train.data.frame_dataset import FrameMOSDataset, PairedFrameDataset  # noqa: E402
-from vmaf_train.data.splits import split_keys  # noqa: E402
-from vmaf_train.models import LearnedFilter, NRMetric  # noqa: E402
 
 C2_PARQUET = REPO_ROOT / "ai" / "data" / "konvid_frames_nr.parquet"
 C3_PARQUET = REPO_ROOT / "ai" / "data" / "konvid_pairs_filter.parquet"
@@ -127,9 +128,7 @@ def train_c2(args: argparse.Namespace) -> Path:
     tr, va, _te = _split_dataset(ds, args.val_frac, args.test_frac, args.seed)
     model = NRMetric(in_channels=1, width=args.c2_width)
     output = Path(args.output_c2)
-    print(
-        f"[c2] training NRMetric on {len(tr)}/{len(va)} train/val frames; " f"width={args.c2_width}"
-    )
+    print(f"[c2] training NRMetric on {len(tr)}/{len(va)} train/val frames; width={args.c2_width}")
     return _train_one(
         model=model,
         train_set=tr,
@@ -167,8 +166,7 @@ def train_c3(args: argparse.Namespace) -> Path:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=("c2", "c3", "both"), default="both")
 
@@ -196,24 +194,16 @@ def main(argv: list[str] | None = None) -> int:
             "when --model includes c2, else <output-c3>/train_konvid.manifest.json)."
         ),
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
 
-    checkpoints: dict[str, Path] = {}
-    if args.model in ("c2", "both"):
-        ck = train_c2(args)
-        print(f"[c2] checkpoint: {ck}")
-        checkpoints["c2_checkpoint"] = ck
-    if args.model in ("c3", "both"):
-        ck = train_c3(args)
-        print(f"[c3] checkpoint: {ck}")
-        checkpoints["c3_checkpoint"] = ck
 
-    # Determine sidecar path and write run-provenance manifest (ADR-0668).
+def _write_training_manifest(
+    args: argparse.Namespace, raw_argv: list[str], checkpoints: dict[str, Path]
+) -> None:
     if args.manifest_out is None:
         anchor = args.output_c2 if args.model in ("c2", "both") else args.output_c3
         args.manifest_out = anchor / "train_konvid.manifest.json"
-    outputs = {k: v for k, v in checkpoints.items()}
-    outputs["manifest"] = args.manifest_out
+    outputs = {**checkpoints, "manifest": args.manifest_out}
     write_manifest_json(
         args.manifest_out,
         {
@@ -233,6 +223,23 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
     print(f"[train-konvid] manifest written to {args.manifest_out}", flush=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+
+    checkpoints: dict[str, Path] = {}
+    if args.model in ("c2", "both"):
+        ck = train_c2(args)
+        print(f"[c2] checkpoint: {ck}")
+        checkpoints["c2_checkpoint"] = ck
+    if args.model in ("c3", "both"):
+        ck = train_c3(args)
+        print(f"[c3] checkpoint: {ck}")
+        checkpoints["c3_checkpoint"] = ck
+
+    _write_training_manifest(args, raw_argv, checkpoints)
     return 0
 
 

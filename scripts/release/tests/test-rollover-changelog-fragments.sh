@@ -36,6 +36,12 @@ tree_hash() {
     cut -d' ' -f1
 }
 
+write_fragment() {
+  local path="$1"
+  local body="$2"
+  printf '%s\n' '# Changelog fragment' '' "$body" >"$path"
+}
+
 fixture() {
   local root="$1"
   local manifest_version="${2:-3.2.1}"
@@ -79,9 +85,10 @@ fixture() {
     '## [3.2.0] - 2026-08-01' \
     '' \
     '- prior release' >"$root/CHANGELOG.md"
-  printf 'legacy entry\n\n' >"$root/changelog.d/_pre_fragment_legacy.md"
-  printf '%s\n' '- added entry' >"$root/changelog.d/added/add.md"
-  printf '%s\n' '- fixed entry' >"$root/changelog.d/fixed/fix.md"
+  printf '%s\n' '# Pre-fragment changelog archive' '' 'legacy entry' '' \
+    >"$root/changelog.d/_pre_fragment_legacy.md"
+  write_fragment "$root/changelog.d/added/add.md" '- added entry'
+  write_fragment "$root/changelog.d/fixed/fix.md" '- fixed entry'
   VMAFX_REPO_ROOT="$root" "$root/scripts/release/concat-changelog-fragments.sh" \
     --write >/dev/null 2>&1
 }
@@ -168,7 +175,7 @@ fi
 # T5: Renderer drift fails before mutation.
 drift="$scratch/drift"
 fixture "$drift"
-printf '%s\n' '- unrendered late fragment' >"$drift/changelog.d/fixed/late.md"
+write_fragment "$drift/changelog.d/fixed/late.md" '- unrendered late fragment'
 before="$(tree_hash "$drift")"
 rc=0
 VMAFX_REPO_ROOT="$drift" "$drift/scripts/release/rollover-changelog-fragments.sh" \
@@ -233,7 +240,7 @@ fi
 big="$scratch/archived"
 fixture "$big"
 for i in $(seq 1 60); do
-  printf '%s\n' "- fixed entry $i" >"$big/changelog.d/fixed/fix$i.md"
+  write_fragment "$big/changelog.d/fixed/fix$i.md" "- fixed entry $i"
 done
 VMAFX_REPO_ROOT="$big" "$big/scripts/release/concat-changelog-fragments.sh" \
   --write >/dev/null 2>&1

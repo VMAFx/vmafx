@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-1245: Cppcheck branch budgets and exhaustive analysis
 
 ## Reproduced cause

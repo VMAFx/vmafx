@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <stddef.h>
 #include <immintrin.h>
@@ -24,8 +26,8 @@
 
 float float_sad_line_avx2(const float *img1, const float *img2, int w)
 {
-    assert(img1 != NULL);
-    assert(img2 != NULL);
+    assert(img1 != VMAF_NULLPTR);
+    assert(img2 != VMAF_NULLPTR);
     assert(w > 0);
     const __m256i abs_mask = _mm256_set1_epi32(0x7FFFFFFF);
     float accum = 0.0f;

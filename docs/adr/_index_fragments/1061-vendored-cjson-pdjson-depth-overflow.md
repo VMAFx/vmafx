@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1061](1061-vendored-cjson-pdjson-depth-overflow.md) | Fix depth-limit, integer-overflow, and banned-function bugs in vendored pdjson and cJSON | Accepted | security, vendored, mcp, c, libvmaf, fork-local |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0927: OpenTelemetry traces + metrics — Phase 1 pilot in vmafx-controller
 
 - **Status**: Accepted
@@ -68,7 +67,7 @@ happens via trace-id injection into slog records, which
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **OTel Collector (chosen)** | Vendor-neutral; one wire format (OTLP) for all backends; supports sampling, batching, retries, redaction at the collector; CNCF-graduated; Kubernetes-native (sidecar / DaemonSet); decouples app from backend choice. | One extra hop; collector must be deployed and monitored. | Chosen. The decoupling is the point — operators can swap Jaeger ↔ Tempo ↔ Honeycomb without touching the app. |
 | Jaeger client (direct) | Simpler one-hop topology; mature Go client. | Jaeger client libraries are **deprecated** in favour of OTel (since 2023); single-backend lock-in; no metrics story. | Deprecation alone disqualifies. |
 | Grafana Tempo (direct) | First-class Grafana integration. | Same backend lock-in; no metrics story; Tempo prefers OTLP ingestion anyway. | Strictly worse than OTLP-to-collector-to-Tempo. |

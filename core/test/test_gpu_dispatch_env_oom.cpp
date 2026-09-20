@@ -119,7 +119,7 @@ mu_message_t test_env_oom_does_not_poison_slot()
 #else
     const char *const var = "VMAFX_TEST_DISPATCH_OOM_R2_9";
     const char *const want = "vif:graph,adm:direct";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
+
     (void)setenv(var, want, 1);
 
     /* Arm the allocation-failure toggle, then attempt the first snapshot.
@@ -147,20 +147,9 @@ mu_message_t test_env_oom_does_not_poison_slot()
      * snapshot to its real value.  Under the R2-9 bug the slot was cached
      * as unset on the first (failing) call, so this returns NULL forever. */
     const char *recovered = vmaf_gpu_dispatch_env_get(var);
-    /* test.h's `mu_assert` returns its message as `char *`. The harness is
-     * C-first, where a string literal -> `char *` is legal; this is the only
-     * test whose body is a C++ TU, and under MSVC /std:c++latest that
-     * conversion is a hard error (C2440) that `-Wno-write-strings` cannot
-     * silence (it is an error, not a warning, and that flag is GCC/Clang-only).
-     * Hold the messages in `static char[]` buffers (mutable arrays decay to
-     * `char *` with no conversion, and static storage keeps the pointer valid
-     * after the function returns) so the assert compiles identically on every
-     * compiler. */
-    static char msg_not_cached[] =
-        "set var must not be permanently cached as unset after a transient OOM";
-    static char msg_value_match[] = "recovered snapshot value matches the env";
-    mu_assert(msg_not_cached, recovered != nullptr);
-    mu_assert(msg_value_match, strcmp(recovered, want) == 0);
+    mu_assert("set var must not be permanently cached as unset after a transient OOM",
+              recovered != nullptr);
+    mu_assert("recovered snapshot value matches the env", strcmp(recovered, want) == 0);
     return nullptr;
 #endif /* VMAF_OOM_TEST_SANITIZED */
 }

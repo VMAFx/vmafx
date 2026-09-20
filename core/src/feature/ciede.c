@@ -42,6 +42,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -71,9 +73,9 @@ SOFTWARE.
 #if ARCH_AARCH64
 #include "arm64/ciede_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -82,7 +84,7 @@ SOFTWARE.
 typedef struct CiedeState {
     VmafPicture ref;
     VmafPicture dist;
-    void (*scale_chroma_planes)(VmafPicture *in, VmafPicture *out);
+    void (*scale_chroma_planes)(const VmafPicture *in, VmafPicture *out);
     void (*preprocess_8)(const uint8_t *, const uint8_t *, const uint8_t *, float *, float *,
                          float *, int);
     void (*preprocess_16)(const uint16_t *, const uint16_t *, const uint16_t *, float *, float *,
@@ -91,7 +93,7 @@ typedef struct CiedeState {
     unsigned width;
 } CiedeState;
 
-static void scale_chroma_planes_hbd(VmafPicture *in, VmafPicture *out)
+static void scale_chroma_planes_hbd(const VmafPicture *in, VmafPicture *out)
 {
     const int ss_hor = in->pix_fmt != VMAF_PIX_FMT_YUV444P;
     const int ss_ver = in->pix_fmt == VMAF_PIX_FMT_YUV420P;
@@ -116,7 +118,7 @@ static void scale_chroma_planes_hbd(VmafPicture *in, VmafPicture *out)
     }
 }
 
-static void scale_chroma_planes(VmafPicture *in, VmafPicture *out)
+static void scale_chroma_planes(const VmafPicture *in, VmafPicture *out)
 {
     const int ss_hor = in->pix_fmt != VMAF_PIX_FMT_YUV444P;
     const int ss_ver = in->pix_fmt == VMAF_PIX_FMT_YUV420P;
@@ -173,18 +175,27 @@ static void ciede_select_preprocess(CiedeState *s)
 #endif
 }
 
+static void ciede_free_tmp(CiedeState *s)
+{
+    for (int i = 0; i < 6; i++) {
+        if (s->tmp[i]) {
+            aligned_free(s->tmp[i]);
+            s->tmp[i] = VMAF_NULLPTR;
+        }
+    }
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
     CiedeState *s = fex->priv;
-    int err = 0;
 
     if (pix_fmt == VMAF_PIX_FMT_YUV400P)
         return -EINVAL;
 
     s->width = w;
-    s->preprocess_8 = NULL;
-    s->preprocess_16 = NULL;
+    s->preprocess_8 = VMAF_NULLPTR;
+    s->preprocess_16 = VMAF_NULLPTR;
     memset((void *)s->tmp, 0, sizeof(s->tmp));
 
     ciede_select_preprocess(s);
@@ -192,8 +203,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (s->preprocess_8 || s->preprocess_16) {
         for (int i = 0; i < 6; i++) {
             s->tmp[i] = aligned_malloc(w * sizeof(float), 32);
-            if (!s->tmp[i])
-                goto fail_tmp;
+            if (!s->tmp[i]) {
+                ciede_free_tmp(s);
+                return -ENOMEM;
+            }
         }
     }
 
@@ -210,28 +223,22 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->scale_chroma_planes = scale_chroma_planes_hbd;
         break;
     default:
-        /* Unsupported bitdepth is a caller error, not OOM: set -EINVAL so the
-         * `return err ? err : -ENOMEM` at fail_tmp reports the right code. */
-        err = -EINVAL;
-        goto fail_tmp;
+        ciede_free_tmp(s);
+        return -EINVAL;
     }
 
-    err = vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
-    if (err)
-        goto fail_tmp;
+    int err = vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
+    if (err) {
+        ciede_free_tmp(s);
+        return err;
+    }
     err = vmaf_picture_alloc(&s->dist, VMAF_PIX_FMT_YUV444P, bpc, w, h);
     if (err) {
         (void)vmaf_picture_unref(&s->ref);
-        goto fail_tmp;
+        ciede_free_tmp(s);
+        return err;
     }
     return 0;
-
-fail_tmp:
-    for (int i = 0; i < 6; i++) {
-        if (s->tmp[i])
-            aligned_free(s->tmp[i]);
-    }
-    return err ? err : -ENOMEM;
 }
 
 static float get_h_prime(const float x, const float y)
@@ -242,8 +249,7 @@ static float get_h_prime(const float x, const float y)
  * gated against the Netflix golden values at that precision. Switching to
  * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
  * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
-    float hue_angle = atan2(x, y);
+    float hue_angle = (float)atan2((double)x, (double)y);
     if (hue_angle < 0.0)
         hue_angle += 2. * M_PI;
     return hue_angle;
@@ -269,9 +275,9 @@ static float get_upcase_h_bar_prime(const float h_prime_1, const float h_prime_2
  * gated against the Netflix golden values at that precision. Switching to
  * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
  * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
-    return fabs((h_prime_1 - h_prime_2)) > M_PI ? (h_prime_1 + h_prime_2 + 2.0 * M_PI) / 2.0 :
-                                                  (h_prime_1 + h_prime_2) / 2.0;
+    return fabs((double)(h_prime_1 - h_prime_2)) > M_PI ?
+               (h_prime_1 + h_prime_2 + 2.0 * M_PI) / 2.0 :
+               (h_prime_1 + h_prime_2) / 2.0;
 }
 
 static float get_upcase_t(const float upcase_h_bar_prime)
@@ -300,10 +306,8 @@ static float get_r_sub_t(const float c_bar_prime, const float upcase_h_bar_prime
  * gated against the Netflix golden values at that precision. Switching to
  * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
  * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
-    // NOLINTBEGIN(performance-type-promotion-in-math-fn)
-    return -2.0 * sqrt(powf(c_bar_prime, 7) / (powf(c_bar_prime, 7) + powf(25., 7))) *
-           sin(degrees_to_radians(60.0 * exp(-(powf(degrees, 2)))));
-    // NOLINTEND(performance-type-promotion-in-math-fn)
+    return -2.0 * sqrt((double)(powf(c_bar_prime, 7) / (powf(c_bar_prime, 7) + powf(25.0f, 7)))) *
+           sin((double)degrees_to_radians((float)(60.0 * exp(-(double)powf(degrees, 2)))));
 }
 
 typedef struct LABColor {
@@ -492,6 +496,12 @@ static double ciede_accumulate_scalar(const VmafPicture *ref, const VmafPicture 
                                       KSubArgs ksub)
 {
     double de00_sum = 0.0;
+    const size_t ref_stride16[3] = {(size_t)ref->stride[0] / sizeof(uint16_t),
+                                    (size_t)ref->stride[1] / sizeof(uint16_t),
+                                    (size_t)ref->stride[2] / sizeof(uint16_t)};
+    const size_t dist_stride16[3] = {(size_t)dist->stride[0] / sizeof(uint16_t),
+                                     (size_t)dist->stride[1] / sizeof(uint16_t),
+                                     (size_t)dist->stride[2] / sizeof(uint16_t)};
     for (unsigned i = 0; i < ref->h[0]; i++) {
         for (unsigned j = 0; j < ref->w[0]; j++) {
             float r_y;
@@ -513,14 +523,12 @@ static double ciede_accumulate_scalar(const VmafPicture *ref, const VmafPicture 
             case 10:
             case 12:
             case 16:
-                // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: the `stride / 2` is the byte→element step for a uint16_t array index, not a value flowing into the float `r_*` / `d_*` destinations. clang-tidy flags the integer division because the surrounding subscript result eventually lands in float, but the index arithmetic itself is correct integer math.
-                r_y = ((uint16_t *)ref->data[0])[i * (ref->stride[0] / 2) + j];
-                r_u = ((uint16_t *)ref->data[1])[i * (ref->stride[1] / 2) + j];
-                r_v = ((uint16_t *)ref->data[2])[i * (ref->stride[2] / 2) + j];
-                d_y = ((uint16_t *)dist->data[0])[i * (dist->stride[0] / 2) + j];
-                d_u = ((uint16_t *)dist->data[1])[i * (dist->stride[1] / 2) + j];
-                d_v = ((uint16_t *)dist->data[2])[i * (dist->stride[2] / 2) + j];
-                // NOLINTEND(bugprone-integer-division)
+                r_y = ((uint16_t *)ref->data[0])[(size_t)i * ref_stride16[0] + j];
+                r_u = ((uint16_t *)ref->data[1])[(size_t)i * ref_stride16[1] + j];
+                r_v = ((uint16_t *)ref->data[2])[(size_t)i * ref_stride16[2] + j];
+                d_y = ((uint16_t *)dist->data[0])[(size_t)i * dist_stride16[0] + j];
+                d_u = ((uint16_t *)dist->data[1])[(size_t)i * dist_stride16[1] + j];
+                d_v = ((uint16_t *)dist->data[2])[(size_t)i * dist_stride16[2] + j];
                 break;
             default:
                 return -EINVAL;
@@ -534,16 +542,17 @@ static double ciede_accumulate_scalar(const VmafPicture *ref, const VmafPicture 
     return de00_sum;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     CiedeState *s = fex->priv;
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    VmafPicture *ref;
-    VmafPicture *dist;
+    const VmafPicture *ref;
+    const VmafPicture *dist;
 
     if (ref_pic->pix_fmt == VMAF_PIX_FMT_YUV444P) {
         // Reuse the provided buffers
@@ -552,20 +561,20 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     } else {
         ref = &s->ref;
         dist = &s->dist;
-        s->scale_chroma_planes(ref_pic, ref);
-        s->scale_chroma_planes(dist_pic, dist);
+        s->scale_chroma_planes(ref_pic, &s->ref);
+        s->scale_chroma_planes(dist_pic, &s->dist);
     }
 
     double de00_sum = 0.;
     const int w = ref->w[0];
-    const KSubArgs default_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
+    const KSubArgs extractor_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
 
     if (ref->bpc == 8 && s->preprocess_8) {
-        de00_sum += ciede_accumulate_8(s, ref, dist, w, default_ksub);
+        de00_sum += ciede_accumulate_8(s, ref, dist, w, extractor_ksub);
     } else if (ref->bpc > 8 && s->preprocess_16) {
-        de00_sum += ciede_accumulate_16(s, ref, dist, w, default_ksub);
+        de00_sum += ciede_accumulate_16(s, ref, dist, w, extractor_ksub);
     } else {
-        de00_sum += ciede_accumulate_scalar(ref, dist, default_ksub);
+        de00_sum += ciede_accumulate_scalar(ref, dist, extractor_ksub);
     }
 
     const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));
@@ -589,7 +598,7 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"ciede2000", NULL};
+static const char *provided_features[] = {"ciede2000", VMAF_NULLPTR};
 
 /* Registered by feature_extractor.cpp's extractor table, which declares it
  * with a bare extern. Without a declaration in this TU clang-tidy sees a
@@ -616,5 +625,3 @@ VmafFeatureExtractor vmaf_fex_ciede = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

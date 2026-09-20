@@ -1,1 +1,5 @@
-| [ADR-0123](0123-cuda-post-cubin-load-regression-32b115df.md) | Fix ffmpeg `libvmaf_cuda` null-deref at `vmaf_read_pictures` tail: `prev_ref` update on CUDA-device-only extractor set dereferenced zero-initialised `ref_host`. Null-guard the `vmaf_picture_ref(&vmaf->prev_ref, ref)` call. Upstream `f740276a` + `32b115df` + fork `65460e3a` combined to reach default builds. | Accepted | cuda, regression, upstream-sync |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0123](0123-cuda-post-cubin-load-regression-32b115df.md) | CUDA prev_ref null-deref on ffmpeg libvmaf_cuda path | Accepted | `cuda`, `regression`, `upstream-sync` |

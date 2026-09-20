@@ -24,8 +24,6 @@ These tests verify:
 
 from __future__ import annotations
 
-import importlib
-
 import conftest
 import pytest
 
@@ -65,36 +63,36 @@ def test_probe_catches_runtimeerror_not_just_importerror(monkeypatch) -> None:
     Stub the ``pytorch_lightning`` import to raise ``RuntimeError`` and verify
     the probe catches it cleanly.
     """
-    real_import_module = importlib.import_module
+    real_import_module = conftest.import_module
 
     def fake_import(name, package=None):
         if name == "pytorch_lightning":
             raise RuntimeError("operator torchvision::nms does not exist")
         return real_import_module(name, package)
 
-    # Force a fresh probe by clearing cached pytorch_lightning if loaded.
-    import sys
-
-    monkeypatch.delitem(sys.modules, "pytorch_lightning", raising=False)
-    monkeypatch.setattr(importlib, "import_module", fake_import)
-
-    # _probe_pytorch_lightning uses a plain ``import`` not importlib, so
-    # the most reliable check is to verify the catch is broad enough by
-    # inspecting the source.  But we can also call the probe via a mocked
-    # ``__import__`` to simulate the failure.
-    import builtins
-
-    real_builtin_import = builtins.__import__
-
-    def fake_builtin_import(name, *args, **kwargs):
-        if name == "pytorch_lightning":
-            raise RuntimeError("operator torchvision::nms does not exist")
-        return real_builtin_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_builtin_import)
-    monkeypatch.delitem(sys.modules, "pytorch_lightning", raising=False)
+    monkeypatch.setattr(conftest, "import_module", fake_import)
 
     result = conftest._probe_pytorch_lightning()
     assert result is not None
     assert "torchvision::nms" in result
     assert "RuntimeError" in result
+
+
+def test_guarded_import_context_skips_before_body(monkeypatch) -> None:
+    monkeypatch.setattr(conftest, "_PYTORCH_LIGHTNING_ERROR", "broken ABI")
+    entered = False
+
+    with pytest.raises(pytest.skip.Exception):
+        with conftest.guarded_pytorch_lightning_import():
+            entered = True
+
+    assert entered is False
+
+
+def test_guarded_import_context_enters_when_available(monkeypatch) -> None:
+    monkeypatch.setattr(conftest, "_PYTORCH_LIGHTNING_ERROR", None)
+
+    with conftest.guarded_pytorch_lightning_import():
+        entered = True
+
+    assert entered is True

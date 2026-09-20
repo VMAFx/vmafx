@@ -1,9 +1,9 @@
-import os
 import unittest
-from test.testutil import set_default_576_324_videos_for_testing
+from pathlib import Path
 
 import numpy as np
 
+from test.testutil import set_default_576_324_videos_for_testing
 from vmaf.config import VmafConfig
 from vmaf.core.local_explainer import LocalExplainer
 from vmaf.core.noref_feature_extractor import MomentNorefFeatureExtractor
@@ -83,7 +83,7 @@ class LocalExplainerTest(MyTestCase):
         )
 
     def test_explain_vmaf_results(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunnerWithLocalExplainer(
             [asset, asset_original],
@@ -193,8 +193,8 @@ class LocalExplainerMomentRandomForestTest(MyTestCase):
     def tearDown(self):
         if hasattr(self, "h5py_file"):
             DisYUVRawVideoExtractor.close_h5py_file(self.h5py_file)
-        if os.path.exists(self.h5py_filepath):
-            os.remove(self.h5py_filepath)
+        if Path(self.h5py_filepath).exists():
+            Path(self.h5py_filepath).unlink()
         super().tearDown()
 
     def test_explain_train_test_model(self):
@@ -250,7 +250,7 @@ class QualityRunnerTest(MyTestCase):
         super().tearDown()
 
     def test_run_vmaf_runner_local_explainer_with_bootstrap_model(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunnerWithLocalExplainer(
             [asset, asset_original],

@@ -10,6 +10,9 @@ cache-hit tests can compare deterministic outputs.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+from importlib import import_module
 from pathlib import Path
 
 import numpy as np
@@ -51,7 +54,7 @@ def _probe_pytorch_lightning() -> str | None:
     up the wheel that matches the installed torch.
     """
     try:
-        import pytorch_lightning  # noqa: F401
+        import_module("pytorch_lightning")
     except Exception as exc:  # pragma: no cover - depends on env
         return f"{type(exc).__name__}: {exc}"
     return None
@@ -81,6 +84,17 @@ def requires_pytorch_lightning() -> None:
             f"pytorch_lightning unavailable: {_PYTORCH_LIGHTNING_ERROR}",
             allow_module_level=True,
         )
+
+
+@contextmanager
+def guarded_pytorch_lightning_import() -> Iterator[None]:
+    """Guard module-level imports that transitively load Lightning.
+
+    Keeping the dependent imports inside this context preserves the broad ABI
+    check while leaving the module's static import ordering lint-clean.
+    """
+    requires_pytorch_lightning()
+    yield
 
 
 # Synthetic 16x16 yuv420p 8-bit frames keep the corpus tiny (384 B / frame).

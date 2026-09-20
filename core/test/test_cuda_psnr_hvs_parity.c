@@ -79,19 +79,19 @@ static char *feed_one_frame(VmafContext *vmaf)
     mu_assert("fill_pic(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     mu_assert("vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu(double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "psnr_hvs", NULL);
+    err = vmaf_use_feature(vmaf, "psnr_hvs", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(psnr_hvs) failed", !err);
 
     char *msg = feed_one_frame(vmaf);
@@ -102,29 +102,29 @@ static char *run_cpu(double *score)
     mu_assert("CPU: vmaf_feature_score_at_index(psnr_hvs) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(double *score)
 {
     *score = NAN;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "psnr_hvs_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "psnr_hvs_cuda", VMAF_NULLPTR);
     mu_assert("CUDA: vmaf_use_feature(psnr_hvs_cuda) failed", !err);
 
     char *msg = feed_one_frame(vmaf);
@@ -137,15 +137,15 @@ static char *run_cuda(double *score)
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_hvs_cuda_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_cuda");
-    mu_assert("psnr_hvs_cuda extractor must be registered", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_cuda");
+    mu_assert("psnr_hvs_cuda extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("psnr_hvs_cuda name matches", !strcmp(fex->name, "psnr_hvs_cuda"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_hvs_cpu_cuda_parity(void)
@@ -160,7 +160,7 @@ static char *test_psnr_hvs_cpu_cuda_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
@@ -168,12 +168,12 @@ static char *test_psnr_hvs_cpu_cuda_parity(void)
                       cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("psnr_hvs CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_psnr_hvs_cuda_registered);
     mu_run_test(test_psnr_hvs_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

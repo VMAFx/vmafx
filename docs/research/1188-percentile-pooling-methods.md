@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-1188 — percentile temporal pooling: what the two surfaces actually compute
 
 Companion digest for [ADR-1188](../adr/1188-percentile-pooling-methods.md) and the

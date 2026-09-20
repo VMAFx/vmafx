@@ -23,15 +23,10 @@ generic CI runner. The fold-training body is covered by the existing
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_REPO_ROOT / "ai" / "scripts"))
-
-import train_predictor_v2_realcorpus as trainer  # noqa: E402
+import train_predictor_v2_realcorpus as trainer
 
 # ---------------------------------------------------------------------
 # 1. Gate enforcement — the load-bearing constraint

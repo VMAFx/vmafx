@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-0661: AI run manifest provenance
 
 ## Question
@@ -42,8 +41,26 @@ deterministic, compact, and honest about missing future output paths.
 
 ## Validation targets
 
-- `.venv/bin/python -m pytest ai/tests/test_run_manifest.py ai/tests/test_train_konvid_mos_head.py -q`
-- `.venv/bin/ruff check ai/src/aiutils/run_manifest.py ai/tests/test_run_manifest.py ai/scripts/train_konvid_mos_head.py ai/scripts/train_chug_hdr_mos_head.py ai/tests/test_train_konvid_mos_head.py`
+- Pytest:
+
+  ```sh
+  .venv/bin/python -m pytest \
+      ai/tests/test_run_manifest.py \
+      ai/tests/test_train_konvid_mos_head.py \
+      -q
+  ```
+
+- Ruff:
+
+  ```sh
+  .venv/bin/ruff check \
+      ai/src/aiutils/run_manifest.py \
+      ai/tests/test_run_manifest.py \
+      ai/scripts/train_konvid_mos_head.py \
+      ai/scripts/train_chug_hdr_mos_head.py \
+      ai/tests/test_train_konvid_mos_head.py
+  ```
+
 - `make format-check`
 - `scripts/docs/concat-adr-index.sh --check`
 - `.venv/bin/mkdocs build --strict`

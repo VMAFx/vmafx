@@ -29,6 +29,19 @@
 #define DEFAULT_VIF_ENHN_GAIN_LIMIT (100.0)
 #endif // !DEFAULT_VIF_ENHN_GAIN_LIMIT
 
+/* CUDA kernels dereference these fields, while the Driver API host side
+ * stores the same 64-bit addresses as CUdeviceptr values.  The two views are
+ * layout-identical and avoid treating a device address as a host pointer. */
+#if defined(__CUDACC__)
+typedef uint16_t *VifCudaU16Ptr;
+typedef uint32_t *VifCudaU32Ptr;
+typedef int64_t *VifCudaI64Ptr;
+#else
+typedef CUdeviceptr VifCudaU16Ptr;
+typedef CUdeviceptr VifCudaU32Ptr;
+typedef CUdeviceptr VifCudaI64Ptr;
+#endif
+
 typedef struct VifBufferCuda {
     VmafCudaState cu_state;
 
@@ -37,25 +50,25 @@ typedef struct VifBufferCuda {
 
     CUdeviceptr ref;
     CUdeviceptr dis;
-    uint16_t *mu1;
-    uint16_t *mu2;
-    uint32_t *mu1_32;
-    uint32_t *mu2_32;
-    uint32_t *ref_sq;
-    uint32_t *dis_sq;
-    uint32_t *ref_dis;
-    int64_t *accum;
+    VifCudaU16Ptr mu1;
+    VifCudaU16Ptr mu2;
+    VifCudaU32Ptr mu1_32;
+    VifCudaU32Ptr mu2_32;
+    VifCudaU32Ptr ref_sq;
+    VifCudaU32Ptr dis_sq;
+    VifCudaU32Ptr ref_dis;
+    VifCudaI64Ptr accum;
     void *accum_host;
     void *cpu_param_buf;
     struct {
-        uint32_t *mu1;
-        uint32_t *mu2;
-        uint32_t *ref;
-        uint32_t *dis;
-        uint32_t *ref_dis;
-        uint32_t *ref_convol;
-        uint32_t *dis_convol;
-        uint32_t *padding;
+        VifCudaU32Ptr mu1;
+        VifCudaU32Ptr mu2;
+        VifCudaU32Ptr ref;
+        VifCudaU32Ptr dis;
+        VifCudaU32Ptr ref_dis;
+        VifCudaU32Ptr ref_convol;
+        VifCudaU32Ptr dis_convol;
+        VifCudaU32Ptr padding;
     } tmp;
 
     ptrdiff_t stride;

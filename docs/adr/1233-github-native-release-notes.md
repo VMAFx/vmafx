@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1233: GitHub generates the release body; CHANGELOG.md keeps an index
 

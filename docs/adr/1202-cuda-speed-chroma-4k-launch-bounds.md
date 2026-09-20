@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1202: GPU SpEED-chroma twins report singularity separately from failure
 
@@ -59,7 +58,7 @@ launch fixes the block size at eight warps and grows the block count.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Out-parameter for singularity, errors propagate (chosen) | Matches the CPU contract exactly; a device failure fails the run; imputation finally works | One more parameter on three internal functions | — |
 | Clamp the CUDA block size to 1024 and stop there | One-line fix for the reported 4K symptom | Leaves the silent-zero path intact: the next device error is still swallowed, on all three backends | Fixes the instance, not the class. The launch bug was only discoverable because someone diff'd CPU against CUDA at 4K by hand |
 | Return a distinguished positive value (e.g. `+1`) for singular, negative for errors | No signature change | Every caller must remember the sign convention; `err \|=` accumulation elsewhere in these files would corrupt it | Too easy to get wrong silently, which is the failure mode being fixed |

@@ -1,10 +1,10 @@
+from vmaf.config import VmafConfig
+
 dataset_name = "example_image"
 
 yuv_fmt = "notyuv"
 quality_width = 1920
 quality_height = 1080
-
-from vmaf.config import VmafConfig
 
 ref_videos = [
     {"content_id": 0, "path": VmafConfig.resource_path("icpf", "frame00000001.icpf")},

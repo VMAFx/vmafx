@@ -16,8 +16,6 @@
  *
  */
 
-#pragma once
-
 #ifndef VIF_OPTIONS_H_
 #define VIF_OPTIONS_H_
 

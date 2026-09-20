@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0646: Route Attached DNN Multi-Output Tensors
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ retaining the legacy `output_name` field for old single-output metadata.
 ## Alternatives considered
 
 | Option | Pros | Cons | Decision |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep returning `-ENOTSUP` for every `out_n > 1` graph | Smallest code delta | Leaves useful scalar-head models unusable through `--tiny-model` | Rejected |
 | Add a new public C API that lets callers provide output-key mappings | Fully explicit and extensible | Public-surface churn, FFmpeg patch churn, and more call-site state for a gap that sidecars already describe | Rejected |
 | Flatten vector outputs into `<base>_0`, `<base>_1`, ... | Supports one tensor with many values | Ambiguous for dynamic shapes and makes output count depend on runtime tensor shape | Deferred |

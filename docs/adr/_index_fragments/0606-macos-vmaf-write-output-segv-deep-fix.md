@@ -1,1 +1,5 @@
-| [ADR-0606](0606-macos-vmaf-write-output-segv-deep-fix.md) | macOS SIGSEGV deep-fix in output.c writers (PR #1403 follow-up) | Accepted | bugfix, macos, output, portability, correctness, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0606](0606-macos-vmaf-write-output-segv-deep-fix.md) | macOS SIGSEGV deep-fix in output.c writers (PR #1403 follow-up) | Accepted | `bugfix`, `macos`, `output`, `portability`, `correctness`, `fork-local` |

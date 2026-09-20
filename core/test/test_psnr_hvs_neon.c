@@ -38,11 +38,6 @@
 #if ARCH_AARCH64
 #include "feature/arm64/psnr_hvs_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #endif
 
 #if ARCH_AARCH64
@@ -55,7 +50,6 @@ typedef int32_t od_coeff;
 #define OD_UNBIASED_RSHIFT32(_a, _b) (((int32_t)(((uint32_t)(_a) >> (32 - (_b))) + (_a))) >> (_b))
 #define OD_DCT_RSHIFT(_a, _b) OD_UNBIASED_RSHIFT32(_a, _b)
 
-// NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar reference (ADR-0138 / ADR-0141 / ADR-0278).
 static void ref_od_bin_fdct8(od_coeff y[8], const od_coeff *x, int xstride)
 {
     const ptrdiff_t xs = (ptrdiff_t)xstride;
@@ -136,7 +130,7 @@ static char *check_dct_block(uint32_t seed)
     od_bin_fdct8x8_neon(out_neon, 8, in, 8);
     SIMD_BITEXACT_ASSERT_MEMCMP(out_scalar, out_neon, sizeof(out_scalar),
                                 "DCT NEON not bit-identical to scalar");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_dct_seed_a(void)
@@ -165,7 +159,7 @@ static char *test_dct_delta(void)
     od_bin_fdct8x8_neon(out_neon, 8, in, 8);
     SIMD_BITEXACT_ASSERT_MEMCMP(out_scalar, out_neon, sizeof(out_scalar),
                                 "DCT NEON delta input not bit-identical");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Constant-field input — DC-only output exercise. */
@@ -181,7 +175,7 @@ static char *test_dct_constant(void)
     od_bin_fdct8x8_neon(out_neon, 8, in, 8);
     SIMD_BITEXACT_ASSERT_MEMCMP(out_scalar, out_neon, sizeof(out_scalar),
                                 "DCT NEON constant input not bit-identical");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_AARCH64 */
@@ -197,7 +191,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

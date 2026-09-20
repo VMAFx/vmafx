@@ -54,12 +54,33 @@ typedef struct VmafPicturePool {
     unsigned free_list_top; // Index of top of stack (# of free pictures)
 } VmafPicturePool;
 
+static int default_condition_init(pthread_cond_t *condition)
+{
+#ifdef _WIN32
+    pthread_condattr_t attributes = NULL;
+    return pthread_cond_init(condition, &attributes);
+#else
+    pthread_condattr_t attributes;
+    const int attributes_init_err = pthread_condattr_init(&attributes);
+    if (attributes_init_err)
+        return attributes_init_err;
+
+    const int condition_init_err = pthread_cond_init(condition, &attributes);
+    const int attributes_destroy_err = pthread_condattr_destroy(&attributes);
+    if (!condition_init_err && attributes_destroy_err) {
+        const int condition_destroy_err = pthread_cond_destroy(condition);
+        return condition_destroy_err ? condition_destroy_err : attributes_destroy_err;
+    }
+    return condition_init_err ? condition_init_err : attributes_destroy_err;
+#endif
+}
+
 /**
  * Release callback invoked when vmaf_picture_unref() brings refcount to 0.
  * Instead of freeing the data, we return the picture to the pool and signal
  * any waiting threads.
  */
-static int pooled_picture_release(VmafPicture *pic, void *cookie)
+static int pooled_picture_release(VmafPicture *pic, const void *cookie)
 {
     (void)cookie;
 
@@ -154,7 +175,7 @@ int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg)
     if (err)
         goto free_free_list;
 
-    err = pthread_cond_init(&p->available, NULL);
+    err = default_condition_init(&p->available);
     if (err)
         goto free_mutex;
 

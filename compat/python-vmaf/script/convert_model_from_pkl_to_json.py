@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import sys
+from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.append(str(Path(__file__).parent.joinpath("..", "..")))
 
 from vmaf.core.train_test_model import LibsvmNusvrTrainTestModel
 

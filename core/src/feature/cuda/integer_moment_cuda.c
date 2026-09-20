@@ -15,6 +15,8 @@
  *  psnr_cuda host scaffolding shipped in PR #129.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,9 +34,9 @@
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -74,7 +76,7 @@ static int moment_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
     void *kernelParams[] = {(void *)ref, (void *)dis, (void *)sums, &width, &height};
     CUfunction func = (bpc == 8) ? funcbpc8 : funcbpc16;
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                           block_dim_y, 1, 0, stream, kernelParams, NULL));
+                                           block_dim_y, 1, 0, stream, kernelParams, VMAF_NULLPTR));
     return 0;
 }
 
@@ -91,7 +93,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -102,38 +104,37 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_kernel_16bpc"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
     s->bpc = bpc;
 
     err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, 4u * sizeof(uint64_t));
-    if (err)
-        goto free_ref;
+    if (err) {
+        (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+        return err;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_ref;
+        (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
+        return -ENOMEM;
     }
 
     return 0;
 
-free_ref:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return err;
-
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -147,7 +148,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Pre-launch: zero the four device counters and wait for the
      * dist-side ready event. The kernel uses atomic adds, so the
      * memset is mandatory. */
-    int err = vmaf_cuda_kernel_submit_pre_launch(&s->lc, fex->cu_state, &s->rb,
+    int err = vmaf_cuda_kernel_submit_pre_launch(fex->cu_state, &s->rb,
                                                  vmaf_cuda_picture_get_stream(ref_pic),
                                                  vmaf_cuda_picture_get_ready_event(dist_pic));
     if (err)
@@ -232,11 +233,8 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {
-    "float_moment_ref1st",
-    "float_moment_dis1st",
-    "float_moment_ref2nd",
-    "float_moment_dis2nd",
-    NULL,
+    "float_moment_ref1st", "float_moment_dis1st", "float_moment_ref2nd",
+    "float_moment_dis2nd", VMAF_NULLPTR,
 };
 
 VmafFeatureExtractor vmaf_fex_float_moment_cuda = {
@@ -259,5 +257,3 @@ VmafFeatureExtractor vmaf_fex_float_moment_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

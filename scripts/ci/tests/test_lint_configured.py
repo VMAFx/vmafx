@@ -9,39 +9,60 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
-import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
+
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
 ROOT = SCRIPT.parents[2]
 PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
+CJSON_MODEL = Path("scripts/ci/cppcheck-cjson-entrypoints.cfg")
+LINKED_MODEL = Path("scripts/ci/cppcheck-linked-entrypoints.cfg")
+MODEL_ROOT_RE = re.compile(r'\A\s*<def\s+format="2"\s*>(?P<body>.*?)</def>\s*\Z', re.DOTALL)
+MODEL_ENTRY_RE = re.compile(r'\s*<entrypoint\s+name="(?P<name>[^"]+)"\s*/>')
+
+
+def parse_entrypoint_model(text: str) -> list[str]:
+    """Parse the intentionally tiny cppcheck external-entrypoint model grammar."""
+    text = re.sub(r'\A\s*<\?xml\s+version="1\.0"\s*\?>', "", text, count=1)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    root = MODEL_ROOT_RE.fullmatch(text)
+    if root is None:
+        raise ValueError('entrypoint model must have one <def format="2"> root')
+    body = root["body"]
+    names: list[str] = []
+    offset = 0
+    while offset < len(body):
+        entry = MODEL_ENTRY_RE.match(body, offset)
+        if entry is None:
+            if body[offset:].strip():
+                raise ValueError("entrypoint model contains unsupported XML")
+            break
+        names.append(entry["name"])
+        offset = entry.end()
+    return names
 
 
 class PublicEntrypointModelTests(unittest.TestCase):
     def validate_model(self, root: Path) -> set[str]:
         """Validate the checked-in subset against this repo's explicit header lists."""
-        model = ET.fromstring(  # noqa: S314 -- checked-in model or local fixture XML
-            (root / PUBLIC_MODEL).read_text(encoding="utf-8")
-        )
-        self.assertEqual((model.tag, model.attrib), ("def", {"format": "2"}))
-        self.assertTrue(len(model), "public entrypoint model must not be empty")
-        self.assertFalse((model.text or "").strip())
+        entries = parse_entrypoint_model((root / PUBLIC_MODEL).read_text(encoding="utf-8"))
+        self.assertTrue(entries, "public entrypoint model must not be empty")
         names: set[str] = set()
-        for node in model:
-            self.assertEqual(node.tag, "entrypoint")
-            self.assertEqual(set(node.attrib), {"name"})
-            name = node.attrib["name"]
+        for name in entries:
             self.assertRegex(name, r"\Avmaf_[a-z0-9_]+\Z")
             self.assertNotIn(name, names, "duplicate public entrypoint")
-            self.assertFalse(len(node), "entrypoints cannot contain nested policy")
-            self.assertFalse((node.text or "").strip())
-            self.assertFalse((node.tail or "").strip())
             names.add(name)
 
         include = root / "core/include/libvmaf"
@@ -108,7 +129,7 @@ class PublicEntrypointModelTests(unittest.TestCase):
             ):
                 with self.subTest(body=body):
                     model.write_text(f'<def format="2">{body}</def>')
-                    with self.assertRaises(AssertionError):
+                    with self.assertRaises((AssertionError, ValueError)):
                         self.validate_model(root)
             model.write_text('<def format="2"><entrypoint name="vmaf_public"/></def>')
             self.assertEqual(self.validate_model(root), {"vmaf_public"})
@@ -145,17 +166,97 @@ class PublicEntrypointModelTests(unittest.TestCase):
         assert pattern is not None
         for path in (
             str(PUBLIC_MODEL),
+            str(CJSON_MODEL),
+            str(LINKED_MODEL),
             "scripts/ci/lint-configured.py",
             "scripts/ci/tests/test_lint_configured.py",
             "scripts/ci/tests/test_cppcheck_posix_model.py",
             "core/include/libvmaf/libvmaf_hip.h",
             "core/include/libvmaf/meson.build",
+            "core/src/mcp/3rdparty/cJSON/cJSON.h",
             ".github/workflows/lint-and-format.yml",
             ".pre-commit-config.yaml",
         ):
             with self.subTest(path=path):
                 self.assertRegex(path, pattern[1])
         self.assertIn("-p test_lint_configured.py", hook)
+
+
+class CjsonEntrypointModelTests(unittest.TestCase):
+    def test_model_exactly_matches_cjson_public_declarations(self) -> None:
+        entries = parse_entrypoint_model((ROOT / CJSON_MODEL).read_text(encoding="utf-8"))
+        names: set[str] = set()
+        for name in entries:
+            self.assertRegex(name, r"\AcJSON_[A-Za-z0-9_]+\Z")
+            self.assertNotIn(name, names, "duplicate cJSON external entrypoint")
+            names.add(name)
+
+        header = (ROOT / "core/src/mcp/3rdparty/cJSON/cJSON.h").read_text(encoding="utf-8")
+        header = re.sub(r"/\*.*?\*/|//[^\n]*", "", header, flags=re.DOTALL)
+        declarations = set(
+            re.findall(
+                r"\bCJSON_PUBLIC\s*\([^)]*\)\s*" r"(?:CJSON_CDECL\s*)?(cJSON_[A-Za-z0-9_]+)\s*\(",
+                header,
+            )
+        )
+        self.assertTrue(declarations, "expected CJSON_PUBLIC declarations")
+        self.assertEqual(names, declarations)
+
+
+class LinkedEntrypointModelTests(unittest.TestCase):
+    def test_model_exactly_matches_proven_external_roots(self) -> None:
+        entries = parse_entrypoint_model((ROOT / LINKED_MODEL).read_text(encoding="utf-8"))
+        self.assertEqual(
+            entries,
+            [
+                "OrtGetApiBase",
+                "adm_dwt2_d",
+                "run_tests",
+                "speed_internal_compute_means",
+                "vmaf_cambi_init_tvi_and_vlt",
+            ],
+        )
+
+        harness = (ROOT / "core/test/test.c").read_text(encoding="utf-8")
+        self.assertIn("run_tests()", harness)
+        self.assertGreater(
+            sum(
+                "run_tests(" in path.read_text(encoding="utf-8", errors="ignore")
+                for path in (ROOT / "core/test").rglob("*.c")
+            ),
+            1,
+            "run_tests must have test-binary definitions beyond the harness declaration",
+        )
+
+        interposer = (ROOT / "core/test/dnn/test_ort_error_injection.c").read_text(encoding="utf-8")
+        backend = (ROOT / "core/src/dnn/ort_backend.c").read_text(encoding="utf-8")
+        self.assertIn("OrtGetApiBase(void)", interposer)
+        self.assertIn("OrtGetApiBase()->GetApi", backend)
+
+        cython_adm = (ROOT / "compat/python-vmaf/core/adm_dwt2_cy.pyx").read_text(encoding="utf-8")
+        self.assertIn('extern from "../../../core/src/feature/adm_tools.c"', cython_adm)
+        self.assertGreaterEqual(cython_adm.count("adm_dwt2_d("), 2)
+        adm_source = (ROOT / "core/src/feature/adm_tools.c").read_text(encoding="utf-8")
+        self.assertIn("int adm_dwt2_d(", adm_source)
+
+        speed_sycl = (ROOT / "core/src/feature/sycl/speed_chroma_sycl.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("speed_internal_compute_means(", speed_sycl)
+        speed_source = (ROOT / "core/src/feature/speed_internal.c").read_text(encoding="utf-8")
+        self.assertIn("void speed_internal_compute_means(", speed_source)
+
+        cambi_callers = (
+            "core/src/feature/sycl/integer_cambi_sycl.cpp",
+            "core/src/feature/hip/integer_cambi_hip.c",
+            "core/src/feature/metal/integer_cambi_metal.mm",
+        )
+        for relative_path in cambi_callers:
+            with self.subTest(cambi_caller=relative_path):
+                caller = (ROOT / relative_path).read_text(encoding="utf-8")
+                self.assertIn("vmaf_cambi_init_tvi_and_vlt(", caller)
+        cambi_source = (ROOT / "core/src/feature/cambi.c").read_text(encoding="utf-8")
+        self.assertIn("int vmaf_cambi_init_tvi_and_vlt(", cambi_source)
 
 
 class ConfiguredLintTests(unittest.TestCase):
@@ -193,6 +294,8 @@ class ConfiguredLintTests(unittest.TestCase):
         (self.root / ".cppcheck-suppressions.txt").write_text("", encoding="utf-8")
         (self.root / PUBLIC_MODEL).parent.mkdir(parents=True)
         shutil.copy2(ROOT / PUBLIC_MODEL, self.root / PUBLIC_MODEL)
+        shutil.copy2(ROOT / CJSON_MODEL, self.root / CJSON_MODEL)
+        shutil.copy2(ROOT / LINKED_MODEL, self.root / LINKED_MODEL)
         self.command(["git", "init", "-q"])
         self.command(["git", "add", "."])
         self.entries = [self.entry(name) for name in self.native]
@@ -219,9 +322,15 @@ class ConfiguredLintTests(unittest.TestCase):
             )
             stub.chmod(0o755)
 
-    def command(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(  # noqa: S603 -- fixture-owned argv, no shell
-            argv, cwd=self.root, env=self.env, capture_output=True, text=True, check=False, **kwargs
+    def command(self, argv: list[str], **kwargs: Any) -> CommandResult:
+        result = run_command(
+            argv,
+            allowed_executables=("git", "make", sys.executable),
+            cwd=self.root,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            **kwargs,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
@@ -236,8 +345,8 @@ class ConfiguredLintTests(unittest.TestCase):
     def write_database(self) -> None:
         self.database.write_text(json.dumps(self.entries), encoding="utf-8")
 
-    def run_driver(self, **env: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 -- execute fixture driver without shell
+    def run_driver(self, **env: str) -> CommandResult:
+        return run_command(
             [
                 sys.executable,
                 str(SCRIPT),
@@ -248,11 +357,11 @@ class ConfiguredLintTests(unittest.TestCase):
                 "--jobs",
                 "2",
             ],
+            allowed_executables=(sys.executable,),
             cwd=self.root,
             env={**self.env, **env},
             capture_output=True,
             text=True,
-            check=False,
         )
 
     def report(self) -> Path:
@@ -285,6 +394,13 @@ class ConfiguredLintTests(unittest.TestCase):
             {args[-1] for args in calls}, {str(self.root / name) for name in self.native}
         )
         self.assertEqual(len(calls), len(self.native))
+        calls_by_source = {args[-1]: args for args in calls}
+        for name in self.native:
+            args = calls_by_source[str(self.root / name)]
+            if Path(name).suffix == ".c":
+                self.assertIn("--checks=-modernize-use-nullptr", args)
+            else:
+                self.assertNotIn("--checks=-modernize-use-nullptr", args)
         cppcheck_calls = [
             json.loads(path.read_text()) for path in self.calls.glob("cppcheck-*.json")
         ]
@@ -292,12 +408,12 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(
             cppcheck_calls[0],
             [
-                "--enable=all",
+                "--enable=warning,style,performance,portability,unusedFunction",
                 "--check-level=exhaustive",
-                "--inline-suppr",
                 "--library=posix",
                 f"--library={self.root / PUBLIC_MODEL}",
-                f"--suppressions-list={self.root / '.cppcheck-suppressions.txt'}",
+                f"--library={self.root / CJSON_MODEL}",
+                f"--library={self.root / LINKED_MODEL}",
                 f"--project={report / 'compile_commands.json'}",
                 "--error-exitcode=1",
             ],
@@ -337,6 +453,8 @@ class ConfiguredLintTests(unittest.TestCase):
         args = json.loads(next(self.calls.glob("cppcheck-*.json")).read_text())
         self.assertIn("--library=posix", args)
         self.assertIn(f"--library={self.root / PUBLIC_MODEL}", args)
+        self.assertIn(f"--library={self.root / CJSON_MODEL}", args)
+        self.assertIn(f"--library={self.root / LINKED_MODEL}", args)
         self.assertIn("--check-level=exhaustive", args)
         self.assertFalse(any(arg.startswith(("--platform", "--language", "--std")) for arg in args))
 
@@ -346,13 +464,17 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertIn("-p test_cppcheck_posix_model.py", job)
         self.assertIn("--library=posix", job)
         self.assertIn(f"--library={PUBLIC_MODEL.as_posix()}", job)
+        self.assertIn(f"--library={CJSON_MODEL.as_posix()}", job)
+        self.assertIn(f"--library={LINKED_MODEL.as_posix()}", job)
         self.assertIn("--check-level=exhaustive", job)
         self.assertNotIn("--check-level=normal", job)
         self.assertNotIn("--check-level=reduced", job)
-        self.assertIn("--enable=warning,performance,portability", job)
+        self.assertIn("--enable=warning,style,performance,portability,unusedFunction", job)
         self.assertIn("--error-exitcode=1", job)
         self.assertIn("--project=build/compile_commands.json", job)
         self.assertNotIn("--disable", job)
+        self.assertNotIn("--inline-suppr", job)
+        self.assertNotIn("--suppressions-list", job)
 
     def test_both_analyzers_run_and_failures_propagate(self) -> None:
         for failing in ["CLANG_TIDY_EXIT", "CPPCHECK_EXIT"]:
@@ -494,23 +616,8 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("invalid output", result.stderr)
 
-    def run_make_target(self, *, polluted: bool = False) -> None:
-        shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
-        target = self.root / "scripts/ci/lint-configured.py"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(SCRIPT, target)
-        original = self.database.read_bytes()
-        (self.root / "native-database.json").write_bytes(original)
-        if polluted:
-            self.entries += [
-                {
-                    "directory": str(self.build),
-                    "file": "meson-internal__test",
-                    "command": "",
-                    "output": "test",
-                }
-            ]
-            self.write_database()
+    def install_make_fixture_tools(self) -> tuple[Path, str]:
+        """Install the fail-closed pip and deterministic Meson/Ninja shims."""
         # Recursive Make does not inherit -o: satisfy the actual tool prerequisites.
         pip = self.root / "fixture-venv/bin/pip"
         pip.parent.mkdir(parents=True)
@@ -546,6 +653,29 @@ class ConfiguredLintTests(unittest.TestCase):
             encoding="utf-8",
         )
         ninja.chmod(0o755)
+        return pip, pip_source
+
+    def run_make_target(self, *, polluted: bool = False) -> None:
+        shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
+        target = self.root / "scripts/ci/lint-configured.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SCRIPT, target)
+        helper = self.root / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        original = self.database.read_bytes()
+        (self.root / "native-database.json").write_bytes(original)
+        if polluted:
+            self.entries += [
+                {
+                    "directory": str(self.build),
+                    "file": "meson-internal__test",
+                    "command": "",
+                    "output": "test",
+                }
+            ]
+            self.write_database()
+        pip, pip_source = self.install_make_fixture_tools()
         # Keep the initial configured-build target; recursive build checks real prerequisites.
         result = self.command(
             [

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0938: Feature-extractor coverage round 2 — seven CPU-side test executables
 
 - **Status**: Accepted
@@ -55,7 +54,7 @@ Each test file is pure test-only; no production code changes.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Extend existing files in-place (test_psnr.c, test_motion_min_dim.c, …) | Fewer meson edits | Mixes "rebase-sensitive upstream-mirror" tests (test_psnr.c) with fork-local coverage assertions; breaks the `git blame` history for the upstream files | Round 1 (PR #344) established the per-coverage-tranche `*_coverage.c` convention; round 2 keeps it. |
 | Drive coverage via the existing `test_predict`/integration tests | Less duplication | Integration tests run a single canonical configuration; option-suffixed feature names and HBD bit depths are out of scope | Coverage of option-driven branches requires per-option tests. |
 | Defer until the 90 % gate flips to required | Cheaper now | Round 1 already opened — round 2 keeps the trajectory; deferring lets coverage drift back as more code lands | Maintain forward pressure. |

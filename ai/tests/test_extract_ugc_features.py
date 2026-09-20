@@ -34,7 +34,7 @@ def test_schema_columns_track_full_features() -> None:
 
 def test_frame_row_reads_full_features_and_speed_aliases() -> None:
     mod = _load_module()
-    metrics = {feature: 1.5 for feature in FULL_FEATURES}
+    metrics = dict.fromkeys(FULL_FEATURES, 1.5)
     metrics["Speed_temporal_feature_speed_temporal_score"] = 2.0
     metrics.pop("speed_temporal")
     metrics["vmaf"] = 88.0
@@ -56,7 +56,6 @@ def test_run_vmaf_command_requests_full_feature_extractors(monkeypatch, tmp_path
         captured["cmd"] = cmd
         out_path = Path(cmd[cmd.index("--output") + 1])
         out_path.write_text(__import__("json").dumps(out_json))
-        return None
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
 
@@ -178,7 +177,7 @@ def test_run_vmaf_rejects_empty_or_null_paths(tmp_path: Path) -> None:
     model = tmp_path / "model.json"
 
     with pytest.raises(ValueError, match="cannot be empty"):
-        mod._run_vmaf(Path(""), ref, dis, 1920, 1080, 1, model)
+        mod._run_vmaf(Path(), ref, dis, 1920, 1080, 1, model)
     with pytest.raises(ValueError, match="cannot contain null bytes"):
         mod._run_vmaf(Path("vmaf\0bad"), ref, dis, 1920, 1080, 1, model)
     with pytest.raises(ValueError, match="cannot contain null bytes"):
@@ -218,7 +217,6 @@ def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None
         out_path = Path(cmd[cmd.index("--output") + 1])
         assert scratch.resolve() in out_path.parents or out_path.parent == scratch.resolve()
         out_path.write_text(__import__("json").dumps(out_json))
-        return None
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
 

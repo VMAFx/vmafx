@@ -31,6 +31,7 @@ Output: ``runs/bvi_dvc_corpus.jsonl`` (gitignored).
 
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import hashlib
 import json
@@ -40,16 +41,15 @@ import uuid
 from pathlib import Path
 
 from _script_bootstrap import bootstrap_ai_script
+from vmaftune import CANONICAL6_FEATURES, CORPUS_ROW_KEYS, SCHEMA_VERSION
+from vmaftune.defaultmodel import DEFAULT_MODEL
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from vmaftune import CANONICAL6_FEATURES, CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
-from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _stable_sha(key: str) -> str:
@@ -152,8 +152,7 @@ def _row_from_cache(
     return row
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="bvi_dvc_to_corpus_jsonl.py")
     ap.add_argument(
         "--cache-dir",
@@ -189,18 +188,10 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the JSONL."
         ),
     )
-    args = ap.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.output.with_suffix(".manifest.json")
+    return ap.parse_args(argv)
 
-    if not args.cache_dir.is_dir():
-        print(f"error: cache dir not found: {args.cache_dir}", file=sys.stderr)
-        return 2
-    caches = sorted(args.cache_dir.glob("*.json"))
-    if not caches:
-        print(f"error: no .json files under {args.cache_dir}", file=sys.stderr)
-        return 2
 
+def _write_rows(args: argparse.Namespace, caches: list[Path]) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with args.output.open("w", encoding="utf-8") as fp:
@@ -215,6 +206,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             fp.write(json.dumps(row, sort_keys=True) + "\n")
             rows += 1
+    return rows
+
+
+def _write_run_manifest(
+    args: argparse.Namespace, raw_argv: list[str], caches: list[Path], rows: int
+) -> None:
     write_manifest_json(
         args.manifest_out,
         {
@@ -236,6 +233,24 @@ def main(argv: list[str] | None = None) -> int:
             ),
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+
+    if not args.cache_dir.is_dir():
+        print(f"error: cache dir not found: {args.cache_dir}", file=sys.stderr)
+        return 2
+    caches = sorted(args.cache_dir.glob("*.json"))
+    if not caches:
+        print(f"error: no .json files under {args.cache_dir}", file=sys.stderr)
+        return 2
+
+    rows = _write_rows(args, caches)
+    _write_run_manifest(args, raw_argv, caches, rows)
     print(
         f"[bvi-dvc-jsonl] wrote {rows} rows to {args.output}; manifest {args.manifest_out}",
         file=sys.stderr,

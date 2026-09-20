@@ -47,6 +47,8 @@
  *    calculate_motion_score_kernel_16bpc
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -70,9 +72,9 @@
 
 #include "../../hip/hip_handle.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
@@ -216,9 +218,9 @@ static int append_if_unwritten(VmafFeatureCollector *fc, VmafDictionary *dict, c
     return vmaf_feature_collector_append(fc, fn, value, index);
 }
 
-static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                              VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                              VmafPicture *dist_pic_90, unsigned index,
+static int extract_force_zero(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                              const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                              const VmafPicture *dist_pic_90, unsigned index,
                               VmafFeatureCollector *feature_collector)
 {
     MotionStateHip *s = fex->priv;
@@ -271,13 +273,13 @@ static int msh_module_load(MotionStateHip *s)
     rc = hipModuleGetFunction(&s->funcbpc8, s->module, "calculate_motion_score_kernel_8bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return msh_rc(rc);
     }
     rc = hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_motion_score_kernel_16bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return msh_rc(rc);
     }
     return 0;
@@ -296,24 +298,24 @@ static int msh_bufs_alloc(MotionStateHip *s)
     return (rc == hipSuccess) ? 0 : -ENOMEM;
 }
 
-/* Free all device buffers and unload the module. Safe with NULL. */
+/* Free all device buffers and unload the module. Safe with VMAF_NULLPTR. */
 static void msh_bufs_free(MotionStateHip *s)
 {
-    if (s->ref_in != NULL) {
+    if (s->ref_in != VMAF_NULLPTR) {
         (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
+        s->ref_in = VMAF_NULLPTR;
     }
-    if (s->blur[1] != NULL) {
+    if (s->blur[1] != VMAF_NULLPTR) {
         (void)hipFree(s->blur[1]);
-        s->blur[1] = NULL;
+        s->blur[1] = VMAF_NULLPTR;
     }
-    if (s->blur[0] != NULL) {
+    if (s->blur[0] != VMAF_NULLPTR) {
         (void)hipFree(s->blur[0]);
-        s->blur[0] = NULL;
+        s->blur[0] = VMAF_NULLPTR;
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
 }
 
@@ -354,12 +356,12 @@ static int msh_launch_kernel(MotionStateHip *s, unsigned cur_idx, unsigned prev_
                       (void *)&bpc};
     const bool is8 = (s->bpc <= 8u);
     return msh_rc(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, MSH_BX, MSH_BY,
-                                        1, 0, str, is8 ? args8 : args16, NULL));
+                                        1, 0, str, is8 ? args8 : args16, VMAF_NULLPTR));
 }
 
 /* Per-frame kernel dispatch: HtoD copy, memset SAD, kernel launch,
  * DtoH enqueue. */
-static int msh_launch(MotionStateHip *s, VmafPicture *ref_pic, unsigned index)
+static int msh_launch(MotionStateHip *s, const VmafPicture *ref_pic, unsigned index)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     const unsigned cur_idx = index % 2u;
@@ -455,13 +457,13 @@ static int msh_release(MotionStateHip *s)
     const int err_rb = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (err_rb != 0 && rc == 0)
         rc = err_rb;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         const int err_dict = vmaf_dictionary_free(&s->feature_name_dict);
         if (err_dict != 0 && rc == 0)
             rc = err_dict;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -502,10 +504,10 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
          * called on this path, so release the HIP resources now rather than
          * leak them. */
         fex->extract = extract_force_zero;
-        fex->submit = NULL;
-        fex->collect = NULL;
-        fex->flush = NULL;
-        fex->close = NULL;
+        fex->submit = VMAF_NULLPTR;
+        fex->collect = VMAF_NULLPTR;
+        fex->flush = VMAF_NULLPTR;
+        fex->close = VMAF_NULLPTR;
         (void)msh_release(s);
         return 0;
     }
@@ -513,7 +515,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -521,8 +523,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return err;
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic;
@@ -658,7 +661,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
                                           "VMAF_integer_feature_motion2_score",
-                                          "VMAF_integer_feature_motion3_score", NULL};
+                                          "VMAF_integer_feature_motion3_score", VMAF_NULLPTR};
 
 /*
  * Load-bearing: registered via `extern VmafFeatureExtractor
@@ -669,7 +672,6 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
  * (e.g. `vmaf_fex_integer_motion_cuda` in
  * `feature/cuda/integer_motion_cuda.c`).
  */
-// NOLINTNEXTLINE(misc-use-internal-linkage) -- ADR-0278 registry pattern
 VmafFeatureExtractor vmaf_fex_integer_motion_hip = {
     .name = "motion_hip",
     .init = init_fex_hip,
@@ -700,5 +702,3 @@ VmafFeatureExtractor vmaf_fex_integer_motion_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

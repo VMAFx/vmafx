@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0595: Real two-pass argv for all 14 codec adapters
 
 - **Status**: Accepted
@@ -71,7 +70,7 @@ when the driver chooses to short-circuit to single-pass.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave `NotImplementedError` for hardware encoders | No new code | Crashes the contract surface; callers can't introspect what argv 2-pass would emit; no path for hardware quality-boost flags to reach `extra_params` | Fails the acceptance gate ("`two_pass_args(1, p)` returns a real list of ffmpeg args") |
 | Set `supports_two_pass=True` for hardware encoders and run two invocations | Reuses the existing driver | Wastes one full encode cycle (the "second pass" is just a separate single-pass run), confuses cache keys (ADR-0298), and contradicts vendor documentation | Hardware analysis is in-encoder; two invocations don't accumulate state |
 | Use SVT-AV1 `-svtav1-params passes=2:pass=N:stats=` for SvtAv1 | Mirrors the standalone SvtAv1EncApp invocation | The FFmpeg `libsvtav1` wrapper doesn't expose those keys (verified against FFmpeg n8.1.1 + SVT-AV1 v4.1.0); the encoder also forbids multi-pass in CRF mode regardless | Falls foul of both the wrapper surface and the encoder's CRF prohibition |

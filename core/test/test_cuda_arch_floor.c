@@ -40,7 +40,7 @@ static char *test_supported_floor_is_ampere(void)
 
     /* Future majors JIT from the compute_120 PTX. */
     mu_assert("a future major must be supported", vmaf_cuda_arch_supported(13, 0));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_turing_and_older_rejected(void)
@@ -54,7 +54,7 @@ static char *test_turing_and_older_rejected(void)
     mu_assert("sm_61 (Pascal) must be rejected", !vmaf_cuda_arch_supported(6, 1));
     mu_assert("sm_52 (Maxwell) must be rejected", !vmaf_cuda_arch_supported(5, 2));
     mu_assert("sm_35 (Kepler) must be rejected", !vmaf_cuda_arch_supported(3, 5));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The predicate compares (major, minor) lexicographically, not `major * 10 +
@@ -66,7 +66,7 @@ static char *test_boundary_is_lexicographic(void)
     mu_assert("7.9 is below 8.0 and must be rejected", !vmaf_cuda_arch_supported(7, 9));
     mu_assert("8.0 is exactly the floor and must be supported", vmaf_cuda_arch_supported(8, 0));
     mu_assert("9.0 is above the floor even with minor 0", vmaf_cuda_arch_supported(9, 0));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Defensive: the driver returning nonsense must not be read as "supported". */
@@ -74,7 +74,7 @@ static char *test_degenerate_capabilities_rejected(void)
 {
     mu_assert("0.0 must be rejected", !vmaf_cuda_arch_supported(0, 0));
     mu_assert("a negative major must be rejected", !vmaf_cuda_arch_supported(-1, 0));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -83,5 +83,5 @@ char *run_tests(void)
     mu_run_test(test_turing_and_older_rejected);
     mu_run_test(test_boundary_is_lexicographic);
     mu_run_test(test_degenerate_capabilities_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }

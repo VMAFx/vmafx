@@ -175,12 +175,12 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
      * existed only at the vmaf_use_feature() site, so the default HIP build
      * failed here instead of skipping. The sibling test has always checked
      * both sites; this now matches it. */
-    if (scaffold != NULL && err == -ENOSYS) {
+    if (scaffold != VMAF_NULLPTR && err == -ENOSYS) {
         *scaffold = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
@@ -192,19 +192,19 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
     *out_score = NAN;
     *skipped = 0;
 
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     if (use_gpu) {
         VmafHipConfiguration hip_cfg = {.device_index = -1};
         const int rc = vmaf_hip_state_init(&hip_state, hip_cfg);
-        if (rc != 0 || hip_state == NULL) {
+        if (rc != 0 || hip_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no HIP device] ");
             *skipped = 1;
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -213,14 +213,14 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         mu_assert("vmaf_hip_import_state failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
+    err = vmaf_use_feature(vmaf, fex_name, VMAF_NULLPTR);
     if (err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
         *skipped = 1;
         (void)vmaf_close(vmaf);
         if (use_gpu)
             vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("vmaf_use_feature failed", !err);
 
@@ -238,8 +238,8 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
             dis_pattern = 0u;
         }
         int scaffold = 0;
-        char *msg =
-            feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma, use_gpu ? &scaffold : NULL);
+        char *msg = feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma,
+                         use_gpu ? &scaffold : VMAF_NULLPTR);
         if (msg)
             return msg;
         if (scaffold) {
@@ -247,10 +247,10 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
             *skipped = 1;
             (void)vmaf_close(vmaf);
             vmaf_hip_state_free(&hip_state);
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, read_index);
@@ -260,7 +260,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
     mu_assert("vmaf_close failed", !err);
     if (use_gpu)
         vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Compare one CPU/GPU pair. */
@@ -278,7 +278,7 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
     if (msg)
         return msg;
     if (skipped || isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU SpEED score is non-finite", isfinite(cpu));
     mu_assert("GPU SpEED score is non-finite", isfinite(gpu));
@@ -290,7 +290,7 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
                       label, cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("SpEED singular-covariance score drifts from the CPU reference", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Exactly one side singular: the CPU returns 0 rather than an inflated score.
@@ -327,5 +327,5 @@ char *run_tests(void)
     mu_run_test(test_speed_temporal_one_sided_singular_parity);
     mu_run_test(test_speed_temporal_both_singular_parity);
     mu_run_test(test_speed_chroma_both_singular_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

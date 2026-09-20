@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Retired two stale sanitizer deselects from the CI workflow:
 
 - `test_cambi` removed from UBSan `EXCLUDE` — PR #761 (2026-05-11) added a

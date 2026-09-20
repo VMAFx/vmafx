@@ -61,6 +61,7 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -120,15 +121,10 @@ def _make_feature_parquet(path: Path, n: int = 30, with_mos: bool = True) -> Non
 
 
 def _has_eval_deps() -> bool:
-    try:
-        import numpy  # noqa: F401
-        import onnx  # noqa: F401
-        import onnxruntime  # noqa: F401
-        import pandas  # noqa: F401
-        import scipy  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return all(
+        find_spec(module) is not None
+        for module in ("numpy", "onnx", "onnxruntime", "pandas", "scipy")
+    )
 
 
 skip_if_no_eval = pytest.mark.skipif(not _has_eval_deps(), reason="vmaf-mcp[eval] not installed")
@@ -835,9 +831,9 @@ def test_allowed_roots_includes_workspace_path(monkeypatch):
     roots = srv._allowed_roots()
     root_strs = [str(r) for r in roots]
     # At least one root must start with /workspace
-    assert any(
-        s.startswith("/workspace") for s in root_strs
-    ), f"/workspace not found in allowed roots: {root_strs}"
+    assert any(s.startswith("/workspace") for s in root_strs), (
+        f"/workspace not found in allowed roots: {root_strs}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -860,9 +856,9 @@ def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
     assert bitdepth_schema["type"] == "integer"
     enum_set = set(bitdepth_schema["enum"])
     # {8, 10, 12} are always required; 16 may or may not be present.
-    assert {8, 10, 12}.issubset(
-        enum_set
-    ), f"bitdepth enum must include at least {{8,10,12}}, got {bitdepth_schema['enum']}"
+    assert {8, 10, 12}.issubset(enum_set), (
+        f"bitdepth enum must include at least {{8,10,12}}, got {bitdepth_schema['enum']}"
+    )
 
 
 def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
@@ -1081,12 +1077,7 @@ def test_run_tune_per_shot_optional_fields(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-_HT_DEPS = True
-try:
-    import aiohttp  # noqa: F401
-    import prometheus_client  # noqa: F401
-except ImportError:
-    _HT_DEPS = False
+_HT_DEPS = all(find_spec(module) is not None for module in ("aiohttp", "prometheus_client"))
 
 ht_skip = pytest.mark.skipif(not _HT_DEPS, reason="aiohttp + prometheus_client not installed")
 

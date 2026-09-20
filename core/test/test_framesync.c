@@ -50,7 +50,7 @@ static int my_worker(void *data, void **tpool_thread_data)
     uint8_t *dependent_buf;
 
     //acquire new buffer from frame sync
-    vmaf_framesync_acquire_new_buf(thread_data->fs_ctx, (void *)&shared_buf, FRAME_BUF_LEN,
+    vmaf_framesync_acquire_new_buf(thread_data->fs_ctx, (void **)&shared_buf, FRAME_BUF_LEN,
                                    thread_data->index);
 
     //populate shared buffer with values
@@ -72,7 +72,7 @@ static int my_worker(void *data, void **tpool_thread_data)
         goto cleanup;
 
     //retrieve dependent buffer from frame sync
-    vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void *)&dependent_buf,
+    vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void **)&dependent_buf,
                                         thread_data->index - 1);
 
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
@@ -127,7 +127,11 @@ static char *test_framesync_create_process_and_destroy(void)
     for (frame_index = 0; frame_index < NUM_TEST_FRAMES; frame_index++) {
         uint8_t *pic_a = malloc(FRAME_BUF_LEN);
         uint8_t *pic_b = malloc(FRAME_BUF_LEN);
-        mu_assert("malloc failed for pic_a/pic_b", pic_a && pic_b);
+        if (!pic_a || !pic_b) {
+            free(pic_a);
+            free(pic_b);
+            return "malloc failed for pic_a/pic_b";
+        }
 
         (void)fprintf(stderr, "processing frame %d\r", frame_index);
 
@@ -161,11 +165,11 @@ static char *test_framesync_create_process_and_destroy(void)
     err = vmaf_framesync_destroy(fs_ctx);
     mu_assert("problem during vmaf_framesync_destroy\n", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_framesync_create_process_and_destroy);
-    return NULL;
+    return VMAF_NULLPTR;
 }

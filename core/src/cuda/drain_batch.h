@@ -61,7 +61,9 @@
 #include "common.h"
 
 #ifdef __cplusplus
-extern "C" {
+#define VMAF_CUDA_DRAIN_LINKAGE extern "C"
+#else
+#define VMAF_CUDA_DRAIN_LINKAGE
 #endif
 
 struct VmafCudaKernelLifecycle;
@@ -80,7 +82,7 @@ struct VmafCudaKernelLifecycle;
  * Idempotent: a second open without an intervening close is a no-op
  * and keeps the existing batch.
  */
-void vmaf_cuda_drain_batch_open(const VmafCudaState *cu_state);
+VMAF_CUDA_DRAIN_LINKAGE void vmaf_cuda_drain_batch_open(const VmafCudaState *cu_state);
 
 /**
  * Register an extractor lifecycle into the open batch.
@@ -94,7 +96,7 @@ void vmaf_cuda_drain_batch_open(const VmafCudaState *cu_state);
  * and -ENOSPC when the batch is full (lifecycle skipped, the caller
  * falls back to per-stream sync via ``vmaf_cuda_kernel_collect_wait``).
  */
-int vmaf_cuda_drain_batch_register(struct VmafCudaKernelLifecycle *lc);
+VMAF_CUDA_DRAIN_LINKAGE int vmaf_cuda_drain_batch_register(struct VmafCudaKernelLifecycle *lc);
 
 /**
  * Register a raw (event, drained-flag) pair into the open batch.
@@ -111,7 +113,8 @@ int vmaf_cuda_drain_batch_register(struct VmafCudaKernelLifecycle *lc);
  * Returns 0 on success, 0 when the batch is closed (no-op), or
  * -ENOSPC on overflow (caller falls back to per-stream sync).
  */
-int vmaf_cuda_drain_batch_register_event(CUevent finished, bool *drained_out);
+VMAF_CUDA_DRAIN_LINKAGE int vmaf_cuda_drain_batch_register_event(CUevent finished,
+                                                                 bool *drained_out);
 
 /**
  * Drain all registered lifecycles in one host-side wait.
@@ -130,7 +133,7 @@ int vmaf_cuda_drain_batch_register_event(CUevent finished, bool *drained_out);
  * Returns 0 on success or a negative errno from
  * ``vmaf_cuda_result_to_errno`` on the first CUDA failure.
  */
-int vmaf_cuda_drain_batch_flush(VmafCudaState *cu_state);
+VMAF_CUDA_DRAIN_LINKAGE int vmaf_cuda_drain_batch_flush(VmafCudaState *cu_state);
 
 /**
  * Close the drain batch on the calling thread.
@@ -140,7 +143,7 @@ int vmaf_cuda_drain_batch_flush(VmafCudaState *cu_state);
  * thread exit; the stream is owned by the persistent CUDA context
  * across calls and is reused on the next batch).
  */
-void vmaf_cuda_drain_batch_close(void);
+VMAF_CUDA_DRAIN_LINKAGE void vmaf_cuda_drain_batch_close(void);
 
 /**
  * Tear down the calling thread's drain stream.
@@ -148,7 +151,7 @@ void vmaf_cuda_drain_batch_close(void);
  * Called from the engine on context shutdown. Safe on a thread that
  * never opened a batch.
  */
-void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
+VMAF_CUDA_DRAIN_LINKAGE void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
 
 /**
  * Number of entries currently registered in this thread's batch.
@@ -160,10 +163,8 @@ void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
  * the next context on this thread cannot see freed events or flags. Not part
  * of the public libvmaf API — ``drain_batch.h`` is a private header.
  */
-unsigned vmaf_cuda_drain_batch_pending(void);
+VMAF_CUDA_DRAIN_LINKAGE unsigned vmaf_cuda_drain_batch_pending(void);
 
-#ifdef __cplusplus
-} /* extern "C" */
-#endif
+#undef VMAF_CUDA_DRAIN_LINKAGE
 
 #endif /* LIBVMAF_CUDA_DRAIN_BATCH_H_ */

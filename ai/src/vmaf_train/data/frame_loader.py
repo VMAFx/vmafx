@@ -20,6 +20,9 @@ _LOG = logging.getLogger(__name__)
 #: stuck wait is a sign of a runaway process the caller should be told about
 #: rather than blocking the generator's ``finally`` cleanup indefinitely.
 _FFMPEG_WAIT_TIMEOUT_S: float = 30.0
+#: Hard safety ceiling for a single decoded source. One million frames is over
+#: nine hours at 30 fps and prevents a corrupt/infinite decoder stream.
+_MAX_FRAMES_PER_SOURCE: int = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -98,11 +101,15 @@ def iter_frames(
     )
     assert proc.stdout is not None
     try:
-        while True:
+        for _frame_index in range(_MAX_FRAMES_PER_SOURCE):
             buf = proc.stdout.read(frame_bytes)
             if len(buf) < frame_bytes:
                 return
             yield np.frombuffer(buf, dtype=np.uint8).reshape(shape).copy()
+        if len(proc.stdout.read(frame_bytes)) >= frame_bytes:
+            raise RuntimeError(
+                f"decoded frame limit exceeded ({_MAX_FRAMES_PER_SOURCE}) for {source.path}"
+            )
     finally:
         try:
             proc.stdout.close()

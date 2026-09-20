@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0511](0511-mcp-backend-probe-allowlist-and-ladder-backend.md) | MCP backend probe, default allowlist, and `vmaf-tune ladder --score-backend` (2026-05-18) | Accepted | mcp, vmaf-tune, ai, dx, bugfix |

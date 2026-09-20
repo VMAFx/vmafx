@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1125: Reconciling seven independent vmafx-tune Go ports into one tree
 
@@ -18,7 +17,7 @@ They were not, however, written against each other. Six packages were invented
 independently by two or three groups at once, under the same import path:
 
 | Package | Groups | Sizes (LOC) |
-|---|---|---|
+| --- | --- | --- |
 | `pkg/codecadapter` | 3, 4, 6 | 1822 / 877 / 1074 |
 | `pkg/pershot` | 1, 6 | 1887 / 776 |
 | `pkg/predictor` | 3, 6 | 484 / 2325 |
@@ -44,7 +43,7 @@ collision against evidence rather than by merge order, and letting `go build` /
 **One implementation per package, chosen on evidence — not on size:**
 
 | Package | Kept | Why |
-|---|---|---|
+| --- | --- | --- |
 | `pkg/codecadapter` | group 6 | Both registries register the **identical 19 codecs**, verified by enumerating `Known()`, so the interface-vs-struct choice costs no coverage. Group 3's per-codec method interface converts mechanically to group 6's struct fields. **This tiebreaker was not sufficient — see Consequences.** |
 | `pkg/pershot` | group 1 | Superset; carries the byte-identical `plan_json` emitter verified against CPython across all ten supported codecs. |
 | `pkg/predictor` | group 6 | Superset (adds `features.go`). Group 3's `Clamp` helper was carried across. |
@@ -57,7 +56,7 @@ deliberately. There are **four**, at import paths that never collided in git,
 totalling ~2,641 lines:
 
 | Package | LOC | Author | Consumers |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `pkg/pyjson` | 723 | group 3 | `pkg/corpus/{corpus,encode,score,jsonl}.go` |
 | `internal/pyjson` | 632 | group 6 | four `cmd/` files, `pkg/corpusrow` |
 | `internal/pyjsonstrict` | 641 | group 4 | `pkg/benchmark`, `pkg/encodeprofile`, `cmd/encodeprofile` |
@@ -91,7 +90,7 @@ Two behavioural details had to be preserved explicitly:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Seven separate PRs, one per group | Small, independently reviewable | The duplicate packages collide no matter the order; whoever merges second does this same reconciliation without the other six branches in hand, six times over | Rejected — moves the work later and does it worse |
 | Keep the largest implementation of each package | Trivial rule, no judgement | Size is not correctness: group 3's `codecadapter` is the largest and has the least Python-parity evidence | Rejected — the tiebreaker has to be evidence |
 | Merge by branch order and let last-writer-win | Zero decisions | Silently drops capability; the group-3/group-6 collision produced no git conflict at all, so "last writer" would not even have been visible | Rejected outright |

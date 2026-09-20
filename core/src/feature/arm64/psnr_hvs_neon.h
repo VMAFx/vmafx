@@ -33,6 +33,6 @@ void od_bin_fdct8x8_neon(int32_t *y, int32_t ystride, const int32_t *x, int32_t 
  */
 double calc_psnrhvs_neon(const unsigned char *src, int systride, const unsigned char *dst,
                          int dystride, double par, int depth, int w, int h, int step,
-                         float csf[8][8]);
+                         const float csf[8][8]);
 
 #endif /* ARM64_NEON_PSNR_HVS_H_ */

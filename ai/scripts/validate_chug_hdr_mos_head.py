@@ -43,11 +43,7 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from train_konvid_mos_head import (  # noqa: E402
+from train_konvid_mos_head import (
     CHUG_HDR_FEATURE_COLUMNS,
     FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
     N_ENCODERS,
@@ -56,8 +52,13 @@ from train_konvid_mos_head import (  # noqa: E402
     _row_to_features,
 )
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import write_run_manifest
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
 
 # ---------------------------------------------------------------------------
 # Gate thresholds — mirrors ADR-0325 production-flip gate; never lowered.
@@ -307,10 +308,7 @@ def _write_md_report(
 # ---------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> int:
-    import numpy as np
-
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]):  # type: ignore[no-untyped-def]
     ap = make_argument_parser(
         prog="validate_chug_hdr_mos_head.py",
         description=__doc__,
@@ -367,22 +365,13 @@ def main(argv: list[str] | None = None) -> int:
         default=GATE_RMSE_MAX,
         help="Maximum RMSE for gate pass.",
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
-    # Resolve effective thresholds from CLI (may be overridden in tests).
-    gate_plcc = args.gate_plcc
-    gate_srocc = args.gate_srocc
-    gate_rmse = args.gate_rmse
 
-    # Resolve ONNX.
+def _resolve_inputs(args):  # type: ignore[no-untyped-def]
     if not args.onnx.is_file():
-        print(
-            f"[validate-chug-mos] error: ONNX not found at {args.onnx}",
-            file=sys.stderr,
-        )
-        return 1
-
-    # Resolve shard paths.
+        print(f"[validate-chug-mos] error: ONNX not found at {args.onnx}", file=sys.stderr)
+        return None
     shard_paths: list[Path] = list(args.feature_jsonl)
     if not shard_paths:
         shard_paths = _discover_shards(args.shard_dir)
@@ -391,6 +380,70 @@ def main(argv: list[str] | None = None) -> int:
             f"[validate-chug-mos] error: no feature JSONL shards found under {args.shard_dir}",
             file=sys.stderr,
         )
+        return None
+    return shard_paths
+
+
+def _gate_from_metrics(args, plcc: float, srocc: float, rmse: float) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+    passed = (
+        not math.isnan(plcc)
+        and plcc >= args.gate_plcc
+        and not math.isnan(srocc)
+        and srocc >= args.gate_srocc
+        and not math.isnan(rmse)
+        and rmse <= args.gate_rmse
+    )
+    return {
+        "passed": bool(passed),
+        "plcc": plcc,
+        "srocc": srocc,
+        "rmse": rmse,
+        "thresholds": {
+            "plcc_min": args.gate_plcc,
+            "srocc_min": args.gate_srocc,
+            "rmse_max": args.gate_rmse,
+        },
+    }
+
+
+def _write_reports(args, raw_argv, metrics, gate, pred, mos_arr, shard_paths) -> None:  # type: ignore[no-untyped-def]
+    plcc, srocc, rmse = metrics
+    if args.out_json is not None:
+        _write_json_report(
+            args.out_json,
+            args=args,
+            raw_argv=raw_argv,
+            n_rows=len(mos_arr),
+            plcc=plcc,
+            srocc=srocc,
+            rmse=rmse,
+            gate=gate,
+            sample_pred=[float(value) for value in pred[:5].tolist()],
+            sample_mos=[float(value) for value in mos_arr[:5].tolist()],
+            shard_paths=shard_paths,
+        )
+        print(f"[validate-chug-mos] wrote JSON report: {args.out_json}")
+    if args.out_md is not None:
+        _write_md_report(
+            args.out_md,
+            n_rows=len(mos_arr),
+            plcc=plcc,
+            srocc=srocc,
+            rmse=rmse,
+            gate=gate,
+            onnx_path=args.onnx,
+        )
+        print(f"[validate-chug-mos] wrote Markdown report: {args.out_md}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    import numpy as np
+
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+
+    shard_paths = _resolve_inputs(args)
+    if shard_paths is None:
         return 1
 
     print(f"[validate-chug-mos] loading test split from {len(shard_paths)} shard(s)…")
@@ -421,62 +474,10 @@ def main(argv: list[str] | None = None) -> int:
     srocc = _srocc(pred, mos_arr)
     rmse = _rmse(pred, mos_arr)
 
-    print(
-        f"[validate-chug-mos] "
-        f"PLCC={plcc:.4f}  SROCC={srocc:.4f}  RMSE={rmse:.4f}"
-        f"  (n={n_rows})"
-    )
+    print(f"[validate-chug-mos] PLCC={plcc:.4f}  SROCC={srocc:.4f}  RMSE={rmse:.4f}  (n={n_rows})")
 
-    # Use CLI-provided gate thresholds (supports test overrides).
-    gate: dict[str, Any] = {
-        "passed": bool(
-            (not math.isnan(plcc))
-            and plcc >= gate_plcc
-            and (not math.isnan(srocc))
-            and srocc >= gate_srocc
-            and (not math.isnan(rmse))
-            and rmse <= gate_rmse
-        ),
-        "plcc": plcc,
-        "srocc": srocc,
-        "rmse": rmse,
-        "thresholds": {
-            "plcc_min": gate_plcc,
-            "srocc_min": gate_srocc,
-            "rmse_max": gate_rmse,
-        },
-    }
-
-    sample_pred = [float(v) for v in pred[:5].tolist()]
-    sample_mos = [float(v) for v in mos_arr[:5].tolist()]
-
-    # Write reports.
-    if args.out_json is not None:
-        _write_json_report(
-            args.out_json,
-            args=args,
-            raw_argv=raw_argv,
-            n_rows=n_rows,
-            plcc=plcc,
-            srocc=srocc,
-            rmse=rmse,
-            gate=gate,
-            sample_pred=sample_pred,
-            sample_mos=sample_mos,
-            shard_paths=shard_paths,
-        )
-        print(f"[validate-chug-mos] wrote JSON report: {args.out_json}")
-    if args.out_md is not None:
-        _write_md_report(
-            args.out_md,
-            n_rows=n_rows,
-            plcc=plcc,
-            srocc=srocc,
-            rmse=rmse,
-            gate=gate,
-            onnx_path=args.onnx,
-        )
-        print(f"[validate-chug-mos] wrote Markdown report: {args.out_md}")
+    gate = _gate_from_metrics(args, plcc, srocc, rmse)
+    _write_reports(args, raw_argv, (plcc, srocc, rmse), gate, pred, mos_arr, shard_paths)
 
     verdict = "PASS" if gate["passed"] else "FAIL"
     print(

@@ -170,7 +170,7 @@ CJSON_PUBLIC(char *) cJSON_PrintBuffered(const cJSON *item, int prebuffer, cJSON
 /* Render a cJSON entity to text using a buffer already allocated in memory with given length. Returns 1 on success and 0 on failure. */
 /* NOTE: cJSON is not always 100% accurate in estimating how much memory it will use, so to be safe allocate 5 bytes more than you actually need */
 CJSON_PUBLIC(cJSON_bool)
-cJSON_PrintPreallocated(cJSON *item, char *buffer, const int length, const cJSON_bool format);
+cJSON_PrintPreallocated(const cJSON *item, char *buffer, const int length, const cJSON_bool format);
 /* Delete a cJSON entity and all subentities. */
 CJSON_PUBLIC(void) cJSON_Delete(cJSON *item);
 
@@ -237,9 +237,9 @@ CJSON_PUBLIC(cJSON_bool) cJSON_AddItemToObject(cJSON *object, const char *string
  * writing to `item->string` */
 CJSON_PUBLIC(cJSON_bool) cJSON_AddItemToObjectCS(cJSON *object, const char *string, cJSON *item);
 /* Append reference to item to the specified array/object. Use this when you want to add an existing cJSON to a new cJSON, but don't want to corrupt your existing cJSON. */
-CJSON_PUBLIC(cJSON_bool) cJSON_AddItemReferenceToArray(cJSON *array, cJSON *item);
+CJSON_PUBLIC(cJSON_bool) cJSON_AddItemReferenceToArray(cJSON *array, const cJSON *item);
 CJSON_PUBLIC(cJSON_bool)
-cJSON_AddItemReferenceToObject(cJSON *object, const char *string, cJSON *item);
+cJSON_AddItemReferenceToObject(cJSON *object, const char *string, const cJSON *item);
 
 /* Remove/Detach items from Arrays/Objects. */
 CJSON_PUBLIC(cJSON *) cJSON_DetachItemViaPointer(cJSON *parent, cJSON *const item);
@@ -299,21 +299,21 @@ CJSON_PUBLIC(cJSON *) cJSON_AddArrayToObject(cJSON *const object, const char *co
 /* helper for the cJSON_SetNumberValue macro */
 CJSON_PUBLIC(double) cJSON_SetNumberHelper(cJSON *object, double number);
 #define cJSON_SetNumberValue(object, number)                                                       \
-    ((object != NULL) ? cJSON_SetNumberHelper(object, (double)number) : (number))
+    (((object) != NULL) ? cJSON_SetNumberHelper((object), (double)(number)) : (number))
 /* Change the valuestring of a cJSON_String object, only takes effect when type of object is cJSON_String */
 CJSON_PUBLIC(char *) cJSON_SetValuestring(cJSON *object, const char *valuestring);
 
 /* If the object is not a boolean type this does nothing and returns cJSON_Invalid else it returns the new type*/
 #define cJSON_SetBoolValue(object, boolValue)                                                      \
-    ((object != NULL && ((object)->type & (cJSON_False | cJSON_True))) ?                           \
+    (((object) != NULL && ((object)->type & (cJSON_False | cJSON_True))) ?                         \
          (object)->type = ((object)->type & (~(cJSON_False | cJSON_True))) |                       \
                           ((boolValue) ? cJSON_True : cJSON_False) :                               \
          cJSON_Invalid)
 
 /* Macro for iterating over an array or object */
 #define cJSON_ArrayForEach(element, array)                                                         \
-    for (element = (array != NULL) ? (array)->child : NULL; element != NULL;                       \
-         element = element->next)
+    for ((element) = ((array) != NULL) ? (array)->child : NULL; (element) != NULL;                 \
+         (element) = (element)->next)
 
 /* malloc/free objects using the malloc/free functions that have been set with cJSON_InitHooks */
 CJSON_PUBLIC(void *) cJSON_malloc(size_t size);

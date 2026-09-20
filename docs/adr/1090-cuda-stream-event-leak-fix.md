@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1090: Fix CUDA stream and event leaks on init error paths
 
@@ -56,7 +55,7 @@ No behaviour change on the success path; no score change; no public API change.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Single `cleanup:` label that null-checks every handle | Simpler label set | Extra null-checks on success path; mixes concerns | Graduated chain is the CERT MEM12-C recommended pattern and matches the existing style in `common.c` |
 | Leave leaks; document as won't-fix | Zero code change | Leaks accumulate in sanitizer runs and long-lived server processes | Resources must be released — CERT MEM31-C |
 

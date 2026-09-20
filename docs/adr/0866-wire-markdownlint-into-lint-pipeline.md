@@ -87,15 +87,13 @@ concatenation is deterministic.
 
 ## Alternatives considered
 
-<!-- markdownlint-disable MD013 MD060 -->
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **(Chosen) Touched-file scope by default, all-files via env opt-in** | Honours CLAUDE.md §12 r12 (touched-file lint-clean); innocent PRs don't inherit ~6.2k pre-existing tail; all-files mode still available for full audits | Two scope modes to document | Pragmatic — matches the existing `clang-tidy` job's delta-scoping pattern |
 | All-files gate, fail on ~6.2k warnings | Maximally enforces the tuned config | Every docs-adjacent PR red on day 1; touched-file rule unsatisfiable | Adversarial; would block the merge train |
 | All-files gate, allow-list-existing-warnings file | Forces zero-net-new warnings without ignoring debt | Allow-list file churns on every cleanup PR; merge-conflict factory | Maintenance burden outweighs the precision win |
 | Advisory-only (`continue-on-error: true`) | No risk of false positives blocking PRs | No teeth — drift accrues silently; the entire reason to wire it in is to gate | Defeats the purpose |
 | Skip wiring entirely, lean on PR review | Zero infra cost | Human review misses lint drift consistently; the ADR-0864 sweep was the proof | The status quo is what created the 19.7k baseline in the first place |
-<!-- markdownlint-enable MD013 MD060 -->
 
 ## Consequences
 

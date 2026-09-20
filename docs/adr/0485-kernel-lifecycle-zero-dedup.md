@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD036 MD060 -->
-# ADR-0485: Extract `VMAF_LIFECYCLE_ZERO` macro to eliminate struct-init duplication across HIP and Metal kernel templates
+# ADR-0485: kernel lifecycle zero dedup
+
+**Decision:** Extract `VMAF_LIFECYCLE_ZERO` macro to eliminate struct-init
+duplication across HIP and Metal kernel templates
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
@@ -8,10 +10,10 @@
 
 ## Context
 
-The 2026-05-16 GPU-template dedup audit (`dedup-audit-gpu-templates-2026-05-16.md`)
-identified opportunity #2: the HIP and Metal `kernel_template` init functions each
-contain an identical field-by-field zero-init block for their lifecycle and
-readback/buffer structs:
+The 2026-05-16 GPU-template dedup audit
+(`dedup-audit-gpu-templates-2026-05-16.md`) identified opportunity #2: the HIP
+and Metal `kernel_template` init functions each contain an identical
+field-by-field zero-init block for their lifecycle and readback/buffer structs:
 
 ```c
 /* HIP kernel_template.c — lifecycle_init */
@@ -34,49 +36,49 @@ And in the readback/buffer alloc functions:
 
 Both patterns exist because each backend's struct was written independently and
 the struct definitions cannot be unified (the `uintptr_t` fields store handle
-types with different semantics: `hipStream_t` vs `MTLCommandQueue`).  However,
-the zero-init action is identical: bring all fields to the all-zeros sentinel that
-signals "not yet initialised."
+types with different semantics: `hipStream_t` vs `MTLCommandQueue`). However,
+the zero-init action is identical: bring all fields to the all-zeros sentinel
+that signals "not yet initialised."
 
-A field-by-field pattern is fragile: adding a new field to either struct silently
-skips the zero-out unless the author remembers to update both the HIP and Metal
-init functions.
+A field-by-field pattern is fragile: adding a new field to either struct
+silently skips the zero-out unless the author remembers to update both the HIP
+and Metal init functions.
 
 ## Decision
 
 Introduce `core/src/kernel_lifecycle_common.h` with a single
-`VMAF_LIFECYCLE_ZERO(lc)` macro backed by `memset(lc, 0, sizeof(*lc))`.  Both
+`VMAF_LIFECYCLE_ZERO(lc)` macro backed by `memset(lc, 0, sizeof(*lc))`. Both
 `hip/kernel_template.c` and `metal/kernel_template.mm` include this header and
 replace the field-by-field zero blocks with `VMAF_LIFECYCLE_ZERO`.
 
-The struct definitions and all other lifecycle logic remain backend-local.  The
+The struct definitions and all other lifecycle logic remain backend-local. The
 shared header is intentionally minimal — it contains only the zero macro and the
 `#include <string.h>` it requires.
 
 ## Alternatives considered
 
-| Option | Pros | Cons |
-|---|---|---|
-| Keep field-by-field zeroing | No new file; zero coupling | Fragile: new fields silently missed; pattern duplicates across backends |
-| Full cross-backend lifecycle struct | Maximum sharing | Impossible: handle types differ; header-purity invariant (no `<hip/hip_runtime.h>` in public surface) forbids it |
-| `memset` inline at each callsite (no shared header) | No new file | Does not establish a named, searchable pattern; still duplicated |
-| `VMAF_LIFECYCLE_ZERO` macro in shared header (chosen) | One place to update; new fields auto-covered; grep-able | Adds one 55-line header |
+| Option                                                | Pros                                                    | Cons                                                                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Keep field-by-field zeroing                           | No new file; zero coupling                              | Fragile: new fields silently missed; pattern duplicates across backends                                          |
+| Full cross-backend lifecycle struct                   | Maximum sharing                                         | Impossible: handle types differ; header-purity invariant (no `<hip/hip_runtime.h>` in public surface) forbids it |
+| `memset` inline at each callsite (no shared header)   | No new file                                             | Does not establish a named, searchable pattern; still duplicated                                                 |
+| `VMAF_LIFECYCLE_ZERO` macro in shared header (chosen) | One place to update; new fields auto-covered; grep-able | Adds one 55-line header                                                                                          |
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - New fields added to `VmafHipKernelLifecycle`, `VmafHipKernelReadback`,
   `VmafMetalKernelLifecycle`, or `VmafMetalKernelBuffer` are automatically
   zero-initialised; no manual update to the init functions required.
 - The zero-init pattern is named and grep-able (`VMAF_LIFECYCLE_ZERO`).
 
-**Negative**
+### Negative
 
-- Adds `core/src/kernel_lifecycle_common.h` as a new internal header that
-  future GPU backends should also include.
+- Adds `core/src/kernel_lifecycle_common.h` as a new internal header that future
+  GPU backends should also include.
 
-**Neutral**
+#### Neutral
 
 - No change to struct field types, API signatures, or observable behaviour.
 - No bit-exactness impact: the macro produces the same all-zeros result as the
@@ -84,10 +86,12 @@ shared header is intentionally minimal — it contains only the zero macro and t
 
 ## References
 
-- Audit file: `.workingdir/dedup-audit-gpu-templates-2026-05-16.md` — opportunity #2
+- Audit file: `.workingdir/dedup-audit-gpu-templates-2026-05-16.md` —
+  opportunity #2
 - `core/src/kernel_lifecycle_common.h` — implementation
 - `core/src/hip/kernel_template.c` — HIP consumer
 - `core/src/metal/kernel_template.mm` — Metal consumer
 - [ADR-0241](0241-hip-first-consumer-psnr.md) — HIP kernel template introduction
 - [ADR-0361](0361-metal-compute-backend.md) — Metal kernel template introduction
-- [ADR-0484](0484-kernel-scaffolding-hip-metal-doc.md) — kernel-scaffolding doc extension
+- [ADR-0484](0484-kernel-scaffolding-hip-metal-doc.md) — kernel-scaffolding doc
+  extension

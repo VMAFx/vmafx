@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD038 MD060 -->
 # Research digest — LLVM IR diff harness for bit-exact SIMD paths
 
 **Date**: 2026-05-31
@@ -36,7 +35,7 @@ Compiled the three seed source files locally with
 `@llvm.fma.*` / `@llvm.fmuladd.*` references per function:
 
 | File | Notable function | FMA count | Notes |
-|---|---|---:|---|
+| --- | --- | ---: | --- |
 | `psnr_hvs_avx2.c` | `calc_psnrhvs_avx2` | 0 | ADR-0138 pragma honored — bit-exact path |
 | `psnr_hvs_avx2.c` | `od_bin_fdct8x8_avx2` | 0 | Same module, same pragma |
 | `ms_ssim_decimate_avx2.c` | `ms_ssim_decimate_avx2` | 18 | Explicit `_mm256_fmadd_ps` intrinsics — intended |
@@ -111,7 +110,7 @@ gate that fires only on compiler bumps.
 
 ## Open follow-ups
 
-1. PR template: add `- [ ] If I touched SIMD, I ran `make ir-diff`` to
+1. PR template: add `- [ ] If I touched SIMD, I ran`make ir-diff`` to
    the existing SIMD checklist row. Deferred to a follow-up PR so this
    one stays small.
 2. AVX-512 / NEON: add entries as those bit-exact paths mature. The

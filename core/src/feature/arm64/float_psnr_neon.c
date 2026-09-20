@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <stddef.h>
 #include <arm_neon.h>
@@ -24,8 +26,8 @@
 
 double float_psnr_noise_line_neon(const float *ref, const float *dis, int w)
 {
-    assert(ref != NULL);
-    assert(dis != NULL);
+    assert(ref != VMAF_NULLPTR);
+    assert(dis != VMAF_NULLPTR);
     assert(w > 0);
     /* Accumulate in double to eliminate SIMD lane-reorder precision loss */
     float64x2_t dsum0 = vdupq_n_f64(0.0);

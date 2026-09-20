@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0917: cargo-deny supply-chain policy enforcement
 
 - **Status**: Accepted
@@ -63,7 +62,7 @@ with the existing `vmafx-sys` build/test job, via the official
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `cargo-deny` (chosen) | Single tool covers all 4 concerns; widely adopted; declarative TOML config; pinned action with SHA. | Yet another CI step; SPDX parser lags behind the registry (forced the `publish = false` workaround). | — |
 | `cargo audit` only | Smaller scope, easier to adopt. | Covers advisories only — leaves licenses, bans, and sources unchecked. | Insufficient coverage. |
 | GitHub Dependabot + Dependency Review action | Native to GitHub; zero config. | Covers advisories + license review, but Dependency Review only triggers on PRs against the default branch (misses pushes to feature branches); no opinionated ban support; no source-pinning. | Misses the bans + sources surface. |

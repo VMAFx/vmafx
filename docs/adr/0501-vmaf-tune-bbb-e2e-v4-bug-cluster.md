@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0501: vmaf-tune ladder cross-resolution scoring + report degraded flag
 
 - **Status**: Accepted
@@ -73,7 +72,7 @@ cluster) surfaced three findings:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **V4-B**: decode reference at native geometry once and pass dims to libvmaf separately | One decode for all rungs; less I/O | Requires a new libvmaf CLI flag pair (`--ref_width` / `--ref_height`) — the existing single `--width` / `--height` apply to *both* legs; would gate on a separate libvmaf PR and break Netflix-golden CLI parity | Per-rung scale matches what we already do for the distorted leg; symmetric, no new flag |
 | **V4-B**: emit `samples` only when caller passes a non-empty list | Smaller JSON when uncalled | KeyError on downstream `report` consumers; inconsistent schema | Always-emit (possibly empty) array; stable schema beats marginal byte savings |
 | **V4-C**: ignore unavailable rows entirely (drop from `codec_rows_failed`) | Cleaner ok=true semantics | Hides the infrastructure gap from dashboards; operators can't see which encoder is missing | New `degraded` flag + dedicated counter — keeps the signal, removes the false negative |

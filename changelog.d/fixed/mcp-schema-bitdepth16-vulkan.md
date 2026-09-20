@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **MCP schema correctness.** The `vmaf_score` / `describe_worst_frames` MCP
   tools rejected 16-bit input — their `bitdepth` enum was `[8,10,12]` while the
   CLI accepts `8/10/12/16` (verified `core/tools/vmaf.c` + `cli_parse.c`); added

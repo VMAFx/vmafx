@@ -29,12 +29,6 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #define SSIM_W (32u)
 #define SSIM_H (32u)
 
@@ -73,22 +67,22 @@ static int alloc_grey10(VmafPicture *pic, uint16_t v)
 static char *init_ssim_default_extract(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
-    mu_assert("ssim extractor missing", fex != NULL);
+    mu_assert("ssim extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, SSIM_W, SSIM_H);
     mu_assert("context_init", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_default_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_ssim_default_extract(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -101,7 +95,8 @@ static char *test_ssim_default_extract(void)
     err = alloc_grey8(&dist, 120u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract default", err == 0);
 
     double score = NAN;
@@ -114,7 +109,7 @@ static char *test_ssim_default_extract(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -125,9 +120,9 @@ static char *init_ssim_enable_db_branch(VmafFeatureExtractorContext **ctx,
                                         VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
-    mu_assert("ssim extractor missing", fex != NULL);
+    mu_assert("ssim extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "enable_db", "true", 0);
     mu_assert("set enable_db", err == 0);
 
@@ -141,13 +136,13 @@ static char *init_ssim_enable_db_branch(VmafFeatureExtractorContext **ctx,
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_enable_db_branch(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_ssim_enable_db_branch(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -160,7 +155,8 @@ static char *test_ssim_enable_db_branch(void)
     err = alloc_grey8(&dist, 120u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract enable_db", err == 0);
 
     double score = NAN;
@@ -177,7 +173,7 @@ static char *test_ssim_enable_db_branch(void)
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -187,9 +183,9 @@ static char *test_ssim_enable_db_branch(void)
 static char *init_ssim_clip_db_branch(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
-    mu_assert("ssim extractor missing", fex != NULL);
+    mu_assert("ssim extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     /* enable_db must also be true for the clip to take effect in extract(). */
     int err = vmaf_dictionary_set(&opts, "enable_db", "true", 0);
     mu_assert("set enable_db", err == 0);
@@ -205,13 +201,13 @@ static char *init_ssim_clip_db_branch(VmafFeatureExtractorContext **ctx, VmafFea
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_clip_db_branch(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_ssim_clip_db_branch(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -226,7 +222,8 @@ static char *test_ssim_clip_db_branch(void)
     err = alloc_grey8(&dist, 128u);
     mu_assert("alloc dist identical", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract identical clip_db", err == 0);
 
     double score = NAN;
@@ -243,7 +240,7 @@ static char *test_ssim_clip_db_branch(void)
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -253,22 +250,22 @@ static char *test_ssim_clip_db_branch(void)
 static char *init_ssim_10bit_extract(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
-    mu_assert("ssim extractor missing", fex != NULL);
+    mu_assert("ssim extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create 10bit", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 10u, SSIM_W, SSIM_H);
     mu_assert("context_init 10bit", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_10bit_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_ssim_10bit_extract(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -281,7 +278,8 @@ static char *test_ssim_10bit_extract(void)
     err = alloc_grey10(&dist, 600u);
     mu_assert("alloc dist 10bit", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract 10bit", err == 0);
 
     double score = NAN;
@@ -294,7 +292,7 @@ static char *test_ssim_10bit_extract(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Allocate a 16-bit YUV420P picture from a per-pixel callback. */
@@ -349,22 +347,22 @@ static char *init_ssim_16bit_distorted_in_range(VmafFeatureExtractorContext **ct
                                                 VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
-    mu_assert("ssim extractor missing", fex != NULL);
+    mu_assert("ssim extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create 16bit", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 16u, SSIM_W, SSIM_H);
     mu_assert("context_init 16bit", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_16bit_distorted_in_range(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_ssim_16bit_distorted_in_range(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -377,7 +375,8 @@ static char *test_ssim_16bit_distorted_in_range(void)
     err = alloc_px16(&dist, ramp_dist16);
     mu_assert("alloc dist 16bit", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract 16bit", err == 0);
 
     double score = NAN;
@@ -394,7 +393,7 @@ static char *test_ssim_16bit_distorted_in_range(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -405,22 +404,22 @@ static char *init_ssim_identical_is_one(VmafFeatureExtractorContext **ctx,
                                         VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
-    mu_assert("ssim extractor missing", fex != NULL);
+    mu_assert("ssim extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, SSIM_W, SSIM_H);
     mu_assert("context_init", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_identical_is_one(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_ssim_identical_is_one(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -433,7 +432,8 @@ static char *test_ssim_identical_is_one(void)
     err = alloc_grey8(&dist, 64u);
     mu_assert("alloc dist identical", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract identical", err == 0);
 
     double score = NAN;
@@ -447,7 +447,7 @@ static char *test_ssim_identical_is_one(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -458,7 +458,5 @@ char *run_tests(void)
     mu_run_test(test_ssim_10bit_extract);
     mu_run_test(test_ssim_16bit_distorted_in_range);
     mu_run_test(test_ssim_identical_is_one);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

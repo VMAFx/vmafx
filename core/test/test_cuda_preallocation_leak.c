@@ -28,18 +28,18 @@ enum {
 
 static int setup_cycle(VmafContext **out_vmaf, VmafCudaState **out_cu_state, VmafModel **out_model)
 {
-    *out_vmaf = NULL;
-    *out_cu_state = NULL;
-    *out_model = NULL;
+    *out_vmaf = VMAF_NULLPTR;
+    *out_cu_state = VMAF_NULLPTR;
+    *out_model = VMAF_NULLPTR;
 
     VmafConfiguration vmaf_cfg = {0};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, vmaf_cfg);
     if (err || !vmaf)
         return err ? err : -1;
 
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err || !cu_state) {
         (void)vmaf_close(vmaf);
@@ -70,8 +70,8 @@ static int setup_cycle(VmafContext **out_vmaf, VmafCudaState **out_cu_state, Vma
         return err;
     }
 
-    VmafModelConfig model_cfg = {0};
-    VmafModel *model = NULL;
+    VmafModelConfig model_cfg = {VMAF_NULLPTR};
+    VmafModel *model = VMAF_NULLPTR;
     err = vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
     if (err || !model) {
         *out_vmaf = vmaf;
@@ -88,11 +88,10 @@ static int setup_cycle(VmafContext **out_vmaf, VmafCudaState **out_cu_state, Vma
 
 static int drive_frames(VmafContext *vmaf)
 {
-    int err = 0;
     for (unsigned i = 0; i < LEAK_REDUCER_FRAMES; i++) {
         VmafPicture ref = {0};
         VmafPicture dist = {0};
-        err = vmaf_cuda_fetch_preallocated_picture(vmaf, &ref);
+        int err = vmaf_cuda_fetch_preallocated_picture(vmaf, &ref);
         if (err)
             return err;
         err = vmaf_cuda_fetch_preallocated_picture(vmaf, &dist);
@@ -102,14 +101,14 @@ static int drive_frames(VmafContext *vmaf)
         if (err)
             return err;
     }
-    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    return vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
 }
 
 static int run_one_cycle(void)
 {
-    VmafContext *vmaf = NULL;
-    VmafCudaState *cu_state = NULL;
-    VmafModel *model = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafModel *model = VMAF_NULLPTR;
 
     int err = setup_cycle(&vmaf, &cu_state, &model);
     if (err == LEAK_REDUCER_SKIP)
@@ -141,7 +140,7 @@ static char *test_cuda_preallocation_leak_reducer(void)
     int first = run_one_cycle();
     if (first == LEAK_REDUCER_SKIP) {
         (void)fprintf(stderr, "[skip: no CUDA runtime] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("first cycle failed during leak reducer", !first);
 
@@ -150,11 +149,11 @@ static char *test_cuda_preallocation_leak_reducer(void)
         mu_assert("cycle failed during leak reducer", !err);
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_cuda_preallocation_leak_reducer);
-    return NULL;
+    return VMAF_NULLPTR;
 }

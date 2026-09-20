@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD029 -->
 # ADR-0165: Tracked `docs/state.md` for bug-status hygiene (T7-1)
 
 - **Status**: Accepted
@@ -55,7 +54,7 @@ sections:
 Wire the update discipline as **CLAUDE.md §12 rule 13** (next free
 slot in the hard-rules block):
 
-> 13. **Every** PR that closes a bug, opens a bug, or rules a Netflix
+> 1. **Every** PR that closes a bug, opens a bug, or rules a Netflix
 >     upstream report not-affecting-the-fork updates `docs/state.md`
 >     in the **same PR**. The update lands a row in the appropriate
 >     section (Open / Recently closed / Confirmed not-affected) and

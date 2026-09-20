@@ -90,9 +90,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 try:
@@ -100,12 +100,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -203,7 +204,7 @@ def _scan_duts_tr(root: Path) -> list[DutsItem]:
     mask_dir = root / "DUTS-TR-Mask"
     if not img_dir.is_dir() or not mask_dir.is_dir():
         raise FileNotFoundError(
-            f"Expected DUTS-TR layout at {root}: missing " "DUTS-TR-Image/ or DUTS-TR-Mask/"
+            f"Expected DUTS-TR layout at {root}: missing DUTS-TR-Image/ or DUTS-TR-Mask/"
         )
     items: list[DutsItem] = []
     for img in sorted(img_dir.glob("*.jpg")):
@@ -403,8 +404,7 @@ def parity_check(
     diff = float(np.max(np.abs(y_pt - y_ort)))
     if diff > threshold:
         raise RuntimeError(
-            f"PyTorch <-> ONNX parity FAILED: max-abs-diff={diff:.3e}  "
-            f"threshold={threshold:.0e}"
+            f"PyTorch <-> ONNX parity FAILED: max-abs-diff={diff:.3e}  threshold={threshold:.0e}"
         )
     return diff
 
@@ -455,7 +455,7 @@ def _build_metrics_payload(
     return payload
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> tuple[argparse.Namespace, list[str]]:
     parser = make_argument_parser(
         prog="train_saliency_student.py",
         description=__doc__,
@@ -480,66 +480,55 @@ def main(argv: list[str] | None = None) -> int:
         "--metrics-out", type=Path, default=None, help="Optional JSON file to dump training metrics"
     )
     raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv), raw_argv
 
-    set_seed(args.seed)
 
+def _build_loaders(args: argparse.Namespace):
     items = _scan_duts_tr(args.duts_root)
     print(f"DUTS-TR pairs found: {len(items)}", flush=True)
     rng = random.Random(args.seed)
     rng.shuffle(items)
     n_val = max(64, round(args.val_fraction * len(items)))
-    val_items = items[:n_val]
-    train_items = items[n_val:]
+    val_items, train_items = items[:n_val], items[n_val:]
     print(f"split: train={len(train_items)}  val={len(val_items)}", flush=True)
-
-    train_ds = DutsDataset(train_items, crop_size=args.crop_size, train=True)
-    val_ds = DutsDataset(val_items, crop_size=args.crop_size, train=False)
-
+    options = {
+        "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "pin_memory": True,
+        "persistent_workers": args.num_workers > 0,
+    }
     train_loader = DataLoader(
-        train_ds,
-        batch_size=args.batch_size,
+        DutsDataset(train_items, crop_size=args.crop_size, train=True),
         shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=True,
         drop_last=True,
-        persistent_workers=args.num_workers > 0,
+        **options,
     )
     val_loader = DataLoader(
-        val_ds,
-        batch_size=args.batch_size,
+        DutsDataset(val_items, crop_size=args.crop_size, train=False),
         shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=True,
-        persistent_workers=args.num_workers > 0,
+        **options,
     )
+    return train_loader, val_loader
 
-    device = torch.device(args.device)
-    model = TinyUNet().to(device)
-    n_params = count_parameters(model)
-    print(f"model: TinyUNet  trainable params = {n_params}", flush=True)
-    if n_params > 200_000:
-        print(f"WARN: param count {n_params} exceeds 200K target", flush=True)
 
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
-
+def _train_model(model, train_loader, val_loader, args, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     best_iou = -1.0
-    best_state: dict | None = None
+    best_state = None
     history: list[dict] = []
-    t0 = time.time()
+    started = time.time()
     for epoch in range(1, args.epochs + 1):
-        ep_t = time.time()
-        train_loss = train_epoch(model, train_loader, opt, device)
+        epoch_started = time.time()
+        train_loss = train_epoch(model, train_loader, optimizer, device)
         val_loss, val_iou = validate(model, val_loader, device)
-        sched.step()
-        elapsed = time.time() - ep_t
-        line = (
-            f"epoch {epoch:02d}/{args.epochs}  "
-            f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}  "
-            f"val_iou={val_iou:.4f}  ({elapsed:.1f}s)"
+        scheduler.step()
+        elapsed = time.time() - epoch_started
+        print(
+            f"epoch {epoch:02d}/{args.epochs}  train_loss={train_loss:.4f}  "
+            f"val_loss={val_loss:.4f}  val_iou={val_iou:.4f}  ({elapsed:.1f}s)",
+            flush=True,
         )
-        print(line, flush=True)
         history.append(
             {
                 "epoch": epoch,
@@ -551,10 +540,68 @@ def main(argv: list[str] | None = None) -> int:
         )
         if val_iou > best_iou:
             best_iou = val_iou
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {
+                key: value.detach().cpu().clone() for key, value in model.state_dict().items()
+            }
             print(f"  -> new best val_iou={best_iou:.4f}", flush=True)
+    return best_iou, best_state, history, time.time() - started
 
-    total_time = time.time() - t0
+
+def _export_and_validate(model, args: argparse.Namespace) -> tuple[bytes, str, float]:
+    model = model.cpu().eval()
+    export_onnx(model, args.output, opset=args.opset)
+    onnx_bytes = args.output.read_bytes()
+    digest = hashlib.sha256(onnx_bytes).hexdigest()
+    print(f"exported {args.output}  ({len(onnx_bytes)} bytes  sha256={digest})", flush=True)
+    diff = parity_check(model, args.output, threshold=1e-5, seed=args.seed)
+    print(f"PT <-> ORT parity max-abs-diff = {diff:.3e}  (threshold 1e-5)", flush=True)
+    return onnx_bytes, digest, diff
+
+
+def _write_metrics(args, raw_argv, best_iou, n_params, history, total_time, export_result, device):
+    if args.metrics_out is None:
+        return
+    onnx_bytes, digest, diff = export_result
+    provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"duts_root": args.duts_root},
+        outputs={"onnx": args.output, "metrics": args.metrics_out},
+    )
+    payload = _build_metrics_payload(
+        best_val_iou=best_iou,
+        param_count=n_params,
+        args=args,
+        history=history,
+        total_time_sec=total_time,
+        onnx_bytes=len(onnx_bytes),
+        onnx_sha256=digest,
+        pt_onnx_max_abs_diff=diff,
+        device=device,
+        run_provenance=provenance,
+    )
+    write_manifest_json(args.metrics_out, payload)
+    print(f"wrote metrics -> {args.metrics_out}", flush=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args, raw_argv = _parse_args(argv)
+
+    set_seed(args.seed)
+    train_loader, val_loader = _build_loaders(args)
+
+    device = torch.device(args.device)
+    model = TinyUNet().to(device)
+    n_params = count_parameters(model)
+    print(f"model: TinyUNet  trainable params = {n_params}", flush=True)
+    if n_params > 200_000:
+        print(f"WARN: param count {n_params} exceeds 200K target", flush=True)
+
+    best_iou, best_state, history, total_time = _train_model(
+        model, train_loader, val_loader, args, device
+    )
     print(f"training done. best val_iou={best_iou:.4f}  total={total_time:.1f}s", flush=True)
 
     if best_state is None:
@@ -562,45 +609,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     model.load_state_dict(best_state)
 
-    # Move to CPU before ONNX export — the legacy TorchScript exporter
-    # in this PyTorch build trips on cross-device tracing when the
-    # parameters live on CUDA.
-    model = model.cpu().eval()
-    export_onnx(model, args.output, opset=args.opset)
-    onnx_bytes = args.output.read_bytes()
-    digest = hashlib.sha256(onnx_bytes).hexdigest()
-    print(f"exported {args.output}  ({len(onnx_bytes)} bytes  sha256={digest})", flush=True)
-
-    # Always validate PyTorch <-> ONNX parity in the same process while
-    # the live state_dict is still loaded — guarantees the shipped
-    # weights match the trained checkpoint within numerical noise.
-    diff = parity_check(model, args.output, threshold=1e-5, seed=args.seed)
-    print(f"PT <-> ORT parity max-abs-diff = {diff:.3e}  (threshold 1e-5)", flush=True)
-
-    if args.metrics_out is not None:
-        write_manifest_json(
-            args.metrics_out,
-            _build_metrics_payload(
-                best_val_iou=best_iou,
-                param_count=n_params,
-                args=args,
-                history=history,
-                total_time_sec=total_time,
-                onnx_bytes=len(onnx_bytes),
-                onnx_sha256=digest,
-                pt_onnx_max_abs_diff=diff,
-                device=device,
-                run_provenance=build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"duts_root": args.duts_root},
-                    outputs={"onnx": args.output, "metrics": args.metrics_out},
-                ),
-            ),
-        )
-        print(f"wrote metrics -> {args.metrics_out}", flush=True)
+    export_result = _export_and_validate(model, args)
+    _write_metrics(args, raw_argv, best_iou, n_params, history, total_time, export_result, device)
 
     return 0
 

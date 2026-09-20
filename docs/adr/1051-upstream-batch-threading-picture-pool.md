@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1051: Port upstream batch-threading + picture-pool defaults (dff4082b + 46d3a154)
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ flags which remain orthogonal to the threading model.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `#ifdef VMAF_BATCH_THREADING` guards | No change risk | Fork diverges from upstream; scheduling semantics differ for multi-threaded callers; P0 classification in upstream audit | Not acceptable for a P0 divergence |
 | Port verbatim via `cherry-pick` | Cleaner diff | The upstream diff touches `libvmaf/src/` paths; the fork moved to `core/src/`. Direct cherry-pick fails on path mismatch. | Adapted port chosen |
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # Research digest: porting `vmaf-tune fast` to Go
 
@@ -16,7 +15,7 @@
 Six steps, of which only one turned out to be un-portable:
 
 | # | Step | Python | Go | Status |
-|---|------|--------|----|--------|
+| --- | ------ | -------- | ---- | -------- |
 | 1 | Validate flags, pick a scoring backend | `_run_fast`, `score_backend.select_backend` | `runFast`, `pkg/scorebackend.Select` | Ported |
 | 2 | TPE search over the integer CRF axis | Optuna `TPESampler(seed=0)` | `pkg/fast.RunTPE` on goptuna | Ported (see §3) |
 | 3 | Per trial: encode a short probe slice | `cli._build_fast_sample_extractor` → `encode.run_encode` | `pkg/fast.NewSamplePredictor` → `pkg/encoder` | Ported |
@@ -78,7 +77,7 @@ So §2.1 and §2.2 independently produce `[0, 0, 0, 0, 0, 0]`.
 Three places define the encoder vocabulary, and they disagree:
 
 | Source | Index 3 | Index 5 | Last slot |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ai/scripts/train_fr_regressor_v2.py::ENCODER_VOCAB` (trained the model) | `libvvenc` | `h264_nvenc` | `unknown` |
 | `model/tiny/fr_regressor_v2.json::encoder_vocab` (ships with the model) | `libvvenc` | `h264_nvenc` | `unknown` |
 | `vmaftune/proxy.py::ENCODER_VOCAB_V2` (used at inference) | `libaom-av1` | `libvvenc` | `av1_qsv` |
@@ -101,7 +100,7 @@ does it. `cli._build_fast_sample_extractor` returns raw libvmaf pooled means,
 ### 2.5 How the Go port handles each
 
 | Defect | Go behaviour |
-|---|---|
+| --- | --- |
 | 2.1 | `runVMAF` decodes container-shaped distorted files to raw YUV (`decodeToRawYUV`, a port of `score._decode_to_raw_yuv`) on **both** legs, clamped with `-t` to the probe window so a short probe does not materialise the whole source. |
 | 2.2 | `ParseCanonical6Means` tries `pooled_metrics["integer_<name>"]`, then the bare key, then a per-frame average of either. Works against both shapes. |
 | 2.3 | `ProxyModel.CodecBlock` builds the one-hot from the sidecar's own `encoder_vocab`, so it cannot drift from the installed checkpoint. Out-of-vocabulary codecs map to `unknown` when the model has that slot; otherwise it is a hard error, never a silent zero-vector. |
@@ -154,7 +153,7 @@ by brute force, which gives an exact yardstick. Reference optima from the
 *Python* `_smoke_predictor`:
 
 | Target | Optimal CRF | Predicted VMAF | Predicted kbps | Objective |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 95.0 | 15 | 95.23711249329942 | 5300.59966363287 | 0.7671724596627076 |
 | 90.0 | 20 | 90.35515462202830 | 3486.83260599045 | 0.7038378826273399 |
 | 88.0 | 22 | 88.24093019754717 | 2952.12248362229 | 0.5361424459094013 |
@@ -163,7 +162,7 @@ by brute force, which gives an exact yardstick. Reference optima from the
 Measured distribution of the Go search's recommendation (sequential runs):
 
 | Target | Budget | Repeats | Observed CRFs |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 95 | 30 | 200 | `15` ×200 |
 | 90 | 50 | 200 | `19` ×1, `20` ×161, `21` ×38 |
 | 88 | 50 | 200 | `21` ×2, `22` ×190, `23` ×8 |
@@ -258,7 +257,7 @@ flattened width.
 ### 4.1 Options considered
 
 | Option | Verdict |
-|---|---|
+| --- | --- |
 | Extend `vmafx-ort-runner` with a named-input protocol + `Registry.InferNamed` | **Preferred.** Smallest change, keeps the CGO-free build. Blocked here only because the runner's source is not in this repo. |
 | Promote `Registry.InferDirect` onto `github.com/yalue/onnxruntime_go` | Works and supports named inputs, but it is a CGO binding requiring `libonnxruntime` at build and run time. `pkg/ai` defers this to "Stage 2" for exactly that reason; adding it would make every `go build ./...` depend on ORT headers. Out of scope for this change. |
 | Re-export `fr_regressor_v2` single-port (concatenate inside the graph) | Viable and cheap on the training side; needs an `ai/scripts/` change plus a new checkpoint and sidecar, and a decision about which export is canonical. |
@@ -289,7 +288,7 @@ had to be reproduced:
    `encoding/json` does not agree:
 
    | Value | Python | Go default |
-   |---|---|---|
+   | --- | --- | --- |
    | `90.0` | `90.0` | `90` |
    | `1000000.0` | `1000000.0` | `1e+06` |
 

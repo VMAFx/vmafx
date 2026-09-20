@@ -51,12 +51,6 @@
 
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Score one ref/dis pair through the public API with `float_motion` configured
  * from `opts` ("key=value" pairs, ':'-separated). Returns the
  * vmaf_read_pictures() result, or the earlier failure that prevented it. */
@@ -64,12 +58,12 @@ static int drive_float_motion(unsigned w, unsigned h, enum VmafPixelFormat pix_f
                               const char *opts)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     int err = vmaf_init(&ctx, cfg);
     if (err)
         return err;
 
-    VmafFeatureDictionary *dict = NULL;
+    VmafFeatureDictionary *dict = VMAF_NULLPTR;
     char buf[128];
     (void)snprintf(buf, sizeof(buf), "%s", opts);
     /* Split "k=v:k=v" by hand rather than with strtok_r: that function is
@@ -80,14 +74,14 @@ static int drive_float_motion(unsigned w, unsigned h, enum VmafPixelFormat pix_f
     char *cursor = buf;
     while (*cursor != '\0') {
         char *sep = strchr(cursor, ':');
-        if (sep != NULL)
+        if (sep != VMAF_NULLPTR)
             *sep = '\0';
         char *eq = strchr(cursor, '=');
-        if (eq != NULL) {
+        if (eq != VMAF_NULLPTR) {
             *eq = '\0';
             (void)vmaf_feature_dictionary_set(&dict, cursor, eq + 1);
         }
-        if (sep == NULL)
+        if (sep == VMAF_NULLPTR)
             break;
         cursor = sep + 1;
     }
@@ -106,7 +100,7 @@ static int drive_float_motion(unsigned w, unsigned h, enum VmafPixelFormat pix_f
     }
 
     err = vmaf_read_pictures(ctx, &ref, &dis, 0);
-    (void)vmaf_read_pictures(ctx, NULL, NULL, 0);
+    (void)vmaf_read_pictures(ctx, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     (void)vmaf_close(ctx);
     return err;
 }
@@ -119,7 +113,7 @@ static char *test_filter_size_1_still_enforces_the_5_tap_minimum(void)
               drive_float_motion(8, 1, VMAF_PIX_FMT_YUV420P, "motion_filter_size=1") != 0);
     mu_assert("float_motion(8x2, motion_filter_size=1) must be rejected (below the 3-row floor)",
               drive_float_motion(8, 2, VMAF_PIX_FMT_YUV420P, "motion_filter_size=1") != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The same option on a frame at or above the floor must still work — the fix
@@ -128,7 +122,7 @@ static char *test_filter_size_1_accepts_frames_at_the_minimum(void)
 {
     mu_assert("float_motion(8x8, motion_filter_size=1) must score",
               drive_float_motion(8, 8, VMAF_PIX_FMT_YUV420P, "motion_filter_size=1") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Odd luma height with motion_add_uv: chroma is ceil(h/2) rows in the picture,
@@ -143,7 +137,7 @@ static char *test_odd_height_chroma_planes_are_not_overrun(void)
     /* Even heights were always fine; pin that they stay fine. */
     mu_assert("float_motion(8x8, motion_add_uv) must score",
               drive_float_motion(8, 8, VMAF_PIX_FMT_YUV420P, "motion_add_uv=true") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The Netflix golden resolution must be unaffected by all of the above. */
@@ -151,7 +145,7 @@ static char *test_golden_resolution_still_scores(void)
 {
     mu_assert("float_motion(576x324) must score",
               drive_float_motion(576, 324, VMAF_PIX_FMT_YUV420P, "motion_add_uv=false") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -160,7 +154,5 @@ char *run_tests(void)
     mu_run_test(test_filter_size_1_accepts_frames_at_the_minimum);
     mu_run_test(test_odd_height_chroma_planes_are_not_overrun);
     mu_run_test(test_golden_resolution_still_scores);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

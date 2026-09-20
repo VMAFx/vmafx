@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 
 import json
-import os
 import re
 import sys
+from pathlib import Path
+from typing import ClassVar
 
 from vmaf.core.result import Result
+
+_COMPARISON_VALUE_2 = 2
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
 def print_usage():
-    print("usage: python " + os.path.basename(sys.argv[0]) + " input_file\n")
+    print("usage: python " + Path(sys.argv[0]).name + " input_file\n")
     print("input_file contains a list of files for assembly (can be xml or json)")
 
 
 class FileAssembler:
 
-    SUPPORTED_FILE_TYPES = ["xml", "json"]
+    SUPPORTED_FILE_TYPES: ClassVar = ["xml", "json"]
 
     def __init__(self, to_assemble_input):
         self.to_assemble_input = to_assemble_input
@@ -30,7 +33,7 @@ class FileAssembler:
         if isinstance(to_assemble_input, list):
             to_assemble_list = to_assemble_input
         else:
-            with open(to_assemble_input, "rt") as input_file:
+            with Path(to_assemble_input).open("rt") as input_file:
                 for line in input_file.readlines():
 
                     # match comment
@@ -64,9 +67,7 @@ class FileAssembler:
         to_assemble_list = self.create_assembly_file_list(self.to_assemble_input)
         self._assert(to_assemble_list)
         results = self._create_result_list(to_assemble_list)
-        combined_result = Result.combine_result(results)
-
-        return combined_result
+        return Result.combine_result(results)
 
     def _assert(self, to_assemble_list):
         """
@@ -76,7 +77,7 @@ class FileAssembler:
         # check that the number of files is greater than 0
         assert len(to_assemble_list) > 0
         # check that the file formats match
-        assemble_format_list = [os.path.splitext(f)[1].split(".")[1] for f in to_assemble_list]
+        assemble_format_list = [Path(f).suffix.removeprefix(".") for f in to_assemble_list]
         assert len(set(assemble_format_list)) == 1, "The file formats for assembly do not much."
         # check that the file format is supported for assembly
         assert (
@@ -93,7 +94,7 @@ class XmlAssembler(FileAssembler):
 
         to_assemble_xml_strings = []
         for to_assemble_xml in to_assemble_list:
-            with open(to_assemble_xml, "r") as f:
+            with Path(to_assemble_xml).open("r") as f:
                 to_assemble_xml_strings.append(f.read())
 
         return to_assemble_xml_strings
@@ -116,7 +117,7 @@ class JsonAssembler(FileAssembler):
 
         to_assemble_json_strings = []
         for json_file in to_assemble_list:
-            with open(json_file, "r") as f:
+            with Path(json_file).open("r") as f:
                 to_assemble_json_strings.append(json.load(f))
 
         return to_assemble_json_strings
@@ -135,7 +136,7 @@ class JsonAssembler(FileAssembler):
 
 def main():
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) != _COMPARISON_VALUE_2:
         print_usage()
         return 2
 

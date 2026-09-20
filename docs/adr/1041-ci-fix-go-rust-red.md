@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1041: Fix CI RED — Go metal option type + Rust AVX-512 test guard
 

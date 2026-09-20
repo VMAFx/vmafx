@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0251: Vulkan VkImage import — v2 async pending-fence model (T7-29 part 4)
 
 - **Status**: Accepted
@@ -50,7 +49,7 @@ destroying any handle.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Per-frame fence pool, FIFO ring (chosen)** | Bounded memory, no runtime alloc, ABI-stable, matches the canonical Vulkan game-engine pattern | Ring size has to be picked up-front; if `max_outstanding_frames` < FFmpeg's filter graph depth the back-pressure stalls show up exactly where the v1 wait did | Simplest change that breaks the serial bottleneck without a Vulkan 1.2 hard dependency |
 | **Single fence with delayed wait** (record + submit in `import_image`, wait in `wait_compute`) | Minimal diff vs v1 | Only one frame can be in flight at any time — the decoder still blocks once it loops back to record the next frame against the same command buffer; gain over v1 is marginal | Doesn't actually remove the serialisation — only relocates the wait |
 | **Timeline semaphore with monotonic counter** (drop fences, signal a `VkSemaphore` of type `VK_SEMAPHORE_TYPE_TIMELINE`, wait on a value) | One synchronisation primitive instead of N fences; matches FFmpeg's hwframes context (`AVVkFrame::sem`); cleaner host API | Requires `VK_KHR_timeline_semaphore` (core in 1.2) — fork's pinned `api_version` is 1.3 so present everywhere we run, but the swap touches every kernel TU's submit path and complicates the FFmpeg filter's existing per-frame timeline-semaphore wait (would need a *second* timeline). Bigger blast radius than the ring | Deferred to v3; revisit when a feature kernel needs a queue family transfer (where timeline semaphores are the only correct primitive) |

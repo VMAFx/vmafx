@@ -122,19 +122,19 @@ static char *feed_one_frame(VmafContext *vmaf, unsigned ref_salt, unsigned dist_
     mu_assert("fill_pic(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     mu_assert("vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_cambi(double *score, int textured)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "cambi", NULL);
+    err = vmaf_use_feature(vmaf, "cambi", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(cambi) failed", !err);
 
     char *msg = feed_one_frame(vmaf, 0u, 1u, textured);
@@ -145,29 +145,29 @@ static char *run_cpu_cambi(double *score, int textured)
     mu_assert("CPU: vmaf_feature_score_at_index(cambi) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda_cambi(double *score, int textured)
 {
     *score = NAN;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "cambi_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "cambi_cuda", VMAF_NULLPTR);
     mu_assert("CUDA: vmaf_use_feature(cambi_cuda) failed", !err);
 
     char *msg = feed_one_frame(vmaf, 0u, 1u, textured);
@@ -180,15 +180,15 @@ static char *run_cuda_cambi(double *score, int textured)
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_cambi_cuda_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("cambi_cuda");
-    mu_assert("cambi_cuda extractor must be registered", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("cambi_cuda");
+    mu_assert("cambi_cuda extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("cambi_cuda name matches", !strcmp(fex->name, "cambi_cuda"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *cambi_parity_for_fixture(int textured)
@@ -203,7 +203,7 @@ static char *cambi_parity_for_fixture(int textured)
     if (msg)
         return msg;
     if (isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
@@ -212,7 +212,7 @@ static char *cambi_parity_for_fixture(int textured)
                       textured ? "textured" : "gradient", cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("cambi CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_cambi_cpu_cuda_parity(void)
@@ -233,5 +233,5 @@ char *run_tests(void)
     mu_run_test(test_cambi_cuda_registered);
     mu_run_test(test_cambi_cpu_cuda_parity);
     mu_run_test(test_cambi_cpu_cuda_parity_textured);
-    return NULL;
+    return VMAF_NULLPTR;
 }

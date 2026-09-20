@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0222: `vmaf-perShot` per-shot CRF predictor sidecar
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ We will ship `vmaf-perShot` as a standalone executable under
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Linear-blend heuristic (chosen) | Transparent; debuggable; no training corpus needed; runs in 30 ms on a 48-frame fixture | Coefficients are a prior, not a fit | Roadmap §2.4 says "v1 = small CNN/MLP"; without a labelled corpus a "small MLP" would just memorise the prior. Defer the MLP to v2 once the BVI-DVC + Netflix corpora produce shot-level CRF labels |
 | Trained MLP (PyTorch → ONNX) | Closer to roadmap §2.4's "small CNN/MLP" wording; later versions could trade accuracy for size | No labelled per-shot CRF dataset exists today; the existing tiny-AI corpora (BVI-DVC, Netflix) have per-clip / per-frame labels, not per-shot CRF targets | Forces fabricating labels; adds ORT dependency to the sidecar for a v1 that has no measured advantage over the linear blend |
 | Embed as a libvmaf C-API entry point (`vmaf_per_shot_predict`) | Reusable from FFmpeg / Python | Stretches libvmaf's "metric engine" charter into encoder-hint territory; CLI flag set is large enough that an embedded API would still need a CLI wrapper | Roadmap §2.4 explicitly says "**Standalone CLI** (`tools/vmaf-perShot`) that writes an encoder-ingestible sidecar. Does **not** run inside libvmaf — its output is a parameter hint, not a quality score" |

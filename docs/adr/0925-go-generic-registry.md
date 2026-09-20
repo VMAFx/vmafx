@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0925: Generic in-memory registry for vmafx-controller subsystems
 
 - **Status**: Accepted
@@ -43,7 +42,7 @@ queue as-is — its semantics are not a generic-Store match.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Force `queue.Queue` + `nodes.Registry` behind one `Registry[T Identifiable]` interface | Symmetric API; fewer top-level types | Queue is SQLite-backed (FIFO + transactional pull-and-claim); registry is in-memory. A shared interface would either expose the lowest common denominator (losing queue capabilities) or carry mostly-empty methods on the registry side. | Over-abstraction; semantics differ too much. |
 | Keep the duplication; "it works" | Zero churn | Two separate hand-rolled mutex/map patterns to maintain; two near-identical narrow interfaces in `pkg/observability`. | Misses the modernization win the audit (#15) flagged. |
 | Move the generic store under `cmd/vmafx-controller/internal/registry/` | Tighter scope; not promised as a public package | The `Counter` constraint needs to be importable from `pkg/observability/` without a back-edge into `cmd/vmafx-controller/`. | `pkg/` placement keeps the import DAG clean. |

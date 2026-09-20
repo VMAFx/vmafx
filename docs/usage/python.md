@@ -1,11 +1,14 @@
-<!-- markdownlint-disable MD013 -->
 # VMAF Python Library
 
-The VMAF Python library offers full functionalities from running basic VMAF command lines, software testing, training and validating a new VMAF model on video datasets, data visualization tools, etc. It is the playground to experiment with VMAF and other video quality metrics.
+The VMAF Python library offers full functionalities from running basic VMAF
+command lines, software testing, training and validating a new VMAF model on
+video datasets, data visualization tools, etc. It is the playground to
+experiment with VMAF and other video quality metrics.
 
 ## Requirements
 
-Make sure you have `python3` (Python 3.10 or higher). You can check the version by `python3 --version`.
+Make sure you have `python3` (Python 3.10 or higher). You can check the version
+by `python3 --version`.
 
 ### Linux
 
@@ -33,7 +36,8 @@ Make sure `nasm` is 2.13.02 or higher (check by `nasm --version`).
 
 First, install [Homebrew](https://brew.sh/).
 
-If you don't already have a `python3` installation on your Mac, run the following to install Python 3 via Homebrew:
+If you don't already have a `python3` installation on your Mac, run the
+following to install Python 3 via Homebrew:
 
 ```bash
 brew install python3
@@ -57,7 +61,10 @@ python3 -m virtualenv .venv
 source .venv/bin/activate
 ```
 
-From this point forward `python3` and `pip3` will be relative to the virtualenv and isolated from the system python. Returning to the project in subsequent shell sessions will require re-activating the virtualenv with `source .venv/bin/activate`.
+From this point forward `python3` and `pip3` will be relative to the virtualenv
+and isolated from the system python. Returning to the project in subsequent
+shell sessions will require re-activating the virtualenv with
+`source .venv/bin/activate`.
 
 Now install the tools required to build VMAF into the virtualenv.
 
@@ -85,7 +92,8 @@ Install the rest of the required Python packages:
 pip3 install -r python/requirements.txt
 ```
 
-On macOS it's important to use the LLVM from homebrew as the macOS clang does not include support for OpenMP, which is needed for libsvm-official
+On macOS it's important to use the LLVM from homebrew as the macOS clang does
+not include support for OpenMP, which is needed for libsvm-official
 
 ```bash
 CC=$HOMEBREW_PREFIX/opt/llvm/bin/clang CXX=$HOMEBREW_PREFIX/opt/llvm/bin/clang++ pip3 install -r python/requirements.txt
@@ -103,7 +111,8 @@ Run unittests and make sure they all pass:
 
 ### Run VMAF Using `run_vmaf`
 
-One can run VMAF in the command line by `run_vmaf`, which allows the input videos to be the `.yuv` format.
+One can run VMAF in the command line by `run_vmaf`, which allows the input
+videos to be the `.yuv` format.
 
 The package ships a `__main__` module so the shortest invocation is:
 
@@ -129,13 +138,16 @@ The arguments are the following:
   - `yuv420p12le`, `yuv422p12le`, `yuv444p12le` (12-Bit little-endian YUV)
   - `yuv420p16le`, `yuv422p16le`, `yuv444p16le` (16-Bit little-endian YUV)
 - `width` and `height` are the width and height of the videos, in pixels
-- `reference_path` and `distorted_path` are the paths to the reference and distorted video files
+- `reference_path` and `distorted_path` are the paths to the reference and
+  distorted video files
 - `output_format` can be one of:
   - `text`
   - `xml`
   - `json`
 
-For example, the following command runs VMAF on a pair of `.yuv` inputs ([`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv), [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv)):
+For example, the following command runs VMAF on a pair of `.yuv` inputs
+([`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv),
+[`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv)):
 
 ```bash
  python -m vmaf.script.run_vmaf \
@@ -163,16 +175,24 @@ This will generate JSON output like:
 }
 ```
 
-where `VMAF_score` is the final score and the others are the scores for VMAF's elementary metrics:
+where `VMAF_score` is the final score and the others are the scores for VMAF's
+elementary metrics:
 
 - `adm2`, `vif_scalex` scores range from 0 (worst) to 1 (best)
 - `motion2` score typically ranges from 0 (static) to 20 (high-motion)
 
 ### Play with Models
 
-VMAF follows a machine-learning based approach to first extract a number of quality-relevant features (or elementary metrics) from a distorted video and its reference full-quality video, followed by fusing them into a final quality score using a non-linear regressor (e.g. an SVM regressor), hence the name “Video Multi-method Assessment Fusion”.
+VMAF follows a machine-learning based approach to first extract a number of
+quality-relevant features (or elementary metrics) from a distorted video and its
+reference full-quality video, followed by fusing them into a final quality score
+using a non-linear regressor (e.g. an SVM regressor), hence the name “Video
+Multi-method Assessment Fusion”.
 
-In addition to the basic commands, the VMAF package also provides a framework to allow any user to train his/her own perceptual quality assessment model. For example, directory [`model`](../../model) contains a number of pre-trained models, which can be loaded by the aforementioned commands:
+In addition to the basic commands, the VMAF package also provides a framework to
+allow any user to train his/her own perceptual quality assessment model. For
+example, directory [`model`](../../model) contains a number of pre-trained
+models, which can be loaded by the aforementioned commands:
 
 ```bash
 python -m vmaf.script.run_vmaf \
@@ -198,11 +218,18 @@ A user can customize the model based on:
 - The list of features used
 - The regressor used (and its hyper-parameters)
 
-Once a model is trained, the VMAF package also provides tools to cross validate it on a different dataset and visualization.
+Once a model is trained, the VMAF package also provides tools to cross validate
+it on a different dataset and visualization.
 
 ### Create a Dataset
 
-To begin with, create a dataset file following the format in [`example_dataset.py`](../../compat/python-vmaf/resource/example/example_dataset.py). A dataset is a collection of distorted videos. Each has a unique asset ID and a corresponding reference video, identified by a unique content ID. Each distorted video is also associated with subjective quality score, typically a MOS (mean opinion score), obtained through subjective study. An example code snippet that defines a dataset is as follows:
+To begin with, create a dataset file following the format in
+[`example_dataset.py`](../../compat/python-vmaf/resource/example/example_dataset.py).
+A dataset is a collection of distorted videos. Each has a unique asset ID and a
+corresponding reference video, identified by a unique content ID. Each distorted
+video is also associated with subjective quality score, typically a MOS (mean
+opinion score), obtained through subjective study. An example code snippet that
+defines a dataset is as follows:
 
 ```python
 dataset_name = 'example'
@@ -221,11 +248,15 @@ dis_videos = [
 ]
 ```
 
-See the directory [`compat/python-vmaf/resource/dataset`](../../compat/python-vmaf/resource/dataset) for more examples. Also refer to the [Datasets](../models/datasets.md) document regarding publicly available datasets.
+See the directory
+[`compat/python-vmaf/resource/dataset`](../../compat/python-vmaf/resource/dataset)
+for more examples. Also refer to the [Datasets](../models/datasets.md) document
+regarding publicly available datasets.
 
 ### Validate a Dataset
 
-Once a dataset is created, first validate the dataset using existing VMAF or other (PSNR, SSIM or MS-SSIM) metrics. Run:
+Once a dataset is created, first validate the dataset using existing VMAF or
+other (PSNR, SSIM or MS-SSIM) metrics. Run:
 
 ```bash
 python -m vmaf.script.run_testing \
@@ -248,11 +279,20 @@ python -m vmaf.script.run_testing \
     --parallelize
 ```
 
-Enabling `--cache-result` allows storing/retrieving extracted features (or elementary quality metrics) in a data store (under `compat/python-vmaf/workspace/result_store_dir/file_result_store` by default; overridable via the `VMAF_WORKSPACE` environment variable — see [docs/architecture/workspace.md](../architecture/workspace.md)), since feature extraction is the most expensive operations here.
+Enabling `--cache-result` allows storing/retrieving extracted features (or
+elementary quality metrics) in a data store (under
+`compat/python-vmaf/workspace/result_store_dir/file_result_store` by default;
+overridable via the `VMAF_WORKSPACE` environment variable — see
+[docs/architecture/workspace.md](../architecture/workspace.md)), since feature
+extraction is the most expensive operations here.
 
-Enabling `--parallelize` allows execution on multiple reference-distorted video pairs in parallel. Sometimes it is desirable to disable parallelization for debugging purpose (e.g. some error messages can only be displayed when parallel execution is disabled).
+Enabling `--parallelize` allows execution on multiple reference-distorted video
+pairs in parallel. Sometimes it is desirable to disable parallelization for
+debugging purpose (e.g. some error messages can only be displayed when parallel
+execution is disabled).
 
-Make sure `matplotlib` is installed to visualize the MOS-prediction scatter plot and inspect the statistics:
+Make sure `matplotlib` is installed to visualize the MOS-prediction scatter plot
+and inspect the statistics:
 
 - PCC – Pearson correlation coefficient
 - SRCC – Spearman rank order correlation coefficient
@@ -260,7 +300,9 @@ Make sure `matplotlib` is installed to visualize the MOS-prediction scatter plot
 
 #### Troubleshooting
 
-When creating a dataset file, one may make errors (for example, having a typo in a file path) that could go unnoticed but make the execution of `run_testing` fail. For debugging purposes, it is recommended to disable `--parallelize`.
+When creating a dataset file, one may make errors (for example, having a typo in
+a file path) that could go unnoticed but make the execution of `run_testing`
+fail. For debugging purposes, it is recommended to disable `--parallelize`.
 
 If the problem persists, one may need to run the script:
 
@@ -280,7 +322,9 @@ python -m vmaf.script.run_cleaning_cache \
 
 ### Train a New Model
 
-Now that we are confident that the dataset is created correctly and we have some benchmark result on existing metrics, we proceed to train a new quality assessment model. Run:
+Now that we are confident that the dataset is created correctly and we have some
+benchmark result on existing metrics, we proceed to train a new quality
+assessment model. Run:
 
 ```bash
 python -m vmaf.script.run_vmaf_training \
@@ -304,7 +348,8 @@ python -m vmaf.script.run_vmaf_training \
     --parallelize
 ```
 
-`feature_param_file` defines the set of features used. For example, both dictionaries below:
+`feature_param_file` defines the set of features used. For example, both
+dictionaries below:
 
 ```python
 feature_dict = {'VMAF_feature': 'all', }
@@ -316,9 +361,15 @@ and
 feature_dict = {'VMAF_feature': ['vif', 'adm'], }
 ```
 
-are valid specifications of selected features. Here `VMAF_feature` is an "aggregate" feature type, and `vif`, `adm` are the "atomic" feature types within the aggregate type. In the first case, `all` specifies that all atomic features of `VMAF_feature` are selected. A `feature_dict` dictionary can also contain more than one aggregate feature types.
+are valid specifications of selected features. Here `VMAF_feature` is an
+"aggregate" feature type, and `vif`, `adm` are the "atomic" feature types within
+the aggregate type. In the first case, `all` specifies that all atomic features
+of `VMAF_feature` are selected. A `feature_dict` dictionary can also contain
+more than one aggregate feature types.
 
-`model_param_file` defines the type and hyper-parameters of the regressor to be used. For details, refer to the self-explanatory examples in directory `resource/model_param`. One example is:
+`model_param_file` defines the type and hyper-parameters of the regressor to be
+used. For details, refer to the self-explanatory examples in directory
+`resource/model_param`. One example is:
 
 ```python
 model_type = "LIBSVMNUSVR"
@@ -335,18 +386,25 @@ model_param_dict = {
 }
 ```
 
-The trained model is output to `output_model_file`. Once it is obtained, it can be used by the `run_vmaf`, or by `run_testing` to validate another dataset.
+The trained model is output to `output_model_file`. Once it is obtained, it can
+be used by the `run_vmaf`, or by `run_testing` to validate another dataset.
 
 ![training scatter](../../resource/images/scatter_training.png)
 ![testing scatter](../../resource/images/scatter_testing.png)
 
-Above are two example scatter plots obtained from running the `run_vmaf_training` and `run_testing` commands on a training and a testing dataset, respectively.
+Above are two example scatter plots obtained from running the
+`run_vmaf_training` and `run_testing` commands on a training and a testing
+dataset, respectively.
 
 ### Using Custom Subjective Models
 
-The commands `run_vmaf_training` and `run_testing` also support custom subjective models (e.g. MLE_CO_AP2 (default), MOS, DMOS, SR_MOS (i.e. ITU-R BT.500), BR_SR_MOS (i.e. ITU-T P.913) and more), through the [sureal](https://github.com/Netflix/sureal) package.
+The commands `run_vmaf_training` and `run_testing` also support custom
+subjective models (e.g. MLE_CO_AP2 (default), MOS, DMOS, SR_MOS (i.e. ITU-R
+BT.500), BR_SR_MOS (i.e. ITU-T P.913) and more), through the
+[sureal](https://github.com/Netflix/sureal) package.
 
-The subjective model option can be specified with option `--subj-model subjective_model`, for example:
+The subjective model option can be specified with option
+`--subj-model subjective_model`, for example:
 
 ```bash
 python -m vmaf.script.run_vmaf_training \
@@ -366,31 +424,71 @@ python -m vmaf.script.run_testing \
     --parallelize
 ```
 
-Note that for the `--subj-model` option to have effect, the input dataset file must follow a format similar to [example_raw_dataset.py](../../compat/python-vmaf/resource/example/example_raw_dataset.py). Specifically, for each dictionary element in `dis_videos`, instead of having a key named `dmos` or `groundtruth` as in [example_dataset.py](../../compat/python-vmaf/resource/example/example_dataset.py), it must have a key named `os` (stands for opinion score), and the value must be a list of numbers. This is the "raw opinion score" collected from subjective experiments, which is used as the input to the custom subjective models.
+Note that for the `--subj-model` option to have effect, the input dataset file
+must follow a format similar to
+[example_raw_dataset.py](../../compat/python-vmaf/resource/example/example_raw_dataset.py).
+Specifically, for each dictionary element in `dis_videos`, instead of having a
+key named `dmos` or `groundtruth` as in
+[example_dataset.py](../../compat/python-vmaf/resource/example/example_dataset.py),
+it must have a key named `os` (stands for opinion score), and the value must be
+a list of numbers. This is the "raw opinion score" collected from subjective
+experiments, which is used as the input to the custom subjective models.
 
 ### Cross Validation
 
-[`run_vmaf_cross_validation.py`](../../compat/python-vmaf/script/run_vmaf_cross_validation.py) provides tools for cross-validation of hyper-parameters and models. `run_vmaf_cv` runs training on a training dataset using hyper-parameters specified in a parameter file, output a trained model file, and then test the trained model on another test dataset and report testing correlation scores. `run_vmaf_kfold_cv` takes in a dataset file, a parameter file, and a data structure (list of lists) that specifies the folds based on video content's IDs, and run k-fold cross validation on the video dataset. This can be useful for manually tuning the model parameters.
+[`run_vmaf_cross_validation.py`](../../compat/python-vmaf/script/run_vmaf_cross_validation.py)
+provides tools for cross-validation of hyper-parameters and models.
+`run_vmaf_cv` runs training on a training dataset using hyper-parameters
+specified in a parameter file, output a trained model file, and then test the
+trained model on another test dataset and report testing correlation scores.
+`run_vmaf_kfold_cv` takes in a dataset file, a parameter file, and a data
+structure (list of lists) that specifies the folds based on video content's IDs,
+and run k-fold cross validation on the video dataset. This can be useful for
+manually tuning the model parameters.
 
 ### Creating New Features And Regressors
 
-You can also customize VMAF by plugging in third-party features or inventing new features, and specify them in a `feature_param_file`. Essentially, the "aggregate" feature type (for example: `VMAF_feature`) specified in the `feature_dict` corresponds to the `TYPE` field of a `FeatureExtractor` subclass (for example: `VmafFeatureExtractor`). All you need to do is to create a new class extending the `FeatureExtractor` base class.
+You can also customize VMAF by plugging in third-party features or inventing new
+features, and specify them in a `feature_param_file`. Essentially, the
+"aggregate" feature type (for example: `VMAF_feature`) specified in the
+`feature_dict` corresponds to the `TYPE` field of a `FeatureExtractor` subclass
+(for example: `VmafFeatureExtractor`). All you need to do is to create a new
+class extending the `FeatureExtractor` base class.
 
-Similarly, you can plug in a third-party regressor or invent a new regressor and specify them in a `model_param_file`. The `model_type` (for example: `LIBSVMNUSVR`) corresponds to the `TYPE` field of a `TrainTestModel` subclass (for example: `LibsvmnusvrTrainTestModel`). All needed is to create a new class extending the `TrainTestModel` base class.
+Similarly, you can plug in a third-party regressor or invent a new regressor and
+specify them in a `model_param_file`. The `model_type` (for example:
+`LIBSVMNUSVR`) corresponds to the `TYPE` field of a `TrainTestModel` subclass
+(for example: `LibsvmnusvrTrainTestModel`). All needed is to create a new class
+extending the `TrainTestModel` base class.
 
-For instructions on how to extending the `FeatureExtractor` and `TrainTestModel` base classes, refer to [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+For instructions on how to extending the `FeatureExtractor` and `TrainTestModel`
+base classes, refer to [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
 ## Analysis Tools
 
-Overtime, a number of helper tools have been incorporated into the package, to facilitate training and validating VMAF models. An overview of the tools available can be found in [this slide deck](../reference/presentations/VQEG_SAM_2018_111_AnalysisToolsInVMAF.pdf).
+Overtime, a number of helper tools have been incorporated into the package, to
+facilitate training and validating VMAF models. An overview of the tools
+available can be found in
+[this slide deck](../reference/presentations/VQEG_SAM_2018_111_AnalysisToolsInVMAF.pdf).
 
 ### BD-Rate Calculator
 
-A Bjøntegaard-Delta (BD) rate [implementation](../../compat/python-vmaf/tools/bd_rate_calculator.py) is added. An example usage is available in [`bd_rate_calculator_test.py`](../../python/test/bd_rate_calculator_test.py). The implementation is validated against [MPEG JCTVC-L1100](http://phenix.int-evry.fr/jct/doc_end_user/current_document.php?id=7281).
+A Bjøntegaard-Delta (BD) rate
+[implementation](../../compat/python-vmaf/tools/bd_rate_calculator.py) is added.
+An example usage is available in
+[`bd_rate_calculator_test.py`](../../python/test/bd_rate_calculator_test.py).
+The implementation is validated against
+[MPEG JCTVC-L1100](http://phenix.int-evry.fr/jct/doc_end_user/current_document.php?id=7281).
 
 ### LIME (Local-Explainer Model-Agnostic Explanation) Implementation
 
-An implementation of [LIME](https://arxiv.org/pdf/1602.04938.pdf) is also added as part of the repository. For more information, refer to our [analysis tools](../reference/presentations/VQEG_SAM_2018_111_AnalysisToolsInVMAF.pdf) presentation. The main idea is to perform a local linear approximation to any regressor or classifier and then use the coefficients of the linearized model as indicators of feature importance. LIME can be used as part of the VMAF regression framework, for example:
+An implementation of [LIME](https://arxiv.org/pdf/1602.04938.pdf) is also added
+as part of the repository. For more information, refer to our
+[analysis tools](../reference/presentations/VQEG_SAM_2018_111_AnalysisToolsInVMAF.pdf)
+presentation. The main idea is to perform a local linear approximation to any
+regressor or classifier and then use the coefficients of the linearized model as
+indicators of feature importance. LIME can be used as part of the VMAF
+regression framework, for example:
 
 ```bash
 python -m vmaf.script.run_vmaf \
@@ -400,7 +498,8 @@ python -m vmaf.script.run_vmaf \
     --local-explain
 ```
 
-Naturally, LIME can also be applied to any other regression scheme as long as there exists a pre-trained model. For example, applying to BRISQUE:
+Naturally, LIME can also be applied to any other regression scheme as long as
+there exists a pre-trained model. For example, applying to BRISQUE:
 
 ```bash
 python -m vmaf.script.run_vmaf yuv420p 576 324 \
@@ -414,7 +513,9 @@ python -m vmaf.script.run_vmaf yuv420p 576 324 \
 
 ### Convert Model File from pickle (pkl) to json
 
-A tool to convert a model file (currently support libsvm model) from pickle to json is added at `compat/python-vmaf/script/convert_model_from_pkl_to_json.py`. Usage:
+A tool to convert a model file (currently support libsvm model) from pickle to
+json is added at `compat/python-vmaf/script/convert_model_from_pkl_to_json.py`.
+Usage:
 
 ```text
 usage: convert_model_from_pkl_to_json.py [-h] --input-pkl-filepath
@@ -447,67 +548,127 @@ compat/python-vmaf/script/convert_model_from_pkl_to_json.py \
 
 ## Core Classes
 
-The core classes of the VMAF Python library can be depicted in the diagram below:
+The core classes of the VMAF Python library can be depicted in the diagram
+below:
 
 ![UML](../../compat/python-vmaf/resource/images/uml.png)
 
 ### Asset
 
-An Asset is the most basic unit with enough information to perform a task on a media. It includes basic information about a distorted video and its undistorted reference counterpart, as well as the auxiliary preprocessing information that can be understood by the `Executor` and its subclasses. For example:
+An Asset is the most basic unit with enough information to perform a task on a
+media. It includes basic information about a distorted video and its undistorted
+reference counterpart, as well as the auxiliary preprocessing information that
+can be understood by the `Executor` and its subclasses. For example:
 
-- The frame range on which to perform a task (i.e. `dis_start_end_frame` and `ref_start_end_frame`)
-- At what resolution to perform a task (e.g. a video frame is upscaled with a `resampling_type` method to the resolution specified by `quality_width_height` before feature extraction)
+- The frame range on which to perform a task (i.e. `dis_start_end_frame` and
+  `ref_start_end_frame`)
+- At what resolution to perform a task (e.g. a video frame is upscaled with a
+  `resampling_type` method to the resolution specified by `quality_width_height`
+  before feature extraction)
 - Optional FFmpeg preprocessing filters in `asset_dict`. Shared keys such as
   `crop_cmd`, `pad_cmd`, `fps_cmd`, `format_cmd`, `gblur_cmd`, `eq_cmd`,
   `lutyuv_cmd`, and `yadif_cmd` apply to both reference and distorted inputs;
   target-specific keys such as `ref_fps_cmd` or `dis_fps_cmd` override the
   shared value for one side.
 
-Asset extends the `WorkdirEnabled` mixin, which comes with a thread-safe working directory to facilitate parallel execution.
+Asset extends the `WorkdirEnabled` mixin, which comes with a thread-safe working
+directory to facilitate parallel execution.
 
 ### Executor
 
-An `Executor` takes a list of `Assets` as input, run computations on them, and return a list of corresponding `Results`. An `Executor` extends the `TypeVersionEnabled` mixin, and must specify a unique type and version combination (by the `TYPE` and `VERSION` attribute), so that the `Result` generated by it can be uniquely identified. This facilitates a number of shared housekeeping functions, including storing and reusing `Results` (`result_store`), creating FIFO pipes (`fifo_mode`), etc. `Executor` understands the preprocessing steps specified in its input `Assets`. It relies on FFmpeg to do the processing for it (FFmpeg must be pre-installed and its path specified in the `FFMPEG_PATH` field in the `compat/python-vmaf/config.py` file).
+An `Executor` takes a list of `Assets` as input, run computations on them, and
+return a list of corresponding `Results`. An `Executor` extends the
+`TypeVersionEnabled` mixin, and must specify a unique type and version
+combination (by the `TYPE` and `VERSION` attribute), so that the `Result`
+generated by it can be uniquely identified. This facilitates a number of shared
+housekeeping functions, including storing and reusing `Results`
+(`result_store`), creating FIFO pipes (`fifo_mode`), etc. `Executor` understands
+the preprocessing steps specified in its input `Assets`. It relies on FFmpeg to
+do the processing for it (FFmpeg must be pre-installed and its path specified in
+the `FFMPEG_PATH` field in the `compat/python-vmaf/config.py` file).
 
-An `Executor` and its subclasses can take optional parameters during initialization. There are two fields to put the optional parameters:
+An `Executor` and its subclasses can take optional parameters during
+initialization. There are two fields to put the optional parameters:
 
-- `optional_dict`: a dictionary field to specify parameters that will impact numerical result (e.g. which wavelet transform to use).
-- `optional_dict2`: a dictionary field to specify parameters that will NOT impact numerical result (e.g. outputting optional results).
+- `optional_dict`: a dictionary field to specify parameters that will impact
+  numerical result (e.g. which wavelet transform to use).
+- `optional_dict2`: a dictionary field to specify parameters that will NOT
+  impact numerical result (e.g. outputting optional results).
 
-`Executor` is the base class for `FeatureExtractor` and `QualityRunner` (and the sub-subclass `VmafQualityRunner`).
+`Executor` is the base class for `FeatureExtractor` and `QualityRunner` (and the
+sub-subclass `VmafQualityRunner`).
 
 ### Result
 
-A `Result` is a key-value store of read-only execution results generated by an `Executor` on an `Asset`. A key corresponds to an "atom" feature type or a type of a quality score, and a value is a list of score values, each corresponding to a computation unit (i.e. in the current implementation, a frame).
+A `Result` is a key-value store of read-only execution results generated by an
+`Executor` on an `Asset`. A key corresponds to an "atom" feature type or a type
+of a quality score, and a value is a list of score values, each corresponding to
+a computation unit (i.e. in the current implementation, a frame).
 
-The `Result` class also provides a number of tools for aggregating the per-unit scores into an average score. The default aggregatijon method is the mean, but `Result.set_score_aggregate_method()` allows customizing other methods (see `test_to_score_str()` in `test/result_test.py` for examples).
+The `Result` class also provides a number of tools for aggregating the per-unit
+scores into an average score. The default aggregatijon method is the mean, but
+`Result.set_score_aggregate_method()` allows customizing other methods (see
+`test_to_score_str()` in `test/result_test.py` for examples).
 
 ### ResultStore
 
-`ResultStore` provides capability to save and load a `Result`. Current implementation `FileSystemResultStore` persists results by a simple file system that save/load result in a directory. The directory has multiple subdirectories, each corresponding to an `Executor`. Each subdirectory contains multiple files, each file storing the dataframe for an `Asset`.
+`ResultStore` provides capability to save and load a `Result`. Current
+implementation `FileSystemResultStore` persists results by a simple file system
+that save/load result in a directory. The directory has multiple subdirectories,
+each corresponding to an `Executor`. Each subdirectory contains multiple files,
+each file storing the dataframe for an `Asset`.
 
 ### FeatureExtractor
 
-`FeatureExtractor` subclasses `Executor`, and is specifically for extracting features (aka elementary quality metrics) from `Assets`. Any concrete feature extraction implementation should extend the `FeatureExtractor` base class (e.g. `VmafFeatureExtractor`). The `TYPE` field corresponds to the "aggregate" feature name, and the `ATOM_FEATURES`/`DERIVED_ATOM_FEATURES` field corresponds to the "atom" feature names.
+`FeatureExtractor` subclasses `Executor`, and is specifically for extracting
+features (aka elementary quality metrics) from `Assets`. Any concrete feature
+extraction implementation should extend the `FeatureExtractor` base class (e.g.
+`VmafFeatureExtractor`). The `TYPE` field corresponds to the "aggregate" feature
+name, and the `ATOM_FEATURES`/`DERIVED_ATOM_FEATURES` field corresponds to the
+"atom" feature names.
 
 ### FeatureAssembler
 
-`FeatureAssembler` assembles features for an input list of `Assets` on a input list of `FeatureExtractor` subclasses. The constructor argument `feature_dict` specifies the list of `FeatureExtractor` subclasses (i.e. the "aggregate" feature) and selected "atom" features. For each asset on a `FeatureExtractor`, it outputs a `BasicResult` object. `FeatureAssembler` is used by a `QualityRunner` to assemble the vector of features to be used by a `TrainTestModel`.
+`FeatureAssembler` assembles features for an input list of `Assets` on a input
+list of `FeatureExtractor` subclasses. The constructor argument `feature_dict`
+specifies the list of `FeatureExtractor` subclasses (i.e. the "aggregate"
+feature) and selected "atom" features. For each asset on a `FeatureExtractor`,
+it outputs a `BasicResult` object. `FeatureAssembler` is used by a
+`QualityRunner` to assemble the vector of features to be used by a
+`TrainTestModel`.
 
 ### TrainTestModel
 
-`TrainTestModel` is the base class for any concrete implementation of regressor, which must provide a `train()` method to perform training on a set of data and their groud-truth labels, and a `predict()` method to predict the labels on a set of data, and a `to_file()` and a `from_file()` method to save and load trained models.
+`TrainTestModel` is the base class for any concrete implementation of regressor,
+which must provide a `train()` method to perform training on a set of data and
+their groud-truth labels, and a `predict()` method to predict the labels on a
+set of data, and a `to_file()` and a `from_file()` method to save and load
+trained models.
 
-A `TrainTestModel` constructor must supply a dictionary of parameters (i.e. `param_dict`) that contains the regressor's hyper-parameters. The base class also provides shared functionalities such as input data normalization/output data denormalization, evaluating prediction performance, etc.
+A `TrainTestModel` constructor must supply a dictionary of parameters (i.e.
+`param_dict`) that contains the regressor's hyper-parameters. The base class
+also provides shared functionalities such as input data normalization/output
+data denormalization, evaluating prediction performance, etc.
 
-Like an `Executor`, a `TrainTestModel` extends `TypeVersionEnabled` and must specify a unique type and version combination (by the `TYPE` and `VERSION` attribute).
+Like an `Executor`, a `TrainTestModel` extends `TypeVersionEnabled` and must
+specify a unique type and version combination (by the `TYPE` and `VERSION`
+attribute).
 
 ### CrossValidation
 
-`CrossValidation` provides a collection of static methods to facilitate validation of a `TrainTestModel` object. As such, it also provides means to search the optimal hyper-parameter set for a `TrainTestModel` object.
+`CrossValidation` provides a collection of static methods to facilitate
+validation of a `TrainTestModel` object. As such, it also provides means to
+search the optimal hyper-parameter set for a `TrainTestModel` object.
 
 ### QualityRunner
 
-`QualityRunner` subclasses `Executor`, and is specifically for evaluating the quality score for `Assets`. Any concrete implementation to generate the final quality score should extend the `QualityRunner` base class (e.g. `VmafQualityRunner`, `PsnrQualityRunner`).
+`QualityRunner` subclasses `Executor`, and is specifically for evaluating the
+quality score for `Assets`. Any concrete implementation to generate the final
+quality score should extend the `QualityRunner` base class (e.g.
+`VmafQualityRunner`, `PsnrQualityRunner`).
 
-There are two ways to extend a `QualityRunner` base class -- either by directly implementing the quality calculation (e.g. by calling a C executable, as in `PsnrQualityRunner`), or by calling a `FeatureAssembler` (with indirectly calls a `FeatureExtractor`) and a `TrainTestModel` subclass (as in `VmafQualityRunner`).
+There are two ways to extend a `QualityRunner` base class -- either by directly
+implementing the quality calculation (e.g. by calling a C executable, as in
+`PsnrQualityRunner`), or by calling a `FeatureAssembler` (with indirectly calls
+a `FeatureExtractor`) and a `TrainTestModel` subclass (as in
+`VmafQualityRunner`).

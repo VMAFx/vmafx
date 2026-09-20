@@ -25,12 +25,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -89,7 +90,7 @@ def _write_report(
     write_manifest_json(args.out_json, payload)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -108,8 +109,34 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional v1 ONNX path; if provided, diff v2 vs v1 predictions.",
     )
     ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    return ap.parse_args(raw_argv)
+
+
+def _diff_v1(args: argparse.Namespace, x: np.ndarray, pred: np.ndarray):  # type: ignore[no-untyped-def]
+    if args.v1_onnx is None or not args.v1_onnx.exists():
+        return None
+    try:
+        mean = x.mean(axis=0)
+        std = x.std(axis=0)
+        std = np.where(std < 1e-8, 1.0, std)
+        x_standardized = (x - mean) / std
+        import onnxruntime as ort
+
+        session = ort.InferenceSession(str(args.v1_onnx), providers=["CPUExecutionProvider"])
+        input_name = session.get_inputs()[0].name
+        v1_pred = session.run(None, {input_name: x_standardized.astype(np.float32)})[0].reshape(-1)
+        delta = pred.astype(np.float64) - v1_pred.astype(np.float64)
+        diff = {"mean": float(delta.mean()), "max_abs": float(np.max(np.abs(delta)))}
+        print(f"[validate-v2] v2-v1 delta: mean={diff['mean']:+.3f} max_abs={diff['max_abs']:.3f}")
+        return diff
+    except Exception as exc:
+        print(f"[validate-v2] v1 diff skipped: {exc}")
+        return {"error": str(exc)}
+
+
+def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    args = _parse_args(raw_argv)
 
     import pandas as pd
 
@@ -131,35 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[validate-v2] sample preds: {pred[:5].round(3).tolist()}")
     print(f"[validate-v2] sample truth: {y[:5].round(3).tolist()}")
 
-    if args.v1_onnx is not None and args.v1_onnx.exists():
-        # v1 graph layout differs (input name, no scaler). We feed the
-        # standardised features the v1 trainer expects (z-score on the
-        # parquet slice itself) — best-effort diff just to confirm the
-        # two models live on the same scale.
-        try:
-            mu = x.mean(axis=0)
-            sd = x.std(axis=0)
-            sd = np.where(sd < 1e-8, 1.0, sd)
-            x_z = (x - mu) / sd
-            import onnxruntime as ort
-
-            sess1 = ort.InferenceSession(str(args.v1_onnx), providers=["CPUExecutionProvider"])
-            v1_in = sess1.get_inputs()[0].name
-            v1_pred = sess1.run(None, {v1_in: x_z.astype(np.float32)})[0].reshape(-1)
-            delta = pred.astype(np.float64) - v1_pred.astype(np.float64)
-            diff = {
-                "mean": float(delta.mean()),
-                "max_abs": float(np.max(np.abs(delta))),
-            }
-            print(
-                f"[validate-v2] v2-v1 delta: mean={diff['mean']:+.3f} "
-                f"max_abs={diff['max_abs']:.3f}"
-            )
-        except Exception as exc:
-            diff = {"error": str(exc)}
-            print(f"[validate-v2] v1 diff skipped: {exc}")
-    else:
-        diff = None
+    diff = _diff_v1(args, x, pred)
 
     if args.out_json is not None:
         _write_report(

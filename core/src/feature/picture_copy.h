@@ -15,8 +15,8 @@
  *     limitations under the License.
  *
  */
-#ifndef __VMAF_PICTURE_COPY_H__
-#define __VMAF_PICTURE_COPY_H__
+#ifndef VMAF_PICTURE_COPY_H_
+#define VMAF_PICTURE_COPY_H_
 
 #include <stddef.h>
 
@@ -26,11 +26,11 @@
 extern "C" {
 #endif
 
-void picture_copy(float *dst, ptrdiff_t dst_stride, VmafPicture *src, int offset, unsigned bpc,
-                  int channel);
+void picture_copy(float *dst, ptrdiff_t dst_stride, const VmafPicture *src, int offset,
+                  unsigned bpc, int channel);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __VMAF_PICTURE_COPY_H__ */
+#endif /* VMAF_PICTURE_COPY_H_ */

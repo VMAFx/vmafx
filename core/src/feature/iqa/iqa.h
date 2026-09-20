@@ -31,8 +31,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _IQA_H_
-#define _IQA_H_
+#ifndef IQA_H_
+#define IQA_H_
 
 #include "iqa_os.h"
 
@@ -64,4 +64,4 @@ struct iqa_ms_ssim_args {
         gammas; /**< Pointer to array of gamma values for each scale. Required if 'scales' isn't 5. */
 };
 
-#endif /*_IQA_H_*/
+#endif /* IQA_H_ */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0524: Tiny-model loader accepts symbolic batch dim
 
 - **Status**: Accepted
@@ -84,7 +83,7 @@ ORT-side change is needed — the policy lives in the libvmaf bridge.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fold symbolic batch at the ORT-shape probe layer (`vmaf_ort_input_shape`) so the bridge never sees `-1` | One place to enforce the rule; callers stay simple | Hides ORT's actual contract from any future caller that legitimately needs to see the symbolic dim (e.g. multi-batch tooling) | The bridge is the right policy boundary; the ORT wrapper stays a faithful pass-through |
 | Hard-code batch=1 reject and tell users to re-export their NR models | Smallest patch | All three NR variants would need re-export; this is the same UX trap ADR-0518 closed for rank-2 | Punts the problem onto every model author |
 | Add a `--tiny-batch` CLI flag and a real batched-inference loop | Enables future throughput optimisation | Out of scope; no in-tree consumer needs >1; the scoring loop is per-frame by design | Defer to a dedicated ADR if/when batched inference becomes a goal |

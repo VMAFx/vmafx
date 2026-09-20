@@ -1,4 +1,7 @@
-fix(hip): wire `motion_max_val` clip into `float_motion_hip` collect and flush paths
+# Changelog fragment
+
+fix(hip): wire `motion_max_val` clip into `float_motion_hip` collect and flush
+paths
 
 `float_motion_hip` applied `motion_fps_weight` but never clipped the result
 against `motion_max_val`, causing the option to be silently ignored on the HIP

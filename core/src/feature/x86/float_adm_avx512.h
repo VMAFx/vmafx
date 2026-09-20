@@ -22,16 +22,13 @@
 
 #include "../adm_tools.h"
 
-void float_adm_dwt2_avx512(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
-                           int w, int h, int src_stride, int dst_stride);
+int float_adm_dwt2_avx512(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
+                          int w, int h, int src_stride, int dst_stride);
 
 void float_adm_csf_avx512(const float *src, float *dst, float *flt, int w, int h, int src_stride,
-                          int dst_stride, float factor, float one_by_30);
+                          int dst_stride, float factor, double one_by_30);
 
 float float_adm_csf_den_scale_avx512(const float *src, int w, int h, int src_stride, int left,
                                      int top, int right, int bottom, float factor);
-
-float float_adm_sum_cube_avx512(const float *x, int w, int h, int stride, int left, int top,
-                                int right, int bottom);
 
 #endif /* X86_AVX512_FLOAT_ADM_H_ */

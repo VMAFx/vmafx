@@ -1,1 +1,5 @@
-- Fixed: removed the dead Windows CE `ALIGNED` compatibility guard and a misplaced `environ` declaration that caused redefinition warnings on modern MSVC and MinGW toolchains. (PR #814)
+# Changelog fragment
+
+- Fixed: removed the dead Windows CE `ALIGNED` compatibility guard and a
+  misplaced `environ` declaration that caused redefinition warnings on modern
+  MSVC and MinGW toolchains. (PR #814)

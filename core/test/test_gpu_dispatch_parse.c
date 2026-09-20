@@ -16,15 +16,9 @@
 #include "mu_table.h"
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #include "gpu_dispatch_parse.h"
 
-static const char *const STRATEGY_NAMES[] = {"fastest", "direct", "balanced", NULL};
+static const char *const STRATEGY_NAMES[] = {"fastest", "direct", "balanced", VMAF_NULLPTR};
 
 enum { STRAT_FASTEST = 0, STRAT_DIRECT = 1, STRAT_BALANCED = 2 };
 
@@ -34,7 +28,7 @@ static char *test_direct_matches_direct(void)
     int rc = vmaf_gpu_dispatch_parse_env("feature:direct", "feature", STRATEGY_NAMES, &idx);
     mu_assert("'direct' should match 'direct'", rc == 1);
     mu_assert("'direct' should resolve to STRAT_DIRECT", idx == STRAT_DIRECT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_directx_does_not_match_direct(void)
@@ -47,7 +41,7 @@ static char *test_directx_does_not_match_direct(void)
      * check, so the parser must report no match. */
     mu_assert("'directx' must NOT match 'direct' (no token boundary)", rc == 0);
     mu_assert("idx must remain unchanged on no-match", idx == -1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_direct_comma_separator_matches(void)
@@ -57,7 +51,7 @@ static char *test_direct_comma_separator_matches(void)
                                          &idx);
     mu_assert("'direct,…' should match 'direct'", rc == 1);
     mu_assert("'direct,…' should resolve to STRAT_DIRECT", idx == STRAT_DIRECT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_direct_newline_terminator_matches(void)
@@ -66,7 +60,7 @@ static char *test_direct_newline_terminator_matches(void)
     int rc = vmaf_gpu_dispatch_parse_env("feature:direct\n", "feature", STRATEGY_NAMES, &idx);
     mu_assert("'direct\\n' should match 'direct' (newline is a valid terminator)", rc == 1);
     mu_assert("'direct\\n' should resolve to STRAT_DIRECT", idx == STRAT_DIRECT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fastest_matches_fastest(void)
@@ -75,7 +69,7 @@ static char *test_fastest_matches_fastest(void)
     int rc = vmaf_gpu_dispatch_parse_env("feature:fastest", "feature", STRATEGY_NAMES, &idx);
     mu_assert("'fastest' should match 'fastest'", rc == 1);
     mu_assert("'fastest' should resolve to STRAT_FASTEST", idx == STRAT_FASTEST);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_balanced_prefix_does_not_match_balanced(void)
@@ -85,7 +79,7 @@ static char *test_balanced_prefix_does_not_match_balanced(void)
     int rc = vmaf_gpu_dispatch_parse_env("feature:balancedx", "feature", STRATEGY_NAMES, &idx);
     mu_assert("'balancedx' must NOT match 'balanced'", rc == 0);
     mu_assert("idx must remain unchanged on no-match", idx == -1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_second_token_directx_does_not_match(void)
@@ -97,7 +91,7 @@ static char *test_second_token_directx_does_not_match(void)
                                          &idx);
     mu_assert("typo in second token must NOT match", rc == 0);
     mu_assert("idx must remain unchanged on no-match", idx == -1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_unrelated_feature_not_matched(void)
@@ -106,21 +100,23 @@ static char *test_unrelated_feature_not_matched(void)
     int rc = vmaf_gpu_dispatch_parse_env("other:direct", "feature", STRATEGY_NAMES, &idx);
     mu_assert("unrelated feature must not match", rc == 0);
     mu_assert("idx must remain unchanged on no-match", idx == -1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_null_inputs_safe(void)
 {
     int idx = -1;
     mu_assert("NULL env_value returns 0",
-              vmaf_gpu_dispatch_parse_env(NULL, "feature", STRATEGY_NAMES, &idx) == 0);
+              vmaf_gpu_dispatch_parse_env(VMAF_NULLPTR, "feature", STRATEGY_NAMES, &idx) == 0);
     mu_assert("NULL feature_name returns 0",
-              vmaf_gpu_dispatch_parse_env("feature:direct", NULL, STRATEGY_NAMES, &idx) == 0);
+              vmaf_gpu_dispatch_parse_env("feature:direct", VMAF_NULLPTR, STRATEGY_NAMES, &idx) ==
+                  0);
     mu_assert("NULL strategy_names returns 0",
-              vmaf_gpu_dispatch_parse_env("feature:direct", "feature", NULL, &idx) == 0);
+              vmaf_gpu_dispatch_parse_env("feature:direct", "feature", VMAF_NULLPTR, &idx) == 0);
     mu_assert("NULL out_strategy_idx returns 0",
-              vmaf_gpu_dispatch_parse_env("feature:direct", "feature", STRATEGY_NAMES, NULL) == 0);
-    return NULL;
+              vmaf_gpu_dispatch_parse_env("feature:direct", "feature", STRATEGY_NAMES,
+                                          VMAF_NULLPTR) == 0);
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -138,5 +134,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

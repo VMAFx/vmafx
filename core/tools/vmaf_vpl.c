@@ -54,6 +54,7 @@
 #include "libvmaf/picture.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
+#include "vmaf_nullptr.h"
 
 /* SYCL surface import: DMA-BUF/VA-API on Linux */
 #include "../src/sycl/dmabuf_import.h"
@@ -113,7 +114,7 @@ static void vpl_cleanup_gpu(VplDecoder *dec)
 {
     if (dec->va_display)
         vaTerminate(dec->va_display);
-    dec->va_display = NULL;
+    dec->va_display = VMAF_NULLPTR;
     if (dec->drm_fd >= 0)
         (void)close(dec->drm_fd);
     dec->drm_fd = -1;
@@ -196,7 +197,7 @@ static int vpl_decoder_open(VplDecoder *dec, const char *filename, const char *r
     dec->bs_buf = (uint8_t *)malloc(dec->bs_buf_size);
     if (!dec->bs_buf) {
         (void)fclose(dec->fp);
-        dec->fp = NULL;
+        dec->fp = VMAF_NULLPTR;
         goto fail_session;
     }
 
@@ -297,10 +298,10 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
                             mfxFrameSurface1 **out_held_surf)
 {
     mfxStatus sts;
-    mfxSyncPoint sync = NULL;
-    mfxFrameSurface1 *out_surf = NULL;
+    mfxSyncPoint sync = VMAF_NULLPTR;
+    mfxFrameSurface1 *out_surf = VMAF_NULLPTR;
 
-    *out_held_surf = NULL;
+    *out_held_surf = VMAF_NULLPTR;
 
     for (;;) {
         /* Refill bitstream if needed */
@@ -309,8 +310,8 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
         }
 
         int passing_null = (dec->bs.DataLength == 0 && dec->eof);
-        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? NULL : &dec->bs,
-                                              NULL, /* internal allocation */
+        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? VMAF_NULLPTR : &dec->bs,
+                                              VMAF_NULLPTR, /* internal allocation */
                                               &out_surf, &sync);
 
         if (sts == MFX_ERR_NONE && sync) {
@@ -324,7 +325,7 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
             }
 
             /* Extract VA surface handle */
-            mfxHDL resource = NULL;
+            mfxHDL resource = VMAF_NULLPTR;
             mfxResourceType res_type = MFX_RESOURCE_VA_SURFACE;
             mfxStatus gnh_sts =
                 out_surf->FrameInterface->GetNativeHandle(out_surf, &resource, &res_type);
@@ -443,15 +444,15 @@ static int vpl_host_upload_fallback(VADisplay va_display, VASurfaceID ref_surf,
                                     VASurfaceID dis_surf, int w, int h, int bpc, VmafContext *vmaf,
                                     unsigned frame_idx)
 {
-    assert(va_display != NULL);
-    assert(vmaf != NULL);
+    assert(va_display != VMAF_NULLPTR);
+    assert(vmaf != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
     assert(bpc == 8 || bpc == 10);
 
     VAImage ref_img;
     VAImage dis_img;
-    void *ref_map = NULL;
-    void *dis_map = NULL;
+    void *ref_map = VMAF_NULLPTR;
+    void *dis_map = VMAF_NULLPTR;
     VmafPicture ref_pic;
     VmafPicture dis_pic;
     int have_ref_img = 0;
@@ -505,7 +506,6 @@ static int vpl_host_upload_fallback(VADisplay va_display, VASurfaceID ref_surf,
         (void)fprintf(stderr, "vmaf_picture_alloc(dis) failed\n");
         goto cleanup;
     }
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0141 / ADR-0278: defensive flag — kept so a future early-exit `goto cleanup` between this alloc and `vmaf_read_pictures` (which transfers ownership and resets the flag) doesn't leak `dis_pic`. Currently no such exit exists, so the analyzer flags the assignment as dead.
     have_dis_pic = 1;
 
     /* Copy Y plane row-by-row to account for VA pitch ≠ width. NV12/P010
@@ -569,8 +569,8 @@ cleanup:
 
 int main(int argc, char *argv[])
 {
-    const char *ref_file = NULL;
-    const char *dis_file = NULL;
+    const char *ref_file = VMAF_NULLPTR;
+    const char *dis_file = VMAF_NULLPTR;
     const char *model_name = VMAF_DEFAULT_MODEL_VERSION;
     const char *render_node = "/dev/dri/renderD128";
     int max_frames = 0;
@@ -585,7 +585,7 @@ int main(int argc, char *argv[])
         } else if (!strcmp(argv[i], "--model") && i + 1 < argc) {
             model_name = argv[++i];
         } else if (!strcmp(argv[i], "--frames") && i + 1 < argc) {
-            char *end = NULL;
+            char *end = VMAF_NULLPTR;
             const long v = strtol(argv[++i], &end, 10);
             if (end == argv[i] || *end != '\0' || v < 0 || v > INT_MAX) {
                 (void)fprintf(stderr, "Invalid --frames value: %s\n", argv[i]);
@@ -593,7 +593,7 @@ int main(int argc, char *argv[])
             }
             max_frames = (int)v;
         } else if (!strcmp(argv[i], "--device") && i + 1 < argc) {
-            char *end = NULL;
+            char *end = VMAF_NULLPTR;
             const long v = strtol(argv[++i], &end, 10);
             if (end == argv[i] || *end != '\0' || v < 0 || v > INT_MAX) {
                 (void)fprintf(stderr, "Invalid --device value: %s\n", argv[i]);
@@ -662,7 +662,7 @@ int main(int argc, char *argv[])
     printf("Resolution: %dx%d @ %d-bit\n", w, h, bpc);
 
     /* ---- Set up SYCL state ---- */
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = device_idx, .enable_profiling = 0};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
     if (err) {
@@ -673,7 +673,7 @@ int main(int argc, char *argv[])
     }
 
     /* ---- Set up VMAF context ---- */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration vmaf_cfg = {
         .log_level = VMAF_LOG_LEVEL_INFO,
         .n_threads = 1,
@@ -705,7 +705,7 @@ int main(int argc, char *argv[])
      * can consume them directly without registering CPU extractors. */
     const char *features[] = {"vif_sycl", "adm_sycl", "motion_sycl"};
     for (int i = 0; i < 3; i++) {
-        err = vmaf_use_feature(vmaf, features[i], NULL);
+        err = vmaf_use_feature(vmaf, features[i], VMAF_NULLPTR);
         if (err) {
             (void)fprintf(stderr, "vmaf_use_feature(%s) failed: %d\n", features[i], err);
         }
@@ -714,7 +714,7 @@ int main(int argc, char *argv[])
     /* Load VMAF model (for final score computation).
      * We do NOT call vmaf_use_features_from_model() because the SYCL
      * extractors already provide the required features. */
-    VmafModel *model = NULL;
+    VmafModel *model = VMAF_NULLPTR;
     VmafModelConfig model_cfg = {
         .name = model_name,
         .flags = VMAF_MODEL_FLAGS_DEFAULT,
@@ -749,8 +749,8 @@ int main(int argc, char *argv[])
     int dmabuf_ok = 1; /* initially assume DMA-BUF import works */
 
     while (max_frames == 0 || frame_idx < max_frames) {
-        mfxFrameSurface1 *ref_held = NULL;
-        mfxFrameSurface1 *dis_held = NULL;
+        mfxFrameSurface1 *ref_held = VMAF_NULLPTR;
+        mfxFrameSurface1 *dis_held = VMAF_NULLPTR;
         VASurfaceID ref_surf;
         VASurfaceID dis_surf;
 

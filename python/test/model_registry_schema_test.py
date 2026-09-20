@@ -19,6 +19,8 @@ untouched (CLAUDE.md §8).
 from __future__ import annotations
 
 import copy
+import hashlib
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -26,13 +28,21 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
-from validate_model_registry import (  # noqa: E402  pylint: disable=wrong-import-position
-    _consistency_check,
-    _structural_fallback_validate,
-    validate,
-)
+
+def _load_registry_validator():
+    repo_root = str(REPO_ROOT)
+    sys.path.insert(0, repo_root)
+    try:
+        return importlib.import_module("ai.scripts.validate_model_registry")
+    finally:
+        sys.path.remove(repo_root)
+
+
+_VALIDATOR = _load_registry_validator()
+_consistency_check = _VALIDATOR._consistency_check
+_structural_fallback_validate = _VALIDATOR._structural_fallback_validate
+validate = _VALIDATOR.validate
 
 REGISTRY_PATH = REPO_ROOT / "model" / "tiny" / "registry.json"
 SCHEMA_PATH = REPO_ROOT / "model" / "tiny" / "registry.schema.json"
@@ -144,8 +154,6 @@ def test_consistency_rejects_unknown_model_file(tmp_path: Path) -> None:
 def test_consistency_rejects_malformed_bundle_extension(tmp_path: Path) -> None:
     onnx_path = tmp_path / "x.onnx"
     onnx_path.write_bytes(b"")  # empty file is enough; sha mismatch caught separately
-    import hashlib
-
     sha = hashlib.sha256(b"").hexdigest()
     # Sidecar must exist for non-smoke entry.
     (tmp_path / "x.json").write_text("{}", encoding="utf-8")
@@ -166,13 +174,12 @@ def test_consistency_rejects_malformed_bundle_extension(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    "jsonschema" not in sys.modules
-    and pytest.importorskip("jsonschema", reason="optional") is None,
+    importlib.util.find_spec("jsonschema") is None,
     reason="jsonschema not installed; covered by structural fallback",
 )
 def test_jsonschema_rejects_bad_id_pattern() -> None:
     """When jsonschema is installed, the full Draft 2020-12 validator runs."""
-    import jsonschema
+    jsonschema = importlib.import_module("jsonschema")
 
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     bad = {
@@ -199,7 +206,7 @@ def _graph_bakes_scaler(onnx_path: Path) -> bool:
     scan (``0x22`` = field 4 ``NodeProto.op_type``, ``0x03`` = string length).
     """
     try:
-        import onnx  # type: ignore[import-not-found]
+        onnx = importlib.import_module("onnx")
     except ImportError:
         raw = onnx_path.read_bytes()
         return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0582: MS-SSIM `enable_db` and `clip_db` option parity on CUDA and SYCL backends
 
 - **Status**: Accepted
@@ -59,7 +58,7 @@ pre-patch binary on both backends.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Return `-ENOTSUP` when `enable_db=true` on GPU | Simple | Caller gets an opaque error with no guidance; breaks pipelines that use CPU/GPU interchangeably | Masks the bug rather than fixing it |
 | Add all remaining MS-SSIM CPU options in one sweep | Closes more parity gaps | Vulkan already exposes `enable_lcs`/`enable_db`/`clip_db`; a sweep would touch more files without closing the core user-visible bug | Fix the verified gaps; defer future audits |
 

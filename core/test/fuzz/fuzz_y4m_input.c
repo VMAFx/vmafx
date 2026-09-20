@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "vidinput.h"
+#include "../../src/vmaf_nullptr.h"
 
 /* Hard cap on input size: a real Y4M frame can be enormous, but
  * the fuzzer only needs the *header* + one short frame's worth of
@@ -105,7 +106,7 @@ static int header_dimensions_in_bounds(const uint8_t *data, size_t size)
  * external linkage; the runtime resolves it by name at link time
  * (`-fsanitize=fuzzer`). Cannot be static — the `misc-use-internal-
  * linkage` warning is load-bearing-wrong here. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI (ADR-0141 / ADR-0278) */
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     if (size == 0u || size > FUZZ_MAX_INPUT_BYTES)
@@ -116,9 +117,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     /* fmemopen() returns a read-only stream over the supplied
      * buffer. The y4m parser only calls `fread` on it, so the
      * `(void *)` cast (dropping const) is safe. */
-    /* NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — fmemopen reads only (ADR-0141 / ADR-0278) */
+
     FILE *fp = fmemopen((void *)(const void *)data, size, "rb");
-    if (fp == NULL)
+    if (fp == VMAF_NULLPTR)
         return 0;
 
     video_input vid;

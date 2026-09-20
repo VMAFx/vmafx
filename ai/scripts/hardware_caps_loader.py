@@ -50,11 +50,12 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
 _DEFAULT_CSV = _REPO_ROOT / "ai" / "data" / "hardware_caps.csv"
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "arch_name",
@@ -180,7 +181,7 @@ def _parse_row(raw: dict[str, str], *, source: str) -> HardwareCapRow:
     vendor = raw["vendor"].strip().lower()
     if vendor not in {"intel", "amd", "nvidia"}:
         raise HardwareCapsError(
-            f"{source}: arch={arch_name!r}: vendor must be intel|amd|nvidia, " f"got {vendor!r}"
+            f"{source}: arch={arch_name!r}: vendor must be intel|amd|nvidia, got {vendor!r}"
         )
     try:
         gen_year = int(raw["gen_year"])
@@ -243,14 +244,14 @@ def _parse_max_res(
             continue
         if "=" not in entry:
             raise HardwareCapsError(
-                f"{source}: arch={arch_name!r}: max_res entry {entry!r} " "must be codec=WxH"
+                f"{source}: arch={arch_name!r}: max_res entry {entry!r} must be codec=WxH"
             )
         codec, dims = entry.split("=", 1)
         codec = codec.strip().lower()
         match = re.fullmatch(r"(\d+)x(\d+)", dims.strip())
         if not match:
             raise HardwareCapsError(
-                f"{source}: arch={arch_name!r}: max_res dims {dims!r} " "must be WxH"
+                f"{source}: arch={arch_name!r}: max_res dims {dims!r} must be WxH"
             )
         out[codec] = (int(match.group(1)), int(match.group(2)))
     missing = [c for c in codecs if c not in out]
@@ -333,7 +334,7 @@ def cap_vector_for(
         "hwcap_source_url",
         "hwcap_verified_date",
     )
-    blank: dict[str, object] = {k: None for k in keys}
+    blank: dict[str, object] = dict.fromkeys(keys)
     blank["hwcap_known"] = 0
 
     if encoder_arch_hint is None:

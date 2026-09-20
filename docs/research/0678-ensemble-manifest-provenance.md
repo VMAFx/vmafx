@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0678 — Ensemble manifest provenance
 
 ## Question
@@ -24,7 +23,7 @@ it should carry the same replay metadata as the per-seed sidecars.
 ## Alternatives considered
 
 | Option | Benefit | Risk | Decision |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave the direct trainer unchanged | No schema delta | The top-level ensemble manifest stays less reproducible than the newer seed sidecars | Rejected |
 | Store custom `training_metadata` | Smaller local diff | Duplicates ADR-0661 normalization and path hashing | Rejected |
 | Add top-level ADR-0661 `run_provenance` | Matches the rest of the AI refresh sidecars | Slightly larger manifest JSON | Accepted |

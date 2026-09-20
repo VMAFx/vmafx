@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0518: Tiny-model loader accepts external-data and feature-vector ONNX
 
 - **Status**: Accepted
@@ -74,7 +73,7 @@ direct ORT-API probe before the libvmaf-side fix landed.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add `AddExternalInitializersFromFilesInMemory` plumbing | Explicit control over external-data | Unnecessary — ORT auto-resolves siblings from `CreateSession(abs_path, …)` | Adds code for no observable behaviour change |
 | Reject rank-2 with a sharper error and force callers to use a Python wrapper | Smaller patch | Defeats the entire `vmaf --tiny-model` UX for the shipped fr_regressor models | Three of the three production tiny models would remain unusable |
 | Require callers to supply the codec block via a new public API | More correct for codec-aware inference | Out of scope for the load-fix; would block on user-facing CLI design (`--tiny-codec libx264 --tiny-preset slow --tiny-crf 23`) | Documented as a follow-up; pre-seeding the "unknown" one-hot keeps the load + run gate green today |

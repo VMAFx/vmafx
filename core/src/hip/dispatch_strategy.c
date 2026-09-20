@@ -21,7 +21,7 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #ifdef HAVE_HIPCC
-static const char *const g_hip_features[] = {
+static const char *const g_hip_motion_and_pixel_features[] = {
     /* integer_motion_v2_hip */
     "motion_v2_hip",
     "VMAF_integer_feature_motion_v2_sad_score",
@@ -58,6 +58,10 @@ static const char *const g_hip_features[] = {
     /* integer_ms_ssim_hip */
     "integer_ms_ssim_hip",
     "float_ms_ssim",
+    NULL,
+};
+
+static const char *const g_hip_vif_and_adm_features[] = {
     /* float_vif_hip */
     "float_vif_hip",
     "VMAF_feature_vif_scale0_score",
@@ -99,6 +103,10 @@ static const char *const g_hip_features[] = {
     "adm_den_scale2",
     "adm_num_scale3",
     "adm_den_scale3",
+    NULL,
+};
+
+static const char *const g_hip_specialized_features[] = {
     /* ciede_hip */
     "ciede_hip",
     "ciede2000",
@@ -123,6 +131,23 @@ static const char *const g_hip_features[] = {
     "speed_temporal",
     NULL,
 };
+
+static const char *const *const g_hip_feature_groups[] = {
+    g_hip_motion_and_pixel_features,
+    g_hip_vif_and_adm_features,
+    g_hip_specialized_features,
+    NULL,
+};
+
+static int hip_feature_group_contains(const char *const *features, const char *feature)
+{
+    assert(features[0] != NULL);
+    for (size_t i = 0; features[i] != NULL; ++i) {
+        if (strcmp(feature, features[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
 #endif /* HAVE_HIPCC */
 
 int vmaf_hip_dispatch_supports(const VmafHipContext *ctx, const char *feature)
@@ -159,14 +184,12 @@ int vmaf_hip_dispatch_supports(const VmafHipContext *ctx, const char *feature)
         }
     }
 
-    /* Power of 10 rule 5. g_hip_features is NULL-terminated and non-empty by
-     * construction; a table truncated to its terminator would make the scan
-     * below report every feature as unsupported, silently disabling the whole
-     * backend instead of failing loudly. */
-    assert(g_hip_features[0] != NULL);
-
-    for (size_t i = 0; g_hip_features[i]; ++i) {
-        if (strcmp(feature, g_hip_features[i]) == 0)
+    /* Power of 10 rule 5. Every feature group is NULL-terminated and non-empty
+     * by construction. A group truncated to its terminator would silently
+     * disable part of the backend instead of failing loudly. */
+    assert(g_hip_feature_groups[0] != NULL);
+    for (size_t i = 0; g_hip_feature_groups[i] != NULL; ++i) {
+        if (hip_feature_group_contains(g_hip_feature_groups[i], feature))
             return 1;
     }
     return 0;

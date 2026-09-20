@@ -1,1 +1,5 @@
-| [ADR-0644](0644-vmaf-tune-codec-runtime-variants.md) | Add `vmaf-tune compare` codec runtime variants: `ADAPTER@VARIANT` display tokens still route through the base adapter, `--encoder-ffmpeg-bin TOKEN=PATH` binds token-local FFmpeg binaries, and compare JSON/CSV rows now expose `adapter`, `runtime_variant`, and `ffmpeg_bin` provenance metadata. | Accepted | vmaf-tune, ffmpeg, cli, docs |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0644](0644-vmaf-tune-codec-runtime-variants.md) | Add vmaf-tune codec runtime variants | Accepted | `vmaf-tune`, `ffmpeg`, `cli`, `docs`, `fork-local` |

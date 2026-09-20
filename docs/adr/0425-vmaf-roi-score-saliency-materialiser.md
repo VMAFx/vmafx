@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0425: vmaf-roi-score saliency materialiser
 
 - **Status**: Accepted
@@ -33,7 +32,7 @@ a clear error.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Implement 8-bit YUV materialisation in the Python tool | Completes the documented Option C path; no libvmaf numerical drift; easy to test with injected masks | Limited to 8-bit planar YUV; costs a second `vmaf` run | Chosen as the smallest complete user-facing implementation |
 | Extend directly to 10/12/16-bit YUV | Covers HDR and high-bit-depth workflows immediately | Requires separate plane-width handling and more fixtures; larger failure surface | Deferred so the first usable path stays small and auditable |
 | Implement Option A in libvmaf pooling | More mathematically direct and one-pass | Touches numerical core, model semantics, and cross-backend parity | Out of scope for this follow-up; remains future ADR work |

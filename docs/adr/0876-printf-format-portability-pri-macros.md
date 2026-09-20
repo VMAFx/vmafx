@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0876: Adopt `<inttypes.h>` PRI macros for fixed-width integer printf formatting
 
 - **Status**: Accepted
@@ -61,7 +60,7 @@ matching-length-modifier idiom, since no PRI macro applies.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `<inttypes.h>` PRI macros (chosen) | Standard-mandated; portable across LP64 / LLP64 / 32-bit; intent is explicit; readable in lint output | Slight visual overhead at format-string sites (`"%" PRIu64`) | The bar for fork-added portability code is C99 conformance + Windows MinGW build cleanliness — PRI macros are the only spec-mandated way to satisfy both. |
 | Keep `(unsigned long long)` + `%llu` cast pattern | Already in use; works on Linux LP64 and Windows LLP64 (because `unsigned long long >= 64 bits`) | Doesn't express intent for fixed-width types; future readers can't tell if cast is load-bearing; silent truncation if anyone forgets the cast | The `(unsigned long)` + `%lu` variant of the same idiom *does* truncate on Windows LLP64; standardizing on PRI macros prevents the whole class. |
 | `(intmax_t)` + `%jd` everywhere | One idiom for every integer type | `intmax_t` is wider than necessary; loses the type information; less idiomatic | Adds zero portability over PRI macros and reads worse. |

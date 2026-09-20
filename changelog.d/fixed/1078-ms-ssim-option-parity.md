@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - `float_ms_ssim` HIP backend now honours `enable_db` and `clip_db` options
   (previously silently ignored, causing raw linear scores to be returned even
   when dB output was requested). SYCL backend gains all three missing options:

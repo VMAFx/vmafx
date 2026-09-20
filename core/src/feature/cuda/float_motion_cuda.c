@@ -11,6 +11,8 @@
  *  emitted at index-1 with min(prev_motion_score, motion_score).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -28,9 +30,9 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -98,9 +100,44 @@ static const VmafOption options[] = {
 #define FM_BX 16
 #define FM_BY 16
 
-static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                              VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                              VmafPicture *dist_pic_90, unsigned index,
+static void cleanup_float_motion_init(VmafFeatureExtractor *fex)
+{
+    FloatMotionStateCuda *s = fex->priv;
+    VmafCudaBuffer *buffers[] = {s->ref_in, s->blur[0], s->blur[1]};
+    for (unsigned i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
+        if (buffers[i]) {
+            (void)vmaf_cuda_buffer_free(fex->cu_state, buffers[i]);
+            free(buffers[i]);
+        }
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+}
+
+static int init_float_motion_buffers(VmafFeatureExtractor *fex, size_t plane_bytes,
+                                     size_t blur_bytes, size_t partials_bytes)
+{
+    FloatMotionStateCuda *s = fex->priv;
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], blur_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], blur_bytes);
+    if (!ret)
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, partials_bytes);
+    if (!ret) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            ret = -ENOMEM;
+    }
+    if (ret)
+        cleanup_float_motion_init(fex);
+    return ret;
+}
+
+static int extract_force_zero(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                              const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                              const VmafPicture *dist_pic_90, unsigned index,
                               VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic;
@@ -116,6 +153,18 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                                                       "VMAF_feature_motion_score", 0.0, index);
     }
     return err;
+}
+
+static bool configure_force_zero(VmafFeatureExtractor *fex, const FloatMotionStateCuda *s)
+{
+    if (!s->motion_force_zero)
+        return false;
+    fex->extract = extract_force_zero;
+    fex->submit = VMAF_NULLPTR;
+    fex->collect = VMAF_NULLPTR;
+    fex->flush = VMAF_NULLPTR;
+    fex->close = VMAF_NULLPTR;
+    return true;
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -148,7 +197,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -158,16 +207,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_motion_kernel_16bpc"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
-    if (s->motion_force_zero) {
-        fex->extract = extract_force_zero;
-        fex->submit = NULL;
-        fex->collect = NULL;
-        fex->flush = NULL;
-        fex->close = NULL;
+    if (configure_force_zero(fex, s))
         return 0;
-    }
 
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t plane_bytes = (size_t)w * h * bpp;
@@ -177,52 +220,36 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->wg_count = gx * gy;
     const size_t pbytes = (size_t)s->wg_count * sizeof(float);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], blur_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], blur_bytes);
-    if (ret)
-        goto free_buffers;
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
-    if (ret)
-        goto free_buffers;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_buffers;
-    }
-    return 0;
-
-free_buffers:
-    if (s->ref_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->blur[0]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
-        free(s->blur[0]);
-    }
-    if (s->blur[1]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
-        free(s->blur[1]);
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return init_float_motion_buffers(fex, plane_bytes, blur_bytes, pbytes);
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int copy_float_motion_input(FloatMotionStateCuda *s, const VmafPicture *ref_pic,
+                                   ptrdiff_t plane_pitch, CUstream pic_stream, CudaFunctions *cu_f)
+{
+    CUDA_MEMCPY2D copy;
+    memset(&copy, 0, sizeof(copy));
+    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
+    copy.srcPitch = ref_pic->stride[0];
+    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    copy.dstDevice = (CUdeviceptr)s->ref_in->data;
+    copy.dstPitch = plane_pitch;
+    copy.WidthInBytes = plane_pitch;
+    copy.Height = s->frame_h;
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
+    return 0;
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)dist_pic;
     (void)ref_pic_90;
@@ -233,24 +260,16 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     s->index = index;
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * (s->bpc <= 8u ? 1u : 2u));
+    const ptrdiff_t plane_pitch = (ptrdiff_t)s->frame_w * (s->bpc <= 8u ? 1 : 2);
 
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
 
-    /* Cache cur ref pixels into ref_in via D2D copy. */
     CHECK_CUDA_RETURN(cu_f,
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(ref_pic),
                                         CU_EVENT_WAIT_DEFAULT));
-    CUDA_MEMCPY2D copy = {0};
-    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    copy.srcPitch = ref_pic->stride[0];
-    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.dstDevice = (CUdeviceptr)s->ref_in->data;
-    copy.dstPitch = plane_pitch;
-    copy.WidthInBytes = plane_pitch;
-    copy.Height = s->frame_h;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
+    int err = copy_float_motion_input(s, ref_pic, plane_pitch, pic_stream, cu_f);
+    if (err)
+        return err;
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
     const unsigned prev_idx = 1u - cur_idx;
@@ -265,7 +284,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             (void *)&s->frame_h,      (void *)&compute_sad,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
-                                               pic_stream, args, NULL));
+                                               pic_stream, args, VMAF_NULLPTR));
     } else {
         void *args[] = {
             &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
@@ -273,7 +292,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             (void *)&s->frame_h,      (void *)&s->bpc,      (void *)&compute_sad,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
-                                               pic_stream, args, NULL));
+                                               pic_stream, args, VMAF_NULLPTR));
     }
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
@@ -400,7 +419,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_feature_motion2_score",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_float_motion_cuda = {
     .name = "float_motion_cuda",
@@ -414,5 +433,3 @@ VmafFeatureExtractor vmaf_fex_float_motion_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_CUDA,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

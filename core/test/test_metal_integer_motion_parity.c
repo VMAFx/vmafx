@@ -44,12 +44,6 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 #define FIXTURE_BPC 8u
@@ -94,18 +88,18 @@ static char *feed_fixture_pair(VmafContext *vmaf, unsigned frame)
     err = vmaf_read_pictures(vmaf, &ref, &dist, frame);
     if (err)
         return "vmaf_read_pictures failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_integer_motion(double *out_score)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -113,7 +107,7 @@ static char *run_cpu_integer_motion(double *out_score)
         if (feed_err)
             return feed_err;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion2_score", out_score, 0u);
@@ -121,7 +115,7 @@ static char *run_cpu_integer_motion(double *out_score)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_metal_integer_motion(double *out_score)
@@ -130,22 +124,22 @@ static char *run_metal_integer_motion(double *out_score)
     int err = 0;
 
     VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
+    VmafMetalState *mstate = VMAF_NULLPTR;
     err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    if (err != 0 || mstate == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no Metal device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("Metal: vmaf_init failed", !err);
 
     err = vmaf_metal_import_state(vmaf, mstate);
     mu_assert("Metal: vmaf_metal_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "integer_motion_metal", NULL);
+    err = vmaf_use_feature(vmaf, "integer_motion_metal", VMAF_NULLPTR);
     mu_assert("Metal: vmaf_use_feature(integer_motion_metal) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -153,7 +147,7 @@ static char *run_metal_integer_motion(double *out_score)
         if (feed_err)
             return feed_err;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion2_score", out_score, 0u);
@@ -163,7 +157,7 @@ static char *run_metal_integer_motion(double *out_score)
     mu_assert("Metal: vmaf_close failed", !err);
 
     vmaf_metal_state_free(&mstate);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_motion_cpu_metal_parity(void)
@@ -179,7 +173,7 @@ static char *test_integer_motion_cpu_metal_parity(void)
         return msg;
 
     if (isnan(metal_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - metal_score);
     if (delta > PARITY_TOL) {
@@ -189,13 +183,11 @@ static char *test_integer_motion_cpu_metal_parity(void)
     }
     mu_assert("integer_motion CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_integer_motion_cpu_metal_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

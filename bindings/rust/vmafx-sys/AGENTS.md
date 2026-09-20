@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # AGENTS.md — vmafx-sys
 

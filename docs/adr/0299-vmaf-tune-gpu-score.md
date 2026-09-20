@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0299: GPU scoring backend for `vmaf-tune` (`--score-backend`)
 
 - **Status**: Accepted
@@ -66,7 +65,7 @@ haven't migrated.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Always inject `--backend auto` | One-liner change in `score.py` | The libvmaf `auto` heuristic is conservative and routes to CPU on hosts where the user *would* want CUDA but no `--gpumask` is set. No telemetry for which backend ran. | Doesn't actually deliver the 10–30× speedup the user wants by default. |
 | Detect once globally, ignore user preference | Simplest CLI surface (no new flag) | Operators on multi-GPU CI runners need to pin a backend for reproducibility. No way to force CPU for a known-bad GPU driver day. | Loses the strict-mode guarantee (no silent downgrade). |
 | Probe by **invoking** vmaf with each backend and keeping the survivor | Most accurate (catches runtime init failures, not just driver presence) | Spawns up to 4 subprocesses per `vmaf-tune` invocation — adds 5–10 s of cold start; doesn't compose with the Phase A "JSONL row per cell" mental model. | Too slow for an interactive selection step. |

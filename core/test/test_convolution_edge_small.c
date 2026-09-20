@@ -46,12 +46,6 @@
 #include "feature/common/convolution.h"
 #include "feature/common/convolution_internal.h" /* convolution_reflect101 */
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/src/feature/float_motion.c. ADR-1138. */
-
 /* Rows of NaN poison above and below the plane inside each buffer. */
 #define GUARD_ROWS 4
 
@@ -92,8 +86,8 @@ static int poison_buf_alloc(PoisonBuf *b, int stride, int height)
 static void poison_buf_free(PoisonBuf *b)
 {
     free(b->base);
-    b->base = NULL;
-    b->plane = NULL;
+    b->base = VMAF_NULLPTR;
+    b->plane = VMAF_NULLPTR;
 }
 
 /* Fill the w x h sub-rectangle with a finite ramp; leave the row tails and
@@ -144,9 +138,9 @@ static int plane_all_finite(const float *plane, int stride, int width, int heigh
 static int run_case(const float *filter, int filter_width, int width, int height)
 {
     const int stride = width + 8;
-    PoisonBuf src = {0};
-    PoisonBuf dst = {0};
-    PoisonBuf tmp = {0};
+    PoisonBuf src = {VMAF_NULLPTR};
+    PoisonBuf dst = {VMAF_NULLPTR};
+    PoisonBuf tmp = {VMAF_NULLPTR};
     int ok = 0;
 
     if (poison_buf_alloc(&src, stride, height))
@@ -179,7 +173,7 @@ static char *test_scalar_5tap_small_planes(void)
             mu_assert("5-tap scalar convolution escaped the plane", run_case(kFilter5, 5, w, h));
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_scalar_3tap_small_planes(void)
@@ -189,7 +183,7 @@ static char *test_scalar_3tap_small_planes(void)
             mu_assert("3-tap scalar convolution escaped the plane", run_case(kFilter3, 3, w, h));
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_scalar_17tap_small_planes(void)
@@ -199,7 +193,7 @@ static char *test_scalar_17tap_small_planes(void)
             mu_assert("17-tap scalar convolution escaped the plane", run_case(kFilter17, 17, w, h));
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Explicit single-bounce reflect-101 index, valid only for size >= radius + 1.
@@ -301,7 +295,7 @@ static char *test_fold_matches_single_bounce_exactly(void)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* End-to-end cross-check at a size where the fold and a single bounce must
@@ -349,7 +343,7 @@ static char *test_large_plane_matches_single_bounce(void)
     free(ref);
     free(rtmp);
     mu_assert("iterative fold moved an in-contract result", matches);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -360,7 +354,5 @@ char *run_tests(void)
     mu_run_test(test_scalar_17tap_small_planes);
     mu_run_test(test_fold_matches_single_bounce_exactly);
     mu_run_test(test_large_plane_matches_single_bounce);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

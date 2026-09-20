@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <float.h>
 #include <math.h>
@@ -39,9 +41,9 @@
 #include "arm64/psnr_neon.h"
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -112,7 +114,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {NULL}};
+    {.name = VMAF_NULLPTR}};
 
 static uint32_t sse_line_8_c(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {
@@ -225,7 +227,7 @@ static double psnr_from_mse(double mse, double peak_sq, double psnr_max, bool un
 static char *mse_name[3] = {"mse_y", "mse_cb", "mse_cr"};
 static char *psnr_name[3] = {"psnr_y", "psnr_cb", "psnr_cr"};
 
-static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
+static int psnr(const VmafPicture *ref_pic, const VmafPicture *dist_pic, unsigned index,
                 VmafFeatureCollector *feature_collector, PsnrState *s)
 {
     const uint8_t peak = 255;
@@ -252,9 +254,9 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
+        const double score = psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
 
-        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
+        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], score, index);
         if (s->enable_mse) {
             err |= vmaf_feature_collector_append(feature_collector, mse_name[p], mse, index);
         }
@@ -263,7 +265,7 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
     return err;
 }
 
-static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
+static int psnr_hbd(const VmafPicture *ref_pic, const VmafPicture *dist_pic, unsigned index,
                     VmafFeatureCollector *feature_collector, PsnrState *s)
 {
     const unsigned n = s->enable_chroma ? 3 : 1;
@@ -289,10 +291,10 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr =
+        const double score =
             psnr_from_mse(mse, (double)s->peak * s->peak, s->psnr_max[p], s->uncapped);
 
-        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
+        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], score, index);
         if (s->enable_mse) {
             err |= vmaf_feature_collector_append(feature_collector, mse_name[p], mse, index);
         }
@@ -301,8 +303,9 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
     return err;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     PsnrState *s = fex->priv;
@@ -325,10 +328,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     PsnrState *s = fex->priv;
-    const char *apsnr_name[3] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
-
     int err = 0;
     if (s->enable_apsnr) {
+        static const char *const apsnr_name[3] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
         /* When chroma is disabled only luma (i=0) is accumulated; iterating
          * over disabled planes would invoke log10(0) yielding -inf / NaN.   */
         const unsigned n_planes = s->enable_chroma ? 3u : 1u;
@@ -356,9 +358,8 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
     return (err < 0) ? err : !err;
 }
 
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr = {
     .name = "psnr",
     .options = options,
@@ -380,5 +381,3 @@ VmafFeatureExtractor vmaf_fex_psnr = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

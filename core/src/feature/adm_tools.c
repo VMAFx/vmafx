@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -27,6 +29,13 @@
 #include "mem.h"
 #include "adm_options.h"
 #include "adm_tools.h"
+#include "cpu.h"
+#if ARCH_X86
+#include "x86/float_adm_avx2.h"
+#if HAVE_AVX512
+#include "x86/float_adm_avx512.h"
+#endif
+#endif
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795028841971693993751
@@ -85,6 +94,31 @@ typedef struct AdmBorderS {
     int right;
     int bottom;
 } AdmBorderS;
+
+#if ARCH_X86
+typedef void (*AdmCsfBandFn)(const float *, float *, float *, int, int, int, int, float, double);
+typedef float (*AdmCsfDenBandFn)(const float *, int, int, int, int, int, int, int, float);
+
+static AdmCsfBandFn adm_csf_band_fn(void)
+{
+    const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512)
+        return float_adm_csf_avx512;
+#endif
+    return (flags & VMAF_X86_CPU_FLAG_AVX2) ? float_adm_csf_avx2 : VMAF_NULLPTR;
+}
+
+static AdmCsfDenBandFn adm_csf_den_band_fn(void)
+{
+    const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512)
+        return float_adm_csf_den_scale_avx512;
+#endif
+    return (flags & VMAF_X86_CPU_FLAG_AVX2) ? float_adm_csf_den_scale_avx2 : VMAF_NULLPTR;
+}
+#endif
 
 /* Region that takes part in the reductions: `border_factor` of each frame
  * edge is excluded. */
@@ -185,9 +219,8 @@ static void adm_csf_rfactor_s(int scale, double adm_norm_view_dist, int adm_ref_
 
 /* Fold a row accumulator (h, v, d) into the frame accumulator and reset it.
  * Float accumulators are upstream's golden-gated arithmetic: widening them
- * to double changes the Netflix scores (ADR-0418 widened only
- * adm_sum_cube_s, whose result survives at places=4); ADR-1141 keeps every
- * other ADM reduction bit-exact. */
+ * to double changes the Netflix scores; ADR-1141 keeps every ADM reduction
+ * bit-exact. */
 static inline void adm_fold3_s(float inner[3], float accum[3])
 {
     for (int k = 0; k < 3; ++k) {
@@ -199,39 +232,6 @@ static inline void adm_fold3_s(float inner[3], float accum[3])
 /* ------------------------------------------------------------------------- */
 /* Reductions                                                                */
 /* ------------------------------------------------------------------------- */
-
-float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_factor,
-                     double adm_p_norm)
-{
-    const int px_stride = stride / sizeof(float);
-    const AdmBorderS b = adm_border_s(w, h, border_factor);
-
-    /* ADR-0418: outer accumulator in `double` to satisfy fork semgrep
-     * rule `vmaf-no-double-precision-loss-in-reduction` (cubed-float
-     * reduction drifts between scalar / SIMD paths). Upstream Netflix
-     * ships these as `float`; bumping to `double` is fork-local and
-     * does not change the final `powf(accum, 1.0f / adm_p_norm)` cast
-     * back to float at places=4 precision. */
-    double accum = 0;
-
-    for (int i = b.top; i < b.bottom; ++i) {
-        double accum_inner = 0;
-
-        for (int j = b.left; j < b.right; ++j) {
-            const float val = fabsf(x[i * px_stride + j]);
-            if (adm_p_norm == 3.0) {
-                accum_inner += (double)val * val * val;
-            } else {
-                accum_inner += powf(val, adm_p_norm);
-            }
-        }
-
-        accum += accum_inner;
-    }
-
-    return powf((float)accum, 1.0f / adm_p_norm) +
-           powf((b.bottom - b.top) * (b.right - b.left) / 32.0f, 1.0f / adm_p_norm);
-}
 
 /* ------------------------------------------------------------------------- */
 /* Decouple                                                                  */
@@ -379,6 +379,22 @@ void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
     /* The computation of the csf values is not required for the regions which lie outside the frame borders */
     const AdmBorderS b = adm_border_filt_s(w, h, border_factor);
 
+#if ARCH_X86
+    AdmCsfBandFn const csf_band = adm_csf_band_fn();
+    if (csf_band) {
+        const int region_w = b.right - b.left;
+        const int region_h = b.bottom - b.top;
+        for (int theta = 0; theta < 3; ++theta) {
+            const ptrdiff_t src_offset = (ptrdiff_t)b.top * src_px_stride + b.left;
+            const ptrdiff_t dst_offset = (ptrdiff_t)b.top * dst_px_stride + b.left;
+            csf_band(src_angles[theta] + src_offset, dst_angles[theta] + dst_offset,
+                     flt_angles[theta] + dst_offset, region_w, region_h, src_stride, dst_stride,
+                     rfactor[theta], FLOAT_ONE_BY_30);
+        }
+        return;
+    }
+#endif
+
     for (int theta = 0; theta < 3; ++theta) {
         const float *src_ptr = src_angles[theta];
         float *dst_ptr = dst_angles[theta];
@@ -397,7 +413,7 @@ void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
     }
 }
 
-/* Combination of adm_csf_s and adm_sum_cube_s for csf_o based den_scale */
+/* CSF filtering plus p-norm reduction for the denominator scale. */
 float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, int w, int h,
                           int src_stride, double border_factor, double adm_norm_view_dist,
                           int adm_ref_display_height, int adm_csf_mode, double luminance_level,
@@ -422,26 +438,39 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
     /* The computation of the denominator scales is not required for the regions which lie outside the frame borders */
     const AdmBorderS b = adm_border_s(w, h, border_factor);
 
-    for (int i = b.top; i < b.bottom; ++i) {
-        const float *src_h = src->band_h + (ptrdiff_t)i * src_px_stride;
-        const float *src_v = src->band_v + (ptrdiff_t)i * src_px_stride;
-        const float *src_d = src->band_d + (ptrdiff_t)i * src_px_stride;
-        for (int j = b.left; j < b.right; ++j) {
-            const float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
-            const float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
-            const float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
+#if ARCH_X86
+    AdmCsfDenBandFn const csf_den_band = adm_csf_den_band_fn();
+    if (adm_p_norm == 3.0 && csf_den_band) {
+        accum[0] = csf_den_band(src->band_h, w, h, src_stride, b.left, b.top, b.right, b.bottom,
+                                rfactor[0]);
+        accum[1] = csf_den_band(src->band_v, w, h, src_stride, b.left, b.top, b.right, b.bottom,
+                                rfactor[1]);
+        accum[2] = csf_den_band(src->band_d, w, h, src_stride, b.left, b.top, b.right, b.bottom,
+                                rfactor[2]);
+    } else
+#endif
+    {
+        for (int i = b.top; i < b.bottom; ++i) {
+            const float *src_h = src->band_h + (ptrdiff_t)i * src_px_stride;
+            const float *src_v = src->band_v + (ptrdiff_t)i * src_px_stride;
+            const float *src_d = src->band_d + (ptrdiff_t)i * src_px_stride;
+            for (int j = b.left; j < b.right; ++j) {
+                const float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
+                const float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
+                const float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
 
-            if (adm_p_norm == 3.0) {
-                inner[0] += abs_csf_o_val_h * abs_csf_o_val_h * abs_csf_o_val_h;
-                inner[1] += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
-                inner[2] += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
-            } else {
-                inner[0] += powf(abs_csf_o_val_h, adm_p_norm);
-                inner[1] += powf(abs_csf_o_val_v, adm_p_norm);
-                inner[2] += powf(abs_csf_o_val_d, adm_p_norm);
+                if (adm_p_norm == 3.0) {
+                    inner[0] += abs_csf_o_val_h * abs_csf_o_val_h * abs_csf_o_val_h;
+                    inner[1] += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
+                    inner[2] += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
+                } else {
+                    inner[0] += powf(abs_csf_o_val_h, adm_p_norm);
+                    inner[1] += powf(abs_csf_o_val_v, adm_p_norm);
+                    inner[2] += powf(abs_csf_o_val_d, adm_p_norm);
+                }
             }
+            adm_fold3_s(inner, accum);
         }
-        adm_fold3_s(inner, accum);
     }
 
     const float den_scale_h =
@@ -688,7 +717,6 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("-ffp-contract=off")))
 #endif
-// NOLINTNEXTLINE(readability-function-size) — ADR-1057 / ADR-1141
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {

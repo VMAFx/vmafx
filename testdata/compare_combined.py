@@ -4,25 +4,37 @@
 
 import json
 import os
-import subprocess
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testdata._command import run_command
+else:
+    try:
+        from testdata._command import run_command
+    except ModuleNotFoundError:
+        from _command import run_command
 
 # Resolve the repo root so this script works from any worktree.
 # Override with VMAF_TESTDATA to point at a different directory.
-_repo_root = subprocess.run(
+_repo_root_text = run_command(
     ["git", "rev-parse", "--show-toplevel"],
     capture_output=True,
     text=True,
-).stdout.strip() or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_default_testdata = os.path.join(_repo_root, "testdata")
-os.chdir(os.environ.get("VMAF_TESTDATA", _default_testdata))
+).stdout.strip()
+_repo_root = Path(_repo_root_text) if _repo_root_text else Path(__file__).resolve().parent.parent
+_default_testdata = _repo_root / "testdata"
+_testdata = Path(os.environ.get("VMAF_TESTDATA", _default_testdata))
 
 for res in ["576", "640", "720", "1080", "4k"]:
-    cpu_file = "scores_cpu_" + res + ".json"
-    sycl_file = "scores_sycl_a380_" + res + ".json"
-    if not os.path.exists(cpu_file) or not os.path.exists(sycl_file):
+    cpu_file = _testdata / f"scores_cpu_{res}.json"
+    sycl_file = _testdata / f"scores_sycl_a380_{res}.json"
+    if not cpu_file.exists() or not sycl_file.exists():
         continue
-    cpu = json.load(open(cpu_file))
-    sycl = json.load(open(sycl_file))
+    with cpu_file.open(encoding="utf-8") as cpu_handle:
+        cpu = json.load(cpu_handle)
+    with sycl_file.open(encoding="utf-8") as sycl_handle:
+        sycl = json.load(sycl_handle)
     print("=== %s ===" % res)
     max_diff = 0
     max_frame = 0

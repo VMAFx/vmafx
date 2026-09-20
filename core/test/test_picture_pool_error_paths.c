@@ -33,11 +33,6 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -97,7 +92,7 @@ static void *waiter_thread_func(void *arg)
         d->result = err;
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /**
@@ -118,7 +113,7 @@ static char *test_pool_waiter_woken_on_unref()
         .pix_fmt = VMAF_PIX_FMT_YUV420P,
     };
 
-    VmafPicturePool *pool = NULL;
+    VmafPicturePool *pool = VMAF_NULLPTR;
     int err = vmaf_picture_pool_init(&pool, cfg);
     mu_assert("vmaf_picture_pool_init should succeed", !err);
     mu_assert("pool should not be NULL", pool);
@@ -131,7 +126,7 @@ static char *test_pool_waiter_woken_on_unref()
     /* Spawn a thread that will block waiting for a picture. */
     WaiterData wd = {.pool = pool, .result = -1, .woke = false};
     pthread_t waiter;
-    err = pthread_create(&waiter, NULL, waiter_thread_func, &wd);
+    err = pthread_create(&waiter, VMAF_NULLPTR, waiter_thread_func, &wd);
     mu_assert("pthread_create should succeed", !err);
 
     /* Give the waiter time to enter pthread_cond_wait. */
@@ -139,7 +134,7 @@ static char *test_pool_waiter_woken_on_unref()
     Sleep(50); /* 50 ms */
 #else
     struct timespec ts = {.tv_sec = 0, .tv_nsec = 50000000L}; /* 50 ms */
-    (void)nanosleep(&ts, NULL);
+    (void)nanosleep(&ts, VMAF_NULLPTR);
 #endif
 
     /* Return the picture — this should signal the waiter (normal path). */
@@ -147,13 +142,13 @@ static char *test_pool_waiter_woken_on_unref()
     mu_assert("vmaf_picture_unref should succeed", !err);
 
     /* Wait up to 2 s for the waiter thread to complete. */
-    pthread_join(waiter, NULL);
+    pthread_join(waiter, VMAF_NULLPTR);
     mu_assert("waiter should have woken (cond_signal received)", wd.woke);
 
     err = vmaf_picture_pool_close(pool);
     mu_assert("vmaf_picture_pool_close should succeed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /**
@@ -172,15 +167,15 @@ static char *test_pool_fetch_priv_not_null_on_success()
         .pix_fmt = VMAF_PIX_FMT_YUV420P,
     };
 
-    VmafPicturePool *pool = NULL;
+    VmafPicturePool *pool = VMAF_NULLPTR;
     int err = vmaf_picture_pool_init(&pool, cfg);
     mu_assert("vmaf_picture_pool_init should succeed", !err);
 
     VmafPicture pic;
     err = vmaf_picture_pool_fetch(pool, &pic);
     mu_assert("fetch should succeed", !err);
-    mu_assert("pic.priv must not be NULL after a successful fetch", pic.priv != NULL);
-    mu_assert("pic.ref must not be NULL after a successful fetch", pic.ref != NULL);
+    mu_assert("pic.priv must not be NULL after a successful fetch", pic.priv != VMAF_NULLPTR);
+    mu_assert("pic.ref must not be NULL after a successful fetch", pic.ref != VMAF_NULLPTR);
 
     /* Unref releases the picture back to the pool. */
     err = vmaf_picture_unref(&pic);
@@ -189,7 +184,7 @@ static char *test_pool_fetch_priv_not_null_on_success()
     err = vmaf_picture_pool_close(pool);
     mu_assert("vmaf_picture_pool_close should succeed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /**
@@ -209,7 +204,7 @@ static char *test_pool_fetch_unref_refetch()
         .pix_fmt = VMAF_PIX_FMT_YUV420P,
     };
 
-    VmafPicturePool *pool = NULL;
+    VmafPicturePool *pool = VMAF_NULLPTR;
     int err = vmaf_picture_pool_init(&pool, cfg);
     mu_assert("vmaf_picture_pool_init should succeed", !err);
 
@@ -217,7 +212,7 @@ static char *test_pool_fetch_unref_refetch()
     err = vmaf_picture_pool_fetch(pool, &pic1);
     mu_assert("first fetch should succeed", !err);
 
-    void *data0 = pic1.data[0];
+    const void *data0 = pic1.data[0];
 
     err = vmaf_picture_unref(&pic1);
     mu_assert("vmaf_picture_unref should succeed", !err);
@@ -233,7 +228,7 @@ static char *test_pool_fetch_unref_refetch()
     err = vmaf_picture_pool_close(pool);
     mu_assert("vmaf_picture_pool_close should succeed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -241,7 +236,5 @@ char *run_tests()
     mu_run_test(test_pool_fetch_priv_not_null_on_success);
     mu_run_test(test_pool_fetch_unref_refetch);
     mu_run_test(test_pool_waiter_woken_on_unref);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

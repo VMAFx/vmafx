@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Tiny-model registry — schema and verification
 
 The registry at [`model/tiny/registry.json`](../../model/tiny/registry.json)
@@ -162,7 +161,7 @@ the ADR-0042 five-point model-card requirement; no `docs/ai/models/` card
 is expected or needed for them.
 
 | Registry id | Notes |
-|---|---|
+| --- | --- |
 | `smoke_v0` | Minimal ONNX graph used by `test_model_loader.c` smoke test. |
 | `smoke_fp16_v0` | Same graph, fp16 weights — exercises the fp16 loader path. |
 | `smoke_multi_output_v0` | Multi-output fixture (mean_score + peak_score) used by `test_vmaf_use_tiny_model.c` — exercises the attached multi-output DNN path. |

@@ -120,27 +120,57 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
+static char *feed_fixture_frames(VmafContext *vmaf, char *fill_ref_error, char *fill_dist_error,
+                                 char *read_error)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_ref(&ref, i);
+        mu_assert(fill_ref_error, !err);
+        err = fill_dist(&dist, i);
+        mu_assert(fill_dist_error, !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert(read_error, !err);
+    }
+    return VMAF_NULLPTR;
+}
+
+static char *open_cuda_context(VmafContext **vmaf, VmafCudaState **cu_state)
+{
+    const VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
+    int err = vmaf_cuda_state_init(cu_state, cuda_cfg);
+    if (err != 0 || *cu_state == VMAF_NULLPTR) {
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
+        return VMAF_NULLPTR;
+    }
+
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    err = vmaf_init(vmaf, cfg);
+    mu_assert("CUDA: vmaf_init failed", !err);
+    err = vmaf_cuda_import_state(*vmaf, *cu_state);
+    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
+    err = vmaf_use_feature(*vmaf, "float_moment_cuda", VMAF_NULLPTR);
+    mu_assert("CUDA: vmaf_use_feature(float_moment_cuda) failed", !err);
+    return VMAF_NULLPTR;
+}
+
 static char *run_cpu(double *out_scores)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_moment", NULL);
+    err = vmaf_use_feature(vmaf, "float_moment", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(float_moment) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CPU: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CPU: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    char *msg = feed_fixture_frames(vmaf, "CPU: fill_ref failed", "CPU: fill_dist failed",
+                                    "CPU: vmaf_read_pictures failed");
+    if (msg)
+        return msg;
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_MOMENTS; m++) {
@@ -150,7 +180,7 @@ static char *run_cpu(double *out_scores)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(double *out_scores, int *skipped)
@@ -159,37 +189,21 @@ static char *run_cuda(double *out_scores, int *skipped)
     for (unsigned m = 0; m < NUM_MOMENTS; m++)
         out_scores[m] = NAN;
 
-    int err = 0;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafContext *vmaf = VMAF_NULLPTR;
+    char *msg = open_cuda_context(&vmaf, &cu_state);
+    if (msg)
+        return msg;
+    if (cu_state == VMAF_NULLPTR) {
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_moment_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(float_moment_cuda) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CUDA: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CUDA: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    msg = feed_fixture_frames(vmaf, "CUDA: fill_ref failed", "CUDA: fill_dist failed",
+                              "CUDA: vmaf_read_pictures failed");
+    if (msg)
+        return msg;
+    int err = 0;
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_MOMENTS; m++) {
@@ -201,7 +215,7 @@ static char *run_cuda(double *out_scores, int *skipped)
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_moment_cpu_cuda_parity(void)
@@ -217,7 +231,7 @@ static char *test_float_moment_cpu_cuda_parity(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned m = 0; m < NUM_MOMENTS; m++) {
         mu_assert("CPU float_moment score is non-finite", isfinite(cpu_scores[m]));
@@ -232,11 +246,11 @@ static char *test_float_moment_cpu_cuda_parity(void)
         mu_assert("float_moment CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_moment_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

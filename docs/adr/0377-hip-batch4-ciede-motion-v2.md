@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0377: HIP batch-4 — `ciede_hip` and `integer_motion_v2_hip` real kernels
 
 - **Status**: Accepted
@@ -89,7 +88,7 @@ batch-1/2/3 comment block). HIP real-kernel count: 8/11.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Also promote `adm_hip` | Reaches 7/11 | Requires full VmafFeatureExtractor redesign of the host TU + 6 CUDA kernels; multi-stage DWT pipeline with non-trivial equivalence risk | Not a clean fill-in; separate effort needed |
 | Also promote `vif_hip` | Reaches 8/11 | Same wrong API shape as `adm_hip`; multi-scale VIF dispatch is complex | Same as above |
 | Single atomic float instead of per-block partials for ciede | Simpler kernel | Empirically off by ~2 in the score for 1080p (ADR-0187) | Already ruled out by CUDA twin; double accumulation retained |

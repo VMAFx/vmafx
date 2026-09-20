@@ -9,11 +9,12 @@ as well as a set of tools that allows a user to train and test a custom VMAF mod
 """
 
 import ast
-import os
+import importlib
+from pathlib import Path
 
 from setuptools import setup
 
-PYTHON_PROJECT = os.path.dirname(os.path.abspath(__file__))
+PYTHON_PROJECT = Path(__file__).resolve().parent
 
 # Real package location after ADR-0700 repo-layout move. We need two forms:
 #   - COMPAT_VMAF_REL: relative to PYTHON_PROJECT, used in setup() kwargs
@@ -24,14 +25,14 @@ PYTHON_PROJECT = os.path.dirname(os.path.abspath(__file__))
 # (Cython rejects `python-vmaf.core.adm_dwt2_cy` because hyphens are
 # illegal in Python module names; via the symlink it sees
 # `vmaf.core.adm_dwt2_cy`).
-COMPAT_VMAF_REL = os.path.join("..", "compat", "vmaf")
-COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, COMPAT_VMAF_REL))
+COMPAT_VMAF_REL = Path("..") / "compat" / "vmaf"
+COMPAT_VMAF = (PYTHON_PROJECT / COMPAT_VMAF_REL).resolve()
 
 
 def get_version():
     """Version from vmaf __init__ (reads from the real package location)."""
     try:
-        with open(os.path.join(COMPAT_VMAF, "__init__.py"), encoding="utf-8") as fh:
+        with (COMPAT_VMAF / "__init__.py").open(encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("__version__"):
                     _, separator, value = line.partition("=")
@@ -40,8 +41,8 @@ def get_version():
                         if isinstance(version, str):
                             return version
 
-    except Exception:
-        pass
+    except (OSError, SyntaxError, ValueError):
+        return "0.0-dev"
 
     return "0.0-dev"
 
@@ -52,15 +53,15 @@ class LazyExtensions(list):
     @property
     def extensions(self):
         if self._extensions is None:
-            import numpy
-            from Cython.Build import cythonize
+            numpy = importlib.import_module("numpy")
+            cythonize = importlib.import_module("Cython.Build").cythonize
 
             # Use the relative path so the resulting Extension's source list
             # stays relative to setup.py (setuptools rejects absolute paths
             # in Extension.sources on macOS Clang the same way it does for
             # package_dir).
             self._extensions = cythonize(
-                [os.path.join(COMPAT_VMAF_REL, "core", "adm_dwt2_cy.pyx")],
+                [str(COMPAT_VMAF_REL / "core" / "adm_dwt2_cy.pyx")],
                 compiler_directives={"language_level": "3"},
             )
             # python/compat/ contains a stub config.h that disables SIMD
@@ -76,7 +77,7 @@ class LazyExtensions(list):
             # included into this C module, so compile it as a real source.
             # language="c++" only selects the C++ driver for the link step —
             # the Cython-generated .c is still compiled as C by extension.
-            self._extensions[0].sources.append(os.path.join("..", "core", "src", "mem.cpp"))
+            self._extensions[0].sources.append(str(Path("..") / "core" / "src" / "mem.cpp"))
             self._extensions[0].language = "c++"
 
         return self._extensions
@@ -91,16 +92,18 @@ class LazyExtensions(list):
         return len(self.extensions)
 
 
+long_description = (PYTHON_PROJECT / "README.rst").read_text(encoding="utf-8")
+
 setup(
     name="vmaf",
     version=get_version(),
     author="Zhi Li",
     author_email="zli@netflix.com",
     description="Video Multimethod Assessment Fusion",
-    long_description=open(os.path.join(PYTHON_PROJECT, "README.rst")).read(),
+    long_description=long_description,
     long_description_content_type="text/x-rst",
     url="https://github.com/Netflix/vmaf",
-    package_dir={"vmaf": COMPAT_VMAF_REL},
+    package_dir={"vmaf": str(COMPAT_VMAF_REL)},
     packages=["vmaf", "vmaf.tools", "vmaf.core", "vmaf.script"],
     package_data={"vmaf": ["py.typed"]},
     include_package_data=True,

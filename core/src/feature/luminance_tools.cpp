@@ -35,7 +35,7 @@
  *   - `std::string_view` drives the EOTF dispatch in
  *     `vmaf_luminance_init_eotf`, eliminating the two `strcmp` calls
  *     and the implicit strlen traversals they entail.
- *   - `nullptr` replaces any legacy `NULL` usage in this TU.
+ *   - `nullptr` replaces any legacy `nullptr` usage in this TU.
  */
 
 #include <algorithm>

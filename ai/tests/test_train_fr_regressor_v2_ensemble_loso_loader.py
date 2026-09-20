@@ -10,20 +10,17 @@ keeps the test runtime sub-second on CPU-only CI hosts.
 from __future__ import annotations
 
 import json
-import sys
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
+try:
+    import numpy as np
+except ImportError:
+    pytest.skip("numpy is not installed", allow_module_level=True)
 
-# pandas / numpy are training-only deps; skip if unavailable in the
-# CPU-only CI install (the doc-only Python lane installs without them).
-pd = pytest.importorskip("pandas")
-np = pytest.importorskip("numpy")
-
-from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402
+from train_fr_regressor_v2_ensemble_loso import (
     CANONICAL_6,
     CODEC_BLOCK_DIM,
     ENCODER_VOCAB,
@@ -31,6 +28,9 @@ from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402
     UNKNOWN_ENCODER_INDEX,
     _load_corpus,
 )
+
+if find_spec("pandas") is None:
+    pytest.skip("pandas is not installed", allow_module_level=True)
 
 
 def _write_synthetic_corpus(path: Path, n_per_source: int = 4) -> None:

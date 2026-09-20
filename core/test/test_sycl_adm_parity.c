@@ -40,12 +40,6 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* Fixture geometry — large enough to clear ADM's 5-tap filter and
  * 4-scale dyadic pyramid (min 32x32 after scale-3 decimation), small
  * enough for fast CI. */
@@ -98,50 +92,50 @@ static int feed_frame(VmafContext *vmaf)
 static char *run_cpu_adm(double *adm2)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "adm", NULL);
+    err = vmaf_use_feature(vmaf, "adm", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_adm2_score", adm2, 0u);
     mu_assert("CPU: VMAF_integer_feature_adm2_score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_sycl_adm(double *adm2)
 {
     *adm2 = NAN;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "adm_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "adm_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(adm_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_adm2_score", adm2, 0u);
     mu_assert("SYCL: VMAF_integer_feature_adm2_score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The default model `vmaf_v1.0.16_3d0h` asks integer ADM for
@@ -161,17 +155,17 @@ static char *run_sycl_adm(double *adm2)
  * python/test/gpu_default_model_test.py, where the delta is <= 5e-06. */
 static VmafFeatureDictionary *model_opts(void)
 {
-    VmafFeatureDictionary *d = NULL;
+    VmafFeatureDictionary *d = VMAF_NULLPTR;
     if (vmaf_feature_dictionary_set(&d, "adm_csf_mode", "2"))
-        return NULL;
+        return VMAF_NULLPTR;
     if (vmaf_feature_dictionary_set(&d, "adm_dlm_weight", "0.7"))
-        return NULL;
+        return VMAF_NULLPTR;
     if (vmaf_feature_dictionary_set(&d, "adm_enhn_gain_limit", "1.0"))
-        return NULL;
+        return VMAF_NULLPTR;
     if (vmaf_feature_dictionary_set(&d, "adm_min_val", "0.5"))
-        return NULL;
+        return VMAF_NULLPTR;
     if (vmaf_feature_dictionary_set(&d, "adm_noise_weight", "0.02"))
-        return NULL;
+        return VMAF_NULLPTR;
     return d;
 }
 
@@ -186,24 +180,23 @@ static const char *const MODEL_KEYS[] = {
 };
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
 {
     for (unsigned k = 0; k < NUM_MODEL_KEYS; k++)
         out[k] = NAN;
 
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     if (use_sycl) {
         VmafSyclConfiguration sycl_cfg = {.device_index = -1};
         const int sy_err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-        if (sy_err != 0 || sycl_state == NULL) {
+        if (sy_err != 0 || sycl_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no SYCL device] ");
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("model-opts: vmaf_init failed", !err);
     if (use_sycl) {
@@ -212,13 +205,13 @@ static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
     }
 
     VmafFeatureDictionary *opts = model_opts();
-    mu_assert("model-opts: dictionary build failed", opts != NULL);
+    mu_assert("model-opts: dictionary build failed", opts != VMAF_NULLPTR);
     err = vmaf_use_feature(vmaf, use_sycl ? "adm_sycl" : "adm", opts);
     mu_assert("model-opts: vmaf_use_feature failed", !err);
 
     err = feed_frame(vmaf);
     mu_assert("model-opts: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("model-opts: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
@@ -234,21 +227,21 @@ static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
     mu_assert("model-opts: vmaf_close failed", !err);
     if (use_sycl)
         vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Every option the CPU table declares must also exist, with the same alias,
  * type and feature-param flag, in the SYCL table — otherwise the emitted
  * feature-name key diverges. */
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *test_adm_sycl_option_table_mirrors_cpu(void)
 {
     VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
     VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_sycl");
-    mu_assert("adm extractor must be registered", cpu != NULL);
-    mu_assert("adm_sycl extractor must be registered", gpu != NULL);
-    mu_assert("adm must declare options", cpu->options != NULL);
-    mu_assert("adm_sycl must declare options", gpu->options != NULL);
+    mu_assert("adm extractor must be registered", cpu != VMAF_NULLPTR);
+    mu_assert("adm_sycl extractor must be registered", gpu != VMAF_NULLPTR);
+    mu_assert("adm must declare options", cpu->options != VMAF_NULLPTR);
+    mu_assert("adm_sycl must declare options", gpu->options != VMAF_NULLPTR);
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
         const VmafOption *a = &cpu->options[i];
@@ -257,7 +250,7 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
          * declared-and-ignored. */
         if (!strcmp(a->name, "adm_skip_aim"))
             continue;
-        const VmafOption *b = NULL;
+        const VmafOption *b = VMAF_NULLPTR;
         for (unsigned j = 0; gpu->options[j].name; j++) {
             if (!strcmp(gpu->options[j].name, a->name)) {
                 b = &gpu->options[j];
@@ -266,16 +259,16 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
         }
         if (!b)
             (void)fprintf(stderr, "\nadm_sycl is missing CPU option \"%s\"\n", a->name);
-        mu_assert("adm_sycl option table is missing a CPU option", b != NULL);
+        mu_assert("adm_sycl option table is missing a CPU option", b != VMAF_NULLPTR);
         mu_assert("adm_sycl option type differs from CPU", a->type == b->type);
         mu_assert("adm_sycl feature-param flag differs from CPU",
                   (a->flags & VMAF_OPT_FLAG_FEATURE_PARAM) ==
                       (b->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
         mu_assert("adm_sycl option alias differs from CPU",
-                  (a->alias == NULL) == (b->alias == NULL) &&
-                      (a->alias == NULL || !strcmp(a->alias, b->alias)));
+                  (a->alias == VMAF_NULLPTR) == (b->alias == VMAF_NULLPTR) &&
+                      (a->alias == VMAF_NULLPTR || !strcmp(a->alias, b->alias)));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Never fabricate a feature to make a name resolve: this twin has no AIM
@@ -284,15 +277,15 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
 static char *test_adm_sycl_does_not_claim_aim(void)
 {
     VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_sycl");
-    mu_assert("adm_sycl extractor must be registered", gpu != NULL);
-    mu_assert("adm_sycl must declare provided_features", gpu->provided_features != NULL);
+    mu_assert("adm_sycl extractor must be registered", gpu != VMAF_NULLPTR);
+    mu_assert("adm_sycl must declare provided_features", gpu->provided_features != VMAF_NULLPTR);
     for (unsigned i = 0; gpu->provided_features[i]; i++) {
         mu_assert("adm_sycl must not claim VMAF_integer_feature_aim_score",
                   strcmp(gpu->provided_features[i], "VMAF_integer_feature_aim_score") != 0);
         mu_assert("adm_sycl must not claim VMAF_integer_feature_adm3_score",
                   strcmp(gpu->provided_features[i], "VMAF_integer_feature_adm3_score") != 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Structural half of the model-option contract, and the half that is
@@ -336,7 +329,7 @@ static char *test_adm_cpu_sycl_model_option_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu[0]))
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
         const double delta = fabs(cpu[k] - gpu[k]);
@@ -349,15 +342,15 @@ static char *test_adm_cpu_sycl_model_option_parity(void)
         mu_assert("adm model-opt CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm_sycl");
-    mu_assert("adm_sycl extractor must be registered", fex != NULL);
+    mu_assert("adm_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("adm_sycl name matches", !strcmp(fex->name, "adm_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_cpu_sycl_parity(void)
@@ -371,14 +364,14 @@ static char *test_adm_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (isnan(sycl_adm2))
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu_adm2 - sycl_adm2);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\nadm2 parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
                       cpu_adm2, sycl_adm2, delta, PARITY_TOL);
     }
     mu_assert("adm2 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -395,7 +388,5 @@ char *run_tests(void)
     mu_run_test(test_adm_cpu_sycl_model_option_keys);
     mu_run_test(test_adm_cpu_sycl_model_option_parity);
     mu_run_test(test_adm_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

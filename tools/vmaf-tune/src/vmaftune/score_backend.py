@@ -53,7 +53,10 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
+
+if TYPE_CHECKING:
+    import numpy as np
 
 _log = logging.getLogger(__name__)
 
@@ -685,7 +688,7 @@ def _extract_middle_luma_frame(
     width: int,
     height: int,
     pix_fmt: str,
-) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
+) -> np.ndarray:
     """Read the middle frame's luma plane from a raw YUV file.
 
     Returns a 2-D ``uint8`` numpy array of shape ``(height, width)``.
@@ -745,7 +748,7 @@ def _extract_middle_luma_frame(
     return arr_u8.reshape(height, width)
 
 
-def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
+def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray:
     """Resize luma frame to 224×224 using simple bilinear interpolation.
 
     Uses ``cv2`` when available (faster); falls back to a pure-numpy

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0208: First per-model QAT — `learned_filter_v1` int8 (T5-4)
 
 - **Status**: Accepted
@@ -130,7 +129,7 @@ per-model design work, per ADR-0207's "third quant tier" goal.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A. Two-step PyTorch-QAT → fp32 ONNX → ORT static-quantize** *(chosen)* | Sidesteps both PyTorch 2.11 ONNX exporter bugs; produces a QDQ ONNX bit-identical in structure to the existing PTQ-static path; ORT loads on every EP (CPU/CUDA/OpenVINO); preserves the QAT weight-conditioning effect | The exported `.int8.onnx` cannot be distinguished from a PTQ-static artefact by graph inspection alone — provenance is registry/sidecar only | Picked. Only path that works on PyTorch 2.11 + ORT 1.25 today. |
 | B. `convert_fx` → `torch.onnx.export(..., dynamo=False)` (per ADR-0207 §4) | Single-step pipeline; matches the "modern" PyTorch QAT story | Legacy exporter emits `quantized::conv2d` / `quantized::add` — non-standard ONNX ops; ORT refuses to load | PyTorch's QAT story is forward-looking; today's exporter cannot produce a QDQ ONNX from `convert_fx`. |
 | C. `convert_fx` → `torch.onnx.export(..., dynamo=True)` (TorchDynamo) | "Forward-looking" exporter | Hits `Conv2dPackedParamsBase.__obj_flatten__` AttributeError on every QAT-converted module in PyTorch 2.11 | PyTorch open issue; not ours to fix this PR. |

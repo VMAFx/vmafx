@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0614: Content-Aware Classifier
 
 **Scope**: Pre-encoding classifier that tags source video with genre, motion
@@ -34,7 +33,7 @@ A content classifier that runs once per clip (10 seconds → tag dict) enables:
 ## Required Tag Set
 
 | Tag category | Values |
-|-------------|--------|
+| ------------- | -------- |
 | `genre` | `live-action`, `animation-2d`, `animation-3d`, `sports`, `talking-head`, `mixed`, `unknown` |
 | `motion_intensity` | `low`, `medium`, `high` |
 | `scene_complexity` | `simple`, `medium`, `complex` |
@@ -115,7 +114,7 @@ RTX 4090 for 11B model.
 **Pros/Cons table**:
 
 | Criterion | Score |
-|-----------|-------|
+| ----------- | ------- |
 | Training needed | None |
 | Runtime cost | 2–5 s / clip |
 | Coverage | All tags |
@@ -127,7 +126,7 @@ RTX 4090 for 11B model.
 Same as A1 but uses the Claude API instead of local Ollama.
 
 | Criterion | Score |
-|-----------|-------|
+| ----------- | ------- |
 | Training needed | None |
 | Runtime cost | 1–3 s / clip + network |
 | Coverage | All tags |
@@ -143,7 +142,7 @@ come from Activity-Net, Moments-in-Time, or the fork's Netflix corpus
 (manually labeled). Output: `genre`, `motion_intensity`, `scene_complexity`.
 
 | Criterion | Score |
-|-----------|-------|
+| ----------- | ------- |
 | Training needed | 1–2 weeks |
 | Runtime cost | <100 ms / clip (CPU) |
 | Coverage | genre + motion + complexity only |
@@ -157,7 +156,7 @@ Use CAMBI score as `source_quality` proxy.
 `dynamic_range` from container metadata.
 
 | Criterion | Score |
-|-----------|-------|
+| ----------- | ------- |
 | Training needed | None |
 | Runtime cost | 5–10 s / clip (single ffmpeg pass) |
 | Coverage | scene_complexity + motion_intensity + dynamic_range + source_quality |
@@ -172,7 +171,7 @@ needed for routing (e.g. to switch to `tune=animation`), run one VLM call
 (A1) only for those missing tags. Cache results per clip fingerprint.
 
 | Criterion | Score |
-|-----------|-------|
+| ----------- | ------- |
 | Training needed | None |
 | Runtime cost | 5–10 s (A3) + optional 2–5 s (A1) |
 | Coverage | All tags |
@@ -207,7 +206,7 @@ The routing table feeds `ladder.py`'s `SamplerFn` seam and `per_shot.py`'s
 ## Dataset Options for A2 Training
 
 | Dataset | Size | Genre labels | Motion | Available |
-|---------|------|-------------|--------|-----------|
+| --------- | ------ | ------------- | -------- | ----------- |
 | Activity-Net v1.3 | 20,000 clips | Yes (200 classes) | Implicit | Public |
 | Moments-in-Time | 3M clips | Yes (339 classes) | Implicit | Registration |
 | Kinetics-700 | 700,000 clips | Yes (700 classes) | Implicit | Public |

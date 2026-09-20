@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0811: Security hardening — CodeQL Go coverage + codeql-config
 
 - **Status**: Accepted
@@ -52,7 +51,7 @@ A security audit (2026-05-29) found three gaps:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep CodeQL config as-is (broken) | No change | Silent misconfiguration; Go not scanned | Unacceptable security gap |
 | Add Go to existing codeql-cpp job | One fewer job | Go requires a separate `init` step; mixing would break language detection | Not supported by CodeQL Action |
 | Re-enable Dependabot alongside Renovate | Belt-and-suspenders | Duplicate PRs (ADR-0363 explicitly disabled it); paid-plan gate in any case | Renovate OSV alerts are sufficient |

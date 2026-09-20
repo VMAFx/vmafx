@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0127: Vulkan compute backend — vendor-neutral GPU path alongside CUDA/SYCL/HIP
 
 - **Status**: Accepted
@@ -90,7 +89,7 @@ with the following constraints:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Vulkan compute (chosen) | Cross-vendor (NVIDIA/AMD/Intel), cross-OS incl. macOS via MoltenVK and mobile; present in every consumer graphics driver; solid DMABUF/Win32-handle import story | Lowest-level GPU API we'll maintain; hand-written queue + descriptor + fence management; SPIR-V toolchain in CI | This is the only option that covers macOS + mobile + consumer-Windows in one shader set |
 | Metal | Native Apple Silicon perf; first-class toolchain on macOS | Apple-only (macOS / iOS); requires a separate MSL shader set maintained in parallel with whatever else ships; obj-c / Swift bridging | Would need to ship alongside (not instead of) Vulkan, doubling GPU-kernel maintenance cost |
 | WebGPU / wgpu-native | Cross-browser and native via wgpu-native; modern API | Immature native story; ecosystem is in flux; WGSL shader language is third thing to maintain; Chrome-GPU-thread model doesn't fit our library pattern | Fine for a future web-scoring demo; wrong tool for the main backend story |
@@ -100,7 +99,7 @@ with the following constraints:
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - Closes macOS / mobile / consumer-Windows-without-SDK GPU gaps in
   one workstream.
@@ -111,7 +110,7 @@ with the following constraints:
 - The SPIR-V + GLSL pipeline is a well-documented, well-tooled
   industry standard — the skills are broadly transferable.
 
-**Negative**
+### Negative
 
 - Meaningful new code surface: runtime (~1500 LOC), plus per-feature
   kernels (~300–800 LOC each). Offset by the `add-gpu-backend`
@@ -129,7 +128,7 @@ with the following constraints:
   not hardware-dependent numerical accuracy. Hardware validation
   happens on developer machines until a self-hosted runner exists.
 
-**Neutral**
+#### Neutral
 
 - No impact on the Netflix CPU golden gate. Vulkan joins
   CUDA/SYCL/HIP as a "close to CPU within tolerance" backend, not a

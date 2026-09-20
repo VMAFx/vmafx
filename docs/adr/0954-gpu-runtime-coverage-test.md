@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0954: Host-only unit test for shared GPU dispatch runtime
 
 - **Status**: Accepted
@@ -63,7 +62,7 @@ on every CI matrix lane that builds tests.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add coverage via existing `test_cuda_*` / `test_hip_smoke` files | Co-located with other backend tests | Those tests are gated by `enable_cuda` / `enable_hip` build options; CPU-only CI lanes never run them. Defeats the goal of catching regressions on every build. | Defeats coverage goal. |
 | Mock the env helper with a separate stub | Avoids env mutation in tests | Would test our mock, not the real shared singleton. The bugs we want to catch live in the real `pthread_once` + atomic-fence interplay. | Tests the mock, not the code. |
 | Per-backend test files (3 separate executables) | One TU per backend keeps the table small | Triples the meson wiring; CUDA + HIP + the shared helpers all need the same fixtures (env mutation, function-pointer table). | Premature decomposition. |

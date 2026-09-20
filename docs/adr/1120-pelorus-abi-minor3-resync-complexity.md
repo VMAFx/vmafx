@@ -1,11 +1,13 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1120: pelorus abi minor3 resync complexity
 
-# ADR-1120: Re-pin the vendored Pelorus interop ABI to minor-3 and consume PEL_SEC_COMPLEXITY in perceptual weighting
+**Decision:** Re-pin the vendored Pelorus interop ABI to minor-3 and consume
+PEL_SEC_COMPLEXITY in perceptual weighting
 
 - **Status**: Accepted
 - **Date**: 2026-06-27
 - **Deciders**: Lusoris
-- **Tags**: interop, abi, vendoring, pelorus, scoring, pooling, golden-gate, build, fork-local
+- **Tags**: interop, abi, vendoring, pelorus, scoring, pooling, golden-gate,
+  build, fork-local
 
 ## Context
 
@@ -49,13 +51,13 @@ which carry no side-data — score byte-identically (verified: mean VMAF
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Re-vendor the full minor-3 surface (chosen) | Mirror stays a faithful, complete copy; fixture links; matches ADR-1113's append-only mirror contract | Adds two compiled TUs the fork does not yet otherwise call | Chosen — the fixture references `pel_x265_csv_parse`, and a partial mirror would diverge from the single source of truth |
-| Trim the fixture / vendor only what links | Smallest diff | The fixture is the shared conformance contract; trimming it forks the test from pelorus and defeats the drift guard | Rejected — breaks the single-source-of-truth invariant |
-| Attenuate salience by `(1 − k·complexity)` (chosen, k=0.5, floor 0.25) | Simple, bounded, monotone, documented; collapses to identity when the section is absent | One free constant to justify | Chosen — predictable and golden-safe |
-| Gate the banding read on a complexity threshold (step function) | Cheaper conceptually | Discontinuous; a tiny complexity change flips weighting on/off | Rejected — non-monotone, harder to reason about and test |
-| Replace banding salience with complexity outright | One signal | Throws away the per-cell spatial banding map ADR-1118 was built around | Rejected — complexity modulates, it does not replace |
+| Option                                                                 | Pros                                                                                                  | Cons                                                                                                                | Why not chosen                                                                                                           |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Re-vendor the full minor-3 surface (chosen)                            | Mirror stays a faithful, complete copy; fixture links; matches ADR-1113's append-only mirror contract | Adds two compiled TUs the fork does not yet otherwise call                                                          | Chosen — the fixture references `pel_x265_csv_parse`, and a partial mirror would diverge from the single source of truth |
+| Trim the fixture / vendor only what links                              | Smallest diff                                                                                         | The fixture is the shared conformance contract; trimming it forks the test from pelorus and defeats the drift guard | Rejected — breaks the single-source-of-truth invariant                                                                   |
+| Attenuate salience by `(1 − k·complexity)` (chosen, k=0.5, floor 0.25) | Simple, bounded, monotone, documented; collapses to identity when the section is absent               | One free constant to justify                                                                                        | Chosen — predictable and golden-safe                                                                                     |
+| Gate the banding read on a complexity threshold (step function)        | Cheaper conceptually                                                                                  | Discontinuous; a tiny complexity change flips weighting on/off                                                      | Rejected — non-monotone, harder to reason about and test                                                                 |
+| Replace banding salience with complexity outright                      | One signal                                                                                            | Throws away the per-cell spatial banding map ADR-1118 was built around                                              | Rejected — complexity modulates, it does not replace                                                                     |
 
 ## Consequences
 
@@ -75,10 +77,10 @@ which carry no side-data — score byte-identically (verified: mean VMAF
 
 ## References
 
-- ADR-0103 (single-source interop ABI), ADR-1113 (vendor the mirror),
-  ADR-1118 (perceptual side-data weighting), ADR-0221 (changelog fragments),
-  ADR-0165 (state.md bug tracking).
+- ADR-0103 (single-source interop ABI), ADR-1113 (vendor the mirror), ADR-1118
+  (perceptual side-data weighting), ADR-0221 (changelog fragments), ADR-0165
+  (state.md bug tracking).
 - Pelorus pin: `VMAFx/pelorus@818d844` (ABI 1.3).
 - Source: `req` — per user direction to "re-vendor + consume the new section":
-  re-pin the vendored ABI to minor-3 faithfully and consume
-  `PEL_SEC_COMPLEXITY` to modulate the perceptual-weight strength.
+  re-pin the vendored ABI to minor-3 faithfully and consume `PEL_SEC_COMPLEXITY`
+  to modulate the perceptual-weight strength.

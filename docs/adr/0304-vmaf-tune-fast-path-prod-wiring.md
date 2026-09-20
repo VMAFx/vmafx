@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0304: `vmaf-tune fast` — production wiring (Optuna TPE + v2 proxy + GPU verify)
 
 - **Status**: Accepted
@@ -82,7 +81,7 @@ explicit fallback signal to the slow Phase A grid (ADR-0276
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Optuna TPE (chosen)** | Bayesian convergence in 30–50 trials on an integer CRF axis; scaffold already imports it; deterministic with seed; proven on similar tuning loops | Optional Optuna dep (already in `[fast]` extra) | Picked: best convergence-per-trial on this dimension; matches ADR-0276 scaffold |
 | CMA-ES | Robust on continuous high-dim spaces | Overkill for a single integer dimension; CRF discretisation defeats its strength; no convergence advantage at 30–50 trials | Rejected: wrong tool for the problem geometry |
 | Random + early-stop | Zero new search complexity; trivially parallelisable | Needs ~3× more trials than TPE for the same convergence; no Bayesian "sharpening" near the target VMAF | Rejected: wastes the proxy budget on uninformative samples |

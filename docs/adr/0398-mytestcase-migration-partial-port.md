@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0398: MyTestCase upstream migration — partial port (golden-pinned files deferred)
 
 - **Status**: Accepted
@@ -48,7 +47,7 @@ reconciled with upstream's.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Cherry-pick the entire cluster with `-X theirs` | One commit, minimal manual work | Silently overwrites fork golden values (verified: 4 SSIM/PSNR keys lost on commit 1 alone) | Violates ADR-0024 / CLAUDE §1 |
 | Per-commit cherry-pick with auto-resolver that preserves fork values | Maintains commit attribution per-commit | Resolver kept_head case drops upstream's setup lines, leaving orphan assertions; produces structurally-broken files (verified: F821 cascades on routine_test, asset_test, feature_extractor_test) | Ships broken tests |
 | Squash to one big commit and apply cumulative diff with manual conflict resolution | Single coherent migration | Hours of manual work × high error risk; fork-value preservation requires diff-by-diff inspection of 660 literals | Time/risk-prohibitive in single session |

@@ -29,11 +29,6 @@
 
 #include <getopt.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -138,7 +133,7 @@ static int run_parse_expect_usage_error(int argc, char **argv, const char *needl
         return -1;
     if (WEXITSTATUS(status) != 1)
         return -1;
-    if (strstr(buf, needle) == NULL)
+    if (strstr(buf, needle) == VMAF_NULLPTR)
         return -1;
     return 0;
 }
@@ -149,7 +144,7 @@ static char *test_threads_invalid_optarg_does_not_assert()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("cli_parse: --threads abc must exit(1) with usage error, not SIGABRT", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_subsample_invalid_optarg_does_not_assert()
@@ -158,7 +153,7 @@ static char *test_subsample_invalid_optarg_does_not_assert()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("cli_parse: --subsample xyz must exit(1) with usage error, not SIGABRT", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_cpumask_invalid_optarg_does_not_assert()
@@ -167,7 +162,7 @@ static char *test_cpumask_invalid_optarg_does_not_assert()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("cli_parse: --cpumask qqq must exit(1) with usage error, not SIGABRT", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Mirrors the parked fuzzer reproducer at
@@ -182,7 +177,7 @@ static char *test_threads_abbrev_does_not_assert()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("cli_parse: --th=foosoxe abbrev must exit(1) with usage error, not SIGABRT", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1088: parse_unsigned must reject negative strings.
@@ -196,7 +191,7 @@ static char *test_frame_cnt_negative_is_rejected()
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("ADR-1088: --frame_cnt -1 must exit(1) with usage error (was silently UINT_MAX)",
               rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_frame_skip_ref_negative_is_rejected()
@@ -205,7 +200,7 @@ static char *test_frame_skip_ref_negative_is_rejected()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("ADR-1088: --frame_skip_ref -5 must exit(1) with usage error", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_frame_skip_dist_negative_is_rejected()
@@ -214,7 +209,7 @@ static char *test_frame_skip_dist_negative_is_rejected()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("ADR-1088: --frame_skip_dist -1 must exit(1) with usage error", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1088: parse_unsigned must reject values that overflow uint32.
@@ -227,7 +222,7 @@ static char *test_frame_cnt_overflow_is_rejected()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("ADR-1088: --frame_cnt 5000000000 must exit(1) (overflows uint32)", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_threads_negative_is_rejected()
@@ -236,7 +231,7 @@ static char *test_threads_negative_is_rejected()
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
     const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
     mu_assert("ADR-1088: --threads -1 must exit(1) with usage error", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -254,5 +249,3 @@ char *run_tests()
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

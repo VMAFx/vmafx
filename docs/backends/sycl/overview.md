@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # SYCL Backend
 
 The SYCL / oneAPI backend runs VMAF's core feature extractors (VIF, ADM,
@@ -243,7 +242,6 @@ without reading the documentation.
 
 ### Default target list
 
-<!-- markdownlint-disable MD013 -->
 The default `sycl_icpx_aot_targets` value covers the following Intel GPU
 micro-architectures:
 
@@ -268,11 +266,16 @@ micro-architectures:
 | `lnl-m` | Lunar Lake-M integrated (requires icpx 2025.0+) |
 | `bmg-g21` | Battlemage G21 dGPU (requires icpx 2025.1+) |
 | `bmg-g31` | Battlemage G31 dGPU (requires icpx 2025.1+) |
-<!-- markdownlint-enable MD013 -->
 
 The fat binary also embeds a SPIR-V JIT fallback (`spir64`) for any device not
 in the list, so an unlisted or future device still works — it just pays the
 cold-start cost.
+
+The compile-only SYCL custom targets pass `-fno-sycl-rdc`, so icpx emits final
+`spir64_gen` AOT images into each fat object instead of deferring device-code
+generation to a link step that these targets never perform. The device list is
+scoped with `-Xsycl-target-backend=spir64_gen`; the separate `spir64` image is
+left as portable SPIR-V and does not receive the IGC-only `-device` option.
 
 ### Adjusting the target list
 
@@ -316,7 +319,7 @@ follow-up task (see Known gaps below).
 `VMAF_SYCL_DISPATCH` controls the SYCL graph-replay strategy:
 
 | Value | Behaviour |
-|---|---|
+| --- | --- |
 | `direct` | Submit kernels directly to an in-order queue (no graph). Lower per-frame overhead at small resolutions. |
 | `graph` | SYCL graph replay (ADR-0483). Reduces kernel-launch overhead at ≥ 720p. |
 

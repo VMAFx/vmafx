@@ -36,12 +36,6 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Tolerances. The analytic identical-input oracles are tight; the
  * non-trivial oracles are at the fork's places=4 atom gate. */
 #define YF_TOL_EXACT (1e-9)
@@ -116,10 +110,10 @@ static int alloc_luma8(VmafPicture *pic, unsigned w, unsigned h, gen_fn gen)
 static int make_ctx(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc, unsigned w,
                     unsigned h)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("y_funque_plus");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("y_funque_plus");
     if (!fex)
         return -1;
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     if (err)
         return err;
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
@@ -153,7 +147,8 @@ static int run_one(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc, u
         vmaf_picture_unref(&ref);
         return err;
     }
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, index, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR,
+                                                 index, fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
     if (err)
@@ -167,8 +162,8 @@ static int run_one(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc, u
 /* 1. 8x8 identical inputs, frame 0 — analytic oracles. */
 static char *test_yf_identical_8x8(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     mu_assert("make_ctx 8x8", make_ctx(&ctx, &fc, 8u, 8u) == 0);
 
     double ms = NAN;
@@ -181,14 +176,14 @@ static char *test_yf_identical_8x8(void)
     mu_assert("8x8 ident mad == 0", fabs(mad) < YF_TOL_EXACT);
 
     destroy_ctx(ctx, fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 2. 64x64 deterministic ref != dist, frame 0 — Python oracle. */
 static char *test_yf_nontrivial_64x64(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     mu_assert("make_ctx 64x64", make_ctx(&ctx, &fc, 64u, 64u) == 0);
 
     double ms = NAN;
@@ -202,14 +197,14 @@ static char *test_yf_nontrivial_64x64(void)
     mu_assert("64x64 f0 mad == 0", fabs(mad) < YF_TOL_EXACT);
 
     destroy_ctx(ctx, fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 3. 2-frame sequence — exercises MAD-Ref != 0; Python oracle. */
 static char *test_yf_temporal_mad(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     mu_assert("make_ctx temporal", make_ctx(&ctx, &fc, 64u, 64u) == 0);
 
     double ms = NAN;
@@ -228,14 +223,14 @@ static char *test_yf_temporal_mad(void)
     mu_assert("f1 mad", fabs(mad - 0.11999870749080883) < YF_TOL_PLACES4);
 
     destroy_ctx(ctx, fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 4. 65x33 ODD dimensions, identical — odd-dim buffer regression. */
 static char *test_yf_odd_dims(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     mu_assert("make_ctx odd", make_ctx(&ctx, &fc, 65u, 33u) == 0);
 
     double ms = NAN;
@@ -250,7 +245,7 @@ static char *test_yf_odd_dims(void)
     mu_assert("65x33 ident mad == 0", fabs(mad) < YF_TOL_EXACT);
 
     destroy_ctx(ctx, fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 5. 100x100 identical — exercises the downscale-then-crop path. ds is
@@ -260,8 +255,8 @@ static char *test_yf_odd_dims(void)
  * (a stride bug there would corrupt the pyramid and break ms==0/dlm==1). */
 static char *test_yf_crop_path(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     mu_assert("make_ctx 100x100", make_ctx(&ctx, &fc, 100u, 100u) == 0);
 
     double ms = NAN;
@@ -274,24 +269,24 @@ static char *test_yf_crop_path(void)
     mu_assert("100x100 ident mad == 0", fabs(mad) < YF_TOL_EXACT);
 
     destroy_ctx(ctx, fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 6. Too-small frame is rejected by init() (bounded-input guard). */
 static char *test_yf_reject_tiny(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("y_funque_plus");
-    mu_assert("y_funque_plus extractor missing", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("y_funque_plus");
+    mu_assert("y_funque_plus extractor missing", fex != VMAF_NULLPTR);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create tiny", err == 0);
     /* 6x6 -> downscale 3x3 -> crop (6>>3)<<2 = 0 -> below the Haar minimum. */
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, 6u, 6u);
     mu_assert("init rejects 6x6", err != 0);
 
     (void)vmaf_feature_extractor_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -302,7 +297,5 @@ char *run_tests(void)
     mu_run_test(test_yf_odd_dims);
     mu_run_test(test_yf_crop_path);
     mu_run_test(test_yf_reject_tiny);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

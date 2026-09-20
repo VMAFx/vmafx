@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0397: `vmaf-tune` Phase F — `auto` adaptive recipe-aware tuning
 
 - **Status**: Accepted
@@ -85,7 +84,7 @@ inference — Phase F is integration, not invention.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Deterministic decision tree (chosen)** | Explainable; reproducible across runs; every branch maps to an existing ADR contract; testable with mocked sub-phases; no runtime ML dependency on the auto path. | Hard-codes priorities; new sub-phases require tree edits. | Picked: matches the fork's "no learned policy at runtime" constraint, the user's explainability requirement, and the per-phase contract carve-outs in ADR-0237 / ADR-0276 / ADR-0295. |
 | Pure-grid composition (today's manual workflow) | Zero new code; fully reproducible. | 8-step manual composition; ≈ 5–6 h wall-clock for a typical 2-hour movie; high operator-error rate; the colleague's "day per movie" pain point. | Rejected: the cost is exactly why Phase F is a backlog item. |
 | Optuna over the full composition space | Strong optimum; reuses Phase A.5 search infrastructure. | Per-source TPE warm-up cost; no closed-form way to express "skip Phase D when source is short"; opaque to operators ("why did it pick x265?"); too few independent samples per source for Bayesian search to beat a hand-tuned tree. | Rejected: search-over-recipes is the wrong model for a discrete composition problem with operator-explainability requirements. |

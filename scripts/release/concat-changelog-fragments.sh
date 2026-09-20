@@ -4,8 +4,10 @@
 #
 # Sections are emitted in the Keep-a-Changelog order:
 #   Added → Changed → Deprecated → Removed → Fixed → Security
-# Each fragment is a stand-alone Markdown bullet (or block of bullets) and
-# may end with an optional trailing newline; the script preserves layout.
+# Each active fragment is a standalone Markdown document whose first line is
+# `# Changelog fragment`; the legacy archive uses
+# `# Pre-fragment changelog archive`. The renderer strips that source-only H1
+# and emits the body under its Keep-a-Changelog section.
 #
 # Inputs:
 #   $REPO_ROOT/changelog.d/<section>/*.md   per-PR fragments
@@ -36,13 +38,9 @@
 #   release header is `## [vX.Y.Z] - YYYY-MM-DD`; never `## Foo`.
 #
 # Fragment-body hygiene:
-#   Stray `## ` headers inside a fragment body are demoted to `**bold**`
-#   pseudo-headers at render time. Reasoning: they were never the right
-#   shape (the renderer emits `### Section` itself) and they hurt the splice
-#   contract above. Authors should write bullets, not in-fragment sections;
-#   the demotion keeps history-rendered text legible without forcing a
-#   cross-PR rewrite of 80+ existing fragments. New fragments are validated
-#   by `--lint`.
+#   Source headings render as plain text labels. The source files remain
+#   independently lintable, while no fragment can inject a duplicate heading
+#   or splice-boundary H2 into the generated changelog.
 #
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
@@ -66,26 +64,38 @@ SECTION_TITLES=(Added Changed Deprecated Removed Fixed Security)
 # the `-v boundary=...` plumbing stays string-clean.
 BOUNDARY_REGEX='^## \\['
 
-# Emit one fragment with stray h1/h2 headers demoted to bold pseudo-headers.
-# The renderer-emitted "### Section" heading is the only h3 the Unreleased
-# block should carry; in-fragment headers would pollute both the visual
-# tree and the splice contract.
+# Emit one fragment without its source-only H1. Body headings become plain
+# labels because CHANGELOG.md and this renderer own the generated hierarchy.
 emit_fragment() {
   local frag="$1"
-  # Replace leading "# " or "## " with "**…**" using awk so we keep any
-  # trailing newline and avoid sed -E portability gotchas.
-  awk '
-    /^# / {
-      sub(/^# /, "")
-      printf "**%s**\n", $0
+  local expected_heading="$2"
+  # Buffer the body so trailing blank lines normalize to exactly one
+  # renderer-owned separator.
+  awk -v expected_heading="$expected_heading" -v fragment="$frag" '
+    NR == 1 {
+      if ($0 != expected_heading) {
+        printf "ERROR: %s must begin with %s\n", fragment, expected_heading > "/dev/stderr"
+        failed = 1
+        exit 65
+      }
       next
     }
-    /^## / {
-      sub(/^## /, "")
-      printf "**%s**\n", $0
+    NR == 2 && $0 == "" { next }
+    /^#+ / {
+      match($0, /^#+ /)
+      lines[++count] = substr($0, RLENGTH + 1)
       next
     }
-    { print }
+    { lines[++count] = $0 }
+    END {
+      if (failed) exit 65
+      while (count > 0 && lines[count] ~ /^[[:space:]]*$/) count--
+      if (count == 0) {
+        printf "ERROR: %s has no changelog body\n", fragment > "/dev/stderr"
+        exit 65
+      }
+      for (line_number = 1; line_number <= count; line_number++) print lines[line_number]
+    }
   ' "$frag"
 }
 
@@ -129,9 +139,12 @@ render() {
   # have no fragments are silently skipped; fragments under unknown
   # subdirs trigger a stderr warning (per PR #384 / ADR-0892).
   local section title dir frag
+  printf '\n'
   warn_unknown_subdirs || return 1
   if [[ -f "$LEGACY" ]]; then
-    cat "$LEGACY"
+    local legacy_body
+    legacy_body="$(emit_fragment "$LEGACY" "# Pre-fragment changelog archive")" || return $?
+    printf '%s\n\n' "$legacy_body"
   fi
   for i in "${!SECTIONS[@]}"; do
     section="${SECTIONS[$i]}"
@@ -156,11 +169,11 @@ render() {
             printf '### %s\n\n' "$title"
             first_in_section=0
           fi
-          emit_fragment "$frag"
-          # Each fragment ends in newline; ensure exactly one blank
-          # line follows so neighbouring bullets don't fuse.
-          [[ "$(tail -c1 "$frag")" == $'\n' ]] || printf '\n'
-          printf '\n'
+          local fragment_body
+          fragment_body="$(emit_fragment "$frag" "# Changelog fragment")" || return $?
+          # Command substitution removes all trailing newlines. Re-add exactly
+          # one body newline plus one blank separator between fragments.
+          printf '<!-- changelog fragment boundary -->\n\n%s\n\n' "$fragment_body"
         done
       fi
     fi
@@ -182,7 +195,11 @@ case "${1:-}" in
     ;;
 esac
 
-rendered="$(render)"
+rendered="$(render)" || {
+  render_status=$?
+  printf 'ERROR: changelog fragment rendering failed\n' >&2
+  exit "$render_status"
+}
 
 if [[ "$mode" == render ]]; then
   # printf '%s\n' restores the trailing newline that command substitution

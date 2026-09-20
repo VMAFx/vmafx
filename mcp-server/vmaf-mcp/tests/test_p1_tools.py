@@ -64,9 +64,9 @@ def test_list_extractors_backend_tags():
     """Backend tags must only be known labels (post-ADR-0726)."""
     valid = {"cpu", "cuda", "sycl", "hip", "metal"}
     for ex in srv._list_extractors():
-        assert (
-            ex["backend"] in valid
-        ), f"Unexpected backend tag {ex['backend']!r} for extractor {ex['name']!r}"
+        assert ex["backend"] in valid, (
+            f"Unexpected backend tag {ex['backend']!r} for extractor {ex['name']!r}"
+        )
 
 
 def test_list_extractors_cpu_backend_for_cpu_extractors():
@@ -75,8 +75,7 @@ def test_list_extractors_cpu_backend_for_cpu_extractors():
     for cpu_name in ("float_vif", "ssim"):
         if cpu_name in by_name:
             assert by_name[cpu_name]["backend"] == "cpu", (
-                f"Extractor {cpu_name!r} should be tagged cpu, "
-                f"got {by_name[cpu_name]['backend']!r}"
+                f"Extractor {cpu_name!r} should be tagged cpu, got {by_name[cpu_name]['backend']!r}"
             )
 
 
@@ -121,9 +120,9 @@ def test_strip_model_ext_no_extension():
     # No recognised extension — return unchanged (the key bug path).
     result = srv._strip_model_ext("vmaf_v0.6.1")
     # Must not strip the ".1" portion the way Path.stem would.
-    assert (
-        result == "vmaf_v0.6.1"
-    ), f"Path.stem bug: _strip_model_ext stripped '.1' from 'vmaf_v0.6.1'; got {result!r}"
+    assert result == "vmaf_v0.6.1", (
+        f"Path.stem bug: _strip_model_ext stripped '.1' from 'vmaf_v0.6.1'; got {result!r}"
+    )
 
 
 def test_strip_model_ext_unknown_extension():

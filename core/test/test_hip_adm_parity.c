@@ -150,10 +150,10 @@ static char *adm_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_ski
      * VmafContext on a skip. */
     if (err == -ENOSYS) {
         *enosys_skip = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run one extractor over the fixture; fill scores[] for kAdmFeatures. */
@@ -161,20 +161,20 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
                            int *skipped)
 {
     *skipped = 0;
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     if (use_hip) {
         VmafHipConfiguration hip_cfg = {.device_index = -1};
         int rc = vmaf_hip_state_init(&hip_state, hip_cfg);
-        if (rc != 0 || hip_state == NULL) {
+        if (rc != 0 || hip_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no HIP device] ");
             mu_skipped = 1;
             *skipped = 1;
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -183,7 +183,7 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
         mu_assert("vmaf_hip_import_state failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, feature_name, NULL);
+    err = vmaf_use_feature(vmaf, feature_name, VMAF_NULLPTR);
     mu_assert("vmaf_use_feature failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -198,11 +198,11 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
             (void)vmaf_close(vmaf);
             if (hip_state)
                 vmaf_hip_state_free(&hip_state);
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
@@ -218,7 +218,7 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
 
     if (hip_state)
         vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_adm_cpu_hip_parity(void)
@@ -241,7 +241,7 @@ static char *test_integer_adm_cpu_hip_parity(void)
         return msg;
 
     if (skipped)
-        return NULL; /* No HIP device or no HIPCC kernels — skip cleanly. */
+        return VMAF_NULLPTR; /* No HIP device or no HIPCC kernels — skip cleanly. */
 
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         double d = fabs(cpu_scores[f] - hip_scores[f]);
@@ -251,7 +251,7 @@ static char *test_integer_adm_cpu_hip_parity(void)
         }
         mu_assert("integer_adm CPU vs HIP delta exceeds places=4 tolerance", d <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Every option the CPU `adm` table declares must also exist, with the same
@@ -270,16 +270,16 @@ static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
 {
     VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
     VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_hip");
-    mu_assert("adm extractor must be registered", cpu != NULL);
-    mu_assert("adm_hip extractor must be registered", gpu != NULL);
-    mu_assert("adm must declare options", cpu->options != NULL);
-    mu_assert("adm_hip must declare options", gpu->options != NULL);
+    mu_assert("adm extractor must be registered", cpu != VMAF_NULLPTR);
+    mu_assert("adm_hip extractor must be registered", gpu != VMAF_NULLPTR);
+    mu_assert("adm must declare options", cpu->options != VMAF_NULLPTR);
+    mu_assert("adm_hip must declare options", gpu->options != VMAF_NULLPTR);
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
         const VmafOption *a = &cpu->options[i];
         if (!strcmp(a->name, "adm_skip_aim"))
             continue;
-        const VmafOption *b = NULL;
+        const VmafOption *b = VMAF_NULLPTR;
         for (unsigned j = 0; gpu->options[j].name; j++) {
             if (!strcmp(gpu->options[j].name, a->name)) {
                 b = &gpu->options[j];
@@ -288,16 +288,16 @@ static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
         }
         if (!b)
             (void)fprintf(stderr, "\nadm_hip is missing CPU option \"%s\"\n", a->name);
-        mu_assert("adm_hip option table is missing a CPU option", b != NULL);
+        mu_assert("adm_hip option table is missing a CPU option", b != VMAF_NULLPTR);
         mu_assert("adm_hip option type differs from CPU", a->type == b->type);
         mu_assert("adm_hip feature-param flag differs from CPU",
                   (a->flags & VMAF_OPT_FLAG_FEATURE_PARAM) ==
                       (b->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
         mu_assert("adm_hip option alias differs from CPU",
-                  (a->alias == NULL) == (b->alias == NULL) &&
-                      (a->alias == NULL || !strcmp(a->alias, b->alias)));
+                  (a->alias == VMAF_NULLPTR) == (b->alias == VMAF_NULLPTR) &&
+                      (a->alias == VMAF_NULLPTR || !strcmp(a->alias, b->alias)));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Never fabricate a feature to make a name resolve: this twin has no AIM
@@ -307,15 +307,15 @@ static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
 static char *test_integer_adm_hip_does_not_claim_aim(void)
 {
     VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_hip");
-    mu_assert("adm_hip extractor must be registered", gpu != NULL);
-    mu_assert("adm_hip must declare provided_features", gpu->provided_features != NULL);
+    mu_assert("adm_hip extractor must be registered", gpu != VMAF_NULLPTR);
+    mu_assert("adm_hip must declare provided_features", gpu->provided_features != VMAF_NULLPTR);
     for (unsigned i = 0; gpu->provided_features[i]; i++) {
         mu_assert("adm_hip must not claim VMAF_integer_feature_aim_score",
                   strcmp(gpu->provided_features[i], "VMAF_integer_feature_aim_score") != 0);
         mu_assert("adm_hip must not claim VMAF_integer_feature_adm3_score",
                   strcmp(gpu->provided_features[i], "VMAF_integer_feature_adm3_score") != 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -323,5 +323,5 @@ char *run_tests(void)
     mu_run_test(test_integer_adm_hip_option_table_mirrors_cpu);
     mu_run_test(test_integer_adm_hip_does_not_claim_aim);
     mu_run_test(test_integer_adm_cpu_hip_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

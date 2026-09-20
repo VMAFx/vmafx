@@ -103,15 +103,16 @@ static char *run_cpu(double *out_score)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_ssim", NULL);
+    err = vmaf_use_feature(vmaf, "float_ssim", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(float_ssim) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CPU: fill_ref failed", !err);
         err = fill_dist(&dist, i);
@@ -119,7 +120,7 @@ static char *run_cpu(double *out_score)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "float_ssim", out_score, 1u);
@@ -127,7 +128,7 @@ static char *run_cpu(double *out_score)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(double *out_score)
@@ -135,23 +136,23 @@ static char *run_cuda(double *out_score)
     *out_score = NAN;
     int err = 0;
 
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_ssim_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "float_ssim_cuda", VMAF_NULLPTR);
     mu_assert("CUDA: vmaf_use_feature(float_ssim_cuda) failed", !err);
 
     /* `float_ssim_cuda` is a v1 scale=1-only extractor: its init rejects
@@ -168,7 +169,8 @@ static char *run_cuda(double *out_score)
      * comparing two different metrics. See ADR-1206. */
     const unsigned auto_scale = (FIXTURE_W < FIXTURE_H ? FIXTURE_W : FIXTURE_H) < 384u ? 1u : 2u;
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CUDA: fill_ref failed", !err);
         err = fill_dist(&dist, i);
@@ -181,11 +183,11 @@ static char *run_cuda(double *out_score)
             vmaf_picture_unref(&dist);
             (void)vmaf_close(vmaf);
             (void)vmaf_cuda_state_free(cu_state);
-            return NULL; /* *out_score stays NAN -> caller skips */
+            return VMAF_NULLPTR; /* *out_score stays NAN -> caller skips */
         }
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "float_ssim", out_score, 1u);
@@ -195,7 +197,7 @@ static char *run_cuda(double *out_score)
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ssim_cpu_cuda_parity(void)
@@ -211,7 +213,7 @@ static char *test_float_ssim_cpu_cuda_parity(void)
         return msg;
 
     if (isnan(cuda_score))
-        return NULL; /* skip path */
+        return VMAF_NULLPTR; /* skip path */
 
     mu_assert("CPU float_ssim score is non-finite", isfinite(cpu_score));
     mu_assert("CUDA float_ssim score is non-finite", isfinite(cuda_score));
@@ -223,11 +225,11 @@ static char *test_float_ssim_cpu_cuda_parity(void)
     }
     mu_assert("float_ssim CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_ssim_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

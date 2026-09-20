@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1244: Guard merge-train ownership and exact-head validation
 
 - **Status**: Accepted

@@ -1,1 +1,5 @@
-| [ADR-0957](0957-sycl-kernel-coverage-round4.md) | SYCL kernel coverage round 4 — 4 CPU vs. SYCL parity gates for `float_moment_sycl`, `speed_chroma_sycl`, `speed_temporal_sycl` (places=4 / 1e-4) and `ssimulacra2_sycl` (5e-3 per ADR-0214 FEATURE_TOLERANCE); closes the SYCL kernel-coverage backlog at 18/18 = 100 % | Accepted | 2026-05-31 | sycl, test, gpu, parity, kernel-coverage |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0957](0957-sycl-kernel-coverage-round4.md) | SYCL kernel coverage round 4 (float_moment + SpEED + SSIMULACRA2) | Accepted | sycl, test, gpu, parity, kernel-coverage |

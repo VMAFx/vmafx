@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1128: Make changelog fragments own release cuts
 
 - **Status**: Accepted
@@ -44,7 +43,7 @@ the rendered notes.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Let release-please update `CHANGELOG.md` | Built into the release action | Leaves 1,498 canonical sources active, so the renderer republishes old entries | Violates the existing fragment ownership contract |
 | Keep released fragments and add an exclusion manifest | Preserves every source file at the tip | Adds permanent dual state and makes every render depend on a growing exclusion list | Git history and a compact receipt already preserve provenance |
 | Keep warning and omit noncanonical sections | No migration diff | Drops 27 existing entries from the release while still claiming all active sources were consumed | A release receipt must account for every discovered fragment |

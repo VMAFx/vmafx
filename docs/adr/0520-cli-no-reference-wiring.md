@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0520: Wire `vmaf --no-reference` through to the scoring path
 
 - **Status**: Accepted
@@ -61,7 +60,7 @@ We will wire `--no-reference` through the CLI end-to-end:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add a public `vmaf_read_pictures_nr(vmaf, dist, idx)` entry point | Single picture per frame; no double-decode | Touches public API surface; needs ABI-bump, header export, ffmpeg-patch wiring, MCP wiring; out of scope for a bug-fix PR | Deferred to T6-NR-PUBLIC-API follow-up if NR throughput becomes a concern |
 | Synthesize a zero-buffer "reference" picture in the CLI | Avoids opening dist twice | Allocates extra memory; semantically misleading; would also need to bypass `vmaf_picture_ref` (not public) | Worse trade-off than the open-twice approach |
 | Refuse `--no-reference` and remove the flag | Cleanest possible code path | Breaks the documented surface; user already depends on it per the task brief | Rejected |

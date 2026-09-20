@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `scripts/release/` — agent invariants
 
 Fork-local release utilities. Nothing here merges from upstream Netflix/vmaf.
@@ -9,7 +8,7 @@ Renders `## [Unreleased]` block of `CHANGELOG.md` from per-PR fragment
 files under `changelog.d/<section>/*.md`. Modes:
 
 | Flag | Effect |
-|---|---|
+| --- | --- |
 | *(none)* | Print rendered body to stdout |
 | `--check` | Diff rendered output against in-tree `CHANGELOG.md`; exit 1 on drift |
 | `--write` | Splice rendered body into `CHANGELOG.md` in place |
@@ -33,7 +32,9 @@ Test coverage: `scripts/release/tests/test-concat-changelog-fragments.sh`
 
 ### Fragment naming convention
 
-Fragment files sorted lexically (`LC_ALL=C sort`). Contributors prefix
+Fragment files are standalone Markdown documents beginning with
+`# Changelog fragment`; the renderer strips that source-only heading.
+Files are sorted lexically (`LC_ALL=C sort`). Contributors prefix
 filenames with task/ADR ID for implicit ordering, e.g.
 `0968-ci-scripts-rebrand-tempfile.md`. Dotfiles excluded (`! -name
 '.*'`).

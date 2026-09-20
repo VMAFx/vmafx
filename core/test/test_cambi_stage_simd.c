@@ -49,14 +49,9 @@
 
 /* The reference must be the shipped file-static scalar stages, not a copy
  * (ADR-1207), so the TU is included, as test_cambi.c does. */
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0141 / ADR-1207: white-box reference to the static scalar stages.
+
 #include "feature/cambi.c"
 #include "feature/cambi_c_values_frame.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 /* A frame-level c-values driver under test. */
 typedef struct {
@@ -144,7 +139,7 @@ static void fill_guard16(uint16_t *buf, size_t n)
 static char *compare_bytes(const void *scalar_buf, const void *simd_buf, size_t n_bytes)
 {
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf, n_bytes, g_label);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* A plane with `rows` rows of `stride` elements plus a GUARD tail. The picture
@@ -169,7 +164,7 @@ static bool plane_alloc(Plane *p, int stride, int rows)
     p->pic.w[0] = (unsigned)stride;
     p->pic.h[0] = (unsigned)rows;
     p->pic.bpc = 10;
-    return p->buf != NULL;
+    return p->buf != VMAF_NULLPTR;
 }
 
 /* Fills the data_w x data_h region with `fill` and everything else (stride
@@ -190,7 +185,7 @@ static void fill_plane(Plane *p, int data_w, int data_h, enum Fill fill, uint32_
 static void plane_free(Plane *p)
 {
     simd_test_aligned_free(p->buf);
-    p->buf = NULL;
+    p->buf = VMAF_NULLPTR;
 }
 
 /* Two identical planes: one for the scalar stage, one for the SIMD stage. */
@@ -261,7 +256,7 @@ static char *check_picture_stage(const StageKernels *simd, PictureStage stage, i
     PlanePair pp;
     uint16_t *mode_buf = simd_test_aligned_malloc((size_t)3 * (size_t)width * sizeof(uint16_t), 64);
     const bool ok = pair_alloc(&pp, stride, data_h + 2, data_w, data_h, fill, seed) && mode_buf;
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         run_picture_stage(&g_scalar, stage, &pp.s, width, height, mode_buf);
         run_picture_stage(simd, stage, &pp.v, width, height, mode_buf);
@@ -288,7 +283,7 @@ static char *sweep_picture_stage(const StageKernels *simd, PictureStage stage)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- derivative row -------------------------------------------------- */
@@ -302,7 +297,7 @@ static char *check_derivative(const StageKernels *simd, int width, int height, i
     uint16_t *out_s = simd_test_aligned_malloc(n_out * sizeof(uint16_t), 64);
     uint16_t *out_v = simd_test_aligned_malloc(n_out * sizeof(uint16_t), 64);
     const bool ok = plane_alloc(&img, stride, height) && out_s && out_v;
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         fill_plane(&img, width, height, fill, seed);
         fill_guard16(out_s, n_out);
@@ -335,7 +330,7 @@ static char *sweep_derivative(const StageKernels *simd)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- histogram range updaters ---------------------------------------- */
@@ -385,7 +380,7 @@ static char *sweep_ranges(const StageKernels *simd)
                 return err;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- c-values fixtures ----------------------------------------------- */
@@ -411,7 +406,7 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     if (max_log_contrast < 0 || max_log_contrast > 5)
         return -EINVAL;
     const uint16_t num_diffs = (uint16_t)(1u << (unsigned)max_log_contrast);
-    if (num_diffs == 0u || num_diffs > sizeof(c->tvi_for_diff) / sizeof(c->tvi_for_diff[0]))
+    if (num_diffs == 0 || num_diffs > sizeof(c->tvi_for_diff) / sizeof(c->tvi_for_diff[0]))
         return -EINVAL;
     c->num_diffs = num_diffs;
     int err =
@@ -432,7 +427,8 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     c->vlt_luma = (uint16_t)get_vlt_luma(vis_lum_threshold, luma_range, eotf);
     const int v_lo = (int)c->vlt_luma - 3 * (int)num_diffs + 1;
     c->v_band_base = v_lo > 0 ? (uint16_t)v_lo : 0;
-    c->v_band_size = (uint16_t)(c->tvi_for_diff[num_diffs - 1] + 1 - c->v_band_base);
+    const size_t last_diff = (size_t)num_diffs - 1u;
+    c->v_band_size = (uint16_t)(c->tvi_for_diff[last_diff] + 1u - c->v_band_base);
     return 0;
 }
 
@@ -510,7 +506,7 @@ static char *check_c_values_row(const StageKernels *simd, const CValuesConfig *c
 {
     RowBuffers b;
     const bool ok = row_buffers_alloc(&b, width, c->v_band_size);
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         uint32_t state = seed;
         row_fixture(&b, c, width, mask_bits, &state);
@@ -556,7 +552,7 @@ static char *sweep_c_values_rows_for(const StageKernels *simd, const CValuesConf
                 return err;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *sweep_c_values_rows(const StageKernels *simd)
@@ -572,7 +568,7 @@ static char *sweep_c_values_rows(const StageKernels *simd)
         if (err)
             return err;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- frame-level c-values -------------------------------------------- */
@@ -677,7 +673,7 @@ static char *check_c_values_frame(const StageKernels *simd, const CValuesDriver 
     const int stride = s->width + 3 + (int)(seed % 11u);
     FrameBuffers b;
     const bool ok = frame_buffers_alloc(&b, s, c, stride, seed);
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         uint32_t state = seed;
         frame_fixture(&b, s, c, stride, &state);
@@ -722,7 +718,7 @@ static char *sweep_frames_for(const StageKernels *simd, const CValuesDriver *dri
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *sweep_c_values_frames(const StageKernels *simd, const CValuesDriver *driver)
@@ -739,7 +735,7 @@ static char *sweep_c_values_frames(const StageKernels *simd, const CValuesDriver
         if (err)
             return err;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- per-ISA entry points -------------------------------------------- */
@@ -783,7 +779,7 @@ static char *test_c_values_frame_parity(void)
         if (err)
             return err;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_isa(const StageKernels *k)
@@ -798,7 +794,7 @@ static char *run_isa(const StageKernels *k)
         mu_run_test(test_range_parity);
     mu_run_test(test_c_values_row_parity);
     mu_run_test(test_c_values_frame_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if ARCH_X86
@@ -840,8 +836,8 @@ static const StageKernels g_neon = {
     get_derivative_data_for_row_neon,
     /* No NEON range updaters: calculate_c_values_neon uses plain C loops that
      * the compilers vectorize (Research-2065). */
-    NULL,
-    NULL,
+    VMAF_NULLPTR,
+    VMAF_NULLPTR,
     calculate_c_values_row_neon,
     {{"calculate_c_values_neon", calculate_c_values_neon}},
 };
@@ -852,7 +848,7 @@ char *run_tests(void)
     /* Scalar reference: clear every CPU flag so anti_dithering_filter, the
      * one stage that dispatches internally, runs its scalar body. */
     vmaf_set_cpu_flags_mask(0u);
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
 #if ARCH_X86
     if (simd_test_have_avx2())
         err = run_isa(&g_avx2);
@@ -869,5 +865,3 @@ char *run_tests(void)
 #endif
     return err;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

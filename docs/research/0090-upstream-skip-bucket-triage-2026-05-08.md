@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0090: Upstream SKIP-bucket triage — 2026-05-08
 
 - **Date**: 2026-05-08
@@ -70,7 +69,7 @@ The classification taxonomy (taken from the task brief):
 ## Summary
 
 | Class | Count | Action |
-|---|---|---|
+| --- | --- | --- |
 | MERGE_BOUNDARY | 12 | None — captured by the underlying squashed ports (10 PR-merges + 2 `ci: retrigger` empty commits) |
 | PORT_NOW | 5 | One PR per `/port-upstream-commit <sha>`; sequence below |
 | PORT_LATER | 18 | Blocks on the in-flight `feat/port-upstream-py-test-mytestcase-2026-05-08` MyTestCase migration |
@@ -87,7 +86,7 @@ fork does not yet have, and are not redundant with anything
 in-flight.
 
 | SHA | Subject | Touches | Hazard |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `856d3835` | libvmaf/motion_v2: fix mirroring behavior, since a44e5e61 | `integer_motion_v2.c` + `x86/motion_v2_avx2.c` + `x86/motion_v2_avx512.c` | **Bugfix** — `mirror()` returns `2*size - idx - 1` on fork (off-by-one); upstream patches all three to `…-2`. Triple-twin: scalar + AVX2 + AVX512 must all flip together to stay bit-exact. Fork's CUDA/SYCL/HIP motion_v2 has its own mirror (or isn't affected); confirm before porting. |
 | `4e469601` | libvmaf/motion_v2: port remaining options | `integer_motion_v2.c` (+99/-2) | Adds `motion_force_zero`, `motion_blend_factor`, `motion_blend_offset`, `motion_fps_weight`, `motion_moving_average` options. Fork already has `motion_blend_tools.h` (2020-vintage) but the v2 extractor never consumed it. **GPU twin-update hazard**: cuda/sycl/hip integer_motion equivalents currently `-ENOTSUP` only `motion_five_frame_window`; new option set will need parallel rejection guards or matching kernel paths. |
 | `a2b59b77` | libvmaf/motion_v2: add motion_five_frame_window | `feature_extractor.h` + `libvmaf.c` + `vmaf.c` + `integer_motion_v2.c` | Adds `prev_prev_ref` field to the public `VmafFeatureExtractor` struct + libvmaf core scheduler support for n-2 frames. **Public-API change** — every fork backend that mirrors `prev_ref` (cuda/sycl/hip picture passing) needs to add `prev_prev_ref` in lockstep, or accept the option with `-ENOTSUP`. Fork's `integer_motion.c` (the OLD extractor) already takes `motion_five_frame_window`; this commit moves the implementation into v2. |
@@ -118,7 +117,7 @@ migration done in earlier ports). `asset_test.py`,
 and need migration.
 
 | SHA | Subject | Block |
-|---|---|---|
+| --- | --- | --- |
 | `38e905d1` | python/test: adopt MyTestCase + reformat BD-rate test data | agent-E batch |
 | `005988ea` | python/test: adopt MyTestCase + port new tests + align fifo_mode in routine | agent-E batch |
 | `4679db83` | python/test: fix VMAFEXEC_score tolerances for macOS FP precision | agent-E batch (vmafexec_test) |
@@ -144,7 +143,7 @@ These either no-op via revert pairs, or conflict with the
 fork's coding-style profile (black + isort).
 
 | SHA | Subject | Why deferred |
-|---|---|---|
+| --- | --- | --- |
 | `cf02b126` | python: align whitespace and import order across source files | Removes blank lines between top-level functions in `python/vmaf/tools/misc.py` (PEP-8 violation, downgrade from black formatting). Fork is black-formatted; porting this commit verbatim regresses style. The substantive `misc.py` → `testutils.py` extraction it implies is **already on fork** — fork has `python/vmaf/tools/testutils.py` containing the bits this commit pulled out. |
 | `a333ba4c` | python/test: remove tests requiring FFmpeg temporal slicing not available in CI | Reverted upstream by `403dafed`. Net diff against `322ca041` (the final approach using pre-sliced YUVs) is zero useful work. |
 | `403dafed` | Revert "python/test: remove tests requiring FFmpeg temporal slicing not available in CI" | Restores what `a333ba4c` removed. Pair-noop with `a333ba4c`. |
@@ -160,7 +159,7 @@ separately.)
 ### PORTED_SILENTLY (2 commits)
 
 | SHA | Subject | Fork commit |
-|---|---|---|
+| --- | --- | --- |
 | `662fb9ce` | python: replace polling-based workfile synchronization with semaphores | `e5a52e74` — *port(python): Netflix#1376 FIFO-hang fix via multiprocessing.Semaphore (ADR-0149) (#85)*. The fork commit cites `Netflix#1376` (the upstream PR number) but not the commit SHA `662fb9ce`, so neither Pass-1 (subject match) nor Pass-2 (identifier ratio) caught it. Backfill: add SHA citation to `docs/rebase-notes.md` under the `e5a52e74` row. |
 | `856d3835`'s mirroring fix has a partial-overlap candidate | (not a true silent port — listed under PORT_NOW because the mirror logic on fork is still buggy) | n/a |
 
@@ -180,7 +179,7 @@ commits. Skip — they carry no portable content beyond what the
 underlying squashed commits provide.
 
 | SHA | Subject |
-|---|---|
+| --- | --- |
 | `a8664e16` | Merge pull request #1530 from Netflix/feature/doc-updates-christosb |
 | `2363a106` | Merge pull request #1529 from Netflix/feature/executor-semaphore-christosb |
 | `54bc8344` | Merge pull request #1528 from Netflix/feature/test-bdrate-christosb |

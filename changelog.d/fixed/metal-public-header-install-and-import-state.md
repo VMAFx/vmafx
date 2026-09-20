@@ -1,3 +1,5 @@
+# Changelog fragment
+
 `libvmaf_metal.h` is now installed by `meson install` whenever
 `-Denable_metal=enabled` or `-Denable_metal=auto` is set, mirroring the
 Vulkan/HIP/SYCL install pattern. The header was previously absent from the

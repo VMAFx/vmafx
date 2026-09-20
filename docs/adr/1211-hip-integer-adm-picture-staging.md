@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1211: `integer_adm_hip` stages the luma plane onto the device before launching
 
@@ -46,7 +45,7 @@ than the picture's stride.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-extractor device staging buffers, mirroring `integer_psnr_hip` (chosen) | Matches the pattern already proven on this backend; local to the broken extractor; no change to the host-pic contract | Each HIP extractor that needs device input pays for its own staging buffer | — |
 | Make the HIP backend device-pic like CUDA | One staging point for every HIP extractor | Changes ADR-0530's backend contract and touches every HIP extractor and the picture pool — a much larger blast radius for a crash fix | Rejected for now; worth revisiting if more HIP extractors need device input |
 | Register `integer_adm_hip` with `.flags = 0` so it is never selected | Trivially stops the crash | Removes a user-facing extractor rather than fixing it, and the CPU fallback already hid the defect from CI | Rejected |

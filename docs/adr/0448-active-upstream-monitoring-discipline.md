@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0448: Active upstream monitoring (no silent "wait" deferrals)
 
 - **Status**: Accepted
@@ -50,7 +49,7 @@ The first concrete instance is
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **In-tree workflow per deferral (chosen)** | Audit trail in Actions tab; auto-opens fork-side tracking issue when trigger fires; no external dependency | Requires writing one workflow per deferral row | Chosen — workflow shapes are short and copy-pasteable |
 | **Single multi-deferral cron + state-file lookup** | Less workflow proliferation | Adds a config file to maintain; harder to read at-a-glance which deferral is being watched | Rejected — explicit-per-deferral is clearer for reviewers |
 | **External scheduled agent ("remote agent re-runs weekly")** | What we had before | No in-tree audit trail; aged silently; fork can't verify the schedule is actually firing | Rejected — exactly the failure mode this ADR is fixing |

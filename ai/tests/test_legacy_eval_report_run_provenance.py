@@ -8,17 +8,15 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 
+from ai.scripts import eval_loso_3arch as eval_3arch
+from ai.scripts import eval_loso_mlp_small as eval_mlp
+from ai.scripts import eval_probabilistic_proxy as eval_prob
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
-
-from unittest.mock import MagicMock  # noqa: E402
-
-from ai.scripts import eval_loso_3arch as eval_3arch  # noqa: E402
-from ai.scripts import eval_loso_mlp_small as eval_mlp  # noqa: E402
-from ai.scripts import eval_probabilistic_proxy as eval_prob  # noqa: E402
 
 
 def _touch(path: Path) -> Path:

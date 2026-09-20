@@ -70,19 +70,15 @@ class DisYUVRawVideoExtractor(H5pyMixin, RawExtractor):
     def channels(self):
         if self.optional_dict is None or "channels" not in self.optional_dict:
             return "yuv"
-        else:
-            channels = self.optional_dict["channels"]
-            assert isinstance(channels, str)
-            channels = set(channels.lower())
-            assert channels.issubset(set("yuv"))
-            return "".join(channels)
+        channels = self.optional_dict["channels"]
+        assert isinstance(channels, str)
+        channels = set(channels.lower())
+        assert channels.issubset(set("yuv"))
+        return "".join(channels)
 
     @override(Executor)
     def run(self, **kwargs):
-        if "parallelize" in kwargs:
-            parallelize = kwargs["parallelize"]
-        else:
-            parallelize = False
+        parallelize = kwargs.get("parallelize", False)
 
         assert parallelize is False, "DisYUVRawVideoExtractor cannot parallelize."
 
@@ -91,6 +87,18 @@ class DisYUVRawVideoExtractor(H5pyMixin, RawExtractor):
     def _assert_args(self):
         super(DisYUVRawVideoExtractor, self)._assert_args()
         self.assert_h5py_file()
+
+    def _write_channel(self, asset, channel, frames):
+        dataset = self.h5py_file.create_dataset(
+            f"{asset}_{channel}",
+            (len(frames), frames[0].shape[0], frames[0].shape[1]),
+            dtype="float",
+        )
+        dataset.dims[0].label = "frame"
+        dataset.dims[1].label = "height"
+        dataset.dims[2].label = "width"
+        for index, frame in enumerate(frames):
+            dataset[index] = frame
 
     @override(Executor)
     def _open_ref_workfile(self, asset, fifo_mode, open_sem=None):
@@ -123,44 +131,12 @@ class DisYUVRawVideoExtractor(H5pyMixin, RawExtractor):
                 dis_us.append(dis_u)
                 dis_vs.append(dis_v)
 
-        # Y
         if "y" in self.channels.lower():
-            h5py_cache_y = self.h5py_file.create_dataset(
-                str(asset) + "_y",
-                (len(dis_ys), dis_ys[0].shape[0], dis_ys[0].shape[1]),
-                dtype="float",
-            )
-            h5py_cache_y.dims[0].label = "frame"
-            h5py_cache_y.dims[1].label = "height"
-            h5py_cache_y.dims[2].label = "width"
-            for idx, dis_y in enumerate(dis_ys):
-                h5py_cache_y[idx] = dis_y
-
-        # U
+            self._write_channel(asset, "y", dis_ys)
         if "u" in self.channels.lower():
-            h5py_cache_u = self.h5py_file.create_dataset(
-                str(asset) + "_u",
-                (len(dis_us), dis_us[0].shape[0], dis_us[0].shape[1]),
-                dtype="float",
-            )
-            h5py_cache_u.dims[0].label = "frame"
-            h5py_cache_u.dims[1].label = "height"
-            h5py_cache_u.dims[2].label = "width"
-            for idx, dis_u in enumerate(dis_us):
-                h5py_cache_u[idx] = dis_u
-
-        # V
+            self._write_channel(asset, "u", dis_us)
         if "v" in self.channels.lower():
-            h5py_cache_v = self.h5py_file.create_dataset(
-                str(asset) + "_v",
-                (len(dis_vs), dis_vs[0].shape[0], dis_vs[0].shape[1]),
-                dtype="float",
-            )
-            h5py_cache_v.dims[0].label = "frame"
-            h5py_cache_v.dims[1].label = "height"
-            h5py_cache_v.dims[2].label = "width"
-            for idx, dis_v in enumerate(dis_vs):
-                h5py_cache_v[idx] = dis_v
+            self._write_channel(asset, "v", dis_vs)
 
     def _read_result(self, asset):
         result = {}

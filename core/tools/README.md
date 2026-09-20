@@ -1,7 +1,10 @@
-<!-- markdownlint-disable MD013 -->
 # `vmaf`
 
-`vmaf` is a command line tool which supports VMAF feature extraction and prediction. The tool takes a pair of input videos as well as a trained VMAF model and writes an output log containing per-frame and pooled VMAF scores. Input videos can be either `.y4m` or `.yuv` and output logs are available in a number of formats: `.xml`, `.json`, `.csv`, `.sub`.
+`vmaf` is a command line tool which supports VMAF feature extraction and
+prediction. The tool takes a pair of input videos as well as a trained VMAF
+model and writes an output log containing per-frame and pooled VMAF scores.
+Input videos can be either `.y4m` or `.yuv` and output logs are available in a
+number of formats: `.xml`, `.json`, `.csv`, `.sub`.
 
 ## Compile
 
@@ -39,7 +42,10 @@ Supported options:
 
 ## Input
 
-Pass your reference/distorted pair of videos to the tool using the `--reference` and `--distorted` flags. If your inputs are `.y4m` this is all that is required. If your inputs are raw `.yuv` the following parameters are also required: `--width`, `--height`, `--pixel_format`, `--bitdepth`.
+Pass your reference/distorted pair of videos to the tool using the `--reference`
+and `--distorted` flags. If your inputs are `.y4m` this is all that is required.
+If your inputs are raw `.yuv` the following parameters are also required:
+`--width`, `--height`, `--pixel_format`, `--bitdepth`.
 
 ```shell script
 # .y4m
@@ -54,7 +60,15 @@ Pass your reference/distorted pair of videos to the tool using the `--reference`
 
 ## VMAF Models
 
-`vmaf` now has a number of VMAF models built-in. This means that no external VMAF model files are required, and the models are read from the binary itself. Previous versions of `libvmaf` required a `.pkl` format model file. Since v2.0.0, these `.pkl` model files have been deprecated in favor of `.json` model files. If you have a previously trained `.pkl` model you would like to convert to `.json`, the following [Python conversion script](../../python/vmaf/script/convert_model_from_pkl_to_json.py) is available. If the `--model` parameter is not passed at all, `version=vmaf_v0.6.1` is enabled by default.
+`vmaf` now has a number of VMAF models built-in. This means that no external
+VMAF model files are required, and the models are read from the binary itself.
+Previous versions of `libvmaf` required a `.pkl` format model file. Since
+v2.0.0, these `.pkl` model files have been deprecated in favor of `.json` model
+files. If you have a previously trained `.pkl` model you would like to convert
+to `.json`, the following
+[Python conversion script](../../python/vmaf/script/convert_model_from_pkl_to_json.py)
+is available. If the `--model` parameter is not passed at all,
+`version=vmaf_v0.6.1` is enabled by default.
 
 ```shell script
 # built-in model
@@ -66,7 +80,8 @@ Pass your reference/distorted pair of videos to the tool using the `--reference`
 
 ## Additional Metrics
 
-A number of addtional metrics are supported. Enable these metrics with the `--feature` flag.
+A number of addtional metrics are supported. Enable these metrics with the
+`--feature` flag.
 
 ```shell script
 # psnr, psnr_hvs, ssim, ms-ssim, ciede
@@ -80,7 +95,10 @@ A number of addtional metrics are supported. Enable these metrics with the `--fe
 
 ## Example
 
-The following example shows a comparison using a pair of yuv inputs ([`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv), [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv)). In addition to VMAF, the `psnr` metric is also computed and logged.
+The following example shows a comparison using a pair of yuv inputs
+([`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv),
+[`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv)).
+In addition to VMAF, the `psnr` metric is also computed and logged.
 
 ```shell script
 ./build/tools/vmaf \

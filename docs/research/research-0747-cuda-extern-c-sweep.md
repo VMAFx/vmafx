@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0747 — CUDA `extern "C"` name-mangling sweep
 
 **Date:** 2026-05-28
@@ -27,7 +26,7 @@ files.
 ### Classification
 
 | File | `extern "C"` present | All looked-up kernels covered | Status |
-|------|----------------------|-------------------------------|--------|
+| ------ | ---------------------- | ------------------------------- | -------- |
 | `integer_ssim/ssim_score.cu` | Yes (line 37) | Yes (`calculate_ssim_*`) | SAFE |
 | `integer_ssim/integer_ssim_score.cu` | **No** | N/A — 3 kernels exposed bare | **BROKEN** |
 | `integer_adm/adm_csf.cu` | Yes (line 205) | Yes (`adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4`) | SAFE |

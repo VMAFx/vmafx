@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0870: Helm values.schema.json + dev-MCP Containerfile rebuild audit
 
 - **Date**: 2026-05-30
@@ -84,7 +83,7 @@ side of the same rename) still has these stale references:
 | `dev/Containerfile` | 485 | comment: `meson.build lives in libvmaf/` |
 | `dev/Containerfile` | 515 | `RUN cd libvmaf && CC=icx CXX=icpx meson setup build …` |
 | `dev/Containerfile` | 533 | `RUN cd libvmaf && ninja -C build install` |
-| `.dockerignore`     | 32-34 | `libvmaf/build*/` siblings only; no `core/build*/` |
+| `.dockerignore` | 32-34 | `libvmaf/build*/` siblings only; no `core/build*/` |
 
 Against current master, the COPY on line 452 fails with `"libvmaf":
 not found` and the build aborts before reaching CUDA / SYCL / HIP

@@ -42,12 +42,6 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Fixture geometry — large enough for the 17-tap VIF Gaussian and the
  * 4-scale pyramid (smallest scale is /8), small enough for a fast CI run. */
 #define FIXTURE_W 256u
@@ -145,7 +139,7 @@ static char *feed_all_frames(VmafContext *vmaf)
         if (err)
             return "vmaf_read_pictures failed";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *read_vif_scores(VmafContext *vmaf, double scores_out[NUM_VIF_SCALES])
@@ -156,7 +150,7 @@ static char *read_vif_scores(VmafContext *vmaf, double scores_out[NUM_VIF_SCALES
         if (err)
             return "vmaf_feature_score_at_index(vif_scale, idx=1) failed";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_vif(double scores_out[NUM_VIF_SCALES])
@@ -164,19 +158,19 @@ static char *run_cpu_vif(double scores_out[NUM_VIF_SCALES])
     int err = 0;
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
     /* CPU extractor name is "vif" (not "integer_vif" — that is the model
      * JSON's feature identifier; the extractor itself registers as "vif"). */
-    err = vmaf_use_feature(vmaf, "vif", NULL);
+    err = vmaf_use_feature(vmaf, "vif", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(vif) failed", !err);
 
     char *feed_err = feed_all_frames(vmaf);
     if (feed_err)
         return feed_err;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_vif_scores(vmaf, scores_out);
@@ -185,12 +179,12 @@ static char *run_cpu_vif(double scores_out[NUM_VIF_SCALES])
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Opening a CUDA-backed context for this feature is the same three calls;
  * folding them into one keeps run_cuda_vif inside the branch budget. */
-static char *open_cuda_context(VmafContext **vmaf, VmafCudaState *cu_state,
+static char *open_cuda_context(VmafContext **vmaf, const VmafCudaState *cu_state,
                                VmafFeatureDictionary *opts)
 {
     const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -203,7 +197,7 @@ static char *open_cuda_context(VmafContext **vmaf, VmafCudaState *cu_state,
     err = vmaf_use_feature(*vmaf, "vif_cuda", opts);
     if (err)
         return "CUDA: vmaf_use_feature(vif_cuda) failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run "vif_cuda" with the given options string (NULL → defaults). Returns
@@ -214,20 +208,20 @@ static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictiona
         scores_out[k] = NAN;
 
     int err = 0;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         /* No CUDA device: free the caller-supplied opts dict before returning so
          * it is not leaked (vmaf_use_feature(), which normally takes ownership,
          * will not be reached).  vmaf_feature_dictionary_free() is a no-op when
          * opts is NULL, so NULL-passing callers are safe.  See ADR-0806. */
         (void)vmaf_feature_dictionary_free(&opts);
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     char *open_err = open_cuda_context(&vmaf, cu_state, opts);
     if (open_err)
         return open_err;
@@ -235,7 +229,7 @@ static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictiona
     char *feed_err = feed_all_frames(vmaf);
     if (feed_err)
         return feed_err;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_vif_scores(vmaf, scores_out);
@@ -246,7 +240,7 @@ static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictiona
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vif_cpu_cuda_parity_4_2_0(void)
@@ -264,13 +258,13 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
     if (msg)
         return msg;
 
-    msg = run_cuda_vif(cuda_default, NULL);
+    msg = run_cuda_vif(cuda_default, VMAF_NULLPTR);
     if (msg)
         return msg;
 
     /* No CUDA device — skip the rest. */
     if (isnan(cuda_default[0]))
-        return NULL;
+        return VMAF_NULLPTR;
 
     /* Parity check: CPU vs CUDA default. */
     for (unsigned k = 0; k < NUM_VIF_SCALES; k++) {
@@ -286,7 +280,7 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
     /* Vestigial enable_chroma=true contract: must produce *identical* scores
      * to the default invocation (the kernel is luma-only; the option is a
      * documented no-op — ADR-0541). */
-    VmafFeatureDictionary *chroma_opts = NULL;
+    VmafFeatureDictionary *chroma_opts = VMAF_NULLPTR;
     int err = vmaf_feature_dictionary_set(&chroma_opts, "enable_chroma", "true");
     mu_assert("vmaf_feature_dictionary_set(enable_chroma) failed", !err);
 
@@ -305,13 +299,11 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
         mu_assert("enable_chroma=true must be a bit-identical no-op (ADR-0541)", delta == 0.0);
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_vif_cpu_cuda_parity_4_2_0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

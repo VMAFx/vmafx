@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0720 — vmaf-tune executor strict JSONL results
 
 ## Question
@@ -30,7 +29,7 @@ unchanged in memory; only the serialized JSONL maps non-finite diagnostics to
 ## Alternatives considered
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave executor rows on raw `json.dumps()` | Smallest diff | Non-standard `NaN` leaks into user-facing result files | Rejected |
 | Normalize row dicts before returning | Serialized and in-memory shapes match | Hides failure sentinels from Python callers | Rejected |
 | Strict serialization only at the write boundary | Portable files and unchanged caller math | Disk rows use `null` while returned rows keep `NaN` | Chosen |

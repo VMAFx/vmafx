@@ -10,10 +10,6 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(concurrency-mt-unsafe): this test's subject is how the library
- * resolves paths from the process environment, so it has to set and unset
- * variables. Each test binary is its own single-threaded process, and nothing
- * else reads the environment while it runs (ADR-0141). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,17 +26,11 @@
 
 #include "dnn/model_loader.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 static char *test_verify_null_path(void)
 {
-    const int err = vmaf_dnn_verify_signature(NULL, NULL);
+    const int err = vmaf_dnn_verify_signature(VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("NULL onnx path -> -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
@@ -62,11 +52,7 @@ static int write_tmp(const char *suffix, const char *body, char *out_path, size_
         return -1;
     FILE *f = fdopen(fd, "wb");
     if (!f) {
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(fd);
         return -1;
     }
@@ -88,7 +74,7 @@ static char *test_verify_missing_registry(void)
     const int err = vmaf_dnn_verify_signature(onnx, "/nonexistent/registry.json");
     mu_assert("missing registry -> -ENOENT", err == -ENOENT);
     (void)unlink(onnx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_no_matching_entry(void)
@@ -102,7 +88,7 @@ static char *test_verify_no_matching_entry(void)
     const int err = vmaf_dnn_verify_signature("/tmp/unknown.onnx", reg_path);
     mu_assert("no entry -> -ENOENT", err == -ENOENT);
     (void)unlink(reg_path);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_missing_bundle(void)
@@ -116,7 +102,7 @@ static char *test_verify_missing_bundle(void)
     const int err = vmaf_dnn_verify_signature("/tmp/y.onnx", reg_path);
     mu_assert("missing bundle -> -ENOENT", err == -ENOENT);
     (void)unlink(reg_path);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_entry_without_bundle(void)
@@ -130,7 +116,7 @@ static char *test_verify_entry_without_bundle(void)
     const int err = vmaf_dnn_verify_signature("/tmp/z.onnx", reg_path);
     mu_assert("no bundle key -> -ENOENT", err == -ENOENT);
     (void)unlink(reg_path);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Helper: set up a per-test scratch directory under /tmp containing
@@ -161,11 +147,7 @@ static int write_in_dir(const char *dir, const char *name, const char *body)
         return -1;
     FILE *f = fdopen(fd, "wb");
     if (!f) {
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(fd);
         return -1;
     }
@@ -204,13 +186,13 @@ static char *test_verify_default_registry_missing(void)
     const int n = snprintf(onnx_path, sizeof(onnx_path), "%s/model.onnx", dir);
     mu_assert("snprintf onnx_path", n > 0 && (size_t)n < sizeof(onnx_path));
 
-    const int err = vmaf_dnn_verify_signature(onnx_path, NULL);
+    const int err = vmaf_dnn_verify_signature(onnx_path, VMAF_NULLPTR);
     /* fopen() of the missing default registry returns -ENOENT. */
     mu_assert("default registry missing -> -ENOENT", err == -ENOENT);
 
     cleanup_in_dir(dir, "model.onnx");
     (void)rmdir(dir);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_default_registry_no_slash_in_onnx(void)
@@ -219,12 +201,12 @@ static char *test_verify_default_registry_no_slash_in_onnx(void)
      * model/tiny/registry.json default. That path won't exist in /tmp's
      * cwd, so we expect a slurp_registry() failure (-ENOENT). Exercises
      * lines 555-558 (the "no slash in onnx_path" branch). */
-    const int err = vmaf_dnn_verify_signature("nonexistent.onnx", NULL);
+    const int err = vmaf_dnn_verify_signature("nonexistent.onnx", VMAF_NULLPTR);
     /* Whatever cwd resolves "model/tiny/registry.json" to, it must not
      * exist for an absolute-no-slash test argument run from the meson
      * test harness. Accept any negative errno that means "not found". */
     mu_assert("no-slash onnx + missing default reg -> negative", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_registry_no_slash_in_path(void)
@@ -241,7 +223,7 @@ static char *test_verify_registry_no_slash_in_path(void)
 
     /* Save + restore cwd so the test is hermetic. */
     char cwd_save[512];
-    mu_assert("getcwd", getcwd(cwd_save, sizeof(cwd_save)) != NULL);
+    mu_assert("getcwd", getcwd(cwd_save, sizeof(cwd_save)) != VMAF_NULLPTR);
     mu_assert("chdir into scratch", chdir(dir) == 0);
 
     /* registry_path is a basename only — no '/'. */
@@ -252,7 +234,7 @@ static char *test_verify_registry_no_slash_in_path(void)
 
     cleanup_in_dir(dir, "reg_noslash.json");
     (void)rmdir(dir);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Build a fake `cosign` shell script under <dir>/cosign that exits
@@ -270,11 +252,7 @@ static int write_fake_cosign(const char *dir, int exit_code)
         return -1;
     FILE *f = fdopen(fd, "w");
     if (!f) {
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(fd);
         return -1;
     }
@@ -305,7 +283,7 @@ static char *setup_fake_cosign_fixture(char *dir, size_t dir_sz, int exit_code)
     mu_assert("write bundle", write_in_dir(dir, "k.onnx.sigstore.json", "{}") == 0);
     mu_assert("write onnx", write_in_dir(dir, "k.onnx", "fake") == 0);
     mu_assert("write fake cosign", write_fake_cosign(dir, exit_code) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_with_fake_cosign(int exit_code, int expected_err)
@@ -340,7 +318,7 @@ static char *run_with_fake_cosign(int exit_code, int expected_err)
     (void)rmdir(dir);
 
     mu_assert("verify_signature returned expected status", err == expected_err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_cosign_success(void)
@@ -371,7 +349,7 @@ static char *setup_cosign_not_on_path_fixture(char *dir, size_t dir_sz)
     mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
     mu_assert("write bundle", write_in_dir(dir, "q.onnx.sigstore.json", "{}") == 0);
     mu_assert("write onnx", write_in_dir(dir, "q.onnx", "fake") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_cosign_not_on_path(void)
@@ -411,7 +389,7 @@ static char *test_verify_cosign_not_on_path(void)
     (void)rmdir(dir);
 
     mu_assert("cosign not on PATH -> -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Scratch-dir + registry + bundle + onnx setup shared by
@@ -425,7 +403,7 @@ static char *setup_cosign_empty_path_fixture(char *dir, size_t dir_sz)
     mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
     mu_assert("write bundle", write_in_dir(dir, "e.onnx.sigstore.json", "{}") == 0);
     mu_assert("write onnx", write_in_dir(dir, "e.onnx", "fake") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_cosign_path_empty_string(void)
@@ -460,7 +438,7 @@ static char *test_verify_cosign_path_empty_string(void)
     (void)rmdir(dir);
 
     mu_assert("empty PATH -> -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_with_registry_body(const char *body, const char *onnx_path, int expected_err,
@@ -472,7 +450,7 @@ static char *run_with_registry_body(const char *body, const char *onnx_path, int
     const int err = vmaf_dnn_verify_signature(onnx_path, reg_path);
     (void)unlink(reg_path);
     mu_assert("verify_signature returned expected status", err == expected_err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_verify_malformed_onnx_no_colon(void)
@@ -550,16 +528,16 @@ static char *test_verify_bundle_is_directory(void)
     (void)rmdir(bundle_path);
     cleanup_in_dir(dir, "registry.json");
     (void)rmdir(dir);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* !_WIN32 */
 
 #ifdef _WIN32
 static char *test_verify_windows_returns_enosys(void)
 {
-    const int err = vmaf_dnn_verify_signature("C:\\fake.onnx", NULL);
+    const int err = vmaf_dnn_verify_signature("C:\\fake.onnx", VMAF_NULLPTR);
     mu_assert("Windows path -> -ENOSYS", err == -ENOSYS);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -592,7 +570,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */
-
-/* NOLINTEND(concurrency-mt-unsafe) */

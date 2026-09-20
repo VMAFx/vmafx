@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # OpenTelemetry integration (ADR-0782)
 
 VMAFX exports distributed traces (and, when a collector is configured,

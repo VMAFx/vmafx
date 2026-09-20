@@ -47,9 +47,11 @@
  *  ``docs/adr/0218-mobilesal-saliency-extractor.md``.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -98,20 +100,20 @@ static void mobilesal_release(MobilesalState *s)
     for (int i = 0; i < 3; ++i) {
         if (s->rgb8[i]) {
             aligned_free(s->rgb8[i]);
-            s->rgb8[i] = NULL;
+            s->rgb8[i] = VMAF_NULLPTR;
         }
     }
     if (s->tensor_in) {
         aligned_free(s->tensor_in);
-        s->tensor_in = NULL;
+        s->tensor_in = VMAF_NULLPTR;
     }
     if (s->sal_map) {
         aligned_free(s->sal_map);
-        s->sal_map = NULL;
+        s->sal_map = VMAF_NULLPTR;
     }
     if (s->sess) {
         (void)vmaf_dnn_session_close(s->sess);
-        s->sess = NULL;
+        s->sess = VMAF_NULLPTR;
     }
 }
 
@@ -181,7 +183,8 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (!path) {
         return -EINVAL;
     }
-    if (strstr(path, "mobilesal.onnx") != NULL || strstr(path, "placeholder") != NULL) {
+    if (strstr(path, "mobilesal.onnx") != VMAF_NULLPTR ||
+        strstr(path, "placeholder") != VMAF_NULLPTR) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "mobilesal: loading placeholder model '%s' (synthetic smoke weights; placeholder "
                  "/ not for production); use saliency_student_v2.onnx for production\n",
@@ -191,7 +194,7 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (rc < 0) {
         return rc;
     }
-    assert(s->sess != NULL);
+    assert(s->sess != VMAF_NULLPTR);
 
     s->w = w;
     s->h = h;
@@ -203,17 +206,17 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     return 0;
 }
 
-static int mobilesal_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                             VmafPicture *dist_pic_90, unsigned index,
+static int mobilesal_extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                             const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                             const VmafPicture *dist_pic_90, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic_90;
     MobilesalState *s = fex->priv;
-    assert(s != NULL);
-    assert(s->sess != NULL);
+    assert(s != VMAF_NULLPTR);
+    assert(s->sess != VMAF_NULLPTR);
 
     if (dist_pic->w[0] != s->w || dist_pic->h[0] != s->h) {
         return -ERANGE;
@@ -285,9 +288,8 @@ static const VmafOption mobilesal_options[] = {
     {0},
 };
 
-static const char *mobilesal_provided_features[] = {"saliency_mean", NULL};
+static const char *mobilesal_provided_features[] = {"saliency_mean", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_mobilesal` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_mobilesal = {
     .name = "mobilesal",
     .init = mobilesal_init,
@@ -300,5 +302,3 @@ VmafFeatureExtractor vmaf_fex_mobilesal = {
      * TUs (silences -Wlto-type-mismatch — see ADR-0181). */
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

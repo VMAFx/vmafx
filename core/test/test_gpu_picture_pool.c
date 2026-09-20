@@ -46,12 +46,12 @@ static char *test_ring_buffer()
         .pix_fmt = VMAF_PIX_FMT_YUV400P,
     };
 
-    VmafCudaConfiguration cu_cfg = {0};
+    VmafCudaConfiguration cu_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&my_cookie.state, cu_cfg);
     if (err || !my_cookie.state) {
         free(my_cookie.state);
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafGpuPicturePoolConfig cfg = {
@@ -112,11 +112,11 @@ static char *test_ring_buffer()
     err = vmaf_gpu_picture_pool_close(ring_buffer);
     mu_assert("problem during vmaf_gpu_picture_pool_close", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_ring_buffer);
-    return NULL;
+    return VMAF_NULLPTR;
 }

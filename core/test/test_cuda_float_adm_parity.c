@@ -138,11 +138,11 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("CPU: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm", opts);
@@ -151,7 +151,8 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CPU: fill_ref failed", !err);
         err = fill_dist(&dist, i);
@@ -159,7 +160,7 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
@@ -169,7 +170,7 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(const char *opt_name, const char *opt_val, const char *const *keys,
@@ -180,24 +181,24 @@ static char *run_cuda(const char *opt_name, const char *opt_val, const char *con
         out_scores[m] = NAN;
 
     int err = 0;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("CUDA: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm_cuda", opts);
@@ -206,7 +207,8 @@ static char *run_cuda(const char *opt_name, const char *opt_val, const char *con
     mu_assert("CUDA: vmaf_use_feature(float_adm_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CUDA: fill_ref failed", !err);
         err = fill_dist(&dist, i);
@@ -214,7 +216,7 @@ static char *run_cuda(const char *opt_name, const char *opt_val, const char *con
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
@@ -226,7 +228,7 @@ static char *run_cuda(const char *opt_name, const char *opt_val, const char *con
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_adm_cpu_cuda_parity(void)
@@ -235,14 +237,14 @@ static char *test_float_adm_cpu_cuda_parity(void)
     double cuda_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(NULL, NULL, ADM_FEATURES, cpu_scores);
+    char *msg = run_cpu(VMAF_NULLPTR, VMAF_NULLPTR, ADM_FEATURES, cpu_scores);
     if (msg)
         return msg;
-    msg = run_cuda(NULL, NULL, ADM_FEATURES, cuda_scores, &skipped);
+    msg = run_cuda(VMAF_NULLPTR, VMAF_NULLPTR, ADM_FEATURES, cuda_scores, &skipped);
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         mu_assert("CPU float_adm score is non-finite", isfinite(cpu_scores[m]));
@@ -257,7 +259,7 @@ static char *test_float_adm_cpu_cuda_parity(void)
         mu_assert("float_adm CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -285,7 +287,7 @@ static char *assert_opt_parity(const char *opt_name, const char *opt_val, const 
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         mu_assert("CPU float_adm score is non-finite", isfinite(cpu_scores[m]));
@@ -300,7 +302,7 @@ static char *assert_opt_parity(const char *opt_name, const char *opt_val, const 
         mu_assert("float_adm with a non-default option drifts from the CPU reference",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_adm_p_norm_reaches_kernel(void)
@@ -333,5 +335,5 @@ char *run_tests(void)
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
     mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
-    return NULL;
+    return VMAF_NULLPTR;
 }

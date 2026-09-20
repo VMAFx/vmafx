@@ -1,7 +1,6 @@
-<!-- markdownlint-disable MD036 -->
 # Research digest: macOS SIGSEGV deep-fix in output.c writers (ADR-0606)
 
-_2026-05-19 — lusoris / Claude_
+## 2026-05-19 — lusoris / Claude
 
 ## Summary
 

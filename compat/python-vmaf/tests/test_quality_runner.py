@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -77,7 +78,7 @@ class TestQualityRunnerKeyHelpers:
 
 
 class TestAssertExtensionFormat:
-    supported = [".pkl", ".json"]
+    supported: ClassVar = [".pkl", ".json"]
 
     def test_pkl_accepted(self):
         VmafQualityRunner._assert_extension_format(self.supported, ".pkl")
@@ -92,11 +93,11 @@ class TestAssertExtensionFormat:
         VmafQualityRunner._assert_extension_format(self.supported, ".json_720")
 
     def test_unsupported_format_raises(self):
-        with pytest.raises(AssertionError, match="supports .pkl or .json"):
+        with pytest.raises(AssertionError, match=r"supports \.pkl or \.json"):
             VmafQualityRunner._assert_extension_format(self.supported, ".pkkl")
 
     def test_another_unsupported_format_raises(self):
-        with pytest.raises(AssertionError, match="supports .pkl or .json"):
+        with pytest.raises(AssertionError, match=r"supports \.pkl or \.json"):
             VmafQualityRunner._assert_extension_format(self.supported, ".jsson")
 
     def test_empty_format_raises(self):

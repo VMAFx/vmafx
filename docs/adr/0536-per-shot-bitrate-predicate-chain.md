@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD060 -->
-# ADR-0536: Per-shot predicate threads bitrate_kbps through bisect sidecar (PR #1290 follow-up)
+# ADR-0536: per shot bitrate predicate chain
+
+**Decision:** Per-shot predicate threads bitrate_kbps through bisect sidecar (PR
+\#1290 follow-up)
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
@@ -31,30 +33,31 @@ Implement the bitrate-sidecar wiring described in ADR-0531:
 2. The inner `_predicate` closure stores `result.bitrate_kbps` into the sidecar
    dict keyed by `(shot.start_frame, shot.end_frame)` before returning.
 3. The call site in `_run_tune_per_shot` unpacks the tuple, initialises an empty
-   `bitrate_sidecar` for the `--predicate-module` path, and after `tune_per_shot`
-   returns patches each `ShotRecommendation` via `dataclasses.replace` to inject
-   the measured bitrate from the sidecar (defaulting to the NaN field value for
-   shots absent from the sidecar).
+   `bitrate_sidecar` for the `--predicate-module` path, and after
+   `tune_per_shot` returns patches each `ShotRecommendation` via
+   `dataclasses.replace` to inject the measured bitrate from the sidecar
+   (defaulting to the NaN field value for shots absent from the sidecar).
 
-The `PredicateFn` public type alias remains `Callable[[Shot, float, str],
-tuple[int, float]]` — no blast radius on custom predicates or library callers.
+The `PredicateFn` public type alias remains
+`Callable[[Shot, float, str], tuple[int, float]]` — no blast radius on custom
+predicates or library callers.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Widen `PredicateFn` to `tuple[int, float, float]` | No side-channel | Breaks all existing `--predicate-module` callers and the `_default_predicate` stub | Breaking API change — ruled out in ADR-0531 |
-| Re-encode each shot after `tune_per_shot` to measure bitrate | Bit-exact final-segment bitrate | Doubles encode time; bisect already has the best-CRF encode | Unnecessary work |
-| Sidecar dict keyed by shot index | Avoids tuple key | Fragile if `tune_per_shot` ever re-orders or skips shots | Key on `(start_frame, end_frame)` is content-stable |
+| Option                                                       | Pros                            | Cons                                                                               | Why not chosen                                      |
+| ------------------------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Widen `PredicateFn` to `tuple[int, float, float]`            | No side-channel                 | Breaks all existing `--predicate-module` callers and the `_default_predicate` stub | Breaking API change — ruled out in ADR-0531         |
+| Re-encode each shot after `tune_per_shot` to measure bitrate | Bit-exact final-segment bitrate | Doubles encode time; bisect already has the best-CRF encode                        | Unnecessary work                                    |
+| Sidecar dict keyed by shot index                             | Avoids tuple key                | Fragile if `tune_per_shot` ever re-orders or skips shots                           | Key on `(start_frame, end_frame)` is content-stable |
 
 ## Consequences
 
 - **Positive**: `bitrate_kbps` in the per-shot plan JSON carries real kbps
   values from the bisect backend; the BBB v11 finding is resolved.
 - **Negative**: `_build_per_shot_bisect_predicate` return type changed from
-  `PerShotPredicateFn` to a 2-tuple — any fork-external caller that assigned
-  the return to a `PerShotPredicateFn`-typed variable must be updated (none
-  exist in tree).
+  `PerShotPredicateFn` to a 2-tuple — any fork-external caller that assigned the
+  return to a `PerShotPredicateFn`-typed variable must be updated (none exist in
+  tree).
 - **Neutral**: external `--predicate-module` predicates still yield `null`
   bitrate (sidecar remains empty); this is correct — no real encode happened.
 

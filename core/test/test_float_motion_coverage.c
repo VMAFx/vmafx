@@ -32,12 +32,6 @@
 #include "libvmaf/picture.h"
 #include "picture.h" /* vmaf_picture_ref — internal, not in the public header */
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #define FMOT_W (16u)
 #define FMOT_H (16u)
 
@@ -95,7 +89,8 @@ static int run_frames(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc
     for (unsigned i = 0; i < n_frames; ++i) {
         if (i > 0)
             vmaf_picture_ref(&ctx->fex->prev_ref, &pics[i - 1u]);
-        err = vmaf_feature_extractor_context_extract(ctx, &pics[i], NULL, &pics[i], NULL, i, fc);
+        err = vmaf_feature_extractor_context_extract(ctx, &pics[i], VMAF_NULLPTR, &pics[i],
+                                                     VMAF_NULLPTR, i, fc);
         if (ctx->fex->prev_ref.ref) {
             (void)vmaf_picture_unref(&ctx->fex->prev_ref);
             memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
@@ -113,16 +108,16 @@ static int run_frames(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc
 
 static char *test_float_motion_default_three_frames(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor present", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
+    mu_assert("float_motion extractor present", fex != VMAF_NULLPTR);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FMOT_W, FMOT_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
@@ -135,57 +130,58 @@ static char *test_float_motion_default_three_frames(void)
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_motion_force_zero(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor present", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
+    mu_assert("float_motion extractor present", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "motion_force_zero", "true", 0);
     mu_assert("set motion_force_zero", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FMOT_W, FMOT_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
     VmafPicture ref;
     err = alloc_grey8(&ref, 128u);
     mu_assert("alloc ref", err == 0);
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &ref, NULL, 0u, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &ref, VMAF_NULLPTR, 0u, fc);
     mu_assert("extract force_zero", err == 0);
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_motion_add_uv(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor present", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
+    mu_assert("float_motion extractor present", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "motion_add_uv", "true", 0);
     mu_assert("set motion_add_uv", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FMOT_W, FMOT_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
@@ -198,29 +194,30 @@ static char *test_float_motion_add_uv(void)
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_motion_single_frame_flush(void)
 {
     /* A single frame then flush exercises the n<=min_idx short-circuit path. */
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor present", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
+    mu_assert("float_motion extractor present", fex != VMAF_NULLPTR);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FMOT_W, FMOT_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
     VmafPicture ref;
     err = alloc_grey8(&ref, 100u);
     mu_assert("alloc ref", err == 0);
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &ref, NULL, 0u, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &ref, VMAF_NULLPTR, 0u, fc);
     mu_assert("extract frame 0", err == 0);
 
     err = vmaf_feature_extractor_context_flush(ctx, fc);
@@ -230,7 +227,7 @@ static char *test_float_motion_single_frame_flush(void)
     (void)vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -239,7 +236,5 @@ char *run_tests(void)
     mu_run_test(test_float_motion_force_zero);
     mu_run_test(test_float_motion_add_uv);
     mu_run_test(test_float_motion_single_frame_flush);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

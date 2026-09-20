@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1042: Containerfile hardening — non-root USER + build-time DEBIAN_FRONTEND
 

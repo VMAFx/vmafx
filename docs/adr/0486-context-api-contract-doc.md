@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0486: Codify the three-function GPU backend context-API contract in docs
 
 - **Status**: Accepted
@@ -33,7 +32,7 @@ are modified; the doc alone closes the drift risk.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Shared C header with function-pointer table | Single machine-readable contract | Requires every backend to register a vtable; breaks header purity (backend headers stay free of cross-backend deps) | Over-engineering for a shape that has only ~4 implementations |
 | Comment block in each `common.h` referencing a contract | Keeps the contract co-located with the declaration | 60-line comment must be kept in sync across 4+ files — the exact drift problem we are solving | |
 | `docs/backends/context-api-contract.md` (chosen) | One place, no source change, low merge-conflict surface | Docs can drift from code if not maintained | Lowest overhead; checklist section prompts new-backend authors to verify |

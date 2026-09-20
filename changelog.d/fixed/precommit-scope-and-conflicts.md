@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - markdownlint no longer lints golden fixtures as prose. The exclude pattern was
   `^testdata/`, anchored at the repository root, so fixture trees under
   `pkg/*/testdata/` — the benchmark renderer's byte-exact expected Markdown, for
@@ -13,6 +15,6 @@
   the comment from another — which then failed ruff. Replaced with a single
   file-level `# ruff: noqa: E402`, which no import reordering can disturb.
 - `cmd/vmafx-tune/AGENTS.md` invariants are numbered sequentially again. Three
-  of the parallel `vmafx-tune` ports each appended invariants numbered 13–17, and
-  the union-merge that reconciled them (PR #1153) kept all three blocks, so the
-  file listed 13–17 three times over. Renumbered 1–25.
+  of the parallel `vmafx-tune` ports each appended invariants numbered 13–17,
+  and the union-merge that reconciled them (PR #1153) kept all three blocks, so
+  the file listed 13–17 three times over. Renumbered 1–25.

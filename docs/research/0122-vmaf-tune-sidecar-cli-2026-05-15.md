@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0122 — `vmaf-tune sidecar` CLI wiring
 
 ## Context
@@ -30,7 +29,7 @@ observations.
 ## Decision Matrix
 
 | Option | Pros | Cons | Decision |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Thin argparse wrapper over `SidecarPredictor` | Reuses the tested model, cache layout, UUID posture, and predictor-version invalidation. Small surface: `status`, `predict`, `record`, `batch-record`. | Still requires callers to provide `ShotFeatures`; capture extraction is separate. | Chosen. This closes the operator access gap without expanding privacy scope. |
 | Add automatic encode/log capture inside `sidecar record` | More end-to-end for operators. | Duplicates existing encode/score plumbing, pulls ffmpeg/vmaf process handling into the sidecar command, and risks hiding what features were recorded. | Rejected for this PR; capture extraction should be a later explicit workflow. |
 | Upload captures to a shared pool | Long-term community learning path. | New consent, signing, transport, and aggregation policy surface. | Rejected; ADR-0394 deliberately keeps upload out of scope. |

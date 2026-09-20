@@ -1,6 +1,8 @@
 import unittest
-from test.testutil import set_default_576_324_videos_for_testing
 
+import pytest
+
+from test.testutil import set_default_576_324_videos_for_testing
 from vmaf.config import VmafConfig
 from vmaf.core.quality_runner import PsnrQualityRunner
 from vmaf.tools.misc import MyTestCase, QualityRunnerTestMixin, import_python_file
@@ -10,7 +12,7 @@ class QualityRunnerTestMixinTest(MyTestCase, QualityRunnerTestMixin):
 
     def setUp(self):
         super().setUp()
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
         self.data = ([30.755063979166664, PsnrQualityRunner, asset, None],)
 
     def test_run_each(self):
@@ -18,9 +20,9 @@ class QualityRunnerTestMixinTest(MyTestCase, QualityRunnerTestMixin):
             self.run_each(*data_each)
 
     def test_plot_frame_scores(self):
-        import matplotlib.pyplot as plt
+        plt = pytest.importorskip("matplotlib.pyplot")
 
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         for data_each in self.data:
             new_data_each = data_each[1:]
             self.plot_frame_scores(ax, *new_data_each, label="src01_hrc01_576x324.yuv")

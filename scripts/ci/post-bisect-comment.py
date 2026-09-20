@@ -22,9 +22,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
+import shutil
 import sys
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import CommandFailed
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandFailed
+    from lib.safe_subprocess import run as run_command
 
 STICKY_HEADER = "<!-- bisect-tracker -->"
 
@@ -34,13 +42,25 @@ STICKY_HEADER = "<!-- bisect-tracker -->"
 WIRING_BROKE_LOG_MAX_CHARS = 4000
 
 
+def _gh_executable() -> str:
+    """Resolve the GitHub CLI before constructing any API argument vector."""
+    executable = shutil.which("gh")
+    if executable is None:
+        raise RuntimeError("GitHub CLI is required to update the bisect tracker")
+    return str(Path(executable).resolve(strict=True))
+
+
 def _gh(*args: str) -> str:
     """Run `gh` and return stdout; raise on non-zero exit."""
-    # S603/S607: trusted args (caller-controlled, not user input);
-    # `gh` resolved from $PATH is correct here — GitHub Actions
-    # provides it pre-installed and at varying absolute locations.
-    cmd = ["gh", *args]
-    result = subprocess.run(cmd, check=True, capture_output=True, text=True)  # noqa: S603
+    cmd = [_gh_executable(), *args]
+    result = run_command(
+        cmd,
+        allowed_executables=(cmd[0],),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout_seconds=60,
+    )
     return result.stdout
 
 
@@ -170,22 +190,20 @@ def _write_comment(repo: str, issue: int, body: str) -> None:
 def _gh_with_stdin(args: list[str], body: str) -> None:
     """Run `gh` and feed a JSON body on stdin; raise on non-zero exit."""
     payload = json.dumps({"body": body})
-    cmd = ["gh", *args]
-    # S603/S607: trusted args (caller-controlled, not user input);
-    # `gh` resolved from $PATH is the GitHub-Actions convention.
-    result = subprocess.run(  # noqa: S603
+    cmd = [_gh_executable(), *args]
+    result = run_command(
         cmd,
+        allowed_executables=(cmd[0],),
         check=False,
-        input=payload,
+        input_data=payload,
         capture_output=True,
         text=True,
+        timeout_seconds=60,
     )
     if result.returncode != 0:
         print(f"gh stderr: {result.stderr.strip()}", file=sys.stderr)
         print(f"gh stdout: {result.stdout.strip()}", file=sys.stderr)
-        raise subprocess.CalledProcessError(
-            result.returncode, cmd, output=result.stdout, stderr=result.stderr
-        )
+        raise CommandFailed(result)
 
 
 def main() -> int:
@@ -206,7 +224,7 @@ def main() -> int:
         "--error-log",
         type=Path,
         default=None,
-        help="Path to a stderr log captured during the failing step " "(used with --wiring-broke).",
+        help="Path to a stderr log captured during the failing step (used with --wiring-broke).",
     )
     p.add_argument(
         "--repo",

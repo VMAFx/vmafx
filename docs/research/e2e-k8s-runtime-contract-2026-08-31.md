@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Kubernetes E2E runtime-contract audit — 2026-08-31
 
 **Date:** 2026-08-31

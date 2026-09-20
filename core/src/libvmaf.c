@@ -117,8 +117,6 @@ typedef struct VmafContext {
                 enum VmafPixelFormat pix_fmt;
             } pic_params;
             enum VmafCudaPicturePreallocationMethod pic_prealloc_method;
-            int device_id;
-            int stream_priority;
         } cfg;
         VmafCudaState state;
         VmafCudaCookie cookie;
@@ -384,7 +382,7 @@ static int prepare_ring_buffer(VmafContext *vmaf, unsigned w, unsigned h,
     return vmaf_gpu_picture_pool_init(&vmaf->cuda.ring_buffer, cfg_buf);
 }
 
-int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state)
+int vmaf_cuda_import_state(VmafContext *vmaf, const VmafCudaState *cu_state)
 {
     if (!vmaf)
         return -EINVAL;
@@ -761,18 +759,9 @@ static void vmaf_ctx_dnn_free(VmafContext *vmaf)
     vmaf->dnn.n_outputs = 0u;
 }
 
-/* Research-2048: retained dnn_ctx.h integration surface. */
-// cppcheck-suppress unusedFunction
-int vmaf_ctx_dnn_has_session(const VmafContext *ctx)
-{
-    return (ctx && ctx->dnn.sess) ? 1 : 0;
-}
-
 /* ADR-0519: bridge for vmaf_dnn_set_codec_context. The public symbol
  * lives in dnn_attach_api.c and forwards here so VmafContext stays
  * opaque to the DNN module. */
-/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
-// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const char *preset,
                                    int crf)
 {
@@ -806,8 +795,6 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
  * DNN module. The int -> enum cast happens at the dispatch site
  * (vmaf_ctx_dnn_run_frame_nchw); the enum-validity gate lives in the
  * public wrapper. */
-/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
-// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
 {
     if (!ctx)
@@ -823,8 +810,6 @@ int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
  *   - the codec block buffer was allocated at attach time (extra_in_width > 0).
  * All three conditions must hold; any mismatch indicates a model that either
  * has no codec block or whose sidecar was absent at load time. */
-/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
-// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_is_codec_aware(const VmafContext *ctx)
 {
     if (!ctx || !ctx->dnn.sess)
@@ -947,7 +932,7 @@ static char *dnn_make_unique_fallback_output_name(const char *base, char *const 
     return NULL;
 }
 
-static int dnn_prepare_output_feature_names(VmafContext *ctx, VmafOrtSession *sess,
+static int dnn_prepare_output_feature_names(VmafContext *ctx, const VmafOrtSession *sess,
                                             const VmafModelSidecar *meta, const char *base_name)
 {
     size_t n_inputs = 0u;
@@ -1251,8 +1236,6 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
     return 0;
 }
 
-/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
-// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
                         const int64_t *in_shape, size_t in_rank, const char *feature_name)
 {
@@ -1840,7 +1823,7 @@ static void fex_release_prev_ref(VmafFeatureExtractor *fex)
  * vmaf_ref_fetch_increment would crash. The only PREV_REF consumer is CPU
  * integer_motion_v2, which is never registered alongside a pure CUDA
  * extractor set — skipping the update there is safe. ADR-0123. */
-static void read_pictures_update_prev_ref(VmafContext *vmaf, VmafPicture *ref)
+static void read_pictures_update_prev_ref(VmafContext *vmaf, const VmafPicture *ref)
 {
     if (vmaf->prev_ref.ref)
         (void)vmaf_picture_unref(&vmaf->prev_ref);
@@ -2212,8 +2195,8 @@ static int flush_context_cuda(VmafContext *vmaf)
      * frame's submit() events registered with the open drain batch.
      * Flush them in one syscall before the per-extractor collect()
      * loop runs, then close the batch so subsequent flush passes
-     * see a clean state. The fall-through to vmaf_cuda_sync below
-     * still catches any non-template-extractor stragglers. */
+     * see a clean state. The context synchronization below catches
+     * any non-template-extractor stragglers. */
     err |= vmaf_cuda_drain_batch_flush(&vmaf->cuda.state);
     vmaf_cuda_drain_batch_close();
     RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
@@ -2338,8 +2321,8 @@ enum {
     HW_FLAG_DEVICE = 1 << 1,
 };
 
-static int translate_picture_host(VmafContext *vmaf, VmafPicture *pic, VmafPicture *pic_device,
-                                  unsigned hw_flags)
+static int translate_picture_host(VmafContext *vmaf, const VmafPicture *pic,
+                                  VmafPicture *pic_device, unsigned hw_flags)
 {
     int err = 0;
     if (!(hw_flags & HW_FLAG_DEVICE))
@@ -2374,8 +2357,8 @@ static int translate_picture_host(VmafContext *vmaf, VmafPicture *pic, VmafPictu
     return err;
 }
 
-static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPicture *pic_host,
-                                    unsigned hw_flags)
+static int translate_picture_device(VmafContext *vmaf, const VmafPicture *pic,
+                                    VmafPicture *pic_host, unsigned hw_flags)
 {
     int err = 0;
     if (!(hw_flags & HW_FLAG_HOST))
@@ -2410,7 +2393,7 @@ static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPic
     return err;
 }
 
-static int translate_picture(VmafContext *vmaf, VmafPicture *pic, VmafPicture *pic_host,
+static int translate_picture(VmafContext *vmaf, const VmafPicture *pic, VmafPicture *pic_host,
                              VmafPicture *pic_device, unsigned hw_flags)
 {
     const VmafPicturePrivate *pic_priv = pic->priv;
@@ -2445,10 +2428,10 @@ static unsigned rfe_hw_flags(RegisteredFeatureExtractors *rfe)
 #endif
 
 #ifdef HAVE_CUDA
-static int read_pictures_cuda_translate(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-                                        unsigned hw_flags, VmafPicture *ref_host,
-                                        VmafPicture *ref_device, VmafPicture *dist_host,
-                                        VmafPicture *dist_device)
+static int read_pictures_cuda_translate(VmafContext *vmaf, const VmafPicture *ref,
+                                        const VmafPicture *dist, unsigned hw_flags,
+                                        VmafPicture *ref_host, VmafPicture *ref_device,
+                                        VmafPicture *dist_host, VmafPicture *dist_device)
 {
     int err = translate_picture(vmaf, ref, ref_host, ref_device, hw_flags);
     if (err)
@@ -2518,7 +2501,8 @@ static int read_pictures_cuda_cleanup(VmafContext *vmaf, VmafPicture *ref_host,
 #endif
 
 #ifdef HAVE_SYCL
-static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist)
+static int read_pictures_sycl_prep(VmafContext *vmaf, const VmafPicture *ref,
+                                   const VmafPicture *dist)
 {
     // SYCL upload must happen BEFORE the extractor loop because SYCL
     // queues are in-order — kernels enqueued during submit read shared
@@ -2579,7 +2563,8 @@ static bool read_pictures_should_skip(const VmafContext *vmaf,
  * success its ownership transfers into the submitted work and the
  * extractor's collect() path releases it on the next frame. */
 static int dispatch_gpu_double_buffer(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
-                                      VmafPicture *ref, VmafPicture *dist, unsigned index)
+                                      const VmafPicture *ref, const VmafPicture *dist,
+                                      unsigned index)
 {
     int err = 0;
     if (fex_ctx->gpu_pending) {
@@ -2599,7 +2584,8 @@ static int dispatch_gpu_double_buffer(VmafContext *vmaf, VmafFeatureExtractorCon
 }
 
 static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
-                                      VmafPicture *ref, VmafPicture *dist, unsigned index)
+                                      const VmafPicture *ref, const VmafPicture *dist,
+                                      unsigned index)
 {
     /* ADR-0778 Fix-A: use vmaf_picture_ref, not a bare struct copy, so
      * the synchronous non-GPU dispatch holds its own counted reference to
@@ -2622,14 +2608,8 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
     return err;
 }
 
-/* Upstream dispatch function. Refactoring is tracked in .workingdir2/OPEN.md.
- * `ref` / `dist` are only read on the CPU configuration cppcheck analyses,
- * but the SYCL build hands them to vmaf_sycl_shared_frame_upload(), whose
- * prototype (src/sycl/common.h) takes mutable pictures, so they cannot be
- * const-qualified for every backend. Suppression cited per ADR-0278. */
-/* cppcheck-suppress constParameterPointer ; SYCL upload takes mutable pictures, see above */
-static int read_pictures_validate_and_prep(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-                                           unsigned index)
+static int read_pictures_validate_and_prep(VmafContext *vmaf, const VmafPicture *ref,
+                                           const VmafPicture *dist, unsigned index)
 {
     /* Enforce monotonically-increasing index: motion / motion2 / motion3
      * use sliding windows keyed by `index % N`, so out-of-order submission
@@ -2695,8 +2675,8 @@ typedef struct ReadPicturesFrame {
  *  Vulkan / SYCL extractors keep their per-frame collect/submit
  *  ordering — only CUDA participates in the batch.
  */
-static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref_device,
-                                             VmafPicture *dist_device, unsigned index)
+static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, const VmafPicture *ref_device,
+                                             const VmafPicture *dist_device, unsigned index)
 {
     if (!vmaf->cuda.state.ctx) {
         return 0;
@@ -2854,11 +2834,11 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr
         if (cuda && fex_ctx->fex->submit && fex_ctx->fex->collect) {
             continue;
         }
-        VmafPicture *ref = cuda ? &fr->ref_device : &fr->ref_host;
-        VmafPicture *dist = cuda ? &fr->dist_device : &fr->dist_host;
+        const VmafPicture *ref = cuda ? &fr->ref_device : &fr->ref_host;
+        const VmafPicture *dist = cuda ? &fr->dist_device : &fr->dist_host;
 #else
-        VmafPicture *ref = fr->ref;
-        VmafPicture *dist = fr->dist;
+        const VmafPicture *ref = fr->ref;
+        const VmafPicture *dist = fr->dist;
 #endif
         const int err_one = read_pictures_dispatch_one(vmaf, fex_ctx, ref, dist, index);
         if (err_one)
@@ -3127,16 +3107,6 @@ int vmaf_flush_sycl(VmafContext *vmaf)
     return err;
 }
 #endif
-
-/* Research-2048: retained externally callable metadata.h registration API. */
-// cppcheck-suppress unusedFunction
-int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration cfg)
-{
-    if (!vmaf)
-        return -EINVAL;
-
-    return vmaf_feature_collector_register_metadata(vmaf->feature_collector, cfg);
-}
 
 /* Fence the pipeline so a read at ``index`` sees every write that is already
  * owed for it (Netflix/vmaf#1305, docs/state.md
@@ -3560,13 +3530,7 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *m
     return err;
 }
 
-/* Read-only accessor, but the exported prototype in
- * core/include/libvmaf/libvmaf.h takes a mutable context and the public C
- * ABI is frozen (no signature changes to the exported API in this rework), so
- * the parameter is deliberately not const-qualified here. Suppression cited
- * per ADR-0278. */
-/* cppcheck-suppress constParameterPointer ; public ABI prototype is frozen, see above */
-int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out)
+int vmaf_context_get_backend(const VmafContext *vmaf, enum VmafBackend *out)
 {
     if (!vmaf)
         return -EINVAL;
@@ -3611,11 +3575,7 @@ static int output_file_open(const char *output_path, FILE **outfile)
 #ifdef _WIN32
         (void)_close(outfd);
 #else
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(outfd);
 #endif
         return -fdopen_errno;

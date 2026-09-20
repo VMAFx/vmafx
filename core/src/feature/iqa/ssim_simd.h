@@ -19,6 +19,8 @@
 #ifndef IQA_SSIM_SIMD_H_
 #define IQA_SSIM_SIMD_H_
 
+#include "vmaf_nullptr.h"
+
 #include <pthread.h>
 
 typedef void (*ssim_precompute_fn)(const float *ref, const float *cmp, float *ref_sq, float *cmp_sq,
@@ -43,7 +45,7 @@ void iqa_ssim_set_dispatch(ssim_precompute_fn precompute, ssim_variance_fn varia
  * to these primitive args at each call site.
  *
  * `workspace` is a caller-owned `w*h`-float scratch buffer used by the
- * horizontal pass. NULL is accepted — the kernel allocates internally
+ * horizontal pass. VMAF_NULLPTR is accepted — the kernel allocates internally
  * (kept for standalone unit tests). The hot path in `iqa_ssim`
  * allocates once and reuses across all 5 dispatch sites, eliminating
  * ~1200 calloc/free pairs per 120-frame run at 1080p. See
@@ -81,6 +83,6 @@ void iqa_convolve_set_dispatch(iqa_convolve_fn convolve);
  * guard fires first wins the install and every subsequent caller —
  * from the same TU or another — short-circuits inside pthread_once.
  */
-void iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(void));
+void iqa_ssim_install_dispatch_once(const pthread_once_t *guard, void (*installer)(void));
 
 #endif /* IQA_SSIM_SIMD_H_ */

@@ -31,6 +31,8 @@
  * See docs/adr/0138-iqa-convolve-avx2-bitexact-double.md.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <immintrin.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -208,9 +210,9 @@ void iqa_convolve_avx512(float *img, int w, int h, const float *kernel_h, const 
                          int kw, int kh, int normalized, float *workspace, float *result, int *rw,
                          int *rh)
 {
-    VMAF_ASSERT_DEBUG(img != NULL);
-    VMAF_ASSERT_DEBUG(kernel_h != NULL);
-    VMAF_ASSERT_DEBUG(kernel_v != NULL);
+    VMAF_ASSERT_DEBUG(img != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(kernel_h != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(kernel_v != VMAF_NULLPTR);
     VMAF_ASSERT_DEBUG(normalized == 1);
     VMAF_ASSERT_DEBUG(w >= kw);
     VMAF_ASSERT_DEBUG(h >= kh);

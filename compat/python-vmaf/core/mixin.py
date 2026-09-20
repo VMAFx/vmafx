@@ -1,7 +1,7 @@
-import os
 import re
 import uuid
 from abc import ABCMeta, abstractmethod
+from pathlib import Path
 
 from vmaf.tools.misc import get_dir_without_last_slash
 
@@ -20,7 +20,7 @@ class WorkdirEnabled(object):
 
     def _get_workdir(self, workdir_root):
         subdir = str(uuid.uuid4())
-        self.workdir = os.path.join(workdir_root, subdir)
+        self.workdir = str(Path(workdir_root).joinpath(subdir))
 
     @property
     def workdir_root(self):
@@ -75,7 +75,7 @@ class TypeVersionEnabled(object):
         """
         matched_subclasses = []
         for subclass in cls.get_subclasses_recursively():
-            if hasattr(subclass, "TYPE") and subclass.TYPE == subclass_type:
+            if hasattr(subclass, "TYPE") and subclass_type == subclass.TYPE:
                 matched_subclasses.append(subclass)
         assert len(matched_subclasses) == 1, (
             "Must have one and only one subclass of {class_name} with type "

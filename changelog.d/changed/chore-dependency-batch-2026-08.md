@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Two months of accumulated dependency updates land as a single batch instead of
   36 individual PRs: Docker base-image digests and tags (debian, fedora 45→46,
   golang 1.26→1.27, ubuntu, python-slim, both distroless variants,

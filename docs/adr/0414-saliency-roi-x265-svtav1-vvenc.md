@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0414: Saliency-aware ROI for x265 / SVT-AV1 / libvvenc adapters
 
 - **Status**: Accepted
@@ -50,7 +49,7 @@ fields are unchanged — zones-based saliency ROI is orthogonal to 2-pass.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | x264 qpfile format for all three codecs | Simpler — one formatter | libx265 / SVT-AV1 / vvenc do not honour x264's ASCII qpfile syntax | Rejected: wrong format per encoder docs |
 | Per-MB (16×16) block granularity for SVT-AV1 / vvenc | Matches x264 MB granularity | SVT-AV1 super-block is 64×64; vvenc CTU is 64×64; sub-SB granularity is undefined | Rejected: encoders document 64×64 as the ROI-map unit |
 | Single-zone x265 approach (mean offset, all frames) | Simple; matches per-clip aggregate saliency mask semantics | Loses within-clip spatial variation | Chosen: per-clip aggregate is the established posture (ADR-0293); temporal zones are a follow-up |

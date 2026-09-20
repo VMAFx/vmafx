@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0321](0321-fr-regressor-v2-ensemble-full-prod-flip.md) | `fr_regressor_v2_ensemble_v1` — full production flip (real ONNX + sidecars) | Accepted | `ai`, `tinyai`, `models`, `registry`, `prod-flip` |

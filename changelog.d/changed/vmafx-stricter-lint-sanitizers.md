@@ -1,17 +1,19 @@
-### CI — tighter clang-tidy + required sanitizer gates (ADR-0694)
+# Changelog fragment
+
+## CI — tighter clang-tidy + required sanitizer gates (ADR-0694)
 
 ### clang-tidy
 
-Two CERT-C checks are now explicitly tracked as Phase 2B / ADR-0686
-enforcement additions in `.clang-tidy`:
+Two CERT-C checks are now explicitly tracked as Phase 2B / ADR-0686 enforcement
+additions in `.clang-tidy`:
 
-- **`cert-err33-c`** (advisory): every non-void return value must be checked
-  or explicitly `(void)`-cast. Already mandated by CLAUDE.md §6; now surfaces
-  in CI lint reports. A follow-up sweep PR will fix 394 pre-existing
-  violations and promote the check to `WarningsAsErrors`.
+- **`cert-err33-c`** (advisory): every non-void return value must be checked or
+  explicitly `(void)`-cast. Already mandated by CLAUDE.md §6; now surfaces in CI
+  lint reports. A follow-up sweep PR will fix 394 pre-existing violations and
+  promote the check to `WarningsAsErrors`.
 - **`bugprone-not-null-terminated-result`** (advisory): catches
-  `strncpy`/`strlcpy` results that may not be null-terminated. Zero
-  pre-existing violations; included for completeness.
+  `strncpy`/`strlcpy` results that may not be null-terminated. Zero pre-existing
+  violations; included for completeness.
 
 Both checks were already reachable via the `bugprone-*` / `cert-*` globs;
 explicit listing documents intent and enables targeted promotion.

@@ -98,22 +98,10 @@ typedef struct VmafCambiHostBuffers {
 
 /* ----- functions exported from cambi.c (otherwise file-static) ----- */
 
-/* CPU 7×7 spatial mask: derivative kernel + 7×7 SAT box-sum + threshold
- * compare. Stays bit-exact with the in-tree CPU extractor. */
-void vmaf_cambi_get_spatial_mask(const VmafPicture *image, VmafPicture *mask, uint32_t *dp,
-                                 uint16_t *derivative_buffer, unsigned width, unsigned height,
-                                 VmafCambiDerivativeCalculator derivative_callback);
-
-/* Strict 2× subsample (NOT a 2x2 box). */
-void vmaf_cambi_decimate(VmafPicture *image, unsigned width, unsigned height);
-
-/* Separable 3-tap mode filter (horizontal + vertical) over `image`. */
-void vmaf_cambi_filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer);
-
 /* Sliding-histogram c-values pass — the precision-sensitive sequential
  * stage that ADR-0205 keeps on host for v1. */
-void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
-                                   uint16_t *histograms, uint16_t window_size,
+void vmaf_cambi_calculate_c_values(const VmafPicture *pic, const VmafPicture *mask_pic,
+                                   float *c_values, uint16_t *histograms, uint16_t window_size,
                                    const uint16_t num_diffs, const uint16_t *tvi_for_diff,
                                    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                    int width, int height, VmafCambiRangeUpdater inc_range_callback,

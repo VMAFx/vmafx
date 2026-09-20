@@ -49,20 +49,20 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-# Allow this script to run both as ``python ai/scripts/qat_train.py``
-# (where the ai/ package needs to be importable) and as
-# ``python -m ai.scripts.qat_train``.
-SCRIPT_PATH = Path(__file__).resolve()
-_REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-if str(_REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from aiutils.run_manifest import write_run_manifest
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -166,12 +166,12 @@ def _build_model_factory(cfg_doc: dict[str, Any]):
     Importing the model registry here keeps the driver lightweight
     when ``--help`` is requested.
     """
-    from ai.src.vmaf_train.train import MODEL_REGISTRY  # type: ignore[import]
+    from vmaf_train.train import MODEL_REGISTRY
 
     model_kind = cfg_doc.get("model")
     if model_kind not in MODEL_REGISTRY:
         raise SystemExit(
-            f"unknown model kind in config: {model_kind!r}; " f"valid: {sorted(MODEL_REGISTRY)}"
+            f"unknown model kind in config: {model_kind!r}; valid: {sorted(MODEL_REGISTRY)}"
         )
     model_cls = MODEL_REGISTRY[model_kind]
     model_args = cfg_doc.get("model_args", {}) or {}
@@ -317,7 +317,7 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
 
     # Wrap the existing Lightning data module into an iterable of (x, y)
     # tensor pairs for the minimal QAT loop.
-    from ai.src.vmaf_train.datamodule import VmafTrainDataModule  # type: ignore[import]
+    from vmaf_train.datamodule import VmafTrainDataModule
 
     def factory():
         dm = VmafTrainDataModule(
@@ -332,12 +332,69 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
     return factory
 
 
+def _write_training_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    cfg_path: Path,
+    cfg_doc: dict[str, Any],
+    qat_cfg,
+    result,
+) -> None:
+    if args.report_out is None:
+        return
+    write_run_manifest(
+        args.report_out,
+        schema="qat-train-report-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=_REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"config": cfg_path},
+        outputs={
+            "fp32_model": result.fp32_onnx,
+            "int8_model": result.int8_onnx,
+            "report": args.report_out,
+        },
+        sections={
+            "mode": "qat",
+            "model": cfg_doc.get("model"),
+            "smoke": bool(qat_cfg.smoke),
+            "epochs_fp32": int(result.epochs_fp32),
+            "epochs_qat": int(result.epochs_qat),
+            "n_calibration": int(qat_cfg.n_calibration),
+            "n_params": int(result.n_params),
+            "fp32_onnx": str(result.fp32_onnx),
+            "int8_onnx": str(result.int8_onnx),
+        },
+    )
+
+
+def _run_training(cfg_doc: dict[str, Any], qat_cfg):
+    model_factory = _build_model_factory(cfg_doc)
+    example_inputs = _build_example_inputs(cfg_doc, qat_cfg)
+    train_loader_factory = _build_train_loader_factory(cfg_doc, qat_cfg)
+    input_name = qat_cfg.extra["input_name"]
+    output_name = qat_cfg.extra["output_name"]
+    dynamic_axes = {input_name: {0: "batch"}, output_name: {0: "batch"}}
+    from ai.train.qat import run_qat
+
+    return run_qat(
+        model_factory=model_factory,
+        qat_cfg=qat_cfg,
+        example_inputs=example_inputs,
+        input_names=[input_name],
+        output_names=[output_name],
+        dynamic_axes=dynamic_axes,
+        train_loader_factory=train_loader_factory,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parse_args(raw_argv)
 
     try:
-        import torch  # noqa: F401
+        import_module("torch")
     except ImportError as exc:
         print(f"torch not available: {exc}", file=sys.stderr)
         return 2
@@ -355,56 +412,13 @@ def main(argv: list[str] | None = None) -> int:
         f"smoke={qat_cfg.smoke}"
     )
 
-    model_factory = _build_model_factory(cfg_doc)
-    example_inputs = _build_example_inputs(cfg_doc, qat_cfg)
-    train_loader_factory = _build_train_loader_factory(cfg_doc, qat_cfg)
-
-    input_name = qat_cfg.extra["input_name"]
-    output_name = qat_cfg.extra["output_name"]
-    dynamic_axes = {input_name: {0: "batch"}, output_name: {0: "batch"}}
-
-    from ai.train.qat import run_qat
-
-    result = run_qat(
-        model_factory=model_factory,
-        qat_cfg=qat_cfg,
-        example_inputs=example_inputs,
-        input_names=[input_name],
-        output_names=[output_name],
-        dynamic_axes=dynamic_axes,
-        train_loader_factory=train_loader_factory,
-    )
+    result = _run_training(cfg_doc, qat_cfg)
 
     print(
         f"[qat_train] done — fp32_onnx={result.fp32_onnx} "
         f"int8_onnx={result.int8_onnx} params={result.n_params}"
     )
-    if args.report_out is not None:
-        write_run_manifest(
-            args.report_out,
-            schema="qat-train-report-v1",
-            entrypoint=SCRIPT_PATH,
-            repo_root=_REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"config": cfg_path},
-            outputs={
-                "fp32_model": result.fp32_onnx,
-                "int8_model": result.int8_onnx,
-                "report": args.report_out,
-            },
-            sections={
-                "mode": "qat",
-                "model": cfg_doc.get("model"),
-                "smoke": bool(qat_cfg.smoke),
-                "epochs_fp32": int(result.epochs_fp32),
-                "epochs_qat": int(result.epochs_qat),
-                "n_calibration": int(qat_cfg.n_calibration),
-                "n_params": int(result.n_params),
-                "fp32_onnx": str(result.fp32_onnx),
-                "int8_onnx": str(result.int8_onnx),
-            },
-        )
+    _write_training_report(args, raw_argv, cfg_path, cfg_doc, qat_cfg, result)
     return 0
 
 

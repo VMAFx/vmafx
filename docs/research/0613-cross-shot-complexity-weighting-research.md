@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0613: Cross-Shot Complexity Weighting
 
 **Scope**: Title-level quality targets (e.g. "average VMAF ≥ 94, no shot below
@@ -52,7 +51,7 @@ The problem is related to:
 ## Current Fork State
 
 | Component | Status |
-|-----------|--------|
+| ----------- | -------- |
 | `per_shot.py` `PredicateFn` | Per-shot target VMAF, no global constraint |
 | `bisect.py` | Target VMAF as scalar per call |
 | `conformal.py` / `uncertainty.py` | Interval-aware quality |
@@ -121,7 +120,7 @@ expensive without NR proxy; scipy dependency.
 ## Recommended Decision Matrix
 
 | Option | Optimality | Runtime cost | Dependencies |
-|--------|-----------|--------------|--------------|
+| -------- | ----------- | -------------- | -------------- |
 | A — linear relaxation | Low | Negligible | None |
 | B — iterative redistribution | Medium | 2× encode | None |
 | C — Lagrangian (recommended) | High | ~1.5× encode | Item 3 (NR) |

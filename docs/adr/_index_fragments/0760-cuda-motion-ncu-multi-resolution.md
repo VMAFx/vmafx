@@ -1,1 +1,5 @@
-| [ADR-0760](0760-cuda-motion-ncu-multi-resolution.md) | CUDA motion kernel multi-resolution ncu profiling methodology | Accepted | cuda, perf, research |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0760](0760-cuda-motion-ncu-multi-resolution.md) | CUDA motion kernel multi-resolution ncu profiling methodology | Accepted | `cuda`, `perf`, `research` |

@@ -1,1 +1,5 @@
-| [ADR-0678](0678-ai-run-manifest-helper.md) | AI scripts now have `aiutils.run_manifest.write_run_manifest()` plus a Claude `/ai-run-manifest` workflow for standalone artifact sidecars, while stable reports may continue embedding `build_run_provenance()`. | Accepted | ai, provenance, docs, agents |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0678](0678-ai-run-manifest-helper.md) | Shared AI Run Manifest Helper | Accepted | ai, provenance, docs, agents |

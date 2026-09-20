@@ -257,8 +257,8 @@ extern "C" {
 static const VmafOption options_motion_v2_sycl[] = {
     {
         .name = "motion_fps_weight",
-        .alias = "mfw",
         .help = "fps-aware multiplicative weight/correction",
+        .alias = "mfw",
         .offset = offsetof(MotionV2StateSycl, motion_fps_weight),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
@@ -268,8 +268,8 @@ static const VmafOption options_motion_v2_sycl[] = {
     },
     {
         .name = "motion_blend_factor",
-        .alias = "mbf",
         .help = "blend motion score given an offset",
+        .alias = "mbf",
         .offset = offsetof(MotionV2StateSycl, motion_blend_factor),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
@@ -279,8 +279,8 @@ static const VmafOption options_motion_v2_sycl[] = {
     },
     {
         .name = "motion_blend_offset",
-        .alias = "mbo",
         .help = "blend motion score starting from this offset",
+        .alias = "mbo",
         .offset = offsetof(MotionV2StateSycl, motion_blend_offset),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 40.0},
@@ -290,8 +290,8 @@ static const VmafOption options_motion_v2_sycl[] = {
     },
     {
         .name = "motion_max_val",
-        .alias = "mmxv",
         .help = "maximum value allowed; larger values will be clipped to this value",
+        .alias = "mmxv",
         .offset = offsetof(MotionV2StateSycl, motion_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = MOTION_V2_SYCL_DEFAULT_MAX_VAL},
@@ -301,8 +301,8 @@ static const VmafOption options_motion_v2_sycl[] = {
     },
     {
         .name = "motion_moving_average",
-        .alias = "mma",
         .help = "smooth motion3 with a 2-frame moving average",
+        .alias = "mma",
         .offset = offsetof(MotionV2StateSycl, motion_moving_average),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -310,7 +310,6 @@ static const VmafOption options_motion_v2_sycl[] = {
     },
     {nullptr}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -371,8 +370,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic;
@@ -553,4 +553,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

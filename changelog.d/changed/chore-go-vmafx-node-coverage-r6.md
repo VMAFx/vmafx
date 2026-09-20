@@ -1,4 +1,6 @@
-### Chore
+# Changelog fragment
+
+## Chore
 
 - Extend Go test coverage for `cmd/vmafx-node`: add `executor_extra_test.go`
   covering `executeScoring` (non-nil scorer with failing stub binary, cancelled

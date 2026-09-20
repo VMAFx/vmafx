@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # ADR-1126: Retire the standalone isort hook; ruff's `I` rules own import sorting
 

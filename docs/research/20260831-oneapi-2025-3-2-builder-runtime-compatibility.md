@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research: oneAPI 2025.3.2 production builder compatibility
 
 ## Question

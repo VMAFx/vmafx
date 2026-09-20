@@ -22,7 +22,7 @@
 #define EPS 0.00001
 
 /* Test support function */
-int almost_equal(double a, double b)
+static int almost_equal(double a, double b)
 {
     const double diff = a > b ? a - b : b - a;
     return diff < EPS;
@@ -162,7 +162,7 @@ static mu_message_t test_range_foot_head_invalid()
     /* An integer the enum cannot legitimately hold. range_foot_head takes an
      * int precisely so this stays well-defined — see the note on its
      * definition; casting to the enum here would itself be UB. */
-    int err = range_foot_head(8, 0x7F, &foot, &head);
+    int const err = range_foot_head(8, 0x7F, &foot, &head);
     mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
 
     return nullptr;
@@ -178,5 +178,5 @@ mu_message_t run_tests()
     mu_run_test(test_init_eotf_dispatch);
     mu_run_test(test_range_foot_head_invalid);
 
-    return NULL;
+    return nullptr;
 }

@@ -37,12 +37,6 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #define FIX_W 64u
 #define FIX_H 64u
 #define FIX_BPC 8u
@@ -63,16 +57,16 @@ static int alloc_picture(VmafPicture *pic, uint8_t fill_y)
 
 static char *test_cuda_only_no_host_no_crash(void)
 {
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -82,7 +76,7 @@ static char *test_cuda_only_no_host_no_crash(void)
     /* Register ONLY the CUDA extractor (no CPU host extractor).
      * This sets hw_flags to HW_FLAG_DEVICE only, triggering the pre-fix
      * NULL deref path in vmaf_read_pictures. */
-    err = vmaf_use_feature(vmaf, "adm_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "adm_cuda", VMAF_NULLPTR);
     mu_assert("vmaf_use_feature(adm_cuda) failed", !err);
 
     VmafPicture ref;
@@ -101,16 +95,14 @@ static char *test_cuda_only_no_host_no_crash(void)
     mu_assert("vmaf_read_pictures must not return a positive code", err <= 0);
 
     /* Flush */
-    (void)vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    (void)vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     (void)vmaf_close(vmaf);
     (void)vmaf_cuda_state_free(cu_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_cuda_only_no_host_no_crash);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

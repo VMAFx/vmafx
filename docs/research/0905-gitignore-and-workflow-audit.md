@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 MD060 -->
 # Research 0905 — `.gitignore` + `.github/workflows/` staleness audit (2026-05-30)
 
 ## Question
@@ -8,7 +7,8 @@ After the ADR-0700 directory rename (`libvmaf/` → `core/`,
 additions, which `.gitignore` rules now match no real artefact and
 which workflow files have never fired? Remove the genuinely dead
 entries without overlapping the in-flight `.gitignore` PRs (#321,
-#330).
+
+\#330)
 
 ## Method
 
@@ -34,7 +34,7 @@ entries without overlapping the in-flight `.gitignore` PRs (#321,
 ### `.gitignore` (root)
 
 | Rule | Status | Action |
-|------|--------|--------|
+| ------ | -------- | -------- |
 | `.gradle/` | Stale — no Gradle in repo, no `build.gradle*`, never created. | Remove. |
 | `.idea/` | Standard JetBrains pattern; conservative keep. | Keep. |
 | `.tox/` | `python/tox.ini` exists — actively used. | Keep. |
@@ -63,7 +63,7 @@ entries without overlapping the in-flight `.gitignore` PRs (#321,
 ### `python/.gitignore`
 
 | Rule | Status | Action |
-|------|--------|--------|
+| ------ | -------- | -------- |
 | `vmaf/externals.py` | Stale — file lives at `compat/python-vmaf/resource/example/externals.py`, not under `python/vmaf/`. | Remove. |
 | `test/resource/{icpf,mp4,test_image_yuv,test_images,yuv,tiff,y4m}` | Stale — none of these subdirs exist in `python/test/resource/`. | Remove. |
 | `adm_dwt2_cy.c*` | Stale at python scope — Cython source is at `compat/python-vmaf/core/adm_dwt2_cy.pyx`; generated `.c` would land next to it, not under `python/`. | **Replace** with explicit root-level rule. |
@@ -118,7 +118,7 @@ pattern. Keep as-is.
 ## Per-category removal count
 
 | Category | Removed | Rewired | Added |
-|----------|---------|---------|-------|
+| ---------- | --------- | --------- | ------- |
 | Root `.gitignore` rules | 2 (`.gradle/`, `.pypirc`) | 11 (matlab paths) | 2 (Cython output) |
 | `python/.gitignore` rules | 9 (stale legacy paths) | 0 | 6-line doc stub |
 | Workflow files | 0 | 0 | 0 |

@@ -23,14 +23,18 @@
 extern "C" {
 #endif
 
+#ifdef __cplusplus
+using VmafEOTF = double (*)(double V);
+#else
 typedef double (*VmafEOTF)(double V);
+#endif
 
 /*
  * Limited pixel range means that only values between 16 and 235 will be used in 8 bits
  * (rescale the bounds appropriately for other bitdepths).
  * Full pixel range means that values from 0 to 2^bitdepth - 1 will be used.
  */
-enum VmafPixelRange {
+enum VmafPixelRange : int {
     VMAF_PIXEL_RANGE_UNKNOWN,
     VMAF_PIXEL_RANGE_LIMITED,
     VMAF_PIXEL_RANGE_FULL,
@@ -39,10 +43,13 @@ enum VmafPixelRange {
 /*
  * Contains the necessary information to normalize a luma value down to [0, 1].
  */
-typedef struct VmafLumaRange {
+struct VmafLumaRange {
     int foot;
     int head;
-} VmafLumaRange;
+};
+#ifndef __cplusplus
+typedef struct VmafLumaRange VmafLumaRange;
+#endif
 
 /*
  * Constructor for the LumaRange struct.

@@ -39,12 +39,6 @@
 
 #include "feature/compat_builtin.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/src/feature/float_motion.c. ADR-1138. */
-
 /* Portable reference: count leading zeros of a 32-bit value. */
 static int ref_clz32(uint32_t x)
 {
@@ -112,7 +106,7 @@ static char *test_clz32_from_msb_matches_reference(void)
         mu_assert("clz32_from_msb disagrees with the reference",
                   vmaf_compat_clz32_from_msb(found, idx) == ref_clz32(kCases[i]));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_clz64_from_msb_matches_reference(void)
@@ -126,7 +120,7 @@ static char *test_clz64_from_msb_matches_reference(void)
         mu_assert("clz64_from_msb disagrees with the reference on a power of two",
                   vmaf_compat_clz64_from_msb(found, idx) == ref_clz64(v));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* On the MSVC CI legs this exercises the shim itself; elsewhere it anchors the
@@ -164,7 +158,7 @@ static char *test_builtin_clz_matches_reference(void)
               17 - __builtin_clz(0x00010000u) == 2);
     mu_assert("integer_adm get_best15_from32 shift must be 16 for 0x40000000",
               17 - __builtin_clz(0x40000000u) == 16);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -172,7 +166,5 @@ char *run_tests(void)
     mu_run_test(test_clz32_from_msb_matches_reference);
     mu_run_test(test_clz64_from_msb_matches_reference);
     mu_run_test(test_builtin_clz_matches_reference);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

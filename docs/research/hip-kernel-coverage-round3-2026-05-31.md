@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # HIP kernel parity coverage — round 3 audit (2026-05-31)
 
 Companion research digest for ADR-0945.  Quantifies the HIP-side
@@ -13,7 +12,7 @@ HIP extractor source files** (one extractor per file, plus the
 `hip_hsaco_stubs.c` build-only entry that registers no extractor).
 
 | Extractor source | Registered name | Tested before round-3? | Round-3 ships test? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `integer_adm_hip.c` | `adm_hip` | yes — `test_hip_adm_parity` (ADR-0539) | — |
 | `integer_motion_v2_hip.c` | `motion_v2_hip` | yes — `test_hip_motion3_parity` | — |
 | `integer_psnr_hip.c` | `psnr_hip` | yes — `test_hip_psnr_parity` (PR #351) | — |
@@ -70,7 +69,7 @@ surface — needs CPU API work before a parity test can be written.
 ## Fixture choices
 
 | Test | Geometry | Bit depth | Frames | Rationale |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `test_hip_cambi_parity` | 320×240 | 8 | 1 | Must clear `CAMBI_MIN_WIDTH_HEIGHT == 216` on at least one dim |
 | `test_hip_float_adm_parity` | 256×144 | 8 | 1 | Matches `test_hip_adm_parity` (ADR-0539); >= 32×32 keeps DWT scale-3 alive |
 | `test_hip_float_motion_parity` | 256×144 | 8 | 2 | Motion needs t-1; we assert at frame index 1 |
@@ -85,7 +84,7 @@ specifically consumes chroma signal.
 ## Tolerance choices (ADR-0214)
 
 | Kernel | Filter? | Tolerance | Rationale |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `float_psnr` | no | 1e-4 (places=4) | Per-plane sum reduction; matches integer twin |
 | `float_motion` | yes (Gaussian) | 1e-4 (places=4) | Same kernel as motion3; equal precision budget |
 | `float_adm` | yes (DWT2 + CSF) | 1e-4 (places=4) | Matches integer ADM (ADR-0539) per-scale ratios |

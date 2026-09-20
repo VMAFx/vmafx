@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 MD060 -->
 # Const-correctness audit — fork-added C / C++ — 2026-05-30
 
 Sweep of fork-added C / C++ translation units for pointer-parameter
@@ -25,10 +24,11 @@ upstream-port mechanical merges.
 In-flight PRs touching `core/src` / `core/tools` / `core/include` C
 sources were also excluded to avoid merge-base churn (file-level
 overlap check against PRs #308, #316, #317, #319, #338, #343, #352,
-#355, #356, #357, #359, #360 at audit time).
+
+\#355, #356, #357, #359, #360 at audit time)
 
 | Surface | Files in tree | Files audited | Reason others skipped |
-|---------|---------------|---------------|-----------------------|
+| --------- | --------------- | --------------- | ----------------------- |
 | `core/src/dnn/` | 7 `.c` + 8 `.h` | 7 `.c` + 8 `.h` | All buildable in CPU-only meson configuration |
 | `core/src/mcp/` | 6 `.c` + 1 `.h` (excl. cJSON vendored) | 3 `.c` | 4 `.c` + 1 `.h` in-flight on PR #359 |
 | `core/src/feature/` (fork-added) | 9 `.c` | 9 `.c` | All buildable in CPU-only |
@@ -128,7 +128,7 @@ For completeness, the same check on upstream-mirrored Netflix C produced
 warnings that this audit **deliberately did not act on**:
 
 | File | Warnings | Provenance | Reason not fixed |
-|------|---------:|------------|------------------|
+| ------ | ---------: | ------------ | ------------------ |
 | `core/src/feature/cambi.c` | 1 (`scores_per_scale`, line 1402) | Netflix upstream | Identifier-shape preserved for rebase parity (CLAUDE.md §10) |
 | `core/src/feature/speed.c` | 11 (various `v` / `A` / `x` / `d` / `sd` parameters in private helpers) | Netflix upstream | Identifier-shape preserved for rebase parity |
 | `core/tools/y4m_input.c` | 5 (various `_aux` / `_dst` parameters) | Vendored Daala (Xiph) | Vendored upstream license + diffable-with-Daala-master invariant |

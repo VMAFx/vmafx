@@ -23,6 +23,8 @@
  *  accumulation step are permissible; the host log10 step is identical.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -44,9 +46,9 @@
 
 #include "../../hip/hip_handle.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
@@ -127,13 +129,13 @@ static int ciede_hip_module_load(CiedeStateHip *s)
     rc = hipModuleGetFunction(&s->funcbpc8, s->module, "calculate_ciede_kernel_8bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return ciede_hip_rc(rc);
     }
     rc = hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_ciede_kernel_16bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return ciede_hip_rc(rc);
     }
     return 0;
@@ -170,19 +172,19 @@ static int ciede_hip_bufs_alloc(CiedeStateHip *s, unsigned w, unsigned h, unsign
 }
 
 /* Free all 6 YUV staging device buffers and unload the module. Safe to
- * call with NULL handles. */
+ * call with VMAF_NULLPTR handles. */
 static void ciede_hip_bufs_free(CiedeStateHip *s)
 {
     void **bufs[6] = {&s->dis_v, &s->dis_u, &s->dis_y, &s->ref_v, &s->ref_u, &s->ref_y};
     for (int i = 0; i < 6; i++) {
-        if (*bufs[i] != NULL) {
+        if (*bufs[i] != VMAF_NULLPTR) {
             (void)hipFree(*bufs[i]);
-            *bufs[i] = NULL;
+            *bufs[i] = VMAF_NULLPTR;
         }
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
 }
 
@@ -278,13 +280,14 @@ static int ciede_hip_launch(CiedeStateHip *s, hipStream_t str)
                     (void *)&bpc,
                     (void *)&ss_hor,
                     (void *)&ss_ver};
-    hipError_t rc =
-        hipModuleLaunchKernel(func, gx, gy, 1, CIEDE_HIP_BX, CIEDE_HIP_BY, 1, 0, str, args, NULL);
+    hipError_t rc = hipModuleLaunchKernel(func, gx, gy, 1, CIEDE_HIP_BX, CIEDE_HIP_BY, 1, 0, str,
+                                          args, VMAF_NULLPTR);
     return (rc == hipSuccess) ? 0 : ciede_hip_rc(rc);
 }
 
 /* Submit: HtoD copies of all 6 YUV planes, kernel launch, event/DtoH. */
-static int ciede_hip_do_submit(CiedeStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
+static int ciede_hip_do_submit(CiedeStateHip *s, const VmafPicture *ref_pic,
+                               const VmafPicture *dist_pic)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
@@ -323,13 +326,13 @@ static int ciede_hip_release(CiedeStateHip *s)
     int err = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0)
         rc = err;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -363,7 +366,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -371,8 +374,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return err;
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -430,7 +434,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     return ciede_hip_release(fex->priv);
 }
 
-static const char *provided_features[] = {"ciede2000", NULL};
+static const char *provided_features[] = {"ciede2000", VMAF_NULLPTR};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_ciede_hip;` in
@@ -440,7 +444,6 @@ static const char *provided_features[] = {"ciede2000", NULL};
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_ciede_cuda` in
  * `libvmaf/src/feature/cuda/integer_ciede_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_ciede_hip = {
     .name = "ciede_hip",
     .init = init_fex_hip,
@@ -459,5 +462,3 @@ VmafFeatureExtractor vmaf_fex_ciede_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0346: FR-features-from-NR-corpus adapter pattern
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ new pipeline).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | (a) Skip NR corpora entirely | No adapter complexity; FR semantics stay clean | Drops 148k K150K rows and the entire UGC distribution coverage that ADR-0325 set up to capture | Loses the cinematic-vs-UGC alignment ADR-0325 paid for; blocks the three stopped agents |
 | (b) Synthesise a reference via denoising / super-resolution | Could approach a "true" master | Adds a learned-component dependency to the corpus pipeline (FastDVDnet / Real-ESRGAN) whose own quality is itself a training subject; circular | Out of scope; the fork already defers a denoiser pre-stage to a separate ADR track |
 | (c) Cross-corpus transfer learning (FR pretrain + NR-MOS-only fine-tune) | Methodologically clean; preserves NR labels as-is | Different ADR scope (model-architecture decision, not corpus decision); does not unblock canonical-6 feature extraction itself | Defer; this ADR is about producing FR feature rows, not about training architecture. (c) can layer on top of the rows this adapter emits |

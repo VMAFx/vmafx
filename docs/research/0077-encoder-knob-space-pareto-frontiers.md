@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0077 — Encoder knob-space Pareto frontiers (per source × codec × rc_mode)
 
 - **Status**: Adopted by [ADR-0305](../adr/0305-encoder-knob-space-pareto-analysis.md)
@@ -33,7 +32,7 @@ within the same slice")?
 (extended to enumerate per-codec knob axes — see ADR-0305):
 
 | axis | values | count |
-|------|--------|------:|
+| ------ | -------- | ------: |
 | sources | 9 Netflix (BigBuckBunny, Crowd-Run, Park-Joy, Tractor, Sintel-Trailer, In-To-Tree, Riverbed, Touchdown-Pass, Ducks-Take-Off) | 9 |
 | codec families | libx264, libx265, libsvtav1, libaom-av1, libvpx-vp9, libvvenc | 6 |
 | rate-control modes | `cq`, `vbr`, `cbr` | 3 |
@@ -82,7 +81,7 @@ branch (`research/encoder-knob-space-pareto-frontiers`) once
 schema each row will follow when populated:
 
 | codec | rc_mode | hull-recipe knobs (frequency-of-appearance ranked) | regresses-vs-bare on N/9 sources | recommended default |
-|-------|---------|----------------------------------------------------|---------------------------------:|---------------------|
+| ------- | --------- | ---------------------------------------------------- | ---------------------------------: | --------------------- |
 | libx264 | cq | TBD | TBD | TBD |
 | libx264 | vbr | TBD | TBD | TBD |
 | libx264 | cbr | TBD | TBD | TBD |

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - The nine round-3/round-4 Metal feature extractors (`integer_ssim_metal`,
   `float_vif_metal`, `integer_vif_metal`, `float_adm_metal`,
   `integer_adm_metal`, `integer_ciede_metal`, `integer_psnr_hvs_metal`,

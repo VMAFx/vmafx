@@ -6,16 +6,11 @@ from __future__ import annotations
 
 import csv
 import io
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from ai.scripts.hardware_caps_loader import (  # noqa: E402
+from ai.scripts.hardware_caps_loader import (
     ENCODER_TO_CODEC,
     REQUIRED_COLUMNS,
     HardwareCapsError,
@@ -24,6 +19,7 @@ from ai.scripts.hardware_caps_loader import (  # noqa: E402
     row_as_dict,
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 _CSV_PATH = _REPO_ROOT / "ai" / "data" / "hardware_caps.csv"
 
 # Architectures the digest committed to fingerprinting (the three
@@ -113,9 +109,9 @@ def test_csv_no_unverified_rows() -> None:
         for col_value in row_as_dict(row).values():
             text = str(col_value).lower()
             for sentinel in sentinels:
-                assert sentinel not in text, (
-                    f"row {row.arch_name}: column contains {sentinel!r}: " f"{col_value!r}"
-                )
+                assert (
+                    sentinel not in text
+                ), f"row {row.arch_name}: column contains {sentinel!r}: {col_value!r}"
 
 
 # ---------------------------------------------------------------------------

@@ -1,1 +1,5 @@
-| [ADR-0917](0917-cargo-deny-supply-chain-policy.md) | Adopt `cargo-deny` with a workspace `deny.toml` enforcing license allowlist, banned crates (`openssl-sys`, `native-tls`), RustSec advisories, and crates.io-only sources for the Rust workspace; wired into `rust-ci.yml` as a parallel job | Accepted | 2026-05-31 | security, ci, rust, supply-chain, license |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0917](0917-cargo-deny-supply-chain-policy.md) | cargo-deny supply-chain policy enforcement | Accepted | `security`, `ci`, `rust`, `supply-chain`, `license` |

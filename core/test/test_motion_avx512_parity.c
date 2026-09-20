@@ -76,11 +76,6 @@
 #include "libvmaf/picture.h"
 #include "common/alignment.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #endif
 
 /* -----------------------------------------------------------------------
@@ -276,7 +271,7 @@ static void y_conv_8_scalar(void *src, uint16_t *dst, unsigned width, unsigned h
  * Scalar reference: y_convolution_16.
  * Mirrors integer_motion.c::y_convolution_16.
  * ----------------------------------------------------------------------- */
-static void y_conv_16_scalar(void *src, uint16_t *dst, unsigned width, unsigned height,
+static void y_conv_16_scalar(const void *src, uint16_t *dst, unsigned width, unsigned height,
                              ptrdiff_t src_stride, ptrdiff_t dst_stride, unsigned inp_size_bits)
 {
     const unsigned radius = filter_width / 2;
@@ -285,7 +280,7 @@ static void y_conv_16_scalar(void *src, uint16_t *dst, unsigned width, unsigned 
     const unsigned add_before_shift = (unsigned)(1 << (inp_size_bits - 1));
     const unsigned shift_var = inp_size_bits;
 
-    uint16_t *src_u16 = (uint16_t *)src;
+    const uint16_t *src_u16 = (const uint16_t *)src;
     for (unsigned i = 0; i < top_edge; i++) {
         for (unsigned j = 0; j < width; ++j) {
             dst[i * dst_stride + j] = (uint16_t)((edge_16(false, src_u16, (int)width, (int)height,
@@ -295,11 +290,11 @@ static void y_conv_16_scalar(void *src, uint16_t *dst, unsigned width, unsigned 
         }
     }
 
-    uint16_t *src_p = src_u16 + (top_edge - radius) * src_stride;
+    const uint16_t *src_p = src_u16 + (top_edge - radius) * src_stride;
     for (unsigned i = top_edge; i < bottom_edge; i++) {
-        uint16_t *src_p1 = src_p;
+        const uint16_t *src_p1 = src_p;
         for (unsigned j = 0; j < width; ++j) {
-            uint16_t *src_p2 = src_p1;
+            const uint16_t *src_p2 = src_p1;
             uint32_t accum = 0;
             for (int k = 0; k < filter_width; ++k) {
                 accum += filter[k] * (*src_p2);
@@ -333,7 +328,7 @@ static void x_conv_16_scalar(const uint16_t *src, uint16_t *dst, unsigned width,
     const unsigned right_edge = vmaf_floorn(width - (filter_width - radius), 1);
     const unsigned shift_add_round = 32768;
 
-    uint16_t *src_p = (uint16_t *)src + (left_edge - radius);
+    const uint16_t *src_p = src + (left_edge - radius);
     for (unsigned i = 0; i < height; ++i) {
         for (unsigned j = 0; j < left_edge; j++) {
             dst[i * dst_stride + j] = (uint16_t)((edge_16(true, src, (int)width, (int)height,
@@ -342,10 +337,10 @@ static void x_conv_16_scalar(const uint16_t *src, uint16_t *dst, unsigned width,
                                                  16);
         }
 
-        uint16_t *src_p1 = src_p;
+        const uint16_t *src_p1 = src_p;
         for (unsigned j = left_edge; j < right_edge; j++) {
             uint32_t accum = 0;
-            uint16_t *src_p2 = src_p1;
+            const uint16_t *src_p2 = src_p1;
             for (int k = 0; k < filter_width; ++k) {
                 accum += filter[k] * (*src_p2);
                 src_p2++;
@@ -427,7 +422,7 @@ static char *check_pipeline_8(unsigned seed_val, const char *label)
                       label, seed_val, (unsigned long long)sad_s, (unsigned long long)sad_v);
         return "motion_score_pipeline_8_avx512 diverges from scalar";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_pipeline_8_random(void)
@@ -485,7 +480,7 @@ static char *check_pipeline_16(unsigned bpc, unsigned seed_val, const char *labe
                       label, bpc, seed_val, (unsigned long long)sad_s, (unsigned long long)sad_v);
         return "motion_score_pipeline_16_avx512 diverges from scalar";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_pipeline_16_bpc10(void)
@@ -542,7 +537,7 @@ static char *test_pipeline_16_neg_diff_bpc10(void)
                       (unsigned long long)sad_s, (unsigned long long)sad_v);
         return "motion_score_pipeline_16_avx512 diverges from scalar on negative-diff fixture";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -----------------------------------------------------------------------
@@ -593,7 +588,7 @@ static char *test_sad_avx512(void)
                       (unsigned long long)sad_s, (unsigned long long)sad_v);
         return "sad_avx512 diverges from scalar";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -----------------------------------------------------------------------
@@ -631,7 +626,7 @@ static char *test_y_conv_8_avx512(void)
     simd_test_aligned_free(src);
     simd_test_aligned_free(dst_s);
     simd_test_aligned_free(dst_v);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -----------------------------------------------------------------------
@@ -685,7 +680,7 @@ static char *check_y_conv_16(unsigned bpc, uint32_t seed_val, const char *label)
     simd_test_aligned_free(src);
     simd_test_aligned_free(dst_s);
     simd_test_aligned_free(dst_v);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_y_conv_16_bpc10(void)
@@ -749,7 +744,7 @@ static char *test_x_conv_16_avx512(void)
     simd_test_aligned_free(src);
     simd_test_aligned_free(dst_s);
     simd_test_aligned_free(dst_v);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 */
@@ -761,7 +756,7 @@ char *run_tests(void)
 {
 #if ARCH_X86
     if (!simd_test_have_avx512()) {
-        return NULL; /* SKIP on hosts without AVX-512 */
+        return VMAF_NULLPTR; /* SKIP on hosts without AVX-512 */
     }
     static const MuTest tests[] = {
         MU_TEST(test_pipeline_8_random),
@@ -779,7 +774,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: non-x86 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

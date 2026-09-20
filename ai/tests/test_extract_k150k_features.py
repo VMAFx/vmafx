@@ -69,7 +69,7 @@ def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: P
             # CPU residual leg (float_ssim + cambi only): no model arg needed.
             metrics["float_ssim"] = 0.9
             metrics["cambi"] = 0.1
-            assert "--no_cuda" in cmd
+            assert cmd[cmd.index("--backend") + 1] == "cpu"
         out.write_text(json.dumps({"frames": [{"metrics": metrics}]}), encoding="utf-8")
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
@@ -105,7 +105,7 @@ def test_cpu_feature_pass_uses_generic_extractors(monkeypatch, tmp_path: Path) -
         out = Path(cmd[cmd.index("--output") + 1])
         names = [cmd[idx + 1] for idx, part in enumerate(cmd) if part == "--feature"]
         assert names == list(K150K.EXTRACTOR_NAMES)
-        assert "--no_cuda" in cmd
+        assert cmd[cmd.index("--backend") + 1] == "cpu"
         # CPU path must also carry --model version=<DEFAULT_MODEL> (Research-0135).
         model_args = [cmd[idx + 1] for idx, part in enumerate(cmd) if part == "--model"]
         assert (
@@ -165,9 +165,8 @@ def test_vmaf_column_non_nan_in_aggregated_output(monkeypatch, tmp_path: Path) -
         threads=1,
         extractor_names=K150K.EXTRACTOR_NAMES,
         backend_args=[
-            "--no_cuda",
-            "--no_sycl",
-            "--no_vulkan",
+            "--backend",
+            "cpu",
             "--model",
             f"version={K150K.DEFAULT_MODEL}",
         ],

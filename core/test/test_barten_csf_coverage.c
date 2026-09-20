@@ -14,11 +14,6 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -42,28 +37,28 @@ static char *test_blend_legacy_1080_5h(void)
 {
     mu_assert("1080p 5H H/V scale0", isclose(barten_watson_blend_csf(0, 0, 5.0, 1080), 0.004212f));
     mu_assert("1080p 5H D scale3", isclose(barten_watson_blend_csf(3, 1, 5.0, 1080), 0.027574f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_legacy_2160(void)
 {
     mu_assert("2160p 3H H/V scale1", isclose(barten_watson_blend_csf(1, 0, 3.0, 2160), 0.01183f));
     mu_assert("2160p 5H D scale2", isclose(barten_watson_blend_csf(2, 1, 5.0, 2160), 0.005852f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_legacy_720(void)
 {
     mu_assert("720p 3H D scale0", isclose(barten_watson_blend_csf(0, 1, 3.0, 720), 0.007999f));
     mu_assert("720p 5H H/V scale2", isclose(barten_watson_blend_csf(2, 0, 5.0, 720), 0.040309f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_legacy_480(void)
 {
     mu_assert("480p 3H H/V scale1", isclose(barten_watson_blend_csf(1, 0, 3.0, 480), 0.045875f));
     mu_assert("480p 5H D scale3", isclose(barten_watson_blend_csf(3, 1, 5.0, 480), 0.037777f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_legacy_unsupported_returns_einval(void)
@@ -72,7 +67,7 @@ static char *test_blend_legacy_unsupported_returns_einval(void)
     mu_assert("legacy unsupported resolution returns -EINVAL", (int)v == -EINVAL);
     v = barten_watson_blend_csf(0, 0, 9.0, 1080);
     mu_assert("legacy unsupported distance returns -EINVAL", (int)v == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -85,7 +80,7 @@ static char *test_blend_mae_1080(void)
               isclose(barten_watson_blend_csf_mae(0, 0, 3.0, 1080), 0.011249f));
     mu_assert("1080p 5H MAE D scale3",
               isclose(barten_watson_blend_csf_mae(3, 1, 5.0, 1080), 0.024515f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_mae_2160(void)
@@ -94,7 +89,7 @@ static char *test_blend_mae_2160(void)
               isclose(barten_watson_blend_csf_mae(1, 1, 3.0, 2160), 0.004097f));
     mu_assert("2160p 5H MAE H/V scale2",
               isclose(barten_watson_blend_csf_mae(2, 0, 5.0, 2160), 0.013939f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_mae_720(void)
@@ -103,7 +98,7 @@ static char *test_blend_mae_720(void)
               isclose(barten_watson_blend_csf_mae(0, 0, 3.0, 720), 0.017329f));
     mu_assert("720p 5H MAE D scale1",
               isclose(barten_watson_blend_csf_mae(1, 1, 5.0, 720), 0.009579f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_mae_480(void)
@@ -112,7 +107,7 @@ static char *test_blend_mae_480(void)
               isclose(barten_watson_blend_csf_mae(2, 0, 3.0, 480), 0.046676f));
     mu_assert("480p 5H MAE D scale0",
               isclose(barten_watson_blend_csf_mae(0, 1, 5.0, 480), 0.006514f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_blend_mae_unsupported_returns_einval(void)
@@ -121,7 +116,7 @@ static char *test_blend_mae_unsupported_returns_einval(void)
     mu_assert("MAE unsupported resolution returns -EINVAL", (int)v == -EINVAL);
     v = barten_watson_blend_csf_mae(0, 0, 9.0, 1080);
     mu_assert("MAE unsupported distance returns -EINVAL", (int)v == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -135,7 +130,7 @@ static char *test_barten_csf_high_scale_and_low_lum(void)
      * non-1080p reference height so adm_csf_scale flows through. */
     float v = barten_csf(5, 5.0, 720, 0.5, 1.0);
     mu_assert("barten_csf 720p 5H scale5 lum0.5 finite", isfinite(v));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Cover the linear-interp slice between every anchor pair, ensuring the
@@ -150,7 +145,7 @@ static char *test_barten_csf_every_anchor_pair(void)
         float v = barten_csf(2, 3.0, 1080, pairs[i], 1.0);
         mu_assert("barten_csf interp anchor pair finite", isfinite(v));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -171,5 +166,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -36,12 +36,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 DEFAULT_REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
 DEFAULT_SCHEMA = REPO_ROOT / "model" / "tiny" / "registry.schema.json"
@@ -148,6 +149,43 @@ def sidecar_for(onnx_path: Path) -> Path:
     return direct
 
 
+def _check_quantized_model(
+    model_id: str, model: dict[str, Any], onnx_path: Path, errors: list[str]
+) -> None:
+    quant_mode = model.get("quant_mode", "fp32")
+    if quant_mode == "fp32":
+        return
+    int8_sha = model.get("int8_sha256")
+    if not int8_sha:
+        errors.append(f"{model_id}: quant_mode={quant_mode} requires int8_sha256")
+        return
+    int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
+    if not int8_path.is_file():
+        return
+    got8 = hashlib.sha256(int8_path.read_bytes()).hexdigest()
+    if got8 != int8_sha:
+        errors.append(f"{model_id}: int8_sha256 mismatch (file={got8}, registry={int8_sha})")
+    if not graph_bakes_scaler(int8_path):
+        return
+    sidecar8 = sidecar_for(int8_path)
+    if not sidecar8.is_file():
+        errors.append(
+            f"{model_id}: {int8_path.name} bakes the scaler but no companion "
+            f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
+        )
+        return
+    try:
+        sidecar_data = json.loads(sidecar8.read_text(encoding="utf-8"))
+    except ValueError as err:
+        errors.append(f"{model_id}: {sidecar8.name} JSON parse error: {err}")
+    else:
+        if sidecar_data.get("onnx_has_scaler") is not True:
+            errors.append(
+                f"{model_id}: {int8_path.name} bakes scaler ops but "
+                f"{sidecar8.name} does not declare onnx_has_scaler: true"
+            )
+
+
 def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
     """Cross-file invariants the schema cannot express (file existence, sha match)."""
     errors: list[str] = []
@@ -175,37 +213,7 @@ def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
             if not sidecar.is_file():
                 errors.append(f"{mid}: missing sidecar {sidecar.name}")
 
-        quant_mode = m.get("quant_mode", "fp32")
-        if quant_mode != "fp32":
-            int8_sha = m.get("int8_sha256")
-            if not int8_sha:
-                errors.append(f"{mid}: quant_mode={quant_mode} requires int8_sha256")
-            else:
-                int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
-                if int8_path.is_file():
-                    got8 = hashlib.sha256(int8_path.read_bytes()).hexdigest()
-                    if got8 != int8_sha:
-                        errors.append(
-                            f"{mid}: int8_sha256 mismatch (file={got8}, registry={int8_sha})"
-                        )
-                    if graph_bakes_scaler(int8_path):
-                        sidecar8 = sidecar_for(int8_path)
-                        if not sidecar8.is_file():
-                            errors.append(
-                                f"{mid}: {int8_path.name} bakes the scaler but no companion "
-                                f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
-                            )
-                        else:
-                            try:
-                                sdata8 = json.loads(sidecar8.read_text(encoding="utf-8"))
-                            except ValueError as err:
-                                errors.append(f"{mid}: {sidecar8.name} JSON parse error: {err}")
-                            else:
-                                if sdata8.get("onnx_has_scaler") is not True:
-                                    errors.append(
-                                        f"{mid}: {int8_path.name} bakes scaler ops but "
-                                        f"{sidecar8.name} does not declare onnx_has_scaler: true"
-                                    )
+        _check_quantized_model(mid, m, onnx_path, errors)
 
         bundle_rel = m.get("sigstore_bundle")
         # Bundle file presence is checked at runtime by --tiny-model-verify,
@@ -243,8 +251,7 @@ def validate(registry_path: Path, schema_path: Path) -> tuple[int, list[str]]:
     return (0 if not errors else 1, errors)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]):  # type: ignore[no-untyped-def]
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "registry",
@@ -265,7 +272,34 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON validation report with ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
+
+
+def _write_report(args, raw_argv, rc: int, errors: list[str], model_count: int) -> None:  # type: ignore[no-untyped-def]
+    if args.out_json is None:
+        return
+    write_manifest_json(
+        args.out_json,
+        {
+            "ok": rc == 0,
+            "error_count": len(errors),
+            "errors": errors,
+            "model_count": model_count,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"registry": args.registry, "schema": args.schema},
+                outputs={"report": args.out_json},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     rc, errors = validate(args.registry, args.schema)
     model_count = 0
@@ -286,24 +320,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             rc = 1
             errors = [f"registry count read failed: {exc}"]
-    if args.out_json is not None:
-        write_manifest_json(
-            args.out_json,
-            {
-                "ok": rc == 0,
-                "error_count": len(errors),
-                "errors": errors,
-                "model_count": model_count,
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"registry": args.registry, "schema": args.schema},
-                    outputs={"report": args.out_json},
-                ),
-            },
-        )
+    _write_report(args, raw_argv, rc, errors, model_count)
     return rc
 
 

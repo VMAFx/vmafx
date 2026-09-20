@@ -49,29 +49,38 @@ extern "C" {
  *  arithmetic and the resulting allocation bounded.  See finding R2-5. */
 #define FEATURE_VECTOR_MAX_INDEX (1u << 28)
 
-typedef struct {
+struct FeatureVector {
     char *name;
     struct {
         bool written;
         double value;
     } *score;
     unsigned capacity;
-} FeatureVector;
+};
+#ifndef __cplusplus
+typedef struct FeatureVector FeatureVector;
+#endif
 
-typedef struct {
+struct AggregateVector {
     struct {
         char *name;
         double value;
     } *metric;
     unsigned cnt, capacity;
-} AggregateVector;
+};
+#ifndef __cplusplus
+typedef struct AggregateVector AggregateVector;
+#endif
 
-typedef struct VmafPredictModel {
+struct VmafPredictModel {
     VmafModel *model;
     struct VmafPredictModel *next;
-} VmafPredictModel;
+};
+#ifndef __cplusplus
+typedef struct VmafPredictModel VmafPredictModel;
+#endif
 
-typedef struct VmafFeatureCollector {
+struct VmafFeatureCollector {
     FeatureVector **feature_vector;
     AggregateVector aggregate_vector;
     VmafCallbackList *metadata;
@@ -88,13 +97,17 @@ typedef struct VmafFeatureCollector {
      * where a thread blocked on pthread_mutex_lock would acquire a mutex that
      * has already been destroyed (UB). */
     bool destroyed;
-} VmafFeatureCollector;
+};
+#ifndef __cplusplus
+typedef struct VmafFeatureCollector VmafFeatureCollector;
+#endif
 
 int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector);
 
 int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, VmafModel *model);
 
-int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model);
+int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector,
+                                         const VmafModel *model);
 
 int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const char *feature_name,
                                   double score, unsigned index);
@@ -110,22 +123,6 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
 
 FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *feature_collector,
                                            const char *feature_name);
-
-/* Round-5 race fix (finding #4): this inline must only be called while the
- * caller holds the VmafFeatureCollector lock.  predict_load_feature_score
- * previously called it after dropping the lock; that call site was moved to
- * use vmaf_feature_collector_get_score (which acquires the lock internally)
- * so the read of .written / .value is always protected.  See predict.c. */
-static inline int vmaf_feature_vector_get_score(FeatureVector *fv, double *score, unsigned index)
-{
-    if (!fv || index >= fv->capacity)
-        return -EINVAL;
-    if (!fv->score[index].written)
-        return -EAGAIN; /* Netflix#755 / ADR-0154 — distinguish invalid vs
-                         * not-yet-written (e.g. motion2 retroactive-write). */
-    *score = fv->score[index].value;
-    return 0;
-}
 
 int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector,
                                          const char *feature_name, double score);

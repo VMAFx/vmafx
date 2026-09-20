@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-0692: Saliency Materializer Temporal Controls
 
 - **Status**: Completed
@@ -10,9 +9,9 @@ Companion to [ADR-0672](../adr/0672-saliency-materializer-temporal-controls.md).
 ## Question
 
 The signal-mix audit identified saliency / ROI as a missing feature family in
-the refreshed AI tables. The existing materializer could compute
-`saliency_mean` and `saliency_var`, but it always used the historical mean
-temporal reducer and wrote no row-level model/reducer attribution.
+the refreshed AI tables. The existing materializer could compute `saliency_mean`
+and `saliency_var`, but it always used the historical mean temporal reducer and
+wrote no row-level model/reducer attribution.
 
 That shape is not enough for the current experiment queue:
 
@@ -42,9 +41,8 @@ The implementation extends `ai/scripts/materialize_saliency_features.py` with:
 - `--temporal-aggregator {mean,ema,max,motion-weighted}`;
 - `--ema-alpha`;
 - `--model-id`;
-- output metadata columns
-  `saliency_model_id`, `saliency_aggregator`, and `saliency_ema_alpha`, each
-  independently suppressible for compatibility.
+- output metadata columns `saliency_model_id`, `saliency_aggregator`, and
+  `saliency_ema_alpha`, each independently suppressible for compatibility.
 
 The default remains compatible with the historical behaviour:
 `saliency_student_v1`, `mean`, `ema_alpha=0.6`. The additional columns are
@@ -70,4 +68,5 @@ PYTHONPATH=. .venv/bin/python -m pytest ai/tests/test_materialize_saliency_featu
 - [ADR-0650](../adr/0650-signal-mix-audit.md)
 - [ADR-0655](../adr/0655-saliency-feature-materializer.md)
 - [ADR-0671](../adr/0671-u2netp-mirror-exporter.md)
-- Source: req — "well that means do u2netp (experimental)... we can only learn i guess lol"
+- Source: req — "well that means do u2netp (experimental)... we can only learn i
+  guess lol"

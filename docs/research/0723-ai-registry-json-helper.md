@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0723 — AI registry strict JSON helper
 
 ## Problem
@@ -23,7 +22,7 @@ registry metadata file.
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave per-script `json.dumps()` | Smallest diff | Non-standard JSON can still leak into registry metadata | Rejected |
 | Reuse `aiutils.write_manifest_json()` directly in every script | Strict output | Keeps the registry policy implicit and repeats call-site intent | Rejected |
 | Add a registry-named wrapper around strict JSON | Central registry contract, smaller future edits | One thin helper to maintain | Chosen |

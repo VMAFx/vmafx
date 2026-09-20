@@ -1,1 +1,5 @@
-- Bound AVX2 and AVX-512 horizontal convolution loads and stores to valid output lanes, preserving each ISA's arithmetic and scalar tail; cover tight final rows, tiny widths and normal/square/cross-product modes.
+# Changelog fragment
+
+- Bound AVX2 and AVX-512 horizontal convolution loads and stores to valid output
+  lanes, preserving each ISA's arithmetic and scalar tail; cover tight final
+  rows, tiny widths and normal/square/cross-product modes.

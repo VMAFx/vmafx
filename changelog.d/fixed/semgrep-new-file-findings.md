@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Two Semgrep findings in this branch's own new files are suppressed with
   their justification inline**, in the ADR-0278 style the repository already
   uses for its other 56 suppressions. `test_windows_cuda_compiler_discovery.py`

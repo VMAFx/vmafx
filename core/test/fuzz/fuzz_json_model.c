@@ -46,6 +46,7 @@
 
 #include "libvmaf/model.h"
 #include "read_json_model.h"
+#include "../../src/vmaf_nullptr.h"
 
 /* Hard cap on input size: shipped models top out around 23 KiB
  * (`model/vmaf_4k_v0.6.1neg.json`). 64 KiB of headroom lets the
@@ -67,9 +68,9 @@
  * Environment-side `ASAN_OPTIONS` overrides this if a CI operator
  * needs to suppress leaks temporarily. The `__` prefix is
  * mandated by the AddressSanitizer weak-symbol ABI (compiler-rt). */
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
+
 const char *__asan_default_options(void);
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
+
 const char *__asan_default_options(void)
 {
     return "detect_leaks=1:allocator_may_return_null=1";
@@ -79,7 +80,7 @@ const char *__asan_default_options(void)
  * external linkage; the runtime resolves it by name at link time
  * (`-fsanitize=fuzzer`). Cannot be static — the
  * `misc-use-internal-linkage` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI (ADR-0141 / ADR-0278) */
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     if (size == 0u || size > FUZZ_MAX_INPUT_BYTES)
@@ -95,14 +96,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
      * non-zero return `*model` is left untouched (we initialise
      * it to NULL so an accidentally-leaked write would be
      * caught by ASan on the dangling free below). */
-    VmafModel *model = NULL;
+    VmafModel *model = VMAF_NULLPTR;
     VmafModelConfig cfg = {0};
     const int rc = vmaf_read_json_model_from_buffer(&model, &cfg, (const char *)data, (int)size);
-    if (rc == 0 && model != NULL)
+    if (rc == 0 && model != VMAF_NULLPTR)
         vmaf_model_destroy(model);
 
-    VmafModel *model_c = NULL;
-    VmafModelCollection *collection = NULL;
+    VmafModel *model_c = VMAF_NULLPTR;
+    VmafModelCollection *collection = VMAF_NULLPTR;
     VmafModelConfig cfg_c = {0};
     (void)vmaf_read_json_model_collection_from_buffer(&model_c, &collection, &cfg_c,
                                                       (const char *)data, (int)size);
@@ -111,9 +112,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
      * succeeded) before the parse of a later key fails. Freeing on
      * error prevents the residual leak that previously forced
      * detect_leaks=0 in __asan_default_options. */
-    if (model_c != NULL)
+    if (model_c != VMAF_NULLPTR)
         vmaf_model_destroy(model_c);
-    if (collection != NULL)
+    if (collection != VMAF_NULLPTR)
         vmaf_model_collection_destroy(collection);
 
     return 0;

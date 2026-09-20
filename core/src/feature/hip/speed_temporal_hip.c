@@ -17,6 +17,8 @@
  *  HIP adaptation notes: same as speed_chroma_hip.c.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -37,9 +39,9 @@
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -137,82 +139,63 @@ typedef struct SpeedTemporalHipState {
     SpeedInternalSingularTally singular_tally;
 } SpeedTemporalHipState;
 
+#define SPEED_TEMPORAL_DOUBLE_OPTION(NAME, HELP, FIELD, DEFAULT, MINIMUM, MAXIMUM, ALIAS)          \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(SpeedTemporalHipState, FIELD),                                          \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = (DEFAULT),                                                                \
+        .min = (MINIMUM),                                                                          \
+        .max = (MAXIMUM),                                                                          \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+#define SPEED_TEMPORAL_STRING_OPTION(NAME, HELP, FIELD, DEFAULT, ALIAS)                            \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(SpeedTemporalHipState, FIELD),                                          \
+        .type = VMAF_OPT_TYPE_STRING,                                                              \
+        .default_val.s = (DEFAULT),                                                                \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+#define SPEED_TEMPORAL_BOOL_OPTION(NAME, HELP, FIELD, DEFAULT, ALIAS)                              \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(SpeedTemporalHipState, FIELD),                                          \
+        .type = VMAF_OPT_TYPE_BOOL,                                                                \
+        .default_val.b = (DEFAULT),                                                                \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+
 static const VmafOption options_temporal[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the Gaussian kernel",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_KERNELSCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_PRESCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = ST_DEFAULT_PRESCALE_METHOD,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_SIGMA_NN,
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor fraction",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_NN_FLOOR,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "clip output to this maximum",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_use_ref_diff",
-        .help = "use reference frame difference instead of distorted",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_use_ref_diff),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "urd",
-    },
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_kernelscale", "scaling factor for the Gaussian kernel",
+                                 speed_temporal_kernelscale, ST_DEFAULT_KERNELSCALE, 0.1, 4.0,
+                                 "ks"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_prescale", "scaling factor for the frame",
+                                 speed_temporal_prescale, ST_DEFAULT_PRESCALE, 0.1, 4.0, "ps"),
+    SPEED_TEMPORAL_STRING_OPTION("speed_prescale_method",
+                                 "scaling method [nearest, bilinear, bicubic, lanczos4]",
+                                 speed_temporal_prescale_method, ST_DEFAULT_PRESCALE_METHOD, "psm"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_sigma_nn", "standard deviation of neural noise",
+                                 speed_temporal_sigma_nn, ST_DEFAULT_SIGMA_NN, 0.1, 2.0, "snn"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_nn_floor", "neural noise floor fraction",
+                                 speed_temporal_nn_floor, ST_DEFAULT_NN_FLOOR, 0.0, 1.0, "nnf"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_max_val", "clip output to this maximum",
+                                 speed_temporal_max_val, ST_DEFAULT_MAX_VAL, 0.0, 1000.0, "mxv"),
+    SPEED_TEMPORAL_BOOL_OPTION("speed_use_ref_diff",
+                               "use reference frame difference instead of distorted",
+                               speed_temporal_use_ref_diff, false, "urd"),
     {0},
 };
+
+#undef SPEED_TEMPORAL_BOOL_OPTION
+#undef SPEED_TEMPORAL_STRING_OPTION
+#undef SPEED_TEMPORAL_DOUBLE_OPTION
 
 /* ------------------------------------------------------------------ */
 /* HIP helpers                                                         */
@@ -253,14 +236,14 @@ static void free_hip_buffers_st(SpeedTemporalHipState *s)
     do {                                                                                           \
         if ((p)) {                                                                                 \
             (void)hipFree((p));                                                                    \
-            (p) = NULL;                                                                            \
+            (p) = VMAF_NULLPTR;                                                                    \
         }                                                                                          \
     } while (0)
 #define FH(p)                                                                                      \
     do {                                                                                           \
         if ((p)) {                                                                                 \
             (void)hipHostFree((p));                                                                \
-            (p) = NULL;                                                                            \
+            (p) = VMAF_NULLPTR;                                                                    \
         }                                                                                          \
     } while (0)
     FD(s->d_plane);
@@ -284,11 +267,11 @@ static void free_hip_buffers_st(SpeedTemporalHipState *s)
     FH(s->h_dis_var);
     if (s->module) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     if (s->stream) {
         (void)hipStreamDestroy(s->stream);
-        s->stream = NULL;
+        s->stream = VMAF_NULLPTR;
     }
 #undef FD
 #undef FH
@@ -305,7 +288,7 @@ static int st_hip_module_load(SpeedTemporalHipState *s)
         rc = hipModuleGetFunction(&(s->field), s->module, (name));                                 \
         if (rc != hipSuccess) {                                                                    \
             (void)hipModuleUnload(s->module);                                                      \
-            s->module = NULL;                                                                      \
+            s->module = VMAF_NULLPTR;                                                              \
             return hip_rc_st(rc);                                                                  \
         }                                                                                          \
     } while (0)
@@ -366,12 +349,12 @@ static int st_hip_bufs_alloc(SpeedTemporalHipState *s)
 static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, void *d_indterm,
                                float *h_indterm)
 {
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
-    const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
-    const uint32_t op_w = (uint32_t)s->dim.truncated_width;
-    const uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
-    const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
-    const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
+    uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
+    uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
+    uint32_t op_w = (uint32_t)s->dim.truncated_width;
+    uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
+    uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
+    uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
     const size_t plane_bytes = s->dim.truncated_height * stride_px * sizeof(float);
     const size_t indterm_bytes = (size_t)ST_ELEMENTS * num_blocks * sizeof(float);
 
@@ -385,7 +368,7 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
         void *args[] = {&s->d_plane,   &s->d_means, &op_w,        &stride_px,
                         &num_blocks_h, &num_blocks, &submatrix_w, &submatrix_h};
         rc = hipModuleLaunchKernel(s->func_means, grid_x, 1u, 1u, ST_MEANS_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
+                                   s->stream, args, VMAF_NULLPTR);
         if (rc != hipSuccess)
             return hip_rc_st(rc);
     }
@@ -394,7 +377,7 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
         void *args[] = {&s->d_plane,   &s->d_means, &s->d_cov_mat, &stride_px,
                         &num_blocks_h, &num_blocks, &submatrix_w,  &submatrix_h};
         rc = hipModuleLaunchKernel(s->func_cov, ST_ELEMENTS, ST_ELEMENTS, 1u, ST_COV_BLOCK, 1u, 1u,
-                                   (uint32_t)smem, s->stream, args, NULL);
+                                   (uint32_t)smem, s->stream, args, VMAF_NULLPTR);
         if (rc != hipSuccess)
             return hip_rc_st(rc);
     }
@@ -403,7 +386,7 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
         const uint32_t grid_x = (total + ST_INDTERM_BLOCK - 1u) / ST_INDTERM_BLOCK;
         void *args[] = {&s->d_plane, &d_indterm, &stride_px, &num_blocks_h, &num_blocks};
         rc = hipModuleLaunchKernel(s->func_indterm, grid_x, 1u, 1u, ST_INDTERM_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
+                                   s->stream, args, VMAF_NULLPTR);
         if (rc != hipSuccess)
             return hip_rc_st(rc);
     }
@@ -461,10 +444,10 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
 
         /* K4: backward substitution — one wavefront per column.
          * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
-        const uint32_t u_nb = (uint32_t)nb;
+        uint32_t u_nb = (uint32_t)nb;
         void *args[] = {&s->d_R, &d_sol, &u_nb};
         rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
+                                   s->stream, args, VMAF_NULLPTR);
         if (rc != hipSuccess)
             return hip_rc_st(rc);
         rc = hipStreamSynchronize(s->stream);
@@ -485,8 +468,8 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
 
 static int run_score_st(SpeedTemporalHipState *s, float *score_out)
 {
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
-    const float sigma_nn = (float)s->opt.speed_sigma_nn;
+    uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
+    float sigma_nn = (float)s->opt.speed_sigma_nn;
     hipError_t rc = hipSuccess;
 
     /* K5: entropy + score. The kernel reads d_eigenvalues_ref for the ref
@@ -498,7 +481,7 @@ static int run_score_st(SpeedTemporalHipState *s, float *score_out)
                         &s->d_indterm_ref,     &s->d_indterm_dis, &s->d_ref_ent, &s->d_ref_var,
                         &s->d_dis_ent,         &s->d_dis_var,     &num_blocks,   &sigma_nn};
         rc = hipModuleLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
+                                   s->stream, args, VMAF_NULLPTR);
         if (rc != hipSuccess)
             return hip_rc_st(rc);
     }
@@ -540,19 +523,32 @@ static int run_score_st(SpeedTemporalHipState *s, float *score_out)
     return 0;
 }
 
+static int speed_temporal_init_device(SpeedTemporalHipState *s)
+{
+    int err = st_hip_module_load(s);
+    if (err)
+        return err;
+
+    if (hipStreamCreate(&s->stream) != hipSuccess)
+        return -EIO;
+
+    int device = 0;
+    hipDeviceProp_t properties;
+    (void)hipGetDevice(&device);
+    s->solve_warp = (hipGetDeviceProperties(&properties, device) == hipSuccess) ?
+                        (unsigned)properties.warpSize :
+                        ST_SOLVE_WARP_DEFAULT;
+    return st_hip_bufs_alloc(s);
+}
+
 #endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                             unsigned w, unsigned h)
+static void speed_temporal_set_options(SpeedTemporalHipState *s)
 {
-    (void)pix_fmt;
-    (void)bpc;
-    SpeedTemporalHipState *s = fex->priv;
-
     s->opt = (SpeedInternalOptions){
         .speed_kernelscale = s->speed_temporal_kernelscale,
         .speed_prescale = s->speed_temporal_prescale,
@@ -561,16 +557,35 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
         .speed_nn_floor = s->speed_temporal_nn_floor,
         .speed_weight_var_mode = 0,
     };
+}
 
-    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
-    if (err)
-        return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+static void speed_temporal_free_cpu(SpeedTemporalHipState *s)
+{
+#define FREE_A(field)                                                                              \
+    do {                                                                                           \
+        aligned_free(s->field);                                                                    \
+        s->field = VMAF_NULLPTR;                                                                   \
+    } while (0)
+    FREE_A(h_ref[0]);
+    FREE_A(h_ref[1]);
+    FREE_A(h_dis[0]);
+    FREE_A(h_dis[1]);
+    FREE_A(h_eigenvalues);
+    FREE_A(h_eig_scratch);
+    FREE_A(h_Q);
+    FREE_A(h_R);
+    FREE_A(h_qr_scratch);
+    FREE_A(h_indterm_ref);
+    FREE_A(h_indterm_dis);
+    FREE_A(h_qt_scratch);
+#undef FREE_A
+}
 
+static int speed_temporal_alloc_cpu(SpeedTemporalHipState *s)
+{
     const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = ST_ELEMENTS * nb * sizeof(float);
+    const size_t indterm_bytes = ST_ELEMENTS * s->dim.num_blocks * sizeof(float);
     const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
 
 #define ALLOC_A(field, sz) s->field = (float *)aligned_malloc((sz), 32)
@@ -588,81 +603,117 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     ALLOC_A(h_qt_scratch, indterm_bytes);
 #undef ALLOC_A
 
-    if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
-        !s->h_Q || !s->h_R) {
-        err = -ENOMEM;
-        goto free_cpu;
+    return s->h_ref[0] && s->h_ref[1] && s->h_dis[0] && s->h_dis[1] && s->h_eigenvalues &&
+                   s->h_eig_scratch && s->h_Q && s->h_R && s->h_qr_scratch && s->h_indterm_ref &&
+                   s->h_indterm_dis && s->h_qt_scratch ?
+               0 :
+               -ENOMEM;
+}
+
+static void speed_temporal_cleanup_init(SpeedTemporalHipState *s)
+{
+#ifdef HAVE_HIPCC
+    free_hip_buffers_st(s);
+#endif
+    speed_temporal_free_cpu(s);
+}
+
+static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                             unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    SpeedTemporalHipState *s = fex->priv;
+
+    speed_temporal_set_options(s);
+    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
+    if (err)
+        return err;
+    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+    err = speed_temporal_alloc_cpu(s);
+    if (err) {
+        speed_temporal_cleanup_init(s);
+        return err;
     }
 
 #ifdef HAVE_HIPCC
-    err = st_hip_module_load(s);
-    if (err)
-        goto free_cpu;
-
-    if (hipStreamCreate(&s->stream) != hipSuccess) {
-        err = -EIO;
-        goto free_module;
-    }
-
-    /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
-     * Used as blockDim.x for speed_solve_hip_kernel. */
-    {
-        int dev = 0;
-        hipDeviceProp_t prop;
-        (void)hipGetDevice(&dev);
-        s->solve_warp = (hipGetDeviceProperties(&prop, dev) == hipSuccess) ?
-                            (unsigned)prop.warpSize :
-                            ST_SOLVE_WARP_DEFAULT;
-    }
-
-    err = st_hip_bufs_alloc(s);
-    if (err)
-        goto free_hip;
+    err = speed_temporal_init_device(s);
 #else
-    return -ENOSYS;
+    err = -ENOSYS;
 #endif /* HAVE_HIPCC */
+    if (err) {
+        speed_temporal_cleanup_init(s);
+        return err;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        goto free_hip;
-#endif
+        speed_temporal_cleanup_init(s);
+        return -ENOMEM;
     }
 
     s->frame_index = 0;
     return 0;
-
-#ifdef HAVE_HIPCC
-free_hip:
-    free_hip_buffers_st(s);
-    goto free_cpu;
-free_module:
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-free_cpu:
-    aligned_free(s->h_ref[0]);
-    aligned_free(s->h_ref[1]);
-    aligned_free(s->h_dis[0]);
-    aligned_free(s->h_dis[1]);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
-    return err;
 }
 
-static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                                VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                                VmafPicture *dist_pic_90, unsigned index,
+#ifdef HAVE_HIPCC
+static void speed_temporal_prepare_diff(SpeedTemporalHipState *s, int current, int previous)
+{
+    const int width = (int)s->dim.original_width;
+    const int height = (int)s->dim.original_height;
+    subtract_plane(s->h_ref[previous], s->h_ref[current], width, height, s->float_stride);
+    if (s->speed_temporal_use_ref_diff)
+        subtract_plane(s->h_dis[previous], s->h_ref[current], width, height, s->float_stride);
+    else
+        subtract_plane(s->h_dis[previous], s->h_dis[current], width, height, s->float_stride);
+}
+
+static int speed_temporal_filter_diff(SpeedTemporalHipState *s, int previous)
+{
+    const size_t stride_px = s->float_stride / sizeof(float);
+    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
+    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
+    if (!tmp_filter)
+        return -ENOMEM;
+
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[previous], tmp_filter,
+                                        s->float_stride);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[previous], tmp_filter,
+                                        s->float_stride);
+    aligned_free(tmp_filter);
+    return 0;
+}
+
+static int speed_temporal_score_diff(SpeedTemporalHipState *s, int previous, float *score)
+{
+    bool singular_ref = false;
+    int err = run_gpu_pipeline_st(s, s->h_ref[previous], s->d_indterm_ref, s->h_indterm_ref);
+    if (!err)
+        err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
+    if (err)
+        return err;
+
+    const hipError_t copy_err =
+        hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float));
+    if (copy_err != hipSuccess)
+        return hip_rc_st(copy_err);
+
+    bool singular_dis = false;
+    err = run_gpu_pipeline_st(s, s->h_dis[previous], s->d_indterm_dis, s->h_indterm_dis);
+    if (!err)
+        err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
+    if (err)
+        return err;
+
+    *score = 0.0f;
+    return singular_ref == singular_dis ? run_score_st(s, score) : 0;
+}
+#endif /* HAVE_HIPCC */
+
+static int extract_temporal_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                                const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                                const VmafPicture *dist_pic_90, unsigned index,
                                 VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
@@ -683,82 +734,20 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
     picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
-
-    if (index == 0) {
+    if (index == 0)
         return vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
             0.0, index);
-    }
 
-    const int orig_w = (int)s->dim.original_width;
-    const int orig_h = (int)s->dim.original_height;
-    subtract_plane(s->h_ref[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    if (s->speed_temporal_use_ref_diff)
-        subtract_plane(s->h_dis[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    else
-        subtract_plane(s->h_dis[other], s->h_dis[cyclic], orig_w, orig_h, s->float_stride);
-
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
-    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
-    if (!tmp_filter)
-        return -ENOMEM;
-
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[other], tmp_filter,
-                                        s->float_stride);
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
-                                        s->float_stride);
-    aligned_free(tmp_filter);
-
-    /* Reference diff: means → cov → indterm, then eigendecomp + QR. Uploads ref
-     * eigenvalues into the shared d_eigenvalues buffer. */
-    int err = run_gpu_pipeline_st(s, s->h_ref[other], s->d_indterm_ref, s->h_indterm_ref);
+    speed_temporal_prepare_diff(s, cyclic, other);
+    int err = speed_temporal_filter_diff(s, other);
     if (err)
         return err;
 
-    bool singular_ref = false;
-    err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
-    if (err)
-        return err;
-
-    /* Stash the reference eigenvalues aside before the distorted linalg pass
-     * overwrites d_eigenvalues. The CPU reference (est_params in speed.c)
-     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
-     * needs both. run_cpu_linalg_st synchronizes the stream after its
-     * eigenvalue H2D, so this DtoD copy is correctly ordered. */
-    {
-        hipError_t drc =
-            hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float));
-        if (drc != hipSuccess)
-            return hip_rc_st(drc);
-    }
-
-    /* Distorted diff: means → cov → indterm (keeps the DIS covariance in
-     * h_cov_mat — no save/restore of the ref covariance), then eigendecomp + QR.
-     * Uploads dis eigenvalues into d_eigenvalues. */
-    err = run_gpu_pipeline_st(s, s->h_dis[other], s->d_indterm_dis, s->h_indterm_dis);
-    if (err)
-        return err;
-
-    bool singular_dis = false;
-    err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
-    if (err)
-        return err;
-
-    /* Exactly one side numerically unstable: report 0 rather than the inflated
-     * score a zeroed solution on one side produces. Verbatim the CPU rule in
-     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
-     * sides are singular the CPU still scores, from two zeroed solutions — so
-     * do we, which is why the singular branch above zeroes `d_sol` on the
-     * device. ADR-1218. */
     float score = 0.0f;
-    if (singular_ref != singular_dis) {
-        score = 0.0f;
-    } else {
-        err = run_score_st(s, &score);
-        if (err)
-            return err;
-    }
+    err = speed_temporal_score_diff(s, other, &score);
+    if (err)
+        return err;
 
     const double mxv = s->speed_temporal_max_val;
     const double clipped = (double)score < mxv ? (double)score : mxv;
@@ -775,18 +764,7 @@ static int close_temporal_hip(VmafFeatureExtractor *fex)
 #ifdef HAVE_HIPCC
     free_hip_buffers_st(s);
 #endif
-    aligned_free(s->h_ref[0]);
-    aligned_free(s->h_ref[1]);
-    aligned_free(s->h_dis[0]);
-    aligned_free(s->h_dis[1]);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
+    speed_temporal_free_cpu(s);
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
     return 0;
@@ -794,7 +772,7 @@ static int close_temporal_hip(VmafFeatureExtractor *fex)
 
 static const char *provided_features_temporal[] = {
     "Speed_temporal_feature_speed_temporal_score",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 /* ADR-0567: real HIP GPU kernels for speed_temporal.
@@ -810,5 +788,3 @@ VmafFeatureExtractor vmaf_fex_speed_temporal_hip = {
     .provided_features = provided_features_temporal,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_HIP,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

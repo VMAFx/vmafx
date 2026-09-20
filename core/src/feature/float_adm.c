@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <string.h>
 #include <stddef.h>
@@ -343,8 +345,9 @@ fail:
     return -ENOMEM;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     AdmState *s = fex->priv;
@@ -358,7 +361,10 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     double luminance_level = DEFAULT_ADM_CSF_LUMINANCE_LEVEL;
 
-    double score, score_num, score_den, score_aim;
+    double score;
+    double score_num;
+    double score_den;
+    double score_aim;
     double scores[8];
     err = compute_adm(s->ref, s->dist, ref_pic->w[0], ref_pic->h[0], s->float_stride,
                       s->float_stride, &score, &score_num, &score_den, scores, ADM_BORDER_FACTOR,
@@ -486,7 +492,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "adm_den_scale2",
                                           "adm_num_scale3",
                                           "adm_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_float_adm = {
     .name = "float_adm",

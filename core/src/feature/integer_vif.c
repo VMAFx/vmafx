@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <string.h>
@@ -42,10 +44,10 @@
 #include "arm64/vif_neon.h"
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -55,9 +57,10 @@ typedef struct VifState {
     bool vif_skip_scale0;
     void (*subsample_rd_8)(const VifBuffer *buf, unsigned w, unsigned h);
     void (*subsample_rd_16)(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc);
-    void (*vif_statistic_8)(VifPublicState *s, float *num, float *den, unsigned w, unsigned h);
-    void (*vif_statistic_16)(VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
-                             int bpc, int scale);
+    void (*vif_statistic_8)(const VifPublicState *s, float *num, float *den, unsigned w,
+                            unsigned h);
+    void (*vif_statistic_16)(const VifPublicState *s, float *num, float *den, unsigned w,
+                             unsigned h, int bpc, int scale);
     VmafDictionary *feature_name_dict;
 } VifState;
 
@@ -386,7 +389,7 @@ static FORCE_INLINE void vif_vertical_line_8(const VifBuffer *buf, const uint16_
     }
 }
 
-void vif_statistic_8(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h)
+void vif_statistic_8(const struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h)
 {
     const unsigned fwidth = vif_filter1d_width[0];
     const uint16_t *vif_filt_s0 = vif_filter1d_table[0];
@@ -467,8 +470,8 @@ static FORCE_INLINE void vif_vertical_line_16(const VifBuffer *buf, const uint16
     }
 }
 
-void vif_statistic_16(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
-                      int bpc, int scale)
+void vif_statistic_16(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                      unsigned h, int bpc, int scale)
 {
     const unsigned fwidth = vif_filter1d_width[scale];
     const uint16_t *vif_filt = vif_filter1d_table[scale];
@@ -617,7 +620,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
         aligned_free(s->public.buf.data);
-        s->public.buf.data = NULL;
+        s->public.buf.data = VMAF_NULLPTR;
         return -ENOMEM;
     }
 
@@ -722,8 +725,9 @@ static int write_scores(VmafFeatureCollector *feature_collector, unsigned index,
     return err;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     VifState *s = fex->priv;
@@ -802,9 +806,8 @@ static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score
                                           "integer_vif_den_scale2",
                                           "integer_vif_num_scale3",
                                           "integer_vif_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_integer_vif` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_vif = {
     .name = "vif",
     .init = init,
@@ -822,5 +825,3 @@ VmafFeatureExtractor vmaf_fex_integer_vif = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

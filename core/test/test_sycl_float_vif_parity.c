@@ -45,12 +45,6 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* Fixture must be ≥ 64x64 for the 4-scale Gaussian footprint;
  * 256x144 matches the round-1 / round-2 fixture sizing. */
 #ifndef FIXTURE_W
@@ -109,14 +103,13 @@ static int feed_frame(VmafContext *vmaf)
 #define NEG_SNSQ "1.5"
 #define NEG_SCALE0_KEY "vif_scale0_egl_1_snsq_1.5"
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu(bool neg_opts, const char *key, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (neg_opts) {
         err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
         mu_assert("CPU: dictionary_set(vif_enhn_gain_limit) failed", !err);
@@ -129,33 +122,32 @@ static char *run_cpu(bool neg_opts, const char *key, double *score)
     mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
     mu_assert("CPU: vif_scale0 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl(bool neg_opts, const char *key, double *score)
 {
     *score = NAN;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (neg_opts) {
         err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
         mu_assert("SYCL: dictionary_set(vif_enhn_gain_limit) failed", !err);
@@ -168,22 +160,22 @@ static char *run_sycl(bool neg_opts, const char *key, double *score)
     mu_assert("SYCL: vmaf_use_feature(float_vif_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
     mu_assert("SYCL: vif_scale0 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif_sycl");
-    mu_assert("float_vif_sycl extractor must be registered", fex != NULL);
+    mu_assert("float_vif_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_vif_sycl name matches", !strcmp(fex->name, "float_vif_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_cpu_sycl_parity(void)
@@ -197,7 +189,7 @@ static char *test_float_vif_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (isnan(sycl_score))
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr,
@@ -206,7 +198,7 @@ static char *test_float_vif_cpu_sycl_parity(void)
     }
     mu_assert("float_vif_scale0 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -229,7 +221,7 @@ static char *test_float_vif_options_reach_kernel(void)
     if (msg)
         return msg;
     if (isnan(sycl_score))
-        return NULL;
+        return VMAF_NULLPTR;
     const double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr,
@@ -239,7 +231,7 @@ static char *test_float_vif_options_reach_kernel(void)
     }
     mu_assert("float_vif with non-default egl/snsq drifts from the CPU reference",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -247,7 +239,5 @@ char *run_tests(void)
     mu_run_test(test_float_vif_sycl_registered);
     mu_run_test(test_float_vif_cpu_sycl_parity);
     mu_run_test(test_float_vif_options_reach_kernel);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

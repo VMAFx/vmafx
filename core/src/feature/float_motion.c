@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <string.h>
@@ -46,10 +48,10 @@
 #include "arm64/float_motion_neon.h"
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -257,10 +259,10 @@ static int motion_plane_alloc(MotionPlane *p, size_t float_stride, unsigned h)
     const size_t plane_sz = float_stride * h;
     p->ref = aligned_malloc(plane_sz, 32);
     p->tmp = aligned_malloc(plane_sz, 32);
-    bool ok = p->ref != NULL && p->tmp != NULL;
+    bool ok = p->ref != VMAF_NULLPTR && p->tmp != VMAF_NULLPTR;
     for (unsigned k = 0; k < MOTION_BLUR_RING; k++) {
         p->blur[k] = aligned_malloc(plane_sz, 32);
-        ok = ok && p->blur[k] != NULL;
+        ok = ok && p->blur[k] != VMAF_NULLPTR;
     }
     if (!ok) {
         motion_plane_free(p);
@@ -417,7 +419,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     }
 
     if (s->motion_force_zero) {
-        fex->flush = NULL;
+        fex->flush = VMAF_NULLPTR;
     }
     s->score = 0;
     s->sad_line = motion_select_sad_line();
@@ -453,8 +455,6 @@ static double motion_blend_clip(const MotionState *s, double score)
         s->motion_max_val);
 }
 
-/* cppcheck-suppress constParameterCallback ; prototype is fixed by the VmafFeatureExtractor.flush
- * callback type in feature_extractor.h — only fex->priv is read here */
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     const MotionState *s = fex->priv;
@@ -469,7 +469,14 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
         ret |= motion_append(s, feature_collector, "VMAF_feature_motion3_score", 0, s->index);
     }
 
-    return (ret < 0) ? ret : !ret;
+    const int result = (ret < 0) ? ret : !ret;
+    if (result > 0) {
+        /* A successful temporal drain is terminal. Clearing the callback makes
+         * the extractor-level flush operation idempotent as well as the
+         * VmafContext-level operation guarded by vmaf->flushed. */
+        fex->flush = VMAF_NULLPTR;
+    }
+    return result;
 }
 
 static int motion_append_forced_zero(const MotionState *s, VmafFeatureCollector *feature_collector,
@@ -500,7 +507,7 @@ static void motion_blur_plane(const MotionState *s, const MotionPlane *p, unsign
                         px_stride, px_stride);
 }
 
-static void motion_copy_and_blur(MotionState *s, VmafPicture *ref_pic, unsigned blur_idx)
+static void motion_copy_and_blur(MotionState *s, const VmafPicture *ref_pic, unsigned blur_idx)
 {
     const unsigned n_planes = s->motion_add_uv ? 3 : 1;
     for (unsigned c = 0; c < n_planes; c++) {
@@ -543,8 +550,9 @@ static int motion_score_pair(const MotionState *s, const VmafPicture *ref_pic, u
     return err;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     MotionState *s = fex->priv;
@@ -616,9 +624,8 @@ static int close(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_feature_motion2_score",
-                                          "VMAF_feature_motion3_score", NULL};
+                                          "VMAF_feature_motion3_score", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_motion` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_motion = {
     .name = "float_motion",
     .init = init,
@@ -630,5 +637,3 @@ VmafFeatureExtractor vmaf_fex_float_motion = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

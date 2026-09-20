@@ -16,10 +16,11 @@
  *
  */
 
+#include "offset.h"
+
 /**
  * Note: stride is in terms of bytes
  */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0141 / ADR-0278: declared extern in offset.h; consumed via per-feature `#define offset_image offset_image_s` aliases in adm.c / motion.c.
 int offset_image_s(float *buf, float off, int width, int height, int stride)
 {
     char *byte_ptr = (char *)buf;
@@ -28,11 +29,7 @@ int offset_image_s(float *buf, float off, int width, int height, int stride)
     int j;
 
     for (i = 0; i < height; ++i) {
-        /* The double cast through void* is the C spelling for a
-         * pointer-type change; bugprone-casting-through-void proposes
-         * reinterpret_cast, which does not exist in C. ADR-0141 / ADR-0278. */
-        // NOLINTNEXTLINE(bugprone-casting-through-void)
-        float *row_ptr = (float *)(void *)byte_ptr;
+        float *row_ptr = (float *)byte_ptr;
 
         for (j = 0; j < width; ++j) {
             row_ptr[j] += off;

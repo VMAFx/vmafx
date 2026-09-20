@@ -33,13 +33,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "feature/feature_extractor.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
-static VmafSyclState *sycl = NULL;
+static VmafSyclState *sycl = VMAF_NULLPTR;
 static int sycl_init_failed = 0;
 
 /* ------------------------------------------------------------------ */
@@ -55,11 +49,11 @@ static char *test_cambi_sycl_setup(void)
                       "no GPU available — skipping cambi_sycl tests\n",
                       err);
         sycl_init_failed = 1;
-        sycl = NULL;
-        return NULL;
+        sycl = VMAF_NULLPTR;
+        return VMAF_NULLPTR;
     }
-    mu_assert("sycl state should be non-NULL", sycl != NULL);
-    return NULL;
+    mu_assert("sycl state should be non-NULL", sycl != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -68,13 +62,13 @@ static char *test_cambi_sycl_setup(void)
 static char *test_cambi_sycl_registration(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("cambi_sycl");
-    mu_assert("vmaf_fex_cambi_sycl should be findable by name", fex != NULL);
+    mu_assert("vmaf_fex_cambi_sycl should be findable by name", fex != VMAF_NULLPTR);
     if (fex) {
         mu_assert("fex name should be cambi_sycl", strcmp(fex->name, "cambi_sycl") == 0);
         mu_assert("fex flags should include VMAF_FEATURE_EXTRACTOR_SYCL",
                   (fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) != 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -84,7 +78,7 @@ static char *test_cambi_sycl_smoke(void)
 {
     if (sycl_init_failed) {
         (void)fprintf(stderr, "  [SKIP] test_cambi_sycl_smoke (no GPU)\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* Build a minimal VmafContext with the SYCL state imported. */
@@ -92,17 +86,17 @@ static char *test_cambi_sycl_smoke(void)
         .log_level = VMAF_LOG_LEVEL_NONE,
         .n_threads = 1,
     };
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("vmaf_init should succeed", err == 0);
     if (err)
-        return NULL;
+        return VMAF_NULLPTR;
 
     err = vmaf_sycl_import_state(vmaf, sycl);
     mu_assert("vmaf_sycl_import_state should succeed", err == 0);
     if (err) {
         (void)vmaf_close(vmaf);
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* Allocate a synthetic 576×324 YUV420P 8-bpc picture pair.
@@ -132,20 +126,20 @@ static char *test_cambi_sycl_smoke(void)
     /* Use vmaf_read_pictures to feed the frame through the pipeline.
      * cambi_sycl is registered and will be auto-selected when the SYCL
      * state is active and "Cambi_feature_cambi_score" is requested. */
-    err = vmaf_use_feature(vmaf, "cambi_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "cambi_sycl", VMAF_NULLPTR);
     mu_assert("vmaf_use_feature(cambi_sycl) should succeed", err == 0);
     if (err) {
         (void)vmaf_picture_unref(&ref_pic);
         (void)vmaf_picture_unref(&dis_pic);
         (void)vmaf_close(vmaf);
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     err = vmaf_read_pictures(vmaf, &ref_pic, &dis_pic, 0);
     mu_assert("vmaf_read_pictures should succeed", err == 0);
 
     /* Flush pipeline. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("flush vmaf_read_pictures should succeed", err == 0);
 
     /* Retrieve the score. */
@@ -155,7 +149,7 @@ static char *test_cambi_sycl_smoke(void)
     mu_assert("score should be finite and non-negative", isfinite(score) && score >= 0.0);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -166,7 +160,7 @@ static char *test_cambi_sycl_teardown(void)
     if (sycl) {
         vmaf_sycl_state_free(&sycl);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -179,16 +173,14 @@ char *run_tests(void)
     mu_run_test(test_cambi_sycl_registration);
     mu_run_test(test_cambi_sycl_smoke);
     mu_run_test(test_cambi_sycl_teardown);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #else /* !HAVE_SYCL */
 
 char *run_tests(void)
 {
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* HAVE_SYCL */
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0433: CHUG Content Splits And HDR Audit
 
 - **Status**: Accepted
@@ -35,7 +34,7 @@ columns.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Row-level random split | Simple and balances row counts closely | Leaks bitrate-ladder variants of the same source content across validation | Rejected; leakage is worse than minor split imbalance |
 | Manifest-order split | Deterministic without hashing | Depends on upstream CSV ordering and can cluster related content accidentally | Rejected; hash partitioning is stable and order-independent |
 | Separate audit script | Keeps the materialiser narrower | Operators can forget the audit before training; duplicated JSONL loading / clip path handling | Rejected; the audit is a pre-training guard for the same local feature job |

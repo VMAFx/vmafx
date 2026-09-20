@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-1100: ΔE-ITP (Delta E ITP) — HDR/WCG colour-difference metric feasibility
 
 - **Status**: Closed (ADR-1110 Accepted)
@@ -64,7 +63,7 @@ BT.2124-0 itself and were not independently cross-confirmed against BT.2100-2.
 58 % PQ BT.709-blue patch, 10-bit full-range PQ RGB `[296, 201, 582]`:
 
 | Step | Value | Standard (4-dp rounded) |
-|---|---|---|
+| --- | --- | --- |
 | E' (÷1023) | [0.2893, 0.1965, 0.5689] | [0.2893, 0.1964, 0.5689] |
 | linear RGB (PQ EOTF) | [8.758, 2.294, 181.318] cd/m² | [8.753, 2.291, 181.3] |
 | ITP (full precision) | **[0.355721, 0.134647, -0.161395]** | [0.3554, 0.1346, -0.1613] |

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **`integer_adm_hip` faulted the GPU and killed the process on the first
   frame.** `extract_fex_hip` passed `ref_pic->data[0]` straight to the DWT2
   device kernel, but the HIP backend is host-pic (ADR-0530): that pointer is

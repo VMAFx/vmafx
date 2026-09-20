@@ -75,6 +75,7 @@ import asyncio
 import json
 import logging
 import os
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -89,27 +90,13 @@ pytest.importorskip("mcp")
 
 from vmaf_mcp import server as srv
 
-_HAS_EVAL: bool
-try:
-    import numpy  # noqa: F401
-    import onnxruntime  # noqa: F401
-    import pandas  # noqa: F401
-    import scipy  # noqa: F401
-
-    _HAS_EVAL = True
-except ImportError:
-    _HAS_EVAL = False
+_HAS_EVAL = all(
+    find_spec(module) is not None for module in ("numpy", "onnxruntime", "pandas", "scipy")
+)
 
 skip_if_no_eval = pytest.mark.skipif(not _HAS_EVAL, reason="vmaf-mcp[eval] not installed")
 
-_HAS_HTTP: bool
-try:
-    import aiohttp  # noqa: F401
-    import prometheus_client  # noqa: F401
-
-    _HAS_HTTP = True
-except ImportError:
-    _HAS_HTTP = False
+_HAS_HTTP = all(find_spec(module) is not None for module in ("aiohttp", "prometheus_client"))
 
 skip_if_no_http = pytest.mark.skipif(
     not _HAS_HTTP, reason="aiohttp + prometheus_client not installed"
@@ -825,26 +812,17 @@ def test_communicate_with_timeout_raises_on_timeout(monkeypatch: pytest.MonkeyPa
         call_count.append(1)
         if len(call_count) == 1:
             # First call: simulate the initial timeout.
-            # Close the coroutine to suppress "never awaited" warnings.
             coro.close()
             raise asyncio.TimeoutError()
-        # Second call (drain attempt): close and return as if it succeeded.
-        # The coro may be a fresh communicate() call from the suppress block.
-        import contextlib
-
-        with contextlib.suppress(Exception):
-            coro.close()
+        # Second call (drain attempt): consume the fresh communicate coroutine
+        # explicitly before returning the simulated drain result.
+        coro.close()
         return b"", b""
 
     monkeypatch.setattr(srv.asyncio, "wait_for", _fake_wait_for)
 
-    # Suppress the RuntimeWarning from the drain coroutine in the suppress block.
-    import warnings
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        with pytest.raises(RuntimeError, match="timed out"):
-            asyncio.run(srv._communicate_with_timeout(proc, timeout=0.001))
+    with pytest.raises(RuntimeError, match="timed out"):
+        asyncio.run(srv._communicate_with_timeout(proc, timeout=0.001))
 
 
 # ===========================================================================

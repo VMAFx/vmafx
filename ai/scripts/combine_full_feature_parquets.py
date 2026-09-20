@@ -31,13 +31,14 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-from ai.data.feature_extractor import FULL_FEATURES  # noqa: E402
+from ai.data.feature_extractor import FULL_FEATURES
 
 # isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 OUTPUT_COLUMNS: tuple[str, ...] = (
     "corpus",
@@ -133,8 +134,7 @@ def _normalise_shard(
     return out
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = make_argument_parser(
         prog="combine_full_feature_parquets.py",
         description=__doc__,
@@ -169,18 +169,15 @@ def main(argv: list[str] | None = None) -> int:
             "and exact CLI args used to build the derived parquet."
         ),
     )
-    args = parser.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
+    return parser.parse_args(argv)
 
+
+def _load_shards(args: argparse.Namespace) -> tuple[list[pd.DataFrame], list[dict[str, object]]]:
     shards: list[pd.DataFrame] = []
     input_stats: list[dict[str, object]] = []
     for label, path in args.inputs:
         shard = _normalise_shard(
-            label,
-            path,
-            args.max_rows_per_input,
-            assume_teacher=args.assume_teacher,
+            label, path, args.max_rows_per_input, assume_teacher=args.assume_teacher
         )
         missing = list(shard.attrs.get("missing_features", []))
         print(
@@ -198,28 +195,27 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         shards.append(shard)
+    return shards, input_stats
 
-    teachers = {shard.attrs["teacher_model"] for shard in shards if not shard.empty}
-    if len(teachers) > 1:
-        raise ValueError(
-            f"Cannot combine shards with conflicting teacher models: {sorted(teachers)}"
-        )
-    combined_teacher = next(iter(teachers)) if teachers else (args.assume_teacher or "unknown")
 
-    combined = pd.concat(shards, ignore_index=True, sort=False)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    combined.to_parquet(args.out, index=False)
-    corpora = {str(key): int(value) for key, value in combined["corpus"].value_counts().items()}
+def _write_combine_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    input_stats: list[dict[str, object]],
+    combined: pd.DataFrame,
+    teacher: str,
+    corpora: dict[str, int],
+) -> None:
     write_manifest_json(
         args.manifest_out,
         {
             "schema": "full-feature-parquet-combine-manifest-v1",
-            "teacher_model": combined_teacher,
+            "teacher_model": teacher,
             "stats": {
                 "input_count": len(args.inputs),
                 "output_rows": len(combined),
                 "corpora": corpora,
-                "teacher_model": combined_teacher,
+                "teacher_model": teacher,
                 "max_rows_per_input": args.max_rows_per_input,
             },
             "inputs": input_stats,
@@ -234,6 +230,28 @@ def main(argv: list[str] | None = None) -> int:
             ),
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    shards, input_stats = _load_shards(args)
+
+    teachers = {shard.attrs["teacher_model"] for shard in shards if not shard.empty}
+    if len(teachers) > 1:
+        raise ValueError(
+            f"Cannot combine shards with conflicting teacher models: {sorted(teachers)}"
+        )
+    combined_teacher = next(iter(teachers)) if teachers else (args.assume_teacher or "unknown")
+
+    combined = pd.concat(shards, ignore_index=True, sort=False)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_parquet(args.out, index=False)
+    corpora = {str(key): int(value) for key, value in combined["corpus"].value_counts().items()}
+    _write_combine_manifest(args, raw_argv, input_stats, combined, combined_teacher, corpora)
     print(
         f"[combine-full] wrote {args.out}: rows={len(combined)} "
         f"corpora={corpora} manifest={args.manifest_out}",

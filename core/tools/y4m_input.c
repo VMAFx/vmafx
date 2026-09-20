@@ -22,18 +22,10 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
-/* Vendored Daala Y4M parser. sscanf return-code checks guard against malformed
- * headers; per-check suppression would clutter the file. */
-// NOLINTBEGIN(bugprone-unchecked-string-to-number-conversion,cert-err34-c) — ADR-1155: sscanf return-code checks guard against malformed headers in Daala parser
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
- * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 #include "vidinput.h"
+#include "vmaf_nullptr.h"
+#include <errno.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -43,7 +35,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 typedef struct y4m_input y4m_input;
 
 /*The function used to perform chroma conversion.*/
-typedef void (*y4m_convert_func)(y4m_input *y4m, unsigned char *dst, const unsigned char *aux);
+typedef void (*y4m_convert_func)(const y4m_input *y4m, unsigned char *dst,
+                                 const unsigned char *aux);
 
 /** Linkage will break without this if using a C++ compiler, and will issue
  * warnings without this for a C compiler*/
@@ -97,31 +90,74 @@ typedef struct {
     int got_chroma;
 } Y4MTagState;
 
+#define Y4M_NUMERIC_TOKEN_CAPACITY 64u
+
+static int y4m_parse_integer(const char *const begin, const char *const end, int *const value)
+{
+    const ptrdiff_t token_length = end - begin;
+    if (token_length <= 0 || (size_t)token_length >= Y4M_NUMERIC_TOKEN_CAPACITY)
+        return -1;
+
+    char token[Y4M_NUMERIC_TOKEN_CAPACITY];
+    (void)memcpy(token, begin, (size_t)token_length);
+    token[token_length] = '\0';
+
+    char *parse_end = VMAF_NULLPTR;
+    errno = 0;
+    const long parsed = strtol(token, &parse_end, 10);
+    if (errno == ERANGE || parse_end == token || *parse_end != '\0' || parsed < INT_MIN ||
+        parsed > INT_MAX)
+        return -1;
+
+    *value = (int)parsed;
+    return 0;
+}
+
+static int y4m_parse_ratio(const char *const begin, const char *const end, int *const numerator,
+                           int *const denominator)
+{
+    const char *separator = VMAF_NULLPTR;
+    for (const char *cursor = begin; cursor < end; cursor++) {
+        if (*cursor != ':')
+            continue;
+        if (separator)
+            return -1;
+        separator = cursor;
+    }
+
+    if (!separator || y4m_parse_integer(begin, separator, numerator) < 0 ||
+        y4m_parse_integer(separator + 1, end, denominator) < 0)
+        return -1;
+    return 0;
+}
+
 static int y4m_process_single_tag(y4m_input *const y4m, const char *const p, const char *const q,
                                   Y4MTagState *const state)
 {
     switch (p[0]) {
     case 'W':
-        if (sscanf(p + 1, "%d", &y4m->pic_w) != 1)
+        if (y4m_parse_integer(p + 1, q, &y4m->pic_w) < 0)
             return -1;
         state->got_w = 1;
         break;
     case 'H':
-        if (sscanf(p + 1, "%d", &y4m->pic_h) != 1)
+        if (y4m_parse_integer(p + 1, q, &y4m->pic_h) < 0)
             return -1;
         state->got_h = 1;
         break;
     case 'F':
-        if (sscanf(p + 1, "%d:%d", &y4m->fps_n, &y4m->fps_d) != 2)
+        if (y4m_parse_ratio(p + 1, q, &y4m->fps_n, &y4m->fps_d) < 0)
             return -1;
         state->got_fps = 1;
         break;
     case 'I':
+        if (q - p != 2)
+            return -1;
         y4m->interlace = p[1];
         state->got_interlace = 1;
         break;
     case 'A':
-        if (sscanf(p + 1, "%d:%d", &y4m->par_n, &y4m->par_d) != 2)
+        if (y4m_parse_ratio(p + 1, q, &y4m->par_n, &y4m->par_d) < 0)
             return -1;
         state->got_par = 1;
         break;
@@ -143,7 +179,7 @@ static int y4m_process_single_tag(y4m_input *const y4m, const char *const p, con
 static int y4m_parse_tags(y4m_input *const y4m, char *const tags)
 {
     Y4MTagState state = {0};
-    char *q = NULL;
+    char *q = VMAF_NULLPTR;
     for (char *p = tags;; p = q) {
         while (*p == ' ')
             p++;
@@ -160,8 +196,10 @@ static int y4m_parse_tags(y4m_input *const y4m, char *const tags)
         y4m->interlace = '?';
     if (!state.got_par)
         y4m->par_n = y4m->par_d = 0;
-    if (!state.got_chroma)
-        (void)strcpy(y4m->chroma_type, "420");
+    if (!state.got_chroma) {
+        static const char default_chroma[] = "420";
+        (void)memcpy(y4m->chroma_type, default_chroma, sizeof(default_chroma));
+    }
     return 0;
 }
 
@@ -195,7 +233,7 @@ static void y4m_horizontal_filter_row(unsigned char *const tmp, const unsigned c
     }
 }
 
-static void y4m_convert_42xmpeg2_42xjpeg(y4m_input *const y4m, unsigned char *dst,
+static void y4m_convert_42xmpeg2_42xjpeg(const y4m_input *const y4m, unsigned char *dst,
                                          const unsigned char *aux)
 {
     dst += (size_t)y4m->pic_w * y4m->pic_h;
@@ -284,7 +322,7 @@ static void y4m_vertical_filter_cr(unsigned char *dst, const unsigned char *tmp,
     }
 }
 
-static void y4m_convert_42xpaldv_42xjpeg(y4m_input *const y4m, unsigned char *dst,
+static void y4m_convert_42xpaldv_42xjpeg(const y4m_input *const y4m, unsigned char *dst,
                                          const unsigned char *aux)
 {
     dst += (size_t)y4m->pic_w * y4m->pic_h;
@@ -367,7 +405,7 @@ static void y4m_filter_411_row(unsigned char *const dst, const unsigned char *co
     }
 }
 
-static void y4m_convert_411_422jpeg(y4m_input *const y4m, unsigned char *dst,
+static void y4m_convert_411_422jpeg(const y4m_input *const y4m, unsigned char *dst,
                                     const unsigned char *aux)
 {
     dst += (size_t)y4m->pic_w * y4m->pic_h;
@@ -383,7 +421,7 @@ static void y4m_convert_411_422jpeg(y4m_input *const y4m, unsigned char *dst,
     }
 }
 
-static void y4m_convert_mono_420jpeg(y4m_input *const y4m, unsigned char *dst,
+static void y4m_convert_mono_420jpeg(const y4m_input *const y4m, unsigned char *dst,
                                      const unsigned char *const aux)
 {
     (void)aux;
@@ -391,15 +429,6 @@ static void y4m_convert_mono_420jpeg(y4m_input *const y4m, unsigned char *dst,
     const size_t c_sz = (size_t)((y4m->pic_w + y4m->dst_c_dec_h - 1) / y4m->dst_c_dec_h) *
                         (size_t)((y4m->pic_h + y4m->dst_c_dec_v - 1) / y4m->dst_c_dec_v);
     (void)memset(dst, 128, c_sz * 2U);
-}
-
-// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-1155: conforms to y4m_convert_func signature
-static void y4m_convert_null(y4m_input *const y4m, unsigned char *const dst,
-                             const unsigned char *const aux)
-{
-    (void)y4m;
-    (void)dst;
-    (void)aux;
 }
 
 #define Y4M_HEADER_BUFSIZE 256
@@ -413,7 +442,7 @@ static int y4m_setup_chroma_format_part1(y4m_input *const y4m)
         y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h +
                                (size_t)2 * ((y4m->pic_w + 1) / 2) * ((y4m->pic_h + 1) / 2);
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "420p10") == 0) {
@@ -423,7 +452,7 @@ static int y4m_setup_chroma_format_part1(y4m_input *const y4m)
                                2;
         y4m->depth = 10;
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "420p12") == 0) {
@@ -433,7 +462,7 @@ static int y4m_setup_chroma_format_part1(y4m_input *const y4m)
                                2;
         y4m->depth = 12;
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "422p10") == 0) {
@@ -443,7 +472,7 @@ static int y4m_setup_chroma_format_part1(y4m_input *const y4m)
         y4m->dst_buf_read_sz = (size_t)2 * ((size_t)y4m->pic_w * y4m->pic_h +
                                             (size_t)2 * ((y4m->pic_w + 1) / 2) * y4m->pic_h);
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "422p12") == 0) {
@@ -453,7 +482,7 @@ static int y4m_setup_chroma_format_part1(y4m_input *const y4m)
         y4m->dst_buf_read_sz = (size_t)2 * ((size_t)y4m->pic_w * y4m->pic_h +
                                             (size_t)2 * ((y4m->pic_w + 1) / 2) * y4m->pic_h);
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     return 1;
@@ -466,7 +495,7 @@ static int y4m_setup_chroma_format_part2(y4m_input *const y4m)
         y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h * 3 * 2;
         y4m->depth = 10;
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "444p12") == 0) {
@@ -474,7 +503,7 @@ static int y4m_setup_chroma_format_part2(y4m_input *const y4m)
         y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h * 3 * 2;
         y4m->depth = 12;
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "420paldv") == 0) {
@@ -511,14 +540,14 @@ static int y4m_setup_chroma_format_part3(y4m_input *const y4m)
         y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 1;
         y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h * 3;
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = 0;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "444alpha") == 0) {
         y4m->src_c_dec_h = y4m->dst_c_dec_h = y4m->src_c_dec_v = y4m->dst_c_dec_v = 1;
         y4m->dst_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h * 3;
         y4m->aux_buf_sz = y4m->aux_buf_read_sz = (size_t)y4m->pic_w * y4m->pic_h;
-        y4m->convert = y4m_convert_null;
+        y4m->convert = VMAF_NULLPTR;
         return 0;
     }
     if (strcmp(y4m->chroma_type, "mono") == 0) {
@@ -619,11 +648,11 @@ static int y4m_allocate_buffers(y4m_input *const y4m)
             (void)fprintf(stderr, "Could not allocate y4m auxiliary buffer (%zu bytes).\n",
                           y4m->aux_buf_sz);
             free(y4m->dst_buf);
-            y4m->dst_buf = NULL;
+            y4m->dst_buf = VMAF_NULLPTR;
             return -1;
         }
     } else {
-        y4m->aux_buf = NULL;
+        y4m->aux_buf = VMAF_NULLPTR;
     }
     return 0;
 }
@@ -644,7 +673,7 @@ static y4m_input *y4m_input_open(FILE *const fin)
     y4m_input *const y4m = (y4m_input *)malloc(sizeof(*y4m));
     if (!y4m) {
         (void)fprintf(stderr, "Could not allocate y4m reader state.\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     (void)memset(y4m, 0, sizeof(*y4m));
     if (y4m_input_open_impl(y4m, fin) < 0) {
@@ -652,7 +681,7 @@ static y4m_input *y4m_input_open(FILE *const fin)
         free(y4m->dst_buf);
         free(y4m->aux_buf);
         free(y4m);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     return y4m;
 }
@@ -721,7 +750,8 @@ static int y4m_input_fetch_frame(y4m_input *const y4m, FILE *const fin, video_in
             return -1;
         }
     }
-    (*y4m->convert)(y4m, y4m->dst_buf, y4m->aux_buf);
+    if (y4m->convert)
+        (*y4m->convert)(y4m, y4m->dst_buf, y4m->aux_buf);
 
     ycbcr[0].width = y4m->frame_w;
     ycbcr[0].height = y4m->frame_h;
@@ -762,10 +792,10 @@ static int y4m_read_plane_rows(FILE *const fin, uint8_t *dst, const size_t row_b
     return 0;
 }
 
-static int y4m_fetch_into_vmaf_picture(y4m_input *const y4m, FILE *const fin,
+static int y4m_fetch_into_vmaf_picture(const y4m_input *const y4m, FILE *const fin,
                                        VmafPicture *const pic)
 {
-    if (y4m->convert != y4m_convert_null) {
+    if (y4m->convert) {
         (void)fprintf(stderr, "y4m format requires conversion; direct read not supported.\n");
         return -1;
     }
@@ -817,18 +847,14 @@ static void y4m_vtbl_close(void *const ctx)
 static int y4m_vtbl_fetch_into_vmaf_picture(void *const ctx, FILE *const fin,
                                             VmafPicture *const pic)
 {
-    return y4m_fetch_into_vmaf_picture((y4m_input *)ctx, fin, pic);
+    return y4m_fetch_into_vmaf_picture((const y4m_input *)ctx, fin, pic);
 }
 
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-1155: extern linkage required by vidinput.c
 OC_EXTERN const video_input_vtbl Y4M_INPUT_VTBL = {
-    .open_raw = NULL,
+    .open_raw = VMAF_NULLPTR,
     .open = y4m_vtbl_open,
     .get_info = y4m_vtbl_get_info,
     .fetch_frame = y4m_vtbl_fetch_frame,
     .close = y4m_vtbl_close,
     .fetch_into_vmaf_picture = y4m_vtbl_fetch_into_vmaf_picture,
 };
-
-// NOLINTEND(modernize-use-nullptr)
-// NOLINTEND(bugprone-unchecked-string-to-number-conversion,cert-err34-c)

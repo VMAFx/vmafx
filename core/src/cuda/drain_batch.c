@@ -131,7 +131,7 @@ static int drain_stream_ensure(VmafCudaState *cu_state)
     }
     CudaFunctions *cu_f = cu_state->f;
     int ctx_pushed = 0;
-    int _cuda_err = 0;
+    int _cuda_err;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
     /* Non-blocking: the drain stream must not implicitly serialise

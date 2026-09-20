@@ -172,8 +172,9 @@ import string
 import sys
 import unittest
 from io import StringIO
+from itertools import islice
 
-__all__ = ["scanf", "sscanf", "fscanf"]
+__all__ = ["fscanf", "scanf", "sscanf"]
 __version__ = "1.0"
 
 # We keep a few sets as module variables just to incur the cost of constructing them just once.
@@ -191,12 +192,12 @@ class CharacterBuffer(object):
     def getch(self):
         """Returns the next character.  If there are no more characters
         left in the stream, returns the empty string."""
-        pass  # implement me!
+        # implement me!
 
     def ungetch(self, ch):
         """Tries to put back a character.  Can be called at most once
         between calls to getch()."""
-        pass  # implement me!
+        # implement me!
 
     def scanCharacterSet(self, characterSet, maxChars=0):
         """Support function that scans across a buffer till we hit
@@ -207,14 +208,12 @@ class CharacterBuffer(object):
         """Support function that scans across a buffer till we hit
         something outside what's allowable by the predicate."""
         chars = []
-        countChars = 0
-        while True:
-            if maxChars != 0 and countChars >= maxChars:
-                break
-            ch = self.getch()
+        source = iter(self.getch, "")
+        if maxChars != 0:
+            source = islice(source, maxChars)
+        for ch in source:
             if ch != "" and predicate(ch):
                 chars.append(ch)
-                countChars += 1
             else:
                 self.ungetch(ch)
                 break
@@ -278,12 +277,8 @@ class CharacterBufferFromFile(CharacterBuffer):
 
 def readiter(inputFile, *args):
     """Returns an iterator that calls read(*args) on the inputFile."""
-    while True:
-        ch = inputFile.read(*args)
-        if ch:
-            yield ch
-        else:
-            raise StopIteration
+    while ch := inputFile.read(*args):
+        yield ch
 
 
 def isIterable(thing):
@@ -319,15 +314,14 @@ def makeCharBuffer(thing):
     """
     if isinstance(thing, CharacterBuffer):
         return thing
-    elif isFileLike(thing):
+    if isFileLike(thing):
         # this check must come before isIterable, since files
         # provide a line-based iterator that we don't want to use.
         # Plus we want to take advantage of file.seek()
         return CharacterBufferFromFile(thing)
-    elif isIterable(thing):
+    if isIterable(thing):
         return CharacterBufferFromIterable(thing)
-    else:
-        raise ValueError("Can't coerse %r to CharacterBuffer" % thing)
+    raise ValueError("Can't coerse %r to CharacterBuffer" % thing)
 
 
 class CappedBuffer(CharacterBuffer):
@@ -346,8 +340,7 @@ class CappedBuffer(CharacterBuffer):
             if not self.isIgnoredChar(nextChar):
                 self.bytesRead += len(nextChar)
             return nextChar
-        else:
-            return ""
+        return ""
 
     def isIgnoredChar(self, ch):
         return self.ignoreWhitespace and isWhitespaceChar(ch)
@@ -364,14 +357,10 @@ class FormatError(ValueError):
     """A FormatError is raised if we run into errors while scanning
     for input."""
 
-    pass
-
 
 class IncompleteCaptureError(ValueError):
     """The *scanf() functions raise IncompleteCaptureError if a problem
     occurs doing scanning."""
-
-    pass
 
 
 """We keep a module-level STDIN CharacterBuffer, so that we can call
@@ -426,8 +415,7 @@ def isWhitespaceChar(ch, _set=_WHITESPACE_SET):
 def handleWhitespace(buffer):
     """Scans for whitespace.  Returns all the whitespace it collects."""
     chars = []
-    while True:
-        ch = buffer.getch()
+    for ch in iter(buffer.getch, ""):
         if isWhitespaceChar(ch):
             chars.append(ch)
         else:
@@ -449,7 +437,7 @@ def handleDecimalInt(buffer, optional=False, allowLeadingWhitespace=True):
     except ValueError:
         if optional:
             return None
-        raise FormatError("invalid literal characters: %s" % "".join(chars))
+        raise FormatError("invalid literal characters: %s" % "".join(chars)) from None
 
 
 def handleOct(buffer):
@@ -459,7 +447,7 @@ def handleOct(buffer):
     try:
         return int("".join(chars), 8)
     except ValueError:
-        raise FormatError("invalid literal characters: %s" % "".join(chars))
+        raise FormatError("invalid literal characters: %s" % "".join(chars)) from None
 
 
 def handleInt(buffer, base=0):
@@ -472,7 +460,7 @@ def handleInt(buffer, base=0):
     try:
         return int("".join(chars), base)
     except ValueError:
-        raise FormatError("invalid literal characters: %s" % "".join(chars))
+        raise FormatError("invalid literal characters: %s" % "".join(chars)) from None
 
 
 def handleHex(buffer):
@@ -493,7 +481,7 @@ def handleFloat(buffer, allowLeadingWhitespace=True):
     try:
         return float("".join(chars))
     except ValueError:
-        raise FormatError("invalid literal characters: %s" % "".join(chars))
+        raise FormatError("invalid literal characters: %s" % "".join(chars)) from None
 
 
 def handleChars(
@@ -506,10 +494,9 @@ def handleChars(
     chars += buffer.scanPredicate(lambda ch: not isBadCharacter(ch))
     if chars:
         return "".join(chars)
-    else:
-        if optional:
-            return None
-        raise FormatError("Empty buffer.")
+    if optional:
+        return None
+    raise FormatError("Empty buffer.")
 
 
 def handleString(buffer, allowLeadingWhitespace=True):
@@ -525,11 +512,10 @@ def makeHandleLiteral(literal):
         ch = buffer.getch()
         if ch == literal:
             return ch
-        else:
-            buffer.ungetch(ch)
-            if optional:
-                return None
-            raise FormatError("%s != %s" % (literal, ch))
+        buffer.ungetch(ch)
+        if optional:
+            return None
+        raise FormatError("%s != %s" % (literal, ch))
 
     return f
 
@@ -551,7 +537,6 @@ handleChar = makeWidthLimitedHandler(handleChars, 1, ignoreWhitespace=False)
 def makeIgnoredHandler(handler):
     def f(buffer):
         handler(buffer)
-        return None
 
     return f
 
@@ -572,7 +557,7 @@ class CompiledPattern:
                     results.append(value)
             return tuple(results)
         except FormatError as e:
-            raise IncompleteCaptureError(e, tuple(results))
+            raise IncompleteCaptureError(e, tuple(results)) from e
 
     def __repr__(self):
         return "compile(%r)" % self.formatString
@@ -588,10 +573,7 @@ def compile(formatString):
     """
     handlers = []
     formatBuffer = CharacterBufferFromIterable(formatString)
-    while True:
-        ch = formatBuffer.getch()
-        if ch == "":
-            break
+    for ch in iter(formatBuffer.getch, ""):
         if isWhitespaceChar(ch):
             handleWhitespace(formatBuffer)
             handlers.append(makeIgnoredHandler(handleWhitespace))
@@ -619,9 +601,8 @@ def _compileFormat(formatBuffer):
     handler = makeFormattedHandler(suppression, width, formatCh)
     if handler:
         return handler
-    else:
-        # At this point, since we couldn't figure out the format, die loudly.
-        raise FormatError("Invalid format character %s" % formatCh)
+    # At this point, since we couldn't figure out the format, die loudly.
+    raise FormatError("Invalid format character %s" % formatCh)
 
 
 _FORMAT_HANDLERS = {
@@ -654,14 +635,10 @@ def makeFormattedHandler(suppression, width, formatCh):
     if formatCh == "c":
         if width is None:
             return applySuppression(handleChar)
-        else:
-            return applySuppression(
-                makeWidthLimitedHandler(handleChars, width, ignoreWhitespace=False)
-            )
+        return applySuppression(makeWidthLimitedHandler(handleChars, width, ignoreWhitespace=False))
     if formatCh in _FORMAT_HANDLERS:
         return applySuppression(applyWidth(_FORMAT_HANDLERS[formatCh]))
-    else:
-        return None
+    return None
 
 
 ######################################################################

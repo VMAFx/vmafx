@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0868: GPU backend kernel parity-test coverage gap-fill
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ audit, picked to:
 The new tests are:
 
 | Test | Backend | Kernel | Tolerance |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `test_cuda_psnr_parity` | CUDA | `psnr_cuda` (integer_psnr_cuda.c + psnr_score.cu) | 1e-4 (places=4) |
 | `test_cuda_ciede_parity` | CUDA | `ciede_cuda` (integer_ciede_cuda.c + ciede_score.cu) | 1e-4 |
 | `test_hip_psnr_parity` | HIP | `psnr_hip` (integer_psnr_hip.c + psnr_score.hip) | 1e-4 |
@@ -60,7 +59,7 @@ device]` notice when the runtime is unavailable, matching the existing
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Full coverage in a single PR (~30 tests across the 45+ extractor gap) | Closes the audit in one shot. | 30+ test files in one PR is past the 200–800-LOC sweet spot called out in the PR-hygiene rule; reviewer cost balloons. | Land highest-leverage 6+1 here, leave a follow-up backlog item for the remaining ~38. |
 | Synthetic fixtures only (current approach) | Deterministic, no file I/O, runs in <1s per backend. | Doesn't exercise the realistic-content code paths that natural video stresses. | Accepted — same trade-off the existing `test_*_motion3_parity.c` makes. The CHUG / netflix-benchmark sweep covers natural content end-to-end. |
 | Bit-exactness (1e-9) tolerance per ADR-0138/0139 | Strongest gate. | GPUs are NOT bit-exact vs CPU per the user-memory rule `feedback_golden_gate_cpu_only.md`; would force false-positive failures. | Use the documented near-exact 1e-4 / 1e-3 places-budget instead. |

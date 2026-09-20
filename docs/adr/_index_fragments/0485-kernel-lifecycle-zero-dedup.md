@@ -1,1 +1,5 @@
-| [ADR-0485](0485-kernel-lifecycle-zero-dedup.md) | Extract `VMAF_LIFECYCLE_ZERO` macro to eliminate struct-init duplication across HIP and Metal kernel templates | Accepted | cuda, framework, lint, build |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0485](0485-kernel-lifecycle-zero-dedup.md) | Extract `VMAF_LIFECYCLE_ZERO` macro to eliminate struct-init duplication across HIP and Metal kernel templates | Accepted | `cuda`, `framework`, `lint`, `build` |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0671: Ensemble LOSO Report Provenance
 
 ## Summary
@@ -35,7 +34,7 @@ validator aggregates them into `PROMOTE.json` or `HOLD.json`.
 ## Decision Matrix
 
 | Option | Pros | Cons | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep LOSO reports as legacy JSON | Smallest diff | Gate inputs remain less traceable than validator verdicts | Rejected |
 | Add custom `command` / `paths` fields | Localized schema | Recreates one-off provenance instead of using ADR-0661 | Rejected |
 | Attach ADR-0661 `run_provenance` to each `loso_seed{N}.json` | Shared schema; records corpus, argv, args, and report target | Slightly larger reports | Chosen |

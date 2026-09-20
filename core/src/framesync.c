@@ -52,26 +52,53 @@ typedef struct VmafFrameSyncContext {
     int aborted;
 } VmafFrameSyncContext;
 
+static int default_condition_init(pthread_cond_t *condition)
+{
+#ifdef _WIN32
+    pthread_condattr_t attributes = NULL;
+    return pthread_cond_init(condition, &attributes);
+#else
+    pthread_condattr_t attributes;
+    const int attributes_init_err = pthread_condattr_init(&attributes);
+    if (attributes_init_err)
+        return attributes_init_err;
+
+    const int condition_init_err = pthread_cond_init(condition, &attributes);
+    const int attributes_destroy_err = pthread_condattr_destroy(&attributes);
+    if (!condition_init_err && attributes_destroy_err) {
+        const int condition_destroy_err = pthread_cond_destroy(condition);
+        return condition_destroy_err ? condition_destroy_err : attributes_destroy_err;
+    }
+    return condition_init_err ? condition_init_err : attributes_destroy_err;
+#endif
+}
+
 int vmaf_framesync_init(VmafFrameSyncContext **fs_ctx)
 {
-    VmafFrameSyncContext *const ctx = *fs_ctx = malloc(sizeof(VmafFrameSyncContext));
+    if (!fs_ctx)
+        return -EINVAL;
+    *fs_ctx = NULL;
+
+    VmafFrameSyncContext *const ctx = malloc(sizeof(VmafFrameSyncContext));
     if (!ctx)
         return -ENOMEM;
     memset(ctx, 0, sizeof(VmafFrameSyncContext));
     ctx->buf_cnt = 1;
 
-    pthread_mutex_init(&(ctx->acquire_lock), NULL);
-    pthread_mutex_init(&(ctx->retrieve_lock), NULL);
-    pthread_cond_init(&(ctx->retrieve), NULL);
+    int err = pthread_mutex_init(&(ctx->acquire_lock), NULL);
+    if (err)
+        goto free_context;
+    err = pthread_mutex_init(&(ctx->retrieve_lock), NULL);
+    if (err)
+        goto destroy_acquire_lock;
+    err = default_condition_init(&(ctx->retrieve));
+    if (err)
+        goto destroy_retrieve_lock;
 
     VmafFrameSyncBuf *buf_que = ctx->buf_que = malloc(sizeof(VmafFrameSyncBuf));
     if (!buf_que) {
-        pthread_cond_destroy(&(ctx->retrieve));
-        pthread_mutex_destroy(&(ctx->retrieve_lock));
-        pthread_mutex_destroy(&(ctx->acquire_lock));
-        free(ctx);
-        *fs_ctx = NULL;
-        return -ENOMEM;
+        err = ENOMEM;
+        goto destroy_condition;
     }
 
     buf_que->frame_data = NULL;
@@ -79,7 +106,18 @@ int vmaf_framesync_init(VmafFrameSyncContext **fs_ctx)
     buf_que->index = -1;
     buf_que->next = NULL;
 
+    *fs_ctx = ctx;
     return 0;
+
+destroy_condition:
+    pthread_cond_destroy(&(ctx->retrieve));
+destroy_retrieve_lock:
+    pthread_mutex_destroy(&(ctx->retrieve_lock));
+destroy_acquire_lock:
+    pthread_mutex_destroy(&(ctx->acquire_lock));
+free_context:
+    free(ctx);
+    return -err;
 }
 
 /*
@@ -167,7 +205,8 @@ int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, un
     return 0;
 }
 
-int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, unsigned index)
+int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, const void *data,
+                                      unsigned index)
 {
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
     const signed long frame_index = (signed long)index;
@@ -271,7 +310,7 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
     return 0;
 }
 
-int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigned index)
+int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, const void *data, unsigned index)
 {
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
     const signed long frame_index = (signed long)index;

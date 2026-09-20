@@ -27,23 +27,15 @@ from __future__ import annotations
 
 import io
 import subprocess
-
-# Make the ai/src tree importable regardless of conftest discovery order.
-import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 
-_AI_SRC = Path(__file__).resolve().parents[1] / "src"
-if str(_AI_SRC) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC))
-
-from corpus.base import download_clip, probe_geometry  # noqa: E402
-from vmaf_train.data import frame_dataset as _frame_dataset_mod  # noqa: E402
-from vmaf_train.data.frame_loader import FrameSource, iter_frames  # noqa: E402
-from vmaf_train.data.manifest_scan import load_mos_csv, write_manifest  # noqa: E402
+from corpus.base import download_clip, probe_geometry
+from vmaf_train.data.frame_loader import FrameSource, iter_frames
+from vmaf_train.data.manifest_scan import load_mos_csv, write_manifest
 
 # ---------------------------------------------------------------------------
 # probe_geometry — wedged-ffprobe timeout (Bug 1)
@@ -215,7 +207,10 @@ def test_iter_frames_passes_through_one_frame_on_success(tmp_path: Path) -> None
     """Healthy ffmpeg path must keep yielding frames + then return rc=0."""
     src = FrameSource(path=tmp_path / "ok.mp4", width=2, height=2, pix_fmt="gray")
     one_frame = bytes([0, 1, 2, 3])  # 2x2 gray
-    popen = lambda *a, **kw: _FakeProc(stdout_bytes=one_frame, rc=0)  # noqa: E731
+
+    def popen(*_args: Any, **_kwargs: Any) -> _FakeProc:
+        return _FakeProc(stdout_bytes=one_frame, rc=0)
+
     frames = list(iter_frames(src, popen=popen))
     assert len(frames) == 1
     assert frames[0].shape == (2, 2)
@@ -229,20 +224,25 @@ def test_iter_frames_passes_through_one_frame_on_success(tmp_path: Path) -> None
 
 def test_load_frame_refuses_pickled_npy(tmp_path: Path) -> None:
     """Object-array .npy (the only pickle-execution code path) must be rejected."""
+    pytest.importorskip("torch")
+    from vmaf_train.data import frame_dataset
+
     pickled = tmp_path / "pickled.npy"
     # Force the pickle path by saving an object-dtype array.
     arr = np.array([{"oops": "code-exec-shaped"}], dtype=object)
     np.save(pickled, arr, allow_pickle=True)
     with pytest.raises(ValueError, match="allow_pickle"):
-        _frame_dataset_mod._load_frame(pickled)
+        frame_dataset._load_frame(pickled)
 
 
 def test_load_frame_accepts_uint8_npy(tmp_path: Path) -> None:
     """Plain uint8 arrays (the production format) keep working."""
+    torch = pytest.importorskip("torch")
+    from vmaf_train.data import frame_dataset
+
     luma_path = tmp_path / "luma.npy"
     np.save(luma_path, np.zeros((8, 8), dtype=np.uint8))
-    import torch  # local import keeps the test optional under torch-less envs
 
-    tensor = _frame_dataset_mod._load_frame(luma_path)
+    tensor = frame_dataset._load_frame(luma_path)
     assert tensor.shape == (1, 8, 8)
     assert tensor.dtype == torch.float32

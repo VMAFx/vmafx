@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0792: Env-var overrides for hardcoded YUV and testdata paths
 
 - **Status**: Accepted
@@ -26,7 +25,7 @@ The following env-var overrides are introduced, consistent with the existing
 `VMAF_ROOT` / `VMAF_BIN` / `VMAF_YUVDIR` convention:
 
 | Script | Env var added | Previous hardcoded value |
-|---|---|---|
+| --- | --- | --- |
 | `testdata/test_all_backends.sh` | `VMAF_BIN`, `VMAF_YUVDIR`, `VMAF_TESTDATA` | `/home/kilian/dev/libvmaf_vulkan/...` |
 | `testdata/bench_quick.py` | `VMAF_BIN`, `VMAF_TESTDATA` | `/home/kilian/dev/libvmaf_vulkan/testdata` |
 | `testdata/compare_combined.py` | `VMAF_TESTDATA` | `/home/kilian/dev/libvmaf_vulkan/testdata` |
@@ -39,7 +38,7 @@ from the repo root continue to work unchanged.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave as-is with a comment | Zero code change | Breaks every non-lusoris checkout and every CI worktree | Unacceptable |
 | Replace with a single `VMAF_FIXTURE_ROOT` var | One var to set | Doesn't align with the established `VMAF_YUVDIR` / `VMAF_TESTDATA` split already in use | Consistency wins |
 

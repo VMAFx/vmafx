@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD060 -->
-# ADR-0467: SSIMULACRA2 AVX-512 + NEON IIR Blur / picture_to_linear_rgb ULP Audit — Clean Close
+# ADR-0467: ssimulacra2 avx512 neon ulp audit
+
+**Decision:** SSIMULACRA2 AVX-512 + NEON IIR Blur / picture_to_linear_rgb ULP
+Audit — Clean Close
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
@@ -11,8 +13,8 @@
 BACKLOG item T3-9(b) (formerly T3-10) required a cross-host ULP audit of the
 SSIMULACRA2 AVX-512 and NEON IIR blur (`ssimulacra2_blur_plane_avx512` /
 `ssimulacra2_blur_plane_neon`) and the `picture_to_linear_rgb` kernels
-(`ssimulacra2_picture_to_linear_rgb_avx512` / `_neon`) after their merge in
-PRs #98–#100 (ADR-0161/0162/0163).
+(`ssimulacra2_picture_to_linear_rgb_avx512` / `_neon`) after their merge in PRs
+\#98–#100 (ADR-0161/0162/0163).
 
 The concern was "post-merge cross-host snapshot drift": whether the SIMD paths
 produce non-zero ULP deltas vs the scalar reference that compound across scales
@@ -44,29 +46,29 @@ Key evidence:
 
 2. **Python snapshot gate (`ssimulacra2_test.py`, 2 tests)** — both the primary
    576x324 fixture (48 frames) and the 160x90 tail fixture pass at `places=4`
-   tolerance. Actual scores (x86-64): mean 80.551211, frame0 91.695977,
-   frame47 77.992897 — all matching hardcoded baselines.
+   tolerance. Actual scores (x86-64): mean 80.551211, frame0 91.695977, frame47
+   77.992897 — all matching hardcoded baselines.
 
-3. **IIR boundary analysis** — `hblur_16rows_avx512` and `hblur_4rows_neon`
-   both initialise `prev1_*` / `prev2_*` vectors to zero, matching the scalar
+3. **IIR boundary analysis** — `hblur_16rows_avx512` and `hblur_4rows_neon` both
+   initialise `prev1_*` / `prev2_*` vectors to zero, matching the scalar
    reference. The gather-index construction for inactive lanes in AVX-512 (lines
    376–380 of `ssimulacra2_avx512.c`) points those lanes at row 0 offsets, but
    their scatter outputs are gated by `for (unsigned i = 0; i < row_count; i++)`
    — no output pollution.
 
 4. **Transcendental isolation** — both paths call `vmaf_ss2_cbrtf` and
-   `vmaf_ss2_srgb_eotf` per-lane via scalar fallthrough in `cbrtf_lane_avx512`
-   / `cbrtf_lane_neon` and `srgb_to_linear_lane_avx512` / `_neon`. These are
-   the ADR-0164 deterministic helpers (no libc dependency), so host divergence
-   at this callsite is structurally impossible.
+   `vmaf_ss2_srgb_eotf` per-lane via scalar fallthrough in `cbrtf_lane_avx512` /
+   `cbrtf_lane_neon` and `srgb_to_linear_lane_avx512` / `_neon`. These are the
+   ADR-0164 deterministic helpers (no libc dependency), so host divergence at
+   this callsite is structurally impossible.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Accept as-is (clean close) | No code churn; tests confirm correctness | None | Chosen: this is the correct outcome |
-| Add per-lane double-accumulator crosscheck | Would catch future regressions earlier | Redundant with existing `memcmp` byte-exact gate | Not needed — existing tests already enforce byte-exactness |
-| Widen to cross-host CI (arm64 runner) | Would close the "cross-host" concern definitively | arm64 runner is already exercised by the existing CI matrix; NEON path tests run on that leg | Already covered |
+| Option                                     | Pros                                              | Cons                                                                                         | Why not chosen                                             |
+| ------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Accept as-is (clean close)                 | No code churn; tests confirm correctness          | None                                                                                         | Chosen: this is the correct outcome                        |
+| Add per-lane double-accumulator crosscheck | Would catch future regressions earlier            | Redundant with existing `memcmp` byte-exact gate                                             | Not needed — existing tests already enforce byte-exactness |
+| Widen to cross-host CI (arm64 runner)      | Would close the "cross-host" concern definitively | arm64 runner is already exercised by the existing CI matrix; NEON path tests run on that leg | Already covered                                            |
 
 ## Consequences
 
@@ -76,8 +78,8 @@ Key evidence:
   helpers fully insulate the SIMD paths from cross-host libc divergence by
   construction.
 - **Neutral**: No snapshot regeneration required (no numerical change).
-- **Follow-up**: T3-9(c) (`iqa_convolve` AVX-512 ceiling check) remains open
-  per the BACKLOG; it is independent of this audit.
+- **Follow-up**: T3-9(c) (`iqa_convolve` AVX-512 ceiling check) remains open per
+  the BACKLOG; it is independent of this audit.
 
 ## References
 

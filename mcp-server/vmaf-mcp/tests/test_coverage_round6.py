@@ -378,6 +378,7 @@ def test_send_progress_swallows_unexpected_exception() -> None:
     """When send_progress_notification raises an unexpected exception it must
     be swallowed and logged as a warning — never propagated.
     """
+
     class _BoomSession:
         async def send_progress_notification(self, *_a: Any, **_kw: Any) -> None:
             raise OSError("unexpected transport failure")
@@ -676,7 +677,6 @@ def test_main_explicit_anyio_backend(monkeypatch: pytest.MonkeyPatch) -> None:
         calls.append({"backend": backend})
 
     with patch.dict("sys.modules", {"anyio": MagicMock(run=_fake_anyio_run)}):
-
         # Re-import to pick up the patched anyio.
         anyio_mod = MagicMock()
         anyio_mod.run = _fake_anyio_run

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0729 — Zed 1.3.6 config refresh + agent_servers wiring
 
 ## Problem
@@ -109,7 +108,7 @@ audit-trail terms). The 2026-05-22 doc is the current reference.
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave Zed config as-is | Zero churn | Inline + commit-msg keep routing through Sonnet 4.5 (~3x cost); 12/15 MCP tools still prompt; no team-shared ACP pin | Rejected — direct cost + UX hit on every keystroke. |
 | Only update `tool_permissions` schema | Smallest diff | Doesn't capture cost-saving model split or the disabled_globs leak risk | Rejected as incomplete. |
 | Land model split + tool_permissions only; defer tasks/debug/docs | Two ~50-LOC PRs | Splits one logical refresh into two PRs against the "no tiny PRs" rule | Rejected. |

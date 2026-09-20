@@ -1,7 +1,9 @@
-### chore(ci): add concurrency groups + shell-strict to curl|tar steps
+# Changelog fragment
 
-Adds top-level `concurrency:` blocks with `cancel-in-progress: true` to three
-CI workflows that lacked them, so stale runs are cancelled when a new push or
+## chore(ci): add concurrency groups + shell-strict to curl|tar steps
+
+Adds top-level `concurrency:` blocks with `cancel-in-progress: true` to three CI
+workflows that lacked them, so stale runs are cancelled when a new push or
 PR-update lands on the same ref:
 
 - `.github/workflows/go-ci.yml`

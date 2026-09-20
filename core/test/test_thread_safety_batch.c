@@ -64,12 +64,6 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* 64x64 satisfies the integer_motion minimum (w >= 3, h >= 3) and keeps
  * TSan shadow overhead well under 1 MB for the entire test run. */
 #define FRAME_W 64u
@@ -123,7 +117,7 @@ static char *feed_motion_frames(VmafContext *vmaf, unsigned n)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("vmaf_read_pictures failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Assert motion_sad_score is finite and non-negative for frames [from, to).
@@ -138,7 +132,7 @@ static char *check_motion_sad_scores_range(VmafContext *vmaf, unsigned from, uns
         mu_assert("motion_sad_score must be finite", isfinite(score));
         mu_assert("motion_sad_score must be non-negative", score >= 0.0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -167,13 +161,13 @@ static char *test_batch_prev_ref_lifecycle(void)
         .n_threads = 4,
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
     /* integer_motion carries VMAF_FEATURE_EXTRACTOR_PREV_REF; its flush()
      * path lazily allocates feature_name_dict (the ADR-1073 root cause). */
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("vmaf_use_feature(motion) failed", !err);
 
     char *msg = feed_motion_frames(vmaf, NUM_FRAMES);
@@ -181,7 +175,7 @@ static char *test_batch_prev_ref_lifecycle(void)
         return msg;
 
     /* EOS: triggers flush_context_threaded (pool wait + flush loop). */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     /* motion_sad_score is written unconditionally from frame 1 onward (frame 0
@@ -194,7 +188,7 @@ static char *test_batch_prev_ref_lifecycle(void)
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Frame-feed loops for test_batch_flush_initialized_threaded/serial below,
@@ -213,7 +207,7 @@ static char *feed_motion_frames_threaded(VmafContext *vmaf, unsigned n)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("threaded: vmaf_read_pictures failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *feed_motion_frames_serial(VmafContext *vmaf, unsigned n)
@@ -228,7 +222,7 @@ static char *feed_motion_frames_serial(VmafContext *vmaf, unsigned n)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("serial: vmaf_read_pictures failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -257,18 +251,18 @@ static char *test_batch_flush_initialized_threaded(void)
         .n_threads = 4,
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("threaded: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("threaded: vmaf_use_feature(motion) failed", !err);
 
     char *msg = feed_motion_frames_threaded(vmaf, 3u);
     if (msg)
         return msg;
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("threaded: EOS failed", !err);
 
     double score = -1.0;
@@ -279,7 +273,7 @@ static char *test_batch_flush_initialized_threaded(void)
     err = vmaf_close(vmaf);
     mu_assert("threaded: vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_batch_flush_initialized_serial(void)
@@ -291,18 +285,18 @@ static char *test_batch_flush_initialized_serial(void)
         .n_threads = 0,
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("serial: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("serial: vmaf_use_feature(motion) failed", !err);
 
     char *msg = feed_motion_frames_serial(vmaf, 3u);
     if (msg)
         return msg;
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("serial: EOS failed", !err);
 
     double score = -1.0;
@@ -313,7 +307,7 @@ static char *test_batch_flush_initialized_serial(void)
     err = vmaf_close(vmaf);
     mu_assert("serial: vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Frame-feed loop for test_batch_n_threads_stress, split out for the same
@@ -330,7 +324,7 @@ static char *feed_motion_frames_stress(VmafContext *vmaf, unsigned n)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("stress: vmaf_read_pictures failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Assert motion_sad_score is finite and non-negative at each of `count`
@@ -346,7 +340,7 @@ static char *check_stress_motion_scores(VmafContext *vmaf, const unsigned *indic
         mu_assert("stress: motion_score finite", isfinite(score));
         mu_assert("stress: motion_score non-negative", score >= 0.0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -368,18 +362,18 @@ static char *test_batch_n_threads_stress(void)
         .n_threads = 8,
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("stress: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("stress: vmaf_use_feature(motion) failed", !err);
 
     char *msg = feed_motion_frames_stress(vmaf, 16u);
     if (msg)
         return msg;
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("stress: EOS failed", !err);
 
     /* Verify frames 1, 5, 10, 14 all have finite non-negative motion scores. */
@@ -391,7 +385,7 @@ static char *test_batch_n_threads_stress(void)
     err = vmaf_close(vmaf);
     mu_assert("stress: vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -431,7 +425,7 @@ static char *feed_two_prev_ref_frames(VmafContext *vmaf, unsigned n)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("two-prev-ref: vmaf_read_pictures failed (motion_v2 starved?)", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* BOTH extractors must have produced their own per-frame SAD feature over
@@ -452,7 +446,7 @@ static char *check_two_prev_ref_scores(VmafContext *vmaf, unsigned from, unsigne
         mu_assert("two-prev-ref: motion_v2_sad_score missing (regression!)", !err);
         mu_assert("two-prev-ref: motion_v2_sad_score finite", isfinite(m2) && m2 >= 0.0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_batch_two_prev_ref_extractors(void)
@@ -464,21 +458,21 @@ static char *test_batch_two_prev_ref_extractors(void)
         .n_threads = 4,
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("two-prev-ref: vmaf_init failed", !err);
 
     /* Two PREV_REF extractors in the same batch — the starvation trigger. */
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("two-prev-ref: vmaf_use_feature(motion) failed", !err);
-    err = vmaf_use_feature(vmaf, "motion_v2", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2", VMAF_NULLPTR);
     mu_assert("two-prev-ref: vmaf_use_feature(motion_v2) failed", !err);
 
     char *msg = feed_two_prev_ref_frames(vmaf, NUM_FRAMES);
     if (msg)
         return msg;
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("two-prev-ref: EOS failed", !err);
 
     msg = check_two_prev_ref_scores(vmaf, 1u, 4u);
@@ -488,7 +482,7 @@ static char *test_batch_two_prev_ref_extractors(void)
     err = vmaf_close(vmaf);
     mu_assert("two-prev-ref: vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -498,7 +492,5 @@ char *run_tests()
     mu_run_test(test_batch_flush_initialized_serial);
     mu_run_test(test_batch_n_threads_stress);
     mu_run_test(test_batch_two_prev_ref_extractors);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -24,15 +24,16 @@
 #include <string.h>
 
 #include "getopt.h"
+#include "vmaf_nullptr.h"
 
-char *optarg = NULL;
+char *optarg = VMAF_NULLPTR;
 int optind = 1;
 int opterr = 1;
 int optopt = 0;
 
 /* Scan cursor inside the current argv element when it is a cluster of short
- * options (e.g. "-abc"). Reset to NULL between argv elements. */
-static const char *short_cursor = NULL;
+ * options (e.g. "-abc"). Reset to VMAF_NULLPTR between argv elements. */
+static const char *short_cursor = VMAF_NULLPTR;
 
 static void report_unknown(const char *prog, int opt, int is_long, const char *name)
 {
@@ -86,9 +87,9 @@ static int handle_short(int argc, char *const argv[], const char *optstring, cha
 
     const char *spec = strchr(optstring, opt);
     if (!spec || opt == ':') {
-        report_unknown(prog, opt, 0, NULL);
+        report_unknown(prog, opt, 0, VMAF_NULLPTR);
         if (*short_cursor == '\0') {
-            short_cursor = NULL;
+            short_cursor = VMAF_NULLPTR;
             optind++;
         }
         return '?';
@@ -101,7 +102,7 @@ static int handle_short(int argc, char *const argv[], const char *optstring, cha
 
     if (has_arg == no_argument) {
         if (*short_cursor == '\0') {
-            short_cursor = NULL;
+            short_cursor = VMAF_NULLPTR;
             optind++;
         }
         return (unsigned char)opt;
@@ -111,20 +112,20 @@ static int handle_short(int argc, char *const argv[], const char *optstring, cha
      * element if non-empty, else the next argv element. */
     if (*short_cursor != '\0') {
         optarg = (char *)short_cursor;
-        short_cursor = NULL;
+        short_cursor = VMAF_NULLPTR;
         optind++;
         return (unsigned char)opt;
     }
 
-    short_cursor = NULL;
+    short_cursor = VMAF_NULLPTR;
     optind++;
     if (has_arg == optional_argument) {
-        optarg = NULL;
+        optarg = VMAF_NULLPTR;
         return (unsigned char)opt;
     }
     /* required_argument */
     if (optind >= argc) {
-        report_missing_arg(prog, opt, 0, NULL);
+        report_missing_arg(prog, opt, 0, VMAF_NULLPTR);
         return (optstring[0] == ':') ? ':' : '?';
     }
     optarg = argv_w[optind++];
@@ -185,7 +186,7 @@ static int handle_long(int argc, char *const argv[], const char *optstring,
         optarg = (char *)(eq + 1);
         optind++;
     } else if (lo->has_arg == optional_argument) {
-        optarg = NULL;
+        optarg = VMAF_NULLPTR;
         optind++;
     } else { /* required_argument */
         optind++;
@@ -208,13 +209,13 @@ static int getopt_internal(int argc, char *const argv[], const char *optstring,
                            const struct option *longopts, int *longindex)
 {
     char **argv_w = (char **)(void *)argv; /* see comment on argv_shift */
-    optarg = NULL;
+    optarg = VMAF_NULLPTR;
 
     /* Resume scanning inside a short-option cluster from the prior call. */
     if (short_cursor && *short_cursor != '\0') {
         return handle_short(argc, argv, optstring, argv_w);
     }
-    short_cursor = NULL;
+    short_cursor = VMAF_NULLPTR;
 
     while (optind < argc) {
         const char *cur = argv[optind];
@@ -258,7 +259,7 @@ static int getopt_internal(int argc, char *const argv[], const char *optstring,
 
 int getopt(int argc, char *const argv[], const char *optstring)
 {
-    return getopt_internal(argc, argv, optstring, NULL, NULL);
+    return getopt_internal(argc, argv, optstring, VMAF_NULLPTR, VMAF_NULLPTR);
 }
 
 int getopt_long(int argc, char *const argv[], const char *optstring, const struct option *longopts,

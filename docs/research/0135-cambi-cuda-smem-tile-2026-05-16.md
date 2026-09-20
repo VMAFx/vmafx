@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD052 MD060 -->
 # Research-0135: CAMBI CUDA spatial-mask shared-memory tile design
 
 - **Status**: Active
@@ -71,11 +70,13 @@ A candidate approach was to load an image tile into smem and derive zero_deriv
 from it in-register.  Analysis showed this approach produces incorrect
 zero_deriv for the left-halo positions of block (0,0):
 
-- For tile position j corresponding to raw_gx = -1: the original kernel
-  computes `rx = clamp(-1) = 0`, `r = image[gy][1]` (rx != w-1 so use rx+1).
-- The tile approach stores `img_tile[i][j+1] = image[gy][clamp(raw_gx+1)] =
-  image[gy][clamp(0)] = image[gy][0]` — same as p — giving a spurious
-  eq_right=true when image[gy][0] != image[gy][1].
+- For tile position `j` corresponding to `raw_gx = -1`, the original kernel
+  computes `rx = clamp(-1) = 0` and `r = image[gy][1]` (`rx != w-1`, so use
+  `rx+1`).
+- The tile approach stores
+  `img_tile[i][j+1] = image[gy][clamp(raw_gx+1)] = image[gy][clamp(0)] = image[gy][0]`.
+  This is the same as `p`, giving a spurious `eq_right=true` when
+  `image[gy][0] != image[gy][1]`.
 
 This discrepancy propagates into the box_sum for output pixel x=0 (which reads
 tile position j=0).  The img_tile approach was rejected.
@@ -88,7 +89,7 @@ still 26x fewer than the original 37,632.
 ### Tile-size trade-offs
 
 | Tile type | smem bytes | Global reads | Correctness | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | No tile (original) | 0 | 37,632 / block | Correct | Baseline |
 | img_tile 23x23 uint16 + zd_tile 22x22 uint8 | 1058+484=1542 | ~484x3+484x3=2904 | Bug at left/top halo | Ruled out |
 | zd_tile only 22x32 uint8 | 704 | 1452 | Correct | Chosen |

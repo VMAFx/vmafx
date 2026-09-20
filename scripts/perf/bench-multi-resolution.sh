@@ -274,9 +274,9 @@ METRIC_JSON_KEY[ms_ssim]="float_ms_ssim"
 
 # ─── backend → vmaf CLI flags ─────────────────────────────────────────────────
 declare -A BACKEND_FLAGS
-BACKEND_FLAGS[cpu]="--no_cuda --no_sycl --no_vulkan"
-BACKEND_FLAGS[cuda]="--gpumask=0 --no_sycl --no_vulkan"
-BACKEND_FLAGS[sycl]="--sycl_device=0 --no_cuda --no_vulkan"
+BACKEND_FLAGS[cpu]="--backend cpu"
+BACKEND_FLAGS[cuda]="--backend cuda"
+BACKEND_FLAGS[sycl]="--backend sycl"
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
 log() { echo "  [bench] $*"; }

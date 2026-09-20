@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **GPU dispatch env thread safety** (ADR-0488): introduce
   `core/src/gpu_dispatch_env.{h,c}` — a single once-snapshot helper for
   `VMAF_*_DISPATCH` env variables. The Vulkan and SYCL `dispatch_strategy`

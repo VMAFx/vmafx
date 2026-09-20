@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0053 — MobileSal real-weights swap blocker
 
 | Field      | Value                                                  |
@@ -128,7 +127,7 @@ forward is being used as the upstream authors intended.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Defer real-weights swap; keep placeholder; document blocker** | Honest record of what's actually shipped; future researchers don't repeat the upstream walk; aligns with the [no-test-weakening rule](../../docs/ai/) and "don't fake it" directive in the task brief | T6-2a-followup remains open for the foreseeable future | **Chosen** — see ADR-0257 |
 | Adapt `yuhuan-wu/MobileSal` weights anyway under fair-use / research-only banner | Real saliency signal | CC BY-NC-SA 4.0 is not waivable by a downstream user; legal exposure for every commercial consumer of the fork; share-alike taints the rest of `model/tiny/` | Rejected — license incompatibility is binary, not negotiable |
 | Email the corresponding author for an MIT/BSD relicense | Clean fix if granted | Out-of-band ask with no commitment from the author; the README-declared license is the legal record; even a personal email grant doesn't bind future redistribution | Filed as a long-shot follow-up in T6-2a-blocker; this PR does not depend on it |

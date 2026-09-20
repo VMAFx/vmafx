@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0289: `vmaf-tune` resolution-aware model selection + CRF offsets
 
 - **Status**: Accepted
@@ -48,7 +47,7 @@ would lie about which model scored each row.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Height-only threshold at 2160 (chosen) | Matches Netflix's published guidance; one branch; trivial test surface; future-proof for 8K (clamps to 4K model). | Loses some 1440p nuance — those rows route to the 1080p model even though they're closer to 4K viewing. | Picked: the bias on 1440p is ~0.5 VMAF (acceptable); a 1440p model doesn't exist in the fork. |
 | Width-and-height matrix | More accurate for anamorphic / cropped content. | Adds a 2-D decision surface; needs per-codec calibration; no public guidance for the corner cases. | Defer: width is accepted as an argument for API symmetry, but the body ignores it until we have a real anamorphic corpus to fit against. |
 | Pixel-count threshold (e.g. ≥ 6 Mpx → 4K) | Handles 21:9 / cropped sources cleanly. | Drifts on letterbox/pillarbox; the canonical Netflix guidance is height-only. | Not chosen: optimising for a corner case over the documented mainline. |

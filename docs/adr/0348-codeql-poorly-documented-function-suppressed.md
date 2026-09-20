@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0348: Globally suppress CodeQL `cpp/poorly-documented-function`
 
 - **Status**: Accepted
@@ -44,7 +43,7 @@ weakening of the security scan.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Global config suppression** (chosen) | Single line of config, single decision, single ADR. Aligns with the documented project style. Re-applies automatically to future code. | Loses any future, genuinely useful hit from the rule. Project standard already says "no comments unless WHY non-obvious" — there is no future hit this rule would catch that the standard would also flag. | — |
 | Per-file `lgtm[cpp/poorly-documented-function]` inline annotations | Scoped — leaves the rule on for any future use. | ~15 inline comment annotations across multiple files; each annotation is itself the kind of noise comment the project standard discourages. New code triggers more annotations indefinitely. | High noise, high recurring cost, contradicts the standard at the comment level. |
 | Mass-add `/** */` doc blocks to the 15 flagged functions | Clears the alerts at the source. | Directly contradicts the project's "no comments unless WHY non-obvious" rule. Every future function added to the fork would have to carry the same boilerplate or re-trigger the alert. | Contradicts the documented coding standard. |
@@ -52,7 +51,7 @@ weakening of the security scan.
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - 15 currently-open CodeQL alerts auto-close on the next scan after
   this change merges and a fresh scan runs against `master`.
@@ -62,7 +61,7 @@ weakening of the security scan.
   audit (`grep -n cpp/poorly-documented-function .github/codeql-config.yml`
   surfaces the suppression and the inline rationale).
 
-**Negative**
+### Negative
 
 - A future case where adding a `/** */` block on a non-obvious
   function would *genuinely* be the right call has no automated
@@ -75,7 +74,7 @@ weakening of the security scan.
   no-guessing rule, this PR does **not** assert pre-merge closure;
   the verification step is explicitly post-merge.
 
-**Neutral / follow-ups**
+#### Neutral / follow-ups
 
 - If a future PR brings in a third-party C/C++ subproject with a
   documented style requiring Doxygen blocks, the suppression would

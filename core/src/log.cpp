@@ -119,9 +119,7 @@ static_assert(level_str_color[1].data()[level_str_color[1].size()] == '\0');
 static_assert(level_str_color[2].data()[level_str_color[2].size()] == '\0');
 static_assert(level_str_color[3].data()[level_str_color[3].size()] == '\0');
 
-extern "C" {
-
-void vmaf_set_log_level(enum VmafLogLevel level)
+extern "C" void vmaf_set_log_level(enum VmafLogLevel level)
 {
     /* std::clamp (C++17, mandated by C++23) replaces the pair of ternary
      * guards in the original C implementation. */
@@ -129,8 +127,7 @@ void vmaf_set_log_level(enum VmafLogLevel level)
     istty = isatty(fileno(stderr));
 }
 
-/* NOLINTNEXTLINE(clang-diagnostic-unknown-attributes) — the no_sanitize
- * attribute suppresses UBSan's enum-invalid-value check for this function.
+/* The no_sanitize attribute suppresses UBSan's enum-invalid-value check for this function.
  * vmaf_log() is a public C ABI function: callers may legally pass any integer
  * value that fits the underlying enum type (int), including sentinel values
  * outside the declared enumerator set (e.g. VMAF_LOG_LEVEL_NONE-1 used by
@@ -140,7 +137,9 @@ void vmaf_set_log_level(enum VmafLogLevel level)
  * preserves every other UBSan diagnostic on this function.
  * See ADR-1080 (UBSan enum-invalid-value in vmaf_log / vmaf_option_set). */
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 8)
-__attribute__((no_sanitize("enum")))
+extern "C" __attribute__((no_sanitize("enum")))
+#else
+extern "C"
 #endif
 void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
 {
@@ -176,11 +175,12 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
     (void)fprintf(
         stderr, "%slibvmaf%s %s%s%s ", istty ? "\x1B[35m" : "", istty ? "\x1B[0m" : "",
         /* ADR-0141 §2 / ADR-0708: the asserts above prove NUL-termination. */
-        istty ? level_str_color[idx].data() // NOLINT(bugprone-suspicious-stringview-data-usage)
+        istty ? level_str_color[idx]
+                    .data() // NOLINT(bugprone-suspicious-stringview-data-usage) ADR-0708
                 :
                 "",
         /* ADR-0141 §2 / ADR-0708: NUL-termination proven above. */
-        level_str[idx].data(), // NOLINT(bugprone-suspicious-stringview-data-usage)
+        level_str[idx].data(), // NOLINT(bugprone-suspicious-stringview-data-usage) ADR-0708
         istty ? "\x1B[0m" : "");
 
     va_list args;
@@ -188,5 +188,3 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
     (void)vfprintf(stderr, fmt, args);
     va_end(args);
 }
-
-} /* extern "C" */

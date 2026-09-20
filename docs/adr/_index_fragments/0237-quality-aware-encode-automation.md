@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0237](0237-quality-aware-encode-automation.md) | Quality-aware encode automation surface (`vmaf-tune`) | Accepted (Phase A only; Phases B–F remain Proposed) | tooling, ai, ffmpeg, codec, automation, fork-local |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0749: Sunset VmafLegacyQualityRunner
 
 **Date**: 2026-05-28
@@ -21,7 +20,7 @@ runner results in a broken or empty result. CI agent T-LEGACY-RUNNER-ANSNR-BROKE
 ## What was removed
 
 | Artifact | Location | Lines removed |
-|---|---|---|
+| --- | --- | --- |
 | `VmafLegacyQualityRunner` class | `compat/python-vmaf/core/quality_runner.py` | ~115 |
 | `test_executor_id` (legacy runner version) | `python/test/quality_runner_test.py` | ~10 |
 | `test_run_vmaf_legacy_runner` | `python/test/quality_runner_test.py` | ~25 |
@@ -65,7 +64,7 @@ returns zero scores or raises a `KeyError` depending on call path.
 ## Before / after test counts
 
 | File | Before | After | Delta |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `quality_runner_test.py` | 5 removed tests + rest | rest only | -5 tests |
 | `result_test.py` | `ResultTest` (2) + `ResultStoreTest` (1) + rest | rest only | -3 tests |
 

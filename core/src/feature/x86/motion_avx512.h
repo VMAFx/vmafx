@@ -35,7 +35,7 @@ uint64_t motion_score_pipeline_16_avx512(const uint8_t *prev, ptrdiff_t prev_str
 
 /* Sub-kernel functions used by unit tests (test_motion_avx512_parity.c). */
 
-void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad);
+void sad_avx512(VmafPicture *pic_a, const VmafPicture *pic_b, uint64_t *sad);
 
 void y_convolution_8_avx512(const void *src, uint16_t *dst, unsigned width, unsigned height,
                             ptrdiff_t src_stride, ptrdiff_t dst_stride, unsigned inp_size_bits);

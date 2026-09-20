@@ -11,6 +11,9 @@ from vmaf.tools.decorator import override
 from vmaf.tools.misc import empty_object, indices
 from vmaf.tools.sigproc import calpvalue, fastDeLong, significanceBinomial
 
+_COMPARISON_VALUE_2 = 2
+_COMPARISON_VALUE_NEG_2 = -2
+
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
@@ -116,270 +119,113 @@ class AucPerfMetric(RawScorePerfMetric):
         return groundtruths, predictions
 
     @staticmethod
-    def _metrics_performance(objScoDif, signif):
-        """
-        mirroring matlab function:
-        %[results] = Metrics_performance(objScoDif, signif, doPlot)
-        % INPUT:    objScoDif   : differences of objective scores [M,N]
-        %                         M : number of metrics
-        %                         N : number of pairs
-        %           signif      : statistical outcome of paired comparison [1,N]
-        %                          0 : no difference
-        %                         -1 : first stimulus is worse
-        %                          1 : first stimulus is better
-        %           doPlot      : boolean indicating if graphs should be plotted
-        %
-        % OUTPUT:   results - structure with following fields
-        %
-        %           AUC_DS      : Area Under the Curve for Different/Similar ROC
-        %                         analysis
-        %           pDS_DL      : p-values for AUC_DS from DeLong test
-        %           pDS_HM      : p-values for AUC_DS from Hanley and McNeil test
-        %           AUC_BW      : Area Under the Curve for Better/Worse ROC
-        %                         analysis
-        %           pBW_DL      : p-values for AUC_BW from DeLong test
-        %           pBW_HM      : p-values for AUC_BW from Hanley and McNeil test
-        %           CC_0        : Correct Classification @ DeltaOM = 0 for
-        %                         Better/Worse ROC analysis
-        %           pCC0_b      : p-values for CC_0 from binomial test
-        %           pCC0_F      : p-values for CC_0 from Fisher's exact test
-        %           THR         : threshold for 95% probability that the stimuli
-        %                         are different
-        """
-
-        # M = size(objScoDif,1);
-        # D = abs(objScoDif(:,signif ~= 0));
-        # S = abs(objScoDif(:,signif == 0));
-        # samples.spsizes = [size(D,2),size(S,2)];
-        # samples.ratings = [D,S];
-
-        M = objScoDif.shape[0]
-        D = np.abs(objScoDif[:, indices(signif[0], lambda x: x != 0)])
-        S = np.abs(objScoDif[:, indices(signif[0], lambda x: x == 0)])
-        samples = empty_object()
-        samples.spsizes = [D.shape[1], S.shape[1]]
-        samples.ratings = np.hstack([D, S])
-
-        # % calculate AUCs
-
-        # [AUC_DS,C] = fastDeLong(samples);
-        AUC_DS, C, _, _ = fastDeLong(samples)
-
-        # % significance calculation
-
-        # pDS_DL = ones(M);
-        # for i=1:M-1
-        #     for j=i+1:M
-        #         pDS_DL(i,j) = calpvalue(AUC_DS([i,j]), C([i,j],[i,j]));
-        #         pDS_DL(j,i) = pDS_DL(i,j);
-        #     end
-        # end
-        pDS_DL = np.ones([M, M])
-        for i in range(1, M):
-            for j in range(i + 1, M + 1):
-                # http://stackoverflow.com/questions/4257394/slicing-of-a-numpy-2d-array-or-how-do-i-extract-an-mxm-submatrix-from-an-nxn-ar
-                pDS_DL[i - 1, j - 1] = calpvalue(
-                    AUC_DS[[i - 1, j - 1]], C[[[i - 1], [j - 1]], [i - 1, j - 1]]
+    def _pairwise_delong(auc, covariance):
+        metric_count = len(auc)
+        p_values = np.ones([metric_count, metric_count])
+        for first in range(metric_count - 1):
+            for second in range(first + 1, metric_count):
+                selection = [first, second]
+                p_values[first, second] = calpvalue(
+                    auc[selection], covariance[np.ix_(selection, selection)]
                 )
-                pDS_DL[j - 1, i - 1] = pDS_DL[i - 1, j - 1]
+                p_values[second, first] = p_values[first, second]
+        return p_values
 
-        ## [pDS_HM,CI_DS] = significanceHM(S, D, AUC_DS);
-        # pDS_HM, CI_DS = significanceHM(S, D, AUC_DS)
-
-        # THR = prctile(D',95);
-        THR = np.percentile(S, 95, axis=1)
-
-        # %%%%%%%%%%%%%%%%%%%%%%% Better / Worse %%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        # B = [objScoDif(:,signif == 1),-objScoDif(:,signif == -1)];
-        # W = -B;
-        # samples.ratings = [B,W];
-        # samples.spsizes = [size(B,2),size(W,2)];
-        B1 = objScoDif[:, indices(signif[0], lambda x: x == 1)]
-        B2 = objScoDif[:, indices(signif[0], lambda x: x == -1)]
-        B = np.hstack([B1, -B2])
-        W = -B
+    @classmethod
+    def _different_similar_performance(cls, score_differences, significance):
+        different = np.abs(score_differences[:, indices(significance[0], lambda value: value != 0)])
+        similar = np.abs(score_differences[:, indices(significance[0], lambda value: value == 0)])
         samples = empty_object()
-        samples.ratings = np.hstack([B, W])
-        samples.spsizes = [B.shape[1], W.shape[1]]
+        samples.spsizes = [different.shape[1], similar.shape[1]]
+        samples.ratings = np.hstack([different, similar])
+        auc, covariance, _, _ = fastDeLong(samples)
+        threshold = np.percentile(similar, 95, axis=1)
+        return auc, cls._pairwise_delong(auc, covariance), threshold
 
-        # % calculate AUCs
-
-        # [AUC_BW,C] = fastDeLong(samples);
-        AUC_BW, C, _, _ = fastDeLong(samples)
-
-        # % calculate correct classification for DeltaOM = 0
-
-        # L = size(B,2) + size(W,2);
-        # CC_0 = zeros(M,1);
-        # for m=1:M
-        #     CC_0(m) = (sum(B(m,:)>0) + sum(W(m,:)<0)) / L;
-        # end
-        L = B.shape[1] + W.shape[1]
-        CC_0 = np.zeros(M)
-        for m in range(M):
-            CC_0[m] = float(np.sum(B[m, :] > 0) + np.sum(W[m, :] < 0)) / L
-
-        # % significance calculation
-
-        # pBW_DL = ones(M);
-        # pCC0_b = ones(M);
-        # pCC0_F = ones(M);
-        # for i=1:M-1
-        #     for j=i+1:M
-        #         pBW_DL(i,j) = calpvalue(AUC_BW([i,j]), C([i,j],[i,j]));
-        #         pBW_DL(j,i) = pBW_DL(i,j);
-        #
-        #         pCC0_b(i,j) = significanceBinomial(CC_0(i), CC_0(j), L);
-        #         pCC0_b(j,i) = pCC0_b(i,j);
-        #
-        #         pCC0_F(i,j) = fexact(CC_0(i)*L, 2*L, CC_0(i)*L + CC_0(j)*L, L, 'tail', 'b')/2;
-        #         pCC0_F(j,i) = pCC0_F(i,j);
-        #     end
-        # end
-        pBW_DL = np.ones([M, M])
-        pCC0_b = np.ones([M, M])
-        # pCC0_F = np.ones([M, M])
-        for i in range(1, M):
-            for j in range(i + 1, M + 1):
-                pBW_DL[i - 1, j - 1] = calpvalue(
-                    AUC_BW[[i - 1, j - 1]], C[[[i - 1], [j - 1]], [i - 1, j - 1]]
+    @classmethod
+    def _better_worse_performance(cls, score_differences, significance):
+        better_positive = score_differences[:, indices(significance[0], lambda value: value == 1)]
+        better_negative = score_differences[:, indices(significance[0], lambda value: value == -1)]
+        better = np.hstack([better_positive, -better_negative])
+        worse = -better
+        samples = empty_object()
+        samples.ratings = np.hstack([better, worse])
+        samples.spsizes = [better.shape[1], worse.shape[1]]
+        auc, covariance, _, _ = fastDeLong(samples)
+        sample_count = better.shape[1] + worse.shape[1]
+        correct = np.array(
+            [float(np.sum(row > 0) + np.sum(-row < 0)) / sample_count for row in better]
+        )
+        binomial = np.ones([len(correct), len(correct)])
+        for first in range(len(correct) - 1):
+            for second in range(first + 1, len(correct)):
+                binomial[first, second] = significanceBinomial(
+                    correct[first], correct[second], sample_count
                 )
-                pBW_DL[j - 1, i - 1] = pBW_DL[i - 1, j - 1]
+                binomial[second, first] = binomial[first, second]
+        return auc, cls._pairwise_delong(auc, covariance), correct, binomial
 
-                pCC0_b[i - 1, j - 1] = significanceBinomial(CC_0[i - 1], CC_0[j - 1], L)
-                pCC0_b[j - 1, i - 1] = pCC0_b[i - 1, j - 1]
-
-                # pCC0_F[i-1, j-1] = fexact(CC_0[i-1]*L, 2*L, CC_0[i-1]*L + CC_0[j-1]*L, L, 'tail', 'b') / 2.0
-                # pCC0_F[j-1, i-1] = pCC0_F[i-1,j]
-
-        # # [pBW_HM,CI_BW] = significanceHM(B, W, AUC_BW);
-        # pBW_HM, CI_BW = significanceHM(B, W, AUC_BW)
-
-        # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        # % Adding outputs to the structure
-
-        # results.AUC_DS = AUC_DS;
-        # results.pDS_DL = pDS_DL;
-        # results.pDS_HM = pDS_HM;
-        # results.AUC_BW = AUC_BW;
-        # results.pBW_DL = pBW_DL;
-        # results.pBW_HM = pBW_HM;
-        # results.CC_0 = CC_0;
-        # results.pCC0_b = pCC0_b;
-        # results.pCC0_F = pCC0_F;
-        # results.THR = THR;
-        result = {
-            "AUC_DS": AUC_DS,
-            "pDS_DL": pDS_DL,
-            # 'pDS_HM': pDS_HM,
-            "AUC_BW": AUC_BW,
-            "pBW_DL": pBW_DL,
-            # 'pBW_HM': pBW_HM,
-            "CC_0": CC_0,
-            "pCC0_b": pCC0_b,
-            # 'pCC0_F': pCC0_F,
-            "THR": THR,
+    @classmethod
+    def _metrics_performance(cls, objScoDif, signif):
+        auc_ds, p_ds, threshold = cls._different_similar_performance(objScoDif, signif)
+        auc_bw, p_bw, correct, p_correct = cls._better_worse_performance(objScoDif, signif)
+        return {
+            "AUC_DS": auc_ds,
+            "pDS_DL": p_ds,
+            "AUC_BW": auc_bw,
+            "pBW_DL": p_bw,
+            "CC_0": correct,
+            "pCC0_b": p_correct,
+            "THR": threshold,
         }
 
-        # %%%%%%%%%%%%%%%%%%%%%%%% Plot Results %%%%%%%%%%%%%%%%%%%%%%%%%%%
-        #
-        # if(doPlot == 1)
-        #
-        # % Using Benjamini-Hochberg procedure for multiple comparisons in plots
-        # % (note: correlation between groups has to be positive)
-        #
-        # plot_auc(results.pDS_HM,results.AUC_DS, CI_DS, 'AUC (-)','Different/Similar')
-        # plot_cc(results.pCC0_F,results.CC_0,'C_0 (%)','Better/Worse')
-        # plot_auc(results.pBW_HM,results.AUC_BW, CI_BW, 'AUC (-)','Better/Worse')
-        #
-        # end
+    @staticmethod
+    def _significance(first_scores, second_scores):
+        first_mean = np.mean(first_scores)
+        second_mean = np.mean(second_scores)
+        variance = np.var(first_scores, ddof=1) / len(first_scores)
+        variance += np.var(second_scores, ddof=1) / len(second_scores)
+        if variance == 0.0:
+            variance = 1e-8
+        z_score = (first_mean - second_mean) / np.sqrt(variance)
+        if z_score < _COMPARISON_VALUE_NEG_2:
+            return -1
+        if z_score > _COMPARISON_VALUE_2:
+            return 1
+        return 0
 
-        return result
+    @classmethod
+    def _significance_matrix(cls, groundtruths):
+        sample_count = len(groundtruths)
+        significance = np.zeros([sample_count, sample_count])
+        for first, first_scores in enumerate(groundtruths):
+            for second, second_scores in enumerate(groundtruths):
+                significance[first, second] = cls._significance(first_scores, second_scores)
+        return significance
+
+    @staticmethod
+    def _prediction_differences(predictions, sample_count):
+        metric_predictions = predictions if isinstance(predictions[0], list) else [predictions]
+        differences = np.zeros([len(metric_predictions), sample_count * sample_count])
+        for metric_index, metric in enumerate(metric_predictions):
+            matrix = np.subtract.outer(metric, metric)
+            differences[metric_index, :] = matrix.reshape(1, sample_count * sample_count)
+        return differences
 
     @classmethod
     def _evaluate(cls, groundtruths, predictions, **kwargs):
-
         if isinstance(groundtruths, (list, tuple)) and isinstance(groundtruths[0], dict):
             raise TypeError("{} cannot handle dictionary-style daataset yet.".format(cls.__name__))
-
-        def _signif(a, b):
-            mos_a = np.mean(a)
-            mos_b = np.mean(b)
-            n_a = len(a)
-            n_b = len(b)
-            var_a = np.var(a, ddof=1)
-            var_b = np.var(b, ddof=1)
-            den = var_a / n_a + var_b / n_b
-            if den == 0.0:
-                den = 1e-8
-            z = (mos_a - mos_b) / np.sqrt(den)
-            if z < -2:
-                return -1
-            elif z > 2:
-                return 1
-            else:
-                return 0
-
-        # generate pairs
-        N = len(groundtruths)
-        signif_mtx = np.zeros([N, N])
-        i = 0
-        for groundtruth in groundtruths:
-            j = 0
-            for groundtruth2 in groundtruths:
-                signif = _signif(groundtruth, groundtruth2)
-                signif_mtx[i, j] = signif
-                j += 1
-            i += 1
-
-        if isinstance(predictions[0], list):
-            M = len(predictions)
-        else:
-            M = 1
-
-        objscodif_all = np.zeros([M, N * N])
-        for metric_idx in range(M):
-            objscodif_mtx = np.zeros([N, N])
-
-            if isinstance(predictions[0], list):
-                metric_predictions = predictions[metric_idx]
-            else:
-                metric_predictions = predictions
-
-            i = 0
-            for prediction in metric_predictions:
-                j = 0
-                for prediction2 in metric_predictions:
-                    objscodif = prediction - prediction2
-                    objscodif_mtx[i, j] = objscodif
-                    j += 1
-                i += 1
-
-            objscodif_all[metric_idx, :] = objscodif_mtx.reshape(1, N * N)
-
-        # import matplotlib.pyplot as plt
-        # plt.figure()
-        # plt.imshow(objscodif_mtx, interpolation='nearest')
-        # plt.set_cmap('gray')
-        # plt.colorbar()
-        # plt.figure()
-        # plt.imshow(signif_mtx, interpolation='nearest')
-        # plt.set_cmap('gray')
-        # plt.colorbar()
-        # DisplayConfig.show()
-
-        results = cls._metrics_performance(objscodif_all, signif_mtx.reshape(1, N * N))
+        sample_count = len(groundtruths)
+        significance = cls._significance_matrix(groundtruths)
+        differences = cls._prediction_differences(predictions, sample_count)
+        results = cls._metrics_performance(
+            differences, significance.reshape(1, sample_count * sample_count)
+        )
         results["score"] = results["AUC_BW"]
-
         if isinstance(predictions[0], list):
             return results
-        else:
-            result = {}
-            for key in results:
-                result[key] = results[key][0]
-            return result
+        return {key: value[0] for key, value in results.items()}
 
     def _assert_args(self):
         if isinstance(self.predictions[0], list):
@@ -388,8 +234,8 @@ class AucPerfMetric(RawScorePerfMetric):
                     metric
                 ), "The lengths of groundtruth labels and predictions do not match."
                 for score in metric:
-                    assert isinstance(score, float) or isinstance(
-                        score, int
+                    assert isinstance(
+                        score, (float, int)
                     ), "Predictions need to be a list of lists of numbers."
 
         else:
@@ -428,14 +274,12 @@ class ResolvingPowerPerfMetric(RawScorePerfMetric):
         xs = 1.0 / (1.0 + np.exp(-(np.array(xs) - a) / b))
 
         # denormalize
-        xs = xs * (ys_max - ys_min) + ys_min
-
-        return xs
+        return xs * (ys_max - ys_min) + ys_min
 
     @classmethod
     @override(PerfMetric)
     def _preprocess(cls, groundtruths, predictions, **kwargs):
-        enable_mapping = kwargs["enable_mapping"] if "enable_mapping" in kwargs else False
+        enable_mapping = kwargs.get("enable_mapping", False)
 
         if enable_mapping:
             predictions_ = cls.sigmoid_adjust_raw(predictions, groundtruths)
@@ -444,215 +288,83 @@ class ResolvingPowerPerfMetric(RawScorePerfMetric):
 
         return groundtruths, predictions_
 
-    @classmethod
-    def _evaluate(cls, groundtruths, predictions, **kwargs):
-
-        # function [resolving_power] = vqm_accuracy (vqm, num_viewers, mos, std, deg_of_freedom) % MATLAB function [resolving_power] = ...
-        # % vqm_accuracy (vqm, num_viewers, mos, std, deg_of_freedom)
-        # %
-        # % Compute resolving power for one model.
-        # %
-        # %    vqm is the video quality metric score for this src_id x hrc_id
-        # %    num_viewers is the number of viewers that rated this src_id x hrc_id
-        # %    mos is the mean opinion score of this src_id x hrc_id
-        # %    std is the standard-deviation of this src_id x hrc_id
-        # %
-        #
-        # % All of the above arrays must be the same length.  The VQM must already be
-        # % fitted to the MOS.
-        # %
-        # %   deg_of_freedom is the number of degrees of freedom for the fit between
-        # %           VQM and MOS prior to calling this routine.
-        # %
-        # % returned data contains:
-        # %   resolving_power(1) = 95% Resolving Power
-        # %   resolving_power(2) = 90% Resolving Power
-        # %   resolving_power(3) = 75% Resolving Power
-        # %   resolving_power(4) = 68% Resolving Power
-
-        if isinstance(groundtruths, (list, tuple)) and isinstance(groundtruths[0], dict):
-            raise TypeError("{} cannot handle dictionary-style daataset yet.".format(cls.__name__))
-
-        deg_of_freedom = kwargs["ddof"] if "ddof" in kwargs else 0
-
-        vqm = np.array(predictions)
-        num_viewers = np.array(list(map(len, groundtruths)))
-        mos = np.array(list(map(np.nanmean, groundtruths)))
-        std = np.array(
-            list(map(lambda groundtruth: np.nanstd(groundtruth, ddof=deg_of_freedom), groundtruths))
-        )
-
-        # variance = std.^2;
-        variance = std**2
-
-        # num_comb = length(vqm);
-        num_comb = len(vqm)
-
-        # % Perform the vqm RMSE calculation using vqm.
-        # vqm_rmse = (sum((vqm-mos).^2)/(num_comb - deg_of_freedom))^0.5;
-        # (CodeQL py/unused-local-variable: vqm_rmse is computed by the
-        # source Matlab routine but never read by the resolving-power
-        # calculation below. Dropped the Python assignment; kept the
-        # commented Matlab line for traceability against the original.)
-
-        # % Perform the vqm resolution measurement using both vqm and mos.
-        # vqm_pairs = repmat(vqm,1,num_comb)-repmat(vqm',num_comb,1);
-        # mos_pairs = repmat(mos,1,num_comb)-repmat(mos',num_comb,1);
-        # stand_err_diff = sqrt(repmat(variance./num_viewers,1,num_comb) + repmat((variance./num_viewers)',num_comb,1));
-        # z_pairs = mos_pairs./stand_err_diff;
-        vqm_pairs = np.tile(vqm, (num_comb, 1))
-        vqm_pairs = vqm_pairs - vqm_pairs.T
-        mos_pairs = np.tile(mos, (num_comb, 1))
-        mos_pairs = mos_pairs - mos_pairs.T
-        stand_err_diff = np.tile(variance / num_viewers, (num_comb, 1))
-        stand_err_diff = np.sqrt(stand_err_diff + stand_err_diff.T)
-        stand_err_diff[stand_err_diff == 0.0] = 1e-8
-        z_pairs = mos_pairs / stand_err_diff
-
-        # % Include everything above the diagonal.
-        # delta_vqm = [];
-        # z = [];
-        # for col = 2:num_comb
-        #     delta_vqm = [delta_vqm; vqm_pairs(1:col-1,col)];
-        #     z = [z; z_pairs(1:col-1,col)];
-        # end
-        delta_vqm = []
-        z = []
-        for col in range(2, num_comb + 1):
-            delta_vqm = np.hstack([delta_vqm, vqm_pairs[0 : col - 1, col - 1]])
-            z = np.hstack([z, z_pairs[0 : col - 1, col - 1]])
-
-        # % Switch on z and delta_vqm for negative delta_vqm
-        # z_vqm = z;
-        # negs_vqm = find(delta_vqm < 0);
-        # delta_vqm(negs_vqm) = -delta_vqm(negs_vqm);
-        # z_vqm(negs_vqm) = -z_vqm(negs_vqm);
-        z_vqm = z
-        negs_vqm = indices(delta_vqm, lambda x: x < 0)
-        delta_vqm[negs_vqm] = -delta_vqm[negs_vqm]
-        z_vqm[negs_vqm] = -z_vqm[negs_vqm]
-
-        # % Compute the average confidence that vqm(2) is worse than vqm(1) in mean_cdf_z_vqm.
-        # cdf_z_vqm = .5+erf(z_vqm/sqrt(2))/2;
+    @staticmethod
+    def _confidence_curve(delta_vqm, z_vqm):
         cdf_z_vqm = 0.5 + scipy.special.erf(z_vqm / np.sqrt(2)) / 2
-
-        # === original binning logic: ===
-        # % One control parameter for delta_vqm resolution plot; number of vqm bins,
-        # % equally spaced from min(delta_vqm) to max(delta_vqm).
-
-        # % Sliding neighborhood filter with 50% overlap means that there will actually
-        # % be vqm_bins*2-1 points on the delta_vqm resolution plot.
-        # vqm_bins = 10; % How many bins to divide full vqm range for local averaging
-        # vqm_low = min(delta_vqm); % lower limit on delta_vqm
-        # vqm_high = max(delta_vqm); % upper limit on delta_vqm
-        # vqm_step = (vqm_high-vqm_low)/vqm_bins; % size of delta_vqm bins
         vqm_bins = 10
         vqm_low = min(delta_vqm)
         vqm_high = max(delta_vqm)
         vqm_step = (vqm_high - vqm_low) / vqm_bins
-
-        # % lower, upper, and center bin locations
-        # low_limits = [vqm_low:vqm_step/2:vqm_high-vqm_step];
-        # high_limits = [vqm_low+vqm_step:vqm_step/2:vqm_high];
-        # centers = [vqm_low+vqm_step/2:vqm_step/2:vqm_high-vqm_step/2];
         low_limits = np.arange(vqm_low, vqm_high - vqm_step, step=vqm_step / 2)
         centers = low_limits.copy() + vqm_step / 2
         high_limits = low_limits.copy() + vqm_step
-        # patch to cover entire range
         if high_limits[-1] < vqm_high:
             low_limits = np.hstack([low_limits, vqm_high - vqm_step])
             high_limits = np.hstack([high_limits, vqm_high])
             centers = np.hstack([centers, vqm_high - vqm_step / 2])
 
-        len_centers = len(centers)
-        assert len_centers == len(low_limits) == len(high_limits)
+        assert len(centers) == len(low_limits) == len(high_limits)
+        mean_confidence = np.zeros(len(centers))
+        for index, (low_limit, high_limit) in enumerate(zip(low_limits, high_limits, strict=True)):
+            in_bin = indices(
+                delta_vqm,
+                lambda value, low=low_limit, high=high_limit: low <= value < high,
+            )
+            mean_confidence[index] = float("NaN") if not in_bin else np.mean(cdf_z_vqm[in_bin])
+        valid_points = [
+            pair for pair in zip(centers, mean_confidence, strict=True) if not np.isnan(pair[1])
+        ]
+        return zip(*valid_points, strict=True)
 
-        # mean_cdf_z_vqm = zeros(1,2*vqm_bins-1);
-        # for i=1:2*vqm_bins-1
-        #     in_bin = find(low_limits(i) <= delta_vqm & delta_vqm < high_limits(i));
-        #     mean_cdf_z_vqm(i) = mean(cdf_z_vqm(in_bin));
-        # end
-        mean_cdf_z_vqm = np.zeros(len_centers)
-        for i in range(0, len_centers):
-            in_bin = indices(delta_vqm, lambda x: low_limits[i] <= x < high_limits[i])
-            if len(in_bin) == 0:
-                mean_cdf_z_vqm[i] = float("NaN")
-            else:
-                mean_cdf_z_vqm[i] = np.mean(cdf_z_vqm[in_bin])
-        centers__mean_cdf_z_vqm = filter(lambda p: not np.isnan(p[1]), zip(centers, mean_cdf_z_vqm))
-        centers, mean_cdf_z_vqm = zip(*centers__mean_cdf_z_vqm)
+    @staticmethod
+    def _groundtruth_statistics(groundtruths, degrees_of_freedom):
+        viewers = np.array(list(map(len, groundtruths)))
+        means = np.array(list(map(np.nanmean, groundtruths)))
+        deviations = np.array(
+            [np.nanstd(groundtruth, ddof=degrees_of_freedom) for groundtruth in groundtruths]
+        )
+        return viewers, means, deviations**2
 
-        # # % % Optional code to plot resolving power curve.
-        # # % % The x-axis is vqm(2)-vqm(1).  The Y-axis is always the average
-        # # % % confidence that vqm(2) is worse than vqm(1).
-        # # % figure(1)
-        # # % plot(centers,mean_cdf_z_vqm)
-        # # % grid
-        # # % set(gca,'LineWidth',1)
-        # #
-        # # % set(gca,'FontName','Ariel')
-        # # % set(gca,'fontsize',11)
-        # # % xlabel('VQM (2) - VQM (1)')
-        # # % ylabel('Average Confidence VQM (2) is worse than VQM (1)')
-        # # % title('VQM Resolving Power')
-        #
-        # # % Compute each resolving power by interpolating the mean_cdf_z_vqm graph
-        #
-        # # % 95% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.95 && i > 1,
-        # #     i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(1) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.95);
-        #
-        # # % 90% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.90 && i > 1,
-        # # i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(2) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.90);
-        #
-        # # % 75% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.75 && i > 1,
-        # # i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(3) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.75);
-        #
-        # # % 68% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.68 && i > 1,
-        # # i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(4) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.68);
-        #
-        # resolving_powers = []
-        # for perc in [0.95, 0.90, 0.75, 0.68]:
-        #     i = len(centers) - 1
-        #     while mean_cdf_z_vqm[i-1] > perc and i > 1:
-        #         i -= 1
-        #     j = min(len(centers), i+1)
-        #     resolving_power = scipy.interpolate.interp1d(mean_cdf_z_vqm[i-1:j], centers[i-1:j])(perc)
-        #     resolving_powers.append(resolving_power)
+    @staticmethod
+    def _upper_triangle_pairs(values):
+        matrix = np.subtract.outer(values, values)
+        return np.hstack(
+            [matrix[0 : column - 1, column - 1] for column in range(2, len(values) + 1)]
+        )
 
+    @classmethod
+    def _oriented_pair_statistics(cls, predictions, means, variance, viewers):
+        prediction_differences = cls._upper_triangle_pairs(predictions)
+        standard_error = variance / viewers
+        standard_error = np.sqrt(standard_error[:, None] + standard_error[None, :])
+        standard_error[standard_error == 0.0] = 1e-8
+        z_matrix = np.subtract.outer(means, means) / standard_error
+        z_scores = np.hstack(
+            [z_matrix[0 : column - 1, column - 1] for column in range(2, len(means) + 1)]
+        )
+        negative = prediction_differences < 0
+        prediction_differences[negative] *= -1
+        z_scores[negative] *= -1
+        return prediction_differences, z_scores
+
+    @staticmethod
+    def _interpolate_resolving_power(confidence, centers):
         try:
-            res_pow_95 = scipy.interpolate.interp1d(mean_cdf_z_vqm, centers, kind="linear")([0.95])[
-                0
-            ]
+            return scipy.interpolate.interp1d(confidence, centers, kind="linear")([0.95])[0]
         except ValueError:
-            res_pow_95 = float("NaN")
+            return float("NaN")
 
-        # % return infinity if can't compute
-        # resolving_power(isnan(resolving_power)) = inf;
-
-        result = dict()
-        result["resolving_power_95perc"] = res_pow_95
-        result["score"] = res_pow_95
-        return result
+    @classmethod
+    def _evaluate(cls, groundtruths, predictions, **kwargs):
+        if isinstance(groundtruths, (list, tuple)) and isinstance(groundtruths[0], dict):
+            raise TypeError("{} cannot handle dictionary-style daataset yet.".format(cls.__name__))
+        viewers, means, variance = cls._groundtruth_statistics(groundtruths, kwargs.get("ddof", 0))
+        differences, z_scores = cls._oriented_pair_statistics(
+            np.array(predictions), means, variance, viewers
+        )
+        centers, confidence = cls._confidence_curve(differences, z_scores)
+        power = cls._interpolate_resolving_power(confidence, centers)
+        return {"resolving_power_95perc": power, "score": power}
 
 
 class AggrScorePerfMetric(PerfMetric):
@@ -678,18 +390,14 @@ class AggrScorePerfMetric(PerfMetric):
         xs = 1.0 / (1.0 + np.exp(-(np.array(xs) - a) / b))
 
         # denormalize
-        xs = xs * (ys_max - ys_min) + ys_min
-
-        return xs
+        return xs * (ys_max - ys_min) + ys_min
 
     @classmethod
     def _preprocess(cls, groundtruths, predictions, **kwargs):
-        aggre_method = kwargs["aggr_method"] if "aggr_method" in kwargs else np.mean
-        enable_mapping = kwargs["enable_mapping"] if "enable_mapping" in kwargs else False
+        aggre_method = kwargs.get("aggr_method", np.mean)
+        enable_mapping = kwargs.get("enable_mapping", False)
 
-        groundtruths_ = list(
-            map(lambda x: aggre_method(x) if hasattr(x, "__len__") else x, groundtruths)
-        )
+        groundtruths_ = [aggre_method(x) if hasattr(x, "__len__") else x for x in groundtruths]
 
         if enable_mapping:
             predictions_ = cls.sigmoid_adjust(predictions, groundtruths_)
@@ -707,8 +415,7 @@ class RmsePerfMetric(AggrScorePerfMetric):
     @classmethod
     def _evaluate(cls, groundtruths, predictions, **kwargs):
         rmse = np.sqrt(np.mean(np.power(np.array(groundtruths) - np.array(predictions), 2.0)))
-        result = {"score": rmse}
-        return result
+        return {"score": rmse}
 
 
 class SrccPerfMetric(AggrScorePerfMetric):
@@ -720,8 +427,7 @@ class SrccPerfMetric(AggrScorePerfMetric):
     def _evaluate(cls, groundtruths, predictions, **kwargs):
         # spearman
         srcc, _ = scipy.stats.spearmanr(groundtruths, predictions)
-        result = {"score": srcc}
-        return result
+        return {"score": srcc}
 
 
 class PccPerfMetric(AggrScorePerfMetric):
@@ -733,8 +439,7 @@ class PccPerfMetric(AggrScorePerfMetric):
     def _evaluate(cls, groundtruths, predictions, **kwargs):
         # pearson
         pcc, _ = scipy.stats.pearsonr(groundtruths, predictions)
-        result = {"score": pcc}
-        return result
+        return {"score": pcc}
 
 
 class KendallPerfMetric(AggrScorePerfMetric):
@@ -746,5 +451,4 @@ class KendallPerfMetric(AggrScorePerfMetric):
     def _evaluate(cls, groundtruths, predictions, **kwargs):
         # kendall
         kendall, _ = scipy.stats.kendalltau(groundtruths, predictions)
-        result = {"score": kendall}
-        return result
+        return {"score": kendall}

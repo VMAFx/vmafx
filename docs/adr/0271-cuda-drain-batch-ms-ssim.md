@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0271: Wire `integer_ms_ssim_cuda` through the CUDA fence-batching helper
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ between launches.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Per-scale partials + drain_batch (this ADR)** | 5+1 host-blocking syncs collapse into the engine's single batched flush; full-frame readback latency hides behind other extractors' kernels; bit-exact (same launches, same order, only host wait point moves). | +12 device buffers and 12 pinned host buffers per state (5×3 + the 3 unused in the old layout, totalling 15 partials + 15 host vs. 3 + 3 before). Footprint increase is dominated by scale 0's block_count (≈ 8.1 KB at 1080p). | Chosen — the latency win dominates, and the buffer footprint is well below the existing pyramid + intermediates allocations. |
 | Keep shared partials, single-scale fence each iteration | Smallest device-memory footprint. Bit-exact. | Per-scale `cuStreamSynchronize` stays — drain_batch doesn't help because the events aren't recorded once-per-frame. | Doesn't address the goal — the readbacks stay un-coalesced. |
 | Move the per-scale reduction to the GPU (Wang product on-device) | Single scalar DtoH for the final score; smallest possible drain. | Requires a new reduction kernel; numerical fidelity vs. the host-side double accumulation needs a fresh `places=4` cross-backend audit; SYCL/Vulkan twins would diverge or have to follow. | Out of scope — bigger surgery, larger risk; deferred to a future T-GPU-OPT issue. |

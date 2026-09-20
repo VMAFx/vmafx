@@ -36,6 +36,7 @@ opset_version is pinned to 17 to match the sister tiny-AI models
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 from typing import Any
@@ -47,13 +48,14 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 OPSET = 17
 
@@ -136,8 +138,7 @@ def _write_sidecar(
     return sidecar
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="export_vmaf_tiny_v2.py", description=__doc__)
     ap.add_argument(
         "--ckpt",
@@ -157,7 +158,44 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Sidecar JSON (input/output names + opset, mirrors v1 format).",
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(argv)
+
+
+def _export_onnx(args: argparse.Namespace, state: dict, features: list[str], mean, std) -> None:
+    import torch
+
+    mlp = _build_mlp_small(len(features))
+    mlp.load_state_dict(state["state_dict"])
+    mlp.eval()
+    wrapper = _BundledScalerMLP(mlp, mean, std)
+    dummy = torch.zeros(1, len(features), dtype=torch.float32)
+    args.out_onnx.parent.mkdir(parents=True, exist_ok=True)
+    print(f"[export-v2] tracing wrapper -> {args.out_onnx} (opset={OPSET})")
+    torch.onnx.export(
+        wrapper,
+        (dummy,),
+        str(args.out_onnx),
+        input_names=["features"],
+        output_names=["vmaf"],
+        dynamic_axes={"features": {0: "N"}, "vmaf": {0: "N"}},
+        opset_version=OPSET,
+        do_constant_folding=True,
+    )
+
+
+def _inline_onnx(path: Path) -> None:
+    import onnx
+
+    proto = onnx.load(str(path))
+    onnx.save(proto, str(path), save_as_external_data=False)
+    sidecar_data = path.with_suffix(".onnx.data")
+    if sidecar_data.exists():
+        sidecar_data.unlink()
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     import torch
 
@@ -176,34 +214,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[export-v2] expected 6 features, got {in_dim}", file=sys.stderr)
         return 2
 
-    mlp = _build_mlp_small(in_dim)
-    mlp.load_state_dict(state["state_dict"])
-    mlp.eval()
-
-    wrapper = _BundledScalerMLP(mlp, mean, std)
-
-    dummy = torch.zeros(1, in_dim, dtype=torch.float32)
-    args.out_onnx.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[export-v2] tracing wrapper -> {args.out_onnx} (opset={OPSET})")
-    torch.onnx.export(
-        wrapper,
-        (dummy,),
-        str(args.out_onnx),
-        input_names=["features"],
-        output_names=["vmaf"],
-        dynamic_axes={"features": {0: "N"}, "vmaf": {0: "N"}},
-        opset_version=OPSET,
-        do_constant_folding=True,
-    )
-
-    # Force inline storage so the sha256 covers the entire model.
-    import onnx
-
-    proto = onnx.load(str(args.out_onnx))
-    onnx.save(proto, str(args.out_onnx), save_as_external_data=False)
-    sidecar_data = args.out_onnx.with_suffix(".onnx.data")
-    if sidecar_data.exists():
-        sidecar_data.unlink()
+    _export_onnx(args, state, features, mean, std)
+    _inline_onnx(args.out_onnx)
 
     digest = sha256(args.out_onnx)
     print(f"[export-v2] sha256={digest}")

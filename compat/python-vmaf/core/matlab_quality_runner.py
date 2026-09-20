@@ -34,7 +34,7 @@ class StrredQualityRunner(QualityRunner):
             + getattr(StrredFeatureExtractor, "DERIVED_ATOM_FEATURES", [])
         }
 
-        feature_assembler = FeatureAssembler(
+        return FeatureAssembler(
             feature_dict=feature_dict,
             feature_option_dict=None,
             assets=[asset],
@@ -47,7 +47,6 @@ class StrredQualityRunner(QualityRunner):
             parallelize=False,  # parallelization already in a higher level
             save_workfiles=self.save_workfiles,
         )
-        return feature_assembler
 
     @override(Executor)
     def _run_on_asset(self, asset):
@@ -87,7 +86,7 @@ class StrredOptQualityRunner(QualityRunner):
             + getattr(StrredOptFeatureExtractor, "DERIVED_ATOM_FEATURES", [])
         }
 
-        feature_assembler = FeatureAssembler(
+        return FeatureAssembler(
             feature_dict=feature_dict,
             feature_option_dict=None,
             assets=[asset],
@@ -100,7 +99,6 @@ class StrredOptQualityRunner(QualityRunner):
             parallelize=False,  # parallelization already in a higher level
             save_workfiles=self.save_workfiles,
         )
-        return feature_assembler
 
     @override(Executor)
     def _run_on_asset(self, asset):
@@ -141,7 +139,7 @@ class SpEEDMatlabQualityRunner(QualityRunner):
             + getattr(SpEEDMatlabFeatureExtractor, "DERIVED_ATOM_FEATURES", [])
         }
 
-        feature_assembler = FeatureAssembler(
+        return FeatureAssembler(
             feature_dict=feature_dict,
             feature_option_dict=None,
             assets=[asset],
@@ -154,7 +152,6 @@ class SpEEDMatlabQualityRunner(QualityRunner):
             parallelize=False,  # parallelization already in a higher level
             save_workfiles=self.save_workfiles,
         )
-        return feature_assembler
 
     @override(Executor)
     def _run_on_asset(self, asset):
@@ -195,7 +192,7 @@ class STMADQualityRunner(QualityRunner):
             + getattr(STMADFeatureExtractor, "DERIVED_ATOM_FEATURES", [])
         }
 
-        feature_assembler = FeatureAssembler(
+        return FeatureAssembler(
             feature_dict=feature_dict,
             feature_option_dict=None,
             assets=[asset],
@@ -208,7 +205,6 @@ class STMADQualityRunner(QualityRunner):
             parallelize=False,  # parallelization already in a higher level
             save_workfiles=self.save_workfiles,
         )
-        return feature_assembler
 
     @override(Executor)
     def _run_on_asset(self, asset):
@@ -248,7 +244,7 @@ class ICIDQualityRunner(QualityRunner):
             + getattr(iCIDFeatureExtractor, "DERIVED_ATOM_FEATURES", [])
         }
 
-        feature_assembler = FeatureAssembler(
+        return FeatureAssembler(
             feature_dict=feature_dict,
             feature_option_dict=None,
             assets=[asset],
@@ -261,7 +257,6 @@ class ICIDQualityRunner(QualityRunner):
             parallelize=False,  # parallelization already in a higher level
             save_workfiles=self.save_workfiles,
         )
-        return feature_assembler
 
     def _run_on_asset(self, asset):
         # Override Executor._run_on_asset(self, asset)

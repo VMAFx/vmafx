@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0577: vmaf-tune bisect decode concurrency cap and aggressive workdir cleanup
 
 - **Status**: Accepted
@@ -55,7 +54,7 @@ Three complementary fixes ship together:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Raise the `/probes` volume size | Simple operational fix | Does not scale; next source or next run hits the same wall | Not a code fix; symptom not cause |
 | Single shared workdir per codec (share the reference YUV across all targets) | One decode per codec instead of one per (codec, target) | Complicates lifecycle; reference YUV cannot be deleted until all targets for that codec complete | The semaphore + per-bisect cleanup already achieves the same peak (one decode at a time) without shared state |
 | Delete reference YUV between codec iterations only (not per bisect) | Slightly fewer deletions | Does not help when a single bisect already ENOSPC on the first decode | Too coarse |

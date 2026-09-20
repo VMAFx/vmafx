@@ -47,11 +47,6 @@
 
 #include <stddef.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -165,7 +160,7 @@ static char *test_ciede_preprocess_8_avx2_parity(void)
     const int w = CIEDE_TEST_W;
     const size_t out_bytes = (size_t)w * sizeof(float);
 
-    CiedeParity8 b = {0};
+    CiedeParity8 b = {VMAF_NULLPTR};
     if (ciede_parity8_alloc(&b, w)) {
         ciede_parity8_free_all(&b);
         return "aligned_malloc failed";
@@ -199,7 +194,7 @@ static char *test_ciede_preprocess_8_avx2_parity(void)
     SIMD_BITEXACT_ASSERT_MEMCMP(b.v_scalar, b.v_simd, out_bytes, "ciede_preprocess_8_avx2 V plane");
 
     ciede_parity8_free_outputs(&b);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -------------------------------------------------------------------------
@@ -261,7 +256,7 @@ static char *test_ciede_preprocess_16_avx2_parity(void)
     const int w = CIEDE_TEST_W;
     const size_t out_bytes = (size_t)w * sizeof(float);
 
-    CiedeParity16 b = {0};
+    CiedeParity16 b = {VMAF_NULLPTR};
     if (ciede_parity16_alloc(&b, w)) {
         ciede_parity16_free_all(&b);
         return "aligned_malloc failed";
@@ -296,7 +291,7 @@ static char *test_ciede_preprocess_16_avx2_parity(void)
                                 "ciede_preprocess_16_avx2 V plane");
 
     ciede_parity16_free_outputs(&b);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 */
@@ -305,14 +300,12 @@ char *run_tests(void)
 {
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_ciede_preprocess_8_avx2_parity);
     mu_run_test(test_ciede_preprocess_16_avx2_parity);
 #else
     (void)fprintf(stderr, "skipping SIMD parity: non-x86 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

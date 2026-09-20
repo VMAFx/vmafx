@@ -5,19 +5,23 @@
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
-torch = pytest.importorskip("torch")
-onnx = pytest.importorskip("onnx")
+try:
+    import_module("onnx")
+    import_module("torch")
+except ImportError:
+    pytest.skip("PyTorch/ONNX dependencies not installed", allow_module_level=True)
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from conftest import guarded_pytorch_lightning_import
 
-requires_pytorch_lightning()
+from vmaf_train.registry import VALID_KINDS, load, register
 
-from vmaf_train.models import FRRegressor, export_to_onnx  # noqa: E402
-from vmaf_train.registry import VALID_KINDS, load, register  # noqa: E402
+with guarded_pytorch_lightning_import():
+    from vmaf_train.models import FRRegressor, export_to_onnx
 
 
 def test_register_roundtrip(tmp_path: Path) -> None:

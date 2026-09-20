@@ -114,8 +114,8 @@ class YuvReaderTest(unittest.TestCase):
             yuv_type="yuv420p",
         ) as yuv_reader:
 
-            for y, u, v in yuv_reader:
-                y, u, v = y.astype(np.double), u.astype(np.double), v.astype(np.double)
+            for raw_y, _, _ in yuv_reader:
+                y = raw_y.astype(np.double)
                 y_1stmoments.append(y.mean())
                 y_2ndmoments.append(y.var() + y.mean() * y.mean())
 
@@ -164,7 +164,7 @@ class YuvReaderTest(unittest.TestCase):
 
             while True:
                 try:
-                    y, u, v = yuv_reader.next(format="float")
+                    y, _u, _v = yuv_reader.next(format="float")
                     y_1stmoments.append(y.mean())
                     y_2ndmoments.append(y.var() + y.mean() * y.mean())
                 except StopIteration:
@@ -257,12 +257,8 @@ class YuvReaderTest10le(unittest.TestCase):
             yuv_type="yuv422p10le",
         ) as yuv_reader:
 
-            for y, u, v in yuv_reader:
-                y, u, v = (
-                    y.astype(np.double) / 4.0,
-                    u.astype(np.double) / 4.0,
-                    v.astype(np.double) / 4.0,
-                )
+            for raw_y, _, _ in yuv_reader:
+                y = raw_y.astype(np.double) / 4.0
                 y_1stmoments.append(y.mean())
                 y_2ndmoments.append(y.var() + y.mean() * y.mean())
 
@@ -353,12 +349,8 @@ class YuvReaderTest12le(unittest.TestCase):
             yuv_type="yuv420p12le",
         ) as yuv_reader:
 
-            for y, u, v in yuv_reader:
-                y, u, v = (
-                    y.astype(np.double) / 16.0,
-                    u.astype(np.double) / 16.0,
-                    v.astype(np.double) / 16.0,
-                )
+            for raw_y, _, _ in yuv_reader:
+                y = raw_y.astype(np.double) / 16.0
                 y_1stmoments.append(y.mean())
                 y_2ndmoments.append(y.var() + y.mean() * y.mean())
 
@@ -449,12 +441,8 @@ class YuvReaderTest16le(unittest.TestCase):
             yuv_type="yuv420p16le",
         ) as yuv_reader:
 
-            for y, u, v in yuv_reader:
-                y, u, v = (
-                    y.astype(np.double) / 256.0,
-                    u.astype(np.double) / 256.0,
-                    v.astype(np.double) / 256.0,
-                )
+            for raw_y, _, _ in yuv_reader:
+                y = raw_y.astype(np.double) / 256.0
                 y_1stmoments.append(y.mean())
                 y_2ndmoments.append(y.var() + y.mean() * y.mean())
 

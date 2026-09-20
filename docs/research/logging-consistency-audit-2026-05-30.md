@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research: Logging consistency audit in fork-added C/C++ code
 
 - **Status**: Active
@@ -45,7 +44,7 @@ Classified each site against three axes:
    pattern — see deferral below.
 
 | Site | Decision | Reason |
-|---|---|---|
+| --- | --- | --- |
 | `core/src/libvmaf.c` x5 — `vmaf_write_output` guards | ROUTE through `vmaf_log` (ERROR) | Public API error path; users expect their callback to receive the message. |
 | `core/src/sycl/dispatch_strategy.cpp` — `VMAF_SYCL_NO_GRAPH` deprecation | ROUTE (WARNING) | One-shot env-var deprecation, exactly the canonical WARNING use case. |
 | `core/src/sycl/common.cpp` — device-enum exception | ROUTE (ERROR) | Exception path during `vmaf_sycl_list_devices()`. |

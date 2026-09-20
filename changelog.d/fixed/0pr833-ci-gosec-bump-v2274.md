@@ -1,1 +1,5 @@
-- Fixed: bumped `gosec` from v2.21.4 to v2.27.1 in the security-scan workflow; v2.21.4 failed to compile against the Go 1.26 standard library changes. (PR #833)
+# Changelog fragment
+
+- Fixed: bumped `gosec` from v2.21.4 to v2.27.1 in the security-scan workflow;
+  v2.21.4 failed to compile against the Go 1.26 standard library changes. (PR
+  #833)

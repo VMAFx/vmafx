@@ -1,5 +1,5 @@
-import os
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -145,11 +145,11 @@ class BootstrapTrainTestModelTest(MyTestCase):
 
         self.model.to_file(self.model_filename)
 
-        self.assertTrue(os.path.exists("{}".format(self.model_filename)))
-        self.assertTrue(os.path.exists("{}".format(self.model_filename) + ".model"))
+        self.assertTrue(Path(f"{self.model_filename}").exists())
+        self.assertTrue(Path(f"{self.model_filename}.model").exists())
         for i in range(1, 100):
-            self.assertTrue(os.path.exists("{}.{:04d}".format(self.model_filename, i)))
-            self.assertTrue(os.path.exists("{}.{:04d}".format(self.model_filename, i) + ".model"))
+            self.assertTrue(Path(f"{self.model_filename}.{i:04d}").exists())
+            self.assertTrue(Path(f"{self.model_filename}.{i:04d}.model").exists())
 
         loaded_model = BootstrapLibsvmNusvrTrainTestModel.from_file(self.model_filename, None)
 
@@ -498,13 +498,11 @@ class BootstrapTrainTestModelTestJson(MyTestCase):
 
         self.model.to_file(self.model_filename_json, format="json")
 
-        self.assertTrue(os.path.exists("{}".format(self.model_filename_json)))
-        self.assertFalse(os.path.exists("{}".format(self.model_filename_json) + ".model"))
+        self.assertTrue(Path(f"{self.model_filename_json}").exists())
+        self.assertFalse(Path(f"{self.model_filename_json}.model").exists())
         for i in range(1, 100):
-            self.assertTrue(os.path.exists("{}.{:04d}".format(self.model_filename_json, i)))
-            self.assertFalse(
-                os.path.exists("{}.{:04d}".format(self.model_filename_json, i) + ".model")
-            )
+            self.assertTrue(Path(f"{self.model_filename_json}.{i:04d}").exists())
+            self.assertFalse(Path(f"{self.model_filename_json}.{i:04d}.model").exists())
 
         loaded_model = BootstrapLibsvmNusvrTrainTestModel.from_file(
             self.model_filename_json, None, format="json"
@@ -608,13 +606,11 @@ class BootstrapTrainTestModelTestJsonCombined(MyTestCase):
 
         self.model.to_file(self.model_filename_json, format="json", combined=True)
 
-        self.assertTrue(os.path.exists("{}".format(self.model_filename_json)))
-        self.assertFalse(os.path.exists("{}".format(self.model_filename_json) + ".model"))
+        self.assertTrue(Path(f"{self.model_filename_json}").exists())
+        self.assertFalse(Path(f"{self.model_filename_json}.model").exists())
         for i in range(1, 100):
-            self.assertFalse(os.path.exists("{}.{:04d}".format(self.model_filename_json, i)))
-            self.assertFalse(
-                os.path.exists("{}.{:04d}".format(self.model_filename_json, i) + ".model")
-            )
+            self.assertFalse(Path(f"{self.model_filename_json}.{i:04d}").exists())
+            self.assertFalse(Path(f"{self.model_filename_json}.{i:04d}.model").exists())
 
         loaded_model = BootstrapLibsvmNusvrTrainTestModel.from_file(
             self.model_filename_json, None, format="json", combined=True

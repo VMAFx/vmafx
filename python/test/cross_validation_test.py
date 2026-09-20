@@ -1,6 +1,7 @@
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
+import random
 import sys
 import unittest
 
@@ -131,8 +132,6 @@ class CrossValidationTest(unittest.TestCase):
         sys.version_info < (3,), reason="For py3 only: py2 uses a different random seed."
     )
     def test_sample_model_param_list(self):
-        import random
-
         random.seed(0)
 
         model_param_search_range = {
@@ -147,7 +146,7 @@ class CrossValidationTest(unittest.TestCase):
             {"n_estimators": 50, "norm_type": "clip_0to1", "random_state": 0},
             {"n_estimators": 10, "norm_type": "normalize", "random_state": 0},
         ]
-        for actual_dict, expected_dict in zip(dicts, expected_dicts):
+        for actual_dict, expected_dict in zip(dicts, expected_dicts, strict=False):
             self.assertDictEqual(actual_dict, expected_dict)
 
         model_param_search_range = {

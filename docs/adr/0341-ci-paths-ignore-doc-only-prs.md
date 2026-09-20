@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0341: `paths-ignore` filter on heavy CI workflows for doc-only PRs
 
 - **Status**: Accepted
@@ -74,7 +73,7 @@ path is conservative.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **`paths-ignore` deny-list** (chosen) | Conservative default — unknown paths run CI. Mirrors GitHub-native trigger filtering. Aggregator already tolerates skips per ADR-0313. | Trigger-level skip is binary per workflow — no per-job granularity. | — |
 | **`paths:` allow-list** | Same effect; matches ADR-0317's pattern verbatim. | Allow-list is less safe: a new top-level directory (e.g. `tools_v2/`) would silently skip CI until the allow-list grows. Research-0061 §Risks called this out explicitly. | Failure mode goes the wrong way. |
 | **`dorny/paths-filter` job-level detector + always-success shim** | Per-job granularity; doc-only PRs can still get a green checkmark from each individual workflow. | ~120 LOC of YAML per workflow + a third-party action; superseded by the simpler aggregator (ADR-0313). | Aggregator already does the same job at the policy layer. |
@@ -82,7 +81,7 @@ path is conservative.
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - Doc-only / research-only PRs (e.g. #525) merge with only the
   always-runs-everywhere lanes (`lint-and-format`, `security-scans`,
@@ -92,7 +91,7 @@ path is conservative.
   scaling with doc-PR rate.
 - Frees runner capacity during merge trains so code PRs land faster.
 
-**Negative**
+#### Negative
 
 - One additional cognitive step when reviewing CI on a doc PR: the
   build matrix and quality gates do not appear under "Checks" because
@@ -103,7 +102,7 @@ path is conservative.
 - Mismatch between the two workflows' deny-lists must stay in sync.
   Both use the identical doc-only set, by design.
 
-**Neutral / follow-ups**
+### Neutral / follow-ups
 
 - Other heavy workflows (`docker-image.yml`, `ffmpeg-integration.yml`)
   already have path filters from ADR-0317; `lint-and-format.yml`,

@@ -97,99 +97,71 @@
  * Phase B sums the same values in the same order (row-major, dy inner).
  * ULP=0 guaranteed (integer-only path).
  * ------------------------------------------------------------------ */
-extern "C" {
-
-__global__ __launch_bounds__(256) void cambi_spatial_mask_kernel(const uint16_t *image,
-                                                                 uint16_t *mask, unsigned width,
-                                                                 unsigned height,
-                                                                 unsigned stride_words,
-                                                                 unsigned mask_index)
+__device__ __forceinline__ uint8_t zero_derivative_at(const uint16_t *image, int x, int y,
+                                                      unsigned width, unsigned height,
+                                                      unsigned stride_words)
 {
-    /* Shared-memory zero_deriv tile: 22 rows x 32 padded uint8 cols = 704 B. */
-    __shared__ uint8_t zd_tile[ZD_TILE_H][ZD_TILE_STRIDE];
+    if (y < 0 || y >= (int)height || x < 0 || x >= (int)width)
+        return 0;
+    const uint16_t p = image[(size_t)y * stride_words + (unsigned)x];
+    const unsigned right_x = (unsigned)((x == (int)width - 1) ? x : x + 1);
+    const unsigned below_y = (unsigned)((y == (int)height - 1) ? y : y + 1);
+    const uint16_t right = image[(size_t)y * stride_words + right_x];
+    const uint16_t below = image[(size_t)below_y * stride_words + (unsigned)x];
+    const int equal_right = (x == (int)width - 1) || (p == right);
+    const int equal_below = (y == (int)height - 1) || (p == below);
+    return (uint8_t)(equal_right & equal_below);
+}
 
+__device__ __forceinline__ void load_zero_derivative_element(uint8_t tile[][ZD_TILE_STRIDE],
+                                                             const uint16_t *image, int bx, int by,
+                                                             int k, unsigned width, unsigned height,
+                                                             unsigned stride_words)
+{
+    const int tile_y = k / (int)ZD_TILE_W;
+    const int tile_x = k % (int)ZD_TILE_W;
+    const int image_y = by - (int)SMEM_HALF + tile_y;
+    const int image_x = bx - (int)SMEM_HALF + tile_x;
+    tile[tile_y][tile_x] = zero_derivative_at(image, image_x, image_y, width, height, stride_words);
+}
+
+__device__ __forceinline__ unsigned sum_zero_derivative_box(const uint8_t tile[][ZD_TILE_STRIDE],
+                                                            int local_x, int local_y)
+{
+    const int base_row = local_y + (int)SMEM_HALF;
+    const int base_col = local_x + (int)SMEM_HALF;
+    unsigned sum = 0u;
+#pragma unroll
+    for (int dy = -(int)SMEM_HALF; dy <= (int)SMEM_HALF; dy++) {
+#pragma unroll
+        for (int dx = -(int)SMEM_HALF; dx <= (int)SMEM_HALF; dx++)
+            sum += (unsigned)tile[base_row + dy][base_col + dx];
+    }
+    return sum;
+}
+
+extern "C" __global__ __launch_bounds__(256) void cambi_spatial_mask_kernel(
+    const uint16_t *image, uint16_t *mask, unsigned width, unsigned height, unsigned stride_words,
+    unsigned mask_index)
+{
+    __shared__ uint8_t zd_tile[ZD_TILE_H][ZD_TILE_STRIDE];
     const int bx = (int)(blockIdx.x * blockDim.x);
     const int by = (int)(blockIdx.y * blockDim.y);
     const int lx = (int)threadIdx.x;
     const int ly = (int)threadIdx.y;
-    const int tid = ly * (int)blockDim.x + lx; /* 0..255 */
-
-    /* ------------------------------------------------------------------
-     * Phase A: populate zd_tile cooperatively (2 passes, 256 threads,
-     * 484 elements).  Thread tid loads element tid in pass 0, and element
-     * tid+256 in pass 1 (only the 228 threads with tid < 228 do pass 1).
-     * ------------------------------------------------------------------ */
-    /* Pass 0 */
-    {
-        const int k = tid; /* k in [0, 255] -- all < ZD_TILE_H*ZD_TILE_W=484 */
-        const int ti = k / (int)ZD_TILE_W;
-        const int tj = k % (int)ZD_TILE_W;
-        const int raw_gy = by - (int)SMEM_HALF + ti;
-        const int raw_gx = bx - (int)SMEM_HALF + tj;
-        if (raw_gy < 0 || raw_gy >= (int)height || raw_gx < 0 || raw_gx >= (int)width) {
-            zd_tile[ti][tj] = 0;
-        } else {
-            const int gy = raw_gy;
-            const int gx = raw_gx;
-            const uint16_t p = image[(size_t)gy * stride_words + (unsigned)gx];
-            const unsigned r_gx = (unsigned)((gx == (int)width - 1) ? gx : gx + 1);
-            const unsigned b_gy = (unsigned)((gy == (int)height - 1) ? gy : gy + 1);
-            const uint16_t r = image[(size_t)gy * stride_words + r_gx];
-            const uint16_t b = image[(size_t)b_gy * stride_words + (unsigned)gx];
-            const int eq_r = (gx == (int)width - 1) || (p == r);
-            const int eq_b = (gy == (int)height - 1) || (p == b);
-            zd_tile[ti][tj] = (uint8_t)(eq_r & eq_b);
-        }
-    }
-    /* Pass 1: elements 256..483 (228 threads active). */
+    const int tid = ly * (int)blockDim.x + lx;
+    load_zero_derivative_element(zd_tile, image, bx, by, tid, width, height, stride_words);
     if (tid < (int)(ZD_TILE_H * ZD_TILE_W) - 256) {
-        const int k = tid + 256;
-        const int ti = k / (int)ZD_TILE_W;
-        const int tj = k % (int)ZD_TILE_W;
-        const int raw_gy = by - (int)SMEM_HALF + ti;
-        const int raw_gx = bx - (int)SMEM_HALF + tj;
-        if (raw_gy < 0 || raw_gy >= (int)height || raw_gx < 0 || raw_gx >= (int)width) {
-            zd_tile[ti][tj] = 0;
-        } else {
-            const int gy = raw_gy;
-            const int gx = raw_gx;
-            const uint16_t p = image[(size_t)gy * stride_words + (unsigned)gx];
-            const unsigned r_gx = (unsigned)((gx == (int)width - 1) ? gx : gx + 1);
-            const unsigned b_gy = (unsigned)((gy == (int)height - 1) ? gy : gy + 1);
-            const uint16_t r = image[(size_t)gy * stride_words + r_gx];
-            const uint16_t b = image[(size_t)b_gy * stride_words + (unsigned)gx];
-            const int eq_r = (gx == (int)width - 1) || (p == r);
-            const int eq_b = (gy == (int)height - 1) || (p == b);
-            zd_tile[ti][tj] = (uint8_t)(eq_r & eq_b);
-        }
+        load_zero_derivative_element(zd_tile, image, bx, by, tid + 256, width, height,
+                                     stride_words);
     }
     __syncthreads();
 
-    /* ------------------------------------------------------------------
-     * Phase B: per-thread 7x7 box sum from SLM.  Guard against threads
-     * outside the image boundary writing to mask (they still participated
-     * in Phase A to fill the full tile cooperatively).
-     * ------------------------------------------------------------------ */
     const int x = bx + lx;
     const int y = by + ly;
     if (x >= (int)width || y >= (int)height)
         return;
-
-    /* zd_tile[ly+3+dy][lx+3+dx] accesses rows [0,21] and cols [0,21]
-     * -- always in-bounds by construction of ZD_TILE_H / ZD_TILE_W. */
-    unsigned box_sum = 0u;
-    {
-        /* Unrolled 7x7 loop: rows first to maximise SLM row reuse. */
-        const int base_row = ly + (int)SMEM_HALF; /* 3..18 */
-        const int base_col = lx + (int)SMEM_HALF; /* 3..18 */
-#pragma unroll
-        for (int dy = -(int)SMEM_HALF; dy <= (int)SMEM_HALF; dy++) {
-#pragma unroll
-            for (int dx = -(int)SMEM_HALF; dx <= (int)SMEM_HALF; dx++) {
-                box_sum += (unsigned)zd_tile[base_row + dy][base_col + dx];
-            }
-        }
-    }
+    const unsigned box_sum = sum_zero_derivative_box(zd_tile, lx, ly);
     mask[(size_t)(unsigned)y * stride_words + (unsigned)x] =
         (uint16_t)(box_sum > mask_index ? 1u : 0u);
 }
@@ -206,9 +178,10 @@ __global__ __launch_bounds__(256) void cambi_spatial_mask_kernel(const uint16_t 
  * dst_stride_words is the stride of the destination (smaller) buffer.
  * Both strides are in uint16_t words.
  * ------------------------------------------------------------------ */
-__global__ void cambi_decimate_kernel(const uint16_t *src, uint16_t *dst, unsigned out_width,
-                                      unsigned out_height, unsigned src_stride_words,
-                                      unsigned dst_stride_words)
+extern "C" __global__ void cambi_decimate_kernel(const uint16_t *src, uint16_t *dst,
+                                                 unsigned out_width, unsigned out_height,
+                                                 unsigned src_stride_words,
+                                                 unsigned dst_stride_words)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -250,8 +223,9 @@ __device__ static inline uint16_t mode3_dev(uint16_t a, uint16_t b, uint16_t c)
     return (a < b) ? ((a < c) ? a : c) : ((b < c) ? b : c);
 }
 
-__global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsigned width,
-                                         unsigned height, unsigned stride_words, int axis)
+extern "C" __global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out,
+                                                    unsigned width, unsigned height,
+                                                    unsigned stride_words, int axis)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
@@ -281,5 +255,3 @@ __global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsi
     }
     out[(size_t)(unsigned)y * stride_words + (unsigned)x] = mode3_dev(a, b, c);
 }
-
-} /* extern "C" */

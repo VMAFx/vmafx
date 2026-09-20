@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - `ruff` bumped 0.15.17 → **0.16.5**, in `.pre-commit-config.yaml` and in the
   `make lint-tools` pin so the local gate and the CI hooks cannot disagree about
   what counts as a violation.
@@ -11,7 +13,7 @@
   reaches a fixed point.
 - **34 findings are deferred, not fixed**, listed with a per-rule rationale in
   the `[tool.ruff.lint] ignore` block of the root, `ai/` and `tools/vmaf-tune/`
-  configs. The intent is to keep the gate exactly as strict as it was *before*
+  configs. The intent is to keep the gate exactly as strict as it was _before_
   the bump, so a version upgrade does not smuggle in a refactor. Notably
   `PLR0917` (too-many-positional-arguments) joins the `PLR0913` entry already
   ignored for the same stated reason, and `BLE001` is deferred because the batch

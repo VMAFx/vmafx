@@ -38,11 +38,9 @@
  *   Compute 7×7 box sum of zero_deriv around each pixel.
  *   mask[y][x] = (box_sum > mask_index) ? 1 : 0.
  * ------------------------------------------------------------------ */
-extern "C" {
-
-__global__ void cambi_spatial_mask_kernel(const uint16_t *image, uint16_t *mask, unsigned width,
-                                          unsigned height, unsigned stride_words,
-                                          unsigned mask_index)
+extern "C" __global__ void cambi_spatial_mask_kernel(const uint16_t *image, uint16_t *mask,
+                                                     unsigned width, unsigned height,
+                                                     unsigned stride_words, unsigned mask_index)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
@@ -72,11 +70,9 @@ __global__ void cambi_spatial_mask_kernel(const uint16_t *image, uint16_t *mask,
                 continue;
             const uint16_t p = image[(size_t)ry * stride_words + (unsigned)rx];
             const uint16_t r =
-                image[(size_t)ry * stride_words +
-                      (unsigned)(rx == (int)width - 1 ? rx : rx + 1)];
+                image[(size_t)ry * stride_words + (unsigned)(rx == (int)width - 1 ? rx : rx + 1)];
             const uint16_t b =
-                image[(size_t)(ry == (int)height - 1 ? ry : ry + 1) * stride_words +
-                      (unsigned)rx];
+                image[(size_t)(ry == (int)height - 1 ? ry : ry + 1) * stride_words + (unsigned)rx];
             const int eq_right = (rx == (int)width - 1) || (p == r);
             const int eq_below = (ry == (int)height - 1) || (p == b);
             box_sum += (unsigned)(eq_right && eq_below);
@@ -91,9 +87,10 @@ __global__ void cambi_spatial_mask_kernel(const uint16_t *image, uint16_t *mask,
  * Output pixel (x,y) samples input pixel (2x, 2y). Matches
  * cambi.c::decimate (strict even-pixel subsample, no filtering).
  * ------------------------------------------------------------------ */
-__global__ void cambi_decimate_kernel(const uint16_t *src, uint16_t *dst, unsigned out_width,
-                                      unsigned out_height, unsigned src_stride_words,
-                                      unsigned dst_stride_words)
+extern "C" __global__ void cambi_decimate_kernel(const uint16_t *src, uint16_t *dst,
+                                                 unsigned out_width, unsigned out_height,
+                                                 unsigned src_stride_words,
+                                                 unsigned dst_stride_words)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -119,8 +116,9 @@ __device__ static __forceinline__ uint16_t mode3_dev(uint16_t a, uint16_t b, uin
     return (a < b) ? ((a < c) ? a : c) : ((b < c) ? b : c);
 }
 
-__global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsigned width,
-                                         unsigned height, unsigned stride_words, int axis)
+extern "C" __global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out,
+                                                    unsigned width, unsigned height,
+                                                    unsigned stride_words, int axis)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
@@ -155,5 +153,3 @@ __global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsi
     }
     out[(size_t)(unsigned)y * stride_words + (unsigned)x] = mode3_dev(a, b, c);
 }
-
-} /* extern "C" */

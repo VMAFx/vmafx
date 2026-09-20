@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0328: Cambi cluster port — skip the shared-header rename
 
 - **Status**: Accepted
@@ -44,7 +43,7 @@ cambi inline" header.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A: Apply 41bacc83 verbatim** (rename `cambi_reciprocal_lut.h` → `cambi.h`, move helpers, move `calculate_c_values_avx2` into `cambi_avx2.c`, move a fork-added `calculate_c_values_neon` into `arm64/cambi_neon.c`) | Maximal rebase friendliness; identical layout to upstream. | Requires deleting the fork's `CAMBI_CALC_C_VALUES_BODY` macro (regression on dispatch DRYness for the 3-variant fork). Adds a second cambi header alongside `cambi_internal.h` — confusing co-existence. NEON `arm64/cambi_neon.c` would need to grow `calculate_c_values_neon`, expanding the fork-specific surface. | Drops a working DRY abstraction for marginal upstream-mirror gain. |
 | **B: Skip 41bacc83 entirely** *(chosen)* | Preserves the macro DRY dispatch; no header collision; minimal diff churn. | Future cambi syncs that touch the moved helpers will need fork-side adaptation (same as today). | Documented as an intentional partial port with a tracking entry in `docs/rebase-notes.md`. |
 | C: Apply only the rename (`cambi_reciprocal_lut.h` → `cambi.h`), keep helpers in `cambi.c` | File-name parity with upstream. | The point of the rename in 41bacc83 is to give the helpers a home — without that, the rename is pure churn. | Half-measure with no payoff. |

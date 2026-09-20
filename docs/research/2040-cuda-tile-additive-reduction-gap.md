@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research: CUDA Tile C++ has no additive reduction, and VIF is made of them
 
 **Date**: 2026-09-07

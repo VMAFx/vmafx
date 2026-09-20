@@ -57,6 +57,64 @@ static __device__ __forceinline__ void copy_vec_4(const int16_t *__restrict__ in
     }
 }
 
+__constant__ const uint8_t i_shifts[4] = {0, 15, 15, 17};
+__constant__ const uint16_t i_shiftsadd[4] = {0, 16384, 16384, 65535};
+
+struct I4CsfBands {
+    const int32_t *ref_h;
+    const int32_t *ref_v;
+    const int32_t *ref_d;
+    const int32_t *dis_h;
+    const int32_t *dis_v;
+    const int32_t *dis_d;
+};
+
+__device__ __forceinline__ int32_t i4_csf_value(const I4CsfBands &bands, int idx, int band,
+                                                uint32_t rfactor, double gain_limit)
+{
+    const int32_t oh = __ldg(&bands.ref_h[idx]);
+    const int32_t ov = __ldg(&bands.ref_v[idx]);
+    const int32_t od = __ldg(&bands.ref_d[idx]);
+    const int32_t th = __ldg(&bands.dis_h[idx]);
+    const int32_t tv = __ldg(&bands.dis_v[idx]);
+    const int32_t td = __ldg(&bands.dis_d[idx]);
+    const int angle = decouple_angle_flag_s123(oh, ov, th, tv);
+    const int32_t remodulated =
+        decouple_r_s123(oh, ov, od, th, tv, td, band - 1, angle, gain_limit);
+    const int32_t distorted = band == 1 ? th : band == 2 ? tv : td;
+    const int32_t anomaly = distorted - remodulated;
+    const int32_t weighted = (int32_t)(((rfactor * int64_t(anomaly)) + (1u << 27)) >> 28);
+    const int32_t add_before_filter_shift = (int32_t)(1u << 31);
+    return (int32_t)((((int64_t)143165577 * abs(weighted)) + add_before_filter_shift) >> 32);
+}
+
+struct CsfBands16 {
+    const int16_t *ref_h;
+    const int16_t *ref_v;
+    const int16_t *ref_d;
+    const int16_t *dis_h;
+    const int16_t *dis_v;
+    const int16_t *dis_d;
+};
+
+__device__ __forceinline__ int16_t csf_value_s0(const CsfBands16 &bands, int idx, int band,
+                                                uint32_t rfactor, double gain_limit)
+{
+    const int16_t oh = __ldg(&bands.ref_h[idx]);
+    const int16_t ov = __ldg(&bands.ref_v[idx]);
+    const int16_t od = __ldg(&bands.ref_d[idx]);
+    const int16_t th = __ldg(&bands.dis_h[idx]);
+    const int16_t tv = __ldg(&bands.dis_v[idx]);
+    const int16_t td = __ldg(&bands.dis_d[idx]);
+    const int angle = decouple_angle_flag_s0(oh, ov, th, tv);
+    const int16_t remodulated = decouple_r_s0(oh, ov, od, th, tv, td, band - 1, angle, gain_limit);
+    const int16_t distorted = band == 1 ? th : band == 2 ? tv : td;
+    const int16_t anomaly = distorted - remodulated;
+    const int32_t weighted = rfactor * (uint32_t)anomaly;
+    const int16_t shifted = (weighted + i_shiftsadd[band]) >> i_shifts[band];
+    return ((4369 * abs((int32_t)shifted)) + 2048) >> 12;
+}
+
 /* Scales 1-3 CSF with inline decouple — reads ref/dis DWT2, writes only csf_f */
 template <int rows_per_thread, int cols_per_thread>
 __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, int top, int bottom,
@@ -74,23 +132,13 @@ __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, 
      * via __ldg().  AdmBufferCuda is passed by value, hiding the sub-struct
      * pointers from ptxas alias analysis; the one-time extraction here makes
      * the alias-free invariant visible (ADR-0773, mirrors ADR-0763/ADR-0754). */
-    const int32_t *__restrict__ ref_h = ref->band_h;
-    const int32_t *__restrict__ ref_v = ref->band_v;
-    const int32_t *__restrict__ ref_d = ref->band_d;
-    const int32_t *__restrict__ dis_h = dis->band_h;
-    const int32_t *__restrict__ dis_v = dis->band_v;
-    const int32_t *__restrict__ dis_d = dis->band_d;
+    const I4CsfBands bands = {ref->band_h, ref->band_v, ref->band_d,
+                              dis->band_h, dis->band_v, dis->band_d};
 
     int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
     int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
     const uint32_t i_rfactor = params.i_rfactor[scale * 3 + blockIdx.z];
-    const uint32_t FIX_ONE_BY_30 = 143165577;
-    const uint32_t shift_dst = 28;
-    const uint32_t shift_flt = 32;
-    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
-    const int32_t add_bef_shift_flt = (1u << (shift_flt - 1));
-
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
 
     const int offset = y * stride + x;
@@ -101,42 +149,13 @@ __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, 
         for (int row = 0; row < rows_per_thread; ++row) {
             const int row_off = offset + row * stride;
 
-            for (int col = 0; col < cols_per_thread; ++col) {
-                const int idx = row_off + col;
-                int32_t oh = __ldg(&ref_h[idx]);
-                int32_t ov = __ldg(&ref_v[idx]);
-                int32_t od = __ldg(&ref_d[idx]);
-                int32_t th = __ldg(&dis_h[idx]);
-                int32_t tv = __ldg(&dis_v[idx]);
-                int32_t td = __ldg(&dis_d[idx]);
-
-                int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-                int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, band - 1, angle_flag,
-                                                adm_enhn_gain_limit);
-
-                int32_t t_val;
-                if (band == 1)
-                    t_val = th;
-                else if (band == 2)
-                    t_val = tv;
-                else
-                    t_val = td;
-
-                int32_t a_val = t_val - r_val;
-
-                int32_t dst_val =
-                    (int32_t)(((i_rfactor * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
+            for (int col = 0; col < cols_per_thread; ++col)
                 flt_vec[col] =
-                    (int32_t)((((int64_t)FIX_ONE_BY_30 * abs(dst_val)) + add_bef_shift_flt) >>
-                              shift_flt);
-            }
+                    i4_csf_value(bands, row_off + col, band, i_rfactor, adm_enhn_gain_limit);
             copy_vec_4<cols_per_thread>(flt_vec, flt_ptr + row_off);
         }
     }
 }
-
-__constant__ const uint8_t i_shifts[4] = {0, 15, 15, 17};
-__constant__ const uint16_t i_shiftsadd[4] = {0, 16384, 16384, 65535};
 
 /* Scale-0 CSF with inline decouple — reads ref/dis DWT2, writes only csf_f */
 template <int rows_per_thread, int cols_per_thread>
@@ -151,19 +170,13 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
 
     /* F3: extract __restrict__ read-only band pointers before the hot inner
      * loop (ADR-0773, mirrors ADR-0763/ADR-0754). */
-    const int16_t *__restrict__ ref_h = ref->band_h;
-    const int16_t *__restrict__ ref_v = ref->band_v;
-    const int16_t *__restrict__ ref_d = ref->band_d;
-    const int16_t *__restrict__ dis_h = dis->band_h;
-    const int16_t *__restrict__ dis_v = dis->band_v;
-    const int16_t *__restrict__ dis_d = dis->band_d;
+    const CsfBands16 bands = {ref->band_h, ref->band_v, ref->band_d,
+                              dis->band_h, dis->band_v, dis->band_d};
 
     int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
     int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
     const uint32_t i_rfactor = params.i_rfactor[blockIdx.z];
-    const uint16_t FIX_ONE_BY_30 = 4369; //(1/30)*2^17
-
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
 
     if (y < bottom && x < right) {
@@ -174,33 +187,9 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
         for (int row = 0; row < rows_per_thread; ++row) {
             const int row_off = offset + row * stride;
 
-            for (int col = 0; col < cols_per_thread; ++col) {
-                const int idx = row_off + col;
-                int16_t oh = __ldg(&ref_h[idx]);
-                int16_t ov = __ldg(&ref_v[idx]);
-                int16_t od = __ldg(&ref_d[idx]);
-                int16_t th = __ldg(&dis_h[idx]);
-                int16_t tv = __ldg(&dis_v[idx]);
-                int16_t td = __ldg(&dis_d[idx]);
-
-                int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-                int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, band - 1, angle_flag,
-                                              adm_enhn_gain_limit);
-
-                int16_t t_val;
-                if (band == 1)
-                    t_val = th;
-                else if (band == 2)
-                    t_val = tv;
-                else
-                    t_val = td;
-
-                int16_t a_val = t_val - r_val;
-
-                int32_t dst_val = i_rfactor * (uint32_t)a_val;
-                int16_t i16_dst_val = (dst_val + i_shiftsadd[band]) >> i_shifts[band];
-                flt_vec[col] = ((FIX_ONE_BY_30 * abs((int32_t)i16_dst_val)) + 2048) >> 12;
-            }
+            for (int col = 0; col < cols_per_thread; ++col)
+                flt_vec[col] =
+                    csf_value_s0(bands, row_off + col, band, i_rfactor, adm_enhn_gain_limit);
             copy_vec_4<cols_per_thread>(flt_vec, flt_ptr + row_off);
         }
     }

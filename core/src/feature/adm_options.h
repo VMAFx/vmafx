@@ -16,8 +16,6 @@
  *
  */
 
-#pragma once
-
 #ifndef ADM_OPTIONS_H_
 #define ADM_OPTIONS_H_
 

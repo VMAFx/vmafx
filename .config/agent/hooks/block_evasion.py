@@ -8,6 +8,7 @@ as argv. Exit code 2 blocks the call and returns the reason to the agent.
 A git hook cannot observe --no-verify because git skips hooks entirely, so this script
 is deliberately not part of lefthook.yml.
 """
+
 import json
 import os
 import re

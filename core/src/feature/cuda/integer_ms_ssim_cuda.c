@@ -52,6 +52,8 @@
  *  only.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -73,9 +75,9 @@
 #include "picture_copy.h"
 #include "cuda_helper.cuh"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -205,13 +207,8 @@ static double ms_ssim_convert_to_db(double score, double max_db)
     return db < max_db ? db : max_db;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int configure_ms_ssim_state(MsSsimStateCuda *s, unsigned bpc, unsigned w, unsigned h)
 {
-    (void)pix_fmt;
-    MsSsimStateCuda *s = fex->priv;
-
-    /* ADR-0153 minimum resolution check. */
     const unsigned min_dim = (unsigned)MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1);
     if (w < min_dim || h < min_dim) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -220,31 +217,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                  w, h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN, min_dim, min_dim);
         return -EINVAL;
     }
-
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-
-    /* ADR-1221 — `clip_db` is a CEILING on the dB output, not a clamp on the
-     * linear score. float_ms_ssim.c derives it from the frame geometry:
-     *
-     *     mse    = 0.5 / (w * h);
-     *     max_db = ceil(10. * log10(peak * peak / mse));
-     *
-     * and `convert_to_db()` returns `MIN(-10*log10(1 - score), max_db)`, with
-     * `score >= 1.0` short-circuiting to `max_db`. The twin used to clamp the
-     * linear score into [0, 1] and then convert with no ceiling, which returns
-     * +Inf for an identical reference/distorted pair. */
-    {
-        const unsigned peak = (1u << bpc) - 1u;
-        if (s->clip_db) {
-            const double mse = 0.5 / (w * h);
-            s->max_db = ceil(10. * log10(peak * peak / mse));
-        } else {
-            s->max_db = INFINITY;
-        }
+    const unsigned peak = (1u << bpc) - 1u;
+    if (s->clip_db) {
+        const double mse = 0.5 / (w * h);
+        s->max_db = ceil(10. * log10(peak * peak / mse));
+    } else {
+        s->max_db = INFINITY;
     }
-
     s->scale_w[0] = w;
     s->scale_h[0] = h;
     for (int i = 1; i < MS_SSIM_SCALES; i++) {
@@ -256,27 +238,69 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->scale_h_horiz[i] = s->scale_h[i];
         s->scale_w_final[i] = s->scale_w[i] - (MS_SSIM_K - 1);
         s->scale_h_final[i] = s->scale_h[i] - (MS_SSIM_K - 1);
-        s->scale_grid_x[i] =
-            (s->scale_w_final[i] + (unsigned)MS_SSIM_BLOCK_X - 1) / (unsigned)MS_SSIM_BLOCK_X;
-        s->scale_grid_y[i] =
-            (s->scale_h_final[i] + (unsigned)MS_SSIM_BLOCK_Y - 1) / (unsigned)MS_SSIM_BLOCK_Y;
+        s->scale_grid_x[i] = (s->scale_w_final[i] + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
+        s->scale_grid_y[i] = (s->scale_h_final[i] + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
         s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
     }
-
-    /* ADR-0990: c1/c2/c3 computed and stored as double. */
-    const double L = 255.0;
-    const double K1 = 0.01;
-    const double K2 = 0.03;
-    s->c1 = (K1 * L) * (K1 * L);
-    s->c2 = (K2 * L) * (K2 * L);
+    const double luma_range = 255.0;
+    s->c1 = (0.01 * luma_range) * (0.01 * luma_range);
+    s->c2 = (0.03 * luma_range) * (0.03 * luma_range);
     s->c3 = s->c2 * 0.5;
+    return 0;
+}
 
-    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
+static int allocate_ms_ssim_device_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
+{
+    int ret = 0;
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        const size_t bytes = (size_t)s->scale_w[i] * s->scale_h[i] * sizeof(float);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pyramid_ref[i], bytes);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pyramid_cmp[i], bytes);
+    }
+    const size_t horiz_bytes = (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes);
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        const size_t bytes = (size_t)s->scale_block_count[i] * sizeof(double);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->l_partials[i], bytes);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->c_partials[i], bytes);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->s_partials[i], bytes);
+    }
+    return ret;
+}
+
+static int allocate_ms_ssim_host_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
+{
+    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
+    int ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref, input_bytes);
+    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_cmp, input_bytes);
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        const size_t bytes = (size_t)s->scale_block_count[i] * sizeof(double);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_l_partials[i], bytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_c_partials[i], bytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s_partials[i], bytes);
+    }
+    return ret;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    MsSsimStateCuda *s = fex->priv;
+
+    int err = configure_ms_ssim_state(s, bpc, w, h);
+    if (err)
+        return err;
+    err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
         return err;
 
     CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -288,53 +312,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_vert_lcs, s->module, "ms_ssim_vert_lcs"),
                     fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
-    /* Allocate device buffers. */
-    int ret = 0;
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t plane_bytes = (size_t)s->scale_w[i] * s->scale_h[i] * sizeof(float);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pyramid_ref[i], plane_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pyramid_cmp[i], plane_bytes);
-    }
-    const size_t horiz_bytes_max =
-        (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes_max);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes_max);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes_max);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes_max);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes_max);
-
-    /* Per-scale partials buffers (T-GPU-OPT-2 / ADR-0271). Each scale
-     * sized to its own block_count so the device DtoH copies are
-     * exactly one double per work block; no aliasing across scales.
-     * ADR-0990: sizeof(double) — kernel writes double partials. */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->l_partials[i], scale_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->c_partials[i], scale_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->s_partials[i], scale_bytes);
-    }
-
-    /* Pinned host buffers — input planes (scale 0) + per-scale
-     * partials triples. Pinned host memory is the precondition for
-     * cuMemcpyDtoHAsync to actually run async with the device side
-     * (pageable host buffers force the driver to stage internally and
-     * defeat the drain-batch coalesce). */
-    const size_t input_bytes = (size_t)w * h * sizeof(float);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref, input_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_cmp, input_bytes);
-    /* ADR-0990: sizeof(double) — host partials mirror device doubles. */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
-        ret |=
-            vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_l_partials[i], scale_bytes);
-        ret |=
-            vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_c_partials[i], scale_bytes);
-        ret |=
-            vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s_partials[i], scale_bytes);
-    }
-
+    int ret = allocate_ms_ssim_device_buffers(fex, s);
+    ret |= allocate_ms_ssim_host_buffers(fex, s);
     if (ret) {
         (void)close_fex_cuda(fex);
         return -ENOMEM;
@@ -351,87 +332,75 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)close_fex_cuda(fex);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int download_and_normalize_picture(VmafFeatureExtractor *fex, const MsSsimStateCuda *s,
+                                          const VmafPicture *pic, CUstream stream, void *tmp_uint,
+                                          float *dst)
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    MsSsimStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
+    const unsigned bpc_bytes = s->bpc <= 8 ? 1u : 2u;
+    CUDA_MEMCPY2D copy = {
+        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+        .srcDevice = (CUdeviceptr)pic->data[0],
+        .srcPitch = (size_t)pic->stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_HOST,
+        .dstHost = tmp_uint,
+        .dstPitch = (size_t)s->width * bpc_bytes,
+        .WidthInBytes = (size_t)s->width * bpc_bytes,
+        .Height = s->height,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, stream));
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
+    VmafPicture host_pic = {
+        .pix_fmt = pic->pix_fmt,
+        .bpc = pic->bpc,
+        .w = {pic->w[0], 0, 0},
+        .h = {pic->h[0], 0, 0},
+        .stride = {(ptrdiff_t)((size_t)s->width * bpc_bytes), 0, 0},
+        .data = {tmp_uint, VMAF_NULLPTR, VMAF_NULLPTR},
+    };
+    picture_copy(dst, (ptrdiff_t)((size_t)s->width * sizeof(float)), &host_pic, 0, pic->bpc, 0);
+    return 0;
+}
 
-    s->index = index;
+static int upload_ms_ssim_level_zero(VmafFeatureExtractor *fex, const MsSsimStateCuda *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    const size_t bytes = (size_t)s->width * s->height * sizeof(float);
+    CHECK_CUDA_RETURN(
+        cu_f, cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_ref[0]->data, s->h_ref, bytes, s->lc.str));
+    CHECK_CUDA_RETURN(
+        cu_f, cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_cmp[0]->data, s->h_cmp, bytes, s->lc.str));
+    return 0;
+}
 
-    /* picture_copy host-side (matches CPU float_ms_ssim's flow):
-     * normalise uint sample → float in [0, 255]. The pic argument
-     * here is the device-side VmafPicture from the CUDA picture
-     * pipeline, with its data[0] pointing at pitched device
-     * memory (cuMemAllocPitch — stride[0] ≥ width*bpc). Use
-     * cuMemcpy2DAsync to honour the device pitch on D2H and
-     * produce a contiguous host buffer that picture_copy can
-     * walk with stride = width*bpc. */
-    const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
-    const size_t input_bytes_uint = (size_t)s->width * s->height * bpc_bytes;
-    void *tmp_uint = NULL;
-    int ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &tmp_uint, input_bytes_uint);
+static int prepare_ms_ssim_level_zero(VmafFeatureExtractor *fex, MsSsimStateCuda *s,
+                                      const VmafPicture *ref_pic, const VmafPicture *dist_pic)
+{
+    const unsigned bpc_bytes = s->bpc <= 8 ? 1u : 2u;
+    const size_t bytes = (size_t)s->width * s->height * bpc_bytes;
+    void *tmp_uint = VMAF_NULLPTR;
+    int ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &tmp_uint, bytes);
     if (ret)
         return -ENOMEM;
-    /* tmp_uint is a pinned host staging buffer freed below on the success
-     * path; the CHECK_CUDA_GOTO sites between here and that free route
-     * through free_tmp so an early CUDA error does not leak it. */
-    int _cuda_err = 0;
     CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
-    CUDA_MEMCPY2D m_ref = {0};
-    m_ref.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    m_ref.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    m_ref.srcPitch = (size_t)ref_pic->stride[0];
-    m_ref.dstMemoryType = CU_MEMORYTYPE_HOST;
-    m_ref.dstHost = tmp_uint;
-    m_ref.dstPitch = (size_t)s->width * bpc_bytes;
-    m_ref.WidthInBytes = (size_t)s->width * bpc_bytes;
-    m_ref.Height = s->height;
-    CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&m_ref, stream), free_tmp);
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(stream), free_tmp);
-    /* Build a fake VmafPicture wrapper for picture_copy. */
-    VmafPicture host_pic_ref = {
-        .pix_fmt = ref_pic->pix_fmt,
-        .bpc = ref_pic->bpc,
-        .w = {ref_pic->w[0], 0, 0},
-        .h = {ref_pic->h[0], 0, 0},
-        .stride = {(ptrdiff_t)((size_t)s->width * bpc_bytes), 0, 0},
-        .data = {tmp_uint, NULL, NULL},
-    };
-    picture_copy(s->h_ref, (ptrdiff_t)((size_t)s->width * sizeof(float)), &host_pic_ref, 0,
-                 ref_pic->bpc, 0);
-
-    CUDA_MEMCPY2D m_cmp = m_ref;
-    m_cmp.srcDevice = (CUdeviceptr)dist_pic->data[0];
-    m_cmp.srcPitch = (size_t)dist_pic->stride[0];
-    CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&m_cmp, stream), free_tmp);
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(stream), free_tmp);
-    VmafPicture host_pic_cmp = host_pic_ref;
-    host_pic_cmp.data[0] = tmp_uint;
-    picture_copy(s->h_cmp, (ptrdiff_t)((size_t)s->width * sizeof(float)), &host_pic_cmp, 0,
-                 dist_pic->bpc, 0);
-
-    /* Upload normalised float planes to pyramid level 0. */
-    const size_t input_bytes_float = (size_t)s->width * s->height * sizeof(float);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_ref[0]->data, s->h_ref,
-                                      input_bytes_float, s->lc.str),
-                    free_tmp);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_cmp[0]->data, s->h_cmp,
-                                      input_bytes_float, s->lc.str),
-                    free_tmp);
+    ret = download_and_normalize_picture(fex, s, ref_pic, stream, tmp_uint, s->h_ref);
+    if (!ret)
+        ret = download_and_normalize_picture(fex, s, dist_pic, stream, tmp_uint, s->h_cmp);
+    if (!ret)
+        ret = upload_ms_ssim_level_zero(fex, s);
     (void)vmaf_cuda_buffer_host_free(fex->cu_state, tmp_uint);
+    return ret;
+}
 
-    /* Build pyramid scales 1..4 via decimate kernel × ref + cmp. */
+static int launch_ms_ssim_pyramid(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
     for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
         const unsigned w_in = s->scale_w[i];
         const unsigned h_in = s->scale_h[i];
@@ -440,83 +409,144 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         const unsigned grid_x = (w_out + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
         const unsigned grid_y = (h_out + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
         for (int side = 0; side < 2; side++) {
-            VmafCudaBuffer *src = (side == 0) ? s->pyramid_ref[i] : s->pyramid_cmp[i];
-            VmafCudaBuffer *dst = (side == 0) ? s->pyramid_ref[i + 1] : s->pyramid_cmp[i + 1];
+            VmafCudaBuffer *src = side == 0 ? s->pyramid_ref[i] : s->pyramid_cmp[i];
+            VmafCudaBuffer *dst = side == 0 ? s->pyramid_ref[i + 1] : s->pyramid_cmp[i + 1];
             void *params[] = {
                 (void *)src,   (void *)dst,    (void *)&w_in,
                 (void *)&h_in, (void *)&w_out, (void *)&h_out,
             };
-            CHECK_CUDA_RETURN(cu_f,
-                              cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1, MS_SSIM_BLOCK_X,
-                                             MS_SSIM_BLOCK_Y, 1, 0, s->lc.str, params, NULL));
+            CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1,
+                                                   MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1, 0,
+                                                   s->lc.str, params, VMAF_NULLPTR));
         }
     }
+    return 0;
+}
 
-    /* Per-scale SSIM compute + readback (T-GPU-OPT-2 / ADR-0271).
-     * All 5 scales' horiz + vert_lcs launches and DtoH copies are
-     * enqueued back-to-back on s->lc.str. CUDA serialises kernels +
-     * copies on the same stream in submission order, so the shared
-     * SSIM intermediates (h_ref_mu / h_cmp_mu / ...) are safely
-     * read-after-write across scales without explicit sync; the
-     * partials buffers are now per-scale (see init) so the DtoH
-     * copies don't alias either. */
+static int launch_ms_ssim_scale(VmafFeatureExtractor *fex, MsSsimStateCuda *s, int scale)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    const unsigned width = s->scale_w[scale];
+    const unsigned w_horiz = s->scale_w_horiz[scale];
+    const unsigned h_horiz = s->scale_h_horiz[scale];
+    const unsigned w_final = s->scale_w_final[scale];
+    const unsigned h_final = s->scale_h_final[scale];
+    const unsigned grid_x = (w_horiz + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
+    const unsigned grid_y = (h_horiz + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
+    void *horiz_params[] = {
+        (void *)s->pyramid_ref[scale],
+        (void *)s->pyramid_cmp[scale],
+        (void *)s->h_ref_mu,
+        (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq,
+        (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp,
+        (void *)&width,
+        (void *)&w_horiz,
+        (void *)&h_horiz,
+    };
+    CHECK_CUDA_RETURN(cu_f,
+                      cuLaunchKernel(s->func_horiz, grid_x, grid_y, 1, MS_SSIM_BLOCK_X,
+                                     MS_SSIM_BLOCK_Y, 1, 0, s->lc.str, horiz_params, VMAF_NULLPTR));
+    void *vert_params[] = {
+        (void *)s->h_ref_mu,
+        (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq,
+        (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp,
+        (void *)s->l_partials[scale],
+        (void *)s->c_partials[scale],
+        (void *)s->s_partials[scale],
+        (void *)&w_horiz,
+        (void *)&w_final,
+        (void *)&h_final,
+        (void *)&s->c1,
+        (void *)&s->c2,
+        (void *)&s->c3,
+    };
+    CHECK_CUDA_RETURN(cu_f,
+                      cuLaunchKernel(s->func_vert_lcs, s->scale_grid_x[scale],
+                                     s->scale_grid_y[scale], 1, MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1,
+                                     0, s->lc.str, vert_params, VMAF_NULLPTR));
+    const size_t bytes = (size_t)s->scale_block_count[scale] * sizeof(double);
+    CHECK_CUDA_RETURN(cu_f,
+                      cuMemcpyDtoHAsync(s->h_l_partials[scale],
+                                        (CUdeviceptr)s->l_partials[scale]->data, bytes, s->lc.str));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuMemcpyDtoHAsync(s->h_c_partials[scale],
+                                        (CUdeviceptr)s->c_partials[scale]->data, bytes, s->lc.str));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuMemcpyDtoHAsync(s->h_s_partials[scale],
+                                        (CUdeviceptr)s->s_partials[scale]->data, bytes, s->lc.str));
+    return 0;
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+    MsSsimStateCuda *s = fex->priv;
+    s->index = index;
+    int ret = prepare_ms_ssim_level_zero(fex, s, ref_pic, dist_pic);
+    if (ret)
+        return ret;
+    ret = launch_ms_ssim_pyramid(fex, s);
+    if (ret)
+        return ret;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const unsigned width = s->scale_w[i];
-        const unsigned w_horiz = s->scale_w_horiz[i];
-        const unsigned h_horiz = s->scale_h_horiz[i];
-        const unsigned w_final = s->scale_w_final[i];
-        const unsigned h_final = s->scale_h_final[i];
-        const unsigned horiz_grid_x = (w_horiz + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
-        const unsigned horiz_grid_y = (h_horiz + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
-
-        void *horiz_params[] = {
-            (void *)s->pyramid_ref[i], (void *)s->pyramid_cmp[i],
-            (void *)s->h_ref_mu,       (void *)s->h_cmp_mu,
-            (void *)s->h_ref_sq,       (void *)s->h_cmp_sq,
-            (void *)s->h_refcmp,       (void *)&width,
-            (void *)&w_horiz,          (void *)&h_horiz,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz, horiz_grid_x, horiz_grid_y, 1,
-                                               MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1, 0, s->lc.str,
-                                               horiz_params, NULL));
-
-        void *vert_params[] = {
-            (void *)s->h_ref_mu,      (void *)s->h_cmp_mu,      (void *)s->h_ref_sq,
-            (void *)s->h_cmp_sq,      (void *)s->h_refcmp,      (void *)s->l_partials[i],
-            (void *)s->c_partials[i], (void *)s->s_partials[i], (void *)&w_horiz,
-            (void *)&w_final,         (void *)&h_final,         (void *)&s->c1,
-            (void *)&s->c2,           (void *)&s->c3,
-        };
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(s->func_vert_lcs, s->scale_grid_x[i], s->scale_grid_y[i],
-                                         1, MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1, 0, s->lc.str,
-                                         vert_params, NULL));
-
-        /* ADR-0990: sizeof(double) matches the double partials written by vert_lcs. */
-        const size_t partials_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->h_l_partials[i], (CUdeviceptr)s->l_partials[i]->data,
-                                            partials_bytes, s->lc.str));
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->h_c_partials[i], (CUdeviceptr)s->c_partials[i]->data,
-                                            partials_bytes, s->lc.str));
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->h_s_partials[i], (CUdeviceptr)s->s_partials[i]->data,
-                                            partials_bytes, s->lc.str));
+        ret = launch_ms_ssim_scale(fex, s, i);
+        if (ret)
+            return ret;
     }
-
-    /* Fence the final readback and opt the lifecycle into the
-     * engine's drain batch. drain_batch_register is best-effort:
-     * when no batch is open or the cap is hit, lc.drained stays
-     * false and collect() falls back to the legacy per-stream
-     * cuStreamSynchronize via vmaf_cuda_kernel_collect_wait. */
+    CudaFunctions *cu_f = fex->cu_state->f;
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.finished, s->lc.str));
     (void)vmaf_cuda_drain_batch_register(&s->lc);
     return 0;
+}
 
-free_tmp:
-    (void)vmaf_cuda_buffer_host_free(fex->cu_state, tmp_uint);
-    return _cuda_err;
+static void compute_ms_ssim_means(const MsSsimStateCuda *s, double *l_means, double *c_means,
+                                  double *s_means)
+{
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        double total_l = 0.0;
+        double total_c = 0.0;
+        double total_s = 0.0;
+        for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
+            total_l += s->h_l_partials[i][j];
+            total_c += s->h_c_partials[i][j];
+            total_s += s->h_s_partials[i][j];
+        }
+        const double n_pixels = (double)s->scale_w_final[i] * (double)s->scale_h_final[i];
+        l_means[i] = total_l / n_pixels;
+        c_means[i] = total_c / n_pixels;
+        s_means[i] = total_s / n_pixels;
+    }
+}
+
+static int append_ms_ssim_lcs(VmafFeatureCollector *feature_collector, const double *l_means,
+                              const double *c_means, const double *s_means, unsigned index)
+{
+    static const char *const l_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
+        "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
+    };
+    static const char *const c_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
+        "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
+    };
+    static const char *const s_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
+        "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
+    };
+    int err = 0;
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
+        err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
+        err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
+    }
+    return err;
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -536,23 +566,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     double l_means[MS_SSIM_SCALES] = {0};
     double c_means[MS_SSIM_SCALES] = {0};
     double s_means[MS_SSIM_SCALES] = {0};
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const unsigned w_final = s->scale_w_final[i];
-        const unsigned h_final = s->scale_h_final[i];
-        double total_l = 0.0;
-        double total_c = 0.0;
-        double total_s = 0.0;
-        /* ADR-0990: h_*_partials are now double arrays; no cast needed. */
-        for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
-            total_l += s->h_l_partials[i][j];
-            total_c += s->h_c_partials[i][j];
-            total_s += s->h_s_partials[i][j];
-        }
-        const double n_pixels = (double)w_final * (double)h_final;
-        l_means[i] = total_l / n_pixels;
-        c_means[i] = total_c / n_pixels;
-        s_means[i] = total_s / n_pixels;
-    }
+    compute_ms_ssim_means(s, l_means, c_means, s_means);
 
     double msssim = 1.0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
@@ -569,114 +583,66 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
      * Mirrors CPU float_ms_ssim.c:extract() which converts before appending. */
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_ms_ssim", score, index);
-    if (s->enable_lcs) {
-        static const char *const l_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-            "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-        };
-        static const char *const c_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-            "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-        };
-        static const char *const s_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-            "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-        };
-        for (int i = 0; i < MS_SSIM_SCALES; i++) {
-            err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
-        }
-    }
+    if (s->enable_lcs)
+        err |= append_ms_ssim_lcs(feature_collector, l_means, c_means, s_means, index);
     return err;
+}
+
+static int free_ms_ssim_device_buffer(VmafFeatureExtractor *fex, VmafCudaBuffer **buffer)
+{
+    if (!*buffer)
+        return 0;
+    const int ret = vmaf_cuda_buffer_free(fex->cu_state, *buffer);
+    free(*buffer);
+    *buffer = VMAF_NULLPTR;
+    return ret;
+}
+
+static int free_ms_ssim_host_buffer(VmafFeatureExtractor *fex, void **buffer)
+{
+    if (!*buffer)
+        return 0;
+    const int ret = vmaf_cuda_buffer_host_free(fex->cu_state, *buffer);
+    *buffer = VMAF_NULLPTR;
+    return ret;
+}
+
+static int free_ms_ssim_scale_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda *s, int scale)
+{
+    int ret = free_ms_ssim_device_buffer(fex, &s->pyramid_ref[scale]);
+    ret |= free_ms_ssim_device_buffer(fex, &s->pyramid_cmp[scale]);
+    ret |= free_ms_ssim_device_buffer(fex, &s->l_partials[scale]);
+    ret |= free_ms_ssim_device_buffer(fex, &s->c_partials[scale]);
+    ret |= free_ms_ssim_device_buffer(fex, &s->s_partials[scale]);
+    ret |= free_ms_ssim_host_buffer(fex, (void **)&s->h_l_partials[scale]);
+    ret |= free_ms_ssim_host_buffer(fex, (void **)&s->h_c_partials[scale]);
+    ret |= free_ms_ssim_host_buffer(fex, (void **)&s->h_s_partials[scale]);
+    return ret;
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     MsSsimStateCuda *s = fex->priv;
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        if (s->pyramid_ref[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->pyramid_ref[i]);
-            free(s->pyramid_ref[i]);
-        }
-        if (s->pyramid_cmp[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->pyramid_cmp[i]);
-            free(s->pyramid_cmp[i]);
-        }
-    }
-    if (s->h_ref_mu) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_mu);
-        free(s->h_ref_mu);
-    }
-    if (s->h_cmp_mu) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_mu);
-        free(s->h_cmp_mu);
-    }
-    if (s->h_ref_sq) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_sq);
-        free(s->h_ref_sq);
-    }
-    if (s->h_cmp_sq) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_sq);
-        free(s->h_cmp_sq);
-    }
-    if (s->h_refcmp) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
-        free(s->h_refcmp);
-    }
-    /* Pinned host input buffers (allocated via vmaf_cuda_buffer_host_alloc
-     * in init). Missing these leaks page-locked host memory per
-     * vmaf_close(). */
-    if (s->h_ref) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_ref);
-        s->h_ref = NULL;
-    }
-    if (s->h_cmp) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_cmp);
-        s->h_cmp = NULL;
-    }
-    /* Per-scale partials triples (T-GPU-OPT-2 / ADR-0271). */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        if (s->l_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->l_partials[i]);
-            free(s->l_partials[i]);
-            s->l_partials[i] = NULL;
-        }
-        if (s->c_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->c_partials[i]);
-            free(s->c_partials[i]);
-            s->c_partials[i] = NULL;
-        }
-        if (s->s_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->s_partials[i]);
-            free(s->s_partials[i]);
-            s->s_partials[i] = NULL;
-        }
-        /* Pinned host partials triples mirror the device buffers above. */
-        if (s->h_l_partials[i]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-        }
-        if (s->h_c_partials[i]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_c_partials[i]);
-            s->h_c_partials[i] = NULL;
-        }
-        if (s->h_s_partials[i]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_s_partials[i]);
-            s->h_s_partials[i] = NULL;
-        }
-    }
+    for (int i = 0; i < MS_SSIM_SCALES; i++)
+        ret |= free_ms_ssim_scale_buffers(fex, s, i);
+    ret |= free_ms_ssim_device_buffer(fex, &s->h_ref_mu);
+    ret |= free_ms_ssim_device_buffer(fex, &s->h_cmp_mu);
+    ret |= free_ms_ssim_device_buffer(fex, &s->h_ref_sq);
+    ret |= free_ms_ssim_device_buffer(fex, &s->h_cmp_sq);
+    ret |= free_ms_ssim_device_buffer(fex, &s->h_refcmp);
+    ret |= free_ms_ssim_host_buffer(fex, (void **)&s->h_ref);
+    ret |= free_ms_ssim_host_buffer(fex, (void **)&s->h_cmp);
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
     const CudaFunctions *cu_f = fex->cu_state->f;
     if (cu_f && s->module) {
         (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return ret;
 }
 
-static const char *provided_features[] = {"float_ms_ssim", NULL};
+static const char *provided_features[] = {"float_ms_ssim", VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda = {
     .name = "float_ms_ssim_cuda",
@@ -696,5 +662,3 @@ VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

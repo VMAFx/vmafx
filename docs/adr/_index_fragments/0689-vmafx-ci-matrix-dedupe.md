@@ -1,1 +1,5 @@
-| [ADR-0689](0689-vmafx-ci-matrix-dedupe.md) | VMAFX CI matrix deduplication — remove five redundant build rows (bare CPU legs, dynamic CUDA, MoltenVK to nightly). Undone the same day by the layout rename merge `384d97d03`; the rows still run. | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | ci, build, vmafx, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0689](0689-vmafx-ci-matrix-dedupe.md) | VMAFX CI Matrix Deduplication | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | `ci`, `build`, `vmafx` |

@@ -69,16 +69,15 @@
  */
 #define MEANS_TX (256)
 
-extern "C" {
-
-__global__ void speed_means_kernel(const float *__restrict__ plane, /* downscaled plane */
-                                   float *__restrict__ means,       /* [25 × num_blocks] */
-                                   uint32_t op_width,               /* truncated_width    */
-                                   uint32_t stride_px,              /* float_stride/4     */
-                                   uint32_t num_blocks_h,           /* tiles in X         */
-                                   uint32_t num_blocks,             /* total tiles         */
-                                   uint32_t submatrix_w,            /* submatrix_width     */
-                                   uint32_t submatrix_h)            /* submatrix_height    */
+extern "C" __global__ void
+speed_means_kernel(const float *__restrict__ plane, /* downscaled plane */
+                   float *__restrict__ means,       /* [25 × num_blocks] */
+                   uint32_t op_width,               /* truncated_width    */
+                   uint32_t stride_px,              /* float_stride/4     */
+                   uint32_t num_blocks_h,           /* tiles in X         */
+                   uint32_t num_blocks,             /* total tiles         */
+                   uint32_t submatrix_w,            /* submatrix_width     */
+                   uint32_t submatrix_h)            /* submatrix_height    */
 {
     /* One thread per element position (er, ec) in the 5x5 block template.
      * CPU parity (compute_mean, called from compute_covariance_matrix): each of
@@ -121,11 +120,12 @@ __global__ void speed_means_kernel(const float *__restrict__ plane, /* downscale
  */
 #define COV_BLOCK (256)
 
-__global__ void speed_cov_kernel(const float *__restrict__ plane,
-                                 const float *__restrict__ means, /* [25 × num_blocks] */
-                                 float *__restrict__ cov_mat,     /* [25 × 25], row-major */
-                                 uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
-                                 uint32_t submatrix_w, uint32_t submatrix_h)
+extern "C" __global__ void speed_cov_kernel(const float *__restrict__ plane,
+                                            const float *__restrict__ means, /* [25 × num_blocks] */
+                                            float *__restrict__ cov_mat, /* [25 × 25], row-major */
+                                            uint32_t stride_px, uint32_t num_blocks_h,
+                                            uint32_t num_blocks, uint32_t submatrix_w,
+                                            uint32_t submatrix_h)
 {
     /* Each block handles one (x_index, y_index) pair. */
     const uint32_t x_index = blockIdx.x; /* row    in [0, 25) */
@@ -196,9 +196,10 @@ __global__ void speed_cov_kernel(const float *__restrict__ plane,
  */
 #define INDTERM_BLOCK (256)
 
-__global__ void speed_indterm_kernel(const float *__restrict__ plane,
-                                     float *__restrict__ indterm, /* [25 × num_blocks] */
-                                     uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks)
+extern "C" __global__ void speed_indterm_kernel(const float *__restrict__ plane,
+                                                float *__restrict__ indterm, /* [25 × num_blocks] */
+                                                uint32_t stride_px, uint32_t num_blocks_h,
+                                                uint32_t num_blocks)
 {
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     const uint32_t total = SP_ELEMENTS * num_blocks;
@@ -236,9 +237,9 @@ __global__ void speed_indterm_kernel(const float *__restrict__ plane,
  */
 #define SOLVE_WARP (32)
 
-__global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] upper tri */
-                                   float *__restrict__ rhs,     /* [25×num_blocks], in/out */
-                                   uint32_t num_blocks)
+extern "C" __global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] upper tri */
+                                              float *__restrict__ rhs, /* [25×num_blocks], in/out */
+                                              uint32_t num_blocks)
 {
     /* Each warp handles one column. */
     const uint32_t warp_id = (blockIdx.x * blockDim.x + threadIdx.x) / SOLVE_WARP;
@@ -297,17 +298,18 @@ __global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] uppe
 #define SPEED_PI_F (3.14159265358979323846f)
 #define SPEED_E_F (2.71828182845904523536f)
 
-__global__ void speed_score_kernel(const float *__restrict__ ref_eigenvalues, /* [25] */
-                                   const float *__restrict__ dis_eigenvalues, /* [25] */
-                                   const float *__restrict__ ref_sol,     /* [25 × num_blocks] */
-                                   const float *__restrict__ dis_sol,     /* [25 × num_blocks] */
-                                   const float *__restrict__ ref_indterm, /* [25 × num_blocks] */
-                                   const float *__restrict__ dis_indterm, /* [25 × num_blocks] */
-                                   float *__restrict__ ref_entropies,     /* [num_blocks] */
-                                   float *__restrict__ ref_variances,     /* [num_blocks] */
-                                   float *__restrict__ dis_entropies,     /* [num_blocks] */
-                                   float *__restrict__ dis_variances,     /* [num_blocks] */
-                                   uint32_t num_blocks, float sigma_nn)
+extern "C" __global__ void
+speed_score_kernel(const float *__restrict__ ref_eigenvalues, /* [25] */
+                   const float *__restrict__ dis_eigenvalues, /* [25] */
+                   const float *__restrict__ ref_sol,         /* [25 × num_blocks] */
+                   const float *__restrict__ dis_sol,         /* [25 × num_blocks] */
+                   const float *__restrict__ ref_indterm,     /* [25 × num_blocks] */
+                   const float *__restrict__ dis_indterm,     /* [25 × num_blocks] */
+                   float *__restrict__ ref_entropies,         /* [num_blocks] */
+                   float *__restrict__ ref_variances,         /* [num_blocks] */
+                   float *__restrict__ dis_entropies,         /* [num_blocks] */
+                   float *__restrict__ dis_variances,         /* [num_blocks] */
+                   uint32_t num_blocks, float sigma_nn)
 {
     const uint32_t tile = blockIdx.x * blockDim.x + threadIdx.x;
     if (tile >= num_blocks)
@@ -346,5 +348,3 @@ __global__ void speed_score_kernel(const float *__restrict__ ref_eigenvalues, /*
     ref_entropies[tile] = ref_ent;
     dis_entropies[tile] = dis_ent;
 }
-
-} /* extern "C" */

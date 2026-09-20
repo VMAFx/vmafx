@@ -10,6 +10,7 @@ P0-2  train_test_model.py:354  — silent zero substitution for missing label st
 P0-3  local_explainer.py:121  — silent first-model pick from ensemble list
 """
 
+import importlib
 import inspect
 import unittest
 from unittest.mock import MagicMock
@@ -24,6 +25,18 @@ from vmaf.tools.exceptions import (
 
 __copyright__ = "Copyright 2026 Lusoris"
 __license__ = "EUPL-1.2"
+
+
+def _local_explainer_class():
+    return importlib.import_module("vmaf.core.local_explainer").LocalExplainer
+
+
+def _regressor_mixin_class():
+    return importlib.import_module("vmaf.core.train_test_model").RegressorMixin
+
+
+def _routine_module():
+    return importlib.import_module("vmaf.routine")
 
 
 # ---------------------------------------------------------------------------
@@ -43,9 +56,7 @@ class TestRoutineCalibrationError(unittest.TestCase):
 
     def test_allow_uncalibrated_parameter_exists_with_false_default(self):
         """run_test_on_dataset must expose allow_uncalibrated=False."""
-        from vmaf.routine import run_test_on_dataset
-
-        sig = inspect.signature(run_test_on_dataset)
+        sig = inspect.signature(_routine_module().run_test_on_dataset)
         self.assertIn(
             "allow_uncalibrated",
             sig.parameters,
@@ -102,8 +113,7 @@ class TestRoutineCalibrationError(unittest.TestCase):
 
     def test_calibration_error_imported_in_routine(self):
         """routine.py must import CalibrationError from tools.exceptions."""
-        import vmaf.routine as routine_mod
-
+        routine_mod = _routine_module()
         self.assertTrue(
             hasattr(routine_mod, "CalibrationError"),
             "CalibrationError must be importable from vmaf.routine",
@@ -141,8 +151,7 @@ class TestPlotScatterMissingStddev(unittest.TestCase):
 
     def test_raises_when_stddev_absent(self):
         """plot_scatter must raise MissingLabelStddevError if stddev absent."""
-        from vmaf.core.train_test_model import RegressorMixin
-
+        RegressorMixin = _regressor_mixin_class()
         ax = self._make_minimal_ax()
         stats = self._make_stats_without_stddev()
 
@@ -151,8 +160,7 @@ class TestPlotScatterMissingStddev(unittest.TestCase):
 
     def test_assume_unit_stddev_does_not_raise(self):
         """plot_scatter with assume_unit_stddev=True must not raise."""
-        from vmaf.core.train_test_model import RegressorMixin
-
+        RegressorMixin = _regressor_mixin_class()
         ax = self._make_minimal_ax()
         stats = self._make_stats_without_stddev()
 
@@ -165,8 +173,7 @@ class TestPlotScatterMissingStddev(unittest.TestCase):
 
     def test_with_stddev_present_does_not_raise(self):
         """plot_scatter with stddev present must not raise."""
-        from vmaf.core.train_test_model import RegressorMixin
-
+        RegressorMixin = _regressor_mixin_class()
         ax = self._make_minimal_ax()
         stats = self._make_stats_with_stddev()
 
@@ -182,8 +189,7 @@ class TestPlotScatterMissingStddev(unittest.TestCase):
 
     def test_assume_unit_stddev_uses_nonzero_bars(self):
         """When assume_unit_stddev=True, error bars must be positive (not zero)."""
-        from vmaf.core.train_test_model import RegressorMixin
-
+        RegressorMixin = _regressor_mixin_class()
         ax = self._make_minimal_ax()
         n = 5
         stats = self._make_stats_without_stddev(n=n)
@@ -191,7 +197,7 @@ class TestPlotScatterMissingStddev(unittest.TestCase):
         captured_xerr = {}
 
         def _mock_errorbar(*args, **kwargs):
-            captured_xerr["xerr"] = kwargs.get("xerr", None)
+            captured_xerr["xerr"] = kwargs.get("xerr")
 
         ax.errorbar.side_effect = _mock_errorbar
 
@@ -231,8 +237,7 @@ class TestLocalExplainerEnsembleError(unittest.TestCase):
 
     def test_raises_for_multi_model_list(self):
         """explain() must raise EnsembleNotSupportedError for len(model) > 1."""
-        from vmaf.core.local_explainer import LocalExplainer
-
+        LocalExplainer = _local_explainer_class()
         model_a = MagicMock()
         model_b = MagicMock()
         ttm = self._make_dummy_train_test_model([model_a, model_b])
@@ -246,8 +251,7 @@ class TestLocalExplainerEnsembleError(unittest.TestCase):
 
     def test_single_element_list_does_not_raise(self):
         """explain() must not raise when model is a single-element list."""
-        from vmaf.core.local_explainer import LocalExplainer
-
+        LocalExplainer = _local_explainer_class()
         inner_model = MagicMock()
         ttm = self._make_dummy_train_test_model([inner_model])
 
@@ -270,8 +274,7 @@ class TestLocalExplainerEnsembleError(unittest.TestCase):
 
     def test_bare_model_not_list_does_not_raise(self):
         """explain() must not raise when model is a bare (non-list) object."""
-        from vmaf.core.local_explainer import LocalExplainer
-
+        LocalExplainer = _local_explainer_class()
         inner_model = MagicMock()
         ttm = self._make_dummy_train_test_model(inner_model)
 
@@ -292,8 +295,7 @@ class TestLocalExplainerEnsembleError(unittest.TestCase):
 
     def test_ensemble_not_supported_error_message_contains_length(self):
         """Error message must include the actual list length for diagnosability."""
-        from vmaf.core.local_explainer import LocalExplainer
-
+        LocalExplainer = _local_explainer_class()
         n = 3
         models = [MagicMock() for _ in range(n)]
         ttm = self._make_dummy_train_test_model(models)

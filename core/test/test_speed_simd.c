@@ -51,11 +51,6 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -143,7 +138,7 @@ static char *check_avx2(uint32_t seed, int w, int h)
 
     SIMD_BITEXACT_ASSERT_RELATIVE(s_scalar, s_avx2, SPEED_COV_REL_TOL,
                                   "compute_cov_kernel_avx2 outside relative tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_avx2_seed_a(void)
@@ -196,7 +191,7 @@ static char *check_avx512(uint32_t seed, int w, int h)
 
     SIMD_BITEXACT_ASSERT_RELATIVE(s_scalar, s_avx512, SPEED_COV_REL_TOL,
                                   "compute_cov_kernel_avx512 outside relative tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_avx512_seed_a(void)
@@ -270,7 +265,7 @@ static char *check_matmul(speed_matmul_fn simd, char *label, uint32_t seed, int 
     simd_test_aligned_free(y);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(matmul_d_scalar, matmul_d_simd, d_elems * sizeof(float), label);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_matmul_avx2_speed_native(void)
@@ -359,7 +354,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: arch lacks Speed covariance SIMD\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

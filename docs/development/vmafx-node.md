@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # vmafx-node: worker node image
 
 `vmafx-node` is the VMAFX worker binary and its container image. Each node
@@ -32,7 +31,7 @@ docker run --rm --entrypoint /usr/local/bin/ffmpeg \
 ## Image variants
 
 | Target | GPU scoring runtime | FFmpeg encoders | Use case |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `node-cpu` | none | software only | Development, CI, low-volume workloads |
 | `node-cuda` | NVIDIA (CUDA 13.3.1) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
 | `node-rocm` | AMD (ROCm 7.2.4) | software only | GPU-accelerated VMAF scoring on AMD pools |
@@ -91,7 +90,7 @@ verification gate and invariants.
 ## Codec matrix
 
 | Codec | Direction | Library | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | H.264 | encode | libx264 | ubiquitous SW encoder |
 | H.265 / HEVC | encode | libx265 | SW encoder |
 | VP9 | encode | libvpx | Google VP9 SW encoder |
@@ -124,7 +123,7 @@ clear error message.
 ## Environment variables
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the ffmpeg binary. The Docker image sets this to `/usr/local/bin/ffmpeg`. |
 | `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address. |
 | `VMAFX_LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR. |

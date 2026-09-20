@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest: Test suite unchecked malloc sweep (Round 27 audit D.1)
 
 **Date**: 2026-05-31
@@ -17,7 +16,7 @@ SIGSEGV and the test process dies without a diagnostic.
 The affected files and site counts:
 
 | File | Sites | Test functions affected |
-|---|---|---|
+| --- | --- | --- |
 | `core/test/test_ssimulacra2_simd.c` | 6 (+ 2 in `test_ptlr_one`) | `test_multiply`, `test_xyb`, `test_downsample`, `test_ssim`, `test_edge`, `test_blur`, `test_ptlr_one` |
 | `core/test/test_framesync.c` | 2 | per-frame loop body |
 | `core/test/test_pic_preallocation.c` | 2 | two per-thread setup loops |

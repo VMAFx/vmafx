@@ -1,30 +1,28 @@
 #!/usr/bin/env python3
 
+from importlib import import_module
+from pathlib import Path
+
 import matplotlib
 
 matplotlib.use("Agg")
 
-import os
 import re
 import sys
 
 import numpy as np
 
 from vmaf.config import DisplayConfig
-from vmaf.core.cambi_quality_runner import (  # noqa: F401  registration side-effect
-    CambiQualityRunner,
-)
-from vmaf.core.matlab_quality_runner import (  # noqa: F401  registration side-effect
-    SpEEDMatlabQualityRunner,
-    STMADQualityRunner,
-    StrredOptQualityRunner,
-    StrredQualityRunner,
-)
 from vmaf.core.quality_runner import BootstrapVmafQualityRunner, QualityRunner, VmafQualityRunner
 from vmaf.core.result_store import FileSystemResultStore
 from vmaf.routine import print_matplotlib_warning, run_test_on_dataset
 from vmaf.tools.misc import cmd_option_exists, get_cmd_option, import_python_file
 from vmaf.tools.stats import ListStats
+
+import_module("vmaf.core.cambi_quality_runner")
+import_module("vmaf.core.matlab_quality_runner")
+
+_COMPARISON_VALUE_3 = 3
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -51,7 +49,7 @@ def print_usage():
     quality_runner_types = ["VMAF", "PSNR", "SSIM", "MS_SSIM", "..."]
     print(
         "usage: "
-        + os.path.basename(sys.argv[0])
+        + Path(sys.argv[0]).name
         + " quality_type test_dataset_filepath [--vmaf-model VMAF_model_path] "
         "[--vmaf-phone-model] [--subj-model subjective_model] [--cache-result] "
         "[--parallelize] [--print-result] [--save-plot plot_dir] [--plot-wh plot_wh] "
@@ -63,18 +61,79 @@ def print_usage():
     print("processes: must be an integer >=1")
 
 
-def main():
-    if len(sys.argv) < 3:
-        print_usage()
-        return 2
+class _CliError(Exception):
+    def __init__(self, exit_code):
+        super().__init__()
+        self.exit_code = exit_code
 
+
+def _aggregate_method(pool_method):
+    methods = {
+        "harmonic_mean": ListStats.harmonic_mean,
+        "min": np.min,
+        "median": np.median,
+        "perc5": ListStats.perc5,
+        "perc10": ListStats.perc10,
+        "perc20": ListStats.perc20,
+    }
+    return methods.get(pool_method, np.mean)
+
+
+def _subjective_model_class(subj_model):
     try:
-        quality_type = sys.argv[1]
-        test_dataset_filepath = sys.argv[2]
-    except ValueError:
-        print_usage()
-        return 2
+        subjective_model = import_module("sureal.subjective_model").SubjectiveModel
+        return subjective_model.find_subclass(subj_model or "MLE_CO_AP2")
+    except Exception as error:
+        print(f"Error: {error}")
+        raise _CliError(1) from error
 
+
+def _plot_size(plot_wh):
+    if plot_wh is None:
+        return 5, 5
+    match = re.fullmatch(r"([0-9]+)x([0-9]+)", plot_wh)
+    if match is None:
+        print("Error: plot_wh must be in the format of WxH, example: 5x5")
+        raise _CliError(1)
+    return int(match.group(1)), int(match.group(2))
+
+
+def _quality_runner_class(quality_type):
+    try:
+        return QualityRunner.find_subclass(quality_type)
+    except Exception as error:
+        print(f"Error: {error}")
+        raise _CliError(1) from error
+
+
+def _process_count(raw_processes):
+    if raw_processes is None:
+        return None
+    try:
+        processes = int(raw_processes)
+    except ValueError as error:
+        print("Input error: processes must be an integer")
+        raise _CliError(2) from error
+    if processes < 1:
+        print("Input error: processes must be at least 1")
+        raise _CliError(2)
+    return processes
+
+
+def _import_dataset(filepath):
+    try:
+        return import_python_file(filepath)
+    except Exception as error:
+        print(f"Error: {error}")
+        raise _CliError(1) from error
+
+
+def _parse_arguments():
+    if len(sys.argv) < _COMPARISON_VALUE_3:
+        print_usage()
+        raise _CliError(2)
+    quality_type = sys.argv[1]
+    test_dataset_filepath = sys.argv[2]
     vmaf_model_path = get_cmd_option(sys.argv, 3, len(sys.argv), "--vmaf-model")
     cache_result = cmd_option_exists(sys.argv, 3, len(sys.argv), "--cache-result")
     parallelize = cmd_option_exists(sys.argv, 3, len(sys.argv), "--parallelize")
@@ -86,169 +145,87 @@ def main():
     pool_method = get_cmd_option(sys.argv, 3, len(sys.argv), "--pool")
     if not (pool_method is None or pool_method in POOL_METHODS):
         print("--pool can only have option among {}".format(", ".join(POOL_METHODS)))
-        return 2
-
+        raise _CliError(2)
     subj_model = get_cmd_option(sys.argv, 3, len(sys.argv), "--subj-model")
-
-    try:
-        from sureal.subjective_model import SubjectiveModel
-
-        if subj_model is not None:
-            subj_model_class = SubjectiveModel.find_subclass(subj_model)
-        else:
-            subj_model_class = SubjectiveModel.find_subclass("MLE_CO_AP2")
-    except Exception as e:
-        print("Error: " + str(e))
-        return 1
-
+    subj_model_class = _subjective_model_class(subj_model)
     save_plot_dir = get_cmd_option(sys.argv, 3, len(sys.argv), "--save-plot")
-
-    plot_wh = get_cmd_option(sys.argv, 3, len(sys.argv), "--plot-wh")
-    if plot_wh is not None:
-        try:
-            mo = re.match(r"([0-9]+)x([0-9]+)", plot_wh)
-            assert mo is not None
-            w = mo.group(1)
-            h = mo.group(2)
-            w = int(w)
-            h = int(h)
-            plot_wh = (w, h)
-        except Exception as e:
-            print("Error: plot_wh must be in the format of WxH, example: 5x5")
-            return 1
-
-    try:
-        runner_class = QualityRunner.find_subclass(quality_type)
-    except Exception as e:
-        print("Error: " + str(e))
-        return 1
-
-    if (
-        vmaf_model_path is not None
-        and runner_class != VmafQualityRunner
-        and runner_class != BootstrapVmafQualityRunner
+    plot_wh = _plot_size(get_cmd_option(sys.argv, 3, len(sys.argv), "--plot-wh"))
+    runner_class = _quality_runner_class(quality_type)
+    if vmaf_model_path is not None and runner_class not in (
+        VmafQualityRunner,
+        BootstrapVmafQualityRunner,
     ):
         print("Input error: only quality_type of VMAF accepts --vmaf-model.")
         print_usage()
-        return 2
-
-    if (
-        vmaf_phone_model
-        and runner_class != VmafQualityRunner
-        and runner_class != BootstrapVmafQualityRunner
-    ):
+        raise _CliError(2)
+    if vmaf_phone_model and runner_class not in (VmafQualityRunner, BootstrapVmafQualityRunner):
         print("Input error: only quality_type of VMAF accepts --vmaf-phone-model.")
         print_usage()
-        return 2
+        raise _CliError(2)
+    return {
+        "test_dataset": _import_dataset(test_dataset_filepath),
+        "runner_class": runner_class,
+        "vmaf_model_path": vmaf_model_path,
+        "result_store": FileSystemResultStore() if cache_result else None,
+        "parallelize": parallelize,
+        "processes": _process_count(processes),
+        "print_result": print_result,
+        "suppress_plot": suppress_plot,
+        "aggregate_method": _aggregate_method(pool_method),
+        "subj_model_class": subj_model_class,
+        "enable_transform_score": True if vmaf_phone_model else None,
+        "save_plot_dir": save_plot_dir,
+        "plot_wh": plot_wh,
+    }
 
-    if processes is not None:
-        try:
-            processes = int(processes)
-        except ValueError:
-            print("Input error: processes must be an integer")
-        assert processes >= 1
 
+def _run_test(arguments, ax):
+    return run_test_on_dataset(
+        arguments["test_dataset"],
+        arguments["runner_class"],
+        ax,
+        arguments["result_store"],
+        arguments["vmaf_model_path"],
+        parallelize=arguments["parallelize"],
+        aggregate_method=arguments["aggregate_method"],
+        subj_model_class=arguments["subj_model_class"],
+        enable_transform_score=arguments["enable_transform_score"],
+        processes=arguments["processes"],
+    )
+
+
+def _run_with_plot(arguments):
+    if arguments["suppress_plot"]:
+        return _run_test(arguments, None)
     try:
-        test_dataset = import_python_file(test_dataset_filepath)
-    except Exception as e:
-        print("Error: " + str(e))
-        return 1
-
-    if cache_result:
-        result_store = FileSystemResultStore()
-    else:
-        result_store = None
-
-    # pooling
-    if pool_method == "harmonic_mean":
-        aggregate_method = ListStats.harmonic_mean
-    elif pool_method == "min":
-        aggregate_method = np.min
-    elif pool_method == "median":
-        aggregate_method = np.median
-    elif pool_method == "perc5":
-        aggregate_method = ListStats.perc5
-    elif pool_method == "perc10":
-        aggregate_method = ListStats.perc10
-    elif pool_method == "perc20":
-        aggregate_method = ListStats.perc20
-    else:  # None or 'mean'
-        aggregate_method = np.mean
-
-    if vmaf_phone_model:
-        enable_transform_score = True
-    else:
-        enable_transform_score = None
-
-    try:
-        if suppress_plot:
-            raise AssertionError
-
-        from vmaf import plt
-
-        if plot_wh is None:
-            plot_wh = (5, 5)
-        fig, ax = plt.subplots(figsize=plot_wh, nrows=1, ncols=1)
-
-        assets, results = run_test_on_dataset(
-            test_dataset,
-            runner_class,
-            ax,
-            result_store,
-            vmaf_model_path,
-            parallelize=parallelize,
-            aggregate_method=aggregate_method,
-            subj_model_class=subj_model_class,
-            enable_transform_score=enable_transform_score,
-            processes=processes,
-        )
-
+        plt = import_module("vmaf").plt
+        _figure, ax = plt.subplots(figsize=arguments["plot_wh"], nrows=1, ncols=1)
+        assets, results = _run_test(arguments, ax)
         bbox = {"facecolor": "white", "alpha": 0.5, "pad": 20}
         ax.annotate("Testing Set", xy=(0.1, 0.85), xycoords="axes fraction", bbox=bbox)
-
-        # ax.set_xlim([-10, 110])
-        # ax.set_ylim([-10, 110])
-
         plt.tight_layout()
-
-        if save_plot_dir is None:
+        if arguments["save_plot_dir"] is None:
             DisplayConfig.show()
         else:
-            DisplayConfig.show(write_to_dir=save_plot_dir)
-
+            DisplayConfig.show(write_to_dir=arguments["save_plot_dir"])
+        return assets, results
     except ImportError:
         print_matplotlib_warning()
-        assets, results = run_test_on_dataset(
-            test_dataset,
-            runner_class,
-            None,
-            result_store,
-            vmaf_model_path,
-            parallelize=parallelize,
-            aggregate_method=aggregate_method,
-            subj_model_class=subj_model_class,
-            enable_transform_score=enable_transform_score,
-            processes=processes,
-        )
+        return _run_test(arguments, None)
     except AssertionError:
-        assets, results = run_test_on_dataset(
-            test_dataset,
-            runner_class,
-            None,
-            result_store,
-            vmaf_model_path,
-            parallelize=parallelize,
-            aggregate_method=aggregate_method,
-            subj_model_class=subj_model_class,
-            enable_transform_score=enable_transform_score,
-            processes=processes,
-        )
+        return _run_test(arguments, None)
 
-    if print_result:
+
+def main():
+    try:
+        arguments = _parse_arguments()
+    except _CliError as error:
+        return error.exit_code
+    _assets, results = _run_with_plot(arguments)
+    if arguments["print_result"]:
         for result in results:
             print(result)
             print("")
-
     return 0
 
 

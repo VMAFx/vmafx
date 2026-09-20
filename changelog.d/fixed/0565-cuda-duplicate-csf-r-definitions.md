@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - CUDA build failure: removed duplicate `inline_i4_csf_r` and `inline_s0_csf_r`
   definitions in `core/src/feature/cuda/integer_adm/adm_cm.cu` introduced when
   PR #565 (adm_decouple `__ldg()` F3 fix) was admin-merged while master already

@@ -356,9 +356,9 @@ def test_vmaf_raw_suffixes_matches_cli_acceptance() -> None:
     """
     expected = frozenset({".yuv", ""})
     assert (
-        _VMAF_RAW_SUFFIXES == expected
+        expected == _VMAF_RAW_SUFFIXES
     ), f"corpus._VMAF_RAW_SUFFIXES drifted: {_VMAF_RAW_SUFFIXES}"
-    assert VMAF_RAW_SUFFIXES == expected, f"score.VMAF_RAW_SUFFIXES drifted: {VMAF_RAW_SUFFIXES}"
+    assert expected == VMAF_RAW_SUFFIXES, f"score.VMAF_RAW_SUFFIXES drifted: {VMAF_RAW_SUFFIXES}"
     assert ".y4m" not in _VMAF_RAW_SUFFIXES, ".y4m must trigger a decode — see ADR-0499"
     assert ".y4m" not in VMAF_RAW_SUFFIXES, ".y4m must trigger a decode — see ADR-0499"
 

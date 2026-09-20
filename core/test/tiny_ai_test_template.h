@@ -95,7 +95,7 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
 #define VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS(ext_name, feat_name, env_var, fn_prefix)              \
     static mu_message_t test_##fn_prefix##_is_registered(void)                                       \
     {                                                                                                \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
+        const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);              \
         mu_assert(ext_name " extractor must be registered by name", fex != NULL);                    \
         mu_assert("registered extractor has wrong name", !strcmp(fex->name, ext_name));              \
         mu_assert(ext_name ".init must be set", fex->init != NULL);                                  \
@@ -107,7 +107,8 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
                                                                                                      \
     static mu_message_t test_##fn_prefix##_provides_primary_feature(void)                            \
     {                                                                                                \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name(feat_name, 0);        \
+        const VmafFeatureExtractor *fex =                                                            \
+            vmaf_get_feature_extractor_by_feature_name(feat_name, 0);                                \
         mu_assert("'" feat_name "' feature name must resolve to an extractor", fex != NULL);         \
         mu_assert("'" feat_name "' must map to the " ext_name " extractor",                          \
                   !strcmp(fex->name, ext_name));                                                     \
@@ -116,7 +117,7 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
                                                                                                      \
     static mu_message_t test_##fn_prefix##_options_table_well_formed(void)                           \
     {                                                                                                \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
+        const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);              \
         mu_assert(ext_name " extractor missing", fex != NULL);                                       \
         mu_assert(ext_name " must expose at least one option", fex->options != NULL);                \
                                                                                                      \

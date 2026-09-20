@@ -170,33 +170,13 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
                                          SpeedInternalOptions *opt, float *frame_buffer,
                                          float *tmp_buffer, size_t float_stride);
 
-/**
- * Compute the 25×25 covariance matrix from the operating-resolution
- * mean-subtracted float plane on the CPU.
- *
- * Used by GPU backends as a fallback / validation path; production GPU
- * backends launch GPU kernels instead.
- *
- * Output: cov_mat[elements_in_block × elements_in_block], symmetric.
- * tmp_means must be ≥ elements_in_block floats.
- *
- * @param dim          Dimensions.
- * @param data         Mean-subtracted operating-resolution plane.
- * @param cov_mat      Output covariance matrix [25×25].
- * @param tmp_means    Scratch buffer [25] for means.
- * @param stride_px    float_stride / sizeof(float).
- */
-/* Per-element submatrix means, the same routine `speed_internal_compute_cov_matrix`
- * uses internally. Exposed so a GPU path can compute them with the CPU's exact
- * rounding instead of reimplementing the reduction on device: they are 1/25th of
- * the covariance work (25 elements vs 625 pairs over the same submatrix), and a
- * one-ulp difference here propagates into every covariance term. `means` must
- * hold dim->elements_in_block floats. */
+/* Per-element submatrix means. Exposed so a GPU path can compute them with the
+ * CPU's exact rounding instead of reimplementing the reduction on device: they
+ * are 1/25th of the covariance work (25 elements vs 625 pairs over the same
+ * submatrix), and a one-ulp difference here propagates into every covariance
+ * term. `means` must hold dim->elements_in_block floats. */
 void speed_internal_compute_means(const SpeedInternalDimensions *dim, const float *data,
                                   float *means, size_t stride_px);
-
-void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const float *data,
-                                       float *cov_mat, float *tmp_means, size_t stride_px);
 
 /**
  * Compute eigenvalues of a symmetric matrix via Householder
@@ -226,7 +206,8 @@ void speed_internal_compute_eigenvalues(const float *A_immutable, float *eigenva
  * @param tmp        Scratch: 3×size² floats.
  * @return 0 on success.
  */
-int speed_internal_qr_factorize(float *A_data, int size, float *Q_out, float *R_out, float *tmp);
+int speed_internal_qr_factorize(const float *A_data, int size, float *Q_out, float *R_out,
+                                float *tmp);
 
 /**
  * Multiply Q^T (transposed orthogonal factor from QR) by B:
@@ -242,25 +223,9 @@ int speed_internal_qr_factorize(float *A_data, int size, float *Q_out, float *R_
  */
 void speed_internal_qt_multiply(const float *Q, float *B, int size, int num_cols, float *tmp);
 
-/**
- * Backward substitution: solve R × X = B for all columns simultaneously.
- * B is overwritten with X.  R must be upper triangular with non-zero diagonal.
- *
- * CPU reference: solve_triangular_system() in speed.c.
- *
- * @param R        [size×size] upper triangular.
- * @param B        [size×num_cols] RHS on input, solution X on output.
- * @param size     Matrix side length.
- * @param num_cols Number of RHS columns.
- * @return 0 on success, -EINVAL if R diagonal has a near-zero entry.
- */
 /* Pivot / eigenvalue regularity epsilon, shared so the GPU twins cannot drift
- * from the CPU reference's value. `speed_internal_backward_substitution` returns
- * -EINVAL when an R diagonal pivot falls below this, and `est_params` folds that
- * into the same `cannot_invert` path a non-regular covariance takes. */
+ * from the CPU reference's value. */
 #define SPEED_INTERNAL_EIGENVALUE_EPS (1e-6f)
-
-int speed_internal_backward_substitution(const float *R, float *B, int size, int num_cols);
 
 /**
  * Check whether all eigenvalues exceed EIGENVALUE_EPS.

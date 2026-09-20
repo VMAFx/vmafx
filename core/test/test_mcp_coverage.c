@@ -82,8 +82,8 @@ static int cov_harness_init(CovHarness *h)
 {
     h->req_pipe[0] = h->req_pipe[1] = -1;
     h->resp_pipe[0] = h->resp_pipe[1] = -1;
-    h->ctx = NULL;
-    h->server = NULL;
+    h->ctx = VMAF_NULLPTR;
+    h->server = VMAF_NULLPTR;
     if (pipe(h->req_pipe) != 0)
         return -1;
     if (pipe(h->resp_pipe) != 0)
@@ -93,7 +93,7 @@ static int cov_harness_init(CovHarness *h)
     cfg.n_threads = 1u;
     if (vmaf_init(&h->ctx, cfg) != 0)
         return -1;
-    if (vmaf_mcp_init(&h->server, h->ctx, NULL) != 0)
+    if (vmaf_mcp_init(&h->server, h->ctx, VMAF_NULLPTR) != 0)
         return -1;
     VmafMcpStdioConfig scfg = {.fd_in = h->req_pipe[0], .fd_out = h->resp_pipe[1]};
     if (vmaf_mcp_start_stdio(h->server, &scfg) != 0)
@@ -105,7 +105,7 @@ static void cov_harness_teardown(CovHarness *h)
 {
     if (h->req_pipe[1] >= 0)
         (void)close(h->req_pipe[1]);
-    if (h->server != NULL)
+    if (h->server != VMAF_NULLPTR)
         vmaf_mcp_close(&h->server);
     if (h->req_pipe[0] >= 0)
         (void)close(h->req_pipe[0]);
@@ -113,7 +113,7 @@ static void cov_harness_teardown(CovHarness *h)
         (void)close(h->resp_pipe[0]);
     if (h->resp_pipe[1] >= 0)
         (void)close(h->resp_pipe[1]);
-    if (h->ctx != NULL)
+    if (h->ctx != VMAF_NULLPTR)
         (void)vmaf_close(h->ctx);
 }
 
@@ -147,7 +147,7 @@ static char *cov_send_and_read(CovHarness *h, const char *req, size_t req_len, c
     mu_assert("write request", w == (ssize_t)req_len);
     ssize_t n = cov_read_one_line(h->resp_pipe[0], line, line_cap);
     mu_assert("response received", n > 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -163,18 +163,19 @@ static char *test_initialize_roundtrip(void)
                               "\"params\":{\"protocolVersion\":\"2024-11-05\"}}\n";
     char line[4096];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("initialize id", strstr(line, "\"id\":11") != NULL);
-    mu_assert("protocolVersion", strstr(line, "\"protocolVersion\":\"2024-11-05\"") != NULL);
-    mu_assert("serverInfo present", strstr(line, "\"serverInfo\"") != NULL);
-    mu_assert("capabilities present", strstr(line, "\"capabilities\"") != NULL);
-    mu_assert("default server name", strstr(line, "libvmaf-mcp") != NULL);
+    mu_assert("initialize id", strstr(line, "\"id\":11") != VMAF_NULLPTR);
+    mu_assert("protocolVersion",
+              strstr(line, "\"protocolVersion\":\"2024-11-05\"") != VMAF_NULLPTR);
+    mu_assert("serverInfo present", strstr(line, "\"serverInfo\"") != VMAF_NULLPTR);
+    mu_assert("capabilities present", strstr(line, "\"capabilities\"") != VMAF_NULLPTR);
+    mu_assert("default server name", strstr(line, "libvmaf-mcp") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resources_list_roundtrip(void)
@@ -185,18 +186,18 @@ static char *test_resources_list_roundtrip(void)
     static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"resources/list\"}\n";
     char line[2048];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("id 12", strstr(line, "\"id\":12") != NULL);
+    mu_assert("id 12", strstr(line, "\"id\":12") != VMAF_NULLPTR);
     /* v1 ships an empty array — verify both the field and absence
      * of any element. */
-    mu_assert("resources field", strstr(line, "\"resources\"") != NULL);
-    mu_assert("empty resources", strstr(line, "\"resources\":[]") != NULL);
+    mu_assert("resources field", strstr(line, "\"resources\"") != VMAF_NULLPTR);
+    mu_assert("empty resources", strstr(line, "\"resources\":[]") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_parse_error_envelope(void)
@@ -208,16 +209,16 @@ static char *test_parse_error_envelope(void)
     static const char req[] = "this is not json at all\n";
     char line[1024];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("parse-error code -32700", strstr(line, "-32700") != NULL);
-    mu_assert("error envelope", strstr(line, "\"error\"") != NULL);
-    mu_assert("null id on parse error", strstr(line, "\"id\":null") != NULL);
+    mu_assert("parse-error code -32700", strstr(line, "-32700") != VMAF_NULLPTR);
+    mu_assert("error envelope", strstr(line, "\"error\"") != VMAF_NULLPTR);
+    mu_assert("null id on parse error", strstr(line, "\"id\":null") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_invalid_request_missing_method(void)
@@ -229,15 +230,15 @@ static char *test_invalid_request_missing_method(void)
     static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":13}\n";
     char line[1024];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("invalid-request code -32600", strstr(line, "-32600") != NULL);
-    mu_assert("id echoed", strstr(line, "\"id\":13") != NULL);
+    mu_assert("invalid-request code -32600", strstr(line, "-32600") != VMAF_NULLPTR);
+    mu_assert("id echoed", strstr(line, "\"id\":13") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_invalid_request_non_string_method(void)
@@ -248,14 +249,14 @@ static char *test_invalid_request_non_string_method(void)
     static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":42}\n";
     char line[1024];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("invalid-request -32600", strstr(line, "-32600") != NULL);
+    mu_assert("invalid-request -32600", strstr(line, "-32600") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Notification: no `id` field — per JSON-RPC 2.0 §4.1 the server
@@ -280,11 +281,11 @@ static char *test_notification_no_response(void)
     mu_assert("one line received", n > 0);
     /* If a response to the notification leaked, this would be the
      * tools/list payload with no id. The id field MUST be 1337. */
-    mu_assert("response is for follow request", strstr(line, "\"id\":1337") != NULL);
-    mu_assert("not the notification response", strstr(line, "\"id\":null") == NULL);
+    mu_assert("response is for follow request", strstr(line, "\"id\":1337") != VMAF_NULLPTR);
+    mu_assert("not the notification response", strstr(line, "\"id\":null") == VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tools_call_missing_params(void)
@@ -295,15 +296,15 @@ static char *test_tools_call_missing_params(void)
     static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"tools/call\"}\n";
     char line[1024];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("invalid-params -32602", strstr(line, "-32602") != NULL);
-    mu_assert("id echoed", strstr(line, "\"id\":21") != NULL);
+    mu_assert("invalid-params -32602", strstr(line, "-32602") != VMAF_NULLPTR);
+    mu_assert("id echoed", strstr(line, "\"id\":21") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tools_call_non_string_name(void)
@@ -315,14 +316,14 @@ static char *test_tools_call_non_string_name(void)
                               "\"params\":{\"name\":99,\"arguments\":{}}}\n";
     char line[1024];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("invalid-params -32602", strstr(line, "-32602") != NULL);
+    mu_assert("invalid-params -32602", strstr(line, "-32602") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tools_call_unknown_tool(void)
@@ -334,15 +335,15 @@ static char *test_tools_call_unknown_tool(void)
                               "\"params\":{\"name\":\"no_such_tool\",\"arguments\":{}}}\n";
     char line[1024];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("method-not-found -32601", strstr(line, "-32601") != NULL);
-    mu_assert("id 23", strstr(line, "\"id\":23") != NULL);
+    mu_assert("method-not-found -32601", strstr(line, "-32601") != VMAF_NULLPTR);
+    mu_assert("id 23", strstr(line, "\"id\":23") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* compute_vmaf with empty arguments: tool's parse_arguments() fires
@@ -357,19 +358,19 @@ static char *test_compute_vmaf_missing_arguments(void)
                               "\"params\":{\"name\":\"compute_vmaf\",\"arguments\":null}}\n";
     char line[2048];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("invalid-params -32602", strstr(line, "-32602") != NULL);
+    mu_assert("invalid-params -32602", strstr(line, "-32602") != VMAF_NULLPTR);
     /* The tool's set_err() string should make it into the
      * error.message; the dispatcher uses the tool message instead
      * of the generic "invalid params". */
-    mu_assert("tool-supplied error message present",
-              strstr(line, "compute_vmaf") != NULL || strstr(line, "arguments") != NULL);
+    mu_assert("tool-supplied error message present", strstr(line, "compute_vmaf") != VMAF_NULLPTR ||
+                                                         strstr(line, "arguments") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* compute_vmaf with valid object but missing required `reference_path`:
@@ -384,15 +385,15 @@ static char *test_compute_vmaf_missing_required_field(void)
                               "\"arguments\":{\"width\":64,\"height\":64}}}\n";
     char line[2048];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("invalid-params -32602", strstr(line, "-32602") != NULL);
-    mu_assert("id 25", strstr(line, "\"id\":25") != NULL);
+    mu_assert("invalid-params -32602", strstr(line, "-32602") != VMAF_NULLPTR);
+    mu_assert("id 25", strstr(line, "\"id\":25") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -401,60 +402,60 @@ static char *test_compute_vmaf_missing_required_field(void)
 
 static char *test_init_rejects_non_power_of_two_queue_depth(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
+    VmafMcpServer *server = VMAF_NULLPTR;
     VmafMcpConfig mcfg = {0};
     mcfg.queue_depth = 7u; /* not a power of two */
     int rc = vmaf_mcp_init(&server, ctx, &mcfg);
     mu_assert("queue_depth=7 -> -EINVAL", rc == -EINVAL);
-    mu_assert("no handle leaks", server == NULL);
+    mu_assert("no handle leaks", server == VMAF_NULLPTR);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_init_rejects_max_drain_over_cap(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
+    VmafMcpServer *server = VMAF_NULLPTR;
     VmafMcpConfig mcfg = {0};
     mcfg.max_drain_per_frame = 65u; /* cap is 64 */
     int rc = vmaf_mcp_init(&server, ctx, &mcfg);
     mu_assert("drain=65 -> -EINVAL", rc == -EINVAL);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_init_accepts_valid_power_of_two_queue_depth(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
+    VmafMcpServer *server = VMAF_NULLPTR;
     VmafMcpConfig mcfg = {0};
     mcfg.queue_depth = 128u;        /* 2^7 */
     mcfg.max_drain_per_frame = 16u; /* well under cap */
     int rc = vmaf_mcp_init(&server, ctx, &mcfg);
     mu_assert("valid cfg -> 0", rc == 0);
-    mu_assert("handle returned", server != NULL);
+    mu_assert("handle returned", server != VMAF_NULLPTR);
 
     vmaf_mcp_close(&server);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Bring up a harness whose VmafMcpServer carries the supplied
@@ -465,8 +466,8 @@ static int cov_harness_init_with_cfg(CovHarness *h, const VmafMcpConfig *mcfg)
 {
     h->req_pipe[0] = h->req_pipe[1] = -1;
     h->resp_pipe[0] = h->resp_pipe[1] = -1;
-    h->ctx = NULL;
-    h->server = NULL;
+    h->ctx = VMAF_NULLPTR;
+    h->server = VMAF_NULLPTR;
     if (pipe(h->req_pipe) != 0)
         return -1;
     if (pipe(h->resp_pipe) != 0)
@@ -496,14 +497,14 @@ static char *test_user_agent_surfaces_in_initialize(void)
     static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n";
     char line[4096];
     char *err = cov_send_and_read(&h, req, sizeof(req) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         cov_harness_teardown(&h);
         return err;
     }
-    mu_assert("custom user_agent name", strstr(line, "\"name\":\"cov-test/9.9\"") != NULL);
+    mu_assert("custom user_agent name", strstr(line, "\"name\":\"cov-test/9.9\"") != VMAF_NULLPTR);
 
     cov_harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -531,13 +532,13 @@ static char *test_transport_available_positive_and_oob(void)
      * Suppression justification (ADR-0141 / ADR-0278): this test deliberately exercises
      * the > 31 guard in vmaf_mcp_transport_available; the cast is the
      * only way to drive that branch through the public API surface. */
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0141 / ADR-0278 */
+
     int rb = vmaf_mcp_transport_available((VmafMcpTransport)32);
     mu_assert("oob id -> 0", rb == 0);
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0141 / ADR-0278 */
+
     int rb2 = vmaf_mcp_transport_available((VmafMcpTransport)100);
     mu_assert("huge oob id -> 0", rb2 == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_start_stdio_double_start_returns_ebusy(void)
@@ -547,14 +548,14 @@ static char *test_start_stdio_double_start_returns_ebusy(void)
     mu_assert("req pipe", pipe(req_pipe) == 0);
     mu_assert("resp pipe", pipe(resp_pipe) == 0);
 
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     VmafMcpStdioConfig scfg = {.fd_in = req_pipe[0], .fd_out = resp_pipe[1]};
     mu_assert("first start", vmaf_mcp_start_stdio(server, &scfg) == 0);
@@ -567,19 +568,19 @@ static char *test_start_stdio_double_start_returns_ebusy(void)
     (void)close(resp_pipe[0]);
     (void)close(resp_pipe[1]);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_start_uds_rejects_empty_path(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     VmafMcpUdsConfig ucfg = {.path = ""};
     int rc = vmaf_mcp_start_uds(server, &ucfg);
@@ -587,19 +588,19 @@ static char *test_start_uds_rejects_empty_path(void)
 
     vmaf_mcp_close(&server);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_start_uds_rejects_overlong_path(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     /* 120 bytes >= 100 byte limit. */
     char longpath[128];
@@ -611,19 +612,19 @@ static char *test_start_uds_rejects_overlong_path(void)
 
     vmaf_mcp_close(&server);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_start_sse_rejects_empty_path(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     VmafMcpSseConfig scfg = {.port = 0, .path = ""};
     int rc = vmaf_mcp_start_sse(server, &scfg);
@@ -631,19 +632,19 @@ static char *test_start_sse_rejects_empty_path(void)
 
     vmaf_mcp_close(&server);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_start_sse_rejects_overlong_path(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     /* 300 chars > 256 byte cap. */
     char longpath[320];
@@ -655,7 +656,7 @@ static char *test_start_sse_rejects_overlong_path(void)
 
     vmaf_mcp_close(&server);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Verifies the close() teardown after a transport has been started
@@ -669,14 +670,14 @@ static char *test_close_after_eof_joins_worker(void)
     mu_assert("req pipe", pipe(req_pipe) == 0);
     mu_assert("resp pipe", pipe(resp_pipe) == 0);
 
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, cfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     VmafMcpStdioConfig scfg = {.fd_in = req_pipe[0], .fd_out = resp_pipe[1]};
     mu_assert("start", vmaf_mcp_start_stdio(server, &scfg) == 0);
@@ -689,13 +690,13 @@ static char *test_close_after_eof_joins_worker(void)
      * Confirms the canonical lifecycle path without an explicit
      * intervening stop() call. */
     vmaf_mcp_close(&server);
-    mu_assert("handle NULLed", server == NULL);
+    mu_assert("handle NULLed", server == VMAF_NULLPTR);
 
     (void)close(req_pipe[0]);
     (void)close(resp_pipe[0]);
     (void)close(resp_pipe[1]);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -732,8 +733,8 @@ static char *check_stdio_oversize_overflow(CovHarness *h)
     static char line[2048];
     ssize_t n = cov_read_one_line(h->resp_pipe[0], line, sizeof(line));
     mu_assert("overflow response", n > 0);
-    mu_assert("overflow parse-error -32700", strstr(line, "-32700") != NULL);
-    mu_assert("overflow message", strstr(line, "64 KiB") != NULL);
+    mu_assert("overflow parse-error -32700", strstr(line, "-32700") != VMAF_NULLPTR);
+    mu_assert("overflow message", strstr(line, "64 KiB") != VMAF_NULLPTR);
 
     /* Worker must have drained the bytes-up-to-LF + resumed cleanly. */
     static const char follow[] = "{\"jsonrpc\":\"2.0\",\"id\":777,\"method\":\"tools/list\"}\n";
@@ -741,8 +742,8 @@ static char *check_stdio_oversize_overflow(CovHarness *h)
     mu_assert("follow write", w2 == (ssize_t)(sizeof(follow) - 1u));
     ssize_t n2 = cov_read_one_line(h->resp_pipe[0], line, sizeof(line));
     mu_assert("post-overflow response", n2 > 0);
-    mu_assert("post-overflow id 777", strstr(line, "\"id\":777") != NULL);
-    return NULL;
+    mu_assert("post-overflow id 777", strstr(line, "\"id\":777") != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_stdio_oversize_line_overflow_envelope(void)
@@ -766,17 +767,17 @@ typedef struct SseTestCtx {
 
 static int sse_test_ctx_up(SseTestCtx *s)
 {
-    s->ctx = NULL;
-    s->server = NULL;
+    s->ctx = VMAF_NULLPTR;
+    s->server = VMAF_NULLPTR;
     s->port = 0u;
     VmafConfiguration vcfg = {0};
     vcfg.log_level = VMAF_LOG_LEVEL_NONE;
     vcfg.n_threads = 1u;
     if (vmaf_init(&s->ctx, vcfg) != 0)
         return -1;
-    if (vmaf_mcp_init(&s->server, s->ctx, NULL) != 0)
+    if (vmaf_mcp_init(&s->server, s->ctx, VMAF_NULLPTR) != 0)
         return -1;
-    VmafMcpSseConfig sse_cfg = {.port = 0, .path = NULL};
+    VmafMcpSseConfig sse_cfg = {.port = 0, .path = VMAF_NULLPTR};
     if (vmaf_mcp_start_sse(s->server, &sse_cfg) != 0)
         return -1;
     s->port = sse_cfg.port;
@@ -785,9 +786,9 @@ static int sse_test_ctx_up(SseTestCtx *s)
 
 static void sse_test_ctx_down(SseTestCtx *s)
 {
-    if (s->server != NULL)
+    if (s->server != VMAF_NULLPTR)
         vmaf_mcp_close(&s->server);
-    if (s->ctx != NULL)
+    if (s->ctx != VMAF_NULLPTR)
         (void)vmaf_close(s->ctx);
 }
 
@@ -816,7 +817,7 @@ static int sse_cov_connect(uint16_t port)
 static long sse_cov_content_length(const char *buf)
 {
     const char *p = strstr(buf, "Content-Length:");
-    if (p == NULL)
+    if (p == VMAF_NULLPTR)
         return -1;
     p += sizeof("Content-Length:") - 1u;
     while (*p == ' ' || *p == '\t')
@@ -850,7 +851,7 @@ static ssize_t sse_cov_drain(int fd, char *buf, size_t cap)
          * BEFORE the buf[total] write. The static analyzer can't
          * follow the clamp across the `total += r` arithmetic, so the
          * ArrayBound finding is a known false positive. */
-        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141 / ADR-0278 */
+
         ssize_t r = read(fd, buf + total, want);
         if (r <= 0)
             break; /* EOF or error. */
@@ -858,10 +859,10 @@ static ssize_t sse_cov_drain(int fd, char *buf, size_t cap)
         total += got;
         if (total >= cap)
             total = cap - 1u; /* unreachable — silences the analyzer's taint flow. */
-        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141 / ADR-0278 */
+
         buf[total] = '\0';
         const char *hdr_end = strstr(buf, "\r\n\r\n");
-        if (hdr_end == NULL)
+        if (hdr_end == VMAF_NULLPTR)
             continue;
         long cl = sse_cov_content_length(buf);
         if (cl < 0)
@@ -872,7 +873,7 @@ static ssize_t sse_cov_drain(int fd, char *buf, size_t cap)
     }
     if (total >= cap)
         total = cap - 1u;
-    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141 / ADR-0278 */
+
     buf[total] = '\0';
     return (ssize_t)total;
 }
@@ -892,11 +893,11 @@ static char *test_sse_health_endpoint(void)
     ssize_t n = sse_cov_drain(fd, buf, sizeof(buf));
     (void)close(fd);
     mu_assert("got bytes", n > 0);
-    mu_assert("health 200", strstr(buf, "200 OK") != NULL);
-    mu_assert("health vmaf-mcp", strstr(buf, "vmaf-mcp") != NULL);
+    mu_assert("health 200", strstr(buf, "200 OK") != VMAF_NULLPTR);
+    mu_assert("health vmaf-mcp", strstr(buf, "vmaf-mcp") != VMAF_NULLPTR);
 
     sse_test_ctx_down(&s);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sse_404_unknown_path(void)
@@ -914,10 +915,10 @@ static char *test_sse_404_unknown_path(void)
     ssize_t n = sse_cov_drain(fd, buf, sizeof(buf));
     (void)close(fd);
     mu_assert("got bytes", n > 0);
-    mu_assert("404 Not Found", strstr(buf, "404 Not Found") != NULL);
+    mu_assert("404 Not Found", strstr(buf, "404 Not Found") != VMAF_NULLPTR);
 
     sse_test_ctx_down(&s);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sse_malformed_request_line(void)
@@ -937,10 +938,10 @@ static char *test_sse_malformed_request_line(void)
     ssize_t n = sse_cov_drain(fd, buf, sizeof(buf));
     (void)close(fd);
     mu_assert("got bytes", n > 0);
-    mu_assert("400 Bad Request", strstr(buf, "400 Bad Request") != NULL);
+    mu_assert("400 Bad Request", strstr(buf, "400 Bad Request") != VMAF_NULLPTR);
 
     sse_test_ctx_down(&s);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sse_post_without_content_length(void)
@@ -961,10 +962,10 @@ static char *test_sse_post_without_content_length(void)
     ssize_t n = sse_cov_drain(fd, buf, sizeof(buf));
     (void)close(fd);
     mu_assert("got bytes", n > 0);
-    mu_assert("400 Bad Request", strstr(buf, "400 Bad Request") != NULL);
+    mu_assert("400 Bad Request", strstr(buf, "400 Bad Request") != VMAF_NULLPTR);
 
     sse_test_ctx_down(&s);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -1014,5 +1015,5 @@ char *run_tests(void)
     for (size_t i = 0u; i < k_cov_test_table_len; ++i) {
         mu_run_test(k_cov_test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }

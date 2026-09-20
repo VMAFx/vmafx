@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Vulkan compute backend (removed — historical reference)
 
 > **Status: REMOVED per [ADR-0726](../../adr/0726-drop-vulkan-backend.md)

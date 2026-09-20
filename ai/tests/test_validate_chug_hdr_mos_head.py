@@ -21,13 +21,14 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import numpy as np
+except ImportError:
+    pytest.skip("numpy is not installed", allow_module_level=True)
+
+import train_konvid_mos_head as trainer
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
-
-np = pytest.importorskip("numpy")
-
-import train_konvid_mos_head as trainer  # noqa: E402
-
 # Load validator under test without executing __main__.
 _SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "validate_chug_hdr_mos_head.py"
 _SPEC = importlib.util.spec_from_file_location("validate_chug_hdr_mos_head", _SCRIPT_PATH)

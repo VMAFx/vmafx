@@ -1,7 +1,4 @@
-import unittest
 from test.testutil import set_default_576_324_videos_for_testing
-
-import numpy as np
 
 from vmaf.third_party.xiph.vmafexec_feature_extractor import PsnrhvsFeatureExtractor
 from vmaf.tools.misc import MyTestCase
@@ -18,7 +15,7 @@ class FeatureExtractorTest(MyTestCase):
         super().tearDown()
 
     def test_run_psnrhvs_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = PsnrhvsFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )

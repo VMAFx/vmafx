@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0076: `vmaf-tune fast` — production wiring
 
 - **Date**: 2026-05-05
@@ -37,7 +36,7 @@ discrete tuning tasks of this shape (single-int knob, smooth-ish
 objective) suggests:
 
 | Trials | Behaviour |
-|---|---|
+| --- | --- |
 | 5–15 | Exploration phase. TPE behaves close to random. |
 | 20–30 | Posterior begins to sharpen near the target. |
 | **30–50 (chosen default)** | Diminishing returns set in. Best-CRF stable across reseeds. |
@@ -79,7 +78,7 @@ score on the **full** source. Wall-time on a typical 60-second
 1080p clip:
 
 | Stage | CPU | CUDA | Vulkan | SYCL |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Encode (libx264 medium) | 8–12 s | (encode stays CPU) | (CPU) | (CPU) |
 | Score (libvmaf) | 2.5–4.5 s | 0.18–0.30 s | 0.20–0.40 s | 0.25–0.55 s |
 | **End-to-end** | **10–17 s** | **8–12 s** | **8–12 s** | **8–13 s** |

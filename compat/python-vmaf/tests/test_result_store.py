@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -17,6 +17,9 @@ import pytest
 from vmaf.core.asset import Asset
 from vmaf.core.result import Result
 from vmaf.core.result_store import FileSystemResultStore
+
+_COMPARISON_VALUE_42 = 42
+_COMPARISON_VALUE_7 = 7
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -80,7 +83,7 @@ class TestFileSystemResultStoreRoundTrip:
         original_scores = list(result.result_dict["FAKE_scores"])
         loaded_scores = list(loaded.result_dict["FAKE_scores"])
         assert len(loaded_scores) == len(original_scores)
-        for orig, load in zip(original_scores, loaded_scores):
+        for orig, load in zip(original_scores, loaded_scores, strict=False):
             assert load == pytest.approx(orig, rel=1e-5)
 
     def test_round_trip_feature_scores_preserved(self, store):
@@ -90,8 +93,8 @@ class TestFileSystemResultStoreRoundTrip:
         loaded = store.load(asset, "FAKE_V1.0")
         orig = result.result_dict["FAKE_feature_vif_scores"]
         load = loaded.result_dict["FAKE_feature_vif_scores"]
-        for o, l in zip(orig, load):
-            assert l == pytest.approx(o, rel=1e-5)
+        for original, loaded_score in zip(orig, load, strict=False):
+            assert loaded_score == pytest.approx(original, rel=1e-5)
 
     def test_round_trip_executor_id_preserved(self, store):
         asset = _make_asset()
@@ -112,14 +115,14 @@ class TestFileSystemResultStoreRoundTrip:
         result = _make_result(asset)
         store.save(result)
         loaded = store.load(asset, "FAKE_V1.0")
-        assert loaded.asset.content_id == 42
+        assert loaded.asset.content_id == _COMPARISON_VALUE_42
 
     def test_round_trip_asset_id_preserved(self, store):
         asset = _make_asset(asset_id=7)
         result = _make_result(asset)
         store.save(result)
         loaded = store.load(asset, "FAKE_V1.0")
-        assert loaded.asset.asset_id == 7
+        assert loaded.asset.asset_id == _COMPARISON_VALUE_7
 
     def test_overwrite_saves_new_result(self, store):
         asset = _make_asset()
@@ -240,7 +243,7 @@ class TestToPythonNatives:
     def test_numpy_int64_coerced(self):
         out = self._fn(np.int64(42))
         assert isinstance(out, int)
-        assert out == 42
+        assert out == _COMPARISON_VALUE_42
 
     def test_numpy_array_coerced_to_list(self):
         out = self._fn(np.array([1.0, 2.0, 3.0]))
@@ -253,7 +256,7 @@ class TestToPythonNatives:
 
     def test_plain_int_passes_through(self):
         out = self._fn(7)
-        assert out == 7
+        assert out == _COMPARISON_VALUE_7
 
     def test_string_passes_through(self):
         out = self._fn("hello")
@@ -292,7 +295,7 @@ class TestStaticSaveLoadResult:
         result = _make_result(asset)
         path = str(tmp_path / "result.txt")
         FileSystemResultStore.save_result(result, path)
-        assert os.path.isfile(path)
+        assert Path(path).is_file()
 
     def test_load_result_returns_result_object(self, tmp_path):
         asset = _make_asset()
@@ -318,5 +321,5 @@ class TestStaticSaveLoadResult:
         loaded = FileSystemResultStore.load_result(path)
         orig = list(result.result_dict["FAKE_scores"])
         load = list(loaded.result_dict["FAKE_scores"])
-        for o, l in zip(orig, load):
-            assert l == pytest.approx(o, rel=1e-5)
+        for original, loaded_score in zip(orig, load, strict=False):
+            assert loaded_score == pytest.approx(original, rel=1e-5)

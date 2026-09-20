@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0934: Migrate user-input dataclass configs to pydantic v2 BaseModel
 
 - **Status**: Accepted
@@ -69,7 +68,7 @@ Add `pydantic>=2.13.4` to `ai/pyproject.toml` (already in the venv via
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Migrate every `@dataclass` in `ai/src/vmaf_train/` (~21 classes) | Uniform style across the package | Adds validation overhead on report types whose fields are already typed at production time; no actual user input path | Goal is line-numbered validation for *operator inputs*, not stylistic uniformity |
 | Stay on `@dataclass` and add hand-rolled validation in `load_config()` / `registry.load()` | No new dep | Re-implements pydantic's error machinery; harder to extend with JSON-Schema export later | pydantic is already in the venv; rolling our own is anti-DRY |
 | Migrate to `attrs` + `cattrs` | Lighter than pydantic | Adds a new dep absent from the venv; pydantic already in tree | New dep with no incremental capability |

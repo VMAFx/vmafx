@@ -50,12 +50,6 @@
 #include "libvmaf/picture.h"
 #include "feature/feature_extractor.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* CAMBI requires >= 216 on at least one dimension; 640x480 is safely above. */
 #define FIXTURE_W 640u
 #define FIXTURE_H 480u
@@ -108,9 +102,9 @@ static char *feed_one_frame(VmafContext *vmaf)
     mu_assert("fill_fixture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     mu_assert("vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Exact mirror of the `cambi_high_res_speedup` row in `core/src/feature/cambi.c`
@@ -124,23 +118,24 @@ static char *assert_hrs_option_mirrors_cpu(const VmafOption *opt)
     mu_assert("hrs min mismatch", opt->min == 0.0);
     mu_assert("hrs max mismatch", opt->max == 2160.0);
     mu_assert("hrs flags mismatch", (opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM) != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_cambi_metal_registered(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_cambi_metal");
-    mu_assert("integer_cambi_metal extractor missing", fex != NULL);
-    mu_assert("integer_cambi_metal has no option table", fex->options != NULL);
+    mu_assert("integer_cambi_metal extractor missing", fex != VMAF_NULLPTR);
+    mu_assert("integer_cambi_metal has no option table", fex->options != VMAF_NULLPTR);
 
-    const VmafOption *hrs = NULL;
+    const VmafOption *hrs = VMAF_NULLPTR;
     for (unsigned i = 0; fex->options[i].name; i++) {
         if (!strcmp(fex->options[i].name, "cambi_high_res_speedup")) {
             hrs = &fex->options[i];
             break;
         }
     }
-    mu_assert("cambi_high_res_speedup option missing from integer_cambi_metal", hrs != NULL);
+    mu_assert("cambi_high_res_speedup option missing from integer_cambi_metal",
+              hrs != VMAF_NULLPTR);
     return assert_hrs_option_mirrors_cpu(hrs);
 }
 
@@ -151,8 +146,8 @@ static char *test_cambi_metal_registered(void)
  * double free. `hrs_val == NULL` means "no options". */
 static int build_hrs_opts(VmafFeatureDictionary **opts, const char *hrs_val)
 {
-    *opts = NULL;
-    if (hrs_val == NULL)
+    *opts = VMAF_NULLPTR;
+    if (hrs_val == VMAF_NULLPTR)
         return 0;
     return vmaf_feature_dictionary_set(opts, "cambi_high_res_speedup", hrs_val);
 }
@@ -160,12 +155,12 @@ static int build_hrs_opts(VmafFeatureDictionary **opts, const char *hrs_val)
 static char *run_cpu_cambi_opts(const char *hrs_val, const char *feature_score_name,
                                 double *out_score)
 {
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     int err = build_hrs_opts(&opts, hrs_val);
     mu_assert("CPU: vmaf_feature_dictionary_set(cambi_high_res_speedup) failed", !err);
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
@@ -182,7 +177,7 @@ static char *run_cpu_cambi_opts(const char *hrs_val, const char *feature_score_n
     mu_assert("CPU: vmaf_feature_score_at_index(cambi) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_metal_cambi_opts(const char *hrs_val, const char *feature_score_name,
@@ -192,15 +187,15 @@ static char *run_metal_cambi_opts(const char *hrs_val, const char *feature_score
     *out_score = NAN;
 
     VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
+    VmafMetalState *mstate = VMAF_NULLPTR;
     int err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    if (err != 0 || mstate == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no Metal device] ");
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = build_hrs_opts(&opts, hrs_val);
     if (err) {
         vmaf_metal_state_free(&mstate);
@@ -208,7 +203,7 @@ static char *run_metal_cambi_opts(const char *hrs_val, const char *feature_score
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("Metal: vmaf_init failed", !err);
 
@@ -231,17 +226,17 @@ static char *run_metal_cambi_opts(const char *hrs_val, const char *feature_score
     mu_assert("Metal: vmaf_close failed", !err);
 
     vmaf_metal_state_free(&mstate);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_cambi(double *out_score)
 {
-    return run_cpu_cambi_opts(NULL, "Cambi_feature_cambi_score", out_score);
+    return run_cpu_cambi_opts(VMAF_NULLPTR, "Cambi_feature_cambi_score", out_score);
 }
 
 static char *run_metal_cambi(double *out_score, int *skipped)
 {
-    return run_metal_cambi_opts(NULL, "Cambi_feature_cambi_score", out_score, skipped);
+    return run_metal_cambi_opts(VMAF_NULLPTR, "Cambi_feature_cambi_score", out_score, skipped);
 }
 
 static char *test_cambi_cpu_metal_parity(void)
@@ -262,7 +257,7 @@ static char *test_cambi_cpu_metal_parity(void)
               cpu_score > 1.0);
 
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - metal_score);
     if (delta > PARITY_TOL) {
@@ -270,7 +265,7 @@ static char *test_cambi_cpu_metal_parity(void)
                       cpu_score, metal_score, delta, PARITY_TOL);
     }
     mu_assert("cambi CPU vs. Metal delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Option-table plumbing test for `cambi_high_res_speedup`.
@@ -302,7 +297,7 @@ static char *test_cambi_cpu_metal_hrs_parity(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - metal_score);
     if (delta > PARITY_TOL) {
@@ -311,7 +306,7 @@ static char *test_cambi_cpu_metal_hrs_parity(void)
     }
     mu_assert("cambi hrs CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -319,7 +314,5 @@ char *run_tests(void)
     mu_run_test(test_cambi_metal_registered);
     mu_run_test(test_cambi_cpu_metal_parity);
     mu_run_test(test_cambi_cpu_metal_hrs_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

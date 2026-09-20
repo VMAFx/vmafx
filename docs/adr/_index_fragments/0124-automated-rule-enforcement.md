@@ -1,1 +1,5 @@
-| [ADR-0124](0124-automated-rule-enforcement.md) | Automate the four rule-bearing process ADRs (0100 doc-substance, 0105 copyright, 0106 ADR-per-decision, 0108 deep-dive deliverables). New `rule-enforcement.yml` workflow with one blocking job (`deep-dive-checklist`) + two advisory PR-comment jobs (`doc-substance-check`, `adr-backfill-check`); pre-commit hook for the copyright template. | Accepted | ci, agents, framework, docs, license |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0124](0124-automated-rule-enforcement.md) | Automate enforcement of process ADRs (0100 / 0105 / 0106 / 0108) | Accepted | ci, agents, framework, docs, license |

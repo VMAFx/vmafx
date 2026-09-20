@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest — HIP extractor audit (9 remaining scaffold claims) (ADR-0563)
 
 - **Date**: 2026-05-18
@@ -40,7 +39,7 @@ had promoted every one of these extractors before this verification pass.
 ### Kernel registration summary
 
 | Extractor | Kernel file(s) | Meson key | ADR |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ciede_hip` | `integer_ciede/ciede_score.hip` | `ciede_score` | ADR-0377 batch-4 |
 | `float_moment_hip` | `float_moment/moment_score.hip` | `moment_score` | ADR-0375 batch-3 |
 | `float_ansnr_hip` | `float_ansnr/float_ansnr_score.hip` | `float_ansnr_score` | ADR-0372 batch-1 |

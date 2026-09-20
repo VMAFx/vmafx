@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # ADR-1018: MCP exec.CommandContext + controller gRPC panic recovery
 
 - **Status**: Accepted

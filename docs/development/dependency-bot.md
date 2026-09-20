@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Dependency-update bot — operator playbook
 
 The fork uses **Mend Renovate** as a [GitHub App][app], not self-hosted.
@@ -23,7 +22,7 @@ All configuration lives in [`renovate.json`](../../renovate.json). The
 App reads it on every webhook. Top-level knobs:
 
 | Setting | Value |
-|---------|-------|
+| --------- | ------- |
 | `schedule` | `before 6am every weekday` (`Europe/Vienna`) |
 | `prHourlyLimit` | `0` (unlimited) |
 | `prConcurrentLimit` | `10` |

@@ -44,8 +44,10 @@
 #include "../picture_copy.h"
 #include "sycl/common.h"
 
-namespace
-{
+/*
+ * lint rationale: ADR-1266 keeps
+ * file-local SYCL helpers static because Praetor misclassifies namespace scopes as functions.
+ */
 
 static constexpr int MS_SSIM_SCALES = 5;
 static constexpr int MS_SSIM_GAUSSIAN_LEN = 11;
@@ -138,7 +140,56 @@ static inline int mirror_idx(int idx, int n)
     return r;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct MsSsimLcsInputs {
+    const float *ref_mu;
+    const float *cmp_mu;
+    const float *ref_sq;
+    const float *cmp_sq;
+    const float *refcmp;
+    unsigned w_horiz;
+    unsigned w_final;
+    unsigned h_final;
+    float c1;
+    float c2;
+    float c3;
+};
+
+struct MsSsimLcsValues {
+    float l;
+    float c;
+    float s;
+};
+
+static MsSsimLcsValues ms_ssim_lcs_at(const MsSsimLcsInputs &in, size_t x, size_t y)
+{
+    if (x >= (size_t)in.w_final || y >= (size_t)in.h_final)
+        return {0.0f, 0.0f, 0.0f};
+    float ref_mu = 0.0f;
+    float cmp_mu = 0.0f;
+    float ref_sq = 0.0f;
+    float cmp_sq = 0.0f;
+    float refcmp = 0.0f;
+    for (int v = 0; v < MS_SSIM_K; ++v) {
+        const size_t src_idx = (y + (size_t)v) * (size_t)in.w_horiz + x;
+        const float w = G[v];
+        ref_mu += w * in.ref_mu[src_idx];
+        cmp_mu += w * in.cmp_mu[src_idx];
+        ref_sq += w * in.ref_sq[src_idx];
+        cmp_sq += w * in.cmp_sq[src_idx];
+        refcmp += w * in.refcmp[src_idx];
+    }
+    const float ref_var = sycl::fmax(ref_sq - ref_mu * ref_mu, 0.0f);
+    const float cmp_var = sycl::fmax(cmp_sq - cmp_mu * cmp_mu, 0.0f);
+    const float covar = refcmp - ref_mu * cmp_mu;
+    const float sigma_xy_geom = sycl::sqrt(ref_var * cmp_var);
+    const float clamped_covar = (covar < 0.0f && sigma_xy_geom <= 0.0f) ? 0.0f : covar;
+    return {
+        (2.0f * ref_mu * cmp_mu + in.c1) / (ref_mu * ref_mu + cmp_mu * cmp_mu + in.c1),
+        (2.0f * sigma_xy_geom + in.c2) / (ref_var + cmp_var + in.c2),
+        (clamped_covar + in.c3) / (sigma_xy_geom + in.c3),
+    };
+}
+
 static void launch_decimate(sycl::queue &q, const float *src, float *dst, unsigned w, unsigned h,
                             unsigned w_out, unsigned h_out)
 {
@@ -221,7 +272,6 @@ static void launch_horiz(sycl::queue &q, const float *ref, const float *cmp, flo
     });
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *h_cmp_mu,
                             const float *h_ref_sq, const float *h_cmp_sq, const float *h_refcmp,
                             float *l_partials, float *c_partials, float *s_partials,
@@ -232,73 +282,29 @@ static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *
     const size_t global_y = ((h_final + WG_Y - 1) / WG_Y) * WG_Y;
     const size_t wg_count_x = global_x / WG_X;
     sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
-    const unsigned e_w_horiz = w_horiz;
-    const unsigned e_w_final = w_final;
-    const unsigned e_h_final = h_final;
-    const float e_c1 = c1;
-    const float e_c2 = c2;
-    const float e_c3 = c3;
-    const size_t e_wg_count_x = wg_count_x;
-    const float *e_h_ref_mu = h_ref_mu;
-    const float *e_h_cmp_mu = h_cmp_mu;
-    const float *e_h_ref_sq = h_ref_sq;
-    const float *e_h_cmp_sq = h_cmp_sq;
-    const float *e_h_refcmp = h_refcmp;
-    float *e_l = l_partials;
-    float *e_c = c_partials;
-    float *e_s = s_partials;
+    const MsSsimLcsInputs in = {h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz,
+                                w_final,  h_final,  c1,       c2,       c3};
 
     q.submit([=](sycl::handler &h_) {
         h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const size_t x = it.get_global_id(1);
             const size_t y = it.get_global_id(0);
-            float my_l = 0.0f;
-            float my_c = 0.0f;
-            float my_s = 0.0f;
-            if (x < (size_t)e_w_final && y < (size_t)e_h_final) {
-                float ref_mu = 0.0f;
-                float cmp_mu = 0.0f;
-                float ref_sq = 0.0f;
-                float cmp_sq = 0.0f;
-                float refcmp = 0.0f;
-                for (int v = 0; v < MS_SSIM_K; ++v) {
-                    const size_t src_idx = (y + (size_t)v) * (size_t)e_w_horiz + x;
-                    const float w = G[v];
-                    ref_mu += w * e_h_ref_mu[src_idx];
-                    cmp_mu += w * e_h_cmp_mu[src_idx];
-                    ref_sq += w * e_h_ref_sq[src_idx];
-                    cmp_sq += w * e_h_cmp_sq[src_idx];
-                    refcmp += w * e_h_refcmp[src_idx];
-                }
-                /* Clamp σ² ≥ 0 before sqrt — matches MAX(0, ...)
-                 * in iqa/ssim_tools.c::ssim_variance_scalar. */
-                const float ref_var = sycl::fmax(ref_sq - ref_mu * ref_mu, 0.0f);
-                const float cmp_var = sycl::fmax(cmp_sq - cmp_mu * cmp_mu, 0.0f);
-                const float covar = refcmp - ref_mu * cmp_mu;
-                const float sigma_xy_geom = sycl::sqrt(ref_var * cmp_var);
-                const float clamped_covar = (covar < 0.0f && sigma_xy_geom <= 0.0f) ? 0.0f : covar;
-
-                my_l = (2.0f * ref_mu * cmp_mu + e_c1) / (ref_mu * ref_mu + cmp_mu * cmp_mu + e_c1);
-                my_c = (2.0f * sigma_xy_geom + e_c2) / (ref_var + cmp_var + e_c2);
-                my_s = (clamped_covar + e_c3) / (sigma_xy_geom + e_c3);
-            }
-
-            float const wg_l = sycl::reduce_over_group(it.get_group(), my_l, sycl::plus<float>{});
-            float const wg_c = sycl::reduce_over_group(it.get_group(), my_c, sycl::plus<float>{});
-            float const wg_s = sycl::reduce_over_group(it.get_group(), my_s, sycl::plus<float>{});
+            const MsSsimLcsValues values = ms_ssim_lcs_at(in, x, y);
+            float const wg_l =
+                sycl::reduce_over_group(it.get_group(), values.l, sycl::plus<float>{});
+            float const wg_c =
+                sycl::reduce_over_group(it.get_group(), values.c, sycl::plus<float>{});
+            float const wg_s =
+                sycl::reduce_over_group(it.get_group(), values.s, sycl::plus<float>{});
             if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
-                const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
-                e_l[wg_idx] = wg_l;
-                e_c[wg_idx] = wg_c;
-                e_s[wg_idx] = wg_s;
+                const size_t wg_idx = it.get_group(0) * wg_count_x + it.get_group(1);
+                l_partials[wg_idx] = wg_l;
+                c_partials[wg_idx] = wg_c;
+                s_partials[wg_idx] = wg_s;
             }
         });
     });
 }
-
-} /* anonymous namespace */
-
-extern "C" {
 
 static const VmafOption options_ms_ssim_sycl[] = {
     {
@@ -306,21 +312,21 @@ static const VmafOption options_ms_ssim_sycl[] = {
         .help = "enable luminance, contrast and structure intermediate output",
         .offset = offsetof(MsSsimStateSycl, enable_lcs),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {
         .name = "enable_db",
         .help = "return dB-domain MS-SSIM score: -10*log10(1 - ms_ssim)",
         .offset = offsetof(MsSsimStateSycl, enable_db),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {
         .name = "clip_db",
         .help = "clip linear ms_ssim to [0, 1] before dB conversion",
         .offset = offsetof(MsSsimStateSycl, clip_db),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {
         .name = "enable_chroma",
@@ -328,21 +334,10 @@ static const VmafOption options_ms_ssim_sycl[] = {
                 "ms_ssim_vulkan PR #957; v1 kernel defers multi-plane dispatch to v2)",
         .offset = offsetof(MsSsimStateSycl, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {.name = nullptr},
 };
-
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points, `ms_ssim_convert_to_db` and the `provided_features_*` table use
-// C-style `static` rather than an anonymous namespace because their addresses
-// are stored in the `extern "C" VmafFeatureExtractor` struct at the bottom of
-// this file, which the C ABI consumes through the function-pointer types in
-// `feature_extractor.h`. A namespace cannot appear inside this linkage
-// specification at all. Same band, same reason, as integer_motion_sycl.cpp and
-// integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these are load-bearing
-// invariants of the SYCL <-> libvmaf C-API ABI.
 
 /* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
 static double ms_ssim_convert_to_db(double score, double max_db)
@@ -355,20 +350,10 @@ static double ms_ssim_convert_to_db(double score, double max_db)
     return db < max_db ? db : max_db;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int ms_ssim_init_format(MsSsimStateSycl *s, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                               unsigned w, unsigned h)
 {
-    auto *s = static_cast<MsSsimStateSycl *>(fex->priv);
-
-    /* Derive n_planes from pix_fmt, then clamp if !enable_chroma.
-     * Mirrors ms_ssim_vulkan.c PR #957 / integer_psnr_cuda.c (ADR-0453). */
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        s->n_planes = 1U;
-    } else {
-        s->n_planes = s->enable_chroma ? 3U : 1U;
-    }
-
+    s->n_planes = pix_fmt == VMAF_PIX_FMT_YUV400P ? 1U : (s->enable_chroma ? 3U : 1U);
     const unsigned min_dim = (unsigned)MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1);
     if (w < min_dim || h < min_dim) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -381,26 +366,14 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->width = w;
     s->height = h;
     s->bpc = bpc;
+    const unsigned peak = (1u << bpc) - 1u;
+    const double mse = 0.5 / (w * h);
+    s->max_db = s->clip_db ? std::ceil(10. * std::log10(peak * peak / mse)) : INFINITY;
+    return 0;
+}
 
-    /* ADR-1221 — `clip_db` is a CEILING on the dB output, not a clamp on the
-     * linear score. float_ms_ssim.c derives it from the frame geometry:
-     *
-     *     mse    = 0.5 / (w * h);
-     *     max_db = ceil(10. * log10(peak * peak / mse));
-     *
-     * and `convert_to_db()` returns `MIN(-10*log10(1 - score), max_db)`, with
-     * `score >= 1.0` short-circuiting to `max_db`. The twin used to clamp the
-     * linear score into [0, 1] and then convert with no ceiling, which returns
-     * +Inf for an identical reference/distorted pair. */
-    {
-        const unsigned peak = (1u << bpc) - 1u;
-        if (s->clip_db) {
-            const double mse = 0.5 / (w * h);
-            s->max_db = std::ceil(10. * std::log10(peak * peak / mse));
-        } else {
-            s->max_db = INFINITY;
-        }
-    }
+static void ms_ssim_init_geometry(MsSsimStateSycl *s, unsigned w, unsigned h)
+{
     s->scale_w[0] = w;
     s->scale_h[0] = h;
     for (int i = 1; i < MS_SSIM_SCALES; i++) {
@@ -423,14 +396,11 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
     s->c3 = s->c2 * 0.5f;
+}
 
-    if (!fex->sycl_state) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: no SYCL state\n");
-        return -EINVAL;
-    }
-    s->sycl_state = fex->sycl_state;
-
-    const size_t input_bytes = (size_t)w * h * sizeof(float);
+static void ms_ssim_alloc_buffers(MsSsimStateSycl *s)
+{
+    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
     s->h_ref = (float *)vmaf_sycl_malloc_host(s->sycl_state, input_bytes);
     s->h_cmp = (float *)vmaf_sycl_malloc_host(s->sycl_state, input_bytes);
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
@@ -452,16 +422,38 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->h_l_partials = (float *)vmaf_sycl_malloc_host(s->sycl_state, partials_bytes_max);
     s->h_c_partials = (float *)vmaf_sycl_malloc_host(s->sycl_state, partials_bytes_max);
     s->h_s_partials = (float *)vmaf_sycl_malloc_host(s->sycl_state, partials_bytes_max);
+}
 
+static bool ms_ssim_buffers_valid(const MsSsimStateSycl *s)
+{
     if (!s->h_ref || !s->h_cmp || !s->d_h_ref_mu || !s->d_h_cmp_mu || !s->d_h_ref_sq ||
         !s->d_h_cmp_sq || !s->d_h_refcmp || !s->d_l_partials || !s->d_c_partials ||
-        !s->d_s_partials || !s->h_l_partials || !s->h_c_partials || !s->h_s_partials) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: USM allocation failed\n");
-        return -ENOMEM;
-    }
+        !s->d_s_partials || !s->h_l_partials || !s->h_c_partials || !s->h_s_partials)
+        return false;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
         if (!s->d_pyramid_ref[i] || !s->d_pyramid_cmp[i])
-            return -ENOMEM;
+            return false;
+    }
+    return true;
+}
+
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    auto *s = static_cast<MsSsimStateSycl *>(fex->priv);
+    int err = ms_ssim_init_format(s, pix_fmt, bpc, w, h);
+    if (err)
+        return err;
+    ms_ssim_init_geometry(s, w, h);
+    if (!fex->sycl_state) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: no SYCL state\n");
+        return -EINVAL;
+    }
+    s->sycl_state = fex->sycl_state;
+    ms_ssim_alloc_buffers(s);
+    if (!ms_ssim_buffers_valid(s)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: USM allocation failed\n");
+        return -ENOMEM;
     }
 
     s->feature_name_dict =
@@ -473,8 +465,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -507,7 +500,63 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct MsSsimScaleMeans {
+    double l;
+    double c;
+    double s;
+};
+
+static MsSsimScaleMeans ms_ssim_collect_scale(MsSsimStateSycl *s, sycl::queue &q, int scale)
+{
+    launch_horiz(q, s->d_pyramid_ref[scale], s->d_pyramid_cmp[scale], s->d_h_ref_mu, s->d_h_cmp_mu,
+                 s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp, s->scale_w[scale],
+                 s->scale_w_horiz[scale], s->scale_h_horiz[scale]);
+    launch_vert_lcs(q, s->d_h_ref_mu, s->d_h_cmp_mu, s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp,
+                    s->d_l_partials, s->d_c_partials, s->d_s_partials, s->scale_w_horiz[scale],
+                    s->scale_w_final[scale], s->scale_h_final[scale], s->c1, s->c2, s->c3);
+    const size_t partials_bytes = (size_t)s->scale_wg_count[scale] * sizeof(float);
+    q.memcpy(s->h_l_partials, s->d_l_partials, partials_bytes);
+    q.memcpy(s->h_c_partials, s->d_c_partials, partials_bytes);
+    q.memcpy(s->h_s_partials, s->d_s_partials, partials_bytes);
+    q.wait();
+
+    MsSsimScaleMeans means = {0.0, 0.0, 0.0};
+    for (unsigned j = 0; j < s->scale_wg_count[scale]; j++) {
+        means.l += (double)s->h_l_partials[j];
+        means.c += (double)s->h_c_partials[j];
+        means.s += (double)s->h_s_partials[j];
+    }
+    const double n_pixels = (double)s->scale_w_final[scale] * (double)s->scale_h_final[scale];
+    means.l /= n_pixels;
+    means.c /= n_pixels;
+    means.s /= n_pixels;
+    return means;
+}
+
+static int ms_ssim_append_lcs(VmafFeatureCollector *fc, const double *l_means,
+                              const double *c_means, const double *s_means, unsigned index)
+{
+    static const char *const l_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
+        "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
+    };
+    static const char *const c_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
+        "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
+    };
+    static const char *const s_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
+        "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
+    };
+    int err = 0;
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        err |= vmaf_feature_collector_append(fc, l_names[i], l_means[i], index);
+        err |= vmaf_feature_collector_append(fc, c_names[i], c_means[i], index);
+        err |= vmaf_feature_collector_append(fc, s_names[i], s_means[i], index);
+    }
+    return err;
+}
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -517,38 +566,14 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     sycl::queue &q = *qptr;
 
-    /* Per-scale SSIM compute + readback. The intermediates are
-     * shared so scales must run sequentially with q.wait()
-     * between them so the host readback gets fresh partials. */
     double l_means[MS_SSIM_SCALES] = {0};
     double c_means[MS_SSIM_SCALES] = {0};
     double s_means[MS_SSIM_SCALES] = {0};
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        launch_horiz(q, s->d_pyramid_ref[i], s->d_pyramid_cmp[i], s->d_h_ref_mu, s->d_h_cmp_mu,
-                     s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp, s->scale_w[i],
-                     s->scale_w_horiz[i], s->scale_h_horiz[i]);
-        launch_vert_lcs(q, s->d_h_ref_mu, s->d_h_cmp_mu, s->d_h_ref_sq, s->d_h_cmp_sq,
-                        s->d_h_refcmp, s->d_l_partials, s->d_c_partials, s->d_s_partials,
-                        s->scale_w_horiz[i], s->scale_w_final[i], s->scale_h_final[i], s->c1, s->c2,
-                        s->c3);
-        const size_t partials_bytes = (size_t)s->scale_wg_count[i] * sizeof(float);
-        q.memcpy(s->h_l_partials, s->d_l_partials, partials_bytes);
-        q.memcpy(s->h_c_partials, s->d_c_partials, partials_bytes);
-        q.memcpy(s->h_s_partials, s->d_s_partials, partials_bytes);
-        q.wait();
-
-        double total_l = 0.0;
-        double total_c = 0.0;
-        double total_s = 0.0;
-        for (unsigned j = 0; j < s->scale_wg_count[i]; j++) {
-            total_l += (double)s->h_l_partials[j];
-            total_c += (double)s->h_c_partials[j];
-            total_s += (double)s->h_s_partials[j];
-        }
-        const double n_pixels = (double)s->scale_w_final[i] * (double)s->scale_h_final[i];
-        l_means[i] = total_l / n_pixels;
-        c_means[i] = total_c / n_pixels;
-        s_means[i] = total_s / n_pixels;
+        const MsSsimScaleMeans means = ms_ssim_collect_scale(s, q, i);
+        l_means[i] = means.l;
+        c_means[i] = means.c;
+        s_means[i] = means.s;
     }
 
     double msssim = 1.0;
@@ -564,29 +589,11 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_ms_ssim", score, index);
-    if (s->enable_lcs) {
-        static const char *const l_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-            "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-        };
-        static const char *const c_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-            "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-        };
-        static const char *const s_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-            "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-        };
-        for (int i = 0; i < MS_SSIM_SCALES; i++) {
-            err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
-        }
-    }
+    if (s->enable_lcs)
+        err |= ms_ssim_append_lcs(feature_collector, l_means, c_means, s_means, index);
     return err;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<MsSsimStateSycl *>(fex->priv);
@@ -631,7 +638,10 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 
 static const char *provided_features_ms_ssim_sycl[] = {"float_ms_ssim", nullptr};
 
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
+/*
+ * lint rationale: ADR-1266 ends the
+ * file-local helper band before the exported C-linkage descriptor.
+ */
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl = {
     .name = "float_ms_ssim_sycl",
@@ -653,5 +663,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-} /* extern "C" */

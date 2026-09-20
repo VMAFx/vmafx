@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0086 — Local sidecar training feasibility
 
 - **Status**: Active — scaffold-grade. Establishes the algorithm
@@ -23,7 +22,7 @@ the shipped MLP-or-analytical predictor (we are not replacing the
 predictor — we are adding a residual-correcting head):
 
 | Algorithm | Per-update cost | State size | Closed-form? | Why considered |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Online ridge regression** (chosen for scaffold) | `O(d²)` per capture for the `d × d` Gram update | `O(d²)` floats (`d ≈ 14` features → ~200 floats) | Yes — rank-1 Sherman-Morrison or batched normal-equation solve | Tiny, deterministic, zero-dep, well-understood. Linear bias-correction is the right baseline before claiming the shipped predictor's residual has structure ridge can't absorb. |
 | Stochastic gradient descent on a 1-2 layer MLP | `O(d × h)` per capture | `O(d × h)` floats | No (iterative) | More expressive than ridge. Pulls in PyTorch on `vmaf-tune`'s zero-dep harness. Premature: needs LR scheduling + a replay buffer for streaming. |
 | Gradient-boosted residual trees (XGBoost / LightGBM) | `O(n × d × tree_depth)` per refit | `O(trees × leaves)` | No (greedy) | Strong empirical performer for tabular residuals. New native dep; pickle format isn't safe to round-trip across hosts (relevant for the future opt-in-upload PR). |

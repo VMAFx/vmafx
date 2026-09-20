@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0464: CAMBI CUDA spatial-mask shared-memory tile
 
 - **Status**: Accepted
@@ -43,7 +42,7 @@ allocation for the known block size and to document the occupancy contract.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep 49-global-read-per-thread | Simple, no smem | 26x redundant traffic | Rejected: measurable BW waste |
 | 2-pass SAT in smem (row scan, then column scan) | O(N) instead of O(N*HALF^2) | Complex, adds smem register pressure, divergent termination | Overkill: 7x7 is small enough that the cooperative tile load amortises correctly; SAT adds logic risk with no bit-exactness benefit |
 | Texture cache | Hardware cache assists | No L1 texture path for uint16 in all SM generations; adds `cudaBindTexture` overhead | Not portable enough |

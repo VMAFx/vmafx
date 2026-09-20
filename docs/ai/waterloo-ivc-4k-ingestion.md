@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Waterloo IVC 4K-VQA → MOS-corpus JSONL ingestion
 
 The fork's `nr_metric_v1` tiny no-reference VQA model is
@@ -169,7 +168,7 @@ named-column CSV with the LSVQ-shape header
 standard branch. Aliases:
 
 | Logical column | Recognised header spellings |
-|---|---|
+| --- | --- |
 | filename | `name`, `video_name`, `filename`, `file_name` |
 | URL (optional) | `url`, `download_url`, `video_url` |
 | MOS | `mos`, `MOS`, `mos_score` |

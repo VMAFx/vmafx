@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-2047: Option-aware feature context registration
 
 ## Reproduction and scope

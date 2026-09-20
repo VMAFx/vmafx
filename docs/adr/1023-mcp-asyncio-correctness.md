@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1023: MCP server asyncio correctness — async wrappers for blocking I/O
 

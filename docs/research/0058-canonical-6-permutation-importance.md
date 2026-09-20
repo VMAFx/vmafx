@@ -1,7 +1,4 @@
-<!-- markdownlint-disable MD025 -->
 # Research 0058 — canonical-6 permutation importance for `vmaf_tiny_v2`
-
-# Research-0058
 
 - **Status:** Complete
 - **Date:** 2026-05-03

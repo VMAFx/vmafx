@@ -149,7 +149,7 @@ def bisect_model_quality(
     result.last_good_index = lo
     result.last_good_model = models[lo]
     result.verdict = (
-        f"first bad: index {hi} ({models[hi].name}) — " f"last good: index {lo} ({models[lo].name})"
+        f"first bad: index {hi} ({models[hi].name}) — last good: index {lo} ({models[lo].name})"
     )
     # Keep the step log in visit order for auditability.
     result.steps.sort(key=lambda s: s.index)

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0211: Tiny-model registry schema + Sigstore `--tiny-model-verify`
 
 - **Status**: Accepted
@@ -39,7 +38,7 @@ with already-shipped registries.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | In-tree custom validator (no JSON Schema) | Zero deps, smallest patch | Re-invents what JSON Schema already covers; no IDE / editor integration | Rejected — JSON Schema is the industry standard and `jsonschema` is a one-line `pip install` |
 | JSON Schema (chosen) | Tooling, IDE completion, Draft 2020-12 widely supported | One optional Python dep | Selected — falls back to a structural check when `jsonschema` isn't installed so CI on minimal images still gets coverage |
 | External schema-spec language (e.g. CUE, Pkl) | More expressive | Adds a non-Python toolchain dep; overkill for ~6-field shape | Rejected |

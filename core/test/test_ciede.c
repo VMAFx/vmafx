@@ -22,7 +22,7 @@
 static int close_enough(float a, float b)
 {
     const float epsilon = 1e-9f;
-    return fabs(a - b) < epsilon;
+    return fabsf(a - b) < epsilon;
 }
 
 /* Regression for the CIEDE 4:2:2 chroma-upsample flag swap (heap OOB read +
@@ -74,7 +74,7 @@ static char *test_ciede_scale_chroma_422_8b(void)
 
     (void)vmaf_picture_unref(&in);
     (void)vmaf_picture_unref(&out);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede_scale_chroma_422_16b(void)
@@ -117,7 +117,7 @@ static char *test_ciede_scale_chroma_422_16b(void)
 
     (void)vmaf_picture_unref(&in);
     (void)vmaf_picture_unref(&out);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static const KSubArgs default_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
@@ -130,7 +130,7 @@ static char *test_ciede()
     const float de00 = ciede2000(color_1, color_2, default_ksub);
     mu_assert("de00 for this input should be 2.54780269", close_enough(de00, 2.54780269));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede2()
@@ -141,7 +141,7 @@ static char *test_ciede2()
     const float de00 = ciede2000(color_1, color_2, default_ksub);
     mu_assert("de00 for this input should be 4.22714281", close_enough(de00, 4.22714281));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede3()
@@ -152,7 +152,7 @@ static char *test_ciede3()
     const float de00 = ciede2000(color_1, color_2, default_ksub);
     mu_assert("de00 for this input should be 4.26012468", close_enough(de00, 4.26012468));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede4()
@@ -163,7 +163,7 @@ static char *test_ciede4()
     const float de00 = ciede2000(color_1, color_2, default_ksub);
     mu_assert("de00 for this input should be 1.26915979", close_enough(de00, 1.26915979));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -174,5 +174,5 @@ char *run_tests()
     mu_run_test(test_ciede4);
     mu_run_test(test_ciede_scale_chroma_422_8b);
     mu_run_test(test_ciede_scale_chroma_422_16b);
-    return NULL;
+    return VMAF_NULLPTR;
 }

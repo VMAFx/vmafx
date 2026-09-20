@@ -43,8 +43,8 @@
  *   [16, 18, 8, 0, 20, 28, 9, 1, 21, 29, 10, 2, 22, 30, 11, 3, 23, 31, 17, 19, 12, 4, 24, 32, 13, 5, 25, 33, 14, 6, 26, 34, 15, 7, 27, 35]
  */
 
-#ifndef __VMAF_FEATURE_NIQE_MODEL_H__
-#define __VMAF_FEATURE_NIQE_MODEL_H__
+#ifndef VMAF_FEATURE_NIQE_MODEL_H_
+#define VMAF_FEATURE_NIQE_MODEL_H_
 
 #define NIQE_FEAT_DIM 36
 
@@ -558,4 +558,4 @@ static const double niqe_cov_prisparam[NIQE_FEAT_DIM][NIQE_FEAT_DIM] = {
     },
 };
 
-#endif /* __VMAF_FEATURE_NIQE_MODEL_H__ */
+#endif /* VMAF_FEATURE_NIQE_MODEL_H_ */

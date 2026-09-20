@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1089: Block non-standard ONNX operator domains in the DNN wire scanner
 
 - **Status**: Accepted
@@ -43,7 +42,7 @@ separate ADR must justify it.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Allowlist specific non-standard domains (e.g. `"ai.onnx.ml"`) | Supports ONNX-ML ops | Wider attack surface; every added domain requires auditing all its ops | No current consumer needs ONNX-ML; default to narrow |
 | Reject domain field presence entirely (require empty/absent domain) | Simplest rule | Rejects explicitly-tagged standard-domain models (`domain="ai.onnx"`) exported by some tools | Too strict; legitimate exporters may emit `"ai.onnx"` explicitly |
 | No change — rely on ORT sandboxing | Zero code change | Scanner's stated purpose is pre-ORT rejection; partial allowlist is misleading if bypassable | Violates the stated security invariant |

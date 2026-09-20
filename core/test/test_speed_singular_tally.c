@@ -21,12 +21,6 @@
 
 #include "feature/speed_internal.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and the `char *` NULL a
- * passing mu_run_test returns is the C spelling the harness defines. ADR-1138. */
-
 static char *test_tally_counts_every_solve(void)
 {
     SpeedInternalSingularTally tally = {0};
@@ -37,7 +31,7 @@ static char *test_tally_counts_every_solve(void)
     mu_assert("a regular solve is counted", tally.solves == 10u);
     mu_assert("a regular solve is not singular", tally.singular == 0u);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tally_counts_singular_solves(void)
@@ -54,7 +48,7 @@ static char *test_tally_counts_singular_solves(void)
     mu_assert("every solve is counted", tally.solves == 6u);
     mu_assert("every singular solve is counted", tally.singular == 4u);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_report_tolerates_a_clean_run(void)
@@ -69,7 +63,7 @@ static char *test_report_tolerates_a_clean_run(void)
     mu_assert("reporting does not disturb the counters", tally.solves == 1u);
     mu_assert("reporting does not invent a singular solve", tally.singular == 0u);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_report_is_idempotent(void)
@@ -83,7 +77,7 @@ static char *test_report_is_idempotent(void)
     mu_assert("reporting leaves the solve count alone", tally.solves == 1u);
     mu_assert("reporting leaves the singular count alone", tally.singular == 1u);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -92,7 +86,5 @@ char *run_tests(void)
     mu_run_test(test_tally_counts_singular_solves);
     mu_run_test(test_report_tolerates_a_clean_run);
     mu_run_test(test_report_is_idempotent);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

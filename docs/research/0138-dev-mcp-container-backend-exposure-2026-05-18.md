@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0138: dev-MCP container backend exposure (SYCL / Vulkan / HIP)
 
 **Date**: 2026-05-18
@@ -19,13 +18,13 @@ Backend matrix in the in-use image (commit `e0061b7e0` running on
 `vmaf-dev-mcp` 2026-05-18):
 
 | Backend | Container | Host |
-|---|---|---|
-| cpu     | OK 76.66783 | OK 76.66783 |
-| cuda    | OK 76.66783 | OK 76.66783 |
-| sycl    | FAIL "No device of requested type available" | OK 76.66783 |
-| vulkan  | FAIL Intel-Arc-only enumeration (NVIDIA hidden) | OK 3/3 GPUs |
-| hip     | FAIL "built without hip support (ADR-0498)" | OK 76.66783 |
-| metal   | FAIL "built without metal support" | n/a (Linux) |
+| --- | --- | --- |
+| cpu | OK 76.66783 | OK 76.66783 |
+| cuda | OK 76.66783 | OK 76.66783 |
+| sycl | FAIL "No device of requested type available" | OK 76.66783 |
+| vulkan | FAIL Intel-Arc-only enumeration (NVIDIA hidden) | OK 3/3 GPUs |
+| hip | FAIL "built without hip support (ADR-0498)" | OK 76.66783 |
+| metal | FAIL "built without metal support" | n/a (Linux) |
 
 ## Diagnostic methodology
 
@@ -167,7 +166,7 @@ by hand.
 ## Fix matrix
 
 | Cause | Where | Fix |
-|---|---|---|
+| --- | --- | --- |
 | `libhwloc.so.15` not findable | `dev/Containerfile` env layer | Append `${ONEAPI_ROOT}/tcm/latest/lib` to `LD_LIBRARY_PATH`. |
 | Vulkan ICD env pinned to non-existent path | `dev/Containerfile` env layer + `dev/scripts/dev-mcp-entrypoint.sh` | Delete the `ENV VK_ICD_FILENAMES=…` line (do NOT replace with empty-string — the loader treats `""` the same as a non-existent file); `unset VK_ICD_FILENAMES VK_DRIVER_FILES` at entrypoint start so operators can still override per-`docker exec`. |
 | `/dev/dri/by-path` symlinks dropped by Docker `devices:` | `dev/docker-compose.yml` | Add read-only bind-mount of `/dev/dri/by-path` to both services. |
@@ -192,7 +191,7 @@ docker exec vmaf-dev-mcp bash -c '
 Expected after this PR + ADR-0492 (Vulkan fp64 relax) land:
 
 | Backend | VMAF | rc |
-|---|---|---|
+| --- | --- | --- |
 | cpu | 76.66783 | 0 |
 | cuda | 76.66783 | 0 |
 | sycl | 76.66783 | 0 |

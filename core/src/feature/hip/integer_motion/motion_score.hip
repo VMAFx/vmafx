@@ -42,13 +42,13 @@
 __constant__ uint16_t ms_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
 
 /* 5-tap filter radius */
-#define MS_RADIUS  2
+#define MS_RADIUS 2
 #define MS_BLOCK_X 16
 #define MS_BLOCK_Y 16
-#define MS_TILE_W  (MS_BLOCK_X + 2 * MS_RADIUS)  /* 20 */
-#define MS_TILE_H  (MS_BLOCK_Y + 2 * MS_RADIUS)  /* 20 */
+#define MS_TILE_W (MS_BLOCK_X + 2 * MS_RADIUS) /* 20 */
+#define MS_TILE_H (MS_BLOCK_Y + 2 * MS_RADIUS) /* 20 */
 /* Pad inner stride to break shared-memory bank conflicts (same as CUDA twin). */
-#define MS_TILE_PITCH (MS_TILE_W + 1)              /* 21 */
+#define MS_TILE_PITCH (MS_TILE_W + 1) /* 21 */
 
 /* Runtime `warpSize` is used in all reduction loops and lane-detection
  * expressions below so the same binary runs on wave64 (GCN/RDNA1) and
@@ -68,18 +68,38 @@ __device__ __forceinline__ int ms_mirror(int idx, int sup)
     return (out < sup) ? out : (sup - (out - sup + 2));
 }
 
-extern "C" {
+__device__ __forceinline__ uint32_t ms_blur_pixel(const uint32_t *tile, unsigned lx, unsigned ly,
+                                                  unsigned shift_y, unsigned add_before_y)
+{
+    uint32_t blurred = 0u;
+#pragma unroll
+    for (int xf = 0; xf < 5; ++xf) {
+        uint32_t blurred_y = 0u;
+#pragma unroll
+        for (int yf = 0; yf < 5; ++yf) {
+            const unsigned row = ly - MS_RADIUS + (unsigned)yf;
+            const unsigned col = lx - MS_RADIUS + (unsigned)xf;
+            blurred_y += (uint32_t)ms_filter_d[yf] * tile[row * MS_TILE_PITCH + col];
+        }
+        blurred += (uint32_t)ms_filter_d[xf] * ((blurred_y + add_before_y) >> shift_y);
+    }
+    return (blurred + 32768u) >> 16u;
+}
 
-__launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
-    void calculate_motion_score_kernel_8bpc(
-        const uint8_t *__restrict__ src,
-        uint16_t *__restrict__       src_blurred,
-        const uint16_t *__restrict__ prev_blurred,
-        uint64_t *__restrict__       sad,
-        unsigned width,
-        unsigned height,
-        ptrdiff_t src_stride,
-        ptrdiff_t blurred_stride_bytes)
+__device__ __forceinline__ void ms_accumulate_sad(uint32_t abs_dist, unsigned lid, uint64_t *sad)
+{
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
+        abs_dist += __shfl_down(abs_dist, off);
+    if (lid % (unsigned)warpSize == 0u) {
+        atomicAdd(reinterpret_cast<unsigned long long *>(sad), (unsigned long long)abs_dist);
+    }
+}
+
+extern "C" __global__
+__launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) void calculate_motion_score_kernel_8bpc(
+    const uint8_t *__restrict__ src, uint16_t *__restrict__ src_blurred,
+    const uint16_t *__restrict__ prev_blurred, uint64_t *__restrict__ sad, unsigned width,
+    unsigned height, ptrdiff_t src_stride, ptrdiff_t blurred_stride_bytes)
 {
     /*
      * Shared memory tile holds source pixels (uint32) to avoid narrowing
@@ -88,20 +108,18 @@ __launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
      */
     __shared__ uint32_t s_tile[MS_TILE_H][MS_TILE_PITCH];
 
-    constexpr unsigned shift_var_y     = 8u;
-    constexpr unsigned add_before_y    = 128u;
-    constexpr unsigned shift_var_x     = 16u;
-    constexpr unsigned add_before_x    = 32768u;
+    constexpr unsigned shift_var_y = 8u;
+    constexpr unsigned add_before_y = 128u;
 
-    const int x   = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y   = blockIdx.y * blockDim.y + threadIdx.y;
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
     /* --- Phase 1: cooperative tile load --- */
     const int tile_origin_x = blockIdx.x * MS_BLOCK_X - MS_RADIUS;
     const int tile_origin_y = blockIdx.y * MS_BLOCK_Y - MS_RADIUS;
-    const unsigned tile_elems = MS_TILE_W * MS_TILE_H;  /* 400 */
-    const unsigned wg_size    = MS_BLOCK_X * MS_BLOCK_Y; /* 256 */
+    const unsigned tile_elems = MS_TILE_W * MS_TILE_H; /* 400 */
+    const unsigned wg_size = MS_BLOCK_X * MS_BLOCK_Y;  /* 256 */
 
     for (unsigned i = lid; i < tile_elems; i += wg_size) {
         const unsigned ty = i / MS_TILE_W;
@@ -118,75 +136,47 @@ __launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
         const unsigned lx = threadIdx.x + MS_RADIUS;
         const unsigned ly = threadIdx.y + MS_RADIUS;
 
-        uint32_t blurred = 0u;
-#pragma unroll
-        for (int xf = 0; xf < 5; ++xf) {
-            uint32_t blurred_y = 0u;
-#pragma unroll
-            for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += (uint32_t)ms_filter_d[yf] *
-                             s_tile[ly - MS_RADIUS + yf][lx - MS_RADIUS + xf];
-            }
-            blurred += (uint32_t)ms_filter_d[xf] *
-                       ((blurred_y + add_before_y) >> shift_var_y);
-        }
-        blurred = (blurred + add_before_x) >> shift_var_x;
+        const uint32_t blurred = ms_blur_pixel(&s_tile[0][0], lx, ly, shift_var_y, add_before_y);
 
         /* Write blurred pixel into ping-pong slot. */
         const ptrdiff_t blurred_pitch = blurred_stride_bytes / (ptrdiff_t)sizeof(uint16_t);
         src_blurred[y * blurred_pitch + x] = (uint16_t)blurred;
 
         /* Absolute difference against the previous blurred frame. */
-        abs_dist = (uint32_t)abs((int)blurred -
-                                  (int)prev_blurred[y * blurred_pitch + x]);
+        abs_dist = (uint32_t)abs((int)blurred - (int)prev_blurred[y * blurred_pitch + x]);
     }
 
     /* --- Phase 3: warp reduction — uses runtime warpSize to handle wave64
      * (GCN/RDNA1) and wave32 (RDNA2+). --- */
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
-        abs_dist += __shfl_down(abs_dist, off);
-
-    const unsigned lane = lid % (unsigned)warpSize;
-    if (lane == 0)
-        atomicAdd(reinterpret_cast<unsigned long long *>(sad),
-                  (unsigned long long)abs_dist);
+    ms_accumulate_sad(abs_dist, lid, sad);
 }
 
-__launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
-    void calculate_motion_score_kernel_16bpc(
-        const uint8_t *__restrict__ src,
-        uint16_t *__restrict__       src_blurred,
-        const uint16_t *__restrict__ prev_blurred,
-        uint64_t *__restrict__       sad,
-        unsigned width,
-        unsigned height,
-        ptrdiff_t src_stride,
-        ptrdiff_t blurred_stride_bytes,
-        unsigned  bpc)
+extern "C" __global__
+__launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) void calculate_motion_score_kernel_16bpc(
+    const uint8_t *__restrict__ src, uint16_t *__restrict__ src_blurred,
+    const uint16_t *__restrict__ prev_blurred, uint64_t *__restrict__ sad, unsigned width,
+    unsigned height, ptrdiff_t src_stride, ptrdiff_t blurred_stride_bytes, unsigned bpc)
 {
     __shared__ uint32_t s_tile[MS_TILE_H][MS_TILE_PITCH];
 
-    const unsigned shift_var_y  = bpc;
+    const unsigned shift_var_y = bpc;
     const unsigned add_before_y = 1u << (bpc - 1u);
-    constexpr unsigned shift_var_x  = 16u;
-    constexpr unsigned add_before_x = 32768u;
 
-    const int x   = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y   = blockIdx.y * blockDim.y + threadIdx.y;
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
     const int tile_origin_x = blockIdx.x * MS_BLOCK_X - MS_RADIUS;
     const int tile_origin_y = blockIdx.y * MS_BLOCK_Y - MS_RADIUS;
     const unsigned tile_elems = MS_TILE_W * MS_TILE_H;
-    const unsigned wg_size    = MS_BLOCK_X * MS_BLOCK_Y;
+    const unsigned wg_size = MS_BLOCK_X * MS_BLOCK_Y;
 
     for (unsigned i = lid; i < tile_elems; i += wg_size) {
         const unsigned ty = i / MS_TILE_W;
         const unsigned tx = i % MS_TILE_W;
         const int gx = ms_mirror(tile_origin_x + (int)tx, (int)width);
         const int gy = ms_mirror(tile_origin_y + (int)ty, (int)height);
-        s_tile[ty][tx] = (uint32_t)(
-            reinterpret_cast<const uint16_t *>(src + gy * src_stride)[gx]);
+        s_tile[ty][tx] = (uint32_t)(reinterpret_cast<const uint16_t *>(src + gy * src_stride)[gx]);
     }
     __syncthreads();
 
@@ -195,33 +185,12 @@ __launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
         const unsigned lx = threadIdx.x + MS_RADIUS;
         const unsigned ly = threadIdx.y + MS_RADIUS;
 
-        uint32_t blurred = 0u;
-#pragma unroll
-        for (int xf = 0; xf < 5; ++xf) {
-            uint32_t blurred_y = 0u;
-#pragma unroll
-            for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += (uint32_t)ms_filter_d[yf] *
-                             s_tile[ly - MS_RADIUS + yf][lx - MS_RADIUS + xf];
-            }
-            blurred += (uint32_t)ms_filter_d[xf] *
-                       ((blurred_y + add_before_y) >> shift_var_y);
-        }
-        blurred = (blurred + add_before_x) >> shift_var_x;
+        const uint32_t blurred = ms_blur_pixel(&s_tile[0][0], lx, ly, shift_var_y, add_before_y);
 
         const ptrdiff_t blurred_pitch = blurred_stride_bytes / (ptrdiff_t)sizeof(uint16_t);
         src_blurred[y * blurred_pitch + x] = (uint16_t)blurred;
-        abs_dist = (uint32_t)abs((int)blurred -
-                                  (int)prev_blurred[y * blurred_pitch + x]);
+        abs_dist = (uint32_t)abs((int)blurred - (int)prev_blurred[y * blurred_pitch + x]);
     }
 
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
-        abs_dist += __shfl_down(abs_dist, off);
-
-    const unsigned lane = lid % (unsigned)warpSize;
-    if (lane == 0)
-        atomicAdd(reinterpret_cast<unsigned long long *>(sad),
-                  (unsigned long long)abs_dist);
+    ms_accumulate_sad(abs_dist, lid, sad);
 }
-
-} /* extern "C" */

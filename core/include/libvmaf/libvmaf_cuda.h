@@ -98,14 +98,15 @@ VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
  *
  * @param vmaf VMAF context allocated with `vmaf_init()`.
  *
- * @param cu_state CUDA state allocated with `vmaf_cuda_state_init()`.
+ * @param cu_state CUDA state allocated with `vmaf_cuda_state_init()`. The
+ *                 import copies the state and does not modify this object.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
  * @thread-safety Not thread-safe. Call before vmaf_use_features_from_model()
  *               and vmaf_read_pictures() on the same context.
  */
-VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
+VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, const VmafCudaState *cu_state);
 
 /**
  * @enum  VmafCudaPicturePreallocationMethod

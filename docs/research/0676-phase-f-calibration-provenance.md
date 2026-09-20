@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0676 — Phase F calibration provenance
 
 ## Context
@@ -25,7 +24,7 @@ top-level keys and reads `recipes` / `metadata` by name.
 ## Alternatives Considered
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the existing JSON shape | No diff | Recipe thresholds still lose corpus snapshot and row-cap lineage | Rejected |
 | Store provenance only in `metadata.corpus` | Keeps one metadata namespace | Recreates script-local manifest shape and omits argv/output target | Rejected |
 | Attach ADR-0661 `run_provenance` | Shared schema; no loader change; records input/output/argv | Adds one top-level key | Chosen |

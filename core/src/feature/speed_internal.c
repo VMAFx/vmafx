@@ -26,6 +26,8 @@
  *  cross-backend audits that surfaced the missing TU.
  */
 
+#include "vmaf_nullptr.h"
+
 #include "feature/speed_internal.h"
 
 #include <assert.h>
@@ -62,7 +64,7 @@
 
 int speed_internal_init_dimensions(SpeedInternalDimensions *dim, int w, int h, double prescale)
 {
-    assert(dim != NULL);
+    assert(dim != VMAF_NULLPTR);
     assert(w > 0);
     assert(h > 0);
 
@@ -116,9 +118,9 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
                                          SpeedInternalOptions *opt, float *frame_buffer,
                                          float *tmp_buffer, size_t float_stride)
 {
-    assert(opt != NULL);
-    assert(frame_buffer != NULL);
-    assert(tmp_buffer != NULL);
+    assert(opt != VMAF_NULLPTR);
+    assert(frame_buffer != VMAF_NULLPTR);
+    assert(tmp_buffer != VMAF_NULLPTR);
 
     const size_t stride_px = float_stride / sizeof(float);
     const size_t frame_size = stride_px * dim->alloc_height;
@@ -175,60 +177,17 @@ static float si_compute_mean(const SpeedInternalDimensions *dim, const float *da
     return denom > 0.0f ? result / denom : 0.0f;
 }
 
-static float si_compute_covariance(const SpeedInternalDimensions *dim, const float *data,
-                                   const float *means, size_t stride_px, size_t start_row_x,
-                                   size_t start_col_x, size_t start_row_y, size_t start_col_y)
-{
-    const double mean_x = means[start_row_x * dim->block_size + start_col_x];
-    const double mean_y = means[start_row_y * dim->block_size + start_col_y];
-    double result = 0.0;
-    for (size_t i = 0; i < dim->submatrix_height; i++) {
-        for (size_t j = 0; j < dim->submatrix_width; j++) {
-            const double val_x = data[(start_row_x + i) * stride_px + (start_col_x + j)];
-            const double val_y = data[(start_row_y + i) * stride_px + (start_col_y + j)];
-            result += (val_x - mean_x) * (val_y - mean_y);
-        }
-    }
-    const double denom = (double)(dim->submatrix_width * dim->submatrix_height);
-    return denom > 0.0 ? (float)(result / denom) : 0.0f;
-}
-
 void speed_internal_compute_means(const SpeedInternalDimensions *dim, const float *data,
                                   float *means, size_t stride_px)
 {
-    assert(dim != NULL);
-    assert(data != NULL);
-    assert(means != NULL);
+    assert(dim != VMAF_NULLPTR);
+    assert(data != VMAF_NULLPTR);
+    assert(means != VMAF_NULLPTR);
 
     for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
         for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
             means[start_row * dim->block_size + start_col] =
                 si_compute_mean(dim, data, stride_px, start_row, start_col);
-        }
-    }
-}
-
-void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const float *data,
-                                       float *cov_mat, float *tmp_means, size_t stride_px)
-{
-    assert(data != NULL);
-    assert(cov_mat != NULL);
-    assert(tmp_means != NULL);
-    assert(dim->block_size > 0);
-
-    speed_internal_compute_means(dim, data, tmp_means, stride_px);
-    const size_t elements_in_block = dim->block_size * dim->block_size;
-
-    for (size_t x_index = 0; x_index < dim->elements_in_block; x_index++) {
-        for (size_t y_index = 0; y_index <= x_index; y_index++) {
-            const size_t start_row_x = x_index / dim->block_size;
-            const size_t start_col_x = x_index % dim->block_size;
-            const size_t start_row_y = y_index / dim->block_size;
-            const size_t start_col_y = y_index % dim->block_size;
-            const float cov = si_compute_covariance(dim, data, tmp_means, stride_px, start_row_x,
-                                                    start_col_x, start_row_y, start_col_y);
-            cov_mat[x_index * elements_in_block + y_index] = cov;
-            cov_mat[y_index * elements_in_block + x_index] = cov;
         }
     }
 }
@@ -344,7 +303,7 @@ static void si_convert_to_tridiagonal(float *A, int size, float *d, float *sd, f
     }
 }
 
-static void si_chop_small(float *d, float *sd, int size)
+static void si_chop_small(const float *d, float *sd, int size)
 {
     for (int i = 0; i < size - 1; i++) {
         if (fabsf(sd[i]) < SI_EIGENVALUE_EPS * (fabsf(d[i]) + fabsf(d[i + 1]))) {
@@ -408,7 +367,6 @@ static void si_qr_step_size2(float *d, float *sd, float x, float z)
 
 static void si_qr_step_general(float *d, float *sd, int n, float x, float z)
 {
-    float ak = 0.0f;
     float bk = 0.0f;
     float zk = 0.0f;
     float ap = d[0];
@@ -428,7 +386,7 @@ static void si_qr_step_general(float *d, float *sd, int n, float x, float z)
         const float aq1 = s * (s * ap + c * bp) + c * (s * bp + c * aq);
         const float bq1 = c * bq;
 
-        ak = ap1;
+        const float ak = ap1;
         bk = bp1;
         zk = zp1;
         ap = aq1;
@@ -514,9 +472,9 @@ static void si_compute_eigenvalues_tridiagonal(float *d, float *sd, float *eigen
 void speed_internal_compute_eigenvalues(const float *A_immutable, float *eigenvalues, int size,
                                         float *buffer)
 {
-    assert(A_immutable != NULL);
-    assert(eigenvalues != NULL);
-    assert(buffer != NULL);
+    assert(A_immutable != VMAF_NULLPTR);
+    assert(eigenvalues != VMAF_NULLPTR);
+    assert(buffer != VMAF_NULLPTR);
     assert(size > 0);
 
     float *A = buffer;
@@ -631,12 +589,13 @@ static void si_identity_minus_v_vt(float *dst, const float *v, int size)
     }
 }
 
-int speed_internal_qr_factorize(float *A_data, int size, float *Q_out, float *R_out, float *tmp)
+int speed_internal_qr_factorize(const float *A_data, int size, float *Q_out, float *R_out,
+                                float *tmp)
 {
-    assert(A_data != NULL);
-    assert(Q_out != NULL);
-    assert(R_out != NULL);
-    assert(tmp != NULL);
+    assert(A_data != VMAF_NULLPTR);
+    assert(Q_out != VMAF_NULLPTR);
+    assert(R_out != VMAF_NULLPTR);
+    assert(tmp != VMAF_NULLPTR);
     assert(size > 0);
 
     /* Workspace layout (3 × size² floats): tmp_q | tmp_z | tmp_mul.
@@ -685,9 +644,9 @@ int speed_internal_qr_factorize(float *A_data, int size, float *Q_out, float *R_
 
 void speed_internal_qt_multiply(const float *Q, float *B, int size, int num_cols, float *tmp)
 {
-    assert(Q != NULL);
-    assert(B != NULL);
-    assert(tmp != NULL);
+    assert(Q != VMAF_NULLPTR);
+    assert(B != VMAF_NULLPTR);
+    assert(tmp != VMAF_NULLPTR);
     assert(size > 0);
     assert(num_cols > 0);
 
@@ -706,40 +665,13 @@ void speed_internal_qt_multiply(const float *Q, float *B, int size, int num_cols
 }
 
 /* ------------------------------------------------------------------ */
-/* Backward substitution: R × X = B, in place into B                   */
-/* ------------------------------------------------------------------ */
-
-int speed_internal_backward_substitution(const float *R, float *B, int size, int num_cols)
-{
-    assert(R != NULL);
-    assert(B != NULL);
-    assert(size > 0);
-    assert(num_cols > 0);
-
-    for (int i = size - 1; i >= 0; i--) {
-        const float denom = R[i * size + i];
-        if (fabsf(denom) < SI_EIGENVALUE_EPS) {
-            return -EINVAL;
-        }
-        for (int j = 0; j < num_cols; j++) {
-            float term = B[i * num_cols + j];
-            for (int k = i + 1; k < size; k++) {
-                term -= B[k * num_cols + j] * R[i * size + k];
-            }
-            B[i * num_cols + j] = term / denom;
-        }
-    }
-    return 0;
-}
-
-/* ------------------------------------------------------------------ */
 /* Regularity check                                                    */
 /* ------------------------------------------------------------------ */
 
 void speed_internal_tally_solve(SpeedInternalSingularTally *tally, bool singular, const char *who)
 {
-    assert(tally != NULL);
-    assert(who != NULL);
+    assert(tally != VMAF_NULLPTR);
+    assert(who != VMAF_NULLPTR);
     tally->solves++;
     if (!singular) {
         return;
@@ -754,8 +686,8 @@ void speed_internal_tally_solve(SpeedInternalSingularTally *tally, bool singular
 
 void speed_internal_report_singular(const SpeedInternalSingularTally *tally, const char *who)
 {
-    assert(tally != NULL);
-    assert(who != NULL);
+    assert(tally != VMAF_NULLPTR);
+    assert(who != VMAF_NULLPTR);
     if (tally->singular == 0) {
         return;
     }
@@ -765,7 +697,7 @@ void speed_internal_report_singular(const SpeedInternalSingularTally *tally, con
 
 bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_elements)
 {
-    assert(eigenvalues != NULL);
+    assert(eigenvalues != VMAF_NULLPTR);
     for (size_t i = 0; i < num_elements; i++) {
         if (eigenvalues[i] < SI_EIGENVALUE_EPS) {
             return false;

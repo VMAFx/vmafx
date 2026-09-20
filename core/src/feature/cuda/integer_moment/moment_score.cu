@@ -34,8 +34,6 @@
 #define BLOCK_X 16
 #define BLOCK_Y 16
 
-extern "C" {
-
 __device__ static inline uint64_t warp_reduce_u64(uint64_t v)
 {
     uint32_t lo = (uint32_t)v;
@@ -52,8 +50,9 @@ __device__ static inline uint64_t warp_reduce_u64(uint64_t v)
     return ((uint64_t)hi << 32) | lo;
 }
 
-__global__ void calculate_moment_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
-                                             VmafCudaBuffer sums, unsigned width, unsigned height)
+extern "C" __global__ void calculate_moment_kernel_8bpc(const VmafPicture ref,
+                                                        const VmafPicture dis, VmafCudaBuffer sums,
+                                                        unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -85,8 +84,9 @@ __global__ void calculate_moment_kernel_8bpc(const VmafPicture ref, const VmafPi
     }
 }
 
-__global__ void calculate_moment_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
-                                              VmafCudaBuffer sums, unsigned width, unsigned height)
+extern "C" __global__ void calculate_moment_kernel_16bpc(const VmafPicture ref,
+                                                         const VmafPicture dis, VmafCudaBuffer sums,
+                                                         unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -119,5 +119,3 @@ __global__ void calculate_moment_kernel_16bpc(const VmafPicture ref, const VmafP
         atomicAdd(&acc[3], (unsigned long long)d2);
     }
 }
-
-} /* extern "C" */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0484: Extend kernel-scaffolding.md with HIP and Metal lifecycle contract
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ No changes to C source files, no meson changes, no new link-time symbols.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep separate header comment blocks | No doc debt | Invariant text drifts independently across three `.h` files | Defeats the purpose of having a shared doc |
 | Shared `.inc` file included by all three headers | Single source for struct comments | Preprocessor abuse; `.inc` files are harder to read standalone and not friendly to clangd | The doc is the right level of abstraction for contract prose |
 | Cross-backend unified struct (`uintptr_t`-only base) | One C type | Loses backend-specific field names (`str` vs `cmd_queue`); breaks consumer code that reads fields by name | Handle-type differences are load-bearing per ADR-0246 |

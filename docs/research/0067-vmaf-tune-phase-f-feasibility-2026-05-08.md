@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0067: `vmaf-tune` Phase F — adaptive recipe-aware composition feasibility
 
 - **Date**: 2026-05-08
@@ -56,7 +55,7 @@ workstation (no GPU encoder), encoding with `libx264 medium` to a
 single rendition at target VMAF 92.
 
 | Step | Today's command | Wall-time | Operator effort |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1. Pick codec (intuition or heuristic) | n/a | 0 (manual) | Read content, guess |
 | 2. Build (preset, CRF) corpus | `vmaf-tune corpus` over 6 cells × full encode | ≈ 70 min | Type 6 flags |
 | 3. Refine corpus around target | `vmaf-tune recommend --target-vmaf 92` (coarse-to-fine) | ≈ 12 min | Type 4 flags |
@@ -134,7 +133,7 @@ Per-decision wall-clock budget on the same 12-core 1080p workstation.
 Numbers in seconds unless noted; `N_shots` ≈ 60 for a 2-hour title.
 
 | Decision | Function | Wall-time | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Probe + HDR detect | `ffprobe` once | < 0.5 s | Cheap; always run. |
 | Resolution shortlist | `ladder.candidate_rungs` | < 0.1 s | Pure metadata. |
 | Codec shortlist | `compare.shortlist` | < 0.1 s | License + HW availability filter. |
@@ -202,7 +201,7 @@ These cases bypass entire phases:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Deterministic decision tree (chosen)** | Explainable, reproducible, every branch maps to an existing ADR contract; trivially testable; no runtime ML dependency. | Hard-codes priorities; new sub-phases require tree edits. | Picked: matches the fork's "no learned policy at runtime" constraint and the user's "explainable, no closed services" framing. |
 | Pure-grid composition (today's manual workflow) | Zero new code; fully reproducible. | 8-step manual composition; ≈ 5–6 h wall-clock; high operator-error rate. | Not chosen: the reason Phase F is a backlog item. |
 | Optuna over the full composition space | Strong optimum; reuses the Phase A.5 search infrastructure. | Per-source TPE warm-up cost; no closed-form way to express "skip Phase D when source is short"; opaque to operators ("why did it pick x265?"). | Not chosen: the optimum-over-recipes problem has too few independent samples per source for Bayesian search to beat a hand-tuned tree. |

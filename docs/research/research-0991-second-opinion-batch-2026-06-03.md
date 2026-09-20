@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD040 -->
 # Research-0991: Second-Opinion Batch Materializer — Smoke-Run Scaffold
 
 ## Problem

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1087: Extend test coverage for pkg/storage and cmd/vmafx-node/bpf
 
 - **Status**: Accepted
@@ -40,7 +39,7 @@ integration path that requires CAP_BPF.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Interface-wrap `ringbuf.Reader` to allow mocking | Would unlock drainLoop branch coverage | Changes production types; adds indirection for a rarely-exercised path | Disproportionate churn for marginal gain |
 | Generate real BPF objects in CI | Full coverage of kernel paths | Requires CAP_BPF, Linux 5.15+, clang, libbpf-dev; unavailable in standard CI containers | Infrastructure cost exceeds value |
 | Skip bpf coverage entirely | No work | Leaves 0% on `closeLinks` body and `drainLoop` ring-buffer paths | Partial improvement plus documentation is strictly better |

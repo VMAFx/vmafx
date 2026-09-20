@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0437](0437-metal-public-header-install-and-import-state-declaration.md) | Metal public-header install and `vmaf_metal_import_state` declaration | Accepted | metal, build, c-api, install, apple-silicon, fork-local |

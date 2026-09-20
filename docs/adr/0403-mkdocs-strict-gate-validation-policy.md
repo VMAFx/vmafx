@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0403: mkdocs `--strict` validation policy — actionable carve-outs
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ flip those categories to `warn` and clear the residual.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Promote every category to `warn` | Maximally strict | 1,276 unfixable WARNINGs against `master`; lane is permanently red until ADR-0028 is repealed | Blocks all PRs |
 | Keep all categories at `info` (status quo) | Zero churn | `--strict` flag is decorative; future broken anchors / fragment leaks land silently | Defeats the gate |
 | Rewrite all cross-tree pointers to absolute GitHub URLs | Categorically eliminates the population | ~820 ADR-body edits; collides with ADR-0028 immutability; loses GitHub's "click the file" relative-link rendering | Out of scope |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0722 — tool report strict JSON
 
 ## Problem
@@ -27,7 +26,7 @@ strict:
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave raw `json.dumps()` | Smallest diff | Strict JSON parsers still reject user-facing files | Rejected |
 | Reject empty external-bench aggregates | No `null` values | A missing optional external binary would make smoke reports fail instead of preserving a clear missing-data row | Rejected |
 | Convert non-finite aggregate means to `null` only at JSON output | Portable JSON and unchanged in-memory/table semantics | JSON and table represent missing data differently (`null` vs `nan`) | Chosen |

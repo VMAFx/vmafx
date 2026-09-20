@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0434: CHUG Parquet Metadata Enrichment
 
 - **Status**: Accepted
@@ -31,7 +30,7 @@ after extraction finishes.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Rerun extraction with `--metadata-jsonl` | Reuses the normal extractor path | Wastes a long-running local feature job and GPU/CPU time | Rejected; metadata can be joined without touching feature values |
 | Add only an extractor restart mode | Keeps one script surface | Still requires restarting the extraction driver and complicates checkpoint semantics | Rejected; post-hoc enrichment is simpler and safer |
 | Always overwrite metadata | Deterministic replacement | Can silently discard manual split fixes or prior audits | Rejected; fill-missing default preserves existing operator intent |

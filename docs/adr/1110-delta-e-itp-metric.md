@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1110: Add ΔE-ITP (Delta E ITP) — PQ-only HDR colour-difference CPU extractor
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ independently validated.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **PQ-only ΔE-ITP now, defer HLG/SDR** (chosen) | Every shipped constant is double/triple-confirmed; smallest correct surface; matches `ciede`/`ssimulacra2` CPU-first staging | No HLG/SDR colour difference yet | Best risk/value: ships the verified HDR core without unvalidated constants |
 | Ship all three transfers (PQ + HLG + BT.1886) now | One-shot complete BT.2124-0 coverage | HLG OOTF constants and the BT.709→BT.2100 primaries are single-sourced; risk of shipping an unverified number | Rejected — violates the fork's "every constant double-confirmed" bar |
 | Do nothing / rely on `ciede` for HDR | No new code | `ciede` is BT.709 SDR; produces meaningless numbers on PQ HDR | Rejected — leaves the WCG/HDR gap open |

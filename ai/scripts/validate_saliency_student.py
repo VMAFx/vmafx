@@ -32,15 +32,15 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from train_saliency_student import TinyUNet  # type: ignore[import-not-found]
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+from vmaf_train.op_allowlist import check_model  # type: ignore[import-not-found]
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from train_saliency_student import TinyUNet  # noqa: E402  # type: ignore[import-not-found]
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
-from vmaf_train.op_allowlist import check_model  # noqa: E402  # type: ignore[import-not-found]
 
 
 def _check_allowlist(onnx_path: Path) -> int:

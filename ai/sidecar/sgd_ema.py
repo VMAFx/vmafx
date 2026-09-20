@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import torch
-    import torch.nn as nn
+    from torch import nn
 
 
 @dataclass
@@ -243,7 +243,7 @@ class SGDEMATrainer:
     # ------------------------------------------------------------------
 
     def _build_optimizer(self) -> "torch.optim.Optimizer":
-        import torch.optim as optim
+        from torch import optim
 
         if self._cfg.optimizer == "adam":
             return optim.Adam(

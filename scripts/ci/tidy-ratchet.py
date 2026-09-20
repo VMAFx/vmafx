@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Whole-tree clang-tidy debt ratchet (ADR-1142).
+"""Whole-tree clang-tidy measurement and zero-debt gate (ADR-1267).
 
 Measures every translation unit in a ``compile_commands.json``, deduplicates
 the clang-tidy diagnostics by ``(path, line, column, check)`` exactly like the
 2026-08-31 / 2026-09-02 baselines, counts ``NOLINT`` markers that carry no
 inline ``ADR-NNNN`` citation, and compares the per-file numbers against a
-committed baseline.  The comparison is a *ratchet*: a file may never grow
-above its baseline (regression), and when a file shrinks the baseline must be
-tightened in the same change (``--write``), so the committed numbers are the
-measured numbers at every commit.
+committed migration baseline.  ``--require-zero`` is the acceptance gate: a
+matching nonzero baseline never makes a warning or uncited suppression clean.
+Without that flag, the comparison remains available only to inventory cleanup
+progress; ``--write`` records that inventory and is not a compliance result.
 
 Exit codes: 0 baseline matches, 2 regression, 3 baseline is stale-high (ratchet
 must be tightened), 4 a translation unit failed to compile under clang-tidy
-(the measurement is unusable — fail closed), 5 usage / IO error.
+(the measurement is unusable — fail closed), 5 usage / IO error, 6 strict
+zero-debt violation.
 """
 
 from __future__ import annotations
@@ -27,7 +28,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -35,6 +35,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 if os.name == "posix":
     import fcntl
@@ -47,9 +53,11 @@ DIAG_RE = re.compile(
     r"(?P<level>warning|error): .*?\[(?P<check>[A-Za-z0-9_.,\-]+)\]\s*$"
 )
 COMPILE_ERROR_CHECK = "clang-diagnostic-error"
-NOLINT_RE = re.compile(r"NOLINT(?:NEXTLINE|BEGIN)?(?:\([^)]*\))?(?!END)")
-ADR_CITE_RE = re.compile(r"ADR-\d{4}")
+NOLINT_RE = re.compile(r"\bNOLINT(?:NEXTLINE|BEGIN)?(?:\([^\)\r\n]*\))?(?![A-Za-z0-9_])")
+ALL_NOLINT_RE = re.compile(r"\bNOLINT(?:NEXTLINE|BEGIN|END)?(?:\([^\)\r\n]*\))?(?![A-Za-z0-9_])")
+ADR_CITE_RE = re.compile(r"\bADR-\d{4}\b")
 GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
+ZERO_DEBT_EXIT = 6
 
 
 @dataclass
@@ -60,6 +68,7 @@ class Measurement:
     tus: int = 0
     warnings: dict[str, int] = field(default_factory=dict)
     nolint_uncited: dict[str, int] = field(default_factory=dict)
+    nolint_markers: dict[str, int] = field(default_factory=dict)
     compile_failures: list[str] = field(default_factory=list)
     clang_tidy_version: str = ""
     sources: list[str] = field(default_factory=list)
@@ -81,6 +90,10 @@ class Measurement:
     def total_nolint_uncited(self) -> int:
         return sum(self.nolint_uncited.values())
 
+    @property
+    def total_nolint_markers(self) -> int:
+        return sum(self.nolint_markers.values())
+
     def to_json(self, *, with_diagnostics: bool = False) -> dict[str, Any]:
         """Serialise the measurement.
 
@@ -100,8 +113,10 @@ class Measurement:
             "compile_failures": sorted(self.compile_failures),
             "total_warnings": self.total_warnings,
             "total_nolint_uncited": self.total_nolint_uncited,
+            "total_nolint_markers": self.total_nolint_markers,
             "warnings": dict(sorted(self.warnings.items())),
             "nolint_uncited": dict(sorted(self.nolint_uncited.items())),
+            "nolint_markers": dict(sorted(self.nolint_markers.items())),
         }
         if with_diagnostics:
             doc["diagnostics"] = list(self.diagnostics)
@@ -118,6 +133,7 @@ class Measurement:
             compile_failures=list(data.get("compile_failures", [])),
             warnings={str(k): int(v) for k, v in data.get("warnings", {}).items()},
             nolint_uncited={str(k): int(v) for k, v in data.get("nolint_uncited", {}).items()},
+            nolint_markers={str(k): int(v) for k, v in data.get("nolint_markers", {}).items()},
             clang_tidy_version=str(data.get("clang_tidy_version", "")),
             cc_version=str(data.get("cc_version", "")),
         )
@@ -170,63 +186,94 @@ def parse_diagnostics(
     return diags, compile_failed
 
 
-def _cited_in_block_comment(lines: list[str], index: int, in_block: bool) -> bool:
-    """Return True when the block comment holding line *index* cites an ADR.
+def _quoted_literal_end(text: str, start: int) -> int:
+    """Return the first offset after a quoted C/C++ string or character literal."""
+    quote = text[start]
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+        elif text[index] == quote:
+            return index + 1
+        else:
+            index += 1
+    return len(text)
 
-    *in_block* says whether line *index* is already inside a ``/* ... */``
-    comment opened on an earlier line. The forward scan stops at the closing
-    ``*/`` so a citation belonging to the next comment never counts.
+
+def _raw_string_end(text: str, start: int) -> int | None:
+    """Return the end of a C++ raw string whose ``R\"`` starts at *start*."""
+    if not text.startswith('R"', start):
+        return None
+    delimiter_end = text.find("(", start + 2, start + 19)
+    if delimiter_end < 0:
+        return None
+    delimiter = text[start + 2 : delimiter_end]
+    if any(char.isspace() or char in "\\()" for char in delimiter):
+        return None
+    terminator = ")" + delimiter + '"'
+    end = text.find(terminator, delimiter_end + 1)
+    return len(text) if end < 0 else end + len(terminator)
+
+
+def _comment_spans(text: str) -> list[tuple[int, int]]:
+    """Return exact block-comment and contiguous-line-comment spans.
+
+    Contiguous ``//`` lines are one explanatory comment when the next line
+    starts with optional horizontal whitespace and another ``//``. String,
+    character and C++ raw-string literals are skipped so comment-looking text
+    in code can neither create a marker nor provide its citation.
     """
-    line = lines[index]
-    opened = line.rfind("/*")
-    if not in_block:
-        if opened < 0 or "*/" in line[opened:]:
-            return False
-    elif "*/" in line:
-        return False
-    for follow in lines[index + 1 :]:
-        if ADR_CITE_RE.search(follow):
-            return True
-        if "*/" in follow:
-            break
-    return False
+    comments: list[tuple[int, int, bool]] = []
+    index = 0
+    while index < len(text):
+        if text.startswith("//", index):
+            end = text.find("\n", index + 2)
+            end = len(text) if end < 0 else end
+            comments.append((index, end, True))
+            index = end
+        elif text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            end = len(text) if end < 0 else end + 2
+            comments.append((index, end, False))
+            index = end
+        elif text[index] in {'"', "'"}:
+            index = _quoted_literal_end(text, index)
+        else:
+            raw_end = _raw_string_end(text, index)
+            index = raw_end if raw_end is not None else index + 1
+
+    spans: list[tuple[int, int, bool]] = []
+    for start, end, is_line in comments:
+        if spans and is_line and spans[-1][2]:
+            gap = text[spans[-1][1] : start]
+            if re.fullmatch(r"\r?\n[ \t]*", gap):
+                spans[-1] = (spans[-1][0], end, True)
+                continue
+        spans.append((start, end, is_line))
+    return [(start, end) for start, end, _ in spans]
 
 
 def count_uncited_nolints(text: str) -> int:
     """Count NOLINT markers that carry no inline ``ADR-NNNN`` citation.
 
-    A marker is cited when ``ADR-NNNN`` appears on the previous, the same or
-    the next line, or anywhere in the ``/* ... */`` block comment that holds
-    the marker (the ADR-1138 ``NOLINTBEGIN`` brackets explain themselves in a
-    multi-line comment and cite the ADR on its last line). ``NOLINTEND`` is a
-    closing bracket, never a suppression of its own.
+    A marker is cited only when ``ADR-NNNN`` appears in the exact comment that
+    holds it: a complete ``/* ... */`` block or a contiguous run of ``//``
+    lines, scanned in both directions. Code, string literals and neighbouring
+    comments cannot lend their ADR token to a marker. ``NOLINTEND`` is a
+    closing bracket, never a suppression of its own. See ADR-1266.
     """
-    lines = text.splitlines()
     uncited = 0
-    in_block = False
-    for index, line in enumerate(lines):
-        markers = len(NOLINT_RE.findall(line))
-        if markers:
-            window = (
-                lines[index - 1] if index > 0 else "",
-                line,
-                lines[index + 1] if index + 1 < len(lines) else "",
-            )
-            cited = any(ADR_CITE_RE.search(item) for item in window)
-            if not cited and not _cited_in_block_comment(lines, index, in_block):
-                uncited += markers
-        # Track block-comment state for the next line. Markers live in
-        # comments, so string literals holding comment tokens are not modelled.
-        rest = line
-        if in_block:
-            if "*/" not in rest:
-                continue
-            in_block = False
-            rest = rest[rest.index("*/") + 2 :]
-        opened = rest.rfind("/*")
-        if opened >= 0 and "*/" not in rest[opened:]:
-            in_block = True
+    for start, end in _comment_spans(text):
+        comment = text[start:end]
+        markers = len(NOLINT_RE.findall(comment))
+        if markers and not ADR_CITE_RE.search(comment):
+            uncited += markers
     return uncited
+
+
+def count_nolint_markers(text: str) -> int:
+    """Count every inline clang-tidy suppression marker, cited or not."""
+    return sum(len(ALL_NOLINT_RE.findall(text[start:end])) for start, end in _comment_spans(text))
 
 
 def load_compile_commands(build_dir: Path, repo_root: Path) -> list[tuple[Path, Path]]:
@@ -267,8 +314,13 @@ def cc_version(build_dir: Path) -> str:
 def clang_tidy_version(binary: str) -> str:
     """Return the LLVM version string of *binary*, or "" when unavailable."""
     try:
-        out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-            [binary, "--version"], capture_output=True, text=True, check=False
+        out = run_command(
+            [binary, "--version"],
+            allowed_executables=(binary,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
         ).stdout
     except OSError:
         return ""
@@ -295,9 +347,17 @@ def run_one(
     forwarded = [
         arg if arg.startswith("--extra-arg") else f"--extra-arg={arg}" for arg in extra_args
     ]
-    argv = [binary, "-p", str(build_dir), *forwarded, str(source)]
-    proc = subprocess.run(  # noqa: S603 -- argv built from compile_commands, no shell
-        argv, capture_output=True, text=True, check=False, cwd=str(directory)
+    language_checks = ["--checks=-modernize-use-nullptr"] if source.suffix == ".c" else []
+    argv = [binary, "-p", str(build_dir), *forwarded, *language_checks, str(source)]
+    proc = run_command(
+        argv,
+        allowed_executables=(binary,),
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(directory),
+        timeout_seconds=600,
+        max_output_bytes=64 * 1_048_576,
     )
     return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode
 
@@ -352,11 +412,18 @@ def measure(
         result.diagnostics.append(f"{path}:{line}:{col}: [{check}]")
     result.diagnostics.sort()
     result.nolint_uncited = scan_nolints(repo_root, units, lane)
+    result.nolint_markers = scan_nolints(repo_root, units, lane, count_all=True)
     return result
 
 
-def scan_nolints(repo_root: Path, units: list[tuple[Path, Path]], lane: str) -> dict[str, int]:
-    """Count uncited NOLINTs in every measured TU and the headers of its lane.
+def scan_nolints(
+    repo_root: Path,
+    units: list[tuple[Path, Path]],
+    lane: str,
+    *,
+    count_all: bool = False,
+) -> dict[str, int]:
+    """Count NOLINTs in every measured TU and the headers of its lane.
 
     The ``cpu`` lane owns every header under ``core/``; a GPU lane only owns
     the headers that live next to its translation units, so a header is
@@ -379,9 +446,9 @@ def scan_nolints(repo_root: Path, units: list[tuple[Path, Path]], lane: str) -> 
         rel = relpath(str(path), repo_root, repo_root)
         if rel is None:
             continue
-        uncited = count_uncited_nolints(text)
-        if uncited:
-            counts[rel] = uncited
+        count = count_nolint_markers(text) if count_all else count_uncited_nolints(text)
+        if count:
+            counts[rel] = count
     return counts
 
 
@@ -418,14 +485,21 @@ def annotate(level: str, message: str) -> None:
     print(f"{prefix}{message}")
 
 
-def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> int:
-    """Print the comparison and return the process exit code."""
+def report(
+    baseline: Measurement,
+    measured: Measurement,
+    allow_slack: bool,
+    *,
+    require_zero: bool = False,
+) -> int:
+    """Print the migration comparison and enforce zero when requested."""
     regressions, slack = compare(baseline, measured)
     print(
         f"tidy-ratchet[{measured.lane}]: {measured.tus} TUs, "
         f"{measured.total_warnings} warnings (baseline {baseline.total_warnings}), "
         f"{measured.total_nolint_uncited} uncited NOLINTs "
-        f"(baseline {baseline.total_nolint_uncited})"
+        f"(baseline {baseline.total_nolint_uncited}), "
+        f"{measured.total_nolint_markers} total NOLINT markers"
     )
     if baseline.clang_tidy_version and measured.clang_tidy_version != baseline.clang_tidy_version:
         annotate(
@@ -452,11 +526,33 @@ def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> i
             f"{delta.path}: {delta.metric} {delta.baseline} -> {delta.measured} "
             f"({delta.change}) — tighten the baseline: tidy-ratchet.py --write",
         )
+    if require_zero and (measured.total_warnings or measured.total_nolint_markers):
+        for path, count in sorted(measured.warnings.items()):
+            annotate(
+                "error",
+                f"{path}: {count} clang-tidy diagnostic(s); ADR-1267 requires zero",
+            )
+        for path, count in sorted(measured.nolint_markers.items()):
+            annotate(
+                "error",
+                f"{path}: {count} NOLINT suppression marker(s); ADR-1267 requires zero",
+            )
+        annotate(
+            "error",
+            "strict zero-debt gate failed; a matching migration baseline is not an allowance",
+        )
+        return ZERO_DEBT_EXIT
     if regressions:
         return 2
     if slack and not allow_slack:
         return 3
-    print("tidy-ratchet: baseline matches measurement")
+    if require_zero:
+        print("tidy-ratchet: strict zero-debt gate passed")
+    else:
+        print(
+            "tidy-ratchet: migration inventory matches the baseline; "
+            "this does not certify zero debt"
+        )
     return 0
 
 
@@ -627,6 +723,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--allow-slack", action="store_true", help="do not fail when files improved"
     )
+    parser.add_argument(
+        "--require-zero",
+        action="store_true",
+        help="fail unless the complete measurement has zero warnings and zero NOLINT markers",
+    )
     return parser.parse_args(argv)
 
 
@@ -642,6 +743,12 @@ def same_output_file(first: Path, second: Path) -> bool:
 
 def prepare_output(args: argparse.Namespace, baseline_path: Path) -> bytes | None:
     """Reject report aliases and snapshot the baseline before any measurement."""
+    if args.require_zero and args.only:
+        raise ValueError("--require-zero cannot be combined with partial --only measurement")
+    if args.require_zero and args.write:
+        raise ValueError("--require-zero cannot be combined with migration inventory --write")
+    if args.require_zero and args.allow_slack:
+        raise ValueError("--require-zero cannot be combined with --allow-slack")
     if args.report and same_output_file(args.report, baseline_path):
         raise ValueError("measurement report must not overwrite the baseline")
     if args.write:
@@ -672,7 +779,12 @@ def finish_measurement(
     if args.write:
         return write_full_baseline(baseline_path, measured, baseline_before)
     baseline = Measurement.from_json(json.loads(baseline_path.read_text(encoding="utf-8")))
-    return report(baseline, measured, args.allow_slack)
+    return report(
+        baseline,
+        measured,
+        args.allow_slack,
+        require_zero=args.require_zero,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -683,7 +795,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         baseline_before = prepare_output(args, baseline_path)
-        binary = shutil.which(args.clang_tidy) or args.clang_tidy
+        resolved_binary = shutil.which(args.clang_tidy)
+        if resolved_binary is None:
+            raise ValueError(f"clang-tidy executable not found: {args.clang_tidy}")
+        binary = str(Path(resolved_binary).resolve(strict=True))
         measured = measure(
             args.lane,
             args.build_dir.resolve(),

@@ -26,11 +26,6 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -138,7 +133,7 @@ static char *validate_vif_avx512_alignment(const struct VifAvx512ConvFixture *fi
     if (((uintptr_t)fixture->tmp % 64u) == 0u) {
         return "tmp fixture must be 64-byte misaligned";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *assert_finite_plane(const float *plane)
@@ -148,7 +143,7 @@ static char *assert_finite_plane(const float *plane)
             return "AVX512 convolution produced non-finite output";
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 && HAVE_AVX512 */
@@ -206,7 +201,7 @@ static char *check_vif_stat_avx2(uint32_t seed, int w, int h)
                                   "vif_statistic_s_avx2 num outside tolerance");
     SIMD_BITEXACT_ASSERT_RELATIVE((double)den_scalar, (double)den_avx2, VIF_REL_TOL,
                                   "vif_statistic_s_avx2 den outside tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vif_avx2_seed_a(void)
@@ -288,7 +283,7 @@ static char *test_vif_avx2_sigma_max_inv_branch(void)
                                   "vif_statistic_s_avx2 sigma_max_inv branch num");
     SIMD_BITEXACT_ASSERT_RELATIVE((double)den_scalar, (double)den_avx2, VIF_REL_TOL,
                                   "vif_statistic_s_avx2 sigma_max_inv branch den");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if HAVE_AVX512
@@ -312,13 +307,13 @@ static char *init_vif_avx512_fixture(struct VifAvx512ConvFixture *fixture)
     fixture->tmp = select_32_aligned_64_misaligned(fixture->tmp_base);
 
     char *result = validate_vif_avx512_alignment(fixture);
-    if (result != NULL) {
+    if (result != VMAF_NULLPTR) {
         return result;
     }
 
     simd_test_fill_random_f32(fixture->src1, VIF_AVX512_ALIGN_TOTAL, 0.0f, 255.0f, 0x510dfaceu);
     simd_test_fill_random_f32(fixture->src2, VIF_AVX512_ALIGN_TOTAL, 0.0f, 255.0f, 0x0ddba11u);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_vif_avx512_convolution(struct VifAvx512ConvFixture *fixture,
@@ -344,17 +339,17 @@ static char *run_vif_avx512_convolution(struct VifAvx512ConvFixture *fixture,
     default:
         return "unknown AVX512 convolution mode";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_vif_avx512_32byte_alignment(enum VifAvx512ConvMode mode)
 {
-    struct VifAvx512ConvFixture fixture = {0};
+    struct VifAvx512ConvFixture fixture = {VMAF_NULLPTR};
     char *result = init_vif_avx512_fixture(&fixture);
-    if (result == NULL) {
+    if (result == VMAF_NULLPTR) {
         result = run_vif_avx512_convolution(&fixture, mode);
     }
-    if (result == NULL) {
+    if (result == VMAF_NULLPTR) {
         result = assert_finite_plane(fixture.dst);
     }
     free_vif_avx512_fixture(&fixture);
@@ -364,10 +359,10 @@ static char *check_vif_avx512_32byte_alignment(enum VifAvx512ConvMode mode)
 static char *test_vif_avx512_convolution_32byte_alignment(void)
 {
     char *result = check_vif_avx512_32byte_alignment(VIF_AVX512_CONV_LINEAR);
-    if (result == NULL) {
+    if (result == VMAF_NULLPTR) {
         result = check_vif_avx512_32byte_alignment(VIF_AVX512_CONV_SQUARE);
     }
-    if (result == NULL) {
+    if (result == VMAF_NULLPTR) {
         result = check_vif_avx512_32byte_alignment(VIF_AVX512_CONV_CROSS);
     }
     return result;
@@ -380,7 +375,7 @@ char *run_tests(void)
 {
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_vif_avx2_seed_a);
     mu_run_test(test_vif_avx2_seed_b);
@@ -397,7 +392,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: non-x86 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

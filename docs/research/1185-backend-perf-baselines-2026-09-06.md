@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research 1185 — refreshing the per-backend performance baselines (2026-09-06)
 
 Companion to [ADR-1185](../adr/1185-backend-perf-baseline-methodology.md).

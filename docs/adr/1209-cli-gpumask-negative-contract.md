@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1209: cli gpumask negative contract
 
-# ADR-1209: `--gpumask` keeps rejecting negative values; the test script uses a positive mask
+**Decision:** `--gpumask` keeps rejecting negative values; the test script uses
+a positive mask
 
 - **Status**: Proposed
 - **Date**: 2026-09-06
@@ -29,18 +30,18 @@ rejects a leading `'-'` before calling `strtoul`, with a comment saying exactly
 why). So the CLI is behaving as designed and the script is the stale side.
 
 The semantics make a positive mask the correct spelling anyway. `gpumask` is
-documented in `libvmaf.h` as: *any non-zero value disables the GPU
+documented in `libvmaf.h` as: _any non-zero value disables the GPU
 feature-extractor selection for both the CUDA and SYCL backends (the runtime
-falls back to the CPU implementation)*. It is not a per-op bitmask despite the
+falls back to the CPU implementation)_. It is not a per-op bitmask despite the
 `<bitmask>` placeholder in the usage string.
 
 Measured on an RTX 4090 over the Netflix 576x324 pair, 4 frames:
 
-| invocation | pooled VMAF |
-|---|---|
-| `--gpumask 0` | 88.80022305138327 |
-| `--gpumask 1` | 88.8002154453433 |
-| `--no_cuda --no_sycl` | 88.8002154453433 |
+| invocation            | pooled VMAF       |
+| --------------------- | ----------------- |
+| `--gpumask 0`         | 88.80022305138327 |
+| `--gpumask 1`         | 88.8002154453433  |
+| `--no_cuda --no_sycl` | 88.8002154453433  |
 
 `--gpumask 1` is byte-identical to an explicit CPU run, which is exactly what
 the script's `-1` was reaching for.
@@ -54,12 +55,12 @@ described a per-op mask, which the option has never been.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Keep strict parsing, fix the script to `1` (chosen) | The CLI keeps failing loudly on input the caller did not mean; the script states its intent directly; matches the documented API semantics | Diverges from upstream's accidental acceptance of `-1` | — |
-| Special-case `--gpumask` to accept negatives as "all bits set" | Restores upstream-compatible spelling | Reintroduces exactly the silent unsigned wraparound the fork removed on purpose, for one option; CERT INT and the fork's own coding standards forbid the implicit conversion | Rejected |
-| Relax `parse_unsigned` globally | One change covers any future case | Would silently accept `-1` for `--width`, `--threads`, `--frame_cnt` and every other unsigned option — a much worse footgun | Rejected |
-| Delete the script's `-1` invocations | Trivially green | Loses coverage of the CPU-fallback path, which is the thing the script exists to test | Rejected — never remove a user surface's coverage to make a gate pass |
+| Option                                                         | Pros                                                                                                                                       | Cons                                                                                                                                                                         | Why not chosen                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Keep strict parsing, fix the script to `1` (chosen)            | The CLI keeps failing loudly on input the caller did not mean; the script states its intent directly; matches the documented API semantics | Diverges from upstream's accidental acceptance of `-1`                                                                                                                       | —                                                                     |
+| Special-case `--gpumask` to accept negatives as "all bits set" | Restores upstream-compatible spelling                                                                                                      | Reintroduces exactly the silent unsigned wraparound the fork removed on purpose, for one option; CERT INT and the fork's own coding standards forbid the implicit conversion | Rejected                                                              |
+| Relax `parse_unsigned` globally                                | One change covers any future case                                                                                                          | Would silently accept `-1` for `--width`, `--threads`, `--frame_cnt` and every other unsigned option — a much worse footgun                                                  | Rejected                                                              |
+| Delete the script's `-1` invocations                           | Trivially green                                                                                                                            | Loses coverage of the CPU-fallback path, which is the thing the script exists to test                                                                                        | Rejected — never remove a user surface's coverage to make a gate pass |
 
 ## Consequences
 
@@ -77,11 +78,10 @@ described a per-op mask, which the option has never been.
 
 ## References
 
-- `core/tools/cli_parse.cpp::parse_unsigned` — the deliberate negative
-  rejection and its rationale comment.
+- `core/tools/cli_parse.cpp::parse_unsigned` — the deliberate negative rejection
+  and its rationale comment.
 - `core/include/libvmaf/libvmaf.h` — the `gpumask` "any non-zero" contract.
 - Upstream ships the same script and the same `strtoul`-based parser:
-  `libvmaf/tools/test/test_vmaf_cuda_gpumask.sh`,
-  `libvmaf/tools/cli_parse.c`.
+  `libvmaf/tools/test/test_vmaf_cuda_gpumask.sh`, `libvmaf/tools/cli_parse.c`.
 - Source: `req` — user direction to fix the `--gpumask -1` regression found
   while running the full suite for ADR-1204 / ADR-1205.

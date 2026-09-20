@@ -1,1 +1,5 @@
-| [ADR-0930](0930-helm-networkpolicy-pss.md) | Helm chart NetworkPolicy default-deny + Pod Security Standards "restricted" baseline (opt-in NP, UID 65532, seccomp RuntimeDefault) | Accepted | 2026-05-31 | helm, kubernetes, security, networkpolicy, podsecurity, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0930](0930-helm-networkpolicy-pss.md) | Ship NetworkPolicy default-deny + Pod Security Standards "restricted" in the VMAFX Helm chart | Accepted | helm, kubernetes, security, networkpolicy, podsecurity, fork-local |

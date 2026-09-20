@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0790](0790-containerfile-layer-optimization.md) | Containerfile layer optimization — merge apt layer, strip build artifacts, no-cache-dir pip | Accepted | `build`, `docker`, `containerfile`, `fork-local` |

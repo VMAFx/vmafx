@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Planning roadmap for six Netflix-grade encoding pipeline features: Dynamic
 Optimizer (ADR-0613), per-shot ABR rendition (ADR-0614), fast NR pre-scoring
 (ADR-0615), VMAF NEG integration (ADR-0616), cross-shot complexity weighting

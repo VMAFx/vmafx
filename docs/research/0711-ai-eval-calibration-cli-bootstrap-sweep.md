@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # AI evaluation and calibration CLI bootstrap sweep
 
 Date: 2026-05-22
@@ -29,14 +28,47 @@ identical to the rest of `ai/scripts/`.
 
 ## Decision
 
-Use `bootstrap_ai_script()` for script import setup and
-`make_argument_parser()` / `collect_cli_argv()` for CLI setup. Keep each
-script's existing output schema, validation semantics, and report contents.
+Use `bootstrap_ai_script()` for script import setup and `make_argument_parser()`
+/ `collect_cli_argv()` for CLI setup. Keep each script's existing output schema,
+validation semantics, and report contents.
 
 No new ADR is needed because this implements ADR-0680 and ADR-0681.
 
 ## Validation
 
-- `.venv/bin/python -m pytest ai/tests/test_eval_saliency_per_mb.py ai/tests/test_legacy_eval_report_run_provenance.py ai/tests/test_calibrate_phase_f_recipes.py ai/tests/test_calibrate_nr_threshold.py ai/tests/test_knob_sweep_analysis.py ai/tests/test_hardware_caps.py -q`
-- `.venv/bin/ruff check ai/scripts/eval_saliency_per_mb.py ai/scripts/eval_probabilistic_proxy.py ai/scripts/calibrate_phase_f_recipes.py ai/scripts/calibrate_nr_threshold.py ai/scripts/analyze_knob_sweep.py ai/scripts/hardware_caps_loader.py`
-- `.venv/bin/black --check ai/scripts/eval_saliency_per_mb.py ai/scripts/eval_probabilistic_proxy.py ai/scripts/calibrate_phase_f_recipes.py ai/scripts/calibrate_nr_threshold.py ai/scripts/analyze_knob_sweep.py ai/scripts/hardware_caps_loader.py`
+- Pytest:
+
+  ```sh
+  .venv/bin/python -m pytest \
+      ai/tests/test_eval_saliency_per_mb.py \
+      ai/tests/test_legacy_eval_report_run_provenance.py \
+      ai/tests/test_calibrate_phase_f_recipes.py \
+      ai/tests/test_calibrate_nr_threshold.py \
+      ai/tests/test_knob_sweep_analysis.py \
+      ai/tests/test_hardware_caps.py \
+      -q
+  ```
+
+- Ruff:
+
+  ```sh
+  .venv/bin/ruff check \
+      ai/scripts/eval_saliency_per_mb.py \
+      ai/scripts/eval_probabilistic_proxy.py \
+      ai/scripts/calibrate_phase_f_recipes.py \
+      ai/scripts/calibrate_nr_threshold.py \
+      ai/scripts/analyze_knob_sweep.py \
+      ai/scripts/hardware_caps_loader.py
+  ```
+
+- Black:
+
+  ```sh
+  .venv/bin/black --check \
+      ai/scripts/eval_saliency_per_mb.py \
+      ai/scripts/eval_probabilistic_proxy.py \
+      ai/scripts/calibrate_phase_f_recipes.py \
+      ai/scripts/calibrate_nr_threshold.py \
+      ai/scripts/analyze_knob_sweep.py \
+      ai/scripts/hardware_caps_loader.py
+  ```

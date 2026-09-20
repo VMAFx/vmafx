@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <string.h>
@@ -40,9 +42,9 @@
 #if HAVE_AVX512
 #include "x86/vif_avx512.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif
@@ -59,11 +61,6 @@ typedef struct VifStateCuda {
     unsigned n_planes;
     double vif_enhn_gain_limit;
     bool vif_skip_scale0;
-    void (*filter1d_8)(VifBufferCuda *buf, uint8_t *ref_in, uint8_t *dis_in, unsigned w, unsigned h,
-                       double vif_enhn_gain_limit, CUstream stream);
-    void (*filter1d_16)(VifBufferCuda *buf, uint16_t *ref_in, uint16_t *dis_in, unsigned w,
-                        unsigned h, int scale, int bpc, double vif_enhn_gain_limit,
-                        CUstream stream);
     VmafDictionary *feature_name_dict;
     CUfunction func_filter1d_8_vertical_kernel_uint32_t_17_9,
         func_filter1d_8_horizontal_kernel_2_17_9, func_filter1d_16_vertical_kernel_uint2_17_9_0,
@@ -132,251 +129,224 @@ static const VmafOption options[] = {{
                                      },
                                      {0}};
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static void vif_cuda_release_runtime(VifStateCuda *s, CudaFunctions *cu_f)
 {
-    VifStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — graduated labels so each earlier allocation is freed when a
-     * later one fails; previously all paths jumped to `fail` which only popped
-     * the context, leaking the stream and any events already created. */
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail_after_event);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx), fail_after_finished);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_8_vertical_kernel_uint32_t_17_9,
-                                        s->filter1d_module,
-                                        "filter1d_8_vertical_kernel_uint32_t_17_9"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_8_horizontal_kernel_2_17_9,
-                                        s->filter1d_module, "filter1d_8_horizontal_kernel_2_17_9"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
-                                        s->filter1d_module,
-                                        "filter1d_16_vertical_kernel_uint2_17_9_0"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_9_5_1,
-                                        s->filter1d_module,
-                                        "filter1d_16_vertical_kernel_uint2_9_5_1"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_5_3_2,
-                                        s->filter1d_module,
-                                        "filter1d_16_vertical_kernel_uint2_5_3_2"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_3_0_3,
-                                        s->filter1d_module,
-                                        "filter1d_16_vertical_kernel_uint2_3_0_3"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_17_9_0,
-                                        s->filter1d_module,
-                                        "filter1d_16_horizontal_kernel_2_17_9_0"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_9_5_1,
-                                        s->filter1d_module,
-                                        "filter1d_16_horizontal_kernel_2_9_5_1"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_5_3_2,
-                                        s->filter1d_module,
-                                        "filter1d_16_horizontal_kernel_2_5_3_2"),
-                    fail_after_module);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_3_0_3,
-                                        s->filter1d_module,
-                                        "filter1d_16_horizontal_kernel_2_3_0_3"),
-                    fail_after_module);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-
-    /* VIF is luma-only by design across every backend (CPU, CUDA, HIP, SYCL,
-     * Vulkan, Metal) and across upstream Netflix/vmaf — the metric (Sheikh &
-     * Bovik, 2006) is defined on a single luminance channel.  `n_planes` is
-     * hardcoded to 1 to match the CPU twin (`libvmaf/src/feature/integer_vif.c`,
-     * which reads `data[0]` only and has no `enable_chroma` option).  The
-     * `enable_chroma` option above is vestigial — retained so callers passing
-     * it on the CLI / in model JSONs do not see an option-not-recognised
-     * error — and warn-on-true here surfaces the no-op behaviour instead of
-     * silently producing luma-only output that contradicts the request.
-     * See ADR-0541. */
-    if (s->enable_chroma) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "integer_vif (CUDA): enable_chroma=true requested but VIF is "
-                 "luma-only by design (matches CPU integer_vif and upstream "
-                 "Netflix/vmaf); option is a no-op. See ADR-0541.\n");
-        s->enable_chroma = false;
+    if (s->filter1d_module) {
+        (void)cu_f->cuModuleUnload(s->filter1d_module);
+        s->filter1d_module = VMAF_NULLPTR;
     }
-    (void)pix_fmt; /* YUV400P needs no special case — luma-only path handles it. */
-    s->n_planes = 1;
-
-    const bool hbd = bpc > 8;
-
-    int tex_alignment;
-    CHECK_CUDA_GOTO(cu_f,
-                    cuDeviceGetAttribute(&tex_alignment, CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT,
-                                         fex->cu_state->dev),
-                    fail_after_pop);
-    s->buf.stride = tex_alignment * (((w * (1 << (int)hbd) + tex_alignment - 1) / tex_alignment));
-    {
-        const int rd_w_bytes = ((w + 1) / 2) * sizeof(uint16_t);
-        s->buf.rd_stride = tex_alignment * ((rd_w_bytes + tex_alignment - 1) / tex_alignment);
+    if (s->finished) {
+        (void)cu_f->cuEventDestroy(s->finished);
+        s->finished = 0;
     }
-    s->buf.stride_16 = ALIGN_CEIL(w * sizeof(uint16_t));
-    s->buf.stride_32 = ALIGN_CEIL(w * sizeof(uint32_t));
-    s->buf.stride_64 = ALIGN_CEIL(w * sizeof(uint64_t));
-    s->buf.stride_tmp = ALIGN_CEIL(w * sizeof(uint32_t));
-    const size_t rd_size = s->buf.rd_stride * ((h + 1) / 2);
-    const size_t data_sz = 2 * rd_size + 2 * (h * s->buf.stride_16) + 5 * (h * s->buf.stride_32) +
-                           8 * (s->buf.stride_tmp * h); // intermediater buffers
-    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.data, data_sz);
-    if (ret)
-        goto free_ref;
+    if (s->event) {
+        (void)cu_f->cuEventDestroy(s->event);
+        s->event = 0;
+    }
+    if (s->str) {
+        (void)cu_f->cuStreamDestroy(s->str);
+        s->str = 0;
+    }
+}
 
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.accum_data, sizeof(vif_accums) * 4);
-    if (ret)
-        goto free_ref;
-
-    ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->buf.accum_host,
-                                      sizeof(vif_accums) * 4);
-    if (ret)
-        goto free_ref;
-
-    CUdeviceptr data;
-    ret = vmaf_cuda_buffer_get_dptr(s->buf.data, &data);
-    if (ret)
-        goto free_ref;
-
-    s->buf.ref = data;
-    data += rd_size;
-    s->buf.dis = data;
-    data += rd_size;
-    // CUDA device pointers arrive as CUdeviceptr (unsigned long long) and must
-    // be cast to host-visible pointer types to carve the buffer into typed
-    // subregions the launch-time kernel-args struct references. The cast is
-    // inherent to the CUDA Driver API and cannot be refactored away without
-    // changing the public libvmaf-CUDA contract. Per ADR-0141 touched-file
-    // rule, upstream-parity exception.
-    // NOLINTBEGIN(performance-no-int-to-ptr)
-    s->buf.mu1 = (uint16_t *)data;
-    data += h * s->buf.stride_16;
-    s->buf.mu2 = (uint16_t *)data;
-    data += h * s->buf.stride_16;
-    s->buf.mu1_32 = (uint32_t *)data;
-    data += h * s->buf.stride_32;
-    s->buf.mu2_32 = (uint32_t *)data;
-    data += h * s->buf.stride_32;
-    s->buf.ref_sq = (uint32_t *)data;
-    data += h * s->buf.stride_32;
-    s->buf.dis_sq = (uint32_t *)data;
-    data += h * s->buf.stride_32;
-    s->buf.ref_dis = (uint32_t *)data;
-    data += h * s->buf.stride_32;
-    s->buf.tmp.mu1 = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.mu2 = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.ref = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.dis = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.ref_dis = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.ref_convol = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.dis_convol = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-    s->buf.tmp.padding = (uint32_t *)data;
-    data += s->buf.stride_tmp * h;
-
-    CUdeviceptr data_accum;
-    ret = vmaf_cuda_buffer_get_dptr(s->buf.accum_data, &data_accum);
-    if (ret)
-        goto free_ref;
-
-    s->buf.accum = (int64_t *)data_accum;
-    // NOLINTEND(performance-no-int-to-ptr)
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto free_ref;
+static int vif_cuda_load_kernels(VifStateCuda *s, CudaFunctions *cu_f)
+{
+    struct KernelSlot {
+        CUfunction *function;
+        const char *name;
+    } kernels[] = {
+        {&s->func_filter1d_8_vertical_kernel_uint32_t_17_9,
+         "filter1d_8_vertical_kernel_uint32_t_17_9"},
+        {&s->func_filter1d_8_horizontal_kernel_2_17_9, "filter1d_8_horizontal_kernel_2_17_9"},
+        {&s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
+         "filter1d_16_vertical_kernel_uint2_17_9_0"},
+        {&s->func_filter1d_16_vertical_kernel_uint2_9_5_1,
+         "filter1d_16_vertical_kernel_uint2_9_5_1"},
+        {&s->func_filter1d_16_vertical_kernel_uint2_5_3_2,
+         "filter1d_16_vertical_kernel_uint2_5_3_2"},
+        {&s->func_filter1d_16_vertical_kernel_uint2_3_0_3,
+         "filter1d_16_vertical_kernel_uint2_3_0_3"},
+        {&s->func_filter1d_16_horizontal_kernel_2_17_9_0, "filter1d_16_horizontal_kernel_2_17_9_0"},
+        {&s->func_filter1d_16_horizontal_kernel_2_9_5_1, "filter1d_16_horizontal_kernel_2_9_5_1"},
+        {&s->func_filter1d_16_horizontal_kernel_2_5_3_2, "filter1d_16_horizontal_kernel_2_5_3_2"},
+        {&s->func_filter1d_16_horizontal_kernel_2_3_0_3, "filter1d_16_horizontal_kernel_2_3_0_3"},
+    };
+    for (size_t i = 0; i < sizeof(kernels) / sizeof(kernels[0]); i++) {
+        CHECK_CUDA_RETURN(
+            cu_f, cuModuleGetFunction(kernels[i].function, s->filter1d_module, kernels[i].name));
+    }
     return 0;
+}
 
-free_ref:
+static int vif_cuda_setup_runtime(VifStateCuda *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0));
+    CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT));
+    CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT));
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx));
+    return vif_cuda_load_kernels(s, cu_f);
+}
+
+static int vif_cuda_create_runtime(VmafFeatureExtractor *fex, VifStateCuda *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
+    const int setup_ret = vif_cuda_setup_runtime(s, cu_f);
+    if (setup_ret)
+        vif_cuda_release_runtime(s, cu_f);
+    CUresult pop_result = cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
+    if (setup_ret)
+        return setup_ret;
+    return pop_result == CUDA_SUCCESS ? 0 : vmaf_cuda_result_to_errno((int)pop_result);
+}
+
+static int vif_cuda_free_buffers(VmafFeatureExtractor *fex, VifStateCuda *s)
+{
+    int ret = 0;
     if (s->buf.data) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
         free(s->buf.data);
+        s->buf.data = VMAF_NULLPTR;
     }
     if (s->buf.accum_data) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
         free(s->buf.accum_data);
+        s->buf.accum_data = VMAF_NULLPTR;
     }
     if (s->buf.accum_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
+        s->buf.accum_host = VMAF_NULLPTR;
     }
-    (void)ret; // accumulated cleanup status intentionally discarded on error path
-
-    /* The context is already popped (cuCtxPopCurrent at the end of module
-     * setup) before any `free_ref` jump fires, so we must not route through
-     * the `fail` label (it would double-pop).  Tear down the module, events,
-     * and stream explicitly here, mirroring the `fail_after_module` ladder. */
-    (void)cu_f->cuModuleUnload(s->filter1d_module);
-    s->filter1d_module = NULL;
-    (void)cu_f->cuEventDestroy(s->finished);
-    s->finished = 0;
-    (void)cu_f->cuEventDestroy(s->event);
-    s->event = 0;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
-
-    return -ENOMEM;
-
-fail_after_module:
-    /* cuModuleGetFunction failed — unload the module before releasing stream
-     * and events.  cuModuleUnload is safe even if no kernels were resolved. */
-    (void)cu_f->cuModuleUnload(s->filter1d_module);
-    s->filter1d_module = NULL;
-fail_after_finished:
-    (void)cu_f->cuEventDestroy(s->finished);
-    s->finished = 0;
-fail_after_event:
-    (void)cu_f->cuEventDestroy(s->event);
-    s->event = 0;
-fail_after_stream:
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
+    return ret;
 }
 
-static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *dis_in, int w,
-                      int h, double vif_enhn_gain_limit, CudaFunctions *cu_f, CUstream stream)
+static size_t vif_cuda_layout_strides(VifBufferCuda *buf, unsigned width, unsigned height,
+                                      unsigned bpc, int alignment)
+{
+    const bool high_bit_depth = bpc > 8;
+    const size_t alignment_size = (size_t)alignment;
+    const size_t row_bytes = (size_t)width * (high_bit_depth ? 2U : 1U);
+    buf->stride =
+        (ptrdiff_t)(alignment_size * ((row_bytes + alignment_size - 1U) / alignment_size));
+    const int rd_width_bytes = (int)((width + 1) / 2) * (int)sizeof(uint16_t);
+    buf->rd_stride = (ptrdiff_t)alignment * ((rd_width_bytes + alignment - 1) / alignment);
+    buf->stride_16 = ALIGN_CEIL(width * sizeof(uint16_t));
+    buf->stride_32 = ALIGN_CEIL(width * sizeof(uint32_t));
+    buf->stride_64 = ALIGN_CEIL(width * sizeof(uint64_t));
+    buf->stride_tmp = ALIGN_CEIL(width * sizeof(uint32_t));
+    const size_t rd_size = (size_t)buf->rd_stride * (((size_t)height + 1U) / 2U);
+    return 2U * rd_size + 2U * (size_t)height * (size_t)buf->stride_16 +
+           5U * (size_t)height * (size_t)buf->stride_32 +
+           8U * (size_t)buf->stride_tmp * (size_t)height;
+}
+
+static int vif_cuda_layout_buffers(VifStateCuda *s, unsigned height)
+{
+    CUdeviceptr data;
+    int ret = vmaf_cuda_buffer_get_dptr(s->buf.data, &data);
+    if (ret)
+        return ret;
+    const size_t rd_size = s->buf.rd_stride * ((height + 1) / 2);
+    s->buf.ref = data;
+    data += rd_size;
+    s->buf.dis = data;
+    data += rd_size;
+    s->buf.mu1 = data;
+    data += height * s->buf.stride_16;
+    s->buf.mu2 = data;
+    data += height * s->buf.stride_16;
+    s->buf.mu1_32 = data;
+    data += height * s->buf.stride_32;
+    s->buf.mu2_32 = data;
+    data += height * s->buf.stride_32;
+    s->buf.ref_sq = data;
+    data += height * s->buf.stride_32;
+    s->buf.dis_sq = data;
+    data += height * s->buf.stride_32;
+    s->buf.ref_dis = data;
+    data += height * s->buf.stride_32;
+    CUdeviceptr *temporary[] = {&s->buf.tmp.mu1,        &s->buf.tmp.mu2,     &s->buf.tmp.ref,
+                                &s->buf.tmp.dis,        &s->buf.tmp.ref_dis, &s->buf.tmp.ref_convol,
+                                &s->buf.tmp.dis_convol, &s->buf.tmp.padding};
+    for (size_t i = 0; i < sizeof(temporary) / sizeof(temporary[0]); i++) {
+        *temporary[i] = data;
+        data += s->buf.stride_tmp * height;
+    }
+    CUdeviceptr accum;
+    ret = vmaf_cuda_buffer_get_dptr(s->buf.accum_data, &accum);
+    if (!ret)
+        s->buf.accum = accum;
+    return ret;
+}
+
+static int vif_cuda_alloc_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, size_t bytes)
+{
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.data, bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.accum_data, sizeof(vif_accums) * 4);
+    if (!ret) {
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->buf.accum_host,
+                                          sizeof(vif_accums) * 4);
+    }
+    return ret;
+}
+
+static int vif_cuda_configure(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned bpc,
+                              unsigned width, unsigned height)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    int alignment;
+    CHECK_CUDA_RETURN(cu_f, cuDeviceGetAttribute(&alignment, CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT,
+                                                 fex->cu_state->dev));
+    const size_t bytes = vif_cuda_layout_strides(&s->buf, width, height, bpc, alignment);
+    int ret = vif_cuda_alloc_buffers(fex, s, bytes);
+    if (!ret)
+        ret = vif_cuda_layout_buffers(s, height);
+    return ret;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned width, unsigned height)
+{
+    (void)pix_fmt;
+    VifStateCuda *s = fex->priv;
+    if (s->enable_chroma) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_vif (CUDA): enable_chroma=true requested but VIF is luma-only; "
+                 "option is a no-op. See ADR-0541.\n");
+        s->enable_chroma = false;
+    }
+    s->n_planes = 1;
+    int ret = vif_cuda_create_runtime(fex, s);
+    if (!ret)
+        ret = vif_cuda_configure(fex, s, bpc, width, height);
+    if (!ret) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            ret = -ENOMEM;
+    }
+    if (ret) {
+        (void)vif_cuda_free_buffers(fex, s);
+        vif_cuda_release_runtime(s, fex->cu_state->f);
+    }
+    return ret;
+}
+
+static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, CUdeviceptr ref_in, CUdeviceptr dis_in,
+                      int w, int h, double vif_enhn_gain_limit, CudaFunctions *cu_f,
+                      CUstream stream)
 {
     {
 
         const int size_of_alignment_type = sizeof(uint32_t);
         const int BLOCKX = 128 / size_of_alignment_type;
         const int BLOCKY = 128 / (VMAF_CUDA_CACHE_LINE_SIZE / size_of_alignment_type);
-        void *args_vert[] = {&*buf, &ref_in, &dis_in, &w, &h, (uint16_t *)&vif_filter1d_table};
+        void *args_vert[] = {buf, &ref_in, &dis_in, &w, &h, (uint16_t *)&vif_filter1d_table};
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_8_vertical_kernel_uint32_t_17_9,
                                                DIV_ROUND_UP(w, BLOCKX * size_of_alignment_type),
                                                DIV_ROUND_UP(h, BLOCKY), 1, BLOCKX, BLOCKY, 1, 0,
-                                               stream, args_vert, NULL));
+                                               stream, args_vert, VMAF_NULLPTR));
     }
     {
         /*
@@ -389,117 +359,96 @@ static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint
         const int val_per_thread = 2;
 
         void *args_hori[] = {
-            &*buf, &w, &h, (uint16_t *)&vif_filter1d_table, &vif_enhn_gain_limit, &buf->accum};
+            buf, &w, &h, (uint16_t *)&vif_filter1d_table, &vif_enhn_gain_limit, &buf->accum};
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_8_horizontal_kernel_2_17_9,
                                                DIV_ROUND_UP(w, BLOCKX * val_per_thread),
                                                DIV_ROUND_UP(h, BLOCKY), 1, BLOCKX, BLOCKY, 1, 0,
-                                               stream, args_hori, NULL));
+                                               stream, args_hori, VMAF_NULLPTR));
     }
     return 0;
 }
 
-static int filter1d_16(VifStateCuda *s, VifBufferCuda *buf, uint16_t *ref_in, uint16_t *dis_in,
-                       int w, int h, int scale, int bpc, double vif_enhn_gain_limit,
+typedef struct VifCudaShifts {
+    int32_t horizontal_round;
+    int32_t horizontal;
+    int32_t vertical_round;
+    int32_t vertical;
+    int32_t square_round;
+    int32_t square;
+} VifCudaShifts;
+
+static VifCudaShifts vif_cuda_shifts(int scale, int bpc)
+{
+    if (scale == 0) {
+        const int square = (bpc - 8) * 2;
+        return (VifCudaShifts){32768, 16, 1 << (bpc - 1), bpc, bpc == 8 ? 0 : 1 << (square - 1),
+                               square};
+    }
+    return (VifCudaShifts){32768, 16, 32768, 16, 32768, 16};
+}
+
+static int vif_cuda_pick_16(const VifStateCuda *s, int scale, CUfunction *vertical,
+                            CUfunction *horizontal)
+{
+    const CUfunction verticals[] = {
+        s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
+        s->func_filter1d_16_vertical_kernel_uint2_9_5_1,
+        s->func_filter1d_16_vertical_kernel_uint2_5_3_2,
+        s->func_filter1d_16_vertical_kernel_uint2_3_0_3,
+    };
+    const CUfunction horizontals[] = {
+        s->func_filter1d_16_horizontal_kernel_2_17_9_0,
+        s->func_filter1d_16_horizontal_kernel_2_9_5_1,
+        s->func_filter1d_16_horizontal_kernel_2_5_3_2,
+        s->func_filter1d_16_horizontal_kernel_2_3_0_3,
+    };
+    if (scale < 0 || scale >= 4)
+        return -EINVAL;
+    *vertical = verticals[scale];
+    *horizontal = horizontals[scale];
+    return 0;
+}
+
+static int filter1d_16(const VifStateCuda *s, VifBufferCuda *buf, CUdeviceptr ref_in,
+                       CUdeviceptr dis_in, int w, int h, int scale, int bpc, double gain_limit,
                        CudaFunctions *cu_f, CUstream stream)
 {
-
-    int32_t add_shift_round_HP;
-    int32_t shift_HP;
-    int32_t add_shift_round_VP;
-    int32_t shift_VP;
-    int32_t add_shift_round_VP_sq;
-    int32_t shift_VP_sq;
-    if (scale == 0) {
-        shift_HP = 16;
-        add_shift_round_HP = 32768;
-        shift_VP = bpc;
-        add_shift_round_VP = 1 << (bpc - 1);
-        shift_VP_sq = (bpc - 8) * 2;
-        add_shift_round_VP_sq = (bpc == 8) ? 0 : 1 << (shift_VP_sq - 1);
-    } else {
-        shift_HP = 16;
-        add_shift_round_HP = 32768;
-        shift_VP = 16;
-        add_shift_round_VP = 32768;
-        shift_VP_sq = 16;
-        add_shift_round_VP_sq = 32768;
-    }
-
-    struct uint2 {
-        unsigned x, y;
-    } uint2;
-
-    const int size_of_alginment = sizeof(uint2);
-    const int val_per_thread = size_of_alginment / sizeof(uint16_t);
-    const int BLOCKX = 128;
-    const int BLOCK_VERT_X = VMAF_CUDA_CACHE_LINE_SIZE / val_per_thread;
-    const int BLOCK_VERT_Y = 128 / (VMAF_CUDA_CACHE_LINE_SIZE / val_per_thread);
-    const int GRID_VERT_X = DIV_ROUND_UP(w, BLOCK_VERT_X * val_per_thread);
-    const int GRID_VERT_Y = DIV_ROUND_UP(h, BLOCK_VERT_Y);
-    const int GRID_HORI_X = DIV_ROUND_UP(w, BLOCKX);
-    const int GRID_HORI_Y = h;
-
-    void *args_vert[] = {&*buf,        &ref_in,
-                         &dis_in,      &w,
-                         &h,           &add_shift_round_VP,
-                         &shift_VP,    &add_shift_round_VP_sq,
-                         &shift_VP_sq, &(*(filter_table_stuct *)vif_filter1d_table)};
-
-    vif_accums *ptr = &((vif_accums *)buf->accum)[scale];
-
-    void *args_hori[] = {&*buf,
-                         &w,
-                         &h,
-                         &add_shift_round_HP,
-                         &shift_HP,
-                         (uint16_t *)&vif_filter1d_table,
-                         &vif_enhn_gain_limit,
-                         &(ptr)};
-
-    switch (scale) {
-    case 0: {
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
-                                               GRID_VERT_X, GRID_VERT_Y, 1, BLOCK_VERT_X,
-                                               BLOCK_VERT_Y, 1, 0, stream, args_vert, NULL));
-
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_16_horizontal_kernel_2_17_9_0,
-                                               GRID_HORI_X, GRID_HORI_Y, 1, BLOCKX, 1, 1, 0, stream,
-                                               args_hori, NULL));
-        break;
-    }
-    case 1: {
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_16_vertical_kernel_uint2_9_5_1,
-                                               GRID_VERT_X, GRID_VERT_Y, 1, BLOCK_VERT_X,
-                                               BLOCK_VERT_Y, 1, 0, stream, args_vert, NULL));
-
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(s->func_filter1d_16_horizontal_kernel_2_9_5_1, GRID_HORI_X,
-                                         GRID_HORI_Y, 1, BLOCKX, 1, 1, 0, stream, args_hori, NULL));
-        break;
-    }
-    case 2: {
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_16_vertical_kernel_uint2_5_3_2,
-                                               GRID_VERT_X, GRID_VERT_Y, 1, BLOCK_VERT_X,
-                                               BLOCK_VERT_Y, 1, 0, stream, args_vert, NULL));
-
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(s->func_filter1d_16_horizontal_kernel_2_5_3_2, GRID_HORI_X,
-                                         GRID_HORI_Y, 1, BLOCKX, 1, 1, 0, stream, args_hori, NULL));
-        break;
-    }
-    case 3: {
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_16_vertical_kernel_uint2_3_0_3,
-                                               GRID_VERT_X, GRID_VERT_Y, 1, BLOCK_VERT_X,
-                                               BLOCK_VERT_Y, 1, 0, stream, args_vert, NULL));
-
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(s->func_filter1d_16_horizontal_kernel_2_3_0_3, GRID_HORI_X,
-                                         GRID_HORI_Y, 1, BLOCKX, 1, 1, 0, stream, args_hori, NULL));
-        break;
-    }
-    default:
-        break; /* VIF has exactly 4 scales (0–3); unreachable with valid input */
-    }
+    const VifCudaShifts shifts = vif_cuda_shifts(scale, bpc);
+    const int values_per_thread = sizeof(struct { unsigned x, y; }) / sizeof(uint16_t);
+    const int block_x = 128;
+    const int block_vertical_x = VMAF_CUDA_CACHE_LINE_SIZE / values_per_thread;
+    const int block_vertical_y = 128 / block_vertical_x;
+    const int grid_vertical_x = DIV_ROUND_UP(w, block_vertical_x * values_per_thread);
+    const int grid_vertical_y = DIV_ROUND_UP(h, block_vertical_y);
+    void *vertical_args[] = {buf,
+                             &ref_in,
+                             &dis_in,
+                             &w,
+                             &h,
+                             (void *)&shifts.vertical_round,
+                             (void *)&shifts.vertical,
+                             (void *)&shifts.square_round,
+                             (void *)&shifts.square,
+                             &(*(filter_table_stuct *)vif_filter1d_table)};
+    CUdeviceptr accum = buf->accum + (size_t)scale * sizeof(vif_accums);
+    void *horizontal_args[] = {buf,
+                               &w,
+                               &h,
+                               (void *)&shifts.horizontal_round,
+                               (void *)&shifts.horizontal,
+                               (uint16_t *)&vif_filter1d_table,
+                               &gain_limit,
+                               &accum};
+    CUfunction vertical;
+    CUfunction horizontal;
+    int ret = vif_cuda_pick_16(s, scale, &vertical, &horizontal);
+    if (ret)
+        return ret;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(vertical, grid_vertical_x, grid_vertical_y, 1,
+                                           block_vertical_x, block_vertical_y, 1, 0, stream,
+                                           vertical_args, VMAF_NULLPTR));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(horizontal, DIV_ROUND_UP(w, block_x), h, 1, block_x, 1,
+                                           1, 0, stream, horizontal_args, VMAF_NULLPTR));
     return 0;
 }
 
@@ -510,14 +459,59 @@ typedef struct VifScore {
     } scale[4];
 } VifScore;
 
+static const char *const vif_cuda_num_names[4] = {
+    "integer_vif_num_scale0",
+    "integer_vif_num_scale1",
+    "integer_vif_num_scale2",
+    "integer_vif_num_scale3",
+};
+
+static const char *const vif_cuda_den_names[4] = {
+    "integer_vif_den_scale0",
+    "integer_vif_den_scale1",
+    "integer_vif_den_scale2",
+    "integer_vif_den_scale3",
+};
+
+static const char *const vif_cuda_score_names[4] = {
+    "VMAF_integer_feature_vif_scale0_score",
+    "VMAF_integer_feature_vif_scale1_score",
+    "VMAF_integer_feature_vif_scale2_score",
+    "VMAF_integer_feature_vif_scale3_score",
+};
+
+static int write_debug_scores(VmafFeatureCollector *collector, VifStateCuda *s, const VifScore *vif,
+                              unsigned index)
+{
+    const bool skip0 = s->vif_skip_scale0;
+    const double score_num = (skip0 ? 0.0 : (double)vif->scale[0].num) + (double)vif->scale[1].num +
+                             (double)vif->scale[2].num + (double)vif->scale[3].num;
+    const double score_den = (skip0 ? 0.0 : (double)vif->scale[0].den) + (double)vif->scale[1].den +
+                             (double)vif->scale[2].den + (double)vif->scale[3].den;
+    const double score = score_den == 0.0 ? 1.0 : score_num / score_den;
+    int err = vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                      "integer_vif", score, index);
+    err |= vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                   "integer_vif_num", score_num, index);
+    err |= vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                   "integer_vif_den", score_den, index);
+    for (unsigned scale = 0; scale < 4u; scale++) {
+        const bool skipped = skip0 && scale == 0u;
+        err |= vmaf_feature_collector_append_with_dict(
+            collector, s->feature_name_dict, vif_cuda_num_names[scale],
+            skipped ? 0.0 : (double)vif->scale[scale].num, index);
+        err |= vmaf_feature_collector_append_with_dict(
+            collector, s->feature_name_dict, vif_cuda_den_names[scale],
+            skipped ? -1.0 : (double)vif->scale[scale].den, index);
+    }
+    return err;
+}
+
 static int write_scores(write_score_parameters_vif *data)
 {
-    VmafFeatureCollector *feature_collector = data->feature_collector;
     VifStateCuda *s = data->s;
-    unsigned index = data->index;
-
     VifScore vif;
-    vif_accums *accum = (vif_accums *)data->s->buf.accum_host;
+    const vif_accums *accum = (const vif_accums *)s->buf.accum_host;
     for (unsigned scale = 0; scale < 4; ++scale) {
         vif.scale[scale].num =
             accum[scale].num_log / 2048.0 + accum[scale].x2 +
@@ -527,103 +521,43 @@ static int write_scores(write_score_parameters_vif *data)
                                accum[scale].den_non_log;
     }
     int err = 0;
-
-    /* When vif_skip_scale0 is set, emit 0.0 for the finest scale (parity
-     * with integer_vif.c CPU path, lines 698-706 and 747-761). The GPU
-     * still computes scale 0 but we discard its contribution here. */
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_vif_scale0_score", 0.0,
-                                                       index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_vif_scale0_score",
-                                                       vif.scale[0].num / vif.scale[0].den, index);
+    for (unsigned scale = 0; scale < 4u; scale++) {
+        const float ratio = vif.scale[scale].num / vif.scale[scale].den;
+        const bool skipped = s->vif_skip_scale0 && scale == 0u;
+        err |= vmaf_feature_collector_append_with_dict(
+            data->feature_collector, s->feature_name_dict, vif_cuda_score_names[scale],
+            skipped ? 0.0 : (double)ratio, data->index);
     }
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale1_score",
-                                                   vif.scale[1].num / vif.scale[1].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale2_score",
-                                                   vif.scale[2].num / vif.scale[2].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale3_score",
-                                                   vif.scale[3].num / vif.scale[3].den, index);
-
     if (!s->debug)
         return err;
-
-    const double score_num =
-        s->vif_skip_scale0 ?
-            (double)vif.scale[1].num + (double)vif.scale[2].num + (double)vif.scale[3].num :
-            (double)vif.scale[0].num + (double)vif.scale[1].num + (double)vif.scale[2].num +
-                (double)vif.scale[3].num;
-
-    const double score_den =
-        s->vif_skip_scale0 ?
-            (double)vif.scale[1].den + (double)vif.scale[2].den + (double)vif.scale[3].den :
-            (double)vif.scale[0].den + (double)vif.scale[1].den + (double)vif.scale[2].den +
-                (double)vif.scale[3].den;
-
-    const double score = score_den == 0.0 ? 1.0f : score_num / score_den;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif", score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_den", score_den, index);
-
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", 0.0, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", -1.0, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", vif.scale[0].num,
-                                                       index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", vif.scale[0].den,
-                                                       index);
-    }
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_num_scale1", vif.scale[1].num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_den_scale1", vif.scale[1].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_num_scale2", vif.scale[2].num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_den_scale2", vif.scale[2].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_num_scale3", vif.scale[3].num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_den_scale3", vif.scale[3].den, index);
-
-    return err;
+    return err | write_debug_scores(data->feature_collector, s, &vif, data->index);
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int vif_cuda_filter_scale(VifStateCuda *s, const VmafPicture *ref, const VmafPicture *dist,
+                                 CudaFunctions *cu_f, unsigned scale, int width, int height)
+{
+    if (ref->bpc == 8 && scale == 0) {
+        return filter1d_8(s, &s->buf, (CUdeviceptr)ref->data[0], (CUdeviceptr)dist->data[0], width,
+                          height, s->vif_enhn_gain_limit, cu_f, vmaf_cuda_picture_get_stream(ref));
+    }
+    if (scale == 0) {
+        return filter1d_16(s, &s->buf, (CUdeviceptr)ref->data[0], (CUdeviceptr)dist->data[0], width,
+                           height, (int)scale, ref->bpc, s->vif_enhn_gain_limit, cu_f,
+                           vmaf_cuda_picture_get_stream(ref));
+    }
+    return filter1d_16(s, &s->buf, s->buf.ref, s->buf.dis, width, height, (int)scale, ref->bpc,
+                       s->vif_enhn_gain_limit, cu_f, s->str);
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     VifStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
     (void)ref_pic_90;
     (void)dist_pic_90;
-    /* n_planes is always 1: VIF is luma-only by design across every backend
-     * (matches CPU integer_vif and upstream Netflix/vmaf — see ADR-0541).
-     * The loop is retained for shape-parity with the CPU/HIP/SYCL twins. */
+    (void)index;
     for (unsigned plane = 0; plane < s->n_planes; ++plane) {
         int w = ref_pic->w[plane];
         int h = dist_pic->h[plane];
@@ -639,25 +573,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                 h /= 2;
             }
 
-            int err = 0;
-            if (ref_pic->bpc == 8 && scale == 0) {
-                err = filter1d_8(s, &s->buf, (uint8_t *)ref_pic->data[0],
-                                 (uint8_t *)dist_pic->data[0], w, h, s->vif_enhn_gain_limit, cu_f,
-                                 vmaf_cuda_picture_get_stream(ref_pic));
-            } else if (scale == 0) {
-                err = filter1d_16(s, &s->buf, (uint16_t *)ref_pic->data[0],
-                                  (uint16_t *)dist_pic->data[0], w, h, scale, ref_pic->bpc,
-                                  s->vif_enhn_gain_limit, cu_f,
-                                  vmaf_cuda_picture_get_stream(ref_pic));
-            } else {
-                // s->buf.ref / s->buf.dis are CUdeviceptr (unsigned long long) carved
-                // from the master buffer in init; the filter1d_16 contract takes a
-                // typed uint16_t* view. Cast is inherent to the CUDA Driver API.
-                // Per ADR-0141 touched-file rule, upstream-parity exception.
-                // NOLINTNEXTLINE(performance-no-int-to-ptr)
-                err = filter1d_16(s, &s->buf, (uint16_t *)s->buf.ref, (uint16_t *)s->buf.dis, w, h,
-                                  scale, ref_pic->bpc, s->vif_enhn_gain_limit, cu_f, s->str);
-            }
+            const int err = vif_cuda_filter_scale(s, ref_pic, dist_pic, cu_f, scale, w, h);
             if (err)
                 return err;
             if (scale == 0) {
@@ -756,7 +672,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score
                                           "integer_vif_den_scale2",
                                           "integer_vif_num_scale3",
                                           "integer_vif_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_integer_vif_cuda = {.name = "vif_cuda",
                                                   .init = init_fex_cuda,
@@ -768,5 +684,3 @@ VmafFeatureExtractor vmaf_fex_integer_vif_cuda = {.name = "vif_cuda",
                                                   .priv_size = sizeof(VifStateCuda),
                                                   .provided_features = provided_features,
                                                   .flags = VMAF_FEATURE_EXTRACTOR_CUDA};
-
-/* NOLINTEND(modernize-use-nullptr) */

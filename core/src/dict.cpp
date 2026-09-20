@@ -92,7 +92,7 @@ dict_ensure_allocated(VmafDictionary **dict)
  * or an expected with the buffer.
  */
 [[nodiscard]] static std::expected<std::unique_ptr<char[]>, int>
-dict_normalize_numeric(std::string_view val)
+dict_normalize_numeric(const char *val)
 {
     char *end = nullptr;
     // strtod operates on NUL-terminated C strings; val is NUL-terminated
@@ -100,8 +100,8 @@ dict_normalize_numeric(std::string_view val)
     // Use strtod (not strtof) to preserve double precision; strtof rounds
     // to ~6-7 significant digits and loses precision on widening to double.
     // Fix for CRITICAL finding in adversarial review PR #78.
-    double dv = std::strtod(val.data(), &end);
-    if (dv == 0.0 && end == val.data())
+    double dv = std::strtod(val, &end);
+    if (dv == 0.0 && end == val)
         return std::unexpected(0); // not numeric — sentinel 0 means "skip"
 
     const char *fmt = "%g";
@@ -166,7 +166,7 @@ dict_append_new_entry(VmafDictionary *d, std::string_view key, std::string_view 
     auto *val_copy = ::strdup(val.data());
     if (!val_copy)
         return std::unexpected(-ENOMEM);
-    auto *key_copy = ::strdup(key.data());
+    const char *const key_copy = ::strdup(key.data());
     if (!key_copy) {
         std::free(val_copy);
         return std::unexpected(-ENOMEM);
@@ -255,7 +255,7 @@ int vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst)
         return -EINVAL;
 
     int err = 0;
-    VmafDictionary *d = *src;
+    const VmafDictionary *const d = *src;
     for (unsigned i = 0; i < d->cnt; i++)
         err |= vmaf_dictionary_set(dst, d->entry[i].key, d->entry[i].val, 0);
     return err;
@@ -294,7 +294,7 @@ VmafDictionary *vmaf_dictionary_merge(VmafDictionary **dict_a, VmafDictionary **
     }
 
     if (*dict_b) {
-        VmafDictionary *b = *dict_b;
+        const VmafDictionary *const b = *dict_b;
         for (unsigned i = 0; i < b->cnt; i++) {
             if (vmaf_dictionary_set(&merged, b->entry[i].key, b->entry[i].val, flags) != 0) {
                 (void)vmaf_dictionary_free(&merged);
@@ -306,7 +306,7 @@ VmafDictionary *vmaf_dictionary_merge(VmafDictionary **dict_a, VmafDictionary **
     return merged;
 }
 
-int vmaf_dictionary_compare(VmafDictionary *a, VmafDictionary *b)
+int vmaf_dictionary_compare(const VmafDictionary *a, const VmafDictionary *b)
 {
     if (!a && !b)
         return 0;
@@ -316,7 +316,13 @@ int vmaf_dictionary_compare(VmafDictionary *a, VmafDictionary *b)
         return -EINVAL;
 
     for (unsigned i = 0; i < a->cnt; i++) {
-        const VmafDictionaryEntry *e = vmaf_dictionary_get(&b, a->entry[i].key, 0);
+        const VmafDictionaryEntry *e = nullptr;
+        for (unsigned j = 0; j < b->cnt; j++) {
+            if (std::strcmp(b->entry[j].key, a->entry[i].key) == 0) {
+                e = &b->entry[j];
+                break;
+            }
+        }
         if (!e)
             return -EINVAL;
         if (std::strcmp(e->val, a->entry[i].val) != 0)

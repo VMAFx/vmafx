@@ -31,12 +31,6 @@
 
 #include "libvmaf/dnn.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* DNN_OPEN_SKIP_RC — return codes that indicate a CI infrastructure gap rather
  * than a code bug.  Tests guard with:
  *
@@ -59,18 +53,18 @@ static char *test_stub_returns_enosys_when_disabled(void)
     if (vmaf_dnn_available()) {
         /* This binary was built with real ORT. The stub-only assertions
          * do not apply — skip without failing. */
-        return NULL;
+        return VMAF_NULLPTR;
     }
     float in_data[1] = {0.0f};
     int64_t in_shape[1] = {1};
     float out_data[1] = {0.0f};
 
-    VmafDnnInput in = {.name = NULL, .data = in_data, .shape = in_shape, .rank = 1};
-    VmafDnnOutput out = {.name = NULL, .data = out_data, .capacity = 1, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = in_data, .shape = in_shape, .rank = 1};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = out_data, .capacity = 1, .written = 0};
 
-    int rc = vmaf_dnn_session_run(NULL, &in, 1, &out, 1);
+    int rc = vmaf_dnn_session_run(VMAF_NULLPTR, &in, 1, &out, 1);
     mu_assert("stub must return -ENOSYS when DNN is disabled", rc == -ENOSYS);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_rejects_null_session(void)
@@ -78,12 +72,12 @@ static char *test_rejects_null_session(void)
     float in_data[1] = {0.0f};
     int64_t in_shape[1] = {1};
     float out_data[1] = {0.0f};
-    VmafDnnInput in = {.name = NULL, .data = in_data, .shape = in_shape, .rank = 1};
-    VmafDnnOutput out = {.name = NULL, .data = out_data, .capacity = 1, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = in_data, .shape = in_shape, .rank = 1};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = out_data, .capacity = 1, .written = 0};
 
-    int rc = vmaf_dnn_session_run(NULL, &in, 1, &out, 1);
+    int rc = vmaf_dnn_session_run(VMAF_NULLPTR, &in, 1, &out, 1);
     mu_assert("NULL session must be rejected", rc < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_descriptor_field_layout(void)
@@ -91,30 +85,30 @@ static char *test_descriptor_field_layout(void)
     /* Compile-time sanity: the public descriptor fields must stay where
      * downstream callers expect them (designated initialisers above pin
      * the contract). Catches accidental field-reorder refactors. */
-    VmafDnnInput in = {.name = "ref", .data = NULL, .shape = NULL, .rank = 4};
-    VmafDnnOutput out = {.name = "y", .data = NULL, .capacity = 0, .written = 0};
-    mu_assert("input.name binding", in.name != NULL);
+    VmafDnnInput in = {.name = "ref", .data = VMAF_NULLPTR, .shape = VMAF_NULLPTR, .rank = 4};
+    VmafDnnOutput out = {.name = "y", .data = VMAF_NULLPTR, .capacity = 0, .written = 0};
+    mu_assert("input.name binding", in.name != VMAF_NULLPTR);
     mu_assert("input.rank binding", in.rank == 4u);
-    mu_assert("output.name binding", out.name != NULL);
+    mu_assert("output.name binding", out.name != VMAF_NULLPTR);
     mu_assert("output.written starts zeroed", out.written == 0u);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_open_rejects_null_out(void)
 {
-    int rc = vmaf_dnn_session_open(NULL, "anything.onnx", NULL);
+    int rc = vmaf_dnn_session_open(VMAF_NULLPTR, "anything.onnx", VMAF_NULLPTR);
     /* Stub branch: -ENOSYS; real branch: -EINVAL. Either is a hard reject. */
     mu_assert("NULL out pointer rejected", rc < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_open_rejects_null_path(void)
 {
-    VmafDnnSession *s = NULL;
-    int rc = vmaf_dnn_session_open(&s, NULL, NULL);
+    VmafDnnSession *s = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&s, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("NULL path rejected", rc < 0);
-    mu_assert("session pointer not written on reject", s == NULL);
-    return NULL;
+    mu_assert("session pointer not written on reject", s == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_open_rejects_missing_file(void)
@@ -122,13 +116,13 @@ static char *test_session_open_rejects_missing_file(void)
     if (!vmaf_dnn_available()) {
         /* Stub returns -ENOSYS regardless of path; no file-existence check
          * to exercise. Skip without failing. */
-        return NULL;
+        return VMAF_NULLPTR;
     }
-    VmafDnnSession *s = NULL;
-    int rc = vmaf_dnn_session_open(&s, "/nonexistent/path/to/model.onnx", NULL);
+    VmafDnnSession *s = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&s, "/nonexistent/path/to/model.onnx", VMAF_NULLPTR);
     mu_assert("missing model file rejected", rc < 0);
-    mu_assert("session pointer not populated", s == NULL);
-    return NULL;
+    mu_assert("session pointer not populated", s == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_luma8_rejects_null(void)
@@ -136,25 +130,25 @@ static char *test_session_run_luma8_rejects_null(void)
     /* Stub branch: returns -ENOSYS for any args. Real branch: -EINVAL on
      * NULL sess/in/out. The wrapper rejects either way. */
     uint8_t buf[16] = {0};
-    int rc = vmaf_dnn_session_run_luma8(NULL, buf, 4, 4, 4, buf, 4);
+    int rc = vmaf_dnn_session_run_luma8(VMAF_NULLPTR, buf, 4, 4, 4, buf, 4);
     mu_assert("NULL session rejected by run_luma8", rc < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_close_null_is_noop(void)
 {
     /* Free on NULL is a hard contract — must never crash. There is no
      * return value to assert; reaching the next line is the test. */
-    vmaf_dnn_session_close(NULL);
+    vmaf_dnn_session_close(VMAF_NULLPTR);
     mu_assert("close(NULL) returned without crashing", 1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_attached_ep_null_returns_null(void)
 {
-    const char *ep = vmaf_dnn_session_attached_ep(NULL);
-    mu_assert("attached_ep(NULL) returns NULL", ep == NULL);
-    return NULL;
+    const char *ep = vmaf_dnn_session_attached_ep(VMAF_NULLPTR);
+    mu_assert("attached_ep(NULL) returns NULL", ep == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_run_rejects_zero_n_inputs(void)
@@ -163,13 +157,13 @@ static char *test_run_rejects_zero_n_inputs(void)
      * Stub returns -ENOSYS; real branch returns -EINVAL. */
     float buf[1] = {0.0f};
     int64_t shape[1] = {1};
-    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 1};
-    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 1, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = buf, .shape = shape, .rank = 1};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = buf, .capacity = 1, .written = 0};
     int rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeef, &in, 0u, &out, 1u);
     mu_assert("zero n_inputs rejected", rc < 0);
     rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeef, &in, 1u, &out, 0u);
     mu_assert("zero n_outputs rejected", rc < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
@@ -179,11 +173,11 @@ static char *test_session_run_luma8_size_mismatch(void)
     /* Drives the w/h mismatch branch (-ERANGE, lines 134-135). Open with
      * a known 2x2 model, then run with a 4x4 buffer — must reject. */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     /* smoke_v0.onnx is fixed-shape NCHW [1,1,4,4]. Pass 7x7 buffers — the
@@ -194,7 +188,7 @@ static char *test_session_run_luma8_size_mismatch(void)
     mu_assert("w/h mismatch returns negative", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0170 / T6-4: end-to-end happy-path for run_plane16 — opens the
@@ -204,11 +198,11 @@ static char *test_session_run_luma8_size_mismatch(void)
 static char *test_session_run_plane16_happy_path(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     /* 10-bit packed uint16 buffer; pin a deterministic input so the
@@ -222,7 +216,7 @@ static char *test_session_run_plane16_happy_path(void)
     mu_assert("plane16 happy-path ORT inference ok", rc == 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
@@ -235,14 +229,10 @@ static FILE *fopen_w_600(const char *path)
 {
     const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     FILE *fp = fdopen(fd, "wb");
     if (!fp) {
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(fd);
     }
     return fp;
@@ -280,7 +270,7 @@ static int copy_file(const char *src, const char *dst)
 /* One-byte regular fixtures keep fwrite buffered until fclose. Research-2052. */
 static int create_copy_flush_file(char *path, size_t size)
 {
-    char *tmp_dir = realpath(P_tmpdir, NULL);
+    char *tmp_dir = realpath(P_tmpdir, VMAF_NULLPTR);
     if (!tmp_dir)
         return -1;
     const int n = snprintf(path, size, "%s/vmaf-copy-flush-XXXXXX", tmp_dir);
@@ -303,7 +293,7 @@ static void run_copy_flush_child(const char *src, const char *dst)
 {
     const struct rlimit limit = {.rlim_cur = 0, .rlim_max = 0};
     struct sigaction action = {.sa_handler = SIG_IGN};
-    if (sigemptyset(&action.sa_mask) != 0 || sigaction(SIGXFSZ, &action, NULL) != 0 ||
+    if (sigemptyset(&action.sa_mask) != 0 || sigaction(SIGXFSZ, &action, VMAF_NULLPTR) != 0 ||
         setrlimit(RLIMIT_FSIZE, &limit) != 0)
         _exit(2); /* Fixture setup failed, distinct from an incorrect copy result. */
     _exit(copy_file(src, dst) == -1 ? 0 : 3);
@@ -340,15 +330,15 @@ static char *test_copy_file_rejects_close_error(void)
     mu_assert("copy-close child setup succeeds", WEXITSTATUS(status) != 2);
     mu_assert("copy-close output is empty after denied flush", stat_rc == 0 && output.st_size == 0);
     mu_assert("copy_file rejects destination close error", WEXITSTATUS(status) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* A directory opens on POSIX but fread fails: a failed model-fixture copy
  * must never be reported as successful. See Research-2052. */
 static char *test_copy_file_rejects_read_error(void)
 {
-    char *tmp_dir = realpath(P_tmpdir, NULL);
-    mu_assert("copy-error temporary directory resolves", tmp_dir != NULL);
+    char *tmp_dir = realpath(P_tmpdir, VMAF_NULLPTR);
+    mu_assert("copy-error temporary directory resolves", tmp_dir != VMAF_NULLPTR);
     char dst[4096];
     const int n = snprintf(dst, sizeof(dst), "%s/vmaf-copy-read-error-XXXXXX", tmp_dir);
     free(tmp_dir);
@@ -361,7 +351,7 @@ static char *test_copy_file_rejects_read_error(void)
     mu_assert("copy-error descriptor closed", close_rc == 0);
     mu_assert("copy-error temporary file removed", unlink_rc == 0);
     mu_assert("copy_file rejects source read error", result == -1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static int write_sidecar_dynamic(const char *path)
@@ -382,11 +372,11 @@ static int write_sidecar_dynamic(const char *path)
 static char *test_session_open_int8_missing_falls_back_to_fp32(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char base[] = "/tmp/vmaf-dnn-int8-miss-XXXXXX";
     int fd = mkstemp(base);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     (void)close(fd);
 
     char onnx[1100];
@@ -395,22 +385,22 @@ static char *test_session_open_int8_missing_falls_back_to_fp32(void)
     (void)snprintf(sidecar, sizeof sidecar, "%s.json", base);
     if (copy_file(SMOKE_FP32_MODEL, onnx) != 0) {
         (void)unlink(base);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("write sidecar ok", write_sidecar_dynamic(sidecar) == 0);
 
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, onnx, VMAF_NULLPTR);
     /* ADR-1032: missing .int8.onnx is no longer a hard error; the runtime
      * falls back to the fp32 baseline transparently. */
     mu_assert("missing .int8.onnx falls back to fp32 (rc == 0)", rc == 0);
-    mu_assert("session populated on fp32 fallback", sess != NULL);
+    mu_assert("session populated on fp32 fallback", sess != VMAF_NULLPTR);
     vmaf_dnn_session_close(sess);
 
     (void)unlink(sidecar);
     (void)unlink(onnx);
     (void)unlink(base);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* sidecar declares quant_mode=dynamic and a valid .int8.onnx exists
@@ -419,11 +409,11 @@ static char *test_session_open_int8_missing_falls_back_to_fp32(void)
 static char *test_session_open_int8_redirect_succeeds(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char base[] = "/tmp/vmaf-dnn-int8-ok-XXXXXX";
     int fd = mkstemp(base);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     (void)close(fd);
 
     char onnx[1100];
@@ -434,21 +424,21 @@ static char *test_session_open_int8_redirect_succeeds(void)
     (void)snprintf(sidecar, sizeof sidecar, "%s.json", base);
     if (copy_file(SMOKE_FP32_MODEL, onnx) != 0 || copy_file(SMOKE_FP32_MODEL, int8_onnx) != 0) {
         (void)unlink(base);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("write sidecar ok", write_sidecar_dynamic(sidecar) == 0);
 
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, onnx, VMAF_NULLPTR);
     mu_assert("int8 redirect open ok", rc == 0);
-    mu_assert("session populated", sess != NULL);
+    mu_assert("session populated", sess != VMAF_NULLPTR);
     vmaf_dnn_session_close(sess);
 
     (void)unlink(sidecar);
     (void)unlink(int8_onnx);
     (void)unlink(onnx);
     (void)unlink(base);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #define TINY_V1_MODEL "model/tiny/vmaf_tiny_v1.onnx"
@@ -460,14 +450,14 @@ static char *test_session_open_int8_redirect_succeeds(void)
 static char *test_session_open_int8_session_fail_falls_back_to_fp32(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     if (access(TINY_V1_MODEL, R_OK) != 0 || access(SMOKE_FP32_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 
     char base[] = "/tmp/vmaf-dnn-int8-fail-XXXXXX";
     const int fd = mkstemp(base);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     (void)close(fd);
 
     char onnx[1100];
@@ -478,21 +468,21 @@ static char *test_session_open_int8_session_fail_falls_back_to_fp32(void)
     (void)snprintf(sidecar, sizeof(sidecar), "%s.json", base);
     if (copy_file(SMOKE_FP32_MODEL, onnx) != 0 || copy_file(TINY_V1_MODEL, int8_onnx) != 0) {
         (void)unlink(base);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("write sidecar ok", write_sidecar_dynamic(sidecar) == 0);
 
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, onnx, VMAF_NULLPTR);
     mu_assert("session open with retry fallback ok", rc == 0);
-    mu_assert("session populated", sess != NULL);
+    mu_assert("session populated", sess != VMAF_NULLPTR);
     vmaf_dnn_session_close(sess);
 
     (void)unlink(sidecar);
     (void)unlink(int8_onnx);
     (void)unlink(onnx);
     (void)unlink(base);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* !_WIN32 */
@@ -502,19 +492,19 @@ static char *test_session_open_int8_session_fail_falls_back_to_fp32(void)
 static char *test_session_run_plane16_rejects_null(void)
 {
     uint16_t buf[16] = {0};
-    int rc = vmaf_dnn_session_run_plane16(NULL, buf, 8, 4, 4, 10, buf, 8);
+    int rc = vmaf_dnn_session_run_plane16(VMAF_NULLPTR, buf, 8, 4, 4, 10, buf, 8);
     mu_assert("NULL session rejected by run_plane16", rc < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_plane16_rejects_bad_bpc(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
     const uint16_t in[16] = {0};
     uint16_t out[16] = {0};
@@ -525,17 +515,17 @@ static char *test_session_run_plane16_rejects_bad_bpc(void)
     rc = vmaf_dnn_session_run_plane16(sess, in, 8, 4, 4, 17, out, 8);
     mu_assert("bpc=17 rejected", rc == -EINVAL);
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_plane16_size_mismatch(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
     /* smoke_v0.onnx pinned at 4x4; 7x7 input must hit the -ERANGE branch
      * inside run_plane16. */
@@ -544,7 +534,7 @@ static char *test_session_run_plane16_size_mismatch(void)
     rc = vmaf_dnn_session_run_plane16(sess, in, 14, 7, 7, 10, out, 14);
     mu_assert("w/h mismatch returns negative", rc < 0);
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_heap_path_for_many_inputs(void)
@@ -557,11 +547,11 @@ static char *test_session_run_heap_path_for_many_inputs(void)
      * returns -ENOSYS before any allocation, so this is an effective test
      * only on real-ORT builds. */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     /* 5 inputs forces the heap-allocation branch (stack array is size 4). */
@@ -587,7 +577,7 @@ static char *test_session_run_heap_path_for_many_inputs(void)
     mu_assert("mismatched input count rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_unknown_input_name(void)
@@ -595,179 +585,179 @@ static char *test_session_run_unknown_input_name(void)
     /* Drives resolve_name() lookup-by-name failure (ort_backend.c line 560,
      * caller branch line 604 → -EINVAL). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
     VmafDnnInput in = {
         .name = "definitely-not-a-real-input", .data = buf, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 16, .written = 0};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = buf, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("unknown input name rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_unknown_output_name(void)
 {
     /* resolve_name() failure on output table (line 625 → -EINVAL). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 4};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = buf, .shape = shape, .rank = 4};
     VmafDnnOutput out = {.name = "no-such-output", .data = buf, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("unknown output name rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_zero_rank_input(void)
 {
     /* Drives the rank == 0 guard inside vmaf_ort_run (line 598 → -EINVAL). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 0u};
-    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 16, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = buf, .shape = shape, .rank = 0u};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = buf, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("zero-rank input rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_negative_dim(void)
 {
     /* Drives the shape[d] <= 0 guard (line 608 → -EINVAL). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, -1, 4}; /* dynamic dim sentinel — must be rejected */
-    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 16, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = buf, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("negative input dim rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_null_input_data(void)
 {
     /* Drives the !inputs[i].data guard (line 598 → -EINVAL). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = NULL, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 16, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = VMAF_NULLPTR, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = buf, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("null input data rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_null_output_data(void)
 {
     /* Drives the !outputs[i].data guard (line 621 → -EINVAL). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = NULL, .capacity = 16, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = VMAF_NULLPTR, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("null output data rejected", rc < 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_rejects_null_vectors(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 16, .written = 0};
-    rc = vmaf_dnn_session_run(sess, NULL, 1, &out, 1);
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = buf, .capacity = 16, .written = 0};
+    rc = vmaf_dnn_session_run(sess, VMAF_NULLPTR, 1, &out, 1);
     mu_assert("NULL input vector rejected", rc == -EINVAL);
-    rc = vmaf_dnn_session_run(sess, &in, 1, NULL, 1);
+    rc = vmaf_dnn_session_run(sess, &in, 1, VMAF_NULLPTR, 1);
     mu_assert("NULL output vector rejected", rc == -EINVAL);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_generic_success(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float in_buf[16] = {0};
     float out_buf[16] = {0};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = in_buf, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = out_buf, .capacity = 16, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = in_buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = out_buf, .capacity = 16, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("generic session run succeeds", rc == 0);
     mu_assert("generic session run reports output count", out.written == 16u);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_undersized_output(void)
@@ -776,24 +766,24 @@ static char *test_session_run_undersized_output(void)
      * smoke model's output is 4x4 = 16 floats; provide capacity 1 and check
      * we get -ENOSPC and written reflects the required count. */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     float in_buf[16] = {0};
     float out_buf[1] = {0.f};
     int64_t shape[4] = {1, 1, 4, 4};
-    VmafDnnInput in = {.name = NULL, .data = in_buf, .shape = shape, .rank = 4};
-    VmafDnnOutput out = {.name = NULL, .data = out_buf, .capacity = 1, .written = 0};
+    VmafDnnInput in = {.name = VMAF_NULLPTR, .data = in_buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = VMAF_NULLPTR, .data = out_buf, .capacity = 1, .written = 0};
     rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
     mu_assert("undersized output buffer returns -ENOSPC", rc == -ENOSPC);
     mu_assert("required count surfaced via written", out.written == 16u);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_run_named_io_round_trip(void)
@@ -803,11 +793,11 @@ static char *test_session_run_named_io_round_trip(void)
      * model uses different names this gracefully falls back to <0 and the
      * test stays informative without spuriously failing. */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
 
     /* Use the legacy luma path to drive a successful end-to-end run that
@@ -819,22 +809,22 @@ static char *test_session_run_named_io_round_trip(void)
     mu_assert("luma8 run on smoke model succeeds", rc == 0);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_open_threads_config(void)
 {
     /* Drives the cfg->threads > 0 branch in vmaf_ort_open (line 204). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .threads = 2};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("threads=2 open succeeds", rc == 0);
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_open_rocm_falls_through(void)
@@ -842,23 +832,23 @@ static char *test_session_open_rocm_falls_through(void)
     /* Drives VMAF_DNN_DEVICE_ROCM branch (lines 237-240). On a CPU-only ORT
      * build try_append_rocm() returns non-zero and ep_name stays "CPU". */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_ROCM};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("ROCm request does not fail open", rc == 0);
     const char *ep = vmaf_dnn_session_attached_ep(sess);
-    mu_assert("EP is reported", ep != NULL);
+    mu_assert("EP is reported", ep != VMAF_NULLPTR);
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_session_open_explicit_ep_selectors_fall_back(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     const VmafDnnDevice devices[] = {
         VMAF_DNN_DEVICE_CUDA,         VMAF_DNN_DEVICE_OPENVINO,     VMAF_DNN_DEVICE_OPENVINO_NPU,
         VMAF_DNN_DEVICE_OPENVINO_CPU, VMAF_DNN_DEVICE_OPENVINO_GPU, VMAF_DNN_DEVICE_COREML,
@@ -866,34 +856,34 @@ static char *test_session_open_explicit_ep_selectors_fall_back(void)
     };
     const size_t n = sizeof(devices) / sizeof(devices[0]);
     for (size_t i = 0; i < n; ++i) {
-        VmafDnnSession *sess = NULL;
+        VmafDnnSession *sess = VMAF_NULLPTR;
         VmafDnnConfig cfg = {.device = devices[i], .device_index = 1, .threads = 1};
         int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
         if (DNN_OPEN_SKIP_RC(rc))
-            return NULL;
+            return VMAF_NULLPTR;
         mu_assert("explicit EP selector opens or CPU-falls-back", rc == 0);
-        mu_assert("session populated", sess != NULL);
+        mu_assert("session populated", sess != VMAF_NULLPTR);
         const char *ep = vmaf_dnn_session_attached_ep(sess);
-        mu_assert("attached EP string reported", ep != NULL && ep[0] != '\0');
+        mu_assert("attached EP string reported", ep != VMAF_NULLPTR && ep[0] != '\0');
         vmaf_dnn_session_close(sess);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_attached_ep_after_session_close(void)
 {
     /* Drives the success path of vmaf_dnn_session_attached_ep (line 231). */
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("smoke model open ok", rc == 0);
     const char *ep = vmaf_dnn_session_attached_ep(sess);
-    mu_assert("attached EP is reported", ep != NULL && ep[0] != '\0');
+    mu_assert("attached EP is reported", ep != VMAF_NULLPTR && ep[0] != '\0');
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
@@ -905,11 +895,11 @@ static char *test_attached_ep_after_session_close(void)
 static char *test_session_open_oversize_sidecar_returns_error(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char base[] = "/tmp/vmaf-dnn-sidecar-big-XXXXXX";
     int fd = mkstemp(base);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     (void)close(fd);
 
     char onnx[1100];
@@ -918,7 +908,7 @@ static char *test_session_open_oversize_sidecar_returns_error(void)
     (void)snprintf(sidecar, sizeof sidecar, "%s.json", base);
     if (copy_file(SMOKE_FP32_MODEL, onnx) != 0) {
         (void)unlink(base);
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* Write a >1 MiB sidecar — the sidecar loader's hard cap is 1 << 20
@@ -931,7 +921,7 @@ static char *test_session_open_oversize_sidecar_returns_error(void)
     if (!s) {
         (void)unlink(onnx);
         (void)unlink(base);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     /* Header + huge filler-comment-string-value to push past 1 MiB. */
     (void)fputs("{\"kind\": \"fr\", \"pad\": \"", s);
@@ -941,15 +931,15 @@ static char *test_session_open_oversize_sidecar_returns_error(void)
     (void)fputs("\"}\n", s);
     (void)fclose(s);
 
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, onnx, VMAF_NULLPTR);
     mu_assert("oversize sidecar must surface a negative error", rc < 0);
-    mu_assert("session pointer remains NULL on sidecar error", sess == NULL);
+    mu_assert("session pointer remains NULL on sidecar error", sess == VMAF_NULLPTR);
 
     (void)unlink(sidecar);
     (void)unlink(onnx);
     (void)unlink(base);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* !_WIN32 */
 
@@ -966,16 +956,16 @@ static char *test_session_open_oversize_sidecar_returns_error(void)
 static char *test_session_open_symbolic_batch_skips_luma_fast_path(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_SYMBATCH_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_SYMBATCH_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     /* Symbolic-batch loader behaviour is gated on ADR-0523; the legacy
      * fast-path detection inside vmaf_dnn_session_open must not crash and
      * must leave the session usable through the generic run() path. */
     mu_assert("symbolic-batch model opens ok", rc == 0);
-    mu_assert("session populated", sess != NULL);
+    mu_assert("session populated", sess != VMAF_NULLPTR);
 
     const uint8_t in[16] = {0};
     uint8_t out[16] = {0};
@@ -983,7 +973,7 @@ static char *test_session_open_symbolic_batch_skips_luma_fast_path(void)
     mu_assert("luma8 must return -ENOTSUP when in_buf was not allocated", rc == -ENOTSUP);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Drives the legacy luma fast-path's run_plane16 -ENOTSUP guard (line 207)
@@ -994,13 +984,13 @@ static char *test_session_open_symbolic_batch_skips_luma_fast_path(void)
 static char *test_session_symbolic_batch_run_plane16_returns_notsup(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, SMOKE_SYMBATCH_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_SYMBATCH_MODEL, VMAF_NULLPTR);
     if (DNN_OPEN_SKIP_RC(rc))
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("symbolic-batch model opens ok", rc == 0);
-    mu_assert("session populated", sess != NULL);
+    mu_assert("session populated", sess != VMAF_NULLPTR);
 
     const uint16_t in[16] = {0};
     uint16_t out[16] = {0};
@@ -1008,7 +998,7 @@ static char *test_session_symbolic_batch_run_plane16_returns_notsup(void)
     mu_assert("plane16 must return -ENOTSUP when in_buf was not allocated", rc == -ENOTSUP);
 
     vmaf_dnn_session_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_1(void)
@@ -1018,7 +1008,7 @@ static char *run_session_api_group_1(void)
     mu_run_test(test_descriptor_field_layout);
     mu_run_test(test_session_open_rejects_null_out);
     mu_run_test(test_session_open_rejects_null_path);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_2(void)
@@ -1028,7 +1018,7 @@ static char *run_session_api_group_2(void)
     mu_run_test(test_session_close_null_is_noop);
     mu_run_test(test_attached_ep_null_returns_null);
     mu_run_test(test_run_rejects_zero_n_inputs);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_3(void)
@@ -1038,7 +1028,7 @@ static char *run_session_api_group_3(void)
     mu_run_test(test_session_run_plane16_rejects_bad_bpc);
     mu_run_test(test_session_run_plane16_size_mismatch);
     mu_run_test(test_session_run_plane16_happy_path);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_4(void)
@@ -1051,7 +1041,7 @@ static char *run_session_api_group_4(void)
     mu_run_test(test_session_run_heap_path_for_many_inputs);
     mu_run_test(test_attached_ep_after_session_close);
     mu_run_test(test_session_run_unknown_input_name);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_5(void)
@@ -1061,7 +1051,7 @@ static char *run_session_api_group_5(void)
     mu_run_test(test_session_run_negative_dim);
     mu_run_test(test_session_run_null_input_data);
     mu_run_test(test_session_run_null_output_data);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_6(void)
@@ -1071,7 +1061,7 @@ static char *run_session_api_group_6(void)
     mu_run_test(test_session_run_undersized_output);
     mu_run_test(test_session_run_named_io_round_trip);
     mu_run_test(test_session_open_threads_config);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_7(void)
@@ -1083,7 +1073,7 @@ static char *run_session_api_group_7(void)
 #endif
     mu_run_test(test_session_open_symbolic_batch_skips_luma_fast_path);
     mu_run_test(test_session_symbolic_batch_run_plane16_returns_notsup);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_session_api_group_8(void)
@@ -1091,7 +1081,7 @@ static char *run_session_api_group_8(void)
 #ifndef _WIN32
     mu_run_test(test_copy_file_rejects_read_error);
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -1123,7 +1113,5 @@ char *run_tests(void)
     fail = run_session_api_group_8();
     if (fail)
         return fail;
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

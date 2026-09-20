@@ -32,6 +32,7 @@
 #include <getopt.h>
 #include <unistd.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <climits>
 #include <cstdarg>
@@ -40,8 +41,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
+#include <string>
 #include <string_view>
-#include <utility>
 
 #include "cli_parse.h"
 #include "libvmaf/feature.h"
@@ -126,7 +128,6 @@ const char *resolve_precision_fmt(const char *optarg, const char *app, CLISettin
                       "%s: --precision must be an integer 1..17, "
                       "or one of: max, full, legacy (got: %s)\n",
                       app, optarg);
-        // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: CLI error exit
         exit(1);
     }
     s->precision_n = static_cast<int>(n);
@@ -300,44 +301,18 @@ void print_usage_options_part2(FILE *const out)
 
 [[noreturn]] void usage_exit(bool is_error)
 {
-    // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: CLI usage exit
     exit(is_error ? 1 : 0);
 }
 
-[[noreturn]] void usage(const char *const app, const char *const reason)
+[[noreturn]] void usage(const char *const app, const std::string &reason)
 {
-    FILE *const out = reason ? stderr : stdout;
-    if (reason) {
-        (void)fputs(reason, stderr);
+    if (!reason.empty()) {
+        (void)fputs(reason.c_str(), stderr);
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
-    usage_exit(reason != nullptr);
-}
-
-template <typename First, typename... Rest>
-[[noreturn]] void usage(const char *const app, const char *const reason, First &&first,
-                        Rest &&...rest)
-{
-    FILE *const out = reason ? stderr : stdout;
-    if (reason) {
-        /* cppcheck-suppress wrongPrintfScanfArgNum ; `reason` is a runtime format
-         * string and the arguments arrive as a template parameter pack, so
-         * cppcheck cannot pair them: it resolves neither the conversion count in
-         * `reason` nor `sizeof...(Rest)`, and reports a fixed mismatch. Every
-         * call site in this file passes a string literal whose conversions match
-         * its arguments, and the compiler checks those at the call site. This
-         * overload exists precisely because it is only ever selected when at
-         * least one argument is present -- the zero-argument case is the
-         * non-template overload above, which uses fputs and never treats
-         * `reason` as a format string. */
-        (void)fprintf(stderr, reason, std::forward<First>(first), std::forward<Rest>(rest)...);
-        (void)fprintf(stderr, "\n\n");
-    }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
-    usage_exit(reason != nullptr);
+    print_usage_options_part1(stderr, app);
+    print_usage_options_part2(stderr);
+    usage_exit(true);
 }
 
 [[noreturn]] void usage(const char *const app, std::nullptr_t)
@@ -352,7 +327,8 @@ void checked_append(T *const arr, unsigned &cnt, const T &val, const char *const
                     const char *const desc)
 {
     if (cnt == CLI_SETTINGS_STATIC_ARRAY_LEN) {
-        usage(app, "A maximum of %d %s are supported\n", CLI_SETTINGS_STATIC_ARRAY_LEN, desc);
+        usage(app, "A maximum of " + std::to_string(CLI_SETTINGS_STATIC_ARRAY_LEN) + " " + desc +
+                       " are supported\n");
     }
     arr[cnt++] = val;
 }
@@ -393,10 +369,9 @@ void error(const char *const app, const char *const optarg, const int option,
      * making the failure non-deterministic and harder to diagnose.
      * Replace with a clean error-exit that never invokes UB. */
     if (!long_opts[n].name) {
-        usage(app,
-              "Invalid argument \"%s\" for unrecognised option (internal error: "
-              "option code %d not in long_opts[])",
-              optarg, option);
+        usage(app, std::string{"Invalid argument \""} + optarg +
+                       "\" for unrecognised option (internal error: option code " +
+                       std::to_string(option) + " not in long_opts[])");
         return; /* unreachable — usage() calls exit(1); satisfies [[noreturn]] analysis */
     }
     if (long_opts[n].val < 256) {
@@ -405,7 +380,8 @@ void error(const char *const app, const char *const optarg, const int option,
         (void)snprintf(optname, sizeof(optname), "--%s", long_opts[n].name);
     }
 
-    usage(app, "Invalid argument \"%s\" for option %s; should be %s", optarg, optname, shouldbe);
+    usage(app, std::string{"Invalid argument \""} + optarg + "\" for option " + optname +
+                   "; should be " + shouldbe);
 }
 
 [[nodiscard]] unsigned parse_unsigned(const char *const optarg, const int option,
@@ -543,7 +519,7 @@ void cli_unescape(char *const s)
     *w = '\0';
 }
 
-void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char *const app)
+void apply_model_opt(CLIModelConfig &model_cfg, char *key, const char *val, const char *const app)
 {
     if (!strcmp(key, "path")) {
         model_cfg.path = val;
@@ -557,10 +533,8 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
         model_cfg.cfg.flags |= !strcmp(val, "true") ? VMAF_MODEL_FLAG_ENABLE_TRANSFORM : 0;
     } else {
         if (model_cfg.overload_cnt == CLI_SETTINGS_STATIC_ARRAY_LEN) {
-            usage(app,
-                  "A maximum of %d feature overloads per model"
-                  " are supported\n",
-                  CLI_SETTINGS_STATIC_ARRAY_LEN);
+            usage(app, "A maximum of " + std::to_string(CLI_SETTINGS_STATIC_ARRAY_LEN) +
+                           " feature overloads per model are supported\n");
         }
         /* The overload key is `<feature>.<option>`; split before unescaping so
          * a `\.` inside either half stays data instead of becoming the
@@ -573,7 +547,7 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
         const int err = vmaf_feature_dictionary_set(
             &model_cfg.feature_overload[model_cfg.overload_cnt].opts_dict, opt, val);
         if (err)
-            usage(app, "Problem parsing model: \"%s\"\n", name);
+            usage(app, std::string{"Problem parsing model: \""} + name + "\"\n");
 
         model_cfg.overload_cnt++;
     }
@@ -590,8 +564,7 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
  * stale pointer, which made the nightly fuzz job fail intermittently rather
  * than reproducibly. Freeing here also keeps the function correct if `usage()`
  * ever stops exiting. */
-[[noreturn]] static void usage_free(void *buf, const char *const app, const char *const fmt,
-                                    const char *const arg)
+[[noreturn]] static void usage_free(void *buf, const char *const app, const char *const arg)
 {
     /* `arg` points INTO `buf` — it is a slice of the option string, not a
      * separate allocation — so it must be copied before the buffer goes away.
@@ -600,7 +573,7 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
     char arg_copy[256];
     (void)snprintf(arg_copy, sizeof(arg_copy), "%s", (arg != nullptr) ? arg : "");
     free(buf);
-    usage(app, fmt, arg_copy);
+    usage(app, std::string{"Problem parsing model, bad option string \""} + arg_copy + "\".");
 }
 
 CLIModelConfig parse_model_config(const char *const optarg, const char *const app)
@@ -608,7 +581,7 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
     const size_t optarg_sz = strnlen(optarg, 1024);
     char *optarg_copy = static_cast<char *>(malloc(optarg_sz + 1));
     if (!optarg_copy)
-        usage(app, "error while parsing model option: %s", optarg);
+        usage(app, std::string{"error while parsing model option: "} + optarg);
     (void)memset(optarg_copy, 0, optarg_sz + 1);
     (void)strncpy(optarg_copy, optarg, optarg_sz);
 
@@ -638,10 +611,7 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
                 val = const_cast<char *>("true");
             } else {
-                usage_free(model_cfg.buf, app,
-                           "Problem parsing model, "
-                           "bad option string \"%s\".",
-                           key);
+                usage_free(model_cfg.buf, app, key);
             }
         }
         apply_model_opt(model_cfg, key, val, app);
@@ -685,10 +655,8 @@ const struct {
     (void)snprintf(key_copy, sizeof(key_copy), "%s", (key != nullptr) ? key : "");
     (void)vmaf_feature_dictionary_free(&cfg->opts_dict);
     free(cfg->buf);
-    usage(app,
-          "Problem parsing feature \"%s\", "
-          "bad option string \"%s\".\n",
-          name_copy, key_copy);
+    usage(app, std::string{"Problem parsing feature \""} + name_copy + "\", bad option string \"" +
+                   key_copy + "\".\n");
 }
 
 CLIFeatureConfig parse_feature_config(const char *const optarg, const char *const app)
@@ -696,7 +664,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     const size_t optarg_sz = strnlen(optarg, 1024);
     char *optarg_copy = static_cast<char *>(malloc(optarg_sz + 1));
     if (!optarg_copy)
-        usage(app, "error while parsing feature option: %s", optarg);
+        usage(app, std::string{"error while parsing feature option: "} + optarg);
     (void)memset(optarg_copy, 0, optarg_sz + 1);
     (void)strncpy(optarg_copy, optarg, optarg_sz);
     void *buf = optarg_copy;
@@ -713,12 +681,11 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     /* Rewrite user-facing "integer_*" aliases to the names the extractor
      * registry actually uses.  The rewrite only touches the name field; any
      * key=value options that follow the "=" separator are unaffected. */
-    for (const auto &feature_alias : cli_feature_aliases) {
-        if (!strcmp(feature_cfg.name, feature_alias.alias)) {
-            feature_cfg.name = feature_alias.target;
-            break;
-        }
-    }
+    const auto feature_alias = std::find_if(
+        std::cbegin(cli_feature_aliases), std::cend(cli_feature_aliases),
+        [&](const auto &candidate) { return strcmp(feature_cfg.name, candidate.alias) == 0; });
+    if (feature_alias != std::cend(cli_feature_aliases))
+        feature_cfg.name = feature_alias->target;
 
     char *key_val = nullptr;
     while ((key_val = cli_split(&optarg_copy, ':')) != nullptr) {
@@ -735,7 +702,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
              * stays valid across the free. */
             (void)vmaf_feature_dictionary_free(&feature_cfg.opts_dict);
             free(feature_cfg.buf);
-            usage(app, "Problem parsing feature \"%s\"\n", optarg);
+            usage(app, std::string{"Problem parsing feature \""} + optarg + "\"\n");
         }
     }
 
@@ -861,7 +828,7 @@ void parse_aom_ctc(CLISettings *const settings, const char *const optarg, const 
         return;
     }
 
-    usage(app, "bad aom_ctc version \"%s\"", optarg);
+    usage(app, std::string{"bad aom_ctc version \""} + optarg + "\"");
 }
 
 void nflx_ctc_v1_0(CLISettings *const settings, const char *const app)
@@ -906,7 +873,7 @@ void parse_nflx_ctc(CLISettings *const settings, const char *const optarg, const
         nflx_ctc_v1_0(settings, app);
         return;
     }
-    usage(app, "bad nflx_ctc version \"%s\"", optarg);
+    usage(app, std::string{"bad nflx_ctc version \""} + optarg + "\"");
 }
 
 void handle_video_input_flag(const int o, const char *const optarg, const char *const app,
@@ -1115,10 +1082,8 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
             if (settings->metal_device < 0)
                 settings->metal_device = 0;
         } else {
-            usage(app,
-                  "Unknown --backend value '%s' "
-                  "(expected: auto|cpu|cuda|sycl|hip|metal)",
-                  settings->backend);
+            usage(app, std::string{"Unknown --backend value '"} + settings->backend +
+                           "' (expected: auto|cpu|cuda|sycl|hip|metal)");
         }
     } else {
         if (!settings->no_cuda && !settings->use_gpumask) {
@@ -1269,7 +1234,6 @@ void handle_misc_flag(const int o, const char *const app, CLISettings *const set
         } else {
             (void)fprintf(stderr, "%s\n", vmaf_version());
         }
-        // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: CLI version exit
         exit(0);
     default:
         break;
@@ -1387,7 +1351,6 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     settings->tiny_crf = -1; /* ADR-0522: -1 = unset; 0..63 user-supplied */
     int o = 0;
 
-    // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: single-threaded CLI entry point before worker threads spawn
     while ((o = getopt_long(argc, argv, short_opts, long_opts, nullptr)) >= 0) {
         process_single_cli_opt(o, optarg, argv[0], settings);
     }

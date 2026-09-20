@@ -1,1 +1,5 @@
-| [ADR-0384](0384-shfmt-src-hook-and-cache-key-fix.md) | Switch shfmt pre-commit hook from binary download to Go-source build | Accepted | ci, build, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0384](0384-shfmt-src-hook-and-cache-key-fix.md) | Switch shfmt pre-commit hook from binary download to Go-source build | Accepted | `ci`, `build`, `fork-local` |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 -->
 # Research-0034: CHANGELOG + ADR-index fragment-file pattern
 
 - **Date**: 2026-04-29
@@ -23,7 +22,8 @@ line.
 ## Cost measurement
 
 Sample of the 2026-04-28 → 2026-04-29 PR cohort (#190, #193, #194, #195,
-#202, #181):
+
+\#202, #181)
 
 - Median rebase passes per PR before merge: **2** (range 1–4).
 - Median time per rebase pass (manual conflict resolution + lint

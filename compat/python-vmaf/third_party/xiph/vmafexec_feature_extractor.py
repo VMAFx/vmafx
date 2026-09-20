@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from vmaf import ExternalProgramCaller
 from vmaf.core.feature_extractor import FeatureExtractor, VmafexecFeatureExtractorMixin
 
@@ -7,9 +9,9 @@ class PsnrhvsFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     TYPE = "PSNRHVS_feature"
     VERSION = "1.0"
 
-    ATOM_FEATURES = ["psnr_hvs", "psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr"]
+    ATOM_FEATURES: ClassVar = ["psnr_hvs", "psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "psnr_hvs": "psnr_hvs",
         "psnr_hvs_y": "psnr_hvs_y",
         "psnr_hvs_cb": "psnr_hvs_cb",
@@ -30,8 +32,8 @@ class PsnrhvsFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "psnr_hvs",

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1243: Allow measured scoped tightening of the lint baseline
 
 - **Status**: Accepted

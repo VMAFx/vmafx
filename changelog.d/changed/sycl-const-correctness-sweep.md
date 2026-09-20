@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **SYCL translation units are const-correct.** The advisory `Tidy SYCL` lane
   carried 983 findings across 21 TUs, so it reported red on essentially any PR
   touching a SYCL kernel regardless of what that PR changed. This clears the

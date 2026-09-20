@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0726 — AI legacy strict JSON writers
 
 ## Problem
@@ -31,7 +30,7 @@ non-finite values with `null`.
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave legacy writers local | Smallest diff | Non-standard JSON can still leak through caches/reports | Rejected |
 | Add a second helper for cache JSON | More semantic naming | Duplicates the existing strict-normalization boundary | Rejected |
 | Reuse `write_manifest_json()` for reports and caches | One strict JSON implementation; no schema churn | Helper name is broader than manifests in legacy paths | Chosen |

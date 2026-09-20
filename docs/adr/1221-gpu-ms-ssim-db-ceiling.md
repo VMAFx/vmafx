@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1221: gpu ms ssim db ceiling
 
-# ADR-1221: `clip_db` is a ceiling on the MS-SSIM dB output, not a clamp on the linear score
+**Decision:** `clip_db` is a ceiling on the MS-SSIM dB output, not a clamp on
+the linear score
 
 - **Status**: Proposed
 - **Date**: 2026-09-07
@@ -30,8 +31,8 @@ if (score >= 1.0)
 return MIN(-10. * log10(1.0 - score), max_db);
 ```
 
-The CUDA, SYCL and HIP twins declared both options and read `clip_db` as a
-clamp on the **linear** score instead:
+The CUDA, SYCL and HIP twins declared both options and read `clip_db` as a clamp
+on the **linear** score instead:
 
 ```c
 if (s->enable_db) {
@@ -44,10 +45,10 @@ if (s->enable_db) {
 None of the three carried a `max_db` field at all. Two consequences:
 
 1. On an **identical reference/distorted pair** — an entirely ordinary thing to
-   score — MS-SSIM is `1.0`, the clamp leaves it at `1.0`, and
-   `-10 * log10(0)` is `+Inf`. The CPU returns the finite `max_db`.
-2. For any high-similarity pair the twins return an **unbounded** dB value
-   where the CPU caps it, so `clip_db` did not clip.
+   score — MS-SSIM is `1.0`, the clamp leaves it at `1.0`, and `-10 * log10(0)`
+   is `+Inf`. The CPU returns the finite `max_db`.
+2. For any high-similarity pair the twins return an **unbounded** dB value where
+   the CPU caps it, so `clip_db` did not clip.
 
 The pre-existing parity tests could not see either: they ran with `NULL`
 options, and with `enable_db` off neither path converts to dB at all.
@@ -64,12 +65,12 @@ finite and that it matches the CPU.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Derive `max_db` in `init()` and mirror `convert_to_db()` (chosen) | Byte-for-byte the CPU's rule, including the `score >= 1.0` short-circuit; costs one `double` per state | None material | — |
-| Keep the linear clamp and just guard `score == 1.0` | Smaller diff; removes the `+Inf` | Still returns unbounded dB for every other high-similarity score, so `clip_db` still does not clip | Fixes the symptom, not the option |
-| Reject `clip_db` in `init()` with `-EINVAL` | Honest about not implementing it | Turns a documented option into a hard failure on three backends | Removes a working surface |
-| Compute `max_db` per frame instead of at `init()` | No state field | `w`, `h` and `bpc` are fixed for the extractor's lifetime, so it would recompute a constant on every frame | Pointless work |
+| Option                                                            | Pros                                                                                                   | Cons                                                                                                       | Why not chosen                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Derive `max_db` in `init()` and mirror `convert_to_db()` (chosen) | Byte-for-byte the CPU's rule, including the `score >= 1.0` short-circuit; costs one `double` per state | None material                                                                                              | —                                 |
+| Keep the linear clamp and just guard `score == 1.0`               | Smaller diff; removes the `+Inf`                                                                       | Still returns unbounded dB for every other high-similarity score, so `clip_db` still does not clip         | Fixes the symptom, not the option |
+| Reject `clip_db` in `init()` with `-EINVAL`                       | Honest about not implementing it                                                                       | Turns a documented option into a hard failure on three backends                                            | Removes a working surface         |
+| Compute `max_db` per frame instead of at `init()`                 | No state field                                                                                         | `w`, `h` and `bpc` are fixed for the extractor's lifetime, so it would recompute a constant on every frame | Pointless work                    |
 
 ## Consequences
 
@@ -81,8 +82,8 @@ finite and that it matches the CPU.
   defaults to `false` — so nothing in the repo changes.
 - **Neutral / follow-ups**: with `clip_db=false` the CPU sets
   `max_db = INFINITY`, so `convert_to_db()` still short-circuits `score >= 1.0`
-  to `INFINITY`. The twins now do the same, where they previously produced
-  `NaN` for a score slightly above `1.0`. The Metal MS-SSIM twin exposes only
+  to `INFINITY`. The twins now do the same, where they previously produced `NaN`
+  for a score slightly above `1.0`. The Metal MS-SSIM twin exposes only
   `enable_lcs` and rejects `enable_db` / `clip_db` outright; giving it the full
   option set is a separate gap, tracked in `docs/state.md`.
 

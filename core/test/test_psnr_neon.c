@@ -42,12 +42,6 @@
 #if ARCH_AARCH64
 #include "feature/arm64/psnr_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Transcribed from sse_line_8_c() in integer_psnr.c (static there).
  * The uint32_t accumulator — and therefore its wraparound — is part of the
  * contract the NEON kernel has to reproduce. */
@@ -171,13 +165,13 @@ static void fill_pair_16(uint16_t *ref, uint16_t *dis, unsigned w, int pat, uint
 static char *test_psnr_sse_line_8_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL; /* NEON kernel is aarch64-only. */
+    return VMAF_NULLPTR; /* NEON kernel is aarch64-only. */
 #else
     const unsigned max_w = k_widths[N_WIDTHS - 1];
     const size_t bytes = (size_t)max_w + 16u;
     uint8_t *ref_buf = malloc(bytes);
     uint8_t *dis_buf = malloc(bytes);
-    mu_assert("allocation failed", ref_buf != NULL && dis_buf != NULL);
+    mu_assert("allocation failed", ref_buf != VMAF_NULLPTR && dis_buf != VMAF_NULLPTR);
 
     for (size_t iw = 0; iw < N_WIDTHS; ++iw) {
         const unsigned w = k_widths[iw];
@@ -211,20 +205,20 @@ static char *test_psnr_sse_line_8_neon_matches_scalar(void)
 
     free(ref_buf);
     free(dis_buf);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
 static char *test_psnr_sse_line_16_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     const unsigned max_w = k_widths[N_WIDTHS - 1];
     const size_t bytes = ((size_t)max_w + 16u) * sizeof(uint16_t);
     uint16_t *ref_buf = malloc(bytes);
     uint16_t *dis_buf = malloc(bytes);
-    mu_assert("allocation failed", ref_buf != NULL && dis_buf != NULL);
+    mu_assert("allocation failed", ref_buf != VMAF_NULLPTR && dis_buf != VMAF_NULLPTR);
 
     for (size_t iw = 0; iw < N_WIDTHS; ++iw) {
         const unsigned w = k_widths[iw];
@@ -255,7 +249,7 @@ static char *test_psnr_sse_line_16_neon_matches_scalar(void)
 
     free(ref_buf);
     free(dis_buf);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -280,7 +274,7 @@ static char *check_sse_line_8_wrap(void)
 
     uint8_t *ref8 = malloc(max_w);
     uint8_t *dis8 = malloc(max_w);
-    mu_assert("allocation failed", ref8 != NULL && dis8 != NULL);
+    mu_assert("allocation failed", ref8 != VMAF_NULLPTR && dis8 != VMAF_NULLPTR);
     memset(ref8, 255, max_w);
     memset(dis8, 0, max_w);
 
@@ -300,7 +294,7 @@ static char *check_sse_line_8_wrap(void)
     }
     free(ref8);
     free(dis8);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 16-bit half: 8K luma of maximum 16-bit error is 7680 * 65535^2 = 3.298e13,
@@ -311,7 +305,7 @@ static char *check_sse_line_16_no_truncation(void)
     const unsigned w16 = 7680u;
     uint16_t *ref16 = malloc((size_t)w16 * sizeof(uint16_t));
     uint16_t *dis16 = malloc((size_t)w16 * sizeof(uint16_t));
-    mu_assert("allocation failed", ref16 != NULL && dis16 != NULL);
+    mu_assert("allocation failed", ref16 != VMAF_NULLPTR && dis16 != VMAF_NULLPTR);
     for (unsigned j = 0; j < w16; ++j) {
         ref16[j] = 65535u;
         dis16[j] = 0u;
@@ -329,17 +323,17 @@ static char *check_sse_line_16_no_truncation(void)
     free(ref16);
     free(dis16);
     mu_assert("psnr_sse_line_16_neon truncates its 64-bit accumulator", ok16);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* ARCH_AARCH64 */
 
 static char *test_psnr_sse_line_neon_accumulator_extremes(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     char *msg = check_sse_line_8_wrap();
-    if (msg != NULL) {
+    if (msg != VMAF_NULLPTR) {
         return msg;
     }
     return check_sse_line_16_no_truncation();
@@ -358,7 +352,5 @@ char *run_tests(void)
     (void)test_psnr_sse_line_16_neon_matches_scalar;
     (void)test_psnr_sse_line_neon_accumulator_extremes;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,17 +1,15 @@
 import re
 
-from vmaf.tools.misc import MyTestCase
-
 
 def get_tidy_mock_call_args_list(mockProcessRunner_run) -> list[str]:
-    l = list()
+    commands = []
     for i in range(len(mockProcessRunner_run.call_args_list)):
         e = mockProcessRunner_run.call_args_list[i][0][0]
         if isinstance(e, str):
-            l.append(e)
+            commands.append(e)
         else:
-            l.append(" ".join(e))
-    return l
+            commands.append(" ".join(e))
+    return commands
 
 
 def replace_uuid(command_line: str) -> str:
@@ -90,8 +88,7 @@ def remove_option(command_line: str, option: str) -> str:
     """
     if command_line.startswith("--{option}".format(option=option)):
         return re.sub(r"--{option} [^\s]*".format(option=option), "", command_line)
-    else:
-        return re.sub(r" --{option} [^\s]*".format(option=option), "", command_line)
+    return re.sub(r" --{option} [^\s]*".format(option=option), "", command_line)
 
 
 def remove_elements_containing_substring(command_line: str, sub_str: str) -> str:
@@ -144,12 +141,9 @@ def assert_equivalent_commands(
     assert len(cmds) == len(
         cmds_expected
     ), f"length of cmds and cmds_expected are not equal: {len(cmds)} vs. {len(cmds_expected)}"
-    for cmd, cmd_expected in zip(cmds, cmds_expected):
+    for cmd, cmd_expected in zip(cmds, cmds_expected, strict=False):
 
-        if do_replace_uuid is True:
-            cmd1 = replace_uuid(cmd)
-        else:
-            cmd1 = cmd
+        cmd1 = replace_uuid(cmd) if do_replace_uuid is True else cmd
         cmd2 = replace_root(cmd1, root)
         cmd3 = remove_redundant_whitespace(cmd2)
         for option_to_remove in options_to_remove:

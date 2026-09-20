@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0044: Quality-aware encode automation (`vmaf-tune`) — option-space digest
 
 - **Date**: 2026-05-02
@@ -21,7 +20,7 @@ search strategy, or one quality target?
 ## Prior art surveyed
 
 | Tool | What it does | What we'd borrow | What we'd improve |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **av1an** (Rust) | AV1-only chunked encoder with optional `--target-quality` (VMAF bisect over CRF per chunk). Uses scenedetect for chunking. | The bisect strategy is solid: "encode at midpoint CRF, score, halve interval, repeat 3–5 times". Concretely: target VMAF ± 0.5, ≤ 5 encodes per chunk. | Multi-codec; drop the AV1-only assumption; use our VMAF + ssimulacra2 + lpips ensemble; consume *our* shot detector instead of scenedetect-py |
 | **ab-av1** (Rust) | Single-clip CRF bisect against a target VMAF. AV1-only. No per-shot. | Same bisect shape; simpler than av1an's chunking. | Multi-codec; per-title (predict starting CRF instead of always starting at midpoint) |
 | **Netflix Per-Title** (paper, 2015) | Complexity-bucket sources, pick CRF per bucket. Shaping the bitrate-quality curve from offline data. | The "predict CRF from source features" model — that's our Phase C. | Use canonical-6 + codec one-hot + resolution + framerate as the source descriptor (we already extract these); skip the manual bucketing |
@@ -35,7 +34,7 @@ search strategy, or one quality target?
 ## Search-strategy axis
 
 | Strategy | Encodes per target | When it wins | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Grid (full sweep)** | O(\|grid\|) | Producing the *training corpus* for Phase C; one-time per source | Only used in Phase A. Never used at inference. |
 | **Coordinate descent** | 5–15 | Tuning a single quality knob (CRF) when other params are fixed | Simple, no ML deps. Phase A baseline strategy. |
 | **Bisect (binary search)** | 4–6 | Single-knob target-quality (target VMAF ± 0.5) | Av1an-proven; this is Phase B's primary algorithm. |
@@ -74,7 +73,7 @@ adapter that doesn't touch the harness or search loop.
 ## Codec scope (per popup `Q2` 2026-05-02)
 
 | Codec | FFmpeg encoder | Phase A? | Quality knob | Phase D format | Notes |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | H.264 | `libx264` | **yes** | `-crf` | `--qpfile` | Highest leverage; 100× deployment of any other codec; corpus gen is fastest |
 | H.265 / HEVC | `libx265` | Phase A+1 | `-crf` | `--zones` | Mature; second-most-deployed |
 | AV1 | `libsvtav1` | Phase A+2 | `-crf` | segment table | Fastest AV1 encoder; corpus gen costs 5–10× x264 |
@@ -99,7 +98,7 @@ We can never redistribute third-party encodes; therefore we own
 the encoder.
 
 | Source | Sources we have | Encodes we own | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Netflix Public Dataset | 9 ref + 70 dis YUVs (37 GB, .workingdir2/netflix/) | We re-encode at Phase A grid | Sources: present locally per memory note 2026-04-27 |
 | KoNViD-1k | sources + per-clip MOS | We re-encode at Phase A grid | Sources: CC BY 4.0, available |
 | BVI-DVC (parts A+B+C+D) | sources + per-clip ratings | We re-encode at Phase A grid | Already used for vmaf_tiny_v2 |

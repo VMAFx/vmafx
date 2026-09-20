@@ -1,1 +1,5 @@
-| [ADR-1153](1153-twin-dead-sides-resolution.md) | Resolve three dead twin sides surfaced by the ADR-1135 gate (T-TWIN-DEAD-SIDES-2026-09-02): delete stale and incomplete model.cpp while retaining model.c; delete obsolete orphan tests test_dict.c and test_feature.c in favour of compiled C++ twins test_dict.cpp and test_feature.cpp; shrink allowlist to zero. | Accepted | 2026-09-03 | build, ci, refactor, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1153](1153-twin-dead-sides-resolution.md) | Resolution of Dead .c/.cpp Twin Sides (model.cpp, test_dict.c, test_feature.c) | Accepted | `build`, `ci`, `refactor`, `fork-local` |

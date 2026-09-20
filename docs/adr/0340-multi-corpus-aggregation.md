@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0340: Multi-corpus aggregation for the FR-regressor / predictor v2 trainer
 
 - **Status**: Accepted
@@ -73,7 +72,7 @@ Three constraints govern the implementation:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-corpus head per dataset (no aggregation) | Each head trained on native scale; no conversion bias. | Negates the multi-corpus motivation: each head sees its own narrow distribution; LOSO folds stay small; cross-corpus generalisation never gets exercised. | Defeats the user's stated goal ("learn from all of them simultaneously"). |
 | Z-score normalisation per corpus | Removes scale-incompatibility without committing to a target axis. | Loses the absolute-quality semantics — a z-score of 0 means "median for *this* corpus", not a fixed quality level. The trainer cannot calibrate against the VMAF reference axis. | Throws away information the VMAF-aligned axis preserves. |
 | Quantile-mapping each corpus to the reference (Netflix) distribution | Compensates for non-affine scale differences. | Documented evidence that any of these scales is *non-affine* w.r.t. the others is thin; quantile-mapping introduces dataset-specific compression that's hard to explain to future maintainers. | Affine is simpler and the published scales support it. |

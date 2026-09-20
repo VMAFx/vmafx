@@ -20,17 +20,18 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 
 def test_probe_yuv_dimensions_at_least_64() -> None:
     """A — probe YUV must be ≥ 64×64 so CUDA ADM does not silently null."""
-    assert (
-        srv._PROBE_YUV_WIDTH >= 64
-    ), f"_PROBE_YUV_WIDTH={srv._PROBE_YUV_WIDTH} — must be ≥ 64 (PR #850 fix)"
-    assert (
-        srv._PROBE_YUV_HEIGHT >= 64
-    ), f"_PROBE_YUV_HEIGHT={srv._PROBE_YUV_HEIGHT} — must be ≥ 64 (PR #850 fix)"
+    assert srv._PROBE_YUV_WIDTH >= 64, (
+        f"_PROBE_YUV_WIDTH={srv._PROBE_YUV_WIDTH} — must be ≥ 64 (PR #850 fix)"
+    )
+    assert srv._PROBE_YUV_HEIGHT >= 64, (
+        f"_PROBE_YUV_HEIGHT={srv._PROBE_YUV_HEIGHT} — must be ≥ 64 (PR #850 fix)"
+    )
 
 
 def test_probe_backend_null_score_yields_runtime_healthy_false(
@@ -78,9 +79,9 @@ def test_probe_backend_null_score_yields_runtime_healthy_false(
             return await _patched("cuda")
 
     result = asyncio.run(_run())
-    assert (
-        result["runtime_healthy"] is False
-    ), f"PR #850 regression: null score must yield runtime_healthy=False, got {result}"
+    assert result["runtime_healthy"] is False, (
+        f"PR #850 regression: null score must yield runtime_healthy=False, got {result}"
+    )
     assert result["score"] is None
 
 

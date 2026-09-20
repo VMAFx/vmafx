@@ -71,27 +71,58 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx, int distort)
     return 0;
 }
 
+static char *feed_fixture_frames(VmafContext *vmaf, char *fill_ref_error, char *fill_dist_error,
+                                 char *read_error)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_fixture(&ref, i, 0);
+        mu_assert(fill_ref_error, !err);
+        err = fill_fixture(&dist, i, 1);
+        mu_assert(fill_dist_error, !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert(read_error, !err);
+    }
+    return VMAF_NULLPTR;
+}
+
+static char *open_cuda_context(VmafContext **vmaf, VmafCudaState **cu_state)
+{
+    const VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
+    int err = vmaf_cuda_state_init(cu_state, cuda_cfg);
+    if (err != 0 || *cu_state == VMAF_NULLPTR) {
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
+        return VMAF_NULLPTR;
+    }
+
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    err = vmaf_init(vmaf, cfg);
+    mu_assert("CUDA: vmaf_init failed", !err);
+    err = vmaf_cuda_import_state(*vmaf, *cu_state);
+    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
+    err = vmaf_use_feature(*vmaf, "speed_chroma_cuda", VMAF_NULLPTR);
+    mu_assert("CUDA: vmaf_use_feature(speed_chroma_cuda) failed", !err);
+    return VMAF_NULLPTR;
+}
+
 static char *run_cpu(double *out_score)
 {
     *out_score = NAN;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "speed_chroma", NULL);
+    err = vmaf_use_feature(vmaf, "speed_chroma", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(speed_chroma) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i, 0);
-        mu_assert("CPU: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i, 1);
-        mu_assert("CPU: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    char *msg =
+        feed_fixture_frames(vmaf, "CPU: fill_fixture(ref) failed", "CPU: fill_fixture(dist) failed",
+                            "CPU: vmaf_read_pictures failed");
+    if (msg)
+        return msg;
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score", out_score,
@@ -100,41 +131,25 @@ static char *run_cpu(double *out_score)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(double *out_score)
 {
     *out_score = NAN;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
-    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
-    }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "speed_chroma_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(speed_chroma_cuda) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i, 0);
-        mu_assert("CUDA: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i, 1);
-        mu_assert("CUDA: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafContext *vmaf = VMAF_NULLPTR;
+    char *msg = open_cuda_context(&vmaf, &cu_state);
+    if (msg)
+        return msg;
+    if (cu_state == VMAF_NULLPTR)
+        return VMAF_NULLPTR;
+    msg = feed_fixture_frames(vmaf, "CUDA: fill_fixture(ref) failed",
+                              "CUDA: fill_fixture(dist) failed", "CUDA: vmaf_read_pictures failed");
+    if (msg)
+        return msg;
+    int err = 0;
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score", out_score,
@@ -146,7 +161,7 @@ static char *run_cuda(double *out_score)
 
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_chroma_cpu_cuda_parity(void)
@@ -163,7 +178,7 @@ static char *test_speed_chroma_cpu_cuda_parity(void)
         return msg;
 
     if (isnan(cuda_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - cuda_score);
     if (delta > PARITY_TOL) {
@@ -172,11 +187,11 @@ static char *test_speed_chroma_cpu_cuda_parity(void)
                       cpu_score, cuda_score, delta, PARITY_TOL);
     }
     mu_assert("speed_chroma CPU vs CUDA delta exceeds places=4 tolerance", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_speed_chroma_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

@@ -28,10 +28,10 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
                      int src_stride, int dst_stride);
 
 void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                       int32_t *adm_div_lookup);
+                       const int32_t *adm_div_lookup);
 
 void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                            int32_t *adm_div_lookup);
+                            const int32_t *adm_div_lookup);
 
 void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_curr_dis,
                                  AdmBuffer *buf, int w, int h, int ref_stride, int dis_stride,

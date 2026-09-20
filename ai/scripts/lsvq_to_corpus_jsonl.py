@@ -40,13 +40,9 @@ from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from corpus import base as _corpus_base  # noqa: E402
-from corpus.base import (  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from corpus import base as _corpus_base
+from corpus.base import (
     CorpusIngestBase,
     RunStats,
     normalise_clip_name,
@@ -54,6 +50,11 @@ from corpus.base import (  # noqa: E402
     utc_now_iso,
     write_ingest_manifest,
 )
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
 
 save_progress = _corpus_base.save_progress
 
@@ -239,15 +240,7 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    ap = make_argument_parser(
-        prog="lsvq_to_corpus_jsonl.py",
-        description=(
-            "ADR-0367: walk a local LSVQ extraction (or build one via "
-            "resumable downloads), probe each clip via ffprobe, join with "
-            "the manifest CSV's MOS scores, and emit one JSONL row per clip."
-        ),
-    )
+def _add_lsvq_paths(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--lsvq-dir",
         type=Path,
@@ -285,6 +278,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
     )
+
+
+def _add_lsvq_runtime(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--ffprobe-bin", default=os.environ.get("FFPROBE_BIN", "ffprobe"), help="ffprobe binary."
     )
@@ -306,7 +302,50 @@ def _build_parser() -> argparse.ArgumentParser:
         "--full", action="store_true", help="Ingest the entire manifest. Overrides --max-rows."
     )
     ap.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = make_argument_parser(
+        prog="lsvq_to_corpus_jsonl.py",
+        description=(
+            "ADR-0367: walk a local LSVQ extraction (or build one via "
+            "resumable downloads), probe each clip via ffprobe, join with "
+            "the manifest CSV's MOS scores, and emit one JSONL row per clip."
+        ),
+    )
+    _add_lsvq_paths(ap)
+    _add_lsvq_runtime(ap)
     return ap
+
+
+def _write_manifest(
+    args: argparse.Namespace, raw_argv: list[str], stats: RunStats, max_rows: int | None
+) -> None:
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="lsvq-corpus-jsonl-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "lsvq_dir": args.lsvq_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "clip_suffix": args.clip_suffix,
+            "min_csv_rows": _LSVQ_MIN_ROWS,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -339,38 +378,14 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         print(
-            "hint: obtain LSVQ-videos from " "https://github.com/teowu/LSVQ-videos or HuggingFace",
+            "hint: obtain LSVQ-videos from https://github.com/teowu/LSVQ-videos or HuggingFace",
             file=sys.stderr,
         )
         return 2
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    write_ingest_manifest(
-        args.manifest_out,
-        schema="lsvq-corpus-jsonl-manifest-v1",
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        corpus_label=_CORPUS_LABEL,
-        stats=stats,
-        inputs={
-            "lsvq_dir": args.lsvq_dir,
-            "manifest_csv": args.manifest_csv,
-            "progress_path": args.progress_path,
-        },
-        outputs={"jsonl": args.output, "manifest": args.manifest_out},
-        config={
-            "clips_subdir": args.clips_subdir,
-            "clip_suffix": args.clip_suffix,
-            "min_csv_rows": _LSVQ_MIN_ROWS,
-            "max_rows": max_rows,
-            "full": args.full,
-            "corpus_version": args.corpus_version,
-            "attrition_warn_threshold": args.attrition_warn_threshold,
-        },
-    )
+    _write_manifest(args, raw_argv, stats, max_rows)
     return 0
 
 

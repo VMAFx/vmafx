@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0309](0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) | `fr_regressor_v2` ensemble — real-corpus retrain harness + flip workflow | Accepted | ai, fr-regressor, ensemble, loso, runbook, fork-local |

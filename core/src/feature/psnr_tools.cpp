@@ -30,7 +30,7 @@
  *     a long if-else ladder.
  *   - `[[nodiscard]]` on the internal helper makes accidental result
  *     discard a compile-time error rather than a silent bug.
- *   - `nullptr` replaces `NULL` throughout this TU.
+ *   - `nullptr` replaces `nullptr` throughout this TU.
  */
 
 #include <algorithm>
@@ -58,7 +58,6 @@ struct FormatEntry {
     PsnrParams params{};
 };
 
-// NOLINTNEXTLINE(cert-err58-cpp) — constexpr aggregate; no dynamic init (ADR-0141 / ADR-0278)
 constexpr std::array<FormatEntry, 12> kFormatTable{{
     {.fmt = "yuv420p", .params = {.peak = 255.0, .psnr_max = 60.0}},
     {.fmt = "yuv422p", .params = {.peak = 255.0, .psnr_max = 60.0}},

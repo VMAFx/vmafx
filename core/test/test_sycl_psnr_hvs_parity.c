@@ -40,12 +40,6 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* Fixture must be ≥ 8x8 for the DCT block size and ideally a
  * multiple of 8 in both dimensions; 256x144 satisfies both
  * (256 % 8 == 0, 144 % 8 == 0). */
@@ -98,58 +92,58 @@ static int feed_frame(VmafContext *vmaf)
 static char *run_cpu(double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "psnr_hvs", NULL);
+    err = vmaf_use_feature(vmaf, "psnr_hvs", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(psnr_hvs) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u);
     mu_assert("CPU: psnr_hvs score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_sycl(double *score)
 {
     *score = NAN;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "psnr_hvs_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "psnr_hvs_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(psnr_hvs_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u);
     mu_assert("SYCL: psnr_hvs score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_hvs_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_sycl");
-    mu_assert("psnr_hvs_sycl extractor must be registered", fex != NULL);
+    mu_assert("psnr_hvs_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("psnr_hvs_sycl name matches", !strcmp(fex->name, "psnr_hvs_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_hvs_cpu_sycl_parity(void)
@@ -163,21 +157,19 @@ static char *test_psnr_hvs_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (isnan(sycl_score))
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\npsnr_hvs parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
                       cpu_score, sycl_score, delta, PARITY_TOL);
     }
     mu_assert("psnr_hvs CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_psnr_hvs_sycl_registered);
     mu_run_test(test_psnr_hvs_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

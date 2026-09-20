@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0454: VIF CUDA shared-memory staging for horizontal and vertical filter passes
 
 - **Status**: Proposed
@@ -45,7 +44,7 @@ All arithmetic is unchanged — results are bit-identical to the pre-patch kerne
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Texture cache (read-only path via `__ldg`) | Zero code change to tile logic | Only improves L2 hit-rate; does not eliminate redundant loads across threads | Does not address inter-thread reuse within the block |
 | Fused vertical + horizontal single kernel | Eliminates 7 tmp buffer round-trips | 17-tap × 7-channel smem would exceed 48 KB at full block occupancy; requires 2D block restructuring | Deferred to follow-up; the tmp buffers allow pipelined execution today |
 | Half-width tile to reduce smem | Halves smem per block, doubles occupancy | Halo threads still issue global loads; the saving is marginal for the dominant interior path | Not worth the indexing complexity |

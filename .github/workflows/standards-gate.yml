@@ -30,8 +30,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-          # `audit -base` diffs against the merge base, so the gate needs history.
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -68,14 +67,23 @@ jobs:
       - name: Verify agent context integrity (HISS-16)
         run: standardsctl compile-context --verify
 
-      # Deliberately the baseline-only form, not `audit -base <ref>`. The `-base`
-      # mode adds a touched-file clean rule on top of the ratchet: every file a PR
-      # touches must carry zero HISS infractions. Measured against this tree that
-      # rule reports 220 infractions on an ordinary change set, because HISS-04
-      # flags every function over 60 lines in any file the PR opens. It would block
-      # routine fixes to legacy C for reasons unrelated to the fix. The ratchet
-      # still holds without it: recorded debt may shrink and never grow. Revisit
-      # `-base` once the baseline is low enough that touching a file is realistic
-      # (ADR-1249).
-      - name: Audit HISS invariants against the baseline
-        run: standardsctl audit
+      # ADR-1267: the baseline remains a mechanically generated migration
+      # inventory, never permission for active debt. The audit proves the scan
+      # matches that inventory; the second command requires the inventory itself
+      # to be empty before this required job can pass.
+      - name: Audit full-tree HISS invariants at zero debt
+        run: |
+          standardsctl audit
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          baseline = json.loads(Path(".standards-baseline.json").read_text(encoding="utf-8"))
+          total = baseline.get("total_infractions")
+          entries = baseline.get("infractions")
+          if total != 0 or entries != []:
+              raise SystemExit(
+                  "Praetor migration inventory is nonzero: "
+                  f"total_infractions={total}, entries={len(entries or [])}"
+              )
+          PY

@@ -31,6 +31,8 @@
 #ifndef VMAF_FEATURE_BRISQUE_MATH_H_
 #define VMAF_FEATURE_BRISQUE_MATH_H_
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <math.h>
 #include <stddef.h>
@@ -60,7 +62,7 @@ static inline double brisque_gamma_value(int idx)
 /* Fill the GGD ratio table (BRISQUE_GAMMA_COUNT doubles). Caller owns it. */
 static inline void brisque_build_ggd_table(double *prec)
 {
-    assert(prec != NULL);
+    assert(prec != VMAF_NULLPTR);
     for (int i = 0; i < BRISQUE_GAMMA_COUNT; i++) {
         const double g = brisque_gamma_value(i);
         const double g1 = tgamma(1.0 / g);
@@ -73,7 +75,7 @@ static inline void brisque_build_ggd_table(double *prec)
 /* Fill the AGGD ratio table (BRISQUE_GAMMA_COUNT doubles). Caller owns it. */
 static inline void brisque_build_aggd_table(double *prec)
 {
-    assert(prec != NULL);
+    assert(prec != VMAF_NULLPTR);
     for (int i = 0; i < BRISQUE_GAMMA_COUNT; i++) {
         const double g = brisque_gamma_value(i);
         const double g1 = tgamma(1.0 / g);
@@ -99,7 +101,7 @@ typedef struct BrisqueGgd {
 
 static inline BrisqueGgd brisque_fit_ggd(const double *x, size_t n, const double *ggd_table)
 {
-    assert(x != NULL && ggd_table != NULL && n > 0);
+    assert(x != VMAF_NULLPTR && ggd_table != VMAF_NULLPTR && n > 0);
     double sq_sum = 0.0;
     double abs_sum = 0.0;
     for (size_t i = 0; i < n; i++) {
@@ -162,37 +164,41 @@ typedef struct BrisqueAggd {
     double right_sq; /* rightstd^2 */
 } BrisqueAggd;
 
-/* One numerical procedure — the AGGD moment fit, matching the NIQE twin. Its
- * intermediate sums feed a snapshot-gated score, so splitting it would change
- * the order they combine in. ADR-0141 §2. */
-/* NOLINTNEXTLINE(readability-function-size) */
-static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const double *aggd_table)
-{
-    assert(x != NULL && aggd_table != NULL && n > 0);
-    double left_sq_sum = 0.0;
-    double right_sq_sum = 0.0;
-    size_t left_cnt = 0;
-    size_t right_cnt = 0;
-    double abs_sum = 0.0;
-    double sq_sum = 0.0;
+typedef struct BrisqueAggdMoments {
+    double left_sq_sum;
+    double right_sq_sum;
+    double abs_sum;
+    double sq_sum;
+    size_t left_cnt;
+    size_t right_cnt;
+} BrisqueAggdMoments;
 
+static inline BrisqueAggdMoments brisque_accumulate_aggd(const double *x, size_t n)
+{
+    BrisqueAggdMoments m = {0};
     for (size_t i = 0; i < n; i++) {
         const double v = x[i];
-        sq_sum += v * v;
-        abs_sum += fabs(v);
+        m.sq_sum += v * v;
+        m.abs_sum += fabs(v);
         if (v < 0.0) {
-            left_sq_sum += v * v;
-            left_cnt++;
+            m.left_sq_sum += v * v;
+            m.left_cnt++;
         } else if (v > 0.0) {
-            right_sq_sum += v * v;
-            right_cnt++;
+            m.right_sq_sum += v * v;
+            m.right_cnt++;
         }
         /* v == 0.0: excluded from both (MATLAB strict <0 / >0). */
     }
+    return m;
+}
 
-    const double leftstd = (left_cnt > 0) ? sqrt(left_sq_sum / (double)left_cnt) : 0.0;
-    const double rightstd = (right_cnt > 0) ? sqrt(right_sq_sum / (double)right_cnt) : 0.0;
-    const double mean_sq = sq_sum / (double)n;
+static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const double *aggd_table)
+{
+    assert(x != VMAF_NULLPTR && aggd_table != VMAF_NULLPTR && n > 0);
+    const BrisqueAggdMoments m = brisque_accumulate_aggd(x, n);
+    const double leftstd = (m.left_cnt > 0) ? sqrt(m.left_sq_sum / (double)m.left_cnt) : 0.0;
+    const double rightstd = (m.right_cnt > 0) ? sqrt(m.right_sq_sum / (double)m.right_cnt) : 0.0;
+    const double mean_sq = m.sq_sum / (double)n;
 
     BrisqueAggd out;
     out.left_sq = leftstd * leftstd;
@@ -210,7 +216,7 @@ static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const doub
     }
 
     const double gammahat = leftstd / rightstd;
-    const double mean_abs = abs_sum / (double)n;
+    const double mean_abs = m.abs_sum / (double)n;
     const double rhat = (mean_abs * mean_abs) / mean_sq;
     const double gh2 = gammahat * gammahat;
     const double gh3 = gh2 * gammahat;
@@ -327,7 +333,7 @@ static inline int brisque_reflect_index(int i, int in_len)
  * axis 0.5x downscale. `idx` and `wts` are out_len*BRISQUE_RESIZE_TAPS. */
 static inline void brisque_resize_coeffs(int in_len, int out_len, int *idx, double *wts)
 {
-    assert(idx != NULL && wts != NULL && in_len > 0 && out_len > 0);
+    assert(idx != VMAF_NULLPTR && wts != VMAF_NULLPTR && in_len > 0 && out_len > 0);
     const double scale = BRISQUE_RESIZE_SCALE;
     const double kernel_width = 4.0 / scale; /* = 8 */
     const double inv_scale = 1.0 / scale;    /* = 2 */

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Repair broken developer and usage guide links using canonical ADR IDs, backend
   overview pages, and source paths; retain historical local-only references.
 - Block selected documentation pushes when MkDocs is unavailable, while direct

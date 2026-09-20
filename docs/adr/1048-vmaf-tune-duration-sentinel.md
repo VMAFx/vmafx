@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1048: vmaf-tune `ladder --duration` sentinel dest mismatch fix
 
 - **Status**: Accepted
@@ -28,7 +27,7 @@ stamp pass covers both the `corpus` sub-command (dest=`duration`) and the
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Normalise `ladder --duration` dest to `"duration"` | Removes the divergence | Would require auditing every downstream read of `args.duration` vs `args.duration_s` across the two sub-commands — high risk of introducing a new cross-contamination bug | Not chosen in this PR; the sentinel fix is safe and minimal |
 | Use `_TrackedDefaultAction` on ladder `--duration` | Self-describing | Requires changing the `_stamp_tracked_default_sentinels` contract anyway | Equivalent outcome; minimal change preferred |
 

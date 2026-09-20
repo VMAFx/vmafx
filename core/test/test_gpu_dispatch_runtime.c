@@ -52,10 +52,6 @@ static int test_unsetenv(const char *name)
 #include "gpu_dispatch_env.h"
 #include "gpu_dispatch_parse.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit where NULL is the canonical null pointer constant. ADR-1138. */
-
 #include "cuda/dispatch_strategy.h"
 #include "hip/dispatch_strategy.h"
 #include "sycl/dispatch_strategy.h"
@@ -65,22 +61,23 @@ static int test_unsetenv(const char *name)
 static char *test_parse_null_inputs_decline(void)
 {
     int idx = 99;
-    const char *const names[] = {"direct", "graph", NULL};
-    mu_assert("NULL env declines", vmaf_gpu_dispatch_parse_env(NULL, "vif", names, &idx) == 0);
+    const char *const names[] = {"direct", "graph", VMAF_NULLPTR};
+    mu_assert("NULL env declines",
+              vmaf_gpu_dispatch_parse_env(VMAF_NULLPTR, "vif", names, &idx) == 0);
     mu_assert("NULL feature declines",
-              vmaf_gpu_dispatch_parse_env("vif:graph", NULL, names, &idx) == 0);
+              vmaf_gpu_dispatch_parse_env("vif:graph", VMAF_NULLPTR, names, &idx) == 0);
     mu_assert("NULL names declines",
-              vmaf_gpu_dispatch_parse_env("vif:graph", "vif", NULL, &idx) == 0);
+              vmaf_gpu_dispatch_parse_env("vif:graph", "vif", VMAF_NULLPTR, &idx) == 0);
     mu_assert("NULL out declines",
-              vmaf_gpu_dispatch_parse_env("vif:graph", "vif", names, NULL) == 0);
+              vmaf_gpu_dispatch_parse_env("vif:graph", "vif", names, VMAF_NULLPTR) == 0);
     mu_assert("decline leaves out untouched", idx == 99);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_parse_matches_strategy_by_name(void)
 {
     int idx = -1;
-    const char *const names[] = {"direct", "graph", NULL};
+    const char *const names[] = {"direct", "graph", VMAF_NULLPTR};
     mu_assert("vif:graph matches",
               vmaf_gpu_dispatch_parse_env("vif:graph", "vif", names, &idx) == 1);
     mu_assert("graph maps to index 1", idx == 1);
@@ -89,13 +86,13 @@ static char *test_parse_matches_strategy_by_name(void)
     mu_assert("vif:direct matches",
               vmaf_gpu_dispatch_parse_env("vif:direct", "vif", names, &idx) == 1);
     mu_assert("direct maps to index 0", idx == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_parse_multi_token_and_whitespace(void)
 {
     int idx = -1;
-    const char *const names[] = {"direct", "graph", NULL};
+    const char *const names[] = {"direct", "graph", VMAF_NULLPTR};
     /* Whitespace between tokens, second token matches. */
     mu_assert("multi-token second matches",
               vmaf_gpu_dispatch_parse_env(" adm:direct , vif:graph ", "vif", names, &idx) == 1);
@@ -104,31 +101,31 @@ static char *test_parse_multi_token_and_whitespace(void)
     /* No match — feature not in the list. */
     mu_assert("absent feature declines",
               vmaf_gpu_dispatch_parse_env("adm:direct,vif:graph", "psnr", names, &idx) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_parse_unknown_strategy_declines(void)
 {
     int idx = 42;
-    const char *const names[] = {"direct", "graph", NULL};
+    const char *const names[] = {"direct", "graph", VMAF_NULLPTR};
     /* Feature matches but strategy string is unknown — must decline
      * (not silently pick index 0). */
     mu_assert("unknown strategy declines",
               vmaf_gpu_dispatch_parse_env("vif:rocket", "vif", names, &idx) == 0);
     mu_assert("decline leaves out untouched", idx == 42);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_parse_malformed_no_colon_declines(void)
 {
     int idx = 7;
-    const char *const names[] = {"direct", "graph", NULL};
+    const char *const names[] = {"direct", "graph", VMAF_NULLPTR};
     /* Missing colon — entire env malformed, parse declines without crash. */
     mu_assert("missing colon declines",
               vmaf_gpu_dispatch_parse_env("vif graph", "vif", names, &idx) == 0);
     mu_assert("empty string declines", vmaf_gpu_dispatch_parse_env("", "vif", names, &idx) == 0);
     mu_assert("decline leaves out untouched", idx == 7);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- gpu_dispatch_env.c — thread-safe once-snapshot ---- */
@@ -137,8 +134,8 @@ static char *test_env_get_null_var_returns_null(void)
 {
     /* NULL var_name → NULL return, no crash. Pinned by the contract
      * in gpu_dispatch_env.h. */
-    mu_assert("NULL var_name → NULL", vmaf_gpu_dispatch_env_get(NULL) == NULL);
-    return NULL;
+    mu_assert("NULL var_name → NULL", vmaf_gpu_dispatch_env_get(VMAF_NULLPTR) == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_env_get_snapshots_first_call(void)
@@ -149,39 +146,39 @@ static char *test_env_get_snapshots_first_call(void)
      * so the FIRST call wins permanently — pre-set the env before the
      * first call. */
     const char *const var = "VMAFX_TEST_DISPATCH_RUNTIME_A";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+
     (void)setenv(var, "vif:graph,adm:direct", 1);
 
     const char *snap = vmaf_gpu_dispatch_env_get(var);
-    mu_assert("snapshot is non-NULL when env is set", snap != NULL);
+    mu_assert("snapshot is non-NULL when env is set", snap != VMAF_NULLPTR);
     mu_assert("snapshot value matches env", strcmp(snap, "vif:graph,adm:direct") == 0);
 
     /* Now mutate the env — the snapshot is immutable per contract. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+
     (void)setenv(var, "psnr:direct", 1);
     const char *snap2 = vmaf_gpu_dispatch_env_get(var);
     mu_assert("snapshot is identity-stable on repeat get", snap2 == snap);
     mu_assert("snapshot value did not observe later setenv",
               strcmp(snap2, "vif:graph,adm:direct") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_env_get_distinct_keys_independent(void)
 {
     const char *const var_b = "VMAFX_TEST_DISPATCH_RUNTIME_B";
     const char *const var_c = "VMAFX_TEST_DISPATCH_RUNTIME_C";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+
     (void)setenv(var_b, "alpha", 1);
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+
     (void)unsetenv(var_c);
 
     const char *snap_b = vmaf_gpu_dispatch_env_get(var_b);
     const char *snap_c = vmaf_gpu_dispatch_env_get(var_c);
 
-    mu_assert("set var snapshots to its value", snap_b != NULL);
+    mu_assert("set var snapshots to its value", snap_b != VMAF_NULLPTR);
     mu_assert("set var value preserved", strcmp(snap_b, "alpha") == 0);
-    mu_assert("unset var snapshots to NULL", snap_c == NULL);
-    return NULL;
+    mu_assert("unset var snapshots to NULL", snap_c == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ---- cuda/dispatch_strategy.c — host-only pure-function selector ---- */
@@ -204,20 +201,23 @@ static char *test_cuda_dispatch_default_is_direct(void)
     /* Pre-set BEFORE first call so the snapshot picks up our value.
      * With graph-capture unimplemented on CUDA, vif:graph emits a warning
      * and falls back to DIRECT. An unmentioned feature also defaults to DIRECT. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+
     (void)setenv("VMAF_CUDA_DISPATCH", "vif:graph,adm:direct", 1);
 
-    const VmafCudaDispatchStrategy s_vif = vmaf_cuda_select_strategy("vif", NULL, 1920, 1080);
+    const VmafCudaDispatchStrategy s_vif =
+        vmaf_cuda_select_strategy("vif", VMAF_NULLPTR, 1920, 1080);
     mu_assert("env override vif:graph falls back to DIRECT", s_vif == VMAF_CUDA_DISPATCH_DIRECT);
 
-    const VmafCudaDispatchStrategy s_adm = vmaf_cuda_select_strategy("adm", NULL, 1920, 1080);
+    const VmafCudaDispatchStrategy s_adm =
+        vmaf_cuda_select_strategy("adm", VMAF_NULLPTR, 1920, 1080);
     mu_assert("env override routes adm → DIRECT", s_adm == VMAF_CUDA_DISPATCH_DIRECT);
 
     /* Feature not mentioned in the env falls back to DIRECT (the
      * library-wide default for CUDA — graph-capture is opt-in). */
-    const VmafCudaDispatchStrategy s_psnr = vmaf_cuda_select_strategy("psnr", NULL, 1920, 1080);
+    const VmafCudaDispatchStrategy s_psnr =
+        vmaf_cuda_select_strategy("psnr", VMAF_NULLPTR, 1920, 1080);
     mu_assert("unmentioned feature defaults to DIRECT", s_psnr == VMAF_CUDA_DISPATCH_DIRECT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_cuda_dispatch_null_feature_defaults_direct(void)
@@ -226,9 +226,10 @@ static char *test_cuda_dispatch_null_feature_defaults_direct(void)
      * fallback applies. Pins the input-validation contract.
      * (Snapshot has already occurred via the test above; calling
      * again is safe — the once-init is no-op after first call.) */
-    const VmafCudaDispatchStrategy s = vmaf_cuda_select_strategy(NULL, NULL, 1920, 1080);
+    const VmafCudaDispatchStrategy s =
+        vmaf_cuda_select_strategy(VMAF_NULLPTR, VMAF_NULLPTR, 1920, 1080);
     mu_assert("NULL feature falls back to DIRECT", s == VMAF_CUDA_DISPATCH_DIRECT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- sycl/dispatch_strategy.cpp — host-safe selector ---- */
@@ -236,36 +237,37 @@ static char *test_sycl_dispatch_env_overrides(void)
 {
     /* Pre-set BEFORE first call so vmaf_gpu_dispatch_env_get snapshot
      * captures the test configuration. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+
     (void)setenv("VMAF_SYCL_DISPATCH", "vif:direct,adm:graph", 1);
 
     /* Feature override: vif -> DIRECT */
     const VmafSyclDispatchStrategy s_vif =
-        vmaf_sycl_select_strategy("vif", NULL, 1920, 1080, false);
+        vmaf_sycl_select_strategy("vif", VMAF_NULLPTR, 1920, 1080, false);
     mu_assert("env override routes vif → DIRECT", s_vif == VMAF_SYCL_DISPATCH_DIRECT);
 
     /* Feature override: adm -> GRAPH_REPLAY */
     const VmafSyclDispatchStrategy s_adm =
-        vmaf_sycl_select_strategy("adm", NULL, 1920, 1080, false);
+        vmaf_sycl_select_strategy("adm", VMAF_NULLPTR, 1920, 1080, false);
     mu_assert("env override routes adm → GRAPH_REPLAY", s_adm == VMAF_SYCL_DISPATCH_GRAPH_REPLAY);
 
     /* Unmentioned feature at 1080p (>= 720p) defaults to GRAPH_REPLAY */
     const VmafSyclDispatchStrategy s_psnr_1080p =
-        vmaf_sycl_select_strategy("psnr", NULL, 1920, 1080, false);
+        vmaf_sycl_select_strategy("psnr", VMAF_NULLPTR, 1920, 1080, false);
     mu_assert("unmentioned 1080p feature defaults to GRAPH_REPLAY",
               s_psnr_1080p == VMAF_SYCL_DISPATCH_GRAPH_REPLAY);
 
     /* Unmentioned feature at small resolution (< 720p) defaults to DIRECT */
     const VmafSyclDispatchStrategy s_psnr_small =
-        vmaf_sycl_select_strategy("psnr", NULL, 320, 240, false);
+        vmaf_sycl_select_strategy("psnr", VMAF_NULLPTR, 320, 240, false);
     mu_assert("unmentioned small feature defaults to DIRECT",
               s_psnr_small == VMAF_SYCL_DISPATCH_DIRECT);
 
     /* Zero-copy va_import_path defaults to DIRECT even at 1080p */
-    const VmafSyclDispatchStrategy s_va = vmaf_sycl_select_strategy("psnr", NULL, 1920, 1080, true);
+    const VmafSyclDispatchStrategy s_va =
+        vmaf_sycl_select_strategy("psnr", VMAF_NULLPTR, 1920, 1080, true);
     mu_assert("va_import_path defaults to DIRECT", s_va == VMAF_SYCL_DISPATCH_DIRECT);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- hip/dispatch_strategy.c — stub selector ---- */
@@ -282,11 +284,13 @@ static char *test_hip_dispatch_supports_null_and_unknown(void)
 {
     /* NULL ctx + NULL feature + unknown feature all return 0
      * (unsupported). The stub never crashes regardless of input. */
-    mu_assert("NULL ctx + NULL feature → 0", vmaf_hip_dispatch_supports(NULL, NULL) == 0);
-    mu_assert("NULL ctx + named feature → 0", vmaf_hip_dispatch_supports(NULL, "psnr_hip") == 0);
+    mu_assert("NULL ctx + NULL feature → 0",
+              vmaf_hip_dispatch_supports(VMAF_NULLPTR, VMAF_NULLPTR) == 0);
+    mu_assert("NULL ctx + named feature → 0",
+              vmaf_hip_dispatch_supports(VMAF_NULLPTR, "psnr_hip") == 0);
     mu_assert("NULL ctx + unknown feature → 0",
-              vmaf_hip_dispatch_supports(NULL, "definitely_not_hip") == 0);
-    return NULL;
+              vmaf_hip_dispatch_supports(VMAF_NULLPTR, "definitely_not_hip") == 0);
+    return VMAF_NULLPTR;
 }
 
 /* Function-pointer table keeps run_tests below the
@@ -321,7 +325,5 @@ char *run_tests(void)
     for (size_t i = 0; i < test_table_len; ++i) {
         mu_run_test(test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

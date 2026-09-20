@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -299,24 +301,27 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (!s->y_row)
         return -ENOMEM;
 
-    if (bpc == 8)
+    if (bpc == 8) {
         s->pipeline = motion_score_pipeline_8;
-    else
+    } else {
         s->pipeline = motion_score_pipeline_16;
+    }
 
 #if ARCH_X86
     if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
-        if (bpc == 8)
+        if (bpc == 8) {
             s->pipeline = motion_score_pipeline_8_avx2;
-        else
+        } else {
             s->pipeline = motion_score_pipeline_16_avx2;
+        }
     }
 #if HAVE_AVX512
     if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
-        if (bpc == 8)
+        if (bpc == 8) {
             s->pipeline = motion_score_pipeline_8_avx512;
-        else
+        } else {
             s->pipeline = motion_score_pipeline_16_avx512;
+        }
     }
 #endif
 #endif
@@ -334,8 +339,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     MotionState *s = fex->priv;
@@ -494,7 +500,7 @@ static const char *provided_features[] = {
     "VMAF_integer_feature_motion_score",
     "VMAF_integer_feature_motion2_score",
     "VMAF_integer_feature_motion3_score",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 VmafFeatureExtractor vmaf_fex_integer_motion = {

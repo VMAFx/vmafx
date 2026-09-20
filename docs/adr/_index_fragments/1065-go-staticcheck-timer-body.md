@@ -1,1 +1,5 @@
-| [ADR-1065](1065-go-staticcheck-timer-body.md) | Go staticcheck r10: replace time.After in poll loops with time.NewTicker (timer-leak fix); add MaxBytesReader + 413 mapping to controller /v1/score; add ReadTimeout to both HTTP servers | Accepted | 2026-06-06 | go, security, correctness |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1065](1065-go-staticcheck-timer-body.md) | Go staticcheck r10 — poll-loop timer leak and missing body guards | Accepted | `go`, `security`, `correctness` |

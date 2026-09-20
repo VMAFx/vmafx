@@ -37,8 +37,6 @@
 #define BLOCK_SIZE (BLOCK_X * BLOCK_Y)
 #define K 11
 
-extern "C" {
-
 __device__ static const float G[K] = {
     0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
     0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f,
@@ -75,11 +73,11 @@ __device__ static inline float scaler_for_bpc(unsigned bpc)
 /* Pass 1 — horizontal: each thread is one output pixel of the
  * (W-10) × H "valid" buffer. Reads input columns [x, x+10] and
  * writes the 5 horizontal-pass values. */
-__global__ void calculate_ssim_horiz_8bpc(const VmafPicture ref, const VmafPicture cmp,
-                                          VmafCudaBuffer h_ref_mu, VmafCudaBuffer h_cmp_mu,
-                                          VmafCudaBuffer h_ref_sq, VmafCudaBuffer h_cmp_sq,
-                                          VmafCudaBuffer h_refcmp, unsigned w_horiz,
-                                          unsigned h_horiz, unsigned width)
+extern "C" __global__ void
+calculate_ssim_horiz_8bpc(const VmafPicture ref, const VmafPicture cmp, VmafCudaBuffer h_ref_mu,
+                          VmafCudaBuffer h_cmp_mu, VmafCudaBuffer h_ref_sq, VmafCudaBuffer h_cmp_sq,
+                          VmafCudaBuffer h_refcmp, unsigned w_horiz, unsigned h_horiz,
+                          unsigned width)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -112,11 +110,11 @@ __global__ void calculate_ssim_horiz_8bpc(const VmafPicture ref, const VmafPictu
     reinterpret_cast<float *>(h_refcmp.data)[dst_idx] = refcmp_h;
 }
 
-__global__ void calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPicture cmp,
-                                           VmafCudaBuffer h_ref_mu, VmafCudaBuffer h_cmp_mu,
-                                           VmafCudaBuffer h_ref_sq, VmafCudaBuffer h_cmp_sq,
-                                           VmafCudaBuffer h_refcmp, unsigned w_horiz,
-                                           unsigned h_horiz, unsigned bpc, unsigned width)
+extern "C" __global__ void
+calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPicture cmp, VmafCudaBuffer h_ref_mu,
+                           VmafCudaBuffer h_cmp_mu, VmafCudaBuffer h_ref_sq,
+                           VmafCudaBuffer h_cmp_sq, VmafCudaBuffer h_refcmp, unsigned w_horiz,
+                           unsigned h_horiz, unsigned bpc, unsigned width)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -150,10 +148,38 @@ __global__ void calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPict
     reinterpret_cast<float *>(h_refcmp.data)[dst_idx] = refcmp_h;
 }
 
-/* Pass 2 — vertical + SSIM combine + per-block partial sum.
- * __launch_bounds__(128) hints nvcc to budget registers for
- * 128-thread blocks; per ADR-0754 / ADR-0743 precedent. */
-__launch_bounds__(128) __global__
+struct SsimHorizPlanes {
+    const float *ref_mu;
+    const float *cmp_mu;
+    const float *ref_sq;
+    const float *cmp_sq;
+    const float *refcmp;
+};
+
+__device__ static inline float calculate_ssim_pixel(const SsimHorizPlanes &planes, unsigned x,
+                                                    unsigned y, unsigned w_horiz, float c1,
+                                                    float c2)
+{
+    float ref_mu = 0.0f, cmp_mu = 0.0f, ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
+    for (int v = 0; v < K; v++) {
+        const unsigned src_idx = (y + (unsigned)v) * w_horiz + x;
+        const float w = G[v];
+        ref_mu += w * __ldg(&planes.ref_mu[src_idx]);
+        cmp_mu += w * __ldg(&planes.cmp_mu[src_idx]);
+        ref_sq += w * __ldg(&planes.ref_sq[src_idx]);
+        cmp_sq += w * __ldg(&planes.cmp_sq[src_idx]);
+        refcmp += w * __ldg(&planes.refcmp[src_idx]);
+    }
+    const float ref_var = ref_sq - ref_mu * ref_mu;
+    const float cmp_var = cmp_sq - cmp_mu * cmp_mu;
+    const float covar = refcmp - ref_mu * cmp_mu;
+    const float mu_xy = ref_mu * cmp_mu;
+    const float num = (2.0f * mu_xy + c1) * (2.0f * covar + c2);
+    const float den = (ref_mu * ref_mu + cmp_mu * cmp_mu + c1) * (ref_var + cmp_var + c2);
+    return num / den;
+}
+
+extern "C" __launch_bounds__(128) __global__
     void calculate_ssim_vert_combine(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
                                      VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
                                      VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer partials,
@@ -162,41 +188,16 @@ __launch_bounds__(128) __global__
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    /* Extract raw __restrict__ pointers once before the inner loop so
-     * the compiler can route all 5×11 loads through the read-only
-     * texture cache path via __ldg().  Passing VmafCudaBuffer by value
-     * hides the pointer from the compiler's non-coherent-load analysis;
-     * the extraction makes the alias-free invariant visible (ADR-0754). */
-    const float *__restrict__ h_ref_mu = reinterpret_cast<const float *>(h_ref_mu_buf.data);
-    const float *__restrict__ h_cmp_mu = reinterpret_cast<const float *>(h_cmp_mu_buf.data);
-    const float *__restrict__ h_ref_sq = reinterpret_cast<const float *>(h_ref_sq_buf.data);
-    const float *__restrict__ h_cmp_sq = reinterpret_cast<const float *>(h_cmp_sq_buf.data);
-    const float *__restrict__ h_refcmp = reinterpret_cast<const float *>(h_refcmp_buf.data);
-
+    const SsimHorizPlanes planes = {
+        reinterpret_cast<const float *>(h_ref_mu_buf.data),
+        reinterpret_cast<const float *>(h_cmp_mu_buf.data),
+        reinterpret_cast<const float *>(h_ref_sq_buf.data),
+        reinterpret_cast<const float *>(h_cmp_sq_buf.data),
+        reinterpret_cast<const float *>(h_refcmp_buf.data),
+    };
     float my_ssim = 0.0f;
-    if (x < w_final && y < h_final) {
-        float ref_mu = 0.0f, cmp_mu = 0.0f, ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
-        for (int v = 0; v < K; v++) {
-            const unsigned src_y = y + (unsigned)v;
-            const unsigned src_idx = src_y * w_horiz + x;
-            const float w = G[v];
-            ref_mu += w * __ldg(&h_ref_mu[src_idx]);
-            cmp_mu += w * __ldg(&h_cmp_mu[src_idx]);
-            ref_sq += w * __ldg(&h_ref_sq[src_idx]);
-            cmp_sq += w * __ldg(&h_cmp_sq[src_idx]);
-            refcmp += w * __ldg(&h_refcmp[src_idx]);
-        }
-        const float ref_var = ref_sq - ref_mu * ref_mu;
-        const float cmp_var = cmp_sq - cmp_mu * cmp_mu;
-        const float covar = refcmp - ref_mu * cmp_mu;
-        const float mu_xy = ref_mu * cmp_mu;
-        const float num = (2.0f * mu_xy + c1) * (2.0f * covar + c2);
-        const float den = (ref_mu * ref_mu + cmp_mu * cmp_mu + c1) * (ref_var + cmp_var + c2);
-        my_ssim = num / den;
-    }
-
-    /* Per-block tree reduction in shared memory. Same precision
-     * pattern as ciede_cuda — partial-per-block + host double sum. */
+    if (x < w_final && y < h_final)
+        my_ssim = calculate_ssim_pixel(planes, x, y, w_horiz, c1, c2);
     __shared__ float s_warp_sums[BLOCK_SIZE / 32];
     float warp_sum = my_ssim;
     for (int off = 16; off > 0; off >>= 1)
@@ -215,5 +216,3 @@ __launch_bounds__(128) __global__
         reinterpret_cast<float *>(partials.data)[block_idx] = block_sum;
     }
 }
-
-} /* extern "C" */

@@ -65,7 +65,9 @@
 #include "common.h"
 
 #ifdef __cplusplus
-extern "C" {
+#define VMAF_HIP_EXTERN_C extern "C"
+#else
+#define VMAF_HIP_EXTERN_C
 #endif
 
 /*
@@ -114,7 +116,8 @@ typedef struct VmafHipKernelReadback {
  * Returns 0 on success or a negative errno. The scaffold returns
  * -ENOSYS unconditionally.
  */
-int vmaf_hip_kernel_lifecycle_init(VmafHipKernelLifecycle *lc, VmafHipContext *ctx);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_lifecycle_init(VmafHipKernelLifecycle *lc,
+                                                     VmafHipContext *ctx);
 
 /*
  * Allocate a (device, pinned-host) readback pair of `bytes` size.
@@ -122,7 +125,8 @@ int vmaf_hip_kernel_lifecycle_init(VmafHipKernelLifecycle *lc, VmafHipContext *c
  * Returns 0 on success or a negative errno. The scaffold returns
  * -ENOSYS; on failure `rb` is left zero-initialised.
  */
-int vmaf_hip_kernel_readback_alloc(VmafHipKernelReadback *rb, VmafHipContext *ctx, size_t bytes);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_readback_alloc(VmafHipKernelReadback *rb, VmafHipContext *ctx,
+                                                     size_t bytes);
 
 /*
  * Per-frame submit-side helper.
@@ -137,9 +141,11 @@ int vmaf_hip_kernel_readback_alloc(VmafHipKernelReadback *rb, VmafHipContext *ct
  * Stream + event handles cross as `uintptr_t` for the same
  * header-purity reason as the lifecycle struct.
  */
-int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext *ctx,
-                                      VmafHipKernelReadback *rb, uintptr_t picture_stream,
-                                      uintptr_t dist_ready_event);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc,
+                                                        VmafHipContext *ctx,
+                                                        VmafHipKernelReadback *rb,
+                                                        uintptr_t picture_stream,
+                                                        uintptr_t dist_ready_event);
 
 /*
  * collect()-side wait point: drains the private stream so the host
@@ -147,7 +153,7 @@ int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext
  *
  * Mirrors `vmaf_cuda_kernel_collect_wait`. Scaffold returns -ENOSYS.
  */
-int vmaf_hip_kernel_collect_wait(VmafHipKernelLifecycle *lc, VmafHipContext *ctx);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_collect_wait(VmafHipKernelLifecycle *lc, VmafHipContext *ctx);
 
 /*
  * close()-side teardown: drain + destroy stream, destroy events.
@@ -158,14 +164,15 @@ int vmaf_hip_kernel_collect_wait(VmafHipKernelLifecycle *lc, VmafHipContext *ctx
  * and aggregate the first error. Safe to call on a partially-
  * initialised lifecycle.
  */
-int vmaf_hip_kernel_lifecycle_close(VmafHipKernelLifecycle *lc, VmafHipContext *ctx);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_lifecycle_close(VmafHipKernelLifecycle *lc,
+                                                      VmafHipContext *ctx);
 
 /*
  * Free the readback pair. Scaffold body is a no-op; runtime PR
  * issues `hipFreeAsync` + `hipHostFree`. Safe to call on a partially-
  * allocated readback.
  */
-int vmaf_hip_kernel_readback_free(VmafHipKernelReadback *rb, VmafHipContext *ctx);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_readback_free(VmafHipKernelReadback *rb, VmafHipContext *ctx);
 
 /*
  * Post-launch submit-side helper: records the `finished` event on
@@ -179,10 +186,9 @@ int vmaf_hip_kernel_readback_free(VmafHipKernelReadback *rb, VmafHipContext *ctx
  * `integer_psnr_hip`. On merge conflict with
  * PR #612 at merge time, keep one copy and discard the duplicate.
  */
-int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc, VmafHipContext *ctx);
+VMAF_HIP_EXTERN_C int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc,
+                                                         VmafHipContext *ctx);
 
-#ifdef __cplusplus
-} /* extern "C" */
-#endif
+#undef VMAF_HIP_EXTERN_C
 
 #endif /* LIBVMAF_HIP_KERNEL_TEMPLATE_H_ */

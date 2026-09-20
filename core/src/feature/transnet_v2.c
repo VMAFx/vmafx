@@ -43,9 +43,11 @@
  *  optional-runtime contract rather than a missing-model error.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -183,16 +185,16 @@ static void release_buffers(TransNetV2State *s)
     for (unsigned i = 0; i < TRANSNET_V2_WINDOW; ++i) {
         if (s->frames[i]) {
             aligned_free(s->frames[i]);
-            s->frames[i] = NULL;
+            s->frames[i] = VMAF_NULLPTR;
         }
     }
     if (s->input_tensor) {
         aligned_free(s->input_tensor);
-        s->input_tensor = NULL;
+        s->input_tensor = VMAF_NULLPTR;
     }
     if (s->output_logits) {
         aligned_free(s->output_logits);
-        s->output_logits = NULL;
+        s->output_logits = VMAF_NULLPTR;
     }
 }
 
@@ -233,7 +235,7 @@ static int transnet_v2_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     if (!path) {
         return -EINVAL;
     }
-    if (strstr(path, "placeholder") != NULL) {
+    if (strstr(path, "placeholder") != VMAF_NULLPTR) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "transnet_v2: loading placeholder model '%s' (not for production use)\n", path);
     }
@@ -241,7 +243,7 @@ static int transnet_v2_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     if (rc < 0) {
         return rc;
     }
-    assert(s->sess != NULL);
+    assert(s->sess != VMAF_NULLPTR);
 
     s->w = w;
     s->h = h;
@@ -252,7 +254,7 @@ static int transnet_v2_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     if (rc < 0) {
         release_buffers(s);
         vmaf_dnn_session_close(s->sess);
-        s->sess = NULL;
+        s->sess = VMAF_NULLPTR;
         return rc;
     }
     return 0;
@@ -279,17 +281,17 @@ static void gather_window(const TransNetV2State *s, float *dst)
     }
 }
 
-static int transnet_v2_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                               VmafPicture *dist_pic_90, unsigned index,
+static int transnet_v2_extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                               const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                               const VmafPicture *dist_pic_90, unsigned index,
                                VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
     TransNetV2State *s = fex->priv;
-    assert(s != NULL);
-    assert(s->sess != NULL);
+    assert(s != VMAF_NULLPTR);
+    assert(s->sess != VMAF_NULLPTR);
 
     if (ref_pic->w[0] != s->w || ref_pic->h[0] != s->h)
         return -ERANGE;
@@ -358,9 +360,8 @@ static const VmafOption transnet_v2_options[] = {
 };
 
 static const char *transnet_v2_provided_features[] = {"shot_boundary_probability", "shot_boundary",
-                                                      NULL};
+                                                      VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_transnet_v2` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_transnet_v2 = {
     .name = "transnet_v2",
     .init = transnet_v2_init,
@@ -374,5 +375,3 @@ VmafFeatureExtractor vmaf_fex_transnet_v2 = {
      * shared with feature_lpips.c). */
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

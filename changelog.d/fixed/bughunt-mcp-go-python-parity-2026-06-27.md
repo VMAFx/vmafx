@@ -1,12 +1,14 @@
-- MCP server: port the Python ADR-0967 HTTP hardening to the Go
-  `cmd/vmafx-mcp` streamable-HTTP transport. New `http_security.go` adds a
-  bearer-token auth middleware (`VMAFX_MCP_HTTP_TOKEN`, constant-time compare,
+# Changelog fragment
+
+- MCP server: port the Python ADR-0967 HTTP hardening to the Go `cmd/vmafx-mcp`
+  streamable-HTTP transport. New `http_security.go` adds a bearer-token auth
+  middleware (`VMAFX_MCP_HTTP_TOKEN`, constant-time compare,
   `VMAFX_MCP_HTTP_NO_AUTH=1` opt-out, refuse-all when neither is set), a 4 MiB
   request-body limit (`http.MaxBytesReader` + Content-Length pre-flight → 413),
   and a loopback-only default bind (`VMAFX_MCP_HTTP_BIND`, default `127.0.0.1`,
   applied when `mcp.http.addr` carries no explicit host). The Go HTTP transport
-  was previously unauthenticated, all-interfaces, and unbounded — diverging
-  from the locked-down Python server.
+  was previously unauthenticated, all-interfaces, and unbounded — diverging from
+  the locked-down Python server.
 - MCP server: align the score-precision default across all paths to `legacy`
   (`%.6f`, the documented C-CLI default per ADR-0119). The Python HTTP
   `/v1/score` path and the Go direct-cgo→subprocess fallback both defaulted to

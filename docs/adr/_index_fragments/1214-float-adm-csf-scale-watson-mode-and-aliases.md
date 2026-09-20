@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1214](1214-float-adm-csf-scale-watson-mode-and-aliases.md) | The float-ADM GPU twins ignore `adm_csf_scale` in Watson mode and share the CPU's option aliases | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, options |

@@ -1,4 +1,6 @@
-### Chore
+# Changelog fragment
+
+## Chore
 
 - Mark `docs/backends/vulkan/overview.md` and `docs/api/vulkan-image-import.md`
   as historical: add removal banners citing ADR-0726 (2026-05-28) and redirect

@@ -1,1 +1,5 @@
-| [ADR-0623](0623-scaffold-audit-p2-half-finished.md) | Scaffold audit P2: nine half-finished implementation fixes — expose `adm_p_norm` on integer ADM; gate `float_vif_hip` auto-dispatch behind `enable_float_vif_hip_autodispatch` Meson option; file T-SYCL-CLANG-TIDY-DISABLED / T-DOCKER-SMOKE / T-VULKAN-MOTION-LAVAPIPE-INIT / T-GPU-COVERAGE-STABLE-WEEKS / T-INTEGER-ADM-P-NORM-SIMD-GAP in state.md; fix stale `.workingdir2/` → `.corpus/` path in konvid_mos_head_v1.md; add forward-declaration banner to u2netp_mirror_card.md; rename lpips_sq.md → lpips_sq_v1.md to match registry id. | Accepted | ci, build, docs, hip, adm, state |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0623](0623-scaffold-audit-p2-half-finished.md) | Scaffold audit P2 — half-finished implementation fixes | Accepted | `ci`, `build`, `docs`, `hip`, `adm`, `state` |

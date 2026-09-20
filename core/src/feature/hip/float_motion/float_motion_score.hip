@@ -43,7 +43,7 @@
 /* Minimum HIP warp size across supported AMD targets (wave32 = RDNA2+).
  * Array sized for the minimum so it is large enough on wave32 hardware.
  * Runtime `warpSize` is used for the reduction loop and lane/warp_id. */
-#define FM_MIN_WARP_SIZE   32
+#define FM_MIN_WARP_SIZE 32
 #define FM_WARPS_PER_BLOCK (FM_BX * FM_BY / FM_MIN_WARP_SIZE)
 
 /* 5-tap Gaussian filter (same constants as the CUDA twin). */
@@ -70,7 +70,43 @@ __device__ __forceinline__ float fm_warp_reduce(float v)
     return v;
 }
 
-extern "C" {
+__device__ __forceinline__ float fm_blur(const float *tile, unsigned lx, unsigned ly)
+{
+    float blurred = 0.0f;
+#pragma unroll
+    for (int xf = 0; xf < 5; xf++) {
+        float v = 0.0f;
+#pragma unroll
+        for (int yf = 0; yf < 5; yf++) {
+            const unsigned row = ly - FM_RADIUS + (unsigned)yf;
+            const unsigned col = lx - FM_RADIUS + (unsigned)xf;
+            v += FM_FILT[yf] * tile[row * FM_TILE_W + col];
+        }
+        blurred += FM_FILT[xf] * v;
+    }
+    return blurred;
+}
+
+__device__ __forceinline__ void fm_finish_partial(float abs_diff, unsigned lid,
+                                                  float *warp_partials, float *partials)
+{
+    const float warp_sum = fm_warp_reduce(abs_diff);
+    const unsigned ws = (unsigned)warpSize;
+    const unsigned lane = lid % ws;
+    const unsigned warp_id = lid / ws;
+    if (lane == 0u)
+        warp_partials[warp_id] = warp_sum;
+    __syncthreads();
+    if (lid != 0u)
+        return;
+
+    float total = 0.0f;
+    const unsigned warps_active = (FM_BX * FM_BY) / ws;
+    for (unsigned i = 0; i < warps_active; i++)
+        total += warp_partials[i];
+    const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
+    partials[block_idx] = total;
+}
 
 /**
  * 8-bpc kernel: ref is uint8_t row-major with ref_stride bytes per row.
@@ -80,16 +116,14 @@ extern "C" {
  * per-pixel `|cur_blur - prev_blur|` partial sums into one float per
  * block in `partials[block_idx]`.
  */
-__global__ void float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
-                                              ptrdiff_t ref_stride,
-                                              float *__restrict__ cur_blur,
-                                              const float *__restrict__ prev_blur,
-                                              float *__restrict__ partials,
-                                              unsigned width,
-                                              unsigned height,
-                                              unsigned compute_sad)
+extern "C" __global__ void
+float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
+                             float *__restrict__ cur_blur, const float *__restrict__ prev_blur,
+                             float *__restrict__ partials, unsigned width, unsigned height,
+                             unsigned compute_sad)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
+    __shared__ float s_warp[FM_WARPS_PER_BLOCK];
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -115,16 +149,7 @@ __global__ void float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
         const unsigned lx = threadIdx.x + FM_RADIUS;
         const unsigned ly = threadIdx.y + FM_RADIUS;
 
-        /* 5x5 separable Gaussian blur (column-then-row). */
-        float blurred = 0.0f;
-#pragma unroll
-        for (int xf = 0; xf < 5; xf++) {
-            float v = 0.0f;
-#pragma unroll
-            for (int yf = 0; yf < 5; yf++)
-                v += FM_FILT[yf] * s_tile[ly - FM_RADIUS + yf][lx - FM_RADIUS + xf];
-            blurred += FM_FILT[xf] * v;
-        }
+        const float blurred = fm_blur(&s_tile[0][0], lx, ly);
         const size_t off = (size_t)y * width + (size_t)x;
         cur_blur[off] = blurred;
 
@@ -135,30 +160,10 @@ __global__ void float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
         }
     }
 
-    if (compute_sad != 0u) {
-        /* Warp reduce, then accumulate warp sums in shared memory. */
-        __shared__ float s_warp[FM_WARPS_PER_BLOCK];
-        const float w = fm_warp_reduce(abs_diff);
-        const unsigned ws      = (unsigned)warpSize;
-        const unsigned lane    = lid % ws;
-        const unsigned warp_id = lid / ws;
-        if (lane == 0)
-            s_warp[warp_id] = w;
-        __syncthreads();
-        if (lid == 0) {
-            float total = 0.0f;
-            const unsigned warps_active = (FM_BX * FM_BY) / ws;
-            for (unsigned i = 0; i < warps_active; i++)
-                total += s_warp[i];
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            partials[block_idx] = total;
-        }
-    } else {
-        if (lid == 0) {
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            partials[block_idx] = 0.0f;
-        }
-    }
+    if (compute_sad != 0u)
+        fm_finish_partial(abs_diff, lid, s_warp, partials);
+    else if (lid == 0u)
+        partials[blockIdx.y * gridDim.x + blockIdx.x] = 0.0f;
 }
 
 /**
@@ -166,17 +171,14 @@ __global__ void float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
  * Scale factors: 10bpc=4, 12bpc=16, 16bpc=256.
  * All other algorithm details are identical to the 8-bpc kernel.
  */
-__global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
-                                               ptrdiff_t ref_stride,
-                                               float *__restrict__ cur_blur,
-                                               const float *__restrict__ prev_blur,
-                                               float *__restrict__ partials,
-                                               unsigned width,
-                                               unsigned height,
-                                               unsigned bpc,
-                                               unsigned compute_sad)
+extern "C" __global__ void
+float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
+                              float *__restrict__ cur_blur, const float *__restrict__ prev_blur,
+                              float *__restrict__ partials, unsigned width, unsigned height,
+                              unsigned bpc, unsigned compute_sad)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
+    __shared__ float s_warp[FM_WARPS_PER_BLOCK];
 
     float scaler = 1.0f;
     if (bpc == 10u)
@@ -211,15 +213,7 @@ __global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
         const unsigned lx = threadIdx.x + FM_RADIUS;
         const unsigned ly = threadIdx.y + FM_RADIUS;
 
-        float blurred = 0.0f;
-#pragma unroll
-        for (int xf = 0; xf < 5; xf++) {
-            float v = 0.0f;
-#pragma unroll
-            for (int yf = 0; yf < 5; yf++)
-                v += FM_FILT[yf] * s_tile[ly - FM_RADIUS + yf][lx - FM_RADIUS + xf];
-            blurred += FM_FILT[xf] * v;
-        }
+        const float blurred = fm_blur(&s_tile[0][0], lx, ly);
         const size_t off = (size_t)y * width + (size_t)x;
         cur_blur[off] = blurred;
 
@@ -230,29 +224,8 @@ __global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
         }
     }
 
-    if (compute_sad != 0u) {
-        __shared__ float s_warp[FM_WARPS_PER_BLOCK];
-        const float w = fm_warp_reduce(abs_diff);
-        const unsigned ws      = (unsigned)warpSize;
-        const unsigned lane    = lid % ws;
-        const unsigned warp_id = lid / ws;
-        if (lane == 0)
-            s_warp[warp_id] = w;
-        __syncthreads();
-        if (lid == 0) {
-            float total = 0.0f;
-            const unsigned warps_active = (FM_BX * FM_BY) / ws;
-            for (unsigned i = 0; i < warps_active; i++)
-                total += s_warp[i];
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            partials[block_idx] = total;
-        }
-    } else {
-        if (lid == 0) {
-            const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-            partials[block_idx] = 0.0f;
-        }
-    }
+    if (compute_sad != 0u)
+        fm_finish_partial(abs_diff, lid, s_warp, partials);
+    else if (lid == 0u)
+        partials[blockIdx.y * gridDim.x + blockIdx.x] = 0.0f;
 }
-
-} /* extern "C" */

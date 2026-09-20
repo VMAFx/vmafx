@@ -259,7 +259,7 @@ def run_wrapper(
     proc = runner(cmd, check=False, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(
-            f"wrapper {competitor} failed (rc={proc.returncode}): " f"{proc.stderr.strip()}"
+            f"wrapper {competitor} failed (rc={proc.returncode}): {proc.stderr.strip()}"
         )
     if not out_path.is_file():
         raise RuntimeError(f"wrapper {competitor} did not produce {out_path}")
@@ -357,7 +357,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--netflix-public-root",
         type=pathlib.Path,
         default=None,
-        help=f"Netflix Public Drop root " f"(default: {DEFAULT_NETFLIX_PUBLIC_ROOT})",
+        help=f"Netflix Public Drop root (default: {DEFAULT_NETFLIX_PUBLIC_ROOT})",
     )
     p.add_argument(
         "--competitors",

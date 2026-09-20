@@ -1,1 +1,5 @@
-| [ADR-1145](1145-neo-stack-derived-from-release.md) | Derive the Intel NEO compute stack (gmmlib and IGC) dynamically from pinned compute-runtime release metadata | Accepted | build, container, supply-chain, renovate, sycl, intel |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1145](1145-neo-stack-derived-from-release.md) | Derive the Intel NEO compute stack (gmmlib and IGC) dynamically from pinned compute-runtime release metadata | Accepted | `build`, `container`, `supply-chain`, `renovate`, `sycl`, `intel` |

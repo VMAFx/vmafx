@@ -25,12 +25,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -89,7 +90,7 @@ def _write_report(
     write_manifest_json(args.out_json, payload)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -108,8 +109,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional v2 ONNX path; if provided, diff v3 vs v2 predictions on the same slice.",
     )
     ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    return ap.parse_args(raw_argv)
+
+
+def _gate_result(plcc: float, minimum: float) -> int:
+    if plcc < minimum:
+        print(f"[validate-v3] FAIL — PLCC {plcc:.4f} < gate {minimum:.4f}", file=sys.stderr)
+        return 1
+    print(f"[validate-v3] PASS — PLCC {plcc:.4f} >= gate {minimum:.4f}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    args = _parse_args(raw_argv)
 
     import pandas as pd
 
@@ -140,8 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                 "max_abs": float(np.max(np.abs(delta))),
             }
             print(
-                f"[validate-v3] v3-v2 delta: mean={diff['mean']:+.3f} "
-                f"max_abs={diff['max_abs']:.3f}"
+                f"[validate-v3] v3-v2 delta: mean={diff['mean']:+.3f} max_abs={diff['max_abs']:.3f}"
             )
         except Exception as exc:
             diff = {"error": str(exc)}
@@ -161,14 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             diff=diff,
         )
 
-    if plcc < args.min_plcc:
-        print(
-            f"[validate-v3] FAIL — PLCC {plcc:.4f} < gate {args.min_plcc:.4f}",
-            file=sys.stderr,
-        )
-        return 1
-    print(f"[validate-v3] PASS — PLCC {plcc:.4f} >= gate {args.min_plcc:.4f}")
-    return 0
+    return _gate_result(plcc, args.min_plcc)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -51,7 +51,7 @@ from pathlib import Path
 import numpy as np
 import onnx
 import torch
-import torch.nn as nn
+from torch import nn
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -215,11 +215,7 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def main(argv: list[str] | None = None) -> int:
-    script_path = Path(__file__).resolve()
-    repo_root = script_path.parent.parent
-    default_out = repo_root / "model" / "tiny" / "lpips_sq.onnx"
-
+def _parse_args(argv: list[str] | None, default_out: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output", "--out", dest="output", type=Path, default=default_out)
     parser.add_argument(
@@ -230,7 +226,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--skip-parity", action="store_true")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    script_path = Path(__file__).resolve()
+    repo_root = script_path.parent.parent
+    args = _parse_args(argv, repo_root / "model" / "tiny" / "lpips_sq.onnx")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     effective_opset = _export(args.output, args.opset)

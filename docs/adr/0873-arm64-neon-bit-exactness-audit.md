@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD038 MD060 -->
 # ADR-0873: ARM64 NEON bit-exactness audit — `-ffp-contract=off` carve-out scope
 
 - **Status**: Accepted
@@ -32,7 +31,7 @@ compiler may auto-fuse `a*b+c` patterns into FMLA instructions in plain C
 code. Three of those files are material:
 
 - `/core/src/feature/arm64/float_adm_neon.c` — `vmlaq_laneq_f32` in the
-  vertical DWT pass and plain `filter_lo[i] * s_i + ... ` in the scalar
+  vertical DWT pass and plain `filter_lo[i] * s_i + ...` in the scalar
   horizontal pass; and `float32x4_t vaddq_f32(v_inner, val3)` in the
   `sum_cube`/`csf_den_scale` reductions, which accumulate in float32 (the
   same reduction-stability gap ADR-0138 addressed for AVX2).
@@ -96,7 +95,7 @@ which includes `test_motion_v2_simd`, but the test body early-exits via
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add `-ffp-contract=off` to the whole `arm64_v8` lib | Simple one-liner | Applies flag to integer TUs where it is a no-op but a lint/clarity noise source | Rejected; the integer TUs need no FP protection |
 | Rely solely on `#pragma STDC FP_CONTRACT OFF` inside each TU | No build system change | Compiler-defined; GCC documents that the pragma has no effect when FP_CONTRACT is mandated by `-ffp-contract=fast`; not portable guarantee | Insufficient as the only barrier |
 | Leave float_adm NEON as dead code | Zero risk of regression | Wastes build time; the dead symbols will eventually confuse the dispatch maintainer | Not acceptable long term |

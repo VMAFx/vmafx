@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 -->
 # Research-0029 — Phase-3b: StandardScaler retry of the subset sweep
 
 _Updated: 2026-04-29._
@@ -59,7 +58,7 @@ VIF scales. It validates **all four** of Research-0027's findings:
   within noise (Δ −0.0008). One extra feature without redundancy
   pruning doesn't help; the model has to make room for ssimulacra2
   by attenuating something else. The PLCC delta is statistically
-  meaningless (std on 9 folds is ±0.029), but the *expectation*
+  meaningless (std on 9 folds is ±0.029), but the _expectation_
   that adding any consensus-top feature would lift PLCC was
   wrong. **Pruning matters.**
 - **Subset B (consensus-7 with redundancy pruning)** is the
@@ -187,7 +186,7 @@ StandardScaler step is negligible).
 
 ## References
 
-- **`req`** (user, 2026-04-29): *"go on"* in response to "Want me
+- **`req`** (user, 2026-04-29): _"go on"_ in response to "Want me
   to fire Phase-3b now".
 - [Research-0026](0026-cross-metric-feature-fusion.md) — 4-phase
   plan; this digest closes Phase 3b (the standardisation retry).

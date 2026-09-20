@@ -26,12 +26,6 @@
 #include "ort_backend.h"
 #include "ort_backend_internal.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
 #define SMOKE_MULTI_OUTPUT_MODEL "model/tiny/smoke_multi_output_v0.onnx"
@@ -41,20 +35,20 @@
 static char *test_fp32_to_fp16_normal(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* +1.0f → exp_f = 0, mant = 0 → h_exp = 15, h_mant = 0 → 0x3C00 */
     mu_assert("fp32→fp16: +1.0", vmaf_ort_internal_fp32_to_fp16(1.0f) == 0x3C00);
     /* -1.0f → sign bit set */
     mu_assert("fp32→fp16: -1.0", vmaf_ort_internal_fp32_to_fp16(-1.0f) == 0xBC00);
     /* 0.0f → all zero */
     mu_assert("fp32→fp16: +0.0", vmaf_ort_internal_fp32_to_fp16(0.0f) == 0x0000);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp32_to_fp16_inf_nan(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* +inf → 0x7C00 (sign 0, exp 31, mant 0). Hits L66-69 inf/nan branch. */
     mu_assert("fp32→fp16: +inf", vmaf_ort_internal_fp32_to_fp16(INFINITY) == 0x7C00);
     /* -inf → 0xFC00 */
@@ -63,70 +57,70 @@ static char *test_fp32_to_fp16_inf_nan(void)
     const uint16_t nan_h = vmaf_ort_internal_fp32_to_fp16(nanf(""));
     mu_assert("fp32→fp16: nan exponent", (nan_h & 0x7C00) == 0x7C00);
     mu_assert("fp32→fp16: nan mantissa non-zero", (nan_h & 0x03FF) != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp32_to_fp16_overflow(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* 1e10 > fp16 max (65504) → overflow → ±inf. Hits L70-73. */
     mu_assert("fp32→fp16: overflow → +inf", vmaf_ort_internal_fp32_to_fp16(1.0e10f) == 0x7C00);
     mu_assert("fp32→fp16: overflow → -inf", vmaf_ort_internal_fp32_to_fp16(-1.0e10f) == 0xFC00);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp32_to_fp16_underflow(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* exp_f < -24 → underflow → ±0. 1e-10f has exp_f ≈ -34. Hits L74-77. */
     mu_assert("fp32→fp16: underflow → +0", vmaf_ort_internal_fp32_to_fp16(1.0e-10f) == 0x0000);
     mu_assert("fp32→fp16: underflow → -0", vmaf_ort_internal_fp32_to_fp16(-1.0e-10f) == 0x8000);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp32_to_fp16_subnormal(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* exp_f in [-24, -15] → subnormal half. 1e-5f has exp_f ≈ -17. Hits L78-83.
      * Just assert the result is a valid subnormal (exponent bits 0, mantissa
      * non-zero) — the exact bit pattern depends on rounding. */
     const uint16_t h = vmaf_ort_internal_fp32_to_fp16(1.0e-5f);
     mu_assert("fp32→fp16: subnormal exp == 0", (h & 0x7C00) == 0x0000);
     mu_assert("fp32→fp16: subnormal mant != 0", (h & 0x03FF) != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp16_to_fp32_normal(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* Round-trip identity: every normal finite fp16 maps back to its fp32
      * exact value, then back to the same fp16 bits. */
     mu_assert("fp16→fp32: +1.0", vmaf_ort_internal_fp16_to_fp32(0x3C00) == 1.0f);
     mu_assert("fp16→fp32: -1.0", vmaf_ort_internal_fp16_to_fp32(0xBC00) == -1.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp16_to_fp32_zero(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* exp_h == 0, mant == 0 → ±0. Hits L96-99. */
     mu_assert("fp16→fp32: +0", vmaf_ort_internal_fp16_to_fp32(0x0000) == 0.0f);
     /* signbit check: bit pattern of -0.0f differs from +0.0f. */
     const float neg_zero = vmaf_ort_internal_fp16_to_fp32(0x8000);
     mu_assert("fp16→fp32: -0 is zero", neg_zero == 0.0f);
     mu_assert("fp16→fp32: -0 has sign bit", signbit(neg_zero));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp16_to_fp32_subnormal(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* IEEE 754 subnormal half: value = mant × 2^-24.
      * Smallest positive subnormal 0x0001 → 2^-24 ≈ 5.960e-8. */
     const float vmin = vmaf_ort_internal_fp16_to_fp32(0x0001);
@@ -142,18 +136,18 @@ static char *test_fp16_to_fp32_subnormal(void)
     const float vmid = vmaf_ort_internal_fp16_to_fp32(0x0200);
     const float kMid = 512.0f * 5.9604644775390625e-8f; /* 2^-15 */
     mu_assert("fp16→fp32: mid subnormal == 512 × 2^-24", vmid == kMid);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_fp16_to_fp32_inf_nan(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* exp_h == 31 → inf or NaN. Hits L109-110. */
     mu_assert("fp16→fp32: +inf", isinf(vmaf_ort_internal_fp16_to_fp32(0x7C00)));
     mu_assert("fp16→fp32: -inf", isinf(vmaf_ort_internal_fp16_to_fp32(0xFC00)));
     mu_assert("fp16→fp32: nan", isnan(vmaf_ort_internal_fp16_to_fp32(0x7E00)));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------- resolve_name ------------------------------------------- */
@@ -161,51 +155,51 @@ static char *test_fp16_to_fp32_inf_nan(void)
 static char *test_resolve_name_hit(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char *names[3] = {(char *)"alpha", (char *)"beta", (char *)"gamma"};
     const char *r = vmaf_ort_internal_resolve_name(names, 3u, "beta", 0u);
     mu_assert("resolve_name hit returns table entry", r == names[1]);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resolve_name_miss(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char *names[2] = {(char *)"a", (char *)"b"};
     const char *r = vmaf_ort_internal_resolve_name(names, 2u, "no-such-name", 0u);
-    mu_assert("resolve_name miss returns NULL", r == NULL);
-    return NULL;
+    mu_assert("resolve_name miss returns NULL", r == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_resolve_name_positional(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char *names[2] = {(char *)"x", (char *)"y"};
     /* NULL name → positional fallback at @p pos. Hits L551-554 happy branch. */
     mu_assert("resolve_name NULL→pos[0]",
-              vmaf_ort_internal_resolve_name(names, 2u, NULL, 0u) == names[0]);
+              vmaf_ort_internal_resolve_name(names, 2u, VMAF_NULLPTR, 0u) == names[0]);
     mu_assert("resolve_name NULL→pos[1]",
-              vmaf_ort_internal_resolve_name(names, 2u, NULL, 1u) == names[1]);
-    return NULL;
+              vmaf_ort_internal_resolve_name(names, 2u, VMAF_NULLPTR, 1u) == names[1]);
+    return VMAF_NULLPTR;
 }
 
 static char *test_resolve_name_positional_out_of_range(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char *names[2] = {(char *)"x", (char *)"y"};
     /* NULL name + pos >= count → NULL. Hits L552-553 (uncovered before). */
     mu_assert("resolve_name pos >= count → NULL",
-              vmaf_ort_internal_resolve_name(names, 2u, NULL, 5u) == NULL);
-    return NULL;
+              vmaf_ort_internal_resolve_name(names, 2u, VMAF_NULLPTR, 5u) == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_convert_non_float_output_types(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
     float dst[3] = {0};
     const double doubles[3] = {1.25, -2.5, 3.75};
@@ -226,7 +220,7 @@ static char *test_convert_non_float_output_types(void)
 
     rc = vmaf_ort_internal_convert_output_elems(ELEM_TYPE_UNDEFINED, int32s, dst, 3u);
     mu_assert("unsupported output type is rejected", rc == -ENOTSUP);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------- ort_backend NULL-guard branches ------------------------ */
@@ -238,47 +232,48 @@ static char *test_convert_non_float_output_types(void)
 static char *test_ort_attached_ep_null_session(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    mu_assert("vmaf_ort_attached_ep(NULL) → NULL", vmaf_ort_attached_ep(NULL) == NULL);
-    return NULL;
+        return VMAF_NULLPTR;
+    mu_assert("vmaf_ort_attached_ep(NULL) → NULL",
+              vmaf_ort_attached_ep(VMAF_NULLPTR) == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_close_null_session(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* Must be a no-op, not a crash. */
-    vmaf_ort_close(NULL);
-    return NULL;
+    vmaf_ort_close(VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_io_count_null_args(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     size_t a = 0;
     size_t b = 0;
-    mu_assert("io_count NULL sess", vmaf_ort_io_count(NULL, &a, &b) == -EINVAL);
+    mu_assert("io_count NULL sess", vmaf_ort_io_count(VMAF_NULLPTR, &a, &b) == -EINVAL);
     /* Need a real session for the other NULL-arg paths. Open one cheaply. */
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("io_count: open succeeds", rc == 0);
-    mu_assert("io_count NULL n_inputs", vmaf_ort_io_count(sess, NULL, &b) == -EINVAL);
-    mu_assert("io_count NULL n_outputs", vmaf_ort_io_count(sess, &a, NULL) == -EINVAL);
+    mu_assert("io_count NULL n_inputs", vmaf_ort_io_count(sess, VMAF_NULLPTR, &b) == -EINVAL);
+    mu_assert("io_count NULL n_outputs", vmaf_ort_io_count(sess, &a, VMAF_NULLPTR) == -EINVAL);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_io_count_valid(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("io_count valid: open succeeds", rc == 0);
     size_t a = 0;
     size_t b = 0;
@@ -287,64 +282,67 @@ static char *test_ort_io_count_valid(void)
     mu_assert("io_count: at least 1 input", a >= 1u);
     mu_assert("io_count: at least 1 output", b >= 1u);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_input_shape_null_args(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     int64_t shape[4] = {0};
     size_t rank = 0;
     /* All NULL-guard combinations. Hits L455. */
-    mu_assert("input_shape NULL sess", vmaf_ort_input_shape(NULL, shape, 4u, &rank) == -EINVAL);
+    mu_assert("input_shape NULL sess",
+              vmaf_ort_input_shape(VMAF_NULLPTR, shape, 4u, &rank) == -EINVAL);
     /* Open a session for the other NULL-arg paths. */
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("input_shape: open succeeds", rc == 0);
-    mu_assert("input_shape NULL out_shape", vmaf_ort_input_shape(sess, NULL, 4u, &rank) == -EINVAL);
-    mu_assert("input_shape NULL out_rank", vmaf_ort_input_shape(sess, shape, 4u, NULL) == -EINVAL);
+    mu_assert("input_shape NULL out_shape",
+              vmaf_ort_input_shape(sess, VMAF_NULLPTR, 4u, &rank) == -EINVAL);
+    mu_assert("input_shape NULL out_rank",
+              vmaf_ort_input_shape(sess, shape, 4u, VMAF_NULLPTR) == -EINVAL);
     mu_assert("input_shape max_rank=0", vmaf_ort_input_shape(sess, shape, 0u, &rank) == -EINVAL);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_input_shape_at_null_guards(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     int64_t shape[4] = {0};
     size_t rank = 0;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("input_shape_at null guards: open succeeds", rc == 0);
 
     mu_assert("input_shape_at NULL sess",
-              vmaf_ort_input_shape_at(NULL, 0u, shape, 4u, &rank) == -EINVAL);
+              vmaf_ort_input_shape_at(VMAF_NULLPTR, 0u, shape, 4u, &rank) == -EINVAL);
     mu_assert("input_shape_at NULL out_shape",
-              vmaf_ort_input_shape_at(sess, 0u, NULL, 4u, &rank) == -EINVAL);
+              vmaf_ort_input_shape_at(sess, 0u, VMAF_NULLPTR, 4u, &rank) == -EINVAL);
     mu_assert("input_shape_at NULL out_rank",
-              vmaf_ort_input_shape_at(sess, 0u, shape, 4u, NULL) == -EINVAL);
+              vmaf_ort_input_shape_at(sess, 0u, shape, 4u, VMAF_NULLPTR) == -EINVAL);
     mu_assert("input_shape_at max_rank=0",
               vmaf_ort_input_shape_at(sess, 0u, shape, 0u, &rank) == -EINVAL);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_input_shape_at_bounds_and_success(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     int64_t shape[4] = {0};
     size_t rank = 0;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("input_shape_at: open succeeds", rc == 0);
 
     mu_assert("input_shape_at slot out of range",
@@ -359,19 +357,19 @@ static char *test_ort_input_shape_at_bounds_and_success(void)
               shape[0] == 1 && shape[1] == 1 && shape[2] == 4 && shape[3] == 4);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_input_shape_success(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     int64_t shape[4] = {0};
     size_t rank = 0;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("input_shape: open succeeds", rc == 0);
 
     rc = vmaf_ort_input_shape(sess, shape, 4u, &rank);
@@ -381,50 +379,50 @@ static char *test_ort_input_shape_success(void)
               vmaf_ort_input_shape(sess, shape, 1u, &rank) == -ERANGE);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_infer_null_guards(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     const float input[16] = {0.0f};
     float output[16] = {0.0f};
     const int64_t shape[4] = {1, 1, 4, 4};
     size_t written = 0;
 
     mu_assert("infer NULL sess",
-              vmaf_ort_infer(NULL, input, shape, 4u, output, 16u, &written) == -EINVAL);
+              vmaf_ort_infer(VMAF_NULLPTR, input, shape, 4u, output, 16u, &written) == -EINVAL);
 
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("infer null guards: open succeeds", rc == 0);
     mu_assert("infer NULL input",
-              vmaf_ort_infer(sess, NULL, shape, 4u, output, 16u, &written) == -EINVAL);
+              vmaf_ort_infer(sess, VMAF_NULLPTR, shape, 4u, output, 16u, &written) == -EINVAL);
     mu_assert("infer NULL shape",
-              vmaf_ort_infer(sess, input, NULL, 4u, output, 16u, &written) == -EINVAL);
+              vmaf_ort_infer(sess, input, VMAF_NULLPTR, 4u, output, 16u, &written) == -EINVAL);
     mu_assert("infer NULL output",
-              vmaf_ort_infer(sess, input, shape, 4u, NULL, 16u, &written) == -EINVAL);
+              vmaf_ort_infer(sess, input, shape, 4u, VMAF_NULLPTR, 16u, &written) == -EINVAL);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_infer_guards_and_smoke_paths(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     const float input[16] = {0.0f};
     float output[16] = {0.0f};
     const int64_t shape[4] = {1, 1, 4, 4};
     size_t written = 0;
 
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("infer smoke: open succeeds", rc == 0);
 
     rc = vmaf_ort_infer(sess, input, shape, 4u, output, 16u, &written);
@@ -436,7 +434,7 @@ static char *test_ort_infer_guards_and_smoke_paths(void)
     mu_assert("infer undersized output required count", written == 16u);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression: vmaf_ort_infer historically passed the caller's shape
@@ -449,14 +447,14 @@ static char *test_ort_infer_guards_and_smoke_paths(void)
 static char *test_ort_infer_rejects_bad_shape(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     const float input[16] = {0.0f};
     float output[16] = {0.0f};
     size_t written = 0;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("infer-bad-shape: open succeeds", rc == 0);
 
     const int64_t neg_shape[4] = {1, 1, -4, 4};
@@ -470,22 +468,22 @@ static char *test_ort_infer_rejects_bad_shape(void)
               vmaf_ort_infer(sess, input, any_shape, 0u, output, 16u, &written) == -EINVAL);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_infer_fp16_input_output_path(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     float input[4] = {0.0f};
     float output[4] = {0.0f};
     const int64_t shape[4] = {1, 1, 2, 2};
     size_t written = 0;
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};
     int rc = vmaf_ort_open(&sess, SMOKE_FP16_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("fp16 smoke model open succeeds", rc == 0);
 
     for (size_t i = 0; i < 4u; ++i)
@@ -495,43 +493,44 @@ static char *test_ort_infer_fp16_input_output_path(void)
     mu_assert("fp16 infer written count", written == 4u);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_run_null_guards(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* All NULL-guard combinations on vmaf_ort_run. Hits L566-567.
      * VmafOrtSession is opaque, so we open a real session for the cases
      * that pass a non-NULL sess. The early-return on bad args fires
      * before any sess deref, so the session is never actually used. */
-    VmafOrtTensorIn ti = {0};
-    VmafOrtTensorOut to = {0};
-    mu_assert("run NULL sess", vmaf_ort_run(NULL, &ti, 1u, &to, 1u) == -EINVAL);
+    VmafOrtTensorIn ti = {VMAF_NULLPTR};
+    VmafOrtTensorOut to = {VMAF_NULLPTR};
+    mu_assert("run NULL sess", vmaf_ort_run(VMAF_NULLPTR, &ti, 1u, &to, 1u) == -EINVAL);
 
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("run-guards: open succeeds", rc == 0);
-    mu_assert("run NULL inputs", vmaf_ort_run(sess, NULL, 1u, &to, 1u) == -EINVAL);
-    mu_assert("run NULL outputs", vmaf_ort_run(sess, &ti, 1u, NULL, 1u) == -EINVAL);
+    mu_assert("run NULL inputs", vmaf_ort_run(sess, VMAF_NULLPTR, 1u, &to, 1u) == -EINVAL);
+    mu_assert("run NULL outputs", vmaf_ort_run(sess, &ti, 1u, VMAF_NULLPTR, 1u) == -EINVAL);
     mu_assert("run zero n_inputs", vmaf_ort_run(sess, &ti, 0u, &to, 1u) == -EINVAL);
     mu_assert("run zero n_outputs", vmaf_ort_run(sess, &ti, 1u, &to, 0u) == -EINVAL);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_null_args(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     /* Hits L185 (NULL out / NULL onnx_path). */
-    VmafOrtSession *sess = NULL;
-    mu_assert("open NULL out", vmaf_ort_open(NULL, SMOKE_FP32_MODEL, NULL) == -EINVAL);
-    mu_assert("open NULL onnx_path", vmaf_ort_open(&sess, NULL, NULL) == -EINVAL);
-    return NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    mu_assert("open NULL out",
+              vmaf_ort_open(VMAF_NULLPTR, SMOKE_FP32_MODEL, VMAF_NULLPTR) == -EINVAL);
+    mu_assert("open NULL onnx_path", vmaf_ort_open(&sess, VMAF_NULLPTR, VMAF_NULLPTR) == -EINVAL);
+    return VMAF_NULLPTR;
 }
 
 /* Regression-lock for the PR #112 ORT audit fix: vmaf_ort_open must populate
@@ -543,11 +542,11 @@ static char *test_ort_open_null_args(void)
 static char *test_ort_open_elem_types_populated(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("elem_types: fp32 smoke open succeeds", rc == 0);
     /* smoke_v0.onnx is a fp32 model; input[0] must be FLOAT (1), not UNDEFINED (0). */
     mu_assert("elem_types: input[0] != UNDEFINED",
@@ -559,17 +558,17 @@ static char *test_ort_open_elem_types_populated(void)
     mu_assert("elem_types: output[0] == FLOAT",
               vmaf_ort_internal_output_elem_type(sess, 0) == ELEM_TYPE_FLOAT);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_elem_types_oob(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("elem_types oob: fp32 smoke open succeeds", rc == 0);
     /* Out-of-range slot must return UNDEFINED, not crash. */
     mu_assert("elem_types: input OOB -> UNDEFINED",
@@ -577,18 +576,18 @@ static char *test_ort_open_elem_types_oob(void)
     mu_assert("elem_types: output OOB -> UNDEFINED",
               vmaf_ort_internal_output_elem_type(sess, 99) == ELEM_TYPE_UNDEFINED);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_elem_types_fp16_model(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};
     int rc = vmaf_ort_open(&sess, SMOKE_FP16_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("elem_types fp16: open succeeds", rc == 0);
     /* smoke_fp16_v0.onnx declares FLOAT16 tensors; input[0] must be FLOAT16 (10). */
     mu_assert("elem_types fp16: input[0] == FLOAT16",
@@ -596,17 +595,17 @@ static char *test_ort_open_elem_types_fp16_model(void)
     mu_assert("elem_types fp16: output[0] == FLOAT16",
               vmaf_ort_internal_output_elem_type(sess, 0) == ELEM_TYPE_FLOAT16);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_multi_output_io_count(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_MULTI_OUTPUT_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("multi-output open ok", rc == 0);
 
     size_t n_in = 0;
@@ -617,7 +616,7 @@ static char *test_ort_multi_output_io_count(void)
     mu_assert("multi-output session reports n_outputs >= 2", n_out >= 2u);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Drives vmaf_ort_run() against the multi-output smoke model so the
@@ -630,11 +629,11 @@ static char *test_ort_multi_output_io_count(void)
 static char *test_ort_run_multi_output_smoke(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_MULTI_OUTPUT_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("multi-output smoke open ok", rc == 0);
 
     size_t n_in = 0;
@@ -645,17 +644,17 @@ static char *test_ort_run_multi_output_smoke(void)
     /* Build per-output buffers. Cap at 8 to stay within VMAF_ORT_MAX_IO. */
     if (n_out > 8u) {
         vmaf_ort_close(sess);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     float in_buf[16] = {0};
     int64_t in_shape[4] = {1, 1, 4, 4};
-    VmafOrtTensorIn ti = {.name = NULL, .data = in_buf, .shape = in_shape, .rank = 4u};
+    VmafOrtTensorIn ti = {.name = VMAF_NULLPTR, .data = in_buf, .shape = in_shape, .rank = 4u};
 
     float out_bufs[8][16];
-    VmafOrtTensorOut to[8] = {0};
+    VmafOrtTensorOut to[8] = {VMAF_NULLPTR};
     for (size_t i = 0; i < n_out; ++i) {
         memset(out_bufs[i], 0, sizeof(out_bufs[i]));
-        to[i].name = NULL;
+        to[i].name = VMAF_NULLPTR;
         to[i].data = out_bufs[i];
         to[i].capacity = 16u;
         to[i].written = 0u;
@@ -673,7 +672,7 @@ static char *test_ort_run_multi_output_smoke(void)
     }
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -----------------------------------------------------------------------
@@ -695,180 +694,180 @@ static char *test_ort_run_multi_output_smoke(void)
 static char *test_ort_open_cuda_device_falls_back_to_cpu(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA, .device_index = 0};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     /* The session must open (CPU fallback) and report ep_name "CPU"
      * when CUDA hardware is absent from the runner. */
     mu_assert("cuda device: open succeeds with CPU fallback", rc == 0);
     const char *ep = vmaf_ort_attached_ep(sess);
-    mu_assert("cuda device: ep is non-NULL", ep != NULL);
+    mu_assert("cuda device: ep is non-NULL", ep != VMAF_NULLPTR);
     /* May be "CUDA" on a real CUDA machine or "CPU" after fallback — either
      * is a valid outcome.  The important invariant is that open returns 0. */
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_openvino_device_falls_back_to_cpu(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO, .fp16_io = false};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("openvino device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_openvino_cpu_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_CPU};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("openvino-cpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_openvino_gpu_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_GPU};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("openvino-gpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_openvino_npu_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_NPU};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("openvino-npu device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_rocm_device_falls_back_to_cpu(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_ROCM};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("rocm device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_coreml_device_falls_back_to_cpu(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("coreml device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_coreml_ane_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_ANE};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("coreml-ane device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_coreml_gpu_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_GPU};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("coreml-gpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_coreml_cpu_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_CPU};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("coreml-cpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_threads_config(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     /* threads > 0 exercises the SetIntraOpNumThreads branch in vmaf_ort_open.
      * Both CUDA path (two-stage, threads set on retry) and CPU path (direct). */
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .threads = 2};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("threads config: open succeeds", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_cuda_device_with_threads_hits_retry_path(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     /* CUDA + threads > 0: on a CPU-only runner the two-stage fallback fires
      * and the retry path re-creates SessionOptions + calls SetIntraOpNumThreads
      * (the intra_retry > 0 branch in vmaf_ort_open). */
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA, .threads = 2, .device_index = 0};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("cuda+threads: open succeeds (CPU fallback)", rc == 0);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Public accessor coverage for vmaf_ort_output_name_at. Lines 792-798 were
@@ -887,67 +886,70 @@ static char *test_ort_public_accessor_coverage(void)
      * struct: covers the !sess arm of vmaf_ort_output_name_at. Safe to
      * call even when ORT is not linked because the stub path also
      * returns NULL. */
-    mu_assert("output_name_at: NULL sess -> NULL", vmaf_ort_output_name_at(NULL, 0) == NULL);
+    mu_assert("output_name_at: NULL sess -> NULL",
+              vmaf_ort_output_name_at(VMAF_NULLPTR, 0) == VMAF_NULLPTR);
 
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
-    VmafOrtSession *sess = NULL;
-    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    VmafOrtSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("accessor coverage: fp32 smoke open succeeds", rc == 0);
 
     /* Happy path: slot 0 returns the output name registered at open time
      * (non-NULL, owned by the session). Covers the bounds-check + return
      * arms of vmaf_ort_output_name_at. */
     const char *name0 = vmaf_ort_output_name_at(sess, 0);
-    mu_assert("output_name_at: slot 0 returns non-NULL on a real session", name0 != NULL);
+    mu_assert("output_name_at: slot 0 returns non-NULL on a real session", name0 != VMAF_NULLPTR);
 
     /* OOB slot returns NULL — covers the slot >= n_outputs arm. */
-    mu_assert("output_name_at: OOB slot -> NULL", vmaf_ort_output_name_at(sess, 99) == NULL);
+    mu_assert("output_name_at: OOB slot -> NULL",
+              vmaf_ort_output_name_at(sess, 99) == VMAF_NULLPTR);
 
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_auto_ep_selection_order_table(void)
 {
-    static const char *const exp_apple[] = {"CoreML", "CUDA", "OpenVINO:GPU", "ROCm", "CPU", NULL};
+    static const char *const exp_apple[] = {"CoreML", "CUDA", "OpenVINO:GPU",
+                                            "ROCm",   "CPU",  VMAF_NULLPTR};
     static const char *const exp_default[] = {"CUDA",   "OpenVINO:GPU", "ROCm",
-                                              "CoreML", "CPU",          NULL};
+                                              "CoreML", "CPU",          VMAF_NULLPTR};
 
     const char *const *apple_order = vmaf_ort_internal_auto_ep_order(1);
-    mu_assert("auto ep apple: non-null", apple_order != NULL);
-    for (unsigned i = 0; exp_apple[i] != NULL; ++i) {
+    mu_assert("auto ep apple: non-null", apple_order != VMAF_NULLPTR);
+    for (unsigned i = 0; exp_apple[i] != VMAF_NULLPTR; ++i) {
         mu_assert("auto ep apple: element match", strcmp(apple_order[i], exp_apple[i]) == 0);
     }
-    mu_assert("auto ep apple: null sentinel", apple_order[5] == NULL);
+    mu_assert("auto ep apple: null sentinel", apple_order[5] == VMAF_NULLPTR);
 
     const char *const *default_order = vmaf_ort_internal_auto_ep_order(0);
-    mu_assert("auto ep default: non-null", default_order != NULL);
-    for (unsigned i = 0; exp_default[i] != NULL; ++i) {
+    mu_assert("auto ep default: non-null", default_order != VMAF_NULLPTR);
+    for (unsigned i = 0; exp_default[i] != VMAF_NULLPTR; ++i) {
         mu_assert("auto ep default: element match", strcmp(default_order[i], exp_default[i]) == 0);
     }
-    mu_assert("auto ep default: null sentinel", default_order[5] == NULL);
+    mu_assert("auto ep default: null sentinel", default_order[5] == VMAF_NULLPTR);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ort_open_auto_device(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    VmafOrtSession *sess = NULL;
+        return VMAF_NULLPTR;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_AUTO};
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
     if (rc == -ENOENT)
-        return NULL;
+        return VMAF_NULLPTR;
     mu_assert("auto device: open succeeds", rc == 0);
     const char *ep = vmaf_ort_attached_ep(sess);
-    mu_assert("auto device: attached ep non-null", ep != NULL);
+    mu_assert("auto device: attached ep non-null", ep != VMAF_NULLPTR);
     vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 typedef char *(*test_fn)(void);
@@ -1009,7 +1011,5 @@ char *run_tests(void)
     for (size_t i = 0u; i < sizeof(k_test_table) / sizeof(k_test_table[0]); ++i) {
         mu_run_test(k_test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

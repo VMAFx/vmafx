@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **`vmafx-controller` migrated onto the golusoris fx framework** (ADR-1119,
   Phase-1 PR-2). The hand-rolled composition root (`flag.Parse` +
   `observability.NewLogger`/`InitOTel`/`NewShutdownContext` + `errgroup` +
@@ -14,23 +16,24 @@
   `modernc.org/sqlite` queue is the controller's zero-dependency operability
   story; only its construction moves into an fx provider with an `OnStop`
   `Close` hook.
-- **JWT auth interceptors injected via golusoris#269 (`ProvideServerOptionFn`).**
-  The unary + stream auth interceptors are wired into the golusoris gRPC server
-  through `grpc.ProvideServerOptionFn(func(mw *auth.Middleware) grpc.ServerOption{…})`
+- **JWT auth interceptors injected via golusoris#269
+  (`ProvideServerOptionFn`).** The unary + stream auth interceptors are wired
+  into the golusoris gRPC server through
+  `grpc.ProvideServerOptionFn(func(mw *auth.Middleware) grpc.ServerOption{…})`
   (the `group:"grpc.serveropts"` group the `grpc.Module` consumes) — fx
   constructs the `*auth.Middleware` and feeds it straight into the option
-  constructor, so tenant isolation is enforced on every RPC after the framework's
-  OTel/logging/recovery interceptors. This replaces the earlier `#225`
-  concrete-option + package-level `globalAuthMW` holder workaround (removed): the
-  per-RPC nil-check and the lazy holder are gone now that v0.6.0 exposes the
-  fx-dependent constructor variant.
+  constructor, so tenant isolation is enforced on every RPC after the
+  framework's OTel/logging/recovery interceptors. This replaces the earlier
+  `#225` concrete-option + package-level `globalAuthMW` holder workaround
+  (removed): the per-RPC nil-check and the lazy holder are gone now that v0.6.0
+  exposes the fx-dependent constructor variant.
 - **Node-registry reaper bound to the fx lifecycle.** `nodes.NewRegistry` no
   longer spawns a goroutine at construction or ties it to a caller context; the
-  reaper is launched by `Start(ctx)` (an fx `OnStart` hook) and stopped + awaited
-  by `Close()` (an fx `OnStop` hook), eliminating the goroutine-leak risk (same
-  pattern the `vmafx-node` `FeedbackClient` adopted). Stop order at shutdown:
-  gRPC `GracefulStop` → node-registry reaper stop + queue `Close` → scorer
-  `Close` (pinned by `TestStopOrder`).
+  reaper is launched by `Start(ctx)` (an fx `OnStart` hook) and stopped +
+  awaited by `Close()` (an fx `OnStop` hook), eliminating the goroutine-leak
+  risk (same pattern the `vmafx-node` `FeedbackClient` adopted). Stop order at
+  shutdown: gRPC `GracefulStop` → node-registry reaper stop + queue `Close` →
+  scorer `Close` (pinned by `TestStopOrder`).
 - **Breaking — env-var / listen-address contract.** The controller previously
   read `VMAFX_PORT` / `VMAFX_GRPC_PORT` as bare port numbers (`8080` / `50051`).
   It now reads `VMAFX_HTTP_ADDR` (koanf `http.addr`, default `:8080`) and
@@ -40,7 +43,8 @@
   configured via `VMAFX_AUTH_DISABLED`, `VMAFX_JWKS_ENDPOINT`,
   `VMAFX_AUTH_ISSUER`, `VMAFX_AUTH_AUDIENCE`, `VMAFX_AUTH_TENANT_CLAIM`
   (CompoundKey `auth.tenant_claim`), and `VMAFX_AUTH_ROLES_CLAIM` (CompoundKey
-  `auth.roles_claim`). See [`docs/usage/env-vars.md`](../docs/usage/env-vars.md).
+  `auth.roles_claim`). See
+  [`docs/usage/env-vars.md`](../docs/usage/env-vars.md).
 - **Fixed — controllerv1 protobuf types now generated, not hand-written.** The
   `gen/go/controller/{controller,controller_grpc}.pb.go` bindings were
   hand-written and did **not** implement `proto.Message` (no

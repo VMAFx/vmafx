@@ -16,7 +16,7 @@
  *
  */
 
-/* NOLINTBEGIN(modernize-deprecated-headers,modernize-use-using,performance-enum-size,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp):
+/* lint rationale:
  * clang-tidy has no compile command for a header, so it analyses this one
  * under the nearest matching translation unit — `feature_extractor.cpp` —
  * and therefore parses every construct below as C++. This is a C header:
@@ -37,16 +37,18 @@
  * file's guard buys nothing and costs upstream-sync parity — the posture
  * ADR-0148 and ADR-0150 already record for upstream-mirror identifiers.
  * Applied to this file under ADR-0141 because this PR touches it, and
- * file-scoped rather than eight separate NOLINTNEXTLINE markers because that
+ * file-scoped rather than eight separate lint rationale markers because that
  * is the shape ADR-1138 prescribes for the same C-parsed-as-C++ artefact in
  * C sources. */
-#ifndef __VMAF_FEATURE_EXTRACTOR_H__
-#define __VMAF_FEATURE_EXTRACTOR_H__
+#ifndef VMAF_FEATURE_EXTRACTOR_H_
+#define VMAF_FEATURE_EXTRACTOR_H_
 
 /* In C++ mode, <stdatomic.h> does not define atomic_int as a usable type
  * on GCC/Clang or MSVC — use <atomic> + using-declaration instead.
  * In C mode keep the canonical <stdatomic.h> path (ADR-0772). */
 #if defined(__cplusplus)
+#include "vmaf_nullptr.h"
+
 #include <atomic>
 using std::atomic_int;
 #else
@@ -68,7 +70,7 @@ using std::atomic_int;
 #include "cuda/common.h"
 #endif
 
-enum VmafFeatureExtractorFlags {
+enum VmafFeatureExtractorFlags : unsigned int {
     VMAF_FEATURE_EXTRACTOR_TEMPORAL = 1 << 0,
     VMAF_FEATURE_EXTRACTOR_CUDA = 1 << 1,
     VMAF_FEATURE_FRAME_SYNC = 1 << 2,
@@ -88,7 +90,7 @@ enum VmafFeatureExtractorFlags {
     VMAF_FEATURE_EXTRACTOR_METAL = 1 << 7,
 };
 
-typedef struct VmafFeatureExtractor {
+struct VmafFeatureExtractor {
     const char *name; ///< Name of feature extractor.
     /**
      * Initialization callback. Optional, preallocate fex->priv buffers here.
@@ -115,8 +117,9 @@ typedef struct VmafFeatureExtractor {
      * @param             index Picture index.
      * @param feature_collector VmafFeatureCollector used to write out scores.
      */
-    int (*extract)(struct VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+    int (*extract)(struct VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector);
     /**
      * Buffer flush callback. Optional.
@@ -140,8 +143,9 @@ typedef struct VmafFeatureExtractor {
      *
      * Parameters mirror extract(), except feature_collector is deferred.
      */
-    int (*submit)(struct VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                  VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index);
+    int (*submit)(struct VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                  const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                  const VmafPicture *dist_pic_90, unsigned index);
     /**
      * Async collect callback. Called after submit() to wait for GPU completion,
      * download results, and write scores to the feature collector.
@@ -152,7 +156,7 @@ typedef struct VmafFeatureExtractor {
     void *priv;                     ///< Custom data.
     size_t priv_size;               ///< sizeof private data.
     uint64_t flags;                 ///< Feauture extraction flags, binary or'd.
-    const char **provided_features; ///< Provided feature list, NULL terminated.
+    const char **provided_features; ///< Provided feature list, VMAF_NULLPTR terminated.
 
 #ifdef HAVE_CUDA
     VmafCudaState *cu_state; ///< VmafCudaState, set by framework
@@ -175,11 +179,141 @@ typedef struct VmafFeatureExtractor {
      * backends fall back to current global behaviour. See ADR-0181.
      */
     VmafFeatureCharacteristics chars;
-
-} VmafFeatureExtractor;
+};
+#ifndef __cplusplus
+typedef struct VmafFeatureExtractor VmafFeatureExtractor;
+#endif
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/* Feature registry descriptors have external C linkage.  Keeping their
+ * declarations beside the descriptor type gives every defining translation
+ * unit a prior declaration and keeps the C++ registry from redeclaring them
+ * with a different language linkage. */
+#if VMAF_FLOAT_FEATURES
+extern VmafFeatureExtractor vmaf_fex_float_psnr;
+extern VmafFeatureExtractor vmaf_fex_float_adm;
+extern VmafFeatureExtractor vmaf_fex_float_motion;
+extern VmafFeatureExtractor vmaf_fex_float_moment;
+extern VmafFeatureExtractor vmaf_fex_float_vif;
+extern VmafFeatureExtractor vmaf_fex_speed_chroma;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal;
+#endif
+extern VmafFeatureExtractor vmaf_fex_float_ssim;
+extern VmafFeatureExtractor vmaf_fex_float_ms_ssim;
+extern VmafFeatureExtractor vmaf_fex_ssim;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2;
+extern VmafFeatureExtractor vmaf_fex_y_funque_plus;
+extern VmafFeatureExtractor vmaf_fex_niqe;
+extern VmafFeatureExtractor vmaf_fex_brisque;
+extern VmafFeatureExtractor vmaf_fex_ciede;
+extern VmafFeatureExtractor vmaf_fex_delta_e_itp;
+extern VmafFeatureExtractor vmaf_fex_pu21;
+extern VmafFeatureExtractor vmaf_fex_psnr;
+extern VmafFeatureExtractor vmaf_fex_psnr_hvs;
+extern VmafFeatureExtractor vmaf_fex_integer_adm;
+extern VmafFeatureExtractor vmaf_fex_integer_motion;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_v2;
+extern VmafFeatureExtractor vmaf_fex_integer_vif;
+extern VmafFeatureExtractor vmaf_fex_cambi;
+
+#if HAVE_CUDA
+extern VmafFeatureExtractor vmaf_fex_integer_adm_cuda;
+extern VmafFeatureExtractor vmaf_fex_integer_vif_cuda;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_cuda;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda;
+extern VmafFeatureExtractor vmaf_fex_psnr_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_moment_cuda;
+extern VmafFeatureExtractor vmaf_fex_ciede_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_ssim_cuda;
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda;
+extern VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_psnr_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_motion_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_vif_cuda;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_cuda;
+extern VmafFeatureExtractor vmaf_fex_float_adm_cuda;
+extern VmafFeatureExtractor vmaf_fex_cambi_cuda;
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_cuda;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_cuda;
+#endif
+
+#if HAVE_SYCL
+extern VmafFeatureExtractor vmaf_fex_integer_vif_sycl;
+extern VmafFeatureExtractor vmaf_fex_integer_adm_sycl;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_sycl;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl;
+extern VmafFeatureExtractor vmaf_fex_psnr_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_moment_sycl;
+extern VmafFeatureExtractor vmaf_fex_ciede_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_ssim_sycl;
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl;
+extern VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_psnr_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_motion_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_vif_sycl;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_sycl;
+extern VmafFeatureExtractor vmaf_fex_float_adm_sycl;
+extern VmafFeatureExtractor vmaf_fex_cambi_sycl;
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_sycl;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_sycl;
+#endif
+
+#if HAVE_HIP
+extern VmafFeatureExtractor vmaf_fex_psnr_hip;
+extern VmafFeatureExtractor vmaf_fex_float_psnr_hip;
+extern VmafFeatureExtractor vmaf_fex_ciede_hip;
+extern VmafFeatureExtractor vmaf_fex_float_moment_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;
+extern VmafFeatureExtractor vmaf_fex_float_motion_hip;
+extern VmafFeatureExtractor vmaf_fex_float_ssim_hip;
+extern VmafFeatureExtractor vmaf_fex_cambi_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_vif_hip;
+extern VmafFeatureExtractor vmaf_fex_float_adm_hip;
+extern VmafFeatureExtractor vmaf_fex_float_vif_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_adm_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;
+extern VmafFeatureExtractor vmaf_fex_psnr_hvs_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_hip;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_hip;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_hip;
+#endif
+
+#if HAVE_METAL
+extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_psnr_metal;
+extern VmafFeatureExtractor vmaf_fex_float_ssim_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_metal;
+extern VmafFeatureExtractor vmaf_fex_float_psnr_metal;
+extern VmafFeatureExtractor vmaf_fex_float_motion_metal;
+extern VmafFeatureExtractor vmaf_fex_float_moment_metal;
+extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_metal;
+extern VmafFeatureExtractor vmaf_fex_float_vif_metal;
+extern VmafFeatureExtractor vmaf_fex_float_adm_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_vif_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_adm_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_ciede_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_psnr_hvs_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
+#endif
+
+extern VmafFeatureExtractor vmaf_fex_speed_qa;
+extern VmafFeatureExtractor vmaf_fex_lpips;
+extern VmafFeatureExtractor vmaf_fex_dists_sq;
+extern VmafFeatureExtractor vmaf_fex_fastdvdnet_pre;
+extern VmafFeatureExtractor vmaf_fex_mobilesal;
+extern VmafFeatureExtractor vmaf_fex_transnet_v2;
+extern VmafFeatureExtractor vmaf_fex_null;
+#if HAVE_RUST_TAD
+extern VmafFeatureExtractor vmaf_fex_tad;
 #endif
 
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name);
@@ -197,26 +331,29 @@ int vmaf_feature_extractor_list_audit(void);
  * @brief Check whether a feature extractor supports all options in @p opts_dict.
  *
  * @param fex         Feature extractor descriptor.
- * @param opts_dict   Dictionary of options to validate (may be NULL).
- * @param missing_key If non-NULL, receives a pointer to the first unsupported key
- *                    (or NULL if all options are supported).
- * @return true if all options are supported (or opts_dict is NULL/empty), false otherwise.
+ * @param opts_dict   Dictionary of options to validate (may be VMAF_NULLPTR).
+ * @param missing_key If non-VMAF_NULLPTR, receives a pointer to the first unsupported key
+ *                    (or VMAF_NULLPTR if all options are supported).
+ * @return true if all options are supported (or opts_dict is VMAF_NULLPTR/empty), false otherwise.
  */
 bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
                                              const VmafDictionary *opts_dict,
                                              const char **missing_key);
 
-enum VmafFeatureExtractorContextFlags {
+enum VmafFeatureExtractorContextFlags : unsigned int {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,
 };
 
-typedef struct VmafFeatureExtractorContext {
+struct VmafFeatureExtractorContext {
     bool is_initialized, is_closed;
     VmafDictionary *opts_dict;
     VmafFeatureExtractor *fex;
     bool gpu_pending;           ///< Has pending GPU submit awaiting collect
     unsigned gpu_pending_index; ///< Frame index of pending GPU work
-} VmafFeatureExtractorContext;
+};
+#ifndef __cplusplus
+typedef struct VmafFeatureExtractorContext VmafFeatureExtractorContext;
+#endif
 
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
@@ -226,14 +363,15 @@ int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
                                         enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                                         unsigned h);
 
-int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
-                                           VmafPicture *ref_90, VmafPicture *dist,
-                                           VmafPicture *dist_90, unsigned pic_index,
-                                           VmafFeatureCollector *vfc);
+int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
+                                           const VmafPicture *ref, const VmafPicture *ref_90,
+                                           const VmafPicture *dist, const VmafPicture *dist_90,
+                                           unsigned pic_index, VmafFeatureCollector *vfc);
 
-int vmaf_feature_extractor_context_submit(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
-                                          VmafPicture *ref_90, VmafPicture *dist,
-                                          VmafPicture *dist_90, unsigned pic_index);
+int vmaf_feature_extractor_context_submit(VmafFeatureExtractorContext *fex_ctx,
+                                          const VmafPicture *ref, const VmafPicture *ref_90,
+                                          const VmafPicture *dist, const VmafPicture *dist_90,
+                                          unsigned pic_index);
 
 // Submit for zero-copy GPU path: no VmafPicture needed.
 // Caller must ensure extractor is initialized via
@@ -265,33 +403,42 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
  * library model enabled for the pthread fields; preserve uninitialized-use
  * checks. See docs/research/fex-pool-growth-2026-09-08.md. Entries remain at
  * fixed addresses until pool destruction, including across waits.
- * Consumer TUs such as fex_ctx_vector.cpp cannot see the factory assignments;
- * their std::atomic members trigger constructor analysis of these four raw
- * fields. Suppress only that declaration warning, not uninitialized reads. */
+ * Consumer TUs such as fex_ctx_vector.cpp cannot see the factory assignments,
+ * so C++ declarations carry zero default member initializers. The C layout and
+ * ABI remain identical; init_fex_list_slot() still performs the required
+ * pthread and atomic initialization before publication. */
+#ifdef __cplusplus
+#define VMAF_CXX_ZERO_INIT                                                                         \
+    {                                                                                              \
+    }
+#else
+#define VMAF_CXX_ZERO_INIT
+#endif
 struct fex_list_entry {
-    // cppcheck-suppress uninitMemberVarNoCtor
-    VmafFeatureExtractor *fex;
-    // cppcheck-suppress uninitMemberVarNoCtor
-    VmafDictionary *opts_dict;
+    VmafFeatureExtractor *fex VMAF_CXX_ZERO_INIT;
+    VmafDictionary *opts_dict VMAF_CXX_ZERO_INIT;
     struct {
         VmafFeatureExtractorContext *fex_ctx;
         bool in_use;
-        // cppcheck-suppress uninitMemberVarNoCtor
-    } *ctx_list;
-    atomic_int capacity, in_use;
-    // cppcheck-suppress uninitMemberVarNoCtor
-    pthread_cond_t full;
+    } *ctx_list VMAF_CXX_ZERO_INIT;
+    atomic_int capacity VMAF_CXX_ZERO_INIT;
+    atomic_int in_use VMAF_CXX_ZERO_INIT;
+    pthread_cond_t full VMAF_CXX_ZERO_INIT;
 };
+#undef VMAF_CXX_ZERO_INIT
 
 /* ADR-0772: vmaf_fex_ctx_pool_create() zero-initializes this C-compatible
  * aggregate, then initializes capacity, thread count and mutex before a
  * successful return. No other construction site exists in the source tree. */
-typedef struct VmafFeatureExtractorContextPool {
+struct VmafFeatureExtractorContextPool {
     struct fex_list_entry **fex_list;
     unsigned cnt, capacity;
     pthread_mutex_t lock;
     unsigned n_threads;
-} VmafFeatureExtractorContextPool;
+};
+#ifndef __cplusplus
+typedef struct VmafFeatureExtractorContextPool VmafFeatureExtractorContextPool;
+#endif
 
 int vmaf_fex_ctx_pool_create(VmafFeatureExtractorContextPool **pool, unsigned n_threads);
 
@@ -299,7 +446,7 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
                              VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx);
 
 int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
-                              VmafFeatureExtractorContext *fex_ctx);
+                              const VmafFeatureExtractorContext *fex_ctx);
 
 int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
                             VmafFeatureCollector *feature_collector);
@@ -310,5 +457,4 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool);
 } /* extern "C" */
 #endif
 
-#endif /* __VMAF_FEATURE_EXTRACTOR_H__ */
-/* NOLINTEND(modernize-deprecated-headers,modernize-use-using,performance-enum-size,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
+#endif /* VMAF_FEATURE_EXTRACTOR_H_ */

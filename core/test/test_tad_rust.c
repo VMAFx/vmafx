@@ -25,12 +25,6 @@
 #include "../src/feature/feature_collector.h"
 #include "../src/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* ---------------------------------------------------------------------------
  * Forward-declare the Rust-exported symbols (same as in tad_rust.c).
  * --------------------------------------------------------------------------- */
@@ -67,7 +61,7 @@ static char *expect_score(VmafFeatureCollector *fc, const char *name, unsigned i
         return "get_score error";
     if (fabs(score - expected) >= EPS)
         return what;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* --------------------------------------------------------------------------- */
@@ -76,8 +70,8 @@ static char *test_tad_identical_frames(void)
 {
     VmafPicture ref;
     VmafPicture dis;
-    VmafFeatureCollector *fc = NULL;
-    void *state = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
+    void *state = VMAF_NULLPTR;
     int err = 0;
 
     err |= alloc_8bit_grey(&ref, 64, 64, 128);
@@ -104,15 +98,15 @@ static char *test_tad_identical_frames(void)
     vmaf_feature_collector_destroy(fc);
     (void)vmaf_picture_unref(&ref);
     (void)vmaf_picture_unref(&dis);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tad_max_diff(void)
 {
     VmafPicture ref;
     VmafPicture dis;
-    VmafFeatureCollector *fc = NULL;
-    void *state = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
+    void *state = VMAF_NULLPTR;
     int err = 0;
 
     err |= alloc_8bit_grey(&ref, 64, 64, 0);
@@ -137,7 +131,7 @@ static char *test_tad_max_diff(void)
     vmaf_feature_collector_destroy(fc);
     (void)vmaf_picture_unref(&ref);
     (void)vmaf_picture_unref(&dis);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tad_partial_diff(void)
@@ -145,8 +139,8 @@ static char *test_tad_partial_diff(void)
     /* ref all-0, dis all-128: expected TAD = 128/255 */
     VmafPicture ref;
     VmafPicture dis;
-    VmafFeatureCollector *fc = NULL;
-    void *state = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
+    void *state = VMAF_NULLPTR;
     int err = 0;
 
     err |= alloc_8bit_grey(&ref, 64, 64, 0);
@@ -173,7 +167,7 @@ static char *test_tad_partial_diff(void)
     vmaf_feature_collector_destroy(fc);
     (void)vmaf_picture_unref(&ref);
     (void)vmaf_picture_unref(&dis);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_tad_multi_frame(void)
@@ -183,8 +177,8 @@ static char *test_tad_multi_frame(void)
     VmafPicture dis0;
     VmafPicture ref1;
     VmafPicture dis1;
-    VmafFeatureCollector *fc = NULL;
-    void *state = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
+    void *state = VMAF_NULLPTR;
     int err = 0;
 
     err |= alloc_8bit_grey(&ref0, 8, 8, 0);
@@ -217,7 +211,7 @@ static char *test_tad_multi_frame(void)
     (void)vmaf_picture_unref(&dis0);
     (void)vmaf_picture_unref(&ref1);
     (void)vmaf_picture_unref(&dis1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------------
@@ -230,7 +224,5 @@ char *run_tests(void)
     mu_run_test(test_tad_max_diff);
     mu_run_test(test_tad_partial_diff);
     mu_run_test(test_tad_multi_frame);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

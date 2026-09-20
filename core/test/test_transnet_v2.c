@@ -22,29 +22,24 @@
 
 #include <string.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #include "tiny_ai_test_template.h"
 
 #include "feature/feature_extractor.h"
 
 /* The registration tests set the model-path environment variable they
  * exercise; the binary is single-threaded (ADR-0141). */
-/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
+
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("transnet_v2", "shot_boundary_probability",
                                        "VMAF_TRANSNET_V2_MODEL_PATH", transnet_v2)
 
 static char *test_transnet_v2_provides_binary_flag_feature(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name("shot_boundary", 0);
-    mu_assert("'shot_boundary' feature name must resolve to an extractor", fex != NULL);
+    const VmafFeatureExtractor *fex =
+        vmaf_get_feature_extractor_by_feature_name("shot_boundary", 0);
+    mu_assert("'shot_boundary' feature name must resolve to an extractor", fex != VMAF_NULLPTR);
     mu_assert("'shot_boundary' must map to the transnet_v2 extractor",
               !strcmp(fex->name, "transnet_v2"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_transnet_v2_provided_features_list_terminated(void)
@@ -52,9 +47,9 @@ static char *test_transnet_v2_provided_features_list_terminated(void)
     /* The provided_features array must be NULL-terminated and contain
      * both feature names so the per-shot CRF predictor (T6-3b) can
      * discover the surface by name. */
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("transnet_v2");
-    mu_assert("transnet_v2 extractor missing", fex != NULL);
-    mu_assert("provided_features must be set", fex->provided_features != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("transnet_v2");
+    mu_assert("transnet_v2 extractor missing", fex != VMAF_NULLPTR);
+    mu_assert("provided_features must be set", fex->provided_features != VMAF_NULLPTR);
 
     int saw_prob = 0;
     int saw_flag = 0;
@@ -69,7 +64,7 @@ static char *test_transnet_v2_provided_features_list_terminated(void)
     }
     mu_assert("provided_features must contain shot_boundary_probability", saw_prob);
     mu_assert("provided_features must contain shot_boundary", saw_flag);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -77,7 +72,5 @@ char *run_tests(void)
     VMAF_TINY_AI_RUN_REGISTRATION_TESTS(transnet_v2);
     mu_run_test(test_transnet_v2_provides_binary_flag_feature);
     mu_run_test(test_transnet_v2_provided_features_list_terminated);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

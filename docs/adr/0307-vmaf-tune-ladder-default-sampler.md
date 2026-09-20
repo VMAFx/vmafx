@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0307: `vmaf-tune` ladder default sampler — wire Phase B/E gap
 
 - **Status**: Accepted
@@ -63,7 +62,7 @@ through the patched module attribute on every call.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 5-point fixed sweep `(18, 23, 28, 33, 38)` (chosen) | Mirrors ADR-0306 coarse-pass cardinality; covers x264's perceptually-informative range; deterministic encode count for downstream wall-time sizing; trivial to reason about | Coarser than a binary bisect at the cost of one extra encode per cell when target VMAF lands between probes | Best balance of simplicity, predictability, and coverage; Phase E callers can always pass `sampler=` for a finer grid |
 | 7-point fixed sweep `(15, 20, 25, 30, 35, 40, 45)` | Tighter CRF resolution — closer match to target | 40 % more encodes per cell; wall-time impact compounds across (resolution × target_vmaf) grid | Phase E's wall-time budget is already the dominant cost; the marginal accuracy gain is dwarfed by the encode-time hit |
 | Adaptive bisect (binary search over CRF) | Optimal probe count asymptotically (~log₂(51) ≈ 6 encodes max) | Duplicates `recommend.pick_target_vmaf`'s existing logic; non-deterministic encode count makes wall-time sizing harder; struggles with VMAF non-monotonicity at boundary CRFs | Existing `pick_target_vmaf` already does the picking; adding a parallel adaptive search adds maintenance debt without buying clarity over the fixed sweep |

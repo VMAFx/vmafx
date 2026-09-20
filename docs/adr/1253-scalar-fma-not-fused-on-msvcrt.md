@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # ADR-1253: Scalar references compute their fused multiply-add themselves
 

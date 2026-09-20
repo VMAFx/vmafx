@@ -10,6 +10,11 @@
 
 from __future__ import annotations
 
+import pickle
+from importlib import import_module
+from io import BytesIO
+from math import isnan
+
 import pytest
 
 from vmaf.tools.decorator import deprecated, dummy, memoized, override, persist
@@ -26,6 +31,20 @@ from vmaf.tools.misc import (
     neg_if_even,
     unroll_dict_of_lists,
 )
+from vmaf.tools.safe_pickle import UnsafePickleError, load_pickle
+from vmaf.tools.stats import ListStats
+
+_COMPARISON_VALUE_10 = 10
+_COMPARISON_VALUE_12 = 12
+_COMPARISON_VALUE_16 = 16
+_COMPARISON_VALUE_1_5 = 1.5
+_COMPARISON_VALUE_2 = 2
+_COMPARISON_VALUE_2_5 = 2.5
+_COMPARISON_VALUE_3 = 3
+_COMPARISON_VALUE_5 = 5
+_COMPARISON_VALUE_6 = 6
+_COMPARISON_VALUE_8 = 8
+_COMPARISON_VALUE_9 = 9
 
 # ---------------------------------------------------------------------------
 # get_file_name_without_extension
@@ -182,22 +201,42 @@ class TestGetUniqueStrFromRecursiveDict:
 
 class TestIndices:
     def test_greater_than(self):
-        assert indices([1, 2, 3, 4], lambda x: x > 2) == [2, 3]
+        assert indices([1, 2, 3, 4], lambda x: x > _COMPARISON_VALUE_2) == [2, 3]
 
     def test_no_match(self):
-        assert indices([1, 2, 3, 4], lambda x: x == 2.5) == []
+        assert indices([1, 2, 3, 4], lambda x: x == _COMPARISON_VALUE_2_5) == []
 
     def test_range(self):
-        assert indices([1, 2, 3, 4], lambda x: 1 < x <= 3) == [1, 2]
+        assert indices([1, 2, 3, 4], lambda x: 1 < x <= _COMPARISON_VALUE_3) == [1, 2]
 
     def test_in_list(self):
         assert indices([1, 2, 3, 4], lambda x: x in [2, 4]) == [1, 3]
 
     def test_repeated_values(self):
-        assert indices([1, 2, 3, 1, 2, 3, 1, 2, 3], lambda x: x > 2) == [2, 5, 8]
+        assert indices([1, 2, 3, 1, 2, 3, 1, 2, 3], lambda x: x > _COMPARISON_VALUE_2) == [2, 5, 8]
 
     def test_empty_list(self):
         assert indices([], lambda x: x > 0) == []
+
+
+class TestListStats:
+    @pytest.mark.parametrize("values", [[], [None], [None, None, None]])
+    def test_nonemean_empty_values_returns_nan_without_warning(self, values):
+        assert isnan(ListStats.nonemean(values))
+
+    def test_nonemean_ignores_none_values(self):
+        assert ListStats.nonemean([None, 1.0, None, 2.0]) == _COMPARISON_VALUE_1_5
+
+
+class TestSafePickle:
+    def test_loads_pickle_without_global_references(self):
+        payload = pickle.dumps({"scores": [1.0, 2.0]})
+        assert load_pickle(BytesIO(payload)) == {"scores": [1.0, 2.0]}
+
+    def test_rejects_unreviewed_global(self):
+        payload = b"cbuiltins\neval\n(V40+2\ntR."
+        with pytest.raises(UnsafePickleError, match=r"builtins\.eval"):
+            load_pickle(BytesIO(payload))
 
 
 # ---------------------------------------------------------------------------
@@ -208,19 +247,19 @@ class TestIndices:
 class TestMapYuvTypeToBitdepth:
     @pytest.mark.parametrize("yuv_type", ["yuv420p", "yuv422p", "yuv444p"])
     def test_8bit(self, yuv_type):
-        assert map_yuv_type_to_bitdepth(yuv_type) == 8
+        assert map_yuv_type_to_bitdepth(yuv_type) == _COMPARISON_VALUE_8
 
     @pytest.mark.parametrize("yuv_type", ["yuv420p10le", "yuv422p10le", "yuv444p10le"])
     def test_10bit(self, yuv_type):
-        assert map_yuv_type_to_bitdepth(yuv_type) == 10
+        assert map_yuv_type_to_bitdepth(yuv_type) == _COMPARISON_VALUE_10
 
     @pytest.mark.parametrize("yuv_type", ["yuv420p12le", "yuv422p12le", "yuv444p12le"])
     def test_12bit(self, yuv_type):
-        assert map_yuv_type_to_bitdepth(yuv_type) == 12
+        assert map_yuv_type_to_bitdepth(yuv_type) == _COMPARISON_VALUE_12
 
     @pytest.mark.parametrize("yuv_type", ["yuv420p16le", "yuv422p16le", "yuv444p16le"])
     def test_16bit(self, yuv_type):
-        assert map_yuv_type_to_bitdepth(yuv_type) == 16
+        assert map_yuv_type_to_bitdepth(yuv_type) == _COMPARISON_VALUE_16
 
     def test_notyuv_returns_none(self):
         assert map_yuv_type_to_bitdepth("notyuv") is None
@@ -257,7 +296,7 @@ class TestUnrollDictOfLists:
 
     def test_two_keys_product(self):
         result = unroll_dict_of_lists({"a": [1, 2], "b": [3]})
-        assert len(result) == 2
+        assert len(result) == _COMPARISON_VALUE_2
         assert {"a": 1, "b": 3} in result
         assert {"a": 2, "b": 3} in result
 
@@ -267,7 +306,7 @@ class TestUnrollDictOfLists:
 
     def test_cross_product_size(self):
         result = unroll_dict_of_lists({"x": [1, 2], "y": [10, 20, 30]})
-        assert len(result) == 6
+        assert len(result) == _COMPARISON_VALUE_6
 
     def test_all_values_covered(self):
         result = unroll_dict_of_lists({"k": [1, 2, 3]})
@@ -282,7 +321,7 @@ class TestUnrollDictOfLists:
 
 class TestDeprecatedDecorator:
     def test_deprecated_still_works(self):
-        import warnings
+        warnings = import_module("warnings")
 
         @deprecated
         def old_fn(x):
@@ -291,7 +330,7 @@ class TestDeprecatedDecorator:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = old_fn(5)
-            assert result == 10
+            assert result == _COMPARISON_VALUE_10
             assert len(w) == 1
             assert issubclass(w[0].category, DeprecationWarning)
 
@@ -314,7 +353,7 @@ class TestDummyDecorator:
         def fn(x):
             return x + 1
 
-        assert fn(4) == 5
+        assert fn(4) == _COMPARISON_VALUE_5
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +370,8 @@ class TestMemoizedDecorator:
             call_count[0] += 1
             return x * x
 
-        assert expensive(3) == 9
-        assert expensive(3) == 9
+        assert expensive(3) == _COMPARISON_VALUE_9
+        assert expensive(3) == _COMPARISON_VALUE_9
         assert call_count[0] == 1  # only computed once
 
     def test_memoized_different_args_computed(self):
@@ -345,7 +384,7 @@ class TestMemoizedDecorator:
 
         fn(1)
         fn(2)
-        assert call_count[0] == 2
+        assert call_count[0] == _COMPARISON_VALUE_2
 
 
 # ---------------------------------------------------------------------------
@@ -355,10 +394,7 @@ class TestMemoizedDecorator:
 
 class TestPersistDecorator:
     def test_persist_is_callable_decorator(self):
-        # The persist decorator in Python 3.14+ raises TypeError when the cache
-        # key is computed because hashlib.sha1() requires bytes, not str.
-        # That pre-existing bug is tracked separately; here we only verify that
-        # @persist wraps a function without raising at decoration time.
+        # Persist exposes a callable wrapper before the first cache lookup.
         @persist
         def fn(x):
             return x

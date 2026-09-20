@@ -207,25 +207,6 @@ void vif_dec16_s(const float *src, float *dst, int src_w, int src_h, int src_str
     }
 }
 
-float vif_sum_s(const float *x, int w, int h, int stride)
-{
-    const int px_stride = stride / sizeof(float);
-
-    float accum = 0;
-
-    for (int i = 0; i < h; ++i) {
-        float accum_inner = 0;
-
-        for (int j = 0; j < w; ++j) {
-            accum_inner += x[i * px_stride + j];
-        } // having an inner accumulator help reduce numerical error (no accumulation of near-0 terms)
-
-        accum += accum_inner;
-    }
-
-    return accum;
-}
-
 /* ==== vif_stat_mode = 'matching_c' (upstream reference, not shipped) ====
  *
  *  if (sigma1_sq < vif_sigma_nsq) {

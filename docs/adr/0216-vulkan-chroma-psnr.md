@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0216: Vulkan PSNR — chroma extension (psnr_cb / psnr_cr)
 
 - **Status**: Accepted
@@ -53,7 +52,7 @@ layout makes it a one-line change if needed.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Three-element arrays in a single state struct (chosen)** | Minimal diff against the v1 luma-only state; descriptor-set / buffer pattern matches sister kernels; no allocator churn beyond what the v1 already paid. | Per-plane arrays read slightly more verbosely than a singleton. | Smallest, most reviewable shape. |
 | Three independent `PsnrVulkanState` instances dispatched as a meta-extractor | Clean per-plane isolation. | Triples descriptor pools, command-buffer alloc churn, pipeline objects, and `feature_name_dict` instances; CPU integer_psnr.c uses the array shape too — staying close to the canonical layout helps the rebase story. | Wrong cost / benefit. |
 | One pipeline per plane via a dedicated `psnr_chroma.comp` (or a `PLANE_INDEX` spec constant) | Lets the shader make plane-specific compile-time decisions. | The shader already takes `(width, height)` from push constants — there is *no* plane-specific decision the GLSL needs to make. Three pipelines would burn 3× SPIR-V cache and pipeline-creation latency for zero benefit. | Spec-constant variation buys nothing here. |

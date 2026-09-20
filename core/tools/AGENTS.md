@@ -215,9 +215,10 @@ tools/
     (zero unique behavior vs `cli_parse.cpp`), deleted; `test_cli_parse`,
     `test_cli_parse_long_only_args`, and `fuzz_cli_parse` compile `cli_parse.cpp`.
     Never reintroduce `cli_parse.c`.
-  - C translation units (`y4m_input.c`, `vmaf_bench.c`) MUST keep `NULL`
-    (ADR-1138), suppress `modernize-use-nullptr` using file-scoped
-    NOLINTBEGIN/NOLINTEND brackets to preserve MSVC `/std:clatest` Windows portability.
+  - C translation units use `VMAF_NULLPTR` from `core/src/vmaf_nullptr.h`
+    (ADR-1269), never raw `NULL` or a `modernize-use-nullptr` suppression. The
+    token selects native C23 `nullptr` where verified and a standards-valid
+    integer null-pointer constant on the required MSVC C lane.
   - In `y4m_input.c`, all plane dimensions, strides, and buffer index
     calculations use `ptrdiff_t` / `size_t` precision to avoid 32-bit
     multiplication overflow.

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0470: Disk-Persistent VkPipelineCache for Vulkan Feature Extractors
 
 - **Status**: Accepted
@@ -47,7 +46,7 @@ owns the device lifecycle and may have its own caching policy.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | In-memory-only cache (no persistence) | Simpler, no filesystem I/O | No cross-process benefit; multi-feature runs within one process already see no re-link | Doesn't address the cold-start cost that motivated the finding |
 | Per-feature-extractor cache files | Finer invalidation granularity | 14+ files instead of one; same device UUID keys them all anyway | Unnecessary complexity; the driver validates the blob internally |
 | System-level shared cache (e.g. `/var/cache/`) | Shared across users | Requires elevated permissions to write | Not appropriate for a user-space library |

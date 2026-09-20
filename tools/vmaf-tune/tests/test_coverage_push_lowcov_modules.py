@@ -822,7 +822,7 @@ class TestFastRecommendValidation:
     """``fast_recommend`` argument validation + smoke entry."""
 
     def test_production_mode_requires_src(self) -> None:
-        optuna = pytest.importorskip("optuna")  # noqa: F841  (sentinel)
+        pytest.importorskip("optuna")
         from vmaftune.fast import fast_recommend
 
         with pytest.raises(ValueError, match="requires a source path"):

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0893: Pre-commit config audit — 2026-05-30
 
 - **Status**: Accepted
@@ -72,7 +71,7 @@ its own diff-with-blame audit. The 6.0.1 step is the safe one.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Apply `pre-commit autoupdate` verbatim | One-command, zero thought. | Would downgrade gitleaks (v8.30.1 → v8.30.0); would jump isort to `9.0.0a3` (alpha pre-release); skips the missing-hook audit entirely. | Autoupdate's tag-sort heuristic produces wrong answers on repos that release point releases out of branch order; alpha pre-releases violate the project's "stable upstream pins only" hygiene. |
 | Bump isort to 8.0.1 (latest stable) | Latest features, Python 3.13 support. | 8.x dropped Python 3.8 (we're on 3.14 so OK), but 7.x→8.x changelog calls out several `profile = "black"` interaction tweaks; needs a wider audit than this audit is sized for. | Conservatism — 6.0.1 has been the de facto stable line for ~18 months, ships the Python 3.13 fix we care about, and keeps the diff small. |
 | Add `markdownlint-cli2` here too | Single audit PR covers all hygiene. | Direct conflict with PR #342 (already in flight, ADR-0866). | Coordination — one PR per moving config block. |

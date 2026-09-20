@@ -25,11 +25,6 @@
 
 #include <stdbool.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stddef.h>
 
 #include "libvmaf/model.h"
@@ -51,14 +46,14 @@ static char *test_json_model_libsvm_duplicate_key_no_leak(void)
                         "\"model\": \"svm_type nu_svr\\nkernel_type linear\\nnr_class 2\\n"
                         "total_sv 1\\nrho 0.25\\nSV\\n1.0 1:2.0\\n\""
                         "}}";
-    VmafModel *model = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     const int err = vmaf_read_json_model_from_buffer(&model, &cfg, json, (int)sizeof(json) - 1);
 
     /* mu_assert expands to an early `return message`, so release the model
      * before asserting — otherwise a failing assertion leaks it and masks the
      * very leak this test exists to detect. */
-    const bool have_model = model != NULL;
+    const bool have_model = model != VMAF_NULLPTR;
     if (have_model)
         vmaf_model_destroy(model);
 
@@ -70,13 +65,11 @@ static char *test_json_model_libsvm_duplicate_key_no_leak(void)
         mu_assert("rejected parse must leave *model untouched (NULL)", !have_model);
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_json_model_libsvm_duplicate_key_no_leak);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

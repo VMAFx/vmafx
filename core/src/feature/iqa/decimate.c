@@ -41,7 +41,6 @@ int iqa_decimate(float *img, int w, int h, int factor, const struct iqa_kernel *
     int y;
     int sw = w / factor + (w & 1);
     int sh = h / factor + (h & 1);
-    int dst_offset;
     float *dst = img;
 
     if (result)
@@ -49,7 +48,7 @@ int iqa_decimate(float *img, int w, int h, int factor, const struct iqa_kernel *
 
     /* Downsample */
     for (y = 0; y < sh; ++y) {
-        dst_offset = y * sw;
+        int dst_offset = y * sw;
         for (x = 0; x < sw; ++x, ++dst_offset) {
             dst[dst_offset] = iqa_filter_pixel(img, w, h, x * factor, y * factor, k, 1.0f);
         }

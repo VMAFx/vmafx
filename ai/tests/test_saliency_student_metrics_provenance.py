@@ -5,19 +5,17 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import pytest
 
-torch = pytest.importorskip("torch")
+try:
+    import torch
+except ImportError:
+    pytest.skip("PyTorch is not installed", allow_module_level=True)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
-
-import train_saliency_student as train_v1  # noqa: E402
-import train_saliency_student_v2 as train_v2  # noqa: E402
+import train_saliency_student as train_v1
+import train_saliency_student_v2 as train_v2
 
 
 def _args(tmp_path: Path) -> argparse.Namespace:

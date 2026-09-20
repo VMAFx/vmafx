@@ -978,7 +978,7 @@ jobs:
             --print-errorlogs
 
   # ===== Power of 10 rule 5 — assertion density =====
-  # Every fork-added (non-trivial) function must contain ≥1 assert().
+  # Every tracked C-family (non-trivial) function must contain ≥1 assert().
   assertion-density:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # Power of 10 §5

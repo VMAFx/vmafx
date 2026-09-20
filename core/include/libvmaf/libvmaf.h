@@ -267,7 +267,7 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  * In this case, the registered feature extractors will form a set, and any
  * features required by multiple models will only be extracted once.
  *
- * @param vmaf  The VMAF context allocated with `vmaf_init()`.
+ * @param vmaf  The VMAF context allocated with `vmaf_init()`; it is not modified.
  *
  * @param model Opaque model context.
  *
@@ -657,7 +657,7 @@ VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *out
  *
  * @return 0 on success, or -EINVAL when @vmaf or @out is NULL.
  */
-VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
+VMAF_EXPORT int vmaf_context_get_backend(const VmafContext *vmaf, enum VmafBackend *out);
 
 /**
  * @brief Return the libvmaf version string (e.g. "3.2.1").

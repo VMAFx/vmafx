@@ -162,6 +162,51 @@ def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[
 # ---------------------------------------------------------------------
 
 
+def _synthetic_corpus_row(
+    codec: str,
+    index: int,
+    rng: random.Random,
+    predictor: Any,
+    shot_features_type: Any,
+) -> dict[str, Any]:
+    """Build one deterministic synthetic training row."""
+    resolutions = ((1920, 1080), (1280, 720), (3840, 2160), (854, 480))
+    framerates = (24.0, 30.0, 60.0)
+    crf = rng.randint(18, 45)
+    width, height = resolutions[index % len(resolutions)]
+    framerate = framerates[index % len(framerates)]
+    duration_s = 4.0 + rng.random() * 6.0
+
+    complexity = 0.6 + rng.random() * 1.2
+    base_kbps = (width * height) / 1000.0
+    crf_decay = math.exp(-(crf - 23.0) * 0.05)
+    bitrate_kbps = base_kbps * crf_decay * complexity
+
+    features = shot_features_type(
+        probe_bitrate_kbps=bitrate_kbps,
+        probe_i_frame_avg_bytes=0.0,
+        probe_p_frame_avg_bytes=0.0,
+        probe_b_frame_avg_bytes=0.0,
+    )
+    target_vmaf = predictor.predict_vmaf(features, crf, codec)
+    target_vmaf += rng.gauss(0.0, 0.5)
+
+    return {
+        "schema_version": 2,
+        "src": f"synthetic_{codec}_{index:04d}",
+        "encoder": codec,
+        "preset": "medium",
+        "crf": crf,
+        "width": width,
+        "height": height,
+        "framerate": framerate,
+        "duration_s": duration_s,
+        "bitrate_kbps": bitrate_kbps,
+        "vmaf_score": max(0.0, min(100.0, target_vmaf)),
+        "exit_status": 0,
+    }
+
+
 def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -> list[dict]:
     """Deterministic per-codec synthetic corpus.
 
@@ -182,56 +227,12 @@ def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -
     rng = random.Random(seed)
     predictor = Predictor()  # analytical fallback supplies the target
 
-    rows: list[dict] = []
     # Sweep CRF across the codec's quality range and a handful of
     # synthetic resolutions so the trainer sees variation on every
     # input dimension.
-    crf_lo, crf_hi = 18, 45
-    resolutions = ((1920, 1080), (1280, 720), (3840, 2160), (854, 480))
-    framerates = (24.0, 30.0, 60.0)
-
-    for i in range(n_rows):
-        crf = rng.randint(crf_lo, crf_hi)
-        width, height = resolutions[i % len(resolutions)]
-        framerate = framerates[i % len(framerates)]
-        duration_s = 4.0 + rng.random() * 6.0  # 4..10s shots
-        # Bitrate scales with resolution and inversely with CRF, plus
-        # a per-row complexity multiplier.
-        complexity = 0.6 + rng.random() * 1.2
-        base_kbps = (width * height) / 1000.0
-        crf_decay = math.exp(-(crf - 23.0) * 0.05)
-        bitrate_kbps = base_kbps * crf_decay * complexity
-
-        # Compute the analytical-fallback VMAF for this synthetic row
-        # — that is the regression target. Add a small Gaussian
-        # residual so the model has something to smooth over.
-        feats = ShotFeatures(
-            probe_bitrate_kbps=bitrate_kbps,
-            probe_i_frame_avg_bytes=0.0,
-            probe_p_frame_avg_bytes=0.0,
-            probe_b_frame_avg_bytes=0.0,
-        )
-        target_vmaf = predictor.predict_vmaf(feats, crf, codec)
-        target_vmaf += rng.gauss(0.0, 0.5)
-        target_vmaf = max(0.0, min(100.0, target_vmaf))
-
-        rows.append(
-            {
-                "schema_version": 2,
-                "src": f"synthetic_{codec}_{i:04d}",
-                "encoder": codec,
-                "preset": "medium",
-                "crf": crf,
-                "width": width,
-                "height": height,
-                "framerate": framerate,
-                "duration_s": duration_s,
-                "bitrate_kbps": bitrate_kbps,
-                "vmaf_score": target_vmaf,
-                "exit_status": 0,
-            }
-        )
-    return rows
+    return [
+        _synthetic_corpus_row(codec, index, rng, predictor, ShotFeatures) for index in range(n_rows)
+    ]
 
 
 # ---------------------------------------------------------------------
@@ -724,24 +725,24 @@ def _write_model_card(
     today = _dt.date.today().isoformat()
     is_synthetic = corpus_kind.startswith("synthetic")
     warning = (
-        "> **Warning — synthetic-stub model.** Trained on a deterministic "
-        "synthetic-100 corpus seeded by the codec name. Predictions are a "
-        "smooth re-encoding of the analytical fallback; PLCC / SROCC / RMSE "
-        "below are artificially high because the regression target *is* the "
-        "fallback. **Do not use this model to drive production CRF picks.** "
-        "Generate a real corpus via `vmaftune.corpus` and re-run "
-        "`predictor_train.py` against it.\n"
+        "\n\n> **Warning — synthetic-stub model.** Trained on a deterministic\n"
+        "> synthetic-100 corpus seeded by the codec name. Predictions are a smooth\n"
+        "> re-encoding of the analytical fallback; PLCC / SROCC / RMSE below are\n"
+        "> artificially high because the regression target *is* the fallback.\n"
+        "> **Do not use this model to drive production CRF picks.** Generate a real\n"
+        "> corpus via `vmaftune.corpus` and re-run `predictor_train.py` against it."
         if is_synthetic
         else ""
     )
     signing_note = (
-        "- **Sigstore signature**: not applicable (synthetic-stub model card; "
-        "production models are signed via Sigstore — see "
-        "[docs/development/release.md](../docs/development/release.md))"
+        "- **Sigstore signature**: not applicable for this synthetic-stub model card.\n"
+        "  Production models are signed via Sigstore; see\n"
+        "  [`docs/development/release.md`](../docs/development/release.md)."
         if is_synthetic
-        else "- **Sigstore signature**: unsigned in-tree artefact. Release "
-        "automation attaches the Sigstore-keyless OIDC signature for the "
-        "published tag; verify that bundle when consuming release assets."
+        else "- **Sigstore signature**: unsigned in-tree artefact. Release automation\n"
+        "  attaches the Sigstore-keyless OIDC signature for the published tag.\n"
+        "  Verify that bundle when consuming release assets; see\n"
+        "  [`docs/development/release.md`](../docs/development/release.md)."
     )
     op_status = "OK" if op_allowlist_ok else f"FAIL — forbidden: {', '.join(forbidden_ops)}"
     body = f"""# `predictor_{codec}` — VMAF predictor model card
@@ -751,9 +752,8 @@ def _write_model_card(
 - **ONNX opset**: {opset}
 - **Graph nodes**: {node_count}
 - **File**: `model/predictor_{codec}.onnx` ({onnx_bytes} bytes)
-- **SHA-256**: `{onnx_sha256}`
+- **SHA-256**: `{onnx_sha256}`{warning}
 
-{warning}
 ## 1. Purpose
 
 Per-shot VMAF predictor for the `{codec}` adapter. Consumed by
@@ -785,21 +785,20 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | {plcc:.4f} |
-| SROCC  | {srocc:.4f} |
-| RMSE   | {rmse:.4f} VMAF |
+| --- | --- |
+| PLCC | {plcc:.4f} |
+| SROCC | {srocc:.4f} |
+| RMSE | {rmse:.4f} VMAF |
 
 ## 5. Signing
 
-{signing_note} See
-[`docs/development/release.md`](../docs/development/release.md).
+{signing_note}
 
 ## Architecture
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```
@@ -919,6 +918,29 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _emit_stub_card(args: argparse.Namespace, codec: str) -> None:
+    """Write the CLI smoke-test card without loading the training stack."""
+    destination: Any = (
+        sys.stdout if args.emit_stub_card_only == "-" else Path(args.emit_stub_card_only)
+    )
+    _write_model_card(
+        destination,
+        codec=codec,
+        opset=args.opset,
+        node_count=0,
+        n_train=SYNTHETIC_CORPUS_ROWS,
+        n_val=0,
+        plcc=0.0,
+        srocc=0.0,
+        rmse=0.0,
+        onnx_sha256="0" * 64,
+        onnx_bytes=0,
+        op_allowlist_ok=True,
+        forbidden_ops=(),
+        corpus_kind=f"synthetic-stub-N={SYNTHETIC_CORPUS_ROWS}",
+    )
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -939,26 +961,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     # ADR-0546 (ai-01): smoke-test hook — emit a synthetic-stub card and exit.
     if args.emit_stub_card_only is not None:
-        codec_for_stub = codecs[0]
-        kind_for_stub = f"synthetic-stub-N={SYNTHETIC_CORPUS_ROWS}"
-        dest_raw = args.emit_stub_card_only
-        dest: Any = sys.stdout if dest_raw == "-" else Path(dest_raw)
-        _write_model_card(
-            dest,
-            codec=codec_for_stub,
-            opset=args.opset,
-            node_count=0,
-            n_train=SYNTHETIC_CORPUS_ROWS,
-            n_val=0,
-            plcc=0.0,
-            srocc=0.0,
-            rmse=0.0,
-            onnx_sha256="0" * 64,
-            onnx_bytes=0,
-            op_allowlist_ok=True,
-            forbidden_ops=(),
-            corpus_kind=kind_for_stub,
-        )
+        _emit_stub_card(args, codecs[0])
         return 0
 
     print(f"training predictor models -> {args.output_dir}", flush=True)

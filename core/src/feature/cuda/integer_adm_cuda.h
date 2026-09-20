@@ -24,27 +24,42 @@
 #include "integer_adm.h"
 #include "common.h"
 
+/* Device code dereferences these addresses; the Driver API host code carries
+ * them as CUdeviceptr integers.  Both representations are pointer-width and
+ * therefore preserve the by-value kernel-argument layout. */
+#if defined(__CUDACC__)
+typedef int16_t *AdmCudaI16Ptr;
+typedef int32_t *AdmCudaI32Ptr;
+typedef int64_t *AdmCudaI64Ptr;
+typedef uint64_t *AdmCudaU64Ptr;
+#else
+typedef CUdeviceptr AdmCudaI16Ptr;
+typedef CUdeviceptr AdmCudaI32Ptr;
+typedef CUdeviceptr AdmCudaI64Ptr;
+typedef CUdeviceptr AdmCudaU64Ptr;
+#endif
+
 typedef struct cuda_adm_dwt_band_t {
     union {
         struct {
-            int16_t *band_a; /* Low-pass V + low-pass H. */
-            int16_t *band_h; /* High-pass V + low-pass H. */
-            int16_t *band_v; /* Low-pass V + high-pass H. */
-            int16_t *band_d; /* High-pass V + high-pass H. */
+            AdmCudaI16Ptr band_a; /* Low-pass V + low-pass H. */
+            AdmCudaI16Ptr band_h; /* High-pass V + low-pass H. */
+            AdmCudaI16Ptr band_v; /* Low-pass V + high-pass H. */
+            AdmCudaI16Ptr band_d; /* High-pass V + high-pass H. */
         };
-        int16_t *bands[4];
+        AdmCudaI16Ptr bands[4];
     };
 } cuda_adm_dwt_band_t;
 
 typedef struct cuda_i4_adm_dwt_band_t {
     union {
         struct {
-            int32_t *band_a; /* Low-pass V + low-pass H. */
-            int32_t *band_h; /* High-pass V + low-pass H. */
-            int32_t *band_v; /* Low-pass V + high-pass H. */
-            int32_t *band_d; /* High-pass V + high-pass H. */
+            AdmCudaI32Ptr band_a; /* Low-pass V + low-pass H. */
+            AdmCudaI32Ptr band_h; /* High-pass V + low-pass H. */
+            AdmCudaI32Ptr band_v; /* Low-pass V + high-pass H. */
+            AdmCudaI32Ptr band_d; /* High-pass V + high-pass H. */
         };
-        int32_t *bands[4];
+        AdmCudaI32Ptr bands[4];
     };
 } cuda_i4_adm_dwt_band_t;
 
@@ -88,9 +103,9 @@ typedef struct AdmBufferCuda {
     cuda_i4_adm_dwt_band_t i4_dis_dwt2;
     cuda_i4_adm_dwt_band_t i4_csf_f;
 
-    int64_t *adm_cm[4];
-    uint64_t *adm_csf_den[4];
-    int64_t *adm_aim_cm[4]; /* AIM CM accumulator slots — ADR-0746 */
+    AdmCudaI64Ptr adm_cm[4];
+    AdmCudaU64Ptr adm_csf_den[4];
+    AdmCudaI64Ptr adm_aim_cm[4]; /* AIM CM accumulator slots — ADR-0746 */
     void *results_host;
 } AdmBufferCuda;
 

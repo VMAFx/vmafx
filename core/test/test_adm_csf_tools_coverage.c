@@ -22,11 +22,6 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdlib.h>
 
 #include "test.h"
@@ -65,7 +60,7 @@ static char *test_adm_csf_theta0_lambda0_1080p(void)
     float got = adm_native_csf(0, 3.0, 1080, 0);
     float ref = reference_adm_native_csf(0, 3.0, 1080, 0);
     mu_assert("theta=0 lambda=0 1080p matches reference", isclose(got, ref, 1e-5f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_csf_theta0_lambda_sweep_4k(void)
@@ -77,7 +72,7 @@ static char *test_adm_csf_theta0_lambda_sweep_4k(void)
         float ref = reference_adm_native_csf(lambda, 3.0, 2160, 0);
         mu_assert("theta=0 lambda sweep 4K matches reference", isclose(got, ref, 1e-5f));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -89,7 +84,7 @@ static char *test_adm_csf_theta45_lambda0_1080p(void)
     float got = adm_native_csf(0, 3.0, 1080, 45);
     float ref = reference_adm_native_csf(0, 3.0, 1080, 45);
     mu_assert("theta=45 lambda=0 1080p matches reference", isclose(got, ref, 1e-5f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_csf_theta45_strictly_less_than_theta0(void)
@@ -103,7 +98,7 @@ static char *test_adm_csf_theta45_strictly_less_than_theta0(void)
     float h_v = adm_native_csf(1, 3.0, 1080, 0);
     float diag = adm_native_csf(1, 3.0, 1080, 45);
     mu_assert("diagonal CSF must be < H/V CSF past the curve peak", diag < h_v);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_csf_theta45_lambda_sweep_2k(void)
@@ -114,7 +109,7 @@ static char *test_adm_csf_theta45_lambda_sweep_2k(void)
         float ref = reference_adm_native_csf(lambda, 3.0, 1440, 45);
         mu_assert("theta=45 lambda sweep 2K matches reference", isclose(got, ref, 1e-5f));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -132,7 +127,7 @@ static char *test_adm_csf_5h_viewing_distance(void)
     float ref_diag = reference_adm_native_csf(0, 5.0, 1080, 45);
     mu_assert("5H theta=0 matches reference", isclose(h_v, ref_h_v, 1e-5f));
     mu_assert("5H theta=45 matches reference", isclose(diag, ref_diag, 1e-5f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -143,7 +138,5 @@ char *run_tests(void)
     mu_run_test(test_adm_csf_theta45_strictly_less_than_theta0);
     mu_run_test(test_adm_csf_theta45_lambda_sweep_2k);
     mu_run_test(test_adm_csf_5h_viewing_distance);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # 0889 — Vendored libsvm 3.24 audit (2026-05-30)
 
 ## Scope
@@ -47,7 +46,7 @@ to upstream `master`, which is on 3.36 as of 2025.
 ### Fork-local patch families (3)
 
 | Family | Where | Citing ADR | Purpose |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Thread-locale isolation | `SVMModelParserFileSource::SVMModelParserFileSource`, `SVMModelParserBufferSource::SVMModelParserBufferSource` | ADR-0137 | Forces `C` locale on the parser so `LC_NUMERIC` cannot perturb downstream `operator>>` numeric conversion |
 | JSON entry points | `svm_parse_model_from_buffer` | none (predates the ADR rule) | Lets `read_json_model.c` pass an SVM blob embedded in a JSON model file without round-tripping through the filesystem |
 | SAN-MODEL-MALLOC-OOB hardening | `VMAF_SVM_MAX_AXIS_COUNT` macro + `parse_header()` axis bounds + `parse_support_vectors()` pre-flight + `sv_buffer.empty()` guard | sanitizer-real-bug-fixes-2026-05-09 changelog | Pre-empts the alloc-too-big and null-passed-as-argument ASan findings from a crafted model file |
@@ -55,7 +54,7 @@ to upstream `master`, which is on 3.36 as of 2025.
 ### Upstream 3.25 – 3.36 CVE survey
 
 | Version | Release window | Notable change | CVE? | Fork already covered? |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 3.25 | 2020-12 | FD-cleanup on early-return in `svm_load_model`; minor formatting | No | Yes — `SVMModelParser<>` uses `std::ifstream` RAII |
 | 3.30 | 2023 | Sparse-LinearSVR additions; doc refresh | No | N/A — feature path not used by the fork |
 | 3.35 | 2024 | `static`-on-helper-function tightenings | No | No security delta |
@@ -116,7 +115,7 @@ rule (ADR-0278) are both unaffected.
 New file: `core/test/test_svm_parser.c` (9 tests, suite `fast`):
 
 | Test | Defect surface |
-|---|---|
+| --- | --- |
 | `test_reject_oversized_nr_class` | `nr_class > VMAF_SVM_MAX_AXIS_COUNT` |
 | `test_reject_oversized_total_sv` | `total_sv > VMAF_SVM_MAX_AXIS_COUNT` |
 | `test_reject_missing_nr_class_before_rho` | `rho` before `nr_class` |

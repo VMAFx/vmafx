@@ -19,14 +19,14 @@ against an explicitly-named one.
 
 from __future__ import absolute_import
 
-import os
+import importlib
 import re
-import subprocess
 import tempfile
 import unittest
-from test.testutil import set_default_576_324_videos_for_testing
+from pathlib import Path
 
-from vmaf import ExternalProgram
+from test.testutil import set_default_576_324_videos_for_testing
+from vmaf import ExternalProgram, run_process
 from vmaf.config import VmafConfig
 
 #: Must equal ``VMAF_DEFAULT_MODEL_VERSION`` in ``core/include/libvmaf/model.h``.
@@ -50,7 +50,7 @@ def _score(extra_args):
     """Score the standard 576x324 pair and return the set of metric names."""
     ref_path, dis_path, _asset, _asset_original = set_default_576_324_videos_for_testing()
     with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "out.xml")
+        out = Path(tmp) / "out.xml"
         cmd = [
             ExternalProgram.vmafexec,
             "-r",
@@ -67,9 +67,10 @@ def _score(extra_args):
             "8",
             "-o",
             out,
-        ] + list(extra_args)
-        subprocess.run(cmd, check=True, capture_output=True)
-        with open(out, encoding="utf-8") as fh:
+            *list(extra_args),
+        ]
+        run_process(cmd)
+        with out.open(encoding="utf-8") as fh:
             return set(_METRIC_RE.findall(fh.read()))
 
 
@@ -139,7 +140,7 @@ class DefaultBuiltInModelTest(unittest.TestCase):
             "dis_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv",
         )
         with tempfile.TemporaryDirectory() as tmp:
-            out = os.path.join(tmp, "out.xml")
+            out = Path(tmp) / "out.xml"
             cmd = [
                 ExternalProgram.vmafexec,
                 "-r",
@@ -158,18 +159,15 @@ class DefaultBuiltInModelTest(unittest.TestCase):
                 out,
                 "--quiet",
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            self.assertNotEqual(
-                proc.returncode,
-                0,
-                "sub-216 input with the default model must fail, not score silently",
-            )
-            self.assertIn("vmaf_v1.0.16_3d0h", proc.stderr, proc.stderr)
-            self.assertIn("cambi", proc.stderr, proc.stderr)
-            self.assertIn("216", proc.stderr, proc.stderr)
-            self.assertIn("--model", proc.stderr, proc.stderr)
+            with self.assertRaises(AssertionError) as error:
+                run_process(cmd)
+            error_text = str(error.exception)
+            self.assertIn("vmaf_v1.0.16_3d0h", error_text, error_text)
+            self.assertIn("cambi", error_text, error_text)
+            self.assertIn("216", error_text, error_text)
+            self.assertIn("--model", error_text, error_text)
             self.assertFalse(
-                os.path.exists(out) and os.path.getsize(out) > 0,
+                out.exists() and out.stat().st_size > 0,
                 "no output file may be written when the model cannot run",
             )
 
@@ -185,7 +183,7 @@ class DefaultBuiltInModelTest(unittest.TestCase):
             "dis_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv",
         )
         with tempfile.TemporaryDirectory() as tmp:
-            out = os.path.join(tmp, "out.xml")
+            out = Path(tmp) / "out.xml"
             cmd = [
                 ExternalProgram.vmafexec,
                 "-r",
@@ -205,8 +203,8 @@ class DefaultBuiltInModelTest(unittest.TestCase):
                 "--model",
                 "version=vmaf_v0.6.1",
             ]
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
-            with open(out, encoding="utf-8") as fh:
+            run_process(cmd)
+            with out.open(encoding="utf-8") as fh:
                 keys = set(_METRIC_RE.findall(fh.read()))
             self.assertTrue(
                 any(V0_ONLY_FEATURE in k for k in keys),
@@ -228,32 +226,31 @@ class NegRoutingTest(unittest.TestCase):
     def _loads(self, version):
         ref_path, dis_path, _a, _b = set_default_576_324_videos_for_testing()
         with tempfile.TemporaryDirectory() as tmp:
-            out = os.path.join(tmp, "out.xml")
-            proc = subprocess.run(
-                [
-                    ExternalProgram.vmafexec,
-                    "-r",
-                    ref_path,
-                    "-d",
-                    dis_path,
-                    "-w",
-                    "576",
-                    "-h",
-                    "324",
-                    "-p",
-                    "420",
-                    "-b",
-                    "8",
-                    "-m",
-                    f"version={version}",
-                    "-o",
-                    out,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            return proc.returncode == 0, proc.stderr
+            out = Path(tmp) / "out.xml"
+            command = [
+                ExternalProgram.vmafexec,
+                "-r",
+                ref_path,
+                "-d",
+                dis_path,
+                "-w",
+                "576",
+                "-h",
+                "324",
+                "-p",
+                "420",
+                "-b",
+                "8",
+                "-m",
+                f"version={version}",
+                "-o",
+                out,
+            ]
+            try:
+                run_process(command)
+            except AssertionError as error:
+                return False, str(error)
+            return True, ""
 
     def test_neg_default_is_a_loadable_model(self):
         ok, err = self._loads("vmaf_v0.6.1neg")
@@ -276,21 +273,21 @@ class DefaultModelMirrorTest(unittest.TestCase):
 
     def test_vmaftune_mirror_matches_expected_default(self):
         try:
-            from vmaftune.defaultmodel import DEFAULT_MODEL
+            default_model = importlib.import_module("vmaftune.defaultmodel").DEFAULT_MODEL
         except ImportError:
             self.skipTest("vmaf-tune is not installed in this environment")
-        self.assertEqual(DEFAULT_MODEL, EXPECTED_DEFAULT_MODEL)
+        self.assertEqual(default_model, EXPECTED_DEFAULT_MODEL)
 
     def test_neg_default_stays_on_the_v0_6_1_family(self):
         # There is no NEG counterpart to any vmaf_v1.0.16_* model, so the NEG
         # default deliberately names a different generation. Deriving it as
         # DEFAULT_MODEL + "neg" would synthesise a model that does not exist.
         try:
-            from vmaftune.defaultmodel import DEFAULT_MODEL_NEG
+            default_model_neg = importlib.import_module("vmaftune.defaultmodel").DEFAULT_MODEL_NEG
         except ImportError:
             self.skipTest("vmaf-tune is not installed in this environment")
-        self.assertEqual(DEFAULT_MODEL_NEG, "vmaf_v0.6.1neg")
-        self.assertNotEqual(DEFAULT_MODEL_NEG, EXPECTED_DEFAULT_MODEL + "neg")
+        self.assertEqual(default_model_neg, "vmaf_v0.6.1neg")
+        self.assertNotEqual(default_model_neg, EXPECTED_DEFAULT_MODEL + "neg")
 
 
 if __name__ == "__main__":

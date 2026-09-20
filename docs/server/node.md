@@ -1,9 +1,8 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-node — Worker Binary
 
-`vmafx-node` is the data-plane scoring worker in the VMAFX distributed
-platform (Phase 4b, ADR-0709). It serves the `VmafxScoring` gRPC API and
-executes score requests against `libvmaf`.
+`vmafx-node` is the data-plane scoring worker in the VMAFX distributed platform
+(Phase 4b, ADR-0709). It serves the `VmafxScoring` gRPC API and executes score
+requests against `libvmaf`.
 
 ## Quick start (local)
 
@@ -23,11 +22,11 @@ The node hosts the **`VmafxScoring`** service (the same contract as
 directly to a node. See
 [ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md).
 
-| RPC | Shape | Notes |
-|---|---|---|
-| `Score` | unary | File-path reference/distorted pair → pooled VMAF + features. |
+| RPC           | Shape                | Notes                                                                                                                                                                                                                                      |
+| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Score`       | unary                | File-path reference/distorted pair → pooled VMAF + features.                                                                                                                                                                               |
 | `ScoreStream` | bidirectional stream | In-memory per-frame scoring (ADR-0933). One `StreamConfig`, then `FramePair` messages, then EOF; the node returns one `FrameScore` per frame plus a terminal `AggregateScore`. See [grpc-streaming.md](../architecture/grpc-streaming.md). |
-| `Health` | unary | Liveness; answers even when no scorer is configured. |
+| `Health`      | unary                | Liveness; answers even when no scorer is configured.                                                                                                                                                                                       |
 
 The scoring engine is the shared cgo `pkg/libvmaf`. The node resolves models
 from `VMAFX_MODEL_DIR`; if no `vmaf` binary / model dir is available the node
@@ -44,18 +43,19 @@ grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
 
 ## Configuration (12-factor env vars)
 
-| Variable | Default | Description |
-|---|---|---|
-| `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address for the node's worker service. |
-| `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
-| `VMAFX_VMAF_BINARY` | automatic lookup | Path to the `vmaf` CLI binary used for scoring. |
-| `VMAFX_MODEL_DIR` | binary default | Directory containing VMAF model files. The node image sets `/usr/local/share/vmafx/model`. |
-| `VMAFX_BACKEND` | `cpu` | Scoring backend label, such as `cpu`, `cuda`, `hip`, or `sycl`. |
-| `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Online-training sidecar Unix socket. |
-| `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
-| `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
+| Variable               | Default                   | Description                                                                                         |
+| ---------------------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| `VMAFX_GRPC_LISTEN`    | `:50052`                  | gRPC listen address for the node's worker service.                                                  |
+| `VMAFX_FFMPEG_BIN`     | `ffmpeg` (PATH)           | Path to the `ffmpeg` binary. The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
+| `VMAFX_VMAF_BINARY`    | automatic lookup          | Path to the `vmaf` CLI binary used for scoring.                                                     |
+| `VMAFX_MODEL_DIR`      | binary default            | Directory containing VMAF model files. The node image sets `/usr/local/share/vmafx/model`.          |
+| `VMAFX_BACKEND`        | `cpu`                     | Scoring backend label, such as `cpu`, `cuda`, `hip`, or `sycl`.                                     |
+| `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Online-training sidecar Unix socket.                                                                |
+| `VMAFX_LOG_LEVEL`      | `info`                    | Structured log level: `debug`, `info`, `warn`, `error`                                              |
+| `VMAFX_LOG_FORMAT`     | `auto`                    | Log handler: `auto`, `tint`, or `json`.                                                             |
 
-See also the [full environment variable reference](../usage/env-vars.md) for the complete table.
+See also the [full environment variable reference](../usage/env-vars.md) for the
+complete table.
 
 ## Backend selection
 
@@ -76,24 +76,24 @@ health check.
 ## Kubernetes deployment
 
 The Helm chart (`deploy/helm/vmafx/`) ships a node worker pool Deployment gated
-on `.Values.node.enabled`.  Enable it alongside the controller:
+on `.Values.node.enabled`. Enable it alongside the controller:
 
 ```yaml
 # values.yaml
 node:
-  enabled: true
-  replicaCount: 3
-  nodeSelector:
-    nvidia.com/gpu.present: "true"
-  tolerations:
-    - key: nvidia.com/gpu
-      operator: Exists
-      effect: NoSchedule
+    enabled: true
+    replicaCount: 3
+    nodeSelector:
+        nvidia.com/gpu.present: "true"
+    tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
 
 gpu:
-  enabled: true
-  vendor: nvidia
-  count: 1
+    enabled: true
+    vendor: nvidia
+    count: 1
 ```
 
 ```bash
@@ -102,12 +102,12 @@ helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 
 ## Container images
 
-| Docker target | Published tag | Runtime |
-|---|---|---|
-| `node-cpu` | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13 |
-| `node-cuda` | not yet published | Debian 13 + CUDA 13.3.1 libraries |
-| `node-rocm` | not yet published | Debian 13 + ROCm 7.2.4 libraries |
-| `node-sycl` | not yet published | Debian 13 + oneAPI 2025.3.1 libraries |
+| Docker target | Published tag            | Runtime                               |
+| ------------- | ------------------------ | ------------------------------------- |
+| `node-cpu`    | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13                  |
+| `node-cuda`   | not yet published        | Debian 13 + CUDA 13.3.1 libraries     |
+| `node-rocm`   | not yet published        | Debian 13 + ROCm 7.2.4 libraries      |
+| `node-sycl`   | not yet published        | Debian 13 + oneAPI 2025.3.1 libraries |
 
 The release workflow currently publishes only `node-cpu`. All targets use the
 same native-architecture FFmpeg dependency collector, so arm64 stages resolve

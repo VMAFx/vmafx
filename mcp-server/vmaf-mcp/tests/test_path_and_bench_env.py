@@ -123,9 +123,9 @@ def test_run_benchmark_injects_vmaf_root(monkeypatch, tmp_path):
         "_run_benchmark did not pass VMAF_ROOT to the subprocess env; "
         "bench_all.sh will fail in containers where git is unavailable."
     )
-    assert captured_env["VMAF_ROOT"] == str(
-        tmp_path
-    ), f"VMAF_ROOT={captured_env['VMAF_ROOT']!r} should equal repo root {tmp_path!r}"
+    assert captured_env["VMAF_ROOT"] == str(tmp_path), (
+        f"VMAF_ROOT={captured_env['VMAF_ROOT']!r} should equal repo root {tmp_path!r}"
+    )
 
 
 def test_run_benchmark_injects_vmaf_bin(monkeypatch, tmp_path):
@@ -161,9 +161,9 @@ def test_run_benchmark_injects_vmaf_bin(monkeypatch, tmp_path):
         "_run_benchmark did not pass VMAF_BIN to the subprocess env; "
         "bench_all.sh will silently use the relative in-tree fallback path."
     )
-    assert captured_env["VMAF_BIN"] == str(
-        fake_bin
-    ), f"VMAF_BIN={captured_env['VMAF_BIN']!r} should equal {fake_bin!r}"
+    assert captured_env["VMAF_BIN"] == str(fake_bin), (
+        f"VMAF_BIN={captured_env['VMAF_BIN']!r} should equal {fake_bin!r}"
+    )
 
 
 def test_run_benchmark_passes_no_positional_args(monkeypatch, tmp_path):

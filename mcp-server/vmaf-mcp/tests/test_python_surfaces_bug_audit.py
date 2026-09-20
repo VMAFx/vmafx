@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import math
 import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,7 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from vmaf_mcp import server as _srv  # noqa: E402
+_srv = import_module("vmaf_mcp.server")
 
 # ---------------------------------------------------------------------------
 # _pick_worst_frames — NaN-safe sort (Bug 13)
@@ -129,9 +130,9 @@ async def test_describe_worst_frames_uses_unique_tempdir_per_call(
     # Each call must have produced its own root, and the two roots must
     # differ (mkdtemp guarantees uniqueness).
     unique_roots = {str(r) for r in captured_roots}
-    assert (
-        len(unique_roots) >= 2
-    ), "Both concurrent calls allocated the same /tmp dir — that's the race the audit fixed"
+    assert len(unique_roots) >= 2, (
+        "Both concurrent calls allocated the same /tmp dir — that's the race the audit fixed"
+    )
 
     # Both calls must return two PNG paths.  With TemporaryDirectory semantics
     # (ADR-Bug-14 fix) the temp dir is cleaned up when the call returns, so the

@@ -7,13 +7,14 @@ from __future__ import annotations
 __copyright__ = "Copyright 2016-2024, Netflix, Inc."
 __license__ = "BSD+Patent"
 
+import itertools
 import math
 from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
 from scipy.integrate import trapezoid
-from scipy.interpolate import pchip_interpolate  # type: ignore[attr-defined]
+from scipy.interpolate import pchip_interpolate
 
 from vmaf.tools.convex_hull import calculate_convex_hull
 
@@ -24,6 +25,9 @@ from .exceptions import (
     BdRateZeroRateException,
 )
 from .typing_utils import RdPoint
+
+_COMPARISON_VALUE_100 = 100
+_COMPARISON_VALUE_4 = 4
 
 INF_REPLACEMENT = 100.0
 NUM_SAMPLES = 100
@@ -71,7 +75,7 @@ def calculate_bd_rate(
         metric_set2 = calculate_convex_hull(metric_set2)
 
     if at_perc is not None:
-        if at_perc < 0 or at_perc > 100:
+        if at_perc < 0 or at_perc > _COMPARISON_VALUE_100:
             raise ValueError(f"at_perc must be between 0 and 100, but got {at_perc}.")
 
     # pchip_interpolate requires keys sorted by x axis.
@@ -79,7 +83,7 @@ def calculate_bd_rate(
     metric_set1 = sorted(metric_set1, key=lambda p: p.metric)
     metric_set2 = sorted(metric_set2, key=lambda p: p.metric)
 
-    if len(metric_set1) < 4 or len(metric_set2) < 4:
+    if len(metric_set1) < _COMPARISON_VALUE_4 or len(metric_set2) < _COMPARISON_VALUE_4:
         raise BdRateNotEnoughPointsException("Each metric set must contain at least 4 points.")
 
     if not _is_curve_monotonic(metric_set1) or not _is_curve_monotonic(metric_set2):
@@ -124,13 +128,12 @@ def calculate_bd_rate(
         # Exponentiate to undo the logarithms
         return math.exp(avg_exp_diff) - 1
 
-    else:
-        at_metric = min_int + (max_int - min_int) * at_perc / 100.0
-        v1b: Any = pchip_interpolate(metric1, log_rate1, [at_metric])
-        v2b: Any = pchip_interpolate(metric2, log_rate2, [at_metric])
+    at_metric = min_int + (max_int - min_int) * at_perc / 100.0
+    v1b: Any = pchip_interpolate(metric1, log_rate1, [at_metric])
+    v2b: Any = pchip_interpolate(metric2, log_rate2, [at_metric])
 
-        # Exponentiate to undo the logarithms
-        return math.exp(v2b[0] - v1b[0]) - 1
+    # Exponentiate to undo the logarithms
+    return math.exp(v2b[0] - v1b[0]) - 1
 
 
 def _is_curve_monotonic(points: list[RdPoint]) -> bool:
@@ -145,7 +148,7 @@ def _is_curve_monotonic(points: list[RdPoint]) -> bool:
     """
     return all(
         point1.rate < point2.rate and point1.metric < point2.metric
-        for point1, point2 in zip(points, points[1:])
+        for point1, point2 in itertools.pairwise(points)
     )
 
 

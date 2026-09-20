@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # ADR-1017: Go operator controller resource-allocation fixes
 
 - **Status**: Accepted

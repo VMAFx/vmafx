@@ -101,20 +101,20 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
 {
     *out_score = NAN;
     *skipped = 0;
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
 
     if (use_hip) {
         VmafHipConfiguration hip_cfg = {.device_index = -1};
         int rc = vmaf_hip_state_init(&hip_state, hip_cfg);
-        if (rc != 0 || hip_state == NULL) {
+        if (rc != 0 || hip_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no HIP device] ");
             *skipped = 1;
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -123,13 +123,13 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
         mu_assert("vmaf_hip_import_state failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
+    err = vmaf_use_feature(vmaf, fex_name, VMAF_NULLPTR);
     if (use_hip && err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
         *skipped = 1;
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("vmaf_use_feature failed", !err);
 
@@ -145,11 +145,11 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
             *skipped = 1;
             (void)vmaf_close(vmaf);
             vmaf_hip_state_free(&hip_state);
-            return NULL;
+            return VMAF_NULLPTR;
         }
         mu_assert("vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     /* Frame 0 emits a forced-zero score; read frame 1 for the real delta. */
@@ -162,7 +162,7 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
 
     if (hip_state)
         vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_temporal_cpu_hip_parity(void)
@@ -180,7 +180,7 @@ static char *test_speed_temporal_cpu_hip_parity(void)
         return msg;
 
     if (skipped || isnan(hip_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - hip_score);
     if (delta > PARITY_TOL) {
@@ -190,11 +190,11 @@ static char *test_speed_temporal_cpu_hip_parity(void)
     }
     mu_assert("speed_temporal CPU vs. HIP delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_speed_temporal_cpu_hip_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

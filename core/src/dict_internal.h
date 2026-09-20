@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_DICT_INTERNAL_H__
-#define __VMAF_SRC_DICT_INTERNAL_H__
+#ifndef VMAF_SRC_DICT_INTERNAL_H_
+#define VMAF_SRC_DICT_INTERNAL_H_
 
 /*
  * dict_internal.h — internal helpers for dict.cpp, exposed only for
@@ -34,20 +34,18 @@
  */
 
 #include <cstdlib>
-#include <string_view>
-
 /* isnumeric — returns true iff `str` can be parsed as a C floating-point
  * literal (leading/trailing whitespace is tolerated; otherwise the entire
  * string must be consumed).  Used by dict_normalize_numeric. */
-[[nodiscard]] inline bool isnumeric(std::string_view str) noexcept
+[[nodiscard]] inline bool isnumeric(const char *str) noexcept
 {
     char *end = nullptr;
-    (void)std::strtof(str.data(), &end);
-    if (end == str.data())
+    (void)std::strtof(str, &end);
+    if (end == str)
         return false;
     while (*end == ' ' || *end == '\t' || *end == '\n')
         ++end;
     return *end == '\0';
 }
 
-#endif /* __VMAF_SRC_DICT_INTERNAL_H__ */
+#endif /* VMAF_SRC_DICT_INTERNAL_H_ */

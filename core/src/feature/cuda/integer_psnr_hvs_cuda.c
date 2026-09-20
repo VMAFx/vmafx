@@ -21,6 +21,8 @@
  *  Rejects YUV400P (no chroma) and `bpc > 12` (matches CPU).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -41,9 +43,9 @@
 #include "picture_copy.h"
 #include "cuda_helper.cuh"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -135,6 +137,85 @@ static const VmafOption options[] = {
 
 static int close_fex_cuda(VmafFeatureExtractor *fex);
 
+static int init_psnr_hvs_plane_geometry(PsnrHvsStateCuda *s, enum VmafPixelFormat pix_fmt,
+                                        unsigned w, unsigned h)
+{
+    s->width[0] = w;
+    s->height[0] = h;
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
+        s->n_planes = 1U;
+        s->width[1] = s->width[2] = 0U;
+        s->height[1] = s->height[2] = 0U;
+        return 0;
+    }
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        s->width[1] = s->width[2] = (w + 1u) >> 1;
+        s->height[1] = s->height[2] = (h + 1u) >> 1;
+        break;
+    case VMAF_PIX_FMT_YUV422P:
+        s->width[1] = s->width[2] = (w + 1u) >> 1;
+        s->height[1] = s->height[2] = h;
+        break;
+    case VMAF_PIX_FMT_YUV444P:
+        s->width[1] = s->width[2] = w;
+        s->height[1] = s->height[2] = h;
+        break;
+    default:
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: unsupported pix_fmt\n");
+        return -EINVAL;
+    }
+    s->n_planes = PSNR_HVS_NUM_PLANES;
+    if (!s->enable_chroma) {
+        s->n_planes = 1U;
+        s->width[1] = s->width[2] = 0U;
+        s->height[1] = s->height[2] = 0U;
+    }
+    return 0;
+}
+
+static int init_psnr_hvs_block_geometry(PsnrHvsStateCuda *s)
+{
+    for (unsigned p = 0; p < s->n_planes; p++) {
+        if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "psnr_hvs_cuda: plane %u dims %ux%u smaller than 8x8 block\n", p, s->width[p],
+                     s->height[p]);
+            return -EINVAL;
+        }
+        s->num_blocks_x[p] = (s->width[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
+        s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
+        s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
+    }
+    return 0;
+}
+
+static int init_psnr_hvs_buffers(VmafFeatureExtractor *fex)
+{
+    PsnrHvsStateCuda *s = fex->priv;
+    const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
+    int ret = 0;
+    for (unsigned p = 0; p < s->n_planes; p++) {
+        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
+        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
+        const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref[p], plane_bytes);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_dist[p], plane_bytes);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_partials[p], partials_bytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref[p], plane_bytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dist[p], plane_bytes);
+        ret |=
+            vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_partials[p], partials_bytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_ref[p], uint_bytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_dist[p], uint_bytes);
+    }
+    if (ret)
+        return -ENOMEM;
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    return s->feature_name_dict ? 0 : -ENOMEM;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -154,61 +235,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     const int32_t samplemax = (1 << bpc) - 1;
     s->samplemax_sq = samplemax * samplemax;
 
-    s->width[0] = w;
-    s->height[0] = h;
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        /* YUV400P: luma only regardless of enable_chroma. */
-        s->n_planes = 1U;
-        s->width[1] = s->width[2] = 0U;
-        s->height[1] = s->height[2] = 0U;
-    } else {
-        switch (pix_fmt) {
-        case VMAF_PIX_FMT_YUV420P:
-            /* Ceiling division — mirrors picture.c fix (Research-0094). */
-            s->width[1] = s->width[2] = (w + 1u) >> 1;
-            s->height[1] = s->height[2] = (h + 1u) >> 1;
-            break;
-        case VMAF_PIX_FMT_YUV422P:
-            /* Ceiling division for horizontal subsampling only. */
-            s->width[1] = s->width[2] = (w + 1u) >> 1;
-            s->height[1] = s->height[2] = h;
-            break;
-        case VMAF_PIX_FMT_YUV444P:
-            s->width[1] = s->width[2] = w;
-            s->height[1] = s->height[2] = h;
-            break;
-        default:
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: unsupported pix_fmt\n");
-            return -EINVAL;
-        }
-        s->n_planes = PSNR_HVS_NUM_PLANES;
-        /* Mirror integer_psnr_cuda.c::init's enable_chroma guard (ADR-0453):
-         * clamp to luma-only when the caller opts out of chroma. */
-        if (!s->enable_chroma) {
-            s->n_planes = 1U;
-            s->width[1] = s->width[2] = 0U;
-            s->height[1] = s->height[2] = 0U;
-        }
-    }
+    int err = init_psnr_hvs_plane_geometry(s, pix_fmt, w, h);
+    if (err)
+        return err;
+    err = init_psnr_hvs_block_geometry(s);
+    if (err)
+        return err;
 
-    for (unsigned p = 0; p < s->n_planes; p++) {
-        if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "psnr_hvs_cuda: plane %u dims %ux%u smaller than 8x8 block\n", p, s->width[p],
-                     s->height[p]);
-            return -EINVAL;
-        }
-        s->num_blocks_x[p] = (s->width[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
-        s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
-        s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
-    }
-
-    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
+    err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
         return err;
 
     CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -222,41 +261,18 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_hvs_score_ptx), fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
-    const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
-    int ret = 0;
-    for (unsigned p = 0; p < s->n_planes; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
-        const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref[p], plane_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_dist[p], plane_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_partials[p], partials_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref[p], plane_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dist[p], plane_bytes);
-        ret |=
-            vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_partials[p], partials_bytes);
-        /* T-GPU-OPT-3: persistent pinned uint8/uint16 staging for D2H. */
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_ref[p], uint_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_dist[p], uint_bytes);
-    }
-    if (ret) {
+    err = init_psnr_hvs_buffers(fex);
+    if (err) {
         (void)close_fex_cuda(fex);
-        return -ENOMEM;
-    }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        (void)close_fex_cuda(fex);
-        return -ENOMEM;
+        return err;
     }
     return 0;
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)close_fex_cuda(fex);
     return _cuda_err;
@@ -281,14 +297,15 @@ fail_after_pop:
  *      stream s->lc.str then cuStreamWaitEvent's on it before
  *      launching, allowing kernel work for plane N to overlap H2D for
  *      plane N+1 on the upload stream's DMA engine. */
-static int issue_d2h_plane(PsnrHvsStateCuda *s, VmafFeatureExtractor *fex, VmafPicture *pic,
+static int issue_d2h_plane(PsnrHvsStateCuda *s, VmafFeatureExtractor *fex, const VmafPicture *pic,
                            void *h_uint, int plane)
 {
     CudaFunctions *cu_f = fex->cu_state->f;
     const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
     CUstream stream = vmaf_cuda_picture_get_stream(pic);
 
-    CUDA_MEMCPY2D m = {0};
+    CUDA_MEMCPY2D m;
+    memset(&m, 0, sizeof(m));
     m.srcMemoryType = CU_MEMORYTYPE_DEVICE;
     m.srcDevice = (CUdeviceptr)pic->data[plane];
     m.srcPitch = (size_t)pic->stride[plane];
@@ -343,8 +360,8 @@ static int issue_h2d_plane(PsnrHvsStateCuda *s, VmafFeatureExtractor *fex, const
  *
  * Caller must `cuStreamWaitEvent(s->lc.str, s->upload_done, ...)`
  * before launching any kernel that reads s->d_ref / s->d_dist. */
-static int upload_frame(PsnrHvsStateCuda *s, VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                        VmafPicture *dist_pic)
+static int upload_frame(PsnrHvsStateCuda *s, VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                        const VmafPicture *dist_pic)
 {
     CudaFunctions *cu_f = fex->cu_state->f;
 
@@ -405,7 +422,8 @@ static int launch_plane_kernels(PsnrHvsStateCuda *s, VmafFeatureExtractor *fex)
             (void *)&nby,        (void *)&plane_arg,   (void *)&bpc_arg,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_psnr_hvs, nbx, nby, 1, PSNR_HVS_BLOCK_DIM,
-                                               PSNR_HVS_BLOCK_DIM, 1, 0, s->lc.str, params, NULL));
+                                               PSNR_HVS_BLOCK_DIM, 1, 0, s->lc.str, params,
+                                               VMAF_NULLPTR));
     }
     return 0;
 }
@@ -422,8 +440,9 @@ static int enqueue_partials_readback(PsnrHvsStateCuda *s, VmafFeatureExtractor *
     return 0;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -497,20 +516,20 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     /* T-GPU-OPT-2: tear down dedicated upload stream + event.
      * Drain first so any in-flight H2D completes before the pinned
      * staging it sources is freed below. */
-    if (s->upload_str != NULL) {
+    if (s->upload_str != VMAF_NULLPTR) {
         const CUresult sync_res = cu_f->cuStreamSynchronize(s->upload_str);
         if (sync_res != CUDA_SUCCESS && ret == 0)
             ret = vmaf_cuda_result_to_errno((int)sync_res);
         const CUresult destroy_res = cu_f->cuStreamDestroy(s->upload_str);
         if (destroy_res != CUDA_SUCCESS && ret == 0)
             ret = vmaf_cuda_result_to_errno((int)destroy_res);
-        s->upload_str = NULL;
+        s->upload_str = VMAF_NULLPTR;
     }
-    if (s->upload_done != NULL) {
+    if (s->upload_done != VMAF_NULLPTR) {
         const CUresult e = cu_f->cuEventDestroy(s->upload_done);
         if (e != CUDA_SUCCESS && ret == 0)
             ret = vmaf_cuda_result_to_errno((int)e);
-        s->upload_done = NULL;
+        s->upload_done = VMAF_NULLPTR;
     }
 
     for (unsigned p = 0; p < s->n_planes; p++) {
@@ -541,13 +560,13 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
     if (cu_f && s->module) {
         (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return ret;
 }
 
 static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda = {
     .name = "psnr_hvs_cuda",
@@ -567,5 +586,3 @@ VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

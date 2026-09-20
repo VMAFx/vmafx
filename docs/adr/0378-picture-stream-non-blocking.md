@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0378: Per-picture CUDA streams must use CU_STREAM_NON_BLOCKING
 
 - **Status**: Accepted
@@ -48,7 +47,7 @@ path.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `CU_STREAM_DEFAULT`, add explicit `cuStreamSynchronize` calls | No stream-creation change | Every submit still serialises the entire context; the synchronise just makes it explicit. No performance gain. | Does not fix the root cause. |
 | Use `cuStreamCreate` with flag `CU_STREAM_NON_BLOCKING` (no priority) | Removes implicit barrier | `cuStreamCreate` is deprecated in favour of `cuStreamCreateWithPriority`; mixing the two APIs in the same file adds inconsistency. | Functional but stylistically inferior to using `cuStreamCreateWithPriority` at priority 0. |
 | Per-frame stream creation and destruction | Allows async teardown | Per-frame `cuStreamCreate`+`cuStreamDestroy` cost ~5-10 µs/call — several times the kernel runtime at 576x324. Would make things worse. | Not viable for sub-4K benchmarking. |

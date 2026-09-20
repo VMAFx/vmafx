@@ -240,7 +240,7 @@ static int check_case(unsigned w, unsigned h, enum pattern pat, int *sentinel_br
 static char *test_x_convolution_16_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL; /* NEON kernel is aarch64-only. */
+    return VMAF_NULLPTR; /* NEON kernel is aarch64-only. */
 #else
     /*
      * The interior span handed to the vector loop is `width - 5`. The widths
@@ -279,7 +279,7 @@ static char *test_x_convolution_16_neon_matches_scalar(void)
     }
     mu_assert("x_convolution_16_neon wrote outside the destination rectangle", !sentinel_broken);
     mu_assert("x_convolution_16_neon diverges from the scalar reference", total_mismatches == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -291,5 +291,5 @@ char *run_tests(void)
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
     (void)test_x_convolution_16_neon_matches_scalar;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }

@@ -1,13 +1,15 @@
-- **The published GPU images were mislabelled and built against a dead runtime.**
-  `docker/Dockerfile.node` and `docker/Dockerfile.production-gpu` pulled their
-  HIP/HSA runtime libraries from `rocm/rocm-terminal:6.4` — a repository AMD
-  abandoned on 2025-04-14 — while the build toolchain is ROCm 7.2.4. That is a
-  KFD-ABI major mismatch: 6.x userspace against a 7.x build. Replaced with
-  `rocm/dev-ubuntu-24.04:7.2.4`, which matches the toolchain exactly and is
-  current (`repo.radeon.com/rocm/apt/latest` serves `rocm-core 7.2.4.70204`).
-  ROCm 10 exists as a Docker tag but is not installable through the apt channel
-  the image builds with, so pairing it with a 7.2.4 build would recreate the same
-  mismatch inverted.
+# Changelog fragment
+
+- **The published GPU images were mislabelled and built against a dead
+  runtime.** `docker/Dockerfile.node` and `docker/Dockerfile.production-gpu`
+  pulled their HIP/HSA runtime libraries from `rocm/rocm-terminal:6.4` — a
+  repository AMD abandoned on 2025-04-14 — while the build toolchain is ROCm
+  7.2.4. That is a KFD-ABI major mismatch: 6.x userspace against a 7.x build.
+  Replaced with `rocm/dev-ubuntu-24.04:7.2.4`, which matches the toolchain
+  exactly and is current (`repo.radeon.com/rocm/apt/latest` serves
+  `rocm-core 7.2.4.70204`). ROCm 10 exists as a Docker tag but is not
+  installable through the apt channel the image builds with, so pairing it with
+  a 7.2.4 build would recreate the same mismatch inverted.
 - Published tags no longer lie about their contents: `-cuda12` shipped CUDA
   13.3.1 and `-rocm6` shipped ROCm 7.2.4. The job names, Docker targets, SBOM
   filenames and tag suffixes are renamed to `cuda13` / `rocm7` / `oneapi2025`.

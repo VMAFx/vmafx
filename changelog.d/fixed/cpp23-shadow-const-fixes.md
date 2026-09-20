@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Replaced all C-style casts (`(char*)`, `(void*)`, `(uint8_t*)`, `(size_t)`,
   `(unsigned)`, `(decltype(...))`) with `static_cast<>` in
   `core/src/feature/feature_collector.cpp` and `core/src/sycl/common.cpp`.

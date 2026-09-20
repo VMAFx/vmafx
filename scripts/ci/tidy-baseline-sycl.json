@@ -330,7 +330,7 @@
   ],
   "compile_failures": [],
   "total_warnings": 815,
-  "total_nolint_uncited": 2,
+  "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
     "core/include/libvmaf/feature.h": 1,
@@ -458,7 +458,22 @@
     "core/tools/vmaf_bench.c": 8,
     "core/tools/vmaf_vpl.c": 21
   },
-  "nolint_uncited": {
-    "core/test/test_sycl_motion3_parity.c": 2
-  }
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/test/test_sycl_motion3_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_sycl_motion3_parity.c": {
+          "nolint_uncited": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "da996503752c3a9b3e20c784cf50b9a992b98ad30e52e760cc651269ec04a74e"
+    }
+  ]
 }

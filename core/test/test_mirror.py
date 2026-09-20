@@ -2,9 +2,11 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
+
 def old_mirror(idx, sup):
     v = abs(idx)
     return v if v < sup else sup - (v - sup + 1)
+
 
 def new_mirror(idx, sup):
     if idx < 0:
@@ -12,6 +14,7 @@ def new_mirror(idx, sup):
     if idx >= sup:
         return 2 * (sup - 1) - idx
     return idx
+
 
 for sup in [5, 324, 576]:
     for idx in range(-10, sup + 10):

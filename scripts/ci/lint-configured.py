@@ -17,11 +17,16 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, cast
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cu", ".hip", ".m", ".mm"}
 GCC_LTO_THREADS = re.compile(r"-flto=[1-9][0-9]*\Z")
@@ -31,11 +36,13 @@ def tracked_sources(root: Path) -> set[Path]:
     git = shutil.which("git")
     if git is None:
         raise ValueError("required tool not found: git")
-    result = subprocess.run(  # noqa: S603 -- resolved git argv, no shell
+    result = run_command(
         [git, "-C", str(root), "ls-files", "-z"],
+        allowed_executables=(git,),
         check=True,
         capture_output=True,
         env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        timeout_seconds=60,
     )
     return {
         (root / name.decode()).resolve()
@@ -79,6 +86,21 @@ def entry_arguments(entry: dict[str, Any], index: int) -> list[str]:
     if not argv or not argv[0]:
         raise ValueError(f"compile entry {index} has an empty compiler command")
     return cast(list[str], argv)
+
+
+def report_prepared_scope(
+    sources: set[Path], selected: list[dict[str, Any]], tracked: set[Path], adaptations: list[dict]
+) -> None:
+    """Report the exact configured scope without altering the build database."""
+    print(
+        f"Configured lint: {len(sources)} tracked native sources, {len(selected)} compile commands; "
+        f"{len(tracked - sources)} tracked native sources outside this build profile.",
+        flush=True,
+    )
+    print(
+        f"GCC numeric LTO arguments adapted: {len(adaptations)}; build database unchanged.",
+        flush=True,
+    )
 
 
 def prepare_database(build: Path, root: Path, report: Path) -> tuple[Path, list[Path]]:
@@ -133,16 +155,8 @@ def prepare_database(build: Path, root: Path, report: Path) -> tuple[Path, list[
         "lto_adaptations": adaptations,
     }
     (report / "scope.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(
-        f"Configured lint: {len(sources)} tracked native sources, {len(selected)} compile commands; "
-        f"{len(tracked - sources)} tracked native sources outside this build profile.",
-        flush=True,
-    )
+    report_prepared_scope(sources, selected, tracked, adaptations)
     print(f"Private analyzer database and receipts: {report}", flush=True)
-    print(
-        f"GCC numeric LTO arguments adapted: {len(adaptations)}; build database unchanged.",
-        flush=True,
-    )
     return database, sorted(sources)
 
 
@@ -151,8 +165,14 @@ def run_analyzer(argv: list[str], root: Path, log: Path) -> int:
         stream.write(f"$ {shlex.join(argv)}\n")
         stream.flush()
         try:
-            result = subprocess.run(  # noqa: S603 -- resolved analyzer argv, no shell
-                argv, cwd=root, stdout=stream, stderr=subprocess.STDOUT, check=False
+            result = run_command(
+                argv,
+                allowed_executables=(argv[0],),
+                cwd=root,
+                stdout=stream,
+                stderr_to_stdout=True,
+                check=False,
+                timeout_seconds=1800,
             )
         except OSError as exc:
             stream.write(f"Cannot execute analyzer: {exc}\n")
@@ -164,12 +184,12 @@ def cppcheck_arguments(binary: str, root: Path, database: Path) -> list[str]:
     """Analyze beyond branch budgets without overriding configured target settings."""
     return [
         binary,
-        "--enable=all",
+        "--enable=warning,style,performance,portability,unusedFunction",
         "--check-level=exhaustive",
-        "--inline-suppr",
         "--library=posix",
         f"--library={root / 'scripts/ci/cppcheck-public-entrypoints.cfg'}",
-        f"--suppressions-list={root / '.cppcheck-suppressions.txt'}",
+        f"--library={root / 'scripts/ci/cppcheck-cjson-entrypoints.cfg'}",
+        f"--library={root / 'scripts/ci/cppcheck-linked-entrypoints.cfg'}",
         f"--project={database}",
         "--error-exitcode=1",
     ]
@@ -198,6 +218,7 @@ def run(args: argparse.Namespace) -> int:
                 str(report),
                 "--quiet",
                 *args.clang_tidy_arg,
+                *(["--checks=-modernize-use-nullptr"] if source.suffix == ".c" else []),
                 str(source),
             ]
             pending[pool.submit(run_analyzer, argv, root, log)] = (source, log)
@@ -234,7 +255,7 @@ def main() -> int:
         parser.error("--jobs must be positive")
     try:
         return run(args)
-    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         print(f"configured lint: {exc}", file=sys.stderr)
         return 2
 

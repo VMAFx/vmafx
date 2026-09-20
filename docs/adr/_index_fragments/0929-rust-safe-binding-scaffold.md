@@ -1,1 +1,5 @@
-| [ADR-0929](0929-rust-safe-binding-scaffold.md) | Promote the safe wrapper layer out of `vmafx-sys` into a standalone `vmafx` crate; ship Phase 1 (`Context`, `Model`, `Picture`, `Score`, `Error`) | Accepted | rust, bindings, ffi, phase4, workspace, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0929](0929-rust-safe-binding-scaffold.md) | Rust `vmafx` safe binding crate — Phase 1 scaffold | Accepted | `rust`, `bindings`, `ffi`, `phase4`, `workspace`, `fork-local` |

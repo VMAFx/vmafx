@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0887: Reject JSON models whose per-feature arrays disagree on length
 
 - **Status**: Accepted
@@ -65,7 +64,7 @@ mismatched models with `-EINVAL`. Concretely:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **(chosen) Parse-time validation + `min` bound in destroy** | Catches malformed input early, defends destroy as a second layer, keeps the rejection visible in error logs. | Two-line change in each walker plus a final validator; +3 unit tests. | Matches the user direction ("surface bad data at parse time, not on destroy. Add a defensive bound in destroy as belt-and-suspenders"). |
 | Destroy-only `min(feature_cap, n_features)` bound | Smallest patch (1 line). | Silently accepts malformed models — downstream `vmaf_predict_score_at_index` would still walk a partially-populated `feature[]` and either crash later or return garbage scores. Hides the bug from operators. | Defence-in-depth without input validation leaves the contract violation unreported. |
 | Reset `model` to zero state on every key reparse | Would normalise the multi-call `feature_names` shape. | Loses any earlier valid state (operator who appends a `feature_opts_dicts` after `feature_names` would see their dicts erased). Surprising semantics. | Too invasive for the surfaced bug; doesn't address the slopes-longer-than-feature_names case at all. |

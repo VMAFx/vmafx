@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # AGENTS.md — vendored cJSON
 
 Parent: [../../AGENTS.md](../../AGENTS.md) (core/src/mcp/).
@@ -37,9 +36,12 @@ ways, only these:
    byte-identical to pristine 1.7.19 under ASan + UBSan.
 4. `can_read` / `can_access_at_index` macro arguments parenthesised;
    `parse_array` / `parse_object` check buffer before dereferencing it;
-   upstream's dead `object = NULL` in `cJSON_free` gone; file carries
-   [ADR-1138](../../../../../docs/adr/1138-c-translation-units-keep-null.md)
-   `modernize-use-nullptr` bracket. These keep clang-tidy and cppcheck at zero.
+   upstream's dead `object = NULL` in `cJSON_free` gone; every public macro
+   parenthesises each argument use; borrowed const keys/nodes cross the legacy
+   mutable storage field through a representation-preserving helper rather
+   than a warning pragma. C-only applicability of `modernize-use-nullptr` is
+   handled by the analyzer driver, so this file carries no suppression marker.
+   These keep clang-tidy and cppcheck at zero.
 5. **`valueint` defined for every double.** Upstream open-codes two range checks
    in `cJSON_CreateNumber` and `cJSON_SetNumberHelper`, then casts. NaN compares
    false against both bounds -> reached `(int)number` = undefined behaviour

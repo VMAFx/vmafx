@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0614: Per-Shot ABR Rendition Selection
 
 - **Status**: Proposed
@@ -29,7 +28,7 @@ phase (P3) and deferred.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | A — complexity-threshold fixed rung | Zero encode overhead | Hand-tuned thresholds; coarse | Accuracy insufficient for production |
 | B — VMAF-targeted rung selection (chosen) | Content-adaptive; no hand-tuning | O(rungs × shots) probes | Mitigated by ADR-0615 (NR) |
 | C — learned per-shot predictor | Zero runtime overhead | Training data + ADR-0618 dependency | Deferred post classifier |
@@ -55,7 +54,7 @@ phase (P3) and deferred.
 ## Implementation phases
 
 | Phase | Description | Effort |
-|-------|-------------|--------|
+| ------- | ------------- | -------- |
 | P1 | `rendition_picker.py`; per-shot rung evaluation; unit tests | 2 days |
 | P2 | Integration with `tune_per_shot` and `merge_shots`; extended `EncodingPlan` | 1 day |
 | P3 | DASH resolution clustering; multi-Representation output | 2 days |

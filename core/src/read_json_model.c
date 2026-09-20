@@ -385,7 +385,7 @@ static int parse_score_transform(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_libsvm_model(json_stream *s, VmafModel *model)
+static int parse_libsvm_model(const json_stream *s, VmafModel *model)
 {
     size_t sz;
     const char *libsvm_model = json_get_string(s, &sz);
@@ -552,7 +552,7 @@ static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafMod
  * disagree on length — a malformed model. Reject at parse time (per
  * ADR-0887) so downstream consumers don't have to defend against
  * partially-populated feature[] ranges. */
-static int validate_feature_arrays(VmafModel *model)
+static int validate_feature_arrays(const VmafModel *model)
 {
     for (unsigned i = 0; i < model->n_features; i++) {
         if (!model->feature[i].name) {

@@ -21,9 +21,11 @@
  * C2=(0.03*L)^2 use the caller-supplied L.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -57,7 +59,6 @@ static void pu21_ssim_init_window(struct iqa_kernel *window)
 
 /* Cross-TU: declared in pu21_ssim.h, called from pu21.c init()/close().
  * clang-tidy misc-use-internal-linkage runs per-TU and can't see the bridge. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU helper — external linkage required (ADR-0278).
 int pu21_ssim_workspace_alloc(struct pu21_ssim_workspace *ws, size_t n)
 {
     assert(ws && n > 0);
@@ -78,11 +79,10 @@ int pu21_ssim_workspace_alloc(struct pu21_ssim_workspace *ws, size_t n)
 }
 
 /* Cross-TU: declared in pu21_ssim.h, called from pu21.c init()/close(). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU helper — external linkage required (ADR-0278).
 void pu21_ssim_workspace_free(struct pu21_ssim_workspace *ws)
 {
     assert(ws);
-    /* free(NULL) is a well-defined no-op (C89 §7.20.3.2); NULL each pointer
+    /* free(VMAF_NULLPTR) is a well-defined no-op (C89 §7.20.3.2); VMAF_NULLPTR each pointer
      * afterwards so a subsequent free() (e.g. close() after a failed init())
      * is a safe no-op rather than a double-free. */
     free(ws->ref_f);
@@ -92,13 +92,13 @@ void pu21_ssim_workspace_free(struct pu21_ssim_workspace *ws)
     free(ws->ref_sigma_sqd);
     free(ws->cmp_sigma_sqd);
     free(ws->sigma_both);
-    ws->ref_f = NULL;
-    ws->cmp_f = NULL;
-    ws->ref_mu = NULL;
-    ws->cmp_mu = NULL;
-    ws->ref_sigma_sqd = NULL;
-    ws->cmp_sigma_sqd = NULL;
-    ws->sigma_both = NULL;
+    ws->ref_f = VMAF_NULLPTR;
+    ws->cmp_f = VMAF_NULLPTR;
+    ws->ref_mu = VMAF_NULLPTR;
+    ws->cmp_mu = VMAF_NULLPTR;
+    ws->ref_sigma_sqd = VMAF_NULLPTR;
+    ws->cmp_sigma_sqd = VMAF_NULLPTR;
+    ws->sigma_both = VMAF_NULLPTR;
 }
 
 /* Blur mu / squared / cross terms, then convert E[x^2] -> variance (clamped to
@@ -167,7 +167,6 @@ static double pu21_ssim_accumulate(const struct pu21_ssim_workspace *ws, int cw,
 
 /* Cross-TU: declared in pu21_ssim.h, called from pu21.c. clang-tidy
  * misc-use-internal-linkage runs per-TU and can't see the header bridge. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU helper — external linkage required (ADR-0278).
 int pu21_compute_ssim(struct pu21_ssim_workspace *ws, const double *ref, const double *dist, int w,
                       int h, double L, double *score)
 {
@@ -212,5 +211,3 @@ int pu21_compute_ssim(struct pu21_ssim_workspace *ws, const double *ref, const d
     *score = ssim_sum / ((double)cw * (double)ch);
     return 0;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -117,7 +117,6 @@ static inline int vmaf_gpu_dispatch_parse_env(const char *env_value, const char 
         const char *v;
         const char *next;
         size_t tok_name_len;
-        int idx;
 
         /* Skip leading whitespace and separators. */
         while (*p == ' ' || *p == '\t' || *p == ',')
@@ -132,7 +131,7 @@ static inline int vmaf_gpu_dispatch_parse_env(const char *env_value, const char 
         tok_name_len = (size_t)(colon - p);
         if (tok_name_len == name_len && memcmp(p, feature_name, name_len) == 0) {
             v = colon + 1;
-            idx = vmaf_gpu_dispatch_match_strategy(v, strategy_names);
+            const int idx = vmaf_gpu_dispatch_match_strategy(v, strategy_names);
             if (idx >= 0) {
                 *out_strategy_idx = idx;
                 return 1;

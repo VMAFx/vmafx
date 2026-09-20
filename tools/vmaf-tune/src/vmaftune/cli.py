@@ -20,7 +20,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 from . import __version__
 from .bisect import bisect_target_vmaf
@@ -64,6 +64,9 @@ from .prefilter import (
 )
 from .resolution import neg_model_for
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
+
+if TYPE_CHECKING:
+    from .report import CodecRow, CodecSweepPoint
 
 
 class _TrackedDefaultAction(argparse.Action):
@@ -2398,15 +2401,14 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
                 _resolved_framerate = _info.fps
             if _resolved_total_frames is None and _info.frame_count > 0:
                 _resolved_total_frames = _info.frame_count
-    else:
-        # Raw YUV source: explicit geometry is required.
-        if _resolved_width is None or _resolved_height is None:
-            sys.stderr.write(
-                "vmaf-tune tune-per-shot: --width and --height are required "
-                "for raw YUV sources. For container sources (mp4, mkv, …) "
-                "these flags are optional and auto-probed via ffprobe.\n"
-            )
-            return 2
+    # Raw YUV source: explicit geometry is required.
+    elif _resolved_width is None or _resolved_height is None:
+        sys.stderr.write(
+            "vmaf-tune tune-per-shot: --width and --height are required "
+            "for raw YUV sources. For container sources (mp4, mkv, …) "
+            "these flags are optional and auto-probed via ffprobe.\n"
+        )
+        return 2
 
     if _resolved_width is None or _resolved_height is None:
         sys.stderr.write(
@@ -5072,7 +5074,7 @@ def _coerce_finite_float(value: Any, default: float = math.nan) -> float:
     return v
 
 
-def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignore[name-defined]  # noqa: F821
+def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:
     """Build a :class:`vmaftune.report.CodecSweepPoint` from a v2 row.
 
     The compare-sweep JSON row carries ``target_vmaf`` as a top-level
@@ -5124,7 +5126,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignor
     )
 
 
-def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:  # type: ignore[name-defined]  # noqa: F821
+def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:
     """Build a :class:`vmaftune.report.CodecRow` from a compare JSON row.
 
     Coerces ``null`` / NaN numerics to ``NaN`` (which the renderer
@@ -5152,8 +5154,6 @@ def _run_report(args: argparse.Namespace) -> int:
 
     from .compare import detect_schema_version
     from .report import (
-        CodecRow,
-        CodecSweepPoint,
         LadderRung,
         LadderSample,
         ReportData,

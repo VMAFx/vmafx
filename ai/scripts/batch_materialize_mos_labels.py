@@ -13,16 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
+from materialize_mos_labels import REPO_ROOT, materialize
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
-from materialize_mos_labels import REPO_ROOT, materialize  # noqa: E402
-
-from aiutils.cli_helpers import (  # noqa: E402
+from aiutils.cli_helpers import (
     add_batch_manifest_arguments,
     collect_cli_argv,
     make_argument_parser,
 )
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _CONFIG_FIELDS = {

@@ -1,5 +1,7 @@
-- **changed(operator):** `vmafx-operator` is now composed with the golusoris
-  fx framework (ADR-1119 Phase 1). The hand-rolled
+# Changelog fragment
+
+- **changed(operator):** `vmafx-operator` is now composed with the golusoris fx
+  framework (ADR-1119 Phase 1). The hand-rolled
   `ctrl.NewManager(...) + mgr.Start(ctrl.SetupSignalHandler())` entry point is
   replaced by `fx.New(...).Run()` over golusoris's `k8s/operator` module: fx
   owns signal handling and the run loop, golusoris `log.Module` supplies the

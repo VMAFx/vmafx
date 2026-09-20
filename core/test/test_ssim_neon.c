@@ -54,12 +54,6 @@
 #include "feature/iqa/ssim_simd.h"
 #include "feature/iqa/ssim_tools.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Element counts exercised by every kernel test. The 4-lane NEON body
  * covers `n - (n % 4)` elements and the scalar tail the rest, so the
  * list deliberately hits every residue class mod 4 (and n == 0). */
@@ -250,7 +244,7 @@ static char *check_precompute_case(int n, uint32_t seed)
         (void)fprintf(stderr, "\n  n=%d: %d mismatching element(s)\n", n, mismatches);
         mu_assert("ssim_precompute_neon diverges from the scalar reference", 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_precompute_neon_matches_scalar(void)
@@ -260,7 +254,7 @@ static char *test_ssim_precompute_neon_matches_scalar(void)
         if (msg)
             return msg;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Seeds the variance inputs. Index 0 and index `n - 1` (when it exists)
@@ -330,7 +324,7 @@ static char *check_variance_case(int n, uint32_t seed)
         (void)fprintf(stderr, "\n  n=%d: %d mismatching element(s)\n", n, mismatches);
         mu_assert("ssim_variance_neon diverges from the scalar reference", 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_variance_neon_matches_scalar(void)
@@ -339,7 +333,7 @@ static char *test_ssim_variance_neon_matches_scalar(void)
      * shows the full mismatch census (which residues of n break, and
      * whether the offending index sits in the vector body or the tail)
      * rather than only the first offender. */
-    char *first = NULL;
+    char *first = VMAF_NULLPTR;
     for (int t = 0; t < K_NUM_SIZES; ++t) {
         char *msg = check_variance_case(k_sizes[t], 0x5eed0002u + (uint32_t)k_sizes[t]);
         if (msg && !first)
@@ -434,7 +428,7 @@ static char *check_accumulate_case(int n, uint32_t seed)
                       got_s);
         mu_assert("ssim_accumulate_neon diverges from the scalar reference", 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_accumulate_neon_matches_scalar(void)
@@ -444,7 +438,7 @@ static char *test_ssim_accumulate_neon_matches_scalar(void)
         if (msg)
             return msg;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* End-to-end: the same picture pair through the real `iqa_ssim()` with
@@ -474,7 +468,7 @@ static char *test_ssim_neon_end_to_end_matches_scalar(void)
     float neon_c;
     float neon_s;
     uint32_t state = 0x5eed0004u;
-    char *msg = NULL;
+    char *msg = VMAF_NULLPTR;
 
     mu_assert("out of memory", ref && cmp);
 
@@ -493,15 +487,17 @@ static char *test_ssim_neon_end_to_end_matches_scalar(void)
         cmp[i] = (i % 37u < 11u) ? ref[i] : ref[i] + rng_float(&state, 24.0f);
     }
 
-    iqa_convolve_set_dispatch(NULL);
-    iqa_ssim_set_dispatch(NULL, NULL, NULL);
-    scalar_score = iqa_ssim(ref, cmp, w, h, &window, NULL, NULL, &scalar_l, &scalar_c, &scalar_s);
+    iqa_convolve_set_dispatch(VMAF_NULLPTR);
+    iqa_ssim_set_dispatch(VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR);
+    scalar_score = iqa_ssim(ref, cmp, w, h, &window, VMAF_NULLPTR, VMAF_NULLPTR, &scalar_l,
+                            &scalar_c, &scalar_s);
 
     iqa_ssim_set_dispatch(ssim_precompute_neon, ssim_variance_neon, ssim_accumulate_neon);
-    neon_score = iqa_ssim(ref, cmp, w, h, &window, NULL, NULL, &neon_l, &neon_c, &neon_s);
+    neon_score =
+        iqa_ssim(ref, cmp, w, h, &window, VMAF_NULLPTR, VMAF_NULLPTR, &neon_l, &neon_c, &neon_s);
 
     /* Leave the globals as the rest of the process expects them. */
-    iqa_ssim_set_dispatch(NULL, NULL, NULL);
+    iqa_ssim_set_dispatch(VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR);
 
     if (!f32_bits_eq(scalar_score, neon_score) || !f32_bits_eq(scalar_l, neon_l) ||
         !f32_bits_eq(scalar_c, neon_c) || !f32_bits_eq(scalar_s, neon_s)) {
@@ -531,7 +527,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

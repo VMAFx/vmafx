@@ -16,8 +16,6 @@
  *
  */
 
-#pragma once
-
 #ifndef MOTION_TOOLS_H_
 #define MOTION_TOOLS_H_
 

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - All in-tree references to `lusoris/vmaf` (GitHub URLs, repository slugs, GHCR
   registry paths, OCI labels) updated to `VMAFx/vmafx` following the GitHub
   organization cutover. GHCR image paths use lowercase `vmafx/vmafx` per OCI

@@ -1,8 +1,7 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0561 — Widen HIP `gfx_targets` hardcoded fallback
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | **Status** | Accepted |
 | **Date** | 2026-05-18 |
 | **Deciders** | lusoris, Claude (Anthropic) |
@@ -60,7 +59,7 @@ documenting the four-step resolution order and the operator override syntax.
 ## Alternatives considered
 
 | Option | Notes | Decision |
-|--------|-------|----------|
+| -------- | ------- | ---------- |
 | Keep `gfx90a` only | Requires every operator to pass `-Dhip_gfx_targets=...` explicitly; error-prone and not documented at build time. The fork broke silently on first use after a container rebuild — the build succeeded but runtime failed. | Rejected |
 | Query GPU at configure time only | `rocm_agent_enumerator` / `hipconfig` already fill steps 2–3; no new logic needed. The fix is purely step 4. | Redundant — steps 2–3 already do this |
 | Add `gfx1035` (another Raphael variant) | The `HSA_OVERRIDE_GFX_VERSION=10.3.0` already maps the iGPU to `gfx1030`; a native `gfx1035` blob is not needed. | Rejected — not a production target in this fork |

@@ -1,1 +1,5 @@
-| [ADR-0874](0874-magic-number-audit-cert-int07c.md) | Name magic numbers in fork-added C surfaces (CERT INT07-C closeout pass 1) — adds ~20 named `#define` constants across `core/src/mcp/`, `core/src/picture.c`, `core/src/cuda/picture_cuda.c`, `core/src/libvmaf.c`. Rename-only; no numeric values changed. | Accepted | 2026-05-30 | cleanup, cert, mcp, dnn, picture, cuda, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0874](0874-magic-number-audit-cert-int07c.md) | Name magic numbers in fork-added C surfaces (CERT INT07-C closeout pass 1) | Accepted | cleanup, cert, mcp, dnn, picture, cuda |

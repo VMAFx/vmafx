@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD056 MD060 -->
 # ADR-0422: CLI HIP and Metal Backend Selectors
 
 - **Status**: Accepted
@@ -12,8 +11,8 @@ The Metal backend (T8-1b, ADR-0420/ADR-0421) and the HIP backend (ADR-0212
 scaffold) are fully wired at the engine level — feature extractors are
 registered under `HAVE_METAL` / `HAVE_HIP` guards and imported into
 `VmafContext` via `vmaf_metal_import_state` / `vmaf_hip_import_state`. However,
-the standalone `vmaf` CLI (`core/tools/`) lacked the surface flags to
-activate either backend at runtime:
+the standalone `vmaf` CLI (`core/tools/`) lacked the surface flags to activate
+either backend at runtime:
 
 - No `--no_hip` / `--hip_device` flags existed (HIP shipped with engine wiring
   but no CLI counterparts).
@@ -25,9 +24,8 @@ built with `-Denable_hip=true` or (on macOS) with Metal enabled. The gap was
 discovered during a post-merge audit of the Metal runtime PR (#765).
 
 The fix is symmetric: add the four flag pairs and two `--backend` values
-following the established Vulkan/SYCL pattern (`X_device >= 0` as the
-activation trigger; `--backend X` disables all siblings and defaults device
-to 0).
+following the established Vulkan/SYCL pattern (`X_device >= 0` as the activation
+trigger; `--backend X` disables all siblings and defaults device to 0).
 
 ## Decision
 
@@ -42,23 +40,23 @@ backends.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Activate HIP/Metal via `--gpumask` like CUDA | Consistent with CUDA | `gpumask` is a CUDA-specific disable bitmask; reusing it for AMD/Apple semantics is confusing and conflicts with the CUDA-disable bit contract | Rejected |
-| Auto-activate when built in (no explicit flag required) | Less user friction | Silent GPU use surprises users on multi-backend Linux hosts; breaks the opt-in contract SYCL/Vulkan/HIP already established | Rejected |
-| Ship only `--backend hip|metal`, skip per-flag pairs | Smaller diff | Users cannot combine `--no_hip --no_metal` on a fully-built binary to force CPU; breaks the granular-disable pattern used by CUDA/SYCL/Vulkan | Rejected |
+| Option                                                              | Pros                 | Cons                                                                                                                                           | Why not chosen |
+| ------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Activate HIP/Metal via `--gpumask` like CUDA                        | Consistent with CUDA | `gpumask` is a CUDA-specific disable bitmask; reusing it for AMD/Apple semantics is confusing and conflicts with the CUDA-disable bit contract | Rejected       |
+| Auto-activate when built in (no explicit flag required)             | Less user friction   | Silent GPU use surprises users on multi-backend Linux hosts; breaks the opt-in contract SYCL/Vulkan/HIP already established                    | Rejected       |
+| Ship only `--backend hip` or `--backend metal`, skip per-flag pairs | Smaller diff         | Users cannot combine `--no_hip --no_metal` on a fully-built binary to force CPU; breaks the granular-disable pattern used by CUDA/SYCL/Vulkan  | Rejected       |
 
 ## Consequences
 
 - **Positive**: HIP and Metal are now fully CLI-accessible; `--backend hip` /
-  `--backend metal` work analogously to `--backend vulkan`; `--backend cpu`
-  now correctly disables all five GPU backends.
+  `--backend metal` work analogously to `--backend vulkan`; `--backend cpu` now
+  correctly disables all five GPU backends.
 - **Positive**: Test coverage added (`test_backend_hip`, `test_backend_metal`,
   `test_hip_device_explicit`, `test_metal_device_explicit`,
   `test_no_hip_no_metal_flags` in `core/test/test_cli_parse.c`).
 - **Neutral**: `docs/usage/cli.md` updated; no ffmpeg-patches update required
-  (the patches consume `libvmaf` C API / public headers, not the `vmaf` CLI
-  tool flags).
+  (the patches consume `libvmaf` C API / public headers, not the `vmaf` CLI tool
+  flags).
 - **Negative**: None identified.
 
 ## References

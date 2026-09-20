@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0248: `nr_metric_v1` joins dynamic-PTQ family (T5-3d)
 
 - **Status**: Accepted
@@ -45,7 +44,7 @@ inside budget.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Strip duplicates only inside `ptq_dynamic.py` (no export-side fix) | Smallest blast radius; existing on-disk model bytes stay frozen | Every future re-export of any tiny model would re-introduce the bug; the next model to quantise hits it again | Rejected. The cost of also updating `exports.py` is two lines, the cost of repeating the diagnosis is hours per model. |
 | Re-train + re-export from a Lightning checkpoint with `dynamo=True` and a fresh `dynamic_axes` spec | Yields a graph the upstream tooling produces cleanly; future-proof against torch.onnx legacy quirks | No `runs/c2_konvid/last.ckpt` is committed; KoNViD-1k corpus is not redistributable; would block T5-3d on a full retraining cycle just to reproduce the same weights | Rejected. The fp32 weights are already audited (sha256-pinned in registry); re-saving with `value_info` stripped preserves the audit chain. |
 | Pin a workaround in `onnxruntime` | Long-term cleanest if upstream accepts | Requires new release dependency; `onnxruntime` 1.22 is the floor across the rest of the harness | Rejected. The strip is a five-line ONNX-level transform; an upstream patch would take longer than this entire PR. |

@@ -1,1 +1,5 @@
-- Fixed: removed `should_fail: true` from `test_sycl_motion_add_uv_parity`; the underlying SYCL motion UV-plane dictionary include was resolved and the test now passes cleanly. (PR #823)
+# Changelog fragment
+
+- Fixed: removed `should_fail: true` from `test_sycl_motion_add_uv_parity`; the
+  underlying SYCL motion UV-plane dictionary include was resolved and the test
+  now passes cleanly. (PR #823)

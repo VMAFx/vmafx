@@ -31,11 +31,12 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -131,8 +132,7 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]):  # type: ignore[no-untyped-def]
     ap = make_argument_parser(prog="train_vmaf_tiny_v2.py", description=__doc__)
     ap.add_argument(
         "--parquet",
@@ -159,12 +159,50 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
-    import pandas as pd
+
+def _save_outputs(args, raw_argv, model, mean, std, metrics, n_rows):  # type: ignore[no-untyped-def]
     import torch
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    checkpoint = {
+        "state_dict": model.state_dict(),
+        "features": list(CANONICAL_6),
+        "input_mean": mean.tolist(),
+        "input_std": std.tolist(),
+        "train_metrics": metrics,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch_size": args.batch_size,
+        "seed": args.seed,
+    }
+    args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(checkpoint, args.out_ckpt)
+    stats_payload = {
+        **{key: value for key, value in checkpoint.items() if key != "state_dict"},
+        "n_train_rows": n_rows,
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"parquet": args.parquet},
+            outputs={
+                "checkpoint_target": str(args.out_ckpt),
+                "stats_target": str(args.out_stats),
+            },
+        ),
+    }
+    write_manifest_json(args.out_stats, stats_payload)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+
+    import pandas as pd
 
     df = pd.read_parquet(args.parquet)
     missing = [c for c in CANONICAL_6 if c not in df.columns]
@@ -189,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     std = np.where(std < 1e-8, 1.0, std)
     x_std = (x - mean) / std
 
-    print(f"[train-v2] mean={mean.round(4).tolist()}\n" f"           std ={std.round(4).tolist()}")
+    print(f"[train-v2] mean={mean.round(4).tolist()}\n           std ={std.round(4).tolist()}")
     print(f"[train-v2] training mlp_small for {args.epochs} epochs (lr={args.lr})")
     model = _train(
         x_std,
@@ -205,45 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
     )
 
-    args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "state_dict": model.state_dict(),
-            "features": list(CANONICAL_6),
-            "input_mean": mean.tolist(),
-            "input_std": std.tolist(),
-            "train_metrics": metrics,
-            "epochs": args.epochs,
-            "lr": args.lr,
-            "batch_size": args.batch_size,
-            "seed": args.seed,
-        },
-        args.out_ckpt,
-    )
-
-    stats_payload = {
-        "features": list(CANONICAL_6),
-        "input_mean": mean.tolist(),
-        "input_std": std.tolist(),
-        "train_metrics": metrics,
-        "epochs": args.epochs,
-        "lr": args.lr,
-        "batch_size": args.batch_size,
-        "seed": args.seed,
-        "n_train_rows": len(df),
-        "run_provenance": build_run_provenance(
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"parquet": args.parquet},
-            outputs={
-                "checkpoint_target": str(args.out_ckpt),
-                "stats_target": str(args.out_stats),
-            },
-        ),
-    }
-    write_manifest_json(args.out_stats, stats_payload)
+    _save_outputs(args, raw_argv, model, mean, std, metrics, len(df))
     print(f"[train-v2] wrote {args.out_ckpt} and {args.out_stats}")
     return 0
 

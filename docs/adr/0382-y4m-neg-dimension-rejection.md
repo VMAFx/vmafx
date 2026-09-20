@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0382: Y4M header parser — reject non-positive width or height before allocation
 
 - **Status**: Accepted
@@ -48,7 +47,7 @@ INT32-C (avoid signed integer overflow in size arithmetic).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add guard in `y4m_parse_tags` directly at the `case 'W'` / `case 'H'` sites | Fails early, inside the scanner | Splits the "semantic validation" concern from "syntactic parsing"; `sscanf` may legitimately return a negative value for signed tag fields in other contexts | Rejected — cleaner to keep the scanner as a pure lexer and validate semantics at the open-impl level |
 | Guard `malloc` result and skip `fread` when `dst_buf == NULL` | Avoids the SEGV without touching the parser | Masks the root cause; a NULL `dst_buf` with non-zero `dst_buf_read_sz` is never valid; any future code path could re-introduce the dereference | Rejected — defensive allocation-return checks do not substitute for input validation |
 | Catch SIGSEGV with a signal handler in the fuzz harness | Prevents the fuzzer from crashing | Signal handlers are unsafe in ASAN mode; silences a real bug rather than fixing it | Rejected explicitly per task constraint |

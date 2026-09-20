@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `vmafx` — modernized CLI reference
 
 `vmafx` is a thin alias for the `vmaf` binary that activates modernized
@@ -14,7 +13,7 @@ basename at startup and adjusts its behavior accordingly (ADR-0690).
 ## Modernized defaults
 
 | Behavior | `vmaf` default | `vmafx` default |
-|---|---|---|
+| --- | --- | --- |
 | Output precision | `%.6f` (6 decimal places, matches upstream Netflix) | `%.17g` (IEEE-754 round-trip lossless, `--precision=max`) |
 | Backend selection | auto (SYCL > CUDA > HIP > CPU) | same — auto is the default for both |
 | Startup banner | `VMAF version <V>` | `VMAFX version <V> (precision=max)` |
@@ -65,7 +64,7 @@ When `--netflix-compat` is passed, the following defaults are forced as the
 **final** post-parse pass (overriding any vmafx-mode modernizations):
 
 | Setting | `--netflix-compat` forced value |
-|---|---|
+| --- | --- |
 | Backend | CPU only (equivalent to `--backend=cpu`) |
 | Output precision | `%.6f` (equivalent to `--precision=legacy`) |
 | Default model | `vmaf_v0.6.1` (restores legacy upstream default model) |
@@ -105,7 +104,7 @@ Three companion Python tools also ship `vmafx-*` aliases alongside their
 existing `vmaf-*` names. Both names invoke the same callable:
 
 | `vmaf-*` name | `vmafx-*` alias | Package |
-|---|---|---|
+| --- | --- | --- |
 | `vmaf-train` | `vmafx-train` | `ai/` (hatch package `vmaf-train`) |
 | `vmaf-tune` | `vmafx-tune` | `tools/vmaf-tune/` (hatch package `vmaf-tune`) |
 | `vmaf-mcp` | `vmafx-mcp` | `mcp-server/vmaf-mcp/` (hatch package `vmaf-mcp`) |

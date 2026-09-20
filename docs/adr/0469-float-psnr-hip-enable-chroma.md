@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0469: `float_psnr` HIP twin — wire `enable_chroma` option
 
 - **Status**: Accepted
@@ -30,7 +29,7 @@ the option is not silently dropped.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | No change | Zero effort | Silent option drop; violates option-parity | Incorrect |
 | Add option + full chroma dispatch | Full parity with integer_psnr | float_psnr has no chroma kernel; out of scope | Follow-up item |
 

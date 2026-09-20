@@ -47,12 +47,6 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #ifndef BRISQUE_TESTDATA_DIR
 #define BRISQUE_TESTDATA_DIR "."
 #endif
@@ -88,7 +82,7 @@ static char *test_brisque_gamma_tables(void)
     mu_assert("AGGD table at g=1.0", close_abs(aggd[i1], 0.5, 1e-9));
     /* AGGD(2) = Gamma(1)^2/(Gamma(0.5)*Gamma(1.5)) = 2/pi = 0.63661977. */
     mu_assert("AGGD table at g=2.0", close_abs(aggd[i2], 0.6366197723675814, 1e-7));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 7x7 Gaussian window: unit-sum and symmetric. */
@@ -102,7 +96,7 @@ static char *test_brisque_window(void)
     mu_assert("window sums to 1.0", close_abs(sum, 1.0, 1e-15));
     for (int i = 0; i < BRISQUE_WIN_LW; i++)
         mu_assert("window not symmetric", close_abs(win[i], win[BRISQUE_WIN_LEN - 1 - i], 1e-15));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* GGD fit of [-2,-1,0,1,2,3]: sigma^2 = mean(x^2) = 19/6 = 3.16666...; the
@@ -115,7 +109,7 @@ static char *test_brisque_ggd_fit(void)
     const BrisqueGgd g = brisque_fit_ggd(x, 6, ggd);
     mu_assert("ggd sigma_sq != 19/6", close_abs(g.sigma_sq, 19.0 / 6.0, 1e-12));
     mu_assert("ggd alpha != 4.223", close_abs(g.alpha, 4.223, 1e-9));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* AGGD fit of [-2,-1,0,1,2,3]: zeros EXCLUDED (MATLAB strict <0 / >0).
@@ -131,7 +125,7 @@ static char *test_brisque_aggd_fit(void)
     mu_assert("aggd right_sq != 14/3 (zeros excluded)", close_abs(a.right_sq, 14.0 / 3.0, 1e-12));
     mu_assert("aggd alpha != 5.837", close_abs(a.alpha, 5.837, 1e-9));
     mu_assert("aggd eta != 0.49356003", close_abs(a.eta, 0.493560033834, 1e-9));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Symmetric AGGD: leftstd == rightstd -> eta = (r-l)*... = 0 exactly. */
@@ -142,7 +136,7 @@ static char *test_brisque_aggd_symmetric(void)
     const double x[4] = {-2.0, -1.0, 1.0, 2.0};
     const BrisqueAggd a = brisque_fit_aggd(x, 4, aggd);
     mu_assert("symmetric aggd eta != 0", close_abs(a.eta, 0.0, 1e-15));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* AGGD flat-patch guard: all-zero input must not NaN (mean_sq==0). */
@@ -161,7 +155,7 @@ static char *test_brisque_aggd_flat(void)
     const BrisqueGgd g = brisque_fit_ggd(x, 4, ggd);
     mu_assert("flat ggd alpha not finite", isfinite(g.alpha));
     mu_assert("flat ggd sigma_sq not finite", isfinite(g.sigma_sq));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Per-input-size check for the resize coefficient table: out_len formula,
@@ -187,7 +181,7 @@ static char *check_bicubic_resize_size(int in)
         }
         mu_assert("bicubic row not normalized", close_abs(s, 1.0, 1e-12));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* MATLAB-imresize bicubic coeffs normalize to 1 for even AND odd inputs, and
@@ -200,7 +194,7 @@ static char *test_brisque_bicubic_coeffs(void)
         if (msg)
             return msg;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* range-scale anchors: feat==min -> -1, feat==max -> +1, mid -> 0. */
@@ -212,7 +206,7 @@ static char *test_brisque_range_scale(void)
     mu_assert("range_scale(max) != +1", close_abs(brisque_range_scale(hi, lo, hi), 1.0, 1e-12));
     mu_assert("range_scale(mid) != 0",
               close_abs(brisque_range_scale((lo + hi) / 2.0, lo, hi), 0.0, 1e-12));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -275,11 +269,11 @@ static void brisque_teardown(VmafPicture *pic, VmafFeatureCollector *fc,
 static char *brisque_e2e_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
                                VmafPicture *pic, unsigned w, unsigned h, unsigned frame)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("brisque");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("brisque");
     if (!fex)
         return (char *)"brisque extractor not registered";
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     if (err)
         return (char *)"brisque context_create failed";
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
@@ -291,15 +285,16 @@ static char *brisque_e2e_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCol
     err = load_yuv420p8_frame(pic, BRISQUE_TESTDATA_DIR "/ref_576x324_48f.yuv", w, h, frame);
     if (err)
         return (char *)"could not load ref_576x324_48f.yuv frame 0";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run the extraction and read back the score. NR metric: ref and dist are the
  * same picture (only dist is scored). */
 static char *brisque_e2e_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
-                                     VmafPicture *pic, double *score)
+                                     const VmafPicture *pic, double *score)
 {
-    int err = vmaf_feature_extractor_context_extract(ctx, pic, NULL, pic, NULL, 0, fc);
+    int err =
+        vmaf_feature_extractor_context_extract(ctx, pic, VMAF_NULLPTR, pic, VMAF_NULLPTR, 0, fc);
     if (err)
         return (char *)"brisque extract failed";
     err = vmaf_feature_collector_get_score(fc, "brisque", score, 0);
@@ -307,7 +302,7 @@ static char *brisque_e2e_check_score(VmafFeatureExtractorContext *ctx, VmafFeatu
         return (char *)"could not read brisque score";
     if (!isfinite(*score))
         return (char *)"brisque score is not finite";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_brisque_end_to_end(void)
@@ -337,8 +332,8 @@ static char *test_brisque_end_to_end(void)
     const unsigned H = 324;
     const unsigned FRAME = 0;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
 
@@ -368,11 +363,11 @@ cleanup:
 static char *brisque_odd_dim_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
                                    VmafPicture *pic, unsigned w, unsigned h)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("brisque");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("brisque");
     if (!fex)
         return (char *)"brisque extractor not registered (odd-dim)";
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     if (err)
         return (char *)"odd-dim: context_create failed";
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
@@ -384,7 +379,7 @@ static char *brisque_odd_dim_setup(VmafFeatureExtractorContext **ctx, VmafFeatur
     err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8, w, h);
     if (err)
         return (char *)"odd-dim: picture alloc failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Fill luma with a deterministic sinusoidal pattern (non-flat, non-random)
@@ -409,9 +404,10 @@ static void brisque_fill_odd_dim_pattern(VmafPicture *pic, unsigned w, unsigned 
 /* Run the extraction and read back the score, using the odd-dim test's own
  * message prefixes (distinct from brisque_e2e_check_score's). */
 static char *brisque_odd_dim_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
-                                         VmafPicture *pic, double *score)
+                                         const VmafPicture *pic, double *score)
 {
-    int err = vmaf_feature_extractor_context_extract(ctx, pic, NULL, pic, NULL, 0, fc);
+    int err =
+        vmaf_feature_extractor_context_extract(ctx, pic, VMAF_NULLPTR, pic, VMAF_NULLPTR, 0, fc);
     if (err)
         return (char *)"odd-dim: extract failed";
     err = vmaf_feature_collector_get_score(fc, "brisque", score, 0);
@@ -419,7 +415,7 @@ static char *brisque_odd_dim_check_score(VmafFeatureExtractorContext *ctx, VmafF
         return (char *)"odd-dim: could not read brisque score";
     if (!isfinite(*score))
         return (char *)"odd-dim: brisque score is not finite";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Odd-dimension regression (577x325, both odd): the imresize coefficient table
@@ -430,8 +426,8 @@ static char *test_brisque_odd_dim(void)
     const unsigned W = 577;
     const unsigned H = 325;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
 
@@ -460,5 +456,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

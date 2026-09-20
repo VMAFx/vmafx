@@ -62,6 +62,7 @@ and refreshes the registry sha256.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -73,15 +74,16 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Pinned upstream provenance — bumping these is a deliberate weights swap.
 UPSTREAM_REPO = "https://github.com/soCzech/TransNetV2"
@@ -191,59 +193,25 @@ def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
-def _replace_segmentsum(onnx_path: Path) -> None:
-    """Splice ColorHistograms/UnsortedSegmentSum -> ScatterND.
+def _find_segmentsum(graph):  # type: ignore[no-untyped-def]
+    for index, node in enumerate(graph.node):
+        if node.op_type == "SegmentSum":
+            return node, index
+    return None, -1
 
-    Original semantics (rank-2 segment IDs, num_segments=51200):
 
-        output[51200] = zeros
-        for i in range(100):
-            for j in range(1296):
-                output[ids[i, j]] += data[i, j]
+def _read_num_segments(graph, initializer_name: str) -> int:  # type: ignore[no-untyped-def]
+    from onnx import numpy_helper
 
-    Equivalent ONNX rewrite:
+    for initializer in graph.initializer:
+        if initializer.name == initializer_name:
+            return int(numpy_helper.to_array(initializer))
+    sys.exit(f"SegmentSum num_segments {initializer_name!r} not in initializers")
 
-        flat_ids   = Reshape(ids,  [-1, 1])
-        flat_data  = Reshape(data, [-1])
-        zeros      = ConstantOfShape([51200])
-        output     = ScatterND(zeros, flat_ids, flat_data, reduction='add')
 
-    onnxruntime CPU EP supports ScatterND with ``reduction='add'`` since
-    opset 16; we target opset 17 here.
-    """
+def _segmentsum_replacement(data_in: str, ids_in: str, out_name: str, num_seg: int):
     import numpy as np
-    import onnx
     from onnx import TensorProto, helper, numpy_helper
-
-    m = onnx.load(str(onnx_path))
-    g = m.graph
-
-    seg_node = None
-    seg_idx = -1
-    for i, n in enumerate(g.node):
-        if n.op_type == "SegmentSum":
-            seg_node = n
-            seg_idx = i
-            break
-    if seg_node is None:
-        # Already rewritten; idempotent re-run.
-        return
-
-    data_in, ids_in, num_seg_in = seg_node.input
-    out_name = seg_node.output[0]
-
-    num_seg = None
-    for init in g.initializer:
-        if init.name == num_seg_in:
-            num_seg = int(numpy_helper.to_array(init))
-            break
-    if num_seg is None:
-        sys.exit(f"SegmentSum num_segments {num_seg_in!r} not in initializers")
-    if num_seg != NUM_HISTOGRAM_BINS:
-        sys.exit(
-            f"unexpected num_segments {num_seg}; "
-            f"expected {NUM_HISTOGRAM_BINS} (100 frames * 512 bins)"
-        )
 
     prefix = "fork_segmentsum_"
     new_inits = [
@@ -288,25 +256,45 @@ def _replace_segmentsum(onnx_path: Path) -> None:
             name=prefix + "scatter",
         ),
     ]
+    return new_nodes, new_inits
 
-    final_nodes = list(g.node)
+
+def _replace_segmentsum(onnx_path: Path) -> None:
+    """Splice ColorHistograms/UnsortedSegmentSum into equivalent ScatterND."""
+    import onnx
+    from onnx import helper
+
+    model = onnx.load(str(onnx_path))
+    graph = model.graph
+    seg_node, seg_idx = _find_segmentsum(graph)
+    if seg_node is None:
+        return
+    data_in, ids_in, num_seg_in = seg_node.input
+    num_seg = _read_num_segments(graph, num_seg_in)
+    if num_seg != NUM_HISTOGRAM_BINS:
+        sys.exit(
+            f"unexpected num_segments {num_seg}; expected {NUM_HISTOGRAM_BINS} "
+            "(100 frames * 512 bins)"
+        )
+    new_nodes, new_inits = _segmentsum_replacement(data_in, ids_in, seg_node.output[0], num_seg)
+
+    final_nodes = list(graph.node)
     final_nodes.pop(seg_idx)
     final_nodes[seg_idx:seg_idx] = new_nodes
-
     new_graph = helper.make_graph(
         final_nodes,
-        g.name,
-        list(g.input),
-        list(g.output),
-        list(g.initializer) + new_inits,
-        value_info=list(g.value_info),
+        graph.name,
+        list(graph.input),
+        list(graph.output),
+        list(graph.initializer) + new_inits,
+        value_info=list(graph.value_info),
     )
     new_model = helper.make_model(
         new_graph,
-        opset_imports=list(m.opset_import),
+        opset_imports=list(model.opset_import),
         producer_name="vmafx-transnet-v2-export",
     )
-    new_model.ir_version = m.ir_version
+    new_model.ir_version = model.ir_version
     onnx.checker.check_model(new_model)
     onnx.save(new_model, str(onnx_path))
 
@@ -423,7 +411,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--upstream-dir",
@@ -458,8 +446,12 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Skip op-allowlist + TF parity verification",
     )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
     raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    args = _parse_args(raw_argv)
 
     _verify_upstream(args.upstream_dir)
     print(f"[upstream] verified saved_model.pb + variables under {args.upstream_dir}")

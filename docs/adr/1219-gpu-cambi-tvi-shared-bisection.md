@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1219: gpu cambi tvi shared bisection
 
-# ADR-1219: The HIP and Metal CAMBI twins use the shared TVI bisection and the CPU's border rules
+**Decision:** The HIP and Metal CAMBI twins use the shared TVI bisection and the
+CPU's border rules
 
 - **Status**: Proposed
 - **Date**: 2026-09-07
@@ -19,17 +20,17 @@ CPU scores at 5.85.
 `luma_range.head - diff - 1`, returning the largest sample at which
 `delta_luminance > tvi_threshold * mean_luminance` still holds. The HIP and
 Metal twins instead hand-rolled a binary search over the **negated** predicate,
-seeded from luma 0 rather than `foot`, and derived `vlt_luma` as the *largest*
-luma below the visibility threshold where the CPU takes the *smallest* luma at
+seeded from luma 0 rather than `foot`, and derived `vlt_luma` as the _largest_
+luma below the visibility threshold where the CPU takes the _smallest_ luma at
 or above it. Replicating both algorithms against the same luminance model at the
 default `max_log_contrast = 2` gives
 
 | `diff` | CPU bisection | hand-rolled |
-| --- | --- | --- |
-| 1 | 182 | 1026 |
-| 2 | 309 | 1025 |
-| 3 | 436 | 1024 |
-| 4 | 563 | 4 |
+| ------ | ------------- | ----------- |
+| 1      | 182           | 1026        |
+| 2      | 309           | 1025        |
+| 3      | 436           | 1024        |
+| 4      | 563           | 4           |
 
 Because `v_band_size = tvi_for_diff[num_diffs-1] + 1 - v_band_base`, the derived
 luma band collapses from 564 entries to a handful and `calculate_c_values()`
@@ -40,8 +41,9 @@ pass into a 3-row ring buffer and writes the vertical result back only under
 `if (i > 1)`, which covers output rows `1 .. height-2`. Rows `0` and `height-1`
 therefore keep the **original, unfiltered** pixels — not the
 horizontally-filtered ones, which never leave the ring. The CUDA and SYCL twins
-already carry the matching `if (axis == 1 && (y == 0 || y >= height - 1)) return;`
-guard; HIP and Metal filtered those rows.
+already carry the matching
+`if (axis == 1 && (y == 0 || y >= height - 1)) return;` guard; HIP and Metal
+filtered those rows.
 
 **3. The 7x7 mask box sum.** `get_spatial_mask_for_index()` accumulates a
 zero-padded summed-area table — `memset(dp, 0, ...)`,
@@ -51,11 +53,11 @@ the border pixel instead, counting that pixel's zero-derivative flag up to three
 extra times per axis and flipping `box_sum > mask_index` on a band of border
 pixels. CUDA and Metal already zero-pad.
 
-Nothing caught any of this, because both the HIP and Metal CAMBI parity
-fixtures were 8-bit gradients stepping 32 code levels every 32 columns. CAMBI
-counts neighbour differences of `1 .. num_diffs` (4 at the default), so a
-32-level step is an edge, not banding: **both fixtures scored exactly 0.0 on the
-CPU as well**, and the parity assertion was `0 == 0`.
+Nothing caught any of this, because both the HIP and Metal CAMBI parity fixtures
+were 8-bit gradients stepping 32 code levels every 32 columns. CAMBI counts
+neighbour differences of `1 .. num_diffs` (4 at the default), so a 32-level step
+is an edge, not banding: **both fixtures scored exactly 0.0 on the CPU as
+well**, and the parity assertion was `0 == 0`.
 
 ## Decision
 
@@ -69,12 +71,12 @@ the CPU score is non-degenerate before comparing, so the gate cannot rot back to
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Call the shared `vmaf_cambi_init_tvi_and_vlt()` (chosen) | One implementation of the bisection for CPU, SYCL, HIP and Metal; cannot drift again; also fixes `vlt_luma` and validates the derived band | None — the helper is host-side scalar code the twins already run in `init()` | — |
-| Port the CPU bisection into each twin | Keeps the twins self-contained | Re-creates exactly the duplication that produced this bug, in two more places | The CUDA twin's own hand-port is why this class exists |
-| Fix the hand-rolled predicate in place | Smallest diff | Still a fourth copy of a subtle bisection, and it would not fix `vlt_luma` or the band validation | Same objection |
-| Loosen the parity tolerance to accommodate the residual | Would have made the test green after fixing only the TVI table | The residual was two more real defects; a wider gate would have buried them | Tolerances are not a diagnosis |
+| Option                                                   | Pros                                                                                                                                       | Cons                                                                                              | Why not chosen                                         |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Call the shared `vmaf_cambi_init_tvi_and_vlt()` (chosen) | One implementation of the bisection for CPU, SYCL, HIP and Metal; cannot drift again; also fixes `vlt_luma` and validates the derived band | None — the helper is host-side scalar code the twins already run in `init()`                      | —                                                      |
+| Port the CPU bisection into each twin                    | Keeps the twins self-contained                                                                                                             | Re-creates exactly the duplication that produced this bug, in two more places                     | The CUDA twin's own hand-port is why this class exists |
+| Fix the hand-rolled predicate in place                   | Smallest diff                                                                                                                              | Still a fourth copy of a subtle bisection, and it would not fix `vlt_luma` or the band validation | Same objection                                         |
+| Loosen the parity tolerance to accommodate the residual  | Would have made the test green after fixing only the TVI table                                                                             | The residual was two more real defects; a wider gate would have buried them                       | Tolerances are not a diagnosis                         |
 
 ## Consequences
 
@@ -86,7 +88,7 @@ the CPU score is non-degenerate before comparing, so the gate cannot rot back to
   to it on any content CAMBI is meant to detect. No in-tree snapshot covers a
   HIP CAMBI run.
 - **Neutral / follow-ups**: the CUDA and SYCL CAMBI parity tests keep their own
-  gradient fixture, which also scores `0.0`; CUDA has a second *textured*
+  gradient fixture, which also scores `0.0`; CUDA has a second _textured_
   fixture that scores `0.173` and does assert something. Giving those two the
   10-bit banding fixture is a follow-up, tracked in the research digest.
 

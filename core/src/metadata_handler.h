@@ -27,7 +27,7 @@ extern "C" {
 
 typedef struct VmafCallbackItem {
     VmafMetadataConfiguration metadata_cfg;
-    void (*callback)(void *, VmafMetadata *);
+    void (*callback)(void *, const VmafMetadata *);
     void *data;
     struct VmafCallbackItem *next;
 } VmafCallbackItem;

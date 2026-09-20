@@ -29,8 +29,6 @@
 #define BLOCK_DIM 8
 #define BLOCK_SIZE (BLOCK_DIM * BLOCK_DIM)
 
-extern "C" {
-
 /* Per-plane CSF tables — identical to the CUDA twin (same constants as
  * csf_y / csf_cb420 / csf_cr420 in third_party/xiph/psnr_hvs.c). */
 __device__ static const float CSF_TABLES[3][64] = {
@@ -193,6 +191,106 @@ __device__ static inline int sample_to_int(float v, int bpc)
     return (int)(v * 16.0f + 0.5f);
 }
 
+__device__ static void psnr_hvs_means(const int *ref, const int *dist, float *ref_means,
+                                      float *dist_means, float *ref_global, float *dist_global)
+{
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            *ref_global += (float)ref[i * 8 + j];
+            *dist_global += (float)dist[i * 8 + j];
+            ref_means[sub] += (float)ref[i * 8 + j];
+            dist_means[sub] += (float)dist[i * 8 + j];
+        }
+    }
+    *ref_global /= 64.f;
+    *dist_global /= 64.f;
+    for (int i = 0; i < 4; i++)
+        ref_means[i] /= 16.f;
+    for (int i = 0; i < 4; i++)
+        dist_means[i] /= 16.f;
+}
+
+__device__ static void psnr_hvs_variances(const int *ref, const int *dist, const float *ref_means,
+                                          const float *dist_means, float ref_global,
+                                          float dist_global, float *ref_ratio, float *dist_ratio)
+{
+    float ref_vars[4] = {0.f, 0.f, 0.f, 0.f};
+    float dist_vars[4] = {0.f, 0.f, 0.f, 0.f};
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            const float ref_delta = (float)ref[i * 8 + j] - ref_global;
+            const float dist_delta = (float)dist[i * 8 + j] - dist_global;
+            *ref_ratio += ref_delta * ref_delta;
+            *dist_ratio += dist_delta * dist_delta;
+            const float ref_quad = (float)ref[i * 8 + j] - ref_means[sub];
+            const float dist_quad = (float)dist[i * 8 + j] - dist_means[sub];
+            ref_vars[sub] += ref_quad * ref_quad;
+            dist_vars[sub] += dist_quad * dist_quad;
+        }
+    }
+    *ref_ratio *= 1.f / 63.f * 64.f;
+    *dist_ratio *= 1.f / 63.f * 64.f;
+    for (int i = 0; i < 4; i++)
+        ref_vars[i] *= 1.f / 15.f * 16.f;
+    for (int i = 0; i < 4; i++)
+        dist_vars[i] *= 1.f / 15.f * 16.f;
+    if (*ref_ratio > 0.f)
+        *ref_ratio = (ref_vars[0] + ref_vars[1] + ref_vars[2] + ref_vars[3]) / *ref_ratio;
+    if (*dist_ratio > 0.f)
+        *dist_ratio = (dist_vars[0] + dist_vars[1] + dist_vars[2] + dist_vars[3]) / *dist_ratio;
+}
+
+__device__ static float psnr_hvs_mask_threshold(const int *ref_dct, const int *dist_dct,
+                                                float ref_ratio, float dist_ratio, int plane,
+                                                float *mask)
+{
+    float ref_mc = 0.f;
+    float dist_mc = 0.f;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const float scaled = CSF_TABLES[plane][i * 8 + j] * 0.3885746225901003f;
+            mask[i * 8 + j] = scaled * scaled;
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int j = i == 0 ? 1 : 0; j < 8; j++) {
+            const int sq = ref_dct[i * 8 + j] * ref_dct[i * 8 + j];
+            ref_mc += (float)sq * mask[i * 8 + j];
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int j = i == 0 ? 1 : 0; j < 8; j++) {
+            const int sq = dist_dct[i * 8 + j] * dist_dct[i * 8 + j];
+            dist_mc += (float)sq * mask[i * 8 + j];
+        }
+    }
+    float threshold = sqrtf(ref_mc * ref_ratio) / 32.f;
+    const float dist_threshold = sqrtf(dist_mc * dist_ratio) / 32.f;
+    if (dist_threshold > threshold)
+        threshold = dist_threshold;
+    return threshold;
+}
+
+__device__ static float psnr_hvs_masked_error(const int *ref_dct, const int *dist_dct,
+                                              const float *mask, float threshold, int plane)
+{
+    float result = 0.f;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            const float coeff = CSF_TABLES[plane][i * 8 + j];
+            float error = fabsf((float)ref_dct[i * 8 + j] - (float)dist_dct[i * 8 + j]);
+            if (i != 0 || j != 0) {
+                const float masked = threshold / mask[i * 8 + j];
+                error = error < masked ? 0.f : error - masked;
+            }
+            result += (error * coeff) * (error * coeff);
+        }
+    }
+    return result;
+}
+
 /**
  * psnr_hvs kernel: one HIP block per output 8x8 image block.
  * Cooperative load (64 threads), then thread 0 runs float means /
@@ -204,15 +302,11 @@ __device__ static inline int sample_to_int(float v, int bpc)
  * (tightly-pitched device buffers, no VmafCudaBuffer wrapper).
  * Everything else is identical to the CUDA twin.
  */
-__global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
-                              const float *__restrict__ dist_in,
-                              float *__restrict__ partials_out,
-                              unsigned width,
-                              unsigned height,
-                              unsigned num_blocks_x,
-                              unsigned num_blocks_y,
-                              int plane,
-                              int bpc)
+extern "C" __global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
+                                        const float *__restrict__ dist_in,
+                                        float *__restrict__ partials_out, unsigned width,
+                                        unsigned height, unsigned num_blocks_x,
+                                        unsigned num_blocks_y, int plane, int bpc)
 {
     __shared__ int s_ref[64];
     __shared__ int s_dist[64];
@@ -249,54 +343,12 @@ __global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
 
     float s_means[4] = {0.f, 0.f, 0.f, 0.f};
     float d_means[4] = {0.f, 0.f, 0.f, 0.f};
-    float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
-    float d_vars[4] = {0.f, 0.f, 0.f, 0.f};
     float s_gmean = 0.f, d_gmean = 0.f;
     float s_gvar = 0.f, d_gvar = 0.f;
-    float s_mc = 0.f, d_mc = 0.f;
 
     if (local_idx == 0u) {
-        /* Pass 1: means. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                s_gmean += (float)s_ref[i * 8 + j];
-                d_gmean += (float)s_dist[i * 8 + j];
-                s_means[sub] += (float)s_ref[i * 8 + j];
-                d_means[sub] += (float)s_dist[i * 8 + j];
-            }
-        }
-        s_gmean /= 64.f;
-        d_gmean /= 64.f;
-        for (int i = 0; i < 4; i++)
-            s_means[i] /= 16.f;
-        for (int i = 0; i < 4; i++)
-            d_means[i] /= 16.f;
-
-        /* Pass 2: variances. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                const float ds = (float)s_ref[i * 8 + j] - s_gmean;
-                const float dd = (float)s_dist[i * 8 + j] - d_gmean;
-                s_gvar += ds * ds;
-                d_gvar += dd * dd;
-                const float qs = (float)s_ref[i * 8 + j] - s_means[sub];
-                const float qd = (float)s_dist[i * 8 + j] - d_means[sub];
-                s_vars[sub] += qs * qs;
-                d_vars[sub] += qd * qd;
-            }
-        }
-        s_gvar *= 1.f / 63.f * 64.f;
-        d_gvar *= 1.f / 63.f * 64.f;
-        for (int i = 0; i < 4; i++)
-            s_vars[i] *= 1.f / 15.f * 16.f;
-        for (int i = 0; i < 4; i++)
-            d_vars[i] *= 1.f / 15.f * 16.f;
-        if (s_gvar > 0.f)
-            s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
-        if (d_gvar > 0.f)
-            d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
+        psnr_hvs_means(s_ref, s_dist, s_means, d_means, &s_gmean, &d_gmean);
+        psnr_hvs_variances(s_ref, s_dist, s_means, d_means, s_gmean, d_gmean, &s_gvar, &d_gvar);
     }
 
     /* Integer DCT in place, parallel across the first eight threads. */
@@ -306,53 +358,12 @@ __global__ void psnr_hvs_hip(const float *__restrict__ ref_in,
     if (local_idx != 0u)
         return;
 
-    /* Pass 3: per-coefficient mask*dct^2 accumulation, skipping DC. */
     float mask[64];
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const float c = CSF_TABLES[plane][i * 8 + j];
-            const float m = c * 0.3885746225901003f;
-            mask[i * 8 + j] = m * m;
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        const int j0 = (i == 0) ? 1 : 0;
-        for (int j = j0; j < 8; j++) {
-            const int sq = dct_s[i * 8 + j] * dct_s[i * 8 + j];
-            s_mc += (float)sq * mask[i * 8 + j];
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        const int j0 = (i == 0) ? 1 : 0;
-        for (int j = j0; j < 8; j++) {
-            const int sq = dct_d[i * 8 + j] * dct_d[i * 8 + j];
-            d_mc += (float)sq * mask[i * 8 + j];
-        }
-    }
-    float sm = sqrtf(s_mc * s_gvar) / 32.f;
-    const float dm = sqrtf(d_mc * d_gvar) / 32.f;
-    if (dm > sm)
-        sm = dm;
-    const float thresh = sm;
-
-    /* Pass 4: per-coefficient masked-error contribution. */
-    float ret = 0.f;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const float c = CSF_TABLES[plane][i * 8 + j];
-            float err = fabsf((float)dct_s[i * 8 + j] - (float)dct_d[i * 8 + j]);
-            if (i != 0 || j != 0) {
-                const float t = thresh / mask[i * 8 + j];
-                err = err < t ? 0.f : err - t;
-            }
-            ret += (err * c) * (err * c);
-        }
-    }
+    const float threshold = psnr_hvs_mask_threshold(dct_s, dct_d, s_gvar, d_gvar, plane, mask);
+    float ret = psnr_hvs_masked_error(dct_s, dct_d, mask, threshold, plane);
     if (!valid_block)
         ret = 0.f;
 
     const unsigned slot = blk_y * num_blocks_x + blk_x;
     partials_out[slot] = ret;
 }
-
-} /* extern "C" */

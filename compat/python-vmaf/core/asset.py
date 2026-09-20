@@ -1,5 +1,8 @@
 import copy
 import hashlib
+from importlib import import_module
+from pathlib import Path
+from typing import ClassVar
 
 from slugify import slugify
 
@@ -8,7 +11,6 @@ from vmaf.tools.decorator import deprecated, override
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
-import os
 
 from vmaf.config import VmafConfig
 from vmaf.core.mixin import WorkdirEnabled
@@ -19,6 +21,8 @@ from vmaf.tools.misc import (
     get_unique_str_from_recursive_dict,
     map_yuv_type_to_bitdepth,
 )
+
+_COMPARISON_VALUE_196 = 196
 
 
 class Asset(WorkdirEnabled):
@@ -39,7 +43,7 @@ class Asset(WorkdirEnabled):
     can be decoded by ffmpeg.
     """
 
-    SUPPORTED_YUV_TYPES = [
+    SUPPORTED_YUV_TYPES: ClassVar = [
         "yuv420p",
         "yuv422p",
         "yuv444p",
@@ -56,10 +60,19 @@ class Asset(WorkdirEnabled):
     ]
     DEFAULT_YUV_TYPE = "yuv420p"
 
-    SUPPORTED_RESAMPLING_TYPES = ["bilinear", "bicubic", "lanczos"]
+    SUPPORTED_RESAMPLING_TYPES: ClassVar = ["bilinear", "bicubic", "lanczos"]
     DEFAULT_RESAMPLING_TYPE = "bicubic"
 
-    ORDERED_FILTER_LIST = ["crop", "pad", "fps", "format", "gblur", "eq", "lutyuv", "yadif"]
+    ORDERED_FILTER_LIST: ClassVar = [
+        "crop",
+        "pad",
+        "fps",
+        "format",
+        "gblur",
+        "eq",
+        "lutyuv",
+        "yadif",
+    ]
 
     # ==== constructor ====
 
@@ -71,7 +84,7 @@ class Asset(WorkdirEnabled):
         ref_path,
         dis_path,
         asset_dict,
-        workdir_root=VmafConfig.workdir_path(),
+        workdir_root=None,
     ):
         """
         :param dataset:
@@ -83,6 +96,8 @@ class Asset(WorkdirEnabled):
         :param workdir_root:
         :return:
         """
+        if workdir_root is None:
+            workdir_root = VmafConfig.workdir_path()
         WorkdirEnabled.__init__(self, workdir_root)
         self.dataset = dataset
         self.content_id = content_id
@@ -135,22 +150,21 @@ class Asset(WorkdirEnabled):
         if "use_workpath_as_procpath" in new_asset_dict:
             del new_asset_dict["use_workpath_as_procpath"]
 
-        dataset = kwargs["dataset"] if "dataset" in kwargs else self.dataset
-        content_id = kwargs["content_id"] if "content_id" in kwargs else self.content_id
-        asset_id = kwargs["asset_id"] if "asset_id" in kwargs else self.asset_id
-        ref_path = kwargs["ref_path"] if "ref_path" in kwargs else self.ref_path
-        dis_path = kwargs["dis_path"] if "dis_path" in kwargs else self.dis_path
-        workdir_root = kwargs["workdir_root"] if "workdir_root" in kwargs else self.workdir_root
+        dataset = kwargs.get("dataset", self.dataset)
+        content_id = kwargs.get("content_id", self.content_id)
+        asset_id = kwargs.get("asset_id", self.asset_id)
+        ref_path = kwargs.get("ref_path", self.ref_path)
+        dis_path = kwargs.get("dis_path", self.dis_path)
+        workdir_root = kwargs.get("workdir_root", self.workdir_root)
 
         # additional or override elements in asset_dict
         if "asset_dict" in kwargs:
             for key in kwargs["asset_dict"]:
                 new_asset_dict[key] = kwargs["asset_dict"][key]
 
-        new_asset = self.__class__(
+        return self.__class__(
             dataset, content_id, asset_id, ref_path, dis_path, new_asset_dict, workdir_root
         )
-        return new_asset
 
     @classmethod
     def from_repr(cls, rp):
@@ -158,7 +172,7 @@ class Asset(WorkdirEnabled):
         Reconstruct Asset from repr string.
         :return:
         """
-        import ast
+        ast = import_module("ast")
 
         d = ast.literal_eval(rp)
         assert "dataset" in d
@@ -186,15 +200,13 @@ class Asset(WorkdirEnabled):
         """
         if "groundtruth" in self.asset_dict:
             return self.asset_dict["groundtruth"]
-        else:
-            return None
+        return None
 
     @property
     def groundtruth_std(self):
         if "groundtruth_std" in self.asset_dict:
             return self.asset_dict["groundtruth_std"]
-        else:
-            return None
+        return None
 
     @property
     def raw_groundtruth(self):
@@ -204,8 +216,7 @@ class Asset(WorkdirEnabled):
         """
         if "raw_groundtruth" in self.asset_dict:
             return self.asset_dict["raw_groundtruth"]
-        else:
-            return None
+        return None
 
     # ==== width and height ====
 
@@ -218,10 +229,9 @@ class Asset(WorkdirEnabled):
         """
         if "ref_width" in self.asset_dict and "ref_height" in self.asset_dict:
             return self.asset_dict["ref_width"], self.asset_dict["ref_height"]
-        elif "width" in self.asset_dict and "height" in self.asset_dict:
+        if "width" in self.asset_dict and "height" in self.asset_dict:
             return self.asset_dict["width"], self.asset_dict["height"]
-        else:
-            return None
+        return None
 
     @property
     def dis_width_height(self):
@@ -232,10 +242,9 @@ class Asset(WorkdirEnabled):
         """
         if "dis_width" in self.asset_dict and "dis_height" in self.asset_dict:
             return self.asset_dict["dis_width"], self.asset_dict["dis_height"]
-        elif "width" in self.asset_dict and "height" in self.asset_dict:
+        if "width" in self.asset_dict and "height" in self.asset_dict:
             return self.asset_dict["width"], self.asset_dict["height"]
-        else:
-            return None
+        return None
 
     @property
     def dis_encode_width_height(self):
@@ -247,8 +256,7 @@ class Asset(WorkdirEnabled):
 
         if "dis_enc_width" in self.asset_dict and "dis_enc_height" in self.asset_dict:
             return self.asset_dict["dis_enc_width"], self.asset_dict["dis_enc_height"]
-        else:
-            return self.dis_width_height
+        return self.dis_width_height
 
     @property
     def dis_encode_bitdepth(self):
@@ -265,8 +273,7 @@ class Asset(WorkdirEnabled):
                 16,
             ], "Supported encoding bitdepths are 8, 10, 12, and 16."
             return self.asset_dict["dis_enc_bitdepth"]
-        else:
-            return map_yuv_type_to_bitdepth(self.dis_yuv_type)
+        return map_yuv_type_to_bitdepth(self.dis_yuv_type)
 
     def clear_up_width_height(self):
         if "width" in self.asset_dict:
@@ -295,13 +302,12 @@ class Asset(WorkdirEnabled):
 
         if "quality_width" in self.asset_dict and "quality_height" in self.asset_dict:
             return self.asset_dict["quality_width"], self.asset_dict["quality_height"]
-        elif self.ref_yuv_type == "notyuv":
+        if self.ref_yuv_type == "notyuv":
             return self.dis_width_height
-        elif self.dis_yuv_type == "notyuv":
+        if self.dis_yuv_type == "notyuv":
             return self.ref_width_height
-        else:
-            assert self.ref_width_height == self.dis_width_height
-            return self.ref_width_height
+        assert self.ref_width_height == self.dis_width_height
+        return self.ref_width_height
 
     # ==== start and end frame ====
 
@@ -316,25 +322,24 @@ class Asset(WorkdirEnabled):
         if "ref_start_frame" in self.asset_dict and "ref_end_frame" in self.asset_dict:
             return self.asset_dict["ref_start_frame"], self.asset_dict["ref_end_frame"]
 
-        elif "start_frame" in self.asset_dict and "end_frame" in self.asset_dict:
+        if "start_frame" in self.asset_dict and "end_frame" in self.asset_dict:
             return self.asset_dict["start_frame"], self.asset_dict["end_frame"]
 
-        elif (
+        if (
             "start_sec" in self.asset_dict
             and "end_sec" in self.asset_dict
             and "fps" in self.asset_dict
         ):
-            start_frame = int(round(self.asset_dict["start_sec"] * self.asset_dict["fps"]))
-            end_frame = int(round(self.asset_dict["end_sec"] * self.asset_dict["fps"])) - 1
+            start_frame = round(self.asset_dict["start_sec"] * self.asset_dict["fps"])
+            end_frame = round(self.asset_dict["end_sec"] * self.asset_dict["fps"]) - 1
             return start_frame, end_frame
 
-        elif "duration_sec" in self.asset_dict and "fps" in self.asset_dict:
+        if "duration_sec" in self.asset_dict and "fps" in self.asset_dict:
             start_frame = 0
-            end_frame = int(round(self.asset_dict["duration_sec"] * self.asset_dict["fps"])) - 1
+            end_frame = round(self.asset_dict["duration_sec"] * self.asset_dict["fps"]) - 1
             return start_frame, end_frame
 
-        else:
-            return None
+        return None
 
     @property
     def dis_start_end_frame(self):
@@ -347,25 +352,24 @@ class Asset(WorkdirEnabled):
         if "dis_start_frame" in self.asset_dict and "dis_end_frame" in self.asset_dict:
             return self.asset_dict["dis_start_frame"], self.asset_dict["dis_end_frame"]
 
-        elif "start_frame" in self.asset_dict and "end_frame" in self.asset_dict:
+        if "start_frame" in self.asset_dict and "end_frame" in self.asset_dict:
             return self.asset_dict["start_frame"], self.asset_dict["end_frame"]
 
-        elif (
+        if (
             "start_sec" in self.asset_dict
             and "end_sec" in self.asset_dict
             and "fps" in self.asset_dict
         ):
-            start_frame = int(round(self.asset_dict["start_sec"] * self.asset_dict["fps"]))
-            end_frame = int(round(self.asset_dict["end_sec"] * self.asset_dict["fps"])) - 1
+            start_frame = round(self.asset_dict["start_sec"] * self.asset_dict["fps"])
+            end_frame = round(self.asset_dict["end_sec"] * self.asset_dict["fps"]) - 1
             return start_frame, end_frame
 
-        elif "duration_sec" in self.asset_dict and "fps" in self.asset_dict:
+        if "duration_sec" in self.asset_dict and "fps" in self.asset_dict:
             start_frame = 0
-            end_frame = int(round(self.asset_dict["duration_sec"] * self.asset_dict["fps"])) - 1
+            end_frame = round(self.asset_dict["duration_sec"] * self.asset_dict["fps"]) - 1
             return start_frame, end_frame
 
-        else:
-            return None
+        return None
 
     def clear_up_start_end_frame(self):
         if "start_frame" in self.asset_dict:
@@ -393,15 +397,13 @@ class Asset(WorkdirEnabled):
         """
         if "duration_sec" in self.asset_dict:
             return self.asset_dict["duration_sec"]
-        elif "start_sec" in self.asset_dict and "end_sec" in self.asset_dict:
+        if "start_sec" in self.asset_dict and "end_sec" in self.asset_dict:
             return self.asset_dict["end_sec"] - self.asset_dict["start_sec"]
-        else:
-            ref_start_end_frame = self.ref_start_end_frame
-            if ref_start_end_frame and "fps" in self.asset_dict:
-                s, e = ref_start_end_frame
-                return (e - s + 1) / float(self.asset_dict["fps"])
-            else:
-                return None
+        ref_start_end_frame = self.ref_start_end_frame
+        if ref_start_end_frame and "fps" in self.asset_dict:
+            s, e = ref_start_end_frame
+            return (e - s + 1) / float(self.asset_dict["fps"])
+        return None
 
     @property
     def dis_duration_sec(self):
@@ -411,41 +413,36 @@ class Asset(WorkdirEnabled):
         """
         if "duration_sec" in self.asset_dict:
             return self.asset_dict["duration_sec"]
-        elif "start_sec" in self.asset_dict and "end_sec" in self.asset_dict:
+        if "start_sec" in self.asset_dict and "end_sec" in self.asset_dict:
             return self.asset_dict["end_sec"] - self.asset_dict["start_sec"]
-        else:
-            dis_start_end_frame = self.dis_start_end_frame
-            if dis_start_end_frame and "fps" in self.asset_dict:
-                start, end = dis_start_end_frame
-                return (end - start + 1) / float(self.asset_dict["fps"])
-            else:
-                return None
+        dis_start_end_frame = self.dis_start_end_frame
+        if dis_start_end_frame and "fps" in self.asset_dict:
+            start, end = dis_start_end_frame
+            return (end - start + 1) / float(self.asset_dict["fps"])
+        return None
 
     @property
     def ref_start_sec(self):
         if self.ref_start_end_frame is None or self.fps is None:
             return None
-        else:
-            ref_start_frame, ref_end_frame = self.ref_start_end_frame
-            fps = self.fps
-            return float(ref_start_frame) / fps
+        ref_start_frame, _ref_end_frame = self.ref_start_end_frame
+        fps = self.fps
+        return float(ref_start_frame) / fps
 
     @property
     def dis_start_sec(self):
         if self.dis_start_end_frame is None or self.fps is None:
             return None
-        else:
-            dis_start_frame, dis_end_frame = self.dis_start_end_frame
-            fps = self.fps
-            return float(dis_start_frame) / fps
+        dis_start_frame, _dis_end_frame = self.dis_start_end_frame
+        fps = self.fps
+        return float(dis_start_frame) / fps
 
     @property
     def fps(self):
         if "fps" in self.asset_dict:
             assert self.asset_dict["fps"] > 0.0, "Frame rate has to be positive."
             return self.asset_dict["fps"]
-        else:
-            return None
+        return None
 
     @property
     def rebuf_indices(self):
@@ -458,8 +455,7 @@ class Asset(WorkdirEnabled):
                 len(list(filter(lambda x: x < 0, self.asset_dict["rebuf_indices"]))) == 0
             ), "All rebuffering indices have to be >= 0."
             return self.asset_dict["rebuf_indices"]
-        else:
-            return None
+        return None
 
     # ==== str ====
 
@@ -485,7 +481,7 @@ class Asset(WorkdirEnabled):
         # specificying resampling type should be ignored
         if (
             self.ref_resampling_type != self.DEFAULT_RESAMPLING_TYPE
-            and not self.ref_width_height == self.quality_width_height
+            and self.ref_width_height != self.quality_width_height
         ):
             if s != "":
                 s += "_"
@@ -541,7 +537,7 @@ class Asset(WorkdirEnabled):
         # specificying resampling type should be ignored
         if (
             self.dis_resampling_type != self.DEFAULT_RESAMPLING_TYPE
-            and not self.dis_width_height == self.quality_width_height
+            and self.dis_width_height != self.quality_width_height
         ):
             if s != "":
                 s += "_"
@@ -599,13 +595,14 @@ class Asset(WorkdirEnabled):
         if quality_str:
             s += "_q_{quality_str}".format(quality_str=quality_str)
 
-        if len(s) > 196:  # upper limit of filename is 256 but leave some space for prefix/suffix
+        if (
+            len(s) > _COMPARISON_VALUE_196
+        ):  # upper limit of filename is 256 but leave some space for prefix/suffix
             # SHA-1 used as a cache-filename shortener, not for security. Input
             # is the asset's own config string the harness just serialised; no
-            # second-pre-image attacker. See Research-0090, F4–F12. Switching
+            # second-pre-image attacker. See Research-0090, F4-F12. Switching
             # to SHA-256 would invalidate every existing user's on-disk cache.
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            s = hashlib.sha1(s.encode("utf-8")).hexdigest()
+            s = hashlib.sha1(s.encode("utf-8"), usedforsecurity=False).hexdigest()
 
         return s
 
@@ -619,7 +616,7 @@ class Asset(WorkdirEnabled):
         for key in self.__dict__:
             if key == "workdir":
                 d[key] = ""
-            elif key == "ref_path" or key == "dis_path":
+            elif key in {"ref_path", "dis_path"}:
                 d[key] = get_file_name_with_extension(self.__dict__[key])
             else:
                 d[key] = self.__dict__[key]
@@ -661,15 +658,13 @@ class Asset(WorkdirEnabled):
     def ref_workfile_path(self):
         if self.use_path_as_workpath:
             return self.ref_path
-        else:
-            return os.path.join(self.workdir, f"ref_{str(self)}")
+        return str(Path(self.workdir).joinpath(f"ref_{self!s}"))
 
     @property
     def dis_workfile_path(self):
         if self.use_path_as_workpath:
             return self.dis_path
-        else:
-            return os.path.join(self.workdir, f"dis_{str(self)}")
+        return str(Path(self.workdir).joinpath(f"dis_{self!s}"))
 
     # ==== procfile ====
 
@@ -677,15 +672,13 @@ class Asset(WorkdirEnabled):
     def ref_procfile_path(self):
         if self.use_workpath_as_procpath:
             return self.ref_workfile_path
-        else:
-            return os.path.join(self.workdir, f"refp_{str(self)}")
+        return str(Path(self.workdir).joinpath(f"refp_{self!s}"))
 
     @property
     def dis_procfile_path(self):
         if self.use_workpath_as_procpath:
             return self.dis_workfile_path
-        else:
-            return os.path.join(self.workdir, f"disp_{str(self)}")
+        return str(Path(self.workdir).joinpath(f"disp_{self!s}"))
 
     # ==== bitrate ====
 
@@ -696,7 +689,7 @@ class Asset(WorkdirEnabled):
         make sure ref_duration_sec covers the entire file.
         """
         try:
-            return os.path.getsize(self.ref_path) / self.ref_duration_sec * 8.0 / 1000.0
+            return Path(self.ref_path).stat().st_size / self.ref_duration_sec * 8.0 / 1000.0
         except (OSError, TypeError, ZeroDivisionError):
             # OSError: ref_path missing / unreadable.
             # TypeError: ref_duration_sec is None (no duration declared).
@@ -712,7 +705,7 @@ class Asset(WorkdirEnabled):
         make sure ref_duration_sec covers the entire file.
         """
         try:
-            return os.path.getsize(self.dis_path) / self.dis_duration_sec * 8.0 / 1000.0
+            return Path(self.dis_path).stat().st_size / self.dis_duration_sec * 8.0 / 1000.0
         except (OSError, TypeError, ZeroDivisionError):
             # See ref_bitrate_kbps_for_entire_file for the rationale.
             # (CodeQL py/catch-base-exception)
@@ -725,30 +718,24 @@ class Asset(WorkdirEnabled):
         if "ref_yuv_type" in self.asset_dict:
             if self.asset_dict["ref_yuv_type"] in self.SUPPORTED_YUV_TYPES:
                 return self.asset_dict["ref_yuv_type"]
-            else:
-                assert False, "Unsupported YUV type: {}".format(self.asset_dict["ref_yuv_type"])
-        elif "yuv_type" in self.asset_dict:
+            raise AssertionError("Unsupported YUV type: {}".format(self.asset_dict["ref_yuv_type"]))
+        if "yuv_type" in self.asset_dict:
             if self.asset_dict["yuv_type"] in self.SUPPORTED_YUV_TYPES:
                 return self.asset_dict["yuv_type"]
-            else:
-                assert False, "Unsupported YUV type: {}".format(self.asset_dict["yuv_type"])
-        else:
-            return self.DEFAULT_YUV_TYPE
+            raise AssertionError("Unsupported YUV type: {}".format(self.asset_dict["yuv_type"]))
+        return self.DEFAULT_YUV_TYPE
 
     @property
     def dis_yuv_type(self):
         if "dis_yuv_type" in self.asset_dict:
             if self.asset_dict["dis_yuv_type"] in self.SUPPORTED_YUV_TYPES:
                 return self.asset_dict["dis_yuv_type"]
-            else:
-                assert False, "Unsupported YUV type: {}".format(self.asset_dict["dis_yuv_type"])
-        elif "yuv_type" in self.asset_dict:
+            raise AssertionError("Unsupported YUV type: {}".format(self.asset_dict["dis_yuv_type"]))
+        if "yuv_type" in self.asset_dict:
             if self.asset_dict["yuv_type"] in self.SUPPORTED_YUV_TYPES:
                 return self.asset_dict["yuv_type"]
-            else:
-                assert False, "Unsupported YUV type: {}".format(self.asset_dict["yuv_type"])
-        else:
-            return self.DEFAULT_YUV_TYPE
+            raise AssertionError("Unsupported YUV type: {}".format(self.asset_dict["yuv_type"]))
+        return self.DEFAULT_YUV_TYPE
 
     @property
     @deprecated
@@ -774,8 +761,7 @@ class Asset(WorkdirEnabled):
                 workfile_yuv_type, str(supported_yuv_types)
             )
             return workfile_yuv_type
-        else:
-            return self.DEFAULT_YUV_TYPE
+        return self.DEFAULT_YUV_TYPE
 
     def clear_up_yuv_type(self):
         if "yuv_type" in self.asset_dict:
@@ -792,38 +778,32 @@ class Asset(WorkdirEnabled):
         if "ref_resampling_type" in self.asset_dict:
             if self.asset_dict["ref_resampling_type"] in self.SUPPORTED_RESAMPLING_TYPES:
                 return self.asset_dict["ref_resampling_type"]
-            else:
-                assert False, "Unsupported resampling type: {}".format(
-                    self.asset_dict["ref_resampling_type"]
-                )
-        elif "resampling_type" in self.asset_dict:
+            raise AssertionError(
+                "Unsupported resampling type: {}".format(self.asset_dict["ref_resampling_type"])
+            )
+        if "resampling_type" in self.asset_dict:
             if self.asset_dict["resampling_type"] in self.SUPPORTED_RESAMPLING_TYPES:
                 return self.asset_dict["resampling_type"]
-            else:
-                assert False, "Unsupported resampling type: {}".format(
-                    self.asset_dict["resampling_type"]
-                )
-        else:
-            return self.DEFAULT_RESAMPLING_TYPE
+            raise AssertionError(
+                "Unsupported resampling type: {}".format(self.asset_dict["resampling_type"])
+            )
+        return self.DEFAULT_RESAMPLING_TYPE
 
     @property
     def dis_resampling_type(self):
         if "dis_resampling_type" in self.asset_dict:
             if self.asset_dict["dis_resampling_type"] in self.SUPPORTED_RESAMPLING_TYPES:
                 return self.asset_dict["dis_resampling_type"]
-            else:
-                assert False, "Unsupported resampling type: {}".format(
-                    self.asset_dict["dis_resampling_type"]
-                )
-        elif "resampling_type" in self.asset_dict:
+            raise AssertionError(
+                "Unsupported resampling type: {}".format(self.asset_dict["dis_resampling_type"])
+            )
+        if "resampling_type" in self.asset_dict:
             if self.asset_dict["resampling_type"] in self.SUPPORTED_RESAMPLING_TYPES:
                 return self.asset_dict["resampling_type"]
-            else:
-                assert False, "Unsupported resampling type: {}".format(
-                    self.asset_dict["resampling_type"]
-                )
-        else:
-            return self.DEFAULT_RESAMPLING_TYPE
+            raise AssertionError(
+                "Unsupported resampling type: {}".format(self.asset_dict["resampling_type"])
+            )
+        return self.DEFAULT_RESAMPLING_TYPE
 
     @property
     @deprecated
@@ -841,12 +821,10 @@ class Asset(WorkdirEnabled):
         if "use_path_as_workpath" in self.asset_dict:
             if self.asset_dict["use_path_as_workpath"] == 1:
                 return True
-            elif self.asset_dict["use_path_as_workpath"] == 0:
+            if self.asset_dict["use_path_as_workpath"] == 0:
                 return False
-            else:
-                assert False
-        else:
-            return False
+            raise AssertionError()
+        return False
 
     @use_path_as_workpath.setter
     def use_path_as_workpath(self, bool_value):
@@ -867,12 +845,10 @@ class Asset(WorkdirEnabled):
         if "use_workpath_as_procpath" in self.asset_dict:
             if self.asset_dict["use_workpath_as_procpath"] == 1:
                 return True
-            elif self.asset_dict["use_workpath_as_procpath"] == 0:
+            if self.asset_dict["use_workpath_as_procpath"] == 0:
                 return False
-            else:
-                assert False
-        else:
-            return False
+            raise AssertionError()
+        return False
 
     @use_workpath_as_procpath.setter
     def use_workpath_as_procpath(self, bool_value):
@@ -925,77 +901,66 @@ class Asset(WorkdirEnabled):
             key=key
         )
         assert (
-            target == "ref" or target == "dis" or target is None
+            target in {"ref", "dis"} or target is None
         ), "target is {}, which is not supported".format(target)
         if target is None:
             cmd = key + "_cmd"
             if cmd in self.asset_dict:
                 return self.asset_dict[cmd]
-            else:
-                return None
-        if target == "ref" or target == "dis":
+            return None
+        if target in {"ref", "dis"}:
             cmd = target + "_" + key + "_cmd"
             cmd2 = key + "_cmd"
             if cmd in self.asset_dict:
                 return self.asset_dict[cmd]
-            elif cmd2 in self.asset_dict:
+            if cmd2 in self.asset_dict:
                 return self.asset_dict[cmd2]
-            else:
-                return None
-        else:
-            assert False
+            return None
+        raise AssertionError()
 
     @property
     def ref_proc_callback_str(self):
         if "ref_proc_callback" in self.asset_dict:
             if self.asset_dict["ref_proc_callback"] in proc_func_dict:
                 return self.asset_dict["ref_proc_callback"]
-            else:
-                assert False, "Unsupported ref_proc_callback: {}".format(
-                    self.asset_dict["ref_proc_callback"]
-                )
-        elif "proc_callback" in self.asset_dict:
+            raise AssertionError(
+                "Unsupported ref_proc_callback: {}".format(self.asset_dict["ref_proc_callback"])
+            )
+        if "proc_callback" in self.asset_dict:
             if self.asset_dict["proc_callback"] in proc_func_dict:
                 return self.asset_dict["proc_callback"]
-            else:
-                assert False, "Unsupported proc_callback: {}".format(
-                    self.asset_dict["proc_callback"]
-                )
-        else:
-            return None
+            raise AssertionError(
+                "Unsupported proc_callback: {}".format(self.asset_dict["proc_callback"])
+            )
+        return None
 
     @property
     def ref_proc_callback(self):
         if self.ref_proc_callback_str is None:
             return None
-        else:
-            return proc_func_dict[self.ref_proc_callback_str]
+        return proc_func_dict[self.ref_proc_callback_str]
 
     @property
     def dis_proc_callback_str(self):
         if "dis_proc_callback" in self.asset_dict:
             if self.asset_dict["dis_proc_callback"] in proc_func_dict:
                 return self.asset_dict["dis_proc_callback"]
-            else:
-                assert False, "Unsupported dis_proc_callback: {}".format(
-                    self.asset_dict["dis_proc_callback"]
-                )
-        elif "proc_callback" in self.asset_dict:
+            raise AssertionError(
+                "Unsupported dis_proc_callback: {}".format(self.asset_dict["dis_proc_callback"])
+            )
+        if "proc_callback" in self.asset_dict:
             if self.asset_dict["proc_callback"] in proc_func_dict:
                 return self.asset_dict["proc_callback"]
-            else:
-                assert False, "Unsupported proc_callback: {}".format(
-                    self.asset_dict["proc_callback"]
-                )
-        else:
-            return None
+            raise AssertionError(
+                "Unsupported proc_callback: {}".format(self.asset_dict["proc_callback"])
+            )
+        return None
 
     @property
     def dis_proc_callback(self):
         if self.dis_proc_callback_str is None:
             return None
-        else:
-            return proc_func_dict[self.dis_proc_callback_str]
+        return proc_func_dict[self.dis_proc_callback_str]
 
 
 class NorefAsset(Asset):
@@ -1013,7 +978,7 @@ class NorefAsset(Asset):
         asset_id,
         dis_path,
         asset_dict,
-        workdir_root=VmafConfig.workdir_path(),
+        workdir_root=None,
     ):
         """
         :param dataset:
@@ -1024,6 +989,8 @@ class NorefAsset(Asset):
         :param workdir_root:
         :return:
         """
+        if workdir_root is None:
+            workdir_root = VmafConfig.workdir_path()
         super(NorefAsset, self).__init__(
             dataset,
             content_id,
@@ -1045,21 +1012,18 @@ class NorefAsset(Asset):
         if "use_workpath_as_procpath" in new_asset_dict:
             del new_asset_dict["use_workpath_as_procpath"]
 
-        dataset = kwargs["dataset"] if "dataset" in kwargs else self.dataset
-        content_id = kwargs["content_id"] if "content_id" in kwargs else self.content_id
-        asset_id = kwargs["asset_id"] if "asset_id" in kwargs else self.asset_id
-        dis_path = kwargs["dis_path"] if "dis_path" in kwargs else self.dis_path
-        workdir_root = kwargs["workdir_root"] if "workdir_root" in kwargs else self.workdir_root
+        dataset = kwargs.get("dataset", self.dataset)
+        content_id = kwargs.get("content_id", self.content_id)
+        asset_id = kwargs.get("asset_id", self.asset_id)
+        dis_path = kwargs.get("dis_path", self.dis_path)
+        workdir_root = kwargs.get("workdir_root", self.workdir_root)
 
         # additional or override elements in asset_dict
         if "asset_dict" in kwargs:
             for key in kwargs["asset_dict"]:
                 new_asset_dict[key] = kwargs["asset_dict"][key]
 
-        new_asset = self.__class__(
-            dataset, content_id, asset_id, dis_path, new_asset_dict, workdir_root
-        )
-        return new_asset
+        return self.__class__(dataset, content_id, asset_id, dis_path, new_asset_dict, workdir_root)
 
     def copy_as_asset(self, **kwargs):
         """similar to Noref.copy, except that the returned object is of
@@ -1138,12 +1102,13 @@ class NorefAsset(Asset):
         if quality_str:
             s += "_q_{quality_str}".format(quality_str=quality_str)
 
-        if len(s) > 196:  # upper limit of filename is 256 but leave some space for prefix/suffix
+        if (
+            len(s) > _COMPARISON_VALUE_196
+        ):  # upper limit of filename is 256 but leave some space for prefix/suffix
             # SHA-1 used as a cache-filename shortener, not for security. Input
             # is the asset's own config string the harness just serialised; no
-            # second-pre-image attacker. See Research-0090, F4–F12. Switching
+            # second-pre-image attacker. See Research-0090, F4-F12. Switching
             # to SHA-256 would invalidate every existing user's on-disk cache.
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            s = hashlib.sha1(s.encode("utf-8")).hexdigest()
+            s = hashlib.sha1(s.encode("utf-8"), usedforsecurity=False).hexdigest()
 
         return s

@@ -33,6 +33,8 @@
  *  the luma plane is dispatched (mirrors ADR-0453 CPU/CUDA/SYCL/Vulkan pattern).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -57,9 +59,9 @@
 
 #include "../../hip/hip_handle.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -108,7 +110,7 @@ typedef struct PsnrStateHip {
     /* Per-plane staging buffers: ref and dis for each active plane,
      * copied from VmafPicture data pointers at submit time.
      * Sized at init() for the maximum geometry (luma at [0],
-     * chroma at [1]/[2]).  NULL when n_planes < 3. */
+     * chroma at [1]/[2]).  VMAF_NULLPTR when n_planes < 3. */
     void *ref_in[PSNR_NUM_PLANES];
     void *dis_in[PSNR_NUM_PLANES];
 #endif /* HAVE_HIPCC */
@@ -170,13 +172,13 @@ static int psnr_hip_module_load(PsnrStateHip *s)
     rc = hipModuleGetFunction(&s->funcbpc8, s->module, "calculate_psnr_hip_kernel_8bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return psnr_hip_rc(rc);
     }
     rc = hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_psnr_hip_kernel_16bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return psnr_hip_rc(rc);
     }
     return 0;
@@ -212,7 +214,8 @@ static int psnr_hip_launch_plane(PsnrStateHip *s, unsigned plane, uintptr_t pic_
         (void *)&ref_dev, (void *)&dis_dev, (void *)&stride, (void *)&stride,
         (void *)&sse_dev, (void *)&pw,      (void *)&ph,
     };
-    rc = hipModuleLaunchKernel(func, gx, gy, 1, PSNR_HIP_BX, PSNR_HIP_BY, 1, 0, pstr, args, NULL);
+    rc = hipModuleLaunchKernel(func, gx, gy, 1, PSNR_HIP_BX, PSNR_HIP_BY, 1, 0, pstr, args,
+                               VMAF_NULLPTR);
     if (rc != hipSuccess)
         return psnr_hip_rc(rc);
     return 0;
@@ -269,18 +272,18 @@ static int psnr_hip_bufs_alloc(PsnrStateHip *s)
 static int psnr_hip_bufs_free(PsnrStateHip *s)
 {
     for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
-        if (s->dis_in[p] != NULL)
+        if (s->dis_in[p] != VMAF_NULLPTR)
             (void)hipFree(s->dis_in[p]);
-        if (s->ref_in[p] != NULL)
+        if (s->ref_in[p] != VMAF_NULLPTR)
             (void)hipFree(s->ref_in[p]);
-        s->dis_in[p] = NULL;
-        s->ref_in[p] = NULL;
+        s->dis_in[p] = VMAF_NULLPTR;
+        s->ref_in[p] = VMAF_NULLPTR;
     }
     int rc = 0;
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         if (hipModuleUnload(s->module) != hipSuccess)
             rc = -EIO;
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return rc;
 }
@@ -328,13 +331,13 @@ static int psnr_hip_release(PsnrStateHip *s)
     if (e != 0 && rc == 0)
         rc = e;
 #endif /* HAVE_HIPCC */
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         const int d = vmaf_dictionary_free(&s->feature_name_dict);
         if (d != 0 && rc == 0)
             rc = d;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -365,7 +368,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -373,8 +376,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return err;
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -490,7 +494,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
  * YUV400 and enable_chroma=false sources clamp n_planes to 1 at init time
  * so chroma is never dispatched at runtime, but the static list still claims
  * psnr_cb/psnr_cr so the dispatcher routes requests through psnr_hip. */
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", VMAF_NULLPTR};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_psnr_hip;` in
@@ -500,7 +504,6 @@ static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_psnr_cuda` in
  * `libvmaf/src/feature/cuda/integer_psnr_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_hip = {
     .name = "psnr_hip",
     .init = init_fex_hip,
@@ -521,5 +524,3 @@ VmafFeatureExtractor vmaf_fex_psnr_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

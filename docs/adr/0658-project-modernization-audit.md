@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0658: Project modernization audit
 
 - **Status**: Accepted
@@ -30,7 +29,7 @@ record.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Continue ad hoc `rg` sweeps | No new code; flexible | Easy to repeat stale hits, miss local state rows, and lose findings across sessions | The user explicitly wants the backlog preserved and worked continuously, not rediscovered manually every time |
 | Make the audit a required CI gate | Prevents new stubs from entering unnoticed | The scanner is text-based and would fail on intentional disabled-build contracts, ADR history, and model-artifact blockers | Too noisy for CI; the right contract is advisory queue shaping |
 | Let the tool rewrite `.workingdir2` | Keeps state files automatically current | Machine edits to local planning files risk deleting context that needs human judgement | Existing project rules keep local state updates editorial; the tool stays read-only |

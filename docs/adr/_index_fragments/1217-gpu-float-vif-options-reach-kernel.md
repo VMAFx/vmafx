@@ -1,1 +1,5 @@
-| [ADR-1217](1217-gpu-float-vif-options-reach-kernel.md) | The GPU float-VIF kernels read `vif_sigma_nsq` and `vif_enhn_gain_limit` from their options | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1217](1217-gpu-float-vif-options-reach-kernel.md) | The GPU float-VIF kernels read `vif_sigma_nsq` and `vif_enhn_gain_limit` from their options | Proposed | `cuda`, `sycl`, `hip`, `correctness`, `feature-extractor`, `testing` |

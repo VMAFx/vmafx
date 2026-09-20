@@ -7,6 +7,8 @@
  *  part 3b — ADR-0192 / ADR-0195). CUDA twin of float_psnr_vulkan.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -24,9 +26,9 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -65,9 +67,9 @@ typedef struct FloatPsnrStateCuda {
 
 /*
  * Size the table explicitly and leave the terminator element out: C
- * zero-initialises the trailing element, which is exactly the `.name == NULL`
+ * zero-initialises the trailing element, which is exactly the `.name == VMAF_NULLPTR`
  * sentinel the option walker stops on. Written this way rather than with an
- * explicit `{0}` / `{NULL}` terminator, because either spells a null pointer
+ * explicit `{0}` / `{VMAF_NULLPTR}` terminator, because either spells a null pointer
  * constant and adds a `modernize-use-nullptr` diagnostic that would push this
  * file past its ADR-1142 clang-tidy baseline; and rather than with the C23
  * empty initialiser `{}`, because MSVC's partial C23 mode (`/std:clatest`,
@@ -88,6 +90,40 @@ static const VmafOption options[2] = {
 
 #define FPSNR_BX 16
 #define FPSNR_BY 16
+
+static void cleanup_float_psnr_init(VmafFeatureExtractor *fex)
+{
+    FloatPsnrStateCuda *s = fex->priv;
+    if (s->ref_in) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
+        free(s->ref_in);
+    }
+    if (s->dis_in) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_in);
+        free(s->dis_in);
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+}
+
+static int init_float_psnr_buffers(VmafFeatureExtractor *fex, size_t plane_bytes, size_t pbytes)
+{
+    FloatPsnrStateCuda *s = fex->priv;
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
+    if (!ret) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            ret = -ENOMEM;
+    }
+    if (ret)
+        cleanup_float_psnr_init(fex);
+    return ret;
+}
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
@@ -120,7 +156,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -130,7 +166,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_psnr_kernel_16bpc"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t plane_bytes = (size_t)w * h * bpp;
@@ -139,64 +175,22 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->wg_count = gx * gy;
     const size_t pbytes = (size_t)s->wg_count * sizeof(float);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
-    if (ret)
-        goto free_buffers;
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
-    if (ret)
-        goto free_buffers;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_buffers;
-    }
-    return 0;
-
-free_buffers:
-    if (s->ref_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->dis_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_in);
-        free(s->dis_in);
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return init_float_psnr_buffers(fex, plane_bytes, pbytes);
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int copy_float_psnr_inputs(FloatPsnrStateCuda *s, const VmafPicture *ref_pic,
+                                  const VmafPicture *dist_pic, ptrdiff_t plane_pitch,
+                                  CUstream pic_stream, CudaFunctions *cu_f)
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    (void)index;
-    FloatPsnrStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-
-    s->frame_w = ref_pic->w[0];
-    s->frame_h = ref_pic->h[0];
-    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * (s->bpc <= 8u ? 1u : 2u));
-
-    CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
-    CHECK_CUDA_RETURN(cu_f,
-                      cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
-                                        CU_EVENT_WAIT_DEFAULT));
-
-    CUDA_MEMCPY2D cpy_ref = {0};
+    CUDA_MEMCPY2D cpy_ref;
+    memset(&cpy_ref, 0, sizeof(cpy_ref));
     cpy_ref.srcMemoryType = CU_MEMORYTYPE_DEVICE;
     cpy_ref.srcDevice = (CUdeviceptr)ref_pic->data[0];
     cpy_ref.srcPitch = ref_pic->stride[0];
@@ -207,16 +201,36 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     cpy_ref.Height = s->frame_h;
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_ref, pic_stream));
 
-    CUDA_MEMCPY2D cpy_dis = {0};
-    cpy_dis.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+    CUDA_MEMCPY2D cpy_dis = cpy_ref;
     cpy_dis.srcDevice = (CUdeviceptr)dist_pic->data[0];
     cpy_dis.srcPitch = dist_pic->stride[0];
-    cpy_dis.dstMemoryType = CU_MEMORYTYPE_DEVICE;
     cpy_dis.dstDevice = (CUdeviceptr)s->dis_in->data;
-    cpy_dis.dstPitch = plane_pitch;
-    cpy_dis.WidthInBytes = plane_pitch;
-    cpy_dis.Height = s->frame_h;
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_dis, pic_stream));
+    return 0;
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+    (void)index;
+    FloatPsnrStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    s->frame_w = ref_pic->w[0];
+    s->frame_h = ref_pic->h[0];
+    const ptrdiff_t plane_pitch = (ptrdiff_t)s->frame_w * (s->bpc <= 8u ? 1 : 2);
+
+    CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
+    CHECK_CUDA_RETURN(cu_f,
+                      cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
+                                        CU_EVENT_WAIT_DEFAULT));
+
+    int err = copy_float_psnr_inputs(s, ref_pic, dist_pic, plane_pitch, pic_stream, cu_f);
+    if (err)
+        return err;
 
     CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->rb.device->data, 0,
                                             (size_t)s->wg_count * sizeof(float), pic_stream));
@@ -230,14 +244,14 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             (void *)s->rb.device, (void *)&s->frame_w, (void *)&s->frame_h,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, FPSNR_BX, FPSNR_BY,
-                                               1, 0, pic_stream, args, NULL));
+                                               1, 0, pic_stream, args, VMAF_NULLPTR));
     } else {
         void *args[] = {
             &s->ref_in->data,     &s->dis_in->data,    (void *)&plane_pitch, (void *)&plane_pitch,
             (void *)s->rb.device, (void *)&s->frame_w, (void *)&s->frame_h,  (void *)&s->bpc,
         };
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, FPSNR_BX, FPSNR_BY,
-                                               1, 0, pic_stream, args, NULL));
+                                               1, 0, pic_stream, args, VMAF_NULLPTR));
     }
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
@@ -312,7 +326,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {"float_psnr", NULL};
+static const char *provided_features[] = {"float_psnr", VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_float_psnr_cuda = {
     .name = "float_psnr_cuda",
@@ -325,5 +339,3 @@ VmafFeatureExtractor vmaf_fex_float_psnr_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

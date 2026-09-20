@@ -20,12 +20,10 @@ from typing import Any
 import typer
 from rich.console import Console
 
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[3]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
@@ -331,9 +329,7 @@ def manifest_scan_cmd(
         raise typer.Exit(code=2)
     dst = write_manifest(dataset, entries)
     with_mos = sum(1 for e in entries if e.mos is not None)
-    console.print(
-        f"[green]Wrote {dst} with {len(entries)} entries " f"({with_mos} with MOS)[/green]"
-    )
+    console.print(f"[green]Wrote {dst} with {len(entries)} entries ({with_mos} with MOS)[/green]")
 
 
 @app.command("validate-norm")

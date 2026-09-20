@@ -46,6 +46,8 @@
  *   invariant #3).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <arm_neon.h>
 #include <assert.h>
 #include <math.h>
@@ -122,7 +124,6 @@ static inline int32x4_t od_mulrshift_neon(int32x4_t x, int32_t k, int32_t round,
  * justification would point the suppression at the comment instead of the
  * function.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
 static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2, int32x4_t in3,
                                      int32x4_t in4, int32x4_t in5, int32x4_t in6, int32x4_t in7,
                                      int32x4_t *out0, int32x4_t *out1, int32x4_t *out2,
@@ -291,8 +292,8 @@ static inline void store_8x8_block_s32(int32_t *y, ptrdiff_t ys, const int32x4_t
 
 void od_bin_fdct8x8_neon(int32_t *y, int32_t ystride, const int32_t *x, int32_t xstride)
 {
-    assert(y != NULL);
-    assert(x != NULL);
+    assert(y != VMAF_NULLPTR);
+    assert(x != VMAF_NULLPTR);
     assert(xstride >= 8);
     assert(ystride >= 8);
     const ptrdiff_t xs = (ptrdiff_t)xstride;
@@ -445,9 +446,7 @@ static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
     /* ADR-0141: `sqrt` (double) matches the scalar reference's float->double
      * promotion before sqrt; switching to `sqrtf` would diverge from the
      * bit-exact contract. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0141 / ADR-0159 / ADR-0278
     b->s_mask = sqrt(b->s_mask * b->s_gvar) / 32.f;
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0141 as above.
     b->d_mask = sqrt(b->d_mask * b->d_gvar) / 32.f;
     if (b->d_mask > b->s_mask) {
         b->s_mask = b->d_mask;
@@ -465,7 +464,7 @@ static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
  * summation tree (IEEE-754 add is non-associative) and break byte-for-byte
  * parity with the scalar reference's inline accumulation at
  * third_party/xiph/psnr_hvs.c:355. */
-static void accumulate_error(const psnr_hvs_block *b, const float mask[8][8], float csf[8][8],
+static void accumulate_error(const psnr_hvs_block *b, const float mask[8][8], const float csf[8][8],
                              float *ret, int *pixels)
 {
     for (int i = 0; i < 8; i++) {
@@ -482,7 +481,7 @@ static void accumulate_error(const psnr_hvs_block *b, const float mask[8][8], fl
 
 double calc_psnrhvs_neon(const unsigned char *src, int systride, const unsigned char *dst,
                          int dystride, double par, int depth, int w, int h, int step,
-                         float csf[8][8])
+                         const float csf[8][8])
 {
     float mask[8][8];
     psnr_hvs_block b;

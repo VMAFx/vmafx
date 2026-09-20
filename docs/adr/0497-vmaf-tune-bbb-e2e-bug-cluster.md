@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0497: vmaf-tune BBB end-to-end bug cluster (compare / ladder / report)
 
 - **Status**: Accepted
@@ -78,7 +77,7 @@ over per-LOC PRs" rule in user memory).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Seven separate PRs (one per bug) | Smaller diffs, atomic reverts | 7× CI cost, fragmented test fixture, harder to verify the e2e smoke went green | Bugs share a root cause (container vs raw demarcation) and a shared regression test fixture; splitting hides the cluster |
 | Single PR, bisect emits raw YUV from the encoder | Avoids the extra decode step | Codec-adapter-specific shape change (would need raw output support per encoder), and the encoded artefact is still useful as a sanity check | The decode step is a 1-call ffmpeg op (~ms on small samples) and matches what `corpus.py` already does — no precedent to invent |
 | Auto-probe `--framerate` / `--duration` via ffprobe in `ladder` | One flag fewer to set | Hides defaults behind a 2nd probe call, breaks the symmetry with `compare` / `tune-per-shot` which take explicit flags | Symmetric explicit flags is the documented surface; ffprobe fallback is a future enhancement (see also the `auto` subcommand which already probes) |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1109: vmafx-node `Serve()` registers the VmafxScoring gRPC service
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ returns `codes.FailedPrecondition` from the scoring RPCs.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Register `VmafxScoring` (chosen)** | The only scoring contract the proto defines; reuses the proven `vmafx-server` handler shape and the shared `pkg/libvmaf` engine; gives the node a dispatchable endpoint immediately; matches the existing `server.go` doc ("accepts the controller's job-dispatch calls"). | The node now has two roles (served scoring + future controller-pull client). | Smallest, contract-faithful change that turns the stub into a working service without inventing a new proto. |
 | Wire the controller-pull loop (`PullWork → Execute → ReportResult`) instead | Matches ADR-0713's lifecycle narrative directly. | Much larger change to `main.go` (controller dial, heartbeat goroutine, retry/backoff); needs a live controller; does not give the node a *served* surface at all, leaving `Serve()` still empty of services. | Out of scope for "register the service the node exposes"; the pull loop is a separate, larger work item that can coexist with a served `VmafxScoring`. |
 | Define a new node-only gRPC service in a new proto | Bespoke node API surface. | The proto is the source of truth and defines no such service; inventing one duplicates `VmafxScoring` for no added meaning today. | Premature; would fork the scoring contract. |

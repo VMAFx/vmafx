@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Netflix-Grade Encoding Pipeline Roadmap — 2026-05-19
 
 Planning-only document. No implementation decisions are final until the user
@@ -9,7 +8,7 @@ selects an item and the corresponding ADR is accepted.
 ## Items Covered
 
 | # | Item | ADR | Research | Effort |
-|---|------|-----|----------|--------|
+| --- | ------ | ----- | ---------- | -------- |
 | 1 | Dynamic Optimizer (DO) | [ADR-0613](../adr/0613-dynamic-optimizer.md) | [Research 0609](../research/0609-dynamic-optimizer-research.md) | 4–5 days |
 | 2 | Per-shot ABR rendition | [ADR-0614](../adr/0614-per-shot-abr-rendition.md) | [Research 0610](../research/0610-per-shot-abr-rendition-research.md) | 6–7 days |
 | 3 | Fast NR pre-scoring | [ADR-0615](../adr/0615-fast-nr-prescoring.md) | [Research 0611](../research/0611-fast-nr-prescoring-research.md) | 3 days |
@@ -59,7 +58,7 @@ selects an item and the corresponding ADR is accepted.
 ### Formal dependency table
 
 | Item | Hard prerequisites | Soft prerequisites (accelerate) |
-|------|-------------------|--------------------------------|
+| ------ | ------------------- | -------------------------------- |
 | 4 (NEG) | None | — |
 | 3 (NR) | None | — |
 | 6 (Classifier) | Item 4 (NEG, for routing) | Item 3 (NR, if complexity proxy shared) |
@@ -136,7 +135,7 @@ The following relevant tooling was found in the Netflix upstream at
 `github.com/Netflix/vmaf`:
 
 | Component | Upstream status | Fork gap |
-|-----------|----------------|----------|
+| ----------- | ---------------- | ---------- |
 | VMAF NEG model files | In `model/` (in-tree in fork) | CLI integration only |
 | CAMBI banding detector | `resource/doc/cambi.md` | In-tree as libvmaf feature |
 | Per-shot CLI | Not found in upstream at time of audit | Full implementation needed |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0435: ADM decouple gather locality (2026-05-18)
 
 ## Summary
@@ -67,7 +66,7 @@ The implementation prefetches into T1 (L2) not T0 (L1) because:
 ### Benchmark results (BBB 1080p, 302 frames, release build)
 
 | Build | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Run 6 | Run 7 | Run 8 | Mean |
-|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Baseline (master) | 9364 | 8670 | 9651 | 9084 | 10520 | 9593 | 9920 | 10022 | **9603 ms** |
 | Patched (ADR-0502) | 8747 | 8677 | 9714 | 9540 | 8974 | 9768 | 8876 | 8100 | **9049 ms** |
 

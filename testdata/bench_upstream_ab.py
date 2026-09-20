@@ -40,11 +40,19 @@ import argparse
 import json
 import os
 import statistics
-import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testdata._command import run_command
+else:
+    try:
+        from testdata._command import run_command
+    except ModuleNotFoundError:
+        from _command import run_command
 
 # Upstream's latest release at the time this harness landed. Pinned rather than
 # tracking master so a rerun months later is comparable to the recorded table:
@@ -124,7 +132,7 @@ DEFAULT_MAX_SCORE_DELTA = 1e-5
 
 
 def load1() -> float:
-    with open("/proc/loadavg", encoding="ascii") as fh:
+    with Path("/proc/loadavg").open(encoding="ascii") as fh:
         return float(fh.read().split()[0])
 
 
@@ -138,7 +146,7 @@ def build_upstream(ref: str, workdir: Path, jobs: int) -> Path:
 
     if not src.exists():
         print(f"==> cloning upstream {ref}", file=sys.stderr)
-        subprocess.run(
+        run_command(
             ["git", "clone", "--depth", "1", "--branch", ref, UPSTREAM_URL, str(src)],
             check=True,
         )
@@ -146,7 +154,7 @@ def build_upstream(ref: str, workdir: Path, jobs: int) -> Path:
     # Upstream's build root is libvmaf/, not core/ — the fork moved it in
     # ADR-0700. Build CPU-only: this harness compares the CPU path.
     print(f"==> building upstream {ref} (CPU only)", file=sys.stderr)
-    subprocess.run(
+    run_command(
         [
             "meson",
             "setup",
@@ -158,7 +166,7 @@ def build_upstream(ref: str, workdir: Path, jobs: int) -> Path:
         cwd=src / "libvmaf",
         check=True,
     )
-    subprocess.run(["ninja", "-C", "build", "-j", str(jobs)], cwd=src / "libvmaf", check=True)
+    run_command(["ninja", "-C", "build", "-j", str(jobs)], cwd=src / "libvmaf", check=True)
     if not binary.exists():
         raise SystemExit(f"upstream build produced no binary at {binary}")
     return binary
@@ -199,15 +207,15 @@ def run_cell(vmaf_bin, fixture, runs, threads, root, verbose):
     load_before = load1()
 
     with tempfile.TemporaryDirectory(prefix="vmaf-ab-") as td:
-        out_path = os.path.join(td, "out.json")
-        cmd = build_cmd(vmaf_bin, fixture, MODEL, out_path, threads, root)
+        out_path = Path(td) / "out.json"
+        cmd = build_cmd(vmaf_bin, fixture, MODEL, str(out_path), threads, root)
         # runs + 1: iteration 0 is a discarded warmup (page cache, first-touch
         # allocation), exactly as in bench_backends.py.
         for i in range(runs + 1):
             start = time.monotonic()
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            proc = run_command(cmd, capture_output=True, text=True, check=False)
             elapsed = time.monotonic() - start
-            if proc.returncode != 0 or not os.path.exists(out_path):
+            if proc.returncode != 0 or not out_path.exists():
                 msg = (proc.stderr or proc.stdout or "").strip().splitlines()
                 return {
                     "status": "unavailable",
@@ -218,7 +226,7 @@ def run_cell(vmaf_bin, fixture, runs, threads, root, verbose):
                 continue
             times.append(elapsed)
             if pooled is None:
-                with open(out_path, encoding="utf-8") as fh:
+                with out_path.open(encoding="utf-8") as fh:
                     doc = json.load(fh)
                 pooled = doc["pooled_metrics"]["vmaf"]["mean"]
                 nframes = len(doc["frames"])
@@ -239,7 +247,8 @@ def run_cell(vmaf_bin, fixture, runs, threads, root, verbose):
     }
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
+    """Parse benchmark command-line arguments."""
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -277,44 +286,48 @@ def main() -> int:
     )
     ap.add_argument("--json", help="write the full result document here")
     ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    root = Path(
-        subprocess.run(
+
+def repository_root() -> Path:
+    """Return the active checkout root."""
+    return Path(
+        run_command(
             ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
         ).stdout.strip()
     )
-    fork_bin = Path(args.fork_bin)
-    if not fork_bin.is_absolute():
-        fork_bin = root / fork_bin
-    if not fork_bin.exists():
-        print(
-            f"error: fork binary not found at {fork_bin}\n"
-            f"       build it first: meson setup core/build core && ninja -C core/build",
-            file=sys.stderr,
-        )
-        return 2
 
-    present = [f for f in FIXTURES if (root / f[1]).exists() and (root / f[2]).exists()]
-    absent = [f[0] for f in FIXTURES if f not in present]
-    if not present:
-        print(
-            "error: no fixtures present\n" "       fetch them: scripts/test/fetch-test-yuvs.sh",
-            file=sys.stderr,
-        )
-        return 2
-    if absent:
-        print(f"note: skipping absent fixtures: {', '.join(absent)}", file=sys.stderr)
 
+def available_fixtures(root: Path) -> tuple[list[tuple], list[str]]:
+    """Partition the fixture table into present and absent entries."""
+    present = [
+        fixture
+        for fixture in FIXTURES
+        if (root / fixture[1]).exists() and (root / fixture[2]).exists()
+    ]
+    absent = [fixture[0] for fixture in FIXTURES if fixture not in present]
+    return present, absent
+
+
+def upstream_binary(args: argparse.Namespace, root: Path) -> Path:
+    """Resolve or build the requested upstream binary."""
     if args.upstream_bin:
-        upstream_bin = Path(args.upstream_bin)
-    else:
-        workdir = Path(args.workdir)
-        if not workdir.is_absolute():
-            workdir = root / workdir
-        workdir.mkdir(parents=True, exist_ok=True)
-        upstream_bin = build_upstream(args.upstream_ref, workdir, args.jobs)
+        return Path(args.upstream_bin)
+    workdir = Path(args.workdir)
+    if not workdir.is_absolute():
+        workdir = root / workdir
+    workdir.mkdir(parents=True, exist_ok=True)
+    return build_upstream(args.upstream_ref, workdir, args.jobs)
 
+
+def run_comparison(
+    args: argparse.Namespace,
+    root: Path,
+    fork_bin: Path,
+    upstream_bin: Path,
+    fixtures: list[tuple],
+) -> tuple[list[dict], list[tuple]]:
+    """Benchmark both binaries for every available fixture."""
     results = []
     parity_failures = []
     print(
@@ -323,12 +336,11 @@ def main() -> int:
     )
     print("-" * 70, file=sys.stderr)
 
-    for fixture in present:
+    for fixture in fixtures:
         tag = fixture[0]
         up = run_cell(upstream_bin, fixture, args.runs, args.threads, root, args.verbose)
         fk = run_cell(fork_bin, fixture, args.runs, args.threads, root, args.verbose)
         cell = {"fixture": tag, "label": fixture[6], "upstream": up, "fork": fk}
-
         if up["status"] == "ok" and fk["status"] == "ok":
             cell["speedup"] = up["median_time"] / fk["median_time"]
             cell["score_delta"] = fk["pooled"] - up["pooled"]
@@ -343,9 +355,17 @@ def main() -> int:
             bad = up if up["status"] != "ok" else fk
             print(f"{tag:<20} UNAVAILABLE: {bad.get('error')}", file=sys.stderr)
         results.append(cell)
+    return results, parity_failures
 
-    ok = [c for c in results if "speedup" in c]
-    startup_bound = [c for c in ok if c["fork"]["median_time"] < MIN_USEFUL_SECONDS]
+
+def report_summary(
+    args: argparse.Namespace,
+    results: list[dict],
+    parity_failures: list[tuple],
+) -> int:
+    """Emit the aggregate document and return the parity status."""
+    ok = [cell for cell in results if "speedup" in cell]
+    startup_bound = [cell for cell in ok if cell["fork"]["median_time"] < MIN_USEFUL_SECONDS]
     if startup_bound and len(startup_bound) == len(ok):
         print(
             f"\nWARNING: every cell ran in under {MIN_USEFUL_SECONDS:g}s, so process "
@@ -360,35 +380,69 @@ def main() -> int:
         "runs": args.runs,
         "threads": args.threads,
         "cells": results,
-        "geomean_speedup": (statistics.geometric_mean([c["speedup"] for c in ok]) if ok else None),
+        "geomean_speedup": (
+            statistics.geometric_mean([cell["speedup"] for cell in ok]) if ok else None
+        ),
         "score_parity": "FAIL" if parity_failures else "OK",
         "max_score_delta": args.max_score_delta,
         "startup_bound": bool(startup_bound and len(startup_bound) == len(ok)),
     }
     if doc["geomean_speedup"]:
         print(
-            f"\ngeomean speedup vs upstream {args.upstream_ref}: " f"{doc['geomean_speedup']:.2f}x",
+            f"\ngeomean speedup vs upstream {args.upstream_ref}: {doc['geomean_speedup']:.2f}x",
             file=sys.stderr,
         )
-
     if args.json:
         Path(args.json).write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {args.json}", file=sys.stderr)
+    if not parity_failures:
+        return 0
 
-    if parity_failures:
+    print(
+        "\nSCORE PARITY FAILED — the fork and upstream disagree on the CPU path:",
+        file=sys.stderr,
+    )
+    for tag, upstream_score, fork_score in parity_failures:
         print(
-            "\nSCORE PARITY FAILED — the fork and upstream disagree on the CPU path:",
+            f"  {tag}: upstream={upstream_score!r} fork={fork_score!r} "
+            f"delta={fork_score - upstream_score:.3e}",
             file=sys.stderr,
         )
-        for tag, u, f in parity_failures:
-            print(f"  {tag}: upstream={u!r} fork={f!r} delta={f - u:.3e}", file=sys.stderr)
+    print(
+        "A speedup that moves the score is a regression. Fix the arithmetic "
+        "before recording any timing from this run.",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def main() -> int:
+    args = parse_args()
+    root = repository_root()
+    fork_bin = Path(args.fork_bin)
+    if not fork_bin.is_absolute():
+        fork_bin = root / fork_bin
+    if not fork_bin.exists():
         print(
-            "A speedup that moves the score is a regression. Fix the arithmetic "
-            "before recording any timing from this run.",
+            f"error: fork binary not found at {fork_bin}\n"
+            f"       build it first: meson setup core/build core && ninja -C core/build",
             file=sys.stderr,
         )
-        return 1
-    return 0
+        return 2
+
+    present, absent = available_fixtures(root)
+    if not present:
+        print(
+            "error: no fixtures present\n" "       fetch them: scripts/test/fetch-test-yuvs.sh",
+            file=sys.stderr,
+        )
+        return 2
+    if absent:
+        print(f"note: skipping absent fixtures: {', '.join(absent)}", file=sys.stderr)
+
+    upstream_bin = upstream_binary(args, root)
+    results, parity_failures = run_comparison(args, root, fork_bin, upstream_bin, present)
+    return report_summary(args, results, parity_failures)
 
 
 if __name__ == "__main__":

@@ -124,8 +124,7 @@ __device__ __forceinline__ float get_upcase_h_bar_prime_dev(float h1, float h2)
 
 __device__ __forceinline__ float get_upcase_t_dev(float h_bar)
 {
-    return 1.0f - 0.17f * cosf(h_bar - 3.141592653589793f / 6.0f) +
-           0.24f * cosf(2.0f * h_bar) +
+    return 1.0f - 0.17f * cosf(h_bar - 3.141592653589793f / 6.0f) + 0.24f * cosf(2.0f * h_bar) +
            0.32f * cosf(3.0f * h_bar + 3.141592653589793f / 30.0f) -
            0.20f * cosf(4.0f * h_bar - 63.0f * 3.141592653589793f / 180.0f);
 }
@@ -183,22 +182,18 @@ __device__ __forceinline__ float ciede_warp_reduce(float v)
     return v;
 }
 
-extern "C" {
-
 /**
  * 8-bpc kernel: ref/dis Y/U/V planes are uint8_t * with separate strides.
  * Chroma subsampling controlled by ss_hor/ss_ver (0 = 4:4:4, 1 = subsampled).
  * Writes one float partial per block into partials[block_idx].
  */
-__global__ void calculate_ciede_kernel_8bpc(
-    const uint8_t *__restrict__ ref_y, ptrdiff_t ref_y_stride,
-    const uint8_t *__restrict__ ref_u, ptrdiff_t ref_u_stride,
-    const uint8_t *__restrict__ ref_v, ptrdiff_t ref_v_stride,
-    const uint8_t *__restrict__ dis_y, ptrdiff_t dis_y_stride,
-    const uint8_t *__restrict__ dis_u, ptrdiff_t dis_u_stride,
-    const uint8_t *__restrict__ dis_v, ptrdiff_t dis_v_stride,
-    float *__restrict__ partials, unsigned width, unsigned height,
-    unsigned bpc, unsigned ss_hor, unsigned ss_ver)
+extern "C" __global__ void calculate_ciede_kernel_8bpc(
+    const uint8_t *__restrict__ ref_y, ptrdiff_t ref_y_stride, const uint8_t *__restrict__ ref_u,
+    ptrdiff_t ref_u_stride, const uint8_t *__restrict__ ref_v, ptrdiff_t ref_v_stride,
+    const uint8_t *__restrict__ dis_y, ptrdiff_t dis_y_stride, const uint8_t *__restrict__ dis_u,
+    ptrdiff_t dis_u_stride, const uint8_t *__restrict__ dis_v, ptrdiff_t dis_v_stride,
+    float *__restrict__ partials, unsigned width, unsigned height, unsigned bpc, unsigned ss_hor,
+    unsigned ss_ver)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -209,14 +204,10 @@ __global__ void calculate_ciede_kernel_8bpc(
         const unsigned cx = ss_hor ? ((unsigned)x >> 1) : (unsigned)x;
         const unsigned cy = ss_ver ? ((unsigned)y >> 1) : (unsigned)y;
         float l1, a1, b1, l2, a2, b2;
-        yuv_to_lab((float)ref_y[y * ref_y_stride + x],
-                   (float)ref_u[cy * ref_u_stride + cx],
-                   (float)ref_v[cy * ref_v_stride + cx],
-                   bpc, &l1, &a1, &b1);
-        yuv_to_lab((float)dis_y[y * dis_y_stride + x],
-                   (float)dis_u[cy * dis_u_stride + cx],
-                   (float)dis_v[cy * dis_v_stride + cx],
-                   bpc, &l2, &a2, &b2);
+        yuv_to_lab((float)ref_y[y * ref_y_stride + x], (float)ref_u[cy * ref_u_stride + cx],
+                   (float)ref_v[cy * ref_v_stride + cx], bpc, &l1, &a1, &b1);
+        yuv_to_lab((float)dis_y[y * dis_y_stride + x], (float)dis_u[cy * dis_u_stride + cx],
+                   (float)dis_v[cy * dis_v_stride + cx], bpc, &l2, &a2, &b2);
         my_de = ciede2000_dev(l1, a1, b1, l2, a2, b2);
     }
 
@@ -243,15 +234,13 @@ __global__ void calculate_ciede_kernel_8bpc(
  * 10/12/16-bpc kernel: ref/dis Y/U/V planes are uint16_t (via uint8_t *
  * byte-addressed row pointers). Same reduction shape as 8-bpc kernel.
  */
-__global__ void calculate_ciede_kernel_16bpc(
-    const uint8_t *__restrict__ ref_y, ptrdiff_t ref_y_stride,
-    const uint8_t *__restrict__ ref_u, ptrdiff_t ref_u_stride,
-    const uint8_t *__restrict__ ref_v, ptrdiff_t ref_v_stride,
-    const uint8_t *__restrict__ dis_y, ptrdiff_t dis_y_stride,
-    const uint8_t *__restrict__ dis_u, ptrdiff_t dis_u_stride,
-    const uint8_t *__restrict__ dis_v, ptrdiff_t dis_v_stride,
-    float *__restrict__ partials, unsigned width, unsigned height,
-    unsigned bpc, unsigned ss_hor, unsigned ss_ver)
+extern "C" __global__ void calculate_ciede_kernel_16bpc(
+    const uint8_t *__restrict__ ref_y, ptrdiff_t ref_y_stride, const uint8_t *__restrict__ ref_u,
+    ptrdiff_t ref_u_stride, const uint8_t *__restrict__ ref_v, ptrdiff_t ref_v_stride,
+    const uint8_t *__restrict__ dis_y, ptrdiff_t dis_y_stride, const uint8_t *__restrict__ dis_u,
+    ptrdiff_t dis_u_stride, const uint8_t *__restrict__ dis_v, ptrdiff_t dis_v_stride,
+    float *__restrict__ partials, unsigned width, unsigned height, unsigned bpc, unsigned ss_hor,
+    unsigned ss_ver)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -289,5 +278,3 @@ __global__ void calculate_ciede_kernel_16bpc(
         partials[block_idx] = block_sum;
     }
 }
-
-} /* extern "C" */

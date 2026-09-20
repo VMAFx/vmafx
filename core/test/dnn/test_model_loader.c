@@ -5,10 +5,6 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(concurrency-mt-unsafe): this test's subject is how the library
- * resolves paths from the process environment, so it has to set and unset
- * variables. Each test binary is its own single-threaded process, and nothing
- * else reads the environment while it runs (ADR-0141). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,20 +26,14 @@
 
 #include "dnn/model_loader.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 static char *test_sniff_by_extension(void)
 {
     mu_assert("json → SVM", vmaf_dnn_sniff_kind("foo.json") == VMAF_MODEL_KIND_SVM);
     mu_assert("pkl → SVM", vmaf_dnn_sniff_kind("foo.pkl") == VMAF_MODEL_KIND_SVM);
     mu_assert("onnx → DNN_FR", vmaf_dnn_sniff_kind("foo.onnx") == VMAF_MODEL_KIND_DNN_FR);
     mu_assert("unknown ext → -1", vmaf_dnn_sniff_kind("foo.bin") == -1);
-    mu_assert("NULL → -1", vmaf_dnn_sniff_kind(NULL) == -1);
-    return NULL;
+    mu_assert("NULL → -1", vmaf_dnn_sniff_kind(VMAF_NULLPTR) == -1);
+    return VMAF_NULLPTR;
 }
 
 static char *test_size_cap(void)
@@ -61,14 +51,14 @@ static char *test_size_cap(void)
     mu_assert("expected -E2BIG for 1-byte cap", err == -E2BIG || err == 0);
     err = vmaf_dnn_validate_onnx("/definitely/does/not/exist.onnx", 0);
     mu_assert("expected errno for missing file", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_validate_null_path(void)
 {
-    const int err = vmaf_dnn_validate_onnx(NULL, 0);
+    const int err = vmaf_dnn_validate_onnx(VMAF_NULLPTR, 0);
     mu_assert("NULL path → -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
@@ -78,11 +68,11 @@ static char *write_temp(const unsigned char *data, size_t len)
     char tmpl[] = "/tmp/vmaf-dnn-validate-XXXXXX";
     int fd = mkstemp(tmpl);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     const ssize_t w = write(fd, data, len);
     close(fd);
     if (w != (ssize_t)len)
-        return NULL;
+        return VMAF_NULLPTR;
     return strdup(tmpl);
 }
 
@@ -112,14 +102,10 @@ static FILE *fopen_w_600(const char *path)
 {
     const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     FILE *fp = fdopen(fd, "w");
     if (!fp) {
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(fd);
     }
     return fp;
@@ -130,12 +116,12 @@ static FILE *fopen_w_600(const char *path)
 static char *test_validate_zero_byte(void)
 {
     char *path = write_temp((const unsigned char *)"", 0);
-    mu_assert("temp file creation failed", path != NULL);
+    mu_assert("temp file creation failed", path != VMAF_NULLPTR);
     const int err = vmaf_dnn_validate_onnx(path, 0);
     (void)remove(path);
     free(path);
     mu_assert("empty file → -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_validate_allowed_onnx(void)
@@ -143,12 +129,12 @@ static char *test_validate_allowed_onnx(void)
     /* Minimal ModelProto { graph { node { op_type = "Conv" } } } */
     const unsigned char buf[] = {0x3A, 0x08, 0x0A, 0x06, 0x22, 0x04, 'C', 'o', 'n', 'v'};
     char *path = write_temp(buf, sizeof(buf));
-    mu_assert("temp file creation failed", path != NULL);
+    mu_assert("temp file creation failed", path != VMAF_NULLPTR);
     const int err = vmaf_dnn_validate_onnx(path, 0);
     (void)remove(path);
     free(path);
     mu_assert("allowed Conv onnx → 0", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_validate_disallowed_onnx(void)
@@ -158,12 +144,12 @@ static char *test_validate_disallowed_onnx(void)
      * rejected by design (see ADR-0169 § Alternatives considered). */
     const unsigned char buf[] = {0x3A, 0x08, 0x0A, 0x06, 0x22, 0x04, 'S', 'c', 'a', 'n'};
     char *path = write_temp(buf, sizeof(buf));
-    mu_assert("temp file creation failed", path != NULL);
+    mu_assert("temp file creation failed", path != VMAF_NULLPTR);
     const int err = vmaf_dnn_validate_onnx(path, 0);
     (void)remove(path);
     free(path);
     mu_assert("disallowed Scan onnx → -EPERM", err == -EPERM);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_validate_symlink_to_dir(void)
@@ -180,7 +166,7 @@ static char *test_validate_symlink_to_dir(void)
     (void)remove(link_path);
     /* /tmp is not a regular file → stat_regular returns -ENOENT. */
     mu_assert("symlink-to-dir → -ENOENT", err == -ENOENT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Allowed ONNX payload (single Conv node) reused across jail tests. */
@@ -207,19 +193,19 @@ static char *test_jail_unset_accepts_anywhere(void)
      * anywhere in the filesystem must still validate. */
     (void)unsetenv("VMAF_TINY_MODEL_DIR");
     char *path = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
-    mu_assert("temp file creation failed", path != NULL);
+    mu_assert("temp file creation failed", path != VMAF_NULLPTR);
     const int err = vmaf_dnn_validate_onnx(path, 0);
     (void)remove(path);
     free(path);
     mu_assert("jail unset → allowed model validates", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jail_accepts_model_inside(void)
 {
     /* Model sits inside the jail dir → must validate. */
     char jail[] = "/tmp/vmaf-dnn-jail-XXXXXX";
-    mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
+    mu_assert("mkdtemp failed", mkdtemp(jail) != VMAF_NULLPTR);
 
     char model_path[PATH_MAX];
     (void)snprintf(model_path, sizeof(model_path), "%s/allowed.onnx", jail);
@@ -231,7 +217,7 @@ static char *test_jail_accepts_model_inside(void)
     mu_assert("write_file_600 model failed", wrc == 0);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("model inside jail → 0", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jail_rejects_model_outside(void)
@@ -239,7 +225,7 @@ static char *test_jail_rejects_model_outside(void)
     /* Model sits outside the jail dir → must return -EACCES before any
      * stat() of the model path happens. */
     char jail[] = "/tmp/vmaf-dnn-jail-XXXXXX";
-    mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
+    mu_assert("mkdtemp failed", mkdtemp(jail) != VMAF_NULLPTR);
 
     char *outside = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     int err = 0;
@@ -249,10 +235,10 @@ static char *test_jail_rejects_model_outside(void)
         free(outside);
     }
     (void)rmdir(jail);
-    mu_assert("write_temp failed", outside != NULL);
+    mu_assert("write_temp failed", outside != VMAF_NULLPTR);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("model outside jail → -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jail_rejects_sibling_prefix(void)
@@ -262,7 +248,7 @@ static char *test_jail_rejects_sibling_prefix(void)
      * The trailing-separator normalisation in enforce_tiny_model_jail must
      * reject this. */
     char jail[] = "/tmp/vmaf-dnn-sibprefix-XXXXXX";
-    mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
+    mu_assert("mkdtemp failed", mkdtemp(jail) != VMAF_NULLPTR);
 
     char sibling_dir[PATH_MAX];
     (void)snprintf(sibling_dir, sizeof(sibling_dir), "%s-sibling", jail);
@@ -283,7 +269,7 @@ static char *test_jail_rejects_sibling_prefix(void)
     mu_assert("write_file_600 sibling model failed", wrc == 0);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("sibling prefix must be rejected → -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Symlink @p link_path → @p target inside the jail and validate the link.
@@ -305,7 +291,7 @@ static char *test_jail_rejects_symlink_escape(void)
      * resolves the symlink to the outside target, which must then fail
      * the prefix check. */
     char jail[] = "/tmp/vmaf-dnn-jailsym-XXXXXX";
-    mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
+    mu_assert("mkdtemp failed", mkdtemp(jail) != VMAF_NULLPTR);
 
     char *outside = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     char link_path[PATH_MAX];
@@ -319,11 +305,11 @@ static char *test_jail_rejects_symlink_escape(void)
         free(outside);
     }
     (void)rmdir(jail);
-    mu_assert("write_temp failed", outside != NULL);
+    mu_assert("write_temp failed", outside != VMAF_NULLPTR);
     mu_assert("symlink() failed", lrc == 0);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("symlink escape must be rejected → -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jail_rejects_nonexistent_jail(void)
@@ -331,7 +317,7 @@ static char *test_jail_rejects_nonexistent_jail(void)
     /* Fails closed on a misconfigured jail: if VMAF_TINY_MODEL_DIR points
      * at a path that does not exist, every validation returns -EACCES. */
     char *model = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
-    mu_assert("write_temp failed", model != NULL);
+    mu_assert("write_temp failed", model != VMAF_NULLPTR);
 
     int err = 0;
     const int set_rc = validate_in_jail("/tmp/vmaf-does-not-exist-zzzyx", model, &err);
@@ -339,7 +325,7 @@ static char *test_jail_rejects_nonexistent_jail(void)
     free(model);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("nonexistent jail dir → -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jail_rejects_non_directory(void)
@@ -347,7 +333,7 @@ static char *test_jail_rejects_non_directory(void)
     /* Jail env pointing at a regular file (not a directory) must also fail
      * closed — a file is not a prefix anything can sit under. */
     char *jail_file = write_temp((const unsigned char *)"x", 1u);
-    mu_assert("write_temp failed", jail_file != NULL);
+    mu_assert("write_temp failed", jail_file != VMAF_NULLPTR);
     char *model = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     int err = 0;
     const int set_rc = model ? validate_in_jail(jail_file, model, &err) : 0;
@@ -357,10 +343,10 @@ static char *test_jail_rejects_non_directory(void)
     }
     (void)remove(jail_file);
     free(jail_file);
-    mu_assert("write_temp failed", model != NULL);
+    mu_assert("write_temp failed", model != VMAF_NULLPTR);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("jail-is-file → -EACCES", err == -EACCES);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jail_accepts_trailing_slash(void)
@@ -368,7 +354,7 @@ static char *test_jail_accepts_trailing_slash(void)
     /* Normalisation check: a trailing '/' on the env value must not
      * introduce a double-separator that breaks the prefix match. */
     char jail[] = "/tmp/vmaf-dnn-jailslash-XXXXXX";
-    mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
+    mu_assert("mkdtemp failed", mkdtemp(jail) != VMAF_NULLPTR);
 
     char jail_with_slash[PATH_MAX];
     (void)snprintf(jail_with_slash, sizeof(jail_with_slash), "%s/", jail);
@@ -383,7 +369,7 @@ static char *test_jail_accepts_trailing_slash(void)
     mu_assert("write_file_600 model failed", wrc == 0);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("jail with trailing slash → 0", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* !_WIN32 */
 
@@ -398,7 +384,7 @@ static char *check_sidecar_scalar_fields(const VmafModelSidecar *meta)
     mu_assert("opset 17", meta->opset == 17);
     mu_assert("name set", meta->name && !strcmp(meta->name, "vmaf_tiny_fr_v1"));
     mu_assert("input set", meta->input_name && !strcmp(meta->input_name, "features"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_sidecar_output_fields(const VmafModelSidecar *meta)
@@ -409,7 +395,7 @@ static char *check_sidecar_output_fields(const VmafModelSidecar *meta)
               meta->output_names[0] && !strcmp(meta->output_names[0], "score"));
     mu_assert("output_names[1] set",
               meta->output_names[1] && !strcmp(meta->output_names[1], "uncertainty"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_parses(void)
@@ -420,7 +406,7 @@ static char *test_sidecar_parses(void)
     GetTempPathA(MAX_PATH, tmpdir);
     snprintf(tmpl, sizeof tmpl, "%svmaf-dnn-sidecar-test", tmpdir);
     FILE *tmpf = fopen(tmpl, "w");
-    mu_assert("temp file creation failed", tmpf != NULL);
+    mu_assert("temp file creation failed", tmpf != VMAF_NULLPTR);
     fclose(tmpf);
 #else
     char tmpl[] = "/tmp/vmaf-dnn-sidecar-XXXXXX";
@@ -439,7 +425,7 @@ static char *test_sidecar_parses(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"name\": \"vmaf_tiny_fr_v1\",\n"
                      "  \"kind\": \"fr\",\n"
@@ -464,26 +450,26 @@ static char *test_sidecar_parses(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_rejects_null_args(void)
 {
     /* NULL onnx_path or NULL out → -EINVAL (line 171). */
     VmafModelSidecar meta;
-    int err = vmaf_dnn_sidecar_load(NULL, &meta);
+    int err = vmaf_dnn_sidecar_load(VMAF_NULLPTR, &meta);
     mu_assert("NULL onnx_path rejected", err == -EINVAL);
-    err = vmaf_dnn_sidecar_load("model.onnx", NULL);
+    err = vmaf_dnn_sidecar_load("model.onnx", VMAF_NULLPTR);
     mu_assert("NULL out rejected", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_free_null_is_noop(void)
 {
     /* free(NULL) must be a no-op (line 241). */
-    vmaf_dnn_sidecar_free(NULL);
+    vmaf_dnn_sidecar_free(VMAF_NULLPTR);
     mu_assert("sidecar_free(NULL) returned without crashing", 1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_missing_returns_enoent(void)
@@ -492,7 +478,7 @@ static char *test_sidecar_missing_returns_enoent(void)
     VmafModelSidecar meta;
     int err = vmaf_dnn_sidecar_load("/tmp/vmaf-no-such-model-zzz.onnx", &meta);
     mu_assert("missing sidecar → -ENOENT", err == -ENOENT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
@@ -522,7 +508,7 @@ static char *test_sidecar_non_regular_returns_einval(void)
     const int err = vmaf_dnn_sidecar_load(onnx, &meta);
     rmdir(dir_json);
     mu_assert("non-regular sidecar (dir) → -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_parses_kind_nr(void)
@@ -542,7 +528,7 @@ static char *test_sidecar_parses_kind_nr(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"nr\"}\n");
     (void)fclose(s);
 
@@ -555,7 +541,7 @@ static char *test_sidecar_parses_kind_nr(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0173 / T5-3: optional `quant_mode` field defaults to FP32 when
@@ -575,7 +561,7 @@ static char *test_sidecar_quant_mode_default_fp32(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* No quant_mode field — default branch. */
     (void)fprintf(s, "{\"kind\": \"fr\"}\n");
     (void)fclose(s);
@@ -588,7 +574,7 @@ static char *test_sidecar_quant_mode_default_fp32(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_quant_mode_dynamic(void)
@@ -605,7 +591,7 @@ static char *test_sidecar_quant_mode_dynamic(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"fr\", \"quant_mode\": \"dynamic\"}\n");
     (void)fclose(s);
 
@@ -617,7 +603,7 @@ static char *test_sidecar_quant_mode_dynamic(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_quant_mode_unknown_falls_back(void)
@@ -634,7 +620,7 @@ static char *test_sidecar_quant_mode_unknown_falls_back(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"fr\", \"quant_mode\": \"int4\"}\n");
     (void)fclose(s);
 
@@ -646,7 +632,7 @@ static char *test_sidecar_quant_mode_unknown_falls_back(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_no_dot_onnx_extension(void)
@@ -668,7 +654,7 @@ static char *test_sidecar_no_dot_onnx_extension(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"fr\"}\n");
     (void)fclose(s);
 
@@ -680,7 +666,7 @@ static char *test_sidecar_no_dot_onnx_extension(void)
     (void)remove(sidecar);
     (void)remove(model);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_oversized_path(void)
@@ -688,14 +674,14 @@ static char *test_sidecar_oversized_path(void)
     /* Path of length > sizeof(sidecar) - 6 → -ENAMETOOLONG (line 178).
      * sizeof(sidecar) is 4096; we need a path > 4090 chars. */
     char *huge = (char *)malloc(4100u);
-    mu_assert("alloc failed", huge != NULL);
+    mu_assert("alloc failed", huge != VMAF_NULLPTR);
     memset(huge, 'a', 4096u);
     huge[4096] = '\0';
     VmafModelSidecar meta;
     int err = vmaf_dnn_sidecar_load(huge, &meta);
     free(huge);
     mu_assert("oversized path → -ENAMETOOLONG", err == -ENAMETOOLONG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_malformed_keys_default(void)
@@ -718,7 +704,7 @@ static char *test_sidecar_malformed_keys_default(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* "kind" present but not a string (number) → extract_string returns
      * NULL via "no opening quote" branch. "name" missing entirely →
      * extract_string returns NULL via strstr-miss branch. "onnx_opset"
@@ -735,13 +721,13 @@ static char *test_sidecar_malformed_keys_default(void)
     /* opset stays 0 when extract_int rejects the value. */
     mu_assert("opset defaults to 0", meta.opset == 0);
     /* No name in JSON → out->name is NULL. */
-    mu_assert("missing name stays NULL", meta.name == NULL);
+    mu_assert("missing name stays NULL", meta.name == VMAF_NULLPTR);
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_extract_string_no_close_quote(void)
@@ -762,7 +748,7 @@ static char *test_sidecar_extract_string_no_close_quote(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* "name" opens a quote that never closes before EOF. */
     (void)fputs("{\"name\": \"unterminated", s);
     (void)fclose(s);
@@ -770,13 +756,13 @@ static char *test_sidecar_extract_string_no_close_quote(void)
     VmafModelSidecar meta;
     int err = vmaf_dnn_sidecar_load(onnx, &meta);
     mu_assert("malformed sidecar still loads", err == 0);
-    mu_assert("unterminated string returns NULL", meta.name == NULL);
+    mu_assert("unterminated string returns NULL", meta.name == VMAF_NULLPTR);
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0976 regression: extract_string_array() must clean up its own
@@ -808,7 +794,7 @@ static char *test_sidecar_string_array_malformed_no_leak(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* output_names array has two valid entries then a non-quote / EOF —
      * extract_string_array() must return -EINVAL after allocating "a"
      * and "b", and the loader must observe n_output_names == 0 with
@@ -828,8 +814,8 @@ static char *test_sidecar_string_array_malformed_no_leak(void)
      * pointers in the slots — otherwise the producer is leaking and the
      * caller's fallback cleanup is silently wrong. */
     mu_assert("n_output_names == 0 after malformed parse", meta.n_output_names == 0u);
-    mu_assert("output_names[0] is NULL", meta.output_names[0] == NULL);
-    mu_assert("output_names[1] is NULL", meta.output_names[1] == NULL);
+    mu_assert("output_names[0] is NULL", meta.output_names[0] == VMAF_NULLPTR);
+    mu_assert("output_names[1] is NULL", meta.output_names[1] == VMAF_NULLPTR);
     /* Safe to free — would crash / report leaks under ASan if the
      * producer left stale pointers. */
     vmaf_dnn_sidecar_free(&meta);
@@ -837,7 +823,7 @@ static char *test_sidecar_string_array_malformed_no_leak(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0976 regression: same invariant for feature_names (drives the
@@ -860,7 +846,7 @@ static char *test_sidecar_feature_names_malformed_no_leak(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* Two valid entries then an unterminated string — exercises the
      * "no close quote" branch of extract_string_array(). */
     (void)fputs("{\n"
@@ -874,14 +860,14 @@ static char *test_sidecar_feature_names_malformed_no_leak(void)
     int err = vmaf_dnn_sidecar_load(onnx, &meta);
     mu_assert("malformed feature_order sidecar still loads", err == 0);
     mu_assert("n_features == 0 after malformed parse", meta.n_features == 0u);
-    mu_assert("feature_names[0] is NULL", meta.feature_names[0] == NULL);
-    mu_assert("feature_names[1] is NULL", meta.feature_names[1] == NULL);
+    mu_assert("feature_names[0] is NULL", meta.feature_names[0] == VMAF_NULLPTR);
+    mu_assert("feature_names[1] is NULL", meta.feature_names[1] == VMAF_NULLPTR);
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0517 regression: sidecar carrying a feature-vector schema
@@ -904,7 +890,7 @@ static char *check_canonical6_feature_fields(const VmafModelSidecar *meta)
     mu_assert("feature_mean[0] ~ 0.86",
               meta->feature_mean[0] > 0.85f && meta->feature_mean[0] < 0.87f);
     mu_assert("feature_std[5] ~ 6.24", meta->feature_std[5] > 6.2f && meta->feature_std[5] < 6.3f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidecar_feature_vector_canonical6(void)
@@ -921,7 +907,7 @@ static char *test_sidecar_feature_vector_canonical6(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"feature_order\": [\"adm2\", \"vif_scale0\", "
@@ -941,7 +927,7 @@ static char *test_sidecar_feature_vector_canonical6(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0517: the alternative `features` / `input_mean` / `input_std`
@@ -961,7 +947,7 @@ static char *test_sidecar_feature_vector_vmaf_tiny_field_names(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"features\": [\"adm2\", \"vif_scale0\"],\n"
@@ -979,7 +965,7 @@ static char *test_sidecar_feature_vector_vmaf_tiny_field_names(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0517: sidecar with feature_order but no scaler arrays — the
@@ -999,7 +985,7 @@ static char *test_sidecar_feature_vector_no_scaler(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"feature_order\": [\"adm2\", \"vif_scale0\"]\n"
@@ -1015,7 +1001,7 @@ static char *test_sidecar_feature_vector_no_scaler(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* vmaf_tiny_v2/v3/v4 pattern: sidecar with features + input_mean/std
@@ -1036,7 +1022,7 @@ static char *test_sidecar_onnx_has_scaler_flag(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"features\": [\"adm2\", \"vif_scale0\"],\n"
@@ -1056,7 +1042,7 @@ static char *test_sidecar_onnx_has_scaler_flag(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Absence of onnx_has_scaler must leave the flag false (backwards
@@ -1075,7 +1061,7 @@ static char *test_sidecar_onnx_has_scaler_absent(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"feature_order\": [\"adm2\", \"vif_scale0\"],\n"
@@ -1093,7 +1079,7 @@ static char *test_sidecar_onnx_has_scaler_absent(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: sidecar carrying an encoder_vocab array populates
@@ -1113,7 +1099,7 @@ static char *test_sidecar_encoder_vocab_v2(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"encoder_vocab\": [\"libx264\", \"libx265\", \"libsvtav1\", "
@@ -1136,7 +1122,7 @@ static char *test_sidecar_encoder_vocab_v2(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: sidecar without encoder_vocab keeps codec_aware false
@@ -1155,7 +1141,7 @@ static char *test_sidecar_no_encoder_vocab(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\n"
                      "  \"kind\": \"fr\",\n"
                      "  \"feature_order\": [\"adm2\"]\n"
@@ -1171,7 +1157,7 @@ static char *test_sidecar_no_encoder_vocab(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* quant_mode "static" — drives the model_loader.c:434-435 branch in
@@ -1191,7 +1177,7 @@ static char *test_sidecar_quant_mode_static(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"fr\", \"quant_mode\": \"static\"}\n");
     (void)fclose(s);
 
@@ -1203,7 +1189,7 @@ static char *test_sidecar_quant_mode_static(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* quant_mode "qat" — drives the model_loader.c:436-437 branch (the
@@ -1222,7 +1208,7 @@ static char *test_sidecar_quant_mode_qat(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"fr\", \"quant_mode\": \"qat\"}\n");
     (void)fclose(s);
 
@@ -1234,7 +1220,7 @@ static char *test_sidecar_quant_mode_qat(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* sidecar kind == "filter" — drives the model_loader.c:405-406 branch
@@ -1254,7 +1240,7 @@ static char *test_sidecar_kind_filter(void)
     if (f)
         (void)fclose(f);
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fprintf(s, "{\"kind\": \"filter\"}\n");
     (void)fclose(s);
 
@@ -1266,7 +1252,7 @@ static char *test_sidecar_kind_filter(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0976 regression sibling for encoder_vocab. Companion to the
@@ -1291,7 +1277,7 @@ static char *test_sidecar_encoder_vocab_malformed_no_leak(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* Two valid encoder entries then an unterminated third entry —
      * extract_string_array returns -EINVAL after allocating
      * "libx264" + "libx265"; the loader's cleanup loop must observe
@@ -1308,14 +1294,14 @@ static char *test_sidecar_encoder_vocab_malformed_no_leak(void)
     mu_assert("malformed encoder_vocab sidecar still loads", err == 0);
     mu_assert("n_encoder_vocab == 0 after malformed parse", meta.n_encoder_vocab == 0u);
     mu_assert("codec_aware stays false on malformed array", meta.codec_aware == false);
-    mu_assert("encoder_vocab[0] is NULL", meta.encoder_vocab[0] == NULL);
-    mu_assert("encoder_vocab[1] is NULL", meta.encoder_vocab[1] == NULL);
+    mu_assert("encoder_vocab[0] is NULL", meta.encoder_vocab[0] == VMAF_NULLPTR);
+    mu_assert("encoder_vocab[1] is NULL", meta.encoder_vocab[1] == VMAF_NULLPTR);
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* extract_string_array empty-array branch (model_loader.c:210-212):
@@ -1339,7 +1325,7 @@ static char *test_sidecar_empty_arrays_are_valid(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* All three string arrays explicitly empty. Each parser returns 0
      * with *out_n == 0; the loader treats *out_n == 0 the same as
      * absent and does not promote codec_aware / has_feature_scaler. */
@@ -1363,7 +1349,7 @@ static char *test_sidecar_empty_arrays_are_valid(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* extract_string_array ERANGE branch (model_loader.c:225-227): when
@@ -1386,7 +1372,7 @@ static char *test_sidecar_encoder_vocab_over_max_returns_erange(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fputs("{\n  \"kind\": \"fr\",\n  \"encoder_vocab\": [", s);
     /* Emit 33 distinct entries — one over the 32-entry cap. */
     for (int i = 0; i < 33; ++i) {
@@ -1409,7 +1395,7 @@ static char *test_sidecar_encoder_vocab_over_max_returns_erange(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* extract_string_array trailing-junk branch (model_loader.c:248-249):
@@ -1434,7 +1420,7 @@ static char *test_sidecar_array_trailing_junk_wipes(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     /* `"a" Z` after the first entry is neither comma nor `]` — exercises
      * the trailing-junk -EINVAL return inside extract_string_array. */
     (void)fputs("{\n"
@@ -1448,13 +1434,13 @@ static char *test_sidecar_array_trailing_junk_wipes(void)
     int err = vmaf_dnn_sidecar_load(onnx, &meta);
     mu_assert("trailing-junk sidecar still loads", err == 0);
     mu_assert("trailing-junk → n_output_names 0", meta.n_output_names == 0u);
-    mu_assert("trailing-junk → slot 0 NULL", meta.output_names[0] == NULL);
+    mu_assert("trailing-junk → slot 0 NULL", meta.output_names[0] == VMAF_NULLPTR);
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* extract_string_array non-string element branch
@@ -1478,7 +1464,7 @@ static char *test_sidecar_array_non_string_element_wipes(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fputs("{\n"
                 "  \"kind\": \"fr\",\n"
                 "  \"output_names\": [42]\n"
@@ -1495,7 +1481,7 @@ static char *test_sidecar_array_non_string_element_wipes(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* extract_int -ERANGE branch (model_loader.c:332-333): a numeric
@@ -1517,7 +1503,7 @@ static char *test_sidecar_opset_overflow_returns_default(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fputs("{\"kind\": \"fr\", \"onnx_opset\": 99999999999999999999999}\n", s);
     (void)fclose(s);
 
@@ -1532,7 +1518,7 @@ static char *test_sidecar_opset_overflow_returns_default(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* extract_float_array trailing-junk -EINVAL branch
@@ -1556,7 +1542,7 @@ static char *test_sidecar_feature_mean_trailing_junk(void)
         (void)fclose(f);
 
     FILE *s = fopen_w_600(sidecar);
-    mu_assert("fopen sidecar failed", s != NULL);
+    mu_assert("fopen sidecar failed", s != VMAF_NULLPTR);
     (void)fputs("{\n"
                 "  \"kind\": \"fr\",\n"
                 "  \"feature_order\": [\"adm2\"],\n"
@@ -1578,7 +1564,7 @@ static char *test_sidecar_feature_mean_trailing_junk(void)
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* !_WIN32 */
 
@@ -1602,7 +1588,7 @@ static char *test_codec_block_fill_libx264_medium_28(void)
     mu_assert("preset_norm ~ 5/9", buf[n_vocab] > 0.555f && buf[n_vocab] < 0.556f);
     /* crf_norm: 28/63 = 0.444... */
     mu_assert("crf_norm ~ 28/63", buf[n_vocab + 1u] > 0.444f && buf[n_vocab + 1u] < 0.445f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: vmaf_dnn_codec_block_fill — unknown codec name returns
@@ -1617,7 +1603,7 @@ static char *test_codec_block_fill_unknown_returns_enoent(void)
     mu_assert("buf[2] == 1.0 (unknown bucket)", buf[2] > 0.999f && buf[2] < 1.001f);
     mu_assert("buf[0] == 0", buf[0] == 0.0f);
     mu_assert("buf[1] == 0", buf[1] == 0.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: vmaf_dnn_codec_block_fill — NULL codec name selects
@@ -1627,10 +1613,10 @@ static char *test_codec_block_fill_null_codec_is_ok(void)
 {
     static const char *VOCAB[] = {"libx264", "unknown"};
     float buf[4] = {0};
-    int rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, NULL, NULL, 0);
+    int rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("rc == 0 for NULL codec", rc == 0);
     mu_assert("unknown bucket set", buf[1] > 0.999f && buf[1] < 1.001f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: vmaf_dnn_codec_block_fill — ffprobe alias "h264" is
@@ -1642,7 +1628,7 @@ static char *test_codec_block_fill_h264_alias(void)
     int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 3u, "h264", "medium", 0);
     mu_assert("rc == 0 for h264 alias", rc == 0);
     mu_assert("buf[0] == 1.0 (libx264 via alias)", buf[0] > 0.999f && buf[0] < 1.001f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* resolve_codec_alias coverage: hevc/h265 → libx265 (model_loader.c:660-661),
@@ -1693,7 +1679,7 @@ static char *test_codec_block_fill_aliases_hevc_av1_vp9_vvc(void)
         mu_assert(c->msg_rc, rc == 0);
         mu_assert(c->msg_buf, buf[c->expected_slot] > 0.999f && buf[c->expected_slot] < 1.001f);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* `slower` preset selector — model_loader.c:635-636 is the only preset
@@ -1708,7 +1694,7 @@ static char *test_codec_block_fill_preset_slower(void)
     mu_assert("slower preset rc == 0", rc == 0);
     /* preset_norm = 7 / 9 = 0.777... */
     mu_assert("slower preset_norm ~ 7/9", buf[2] > 0.777f && buf[2] < 0.778f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* NULL vocab entry skip branch — model_loader.c:702-704. When the
@@ -1719,13 +1705,13 @@ static char *test_codec_block_fill_null_vocab_entry_is_skipped(void)
 {
     /* Mid-table NULL slot — the loop must skip it and still match
      * "libx264" at slot 2. */
-    static const char *VOCAB[] = {"libx265", NULL, "libx264", "unknown"};
+    static const char *VOCAB[] = {"libx265", VMAF_NULLPTR, "libx264", "unknown"};
     float buf[6] = {0};
     int rc = vmaf_dnn_codec_block_fill(buf, 6u, VOCAB, 4u, "libx264", "medium", 28);
     mu_assert("rc == 0 when matching past a NULL slot", rc == 0);
     mu_assert("buf[2] == 1.0", buf[2] > 0.999f && buf[2] < 1.001f);
     mu_assert("buf[1] (NULL slot) untouched", buf[1] == 0.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: vmaf_dnn_codec_block_fill — CRF clamped to [0, 63]. */
@@ -1741,7 +1727,7 @@ static char *test_codec_block_fill_crf_clamp(void)
     rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, "libx264", "medium", -5);
     mu_assert("rc == 0 (negative crf)", rc == 0);
     mu_assert("crf_norm clamped to 0.0", buf[3] == 0.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* One (codec, preset) -> buf[12] preset-ordinal expectation row for
@@ -1815,7 +1801,7 @@ static char *test_codec_block_fill_preset_tables(void)
             mu_assert(c->msg_val, buf[12] < c->hi);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* One (codec, unrecognised-preset) row for
@@ -1852,20 +1838,20 @@ static char *test_codec_block_fill_unknown_presets_default(void)
         mu_assert(c->msg_rc, rc == 0);
         mu_assert(c->msg_val, buf[7] > 0.555f && buf[7] < 0.556f);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_codec_block_fill_rejects_bad_args(void)
 {
     static const char *VOCAB[] = {"libx264", "unknown"};
     float buf[4] = {0};
-    int rc = vmaf_dnn_codec_block_fill(NULL, 4u, VOCAB, 2u, "libx264", "medium", 28);
+    int rc = vmaf_dnn_codec_block_fill(VMAF_NULLPTR, 4u, VOCAB, 2u, "libx264", "medium", 28);
     mu_assert("NULL buf rejected", rc == -EINVAL);
-    rc = vmaf_dnn_codec_block_fill(buf, 4u, NULL, 2u, "libx264", "medium", 28);
+    rc = vmaf_dnn_codec_block_fill(buf, 4u, VMAF_NULLPTR, 2u, "libx264", "medium", 28);
     mu_assert("NULL vocab rejected", rc == -EINVAL);
     rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 0u, "libx264", "medium", 28);
     mu_assert("empty vocab rejected", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0519: vmaf_dnn_codec_block_fill — wrong buf_len returns -EINVAL. */
@@ -1876,7 +1862,7 @@ static char *test_codec_block_fill_bad_len(void)
     /* expected len = 2 + 2 = 4; pass 5 */
     int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 2u, "libx264", "medium", 28);
     mu_assert("rc == -EINVAL for wrong buf_len", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* run_tests' table split into three file-scope segments (core validate/jail,
@@ -1960,7 +1946,3 @@ char *run_tests(void)
         return msg;
     return mu_run_table(CODEC_BLOCK_TESTS, MU_TABLE_LEN(CODEC_BLOCK_TESTS));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */
-
-/* NOLINTEND(concurrency-mt-unsafe) */

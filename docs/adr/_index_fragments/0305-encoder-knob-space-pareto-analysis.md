@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0305](0305-encoder-knob-space-pareto-analysis.md) | Encoder knob-space Pareto-frontier analysis stratified per (source, codec, rc_mode) | Accepted | ai, vmaf-tune, research, encoder, pareto, fork-local |

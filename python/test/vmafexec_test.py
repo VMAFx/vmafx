@@ -2,6 +2,8 @@ from __future__ import absolute_import
 
 import platform
 import unittest
+
+import vmaf
 from test.testutil import (
     set_default_576_324_10bit_videos_for_testing,
     set_default_576_324_10bit_videos_for_testing_b,
@@ -9,8 +11,11 @@ from test.testutil import (
     set_default_576_324_16bit_videos_for_testing,
     set_default_576_324_videos_for_testing,
 )
-
-import vmaf
+from vmaf.config import VmafConfig
+from vmaf.core.asset import Asset
+from vmaf.core.quality_runner import VmafexecQualityRunner
+from vmaf.core.result_store import FileSystemResultStore
+from vmaf.tools.misc import MyTestCase
 
 # ADR-0418: Per-platform expected values for VMAF *model-prediction*
 # scores (akiyo_multiply variants). libsvm's `svm_predict` calls
@@ -30,11 +35,6 @@ import vmaf
 # failing the macOS lanes. The other three per-platform values still
 # measure as recorded and stay.
 _IS_DARWIN = platform.system() == "Darwin"
-from vmaf.config import VmafConfig
-from vmaf.core.asset import Asset
-from vmaf.core.quality_runner import VmafexecQualityRunner
-from vmaf.core.result_store import FileSystemResultStore
-from vmaf.tools.misc import MyTestCase
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -53,7 +53,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_matched_to_vmafossexec(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -108,7 +108,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_float_fex(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -166,7 +166,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_motion_force_zero(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -223,7 +223,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_motion_force_zero2(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -279,7 +279,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_fixed_psnr(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -306,7 +306,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_n_threads(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -375,7 +375,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_set_custom_models(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -413,7 +413,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_set_custom_models_enable_transform(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -443,7 +443,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_disable_avx(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -484,7 +484,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_parallel_vmafexec_runner_with_repeated_assets(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original, asset, asset],
@@ -503,7 +503,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_yuv422p10le(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -560,7 +560,9 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_yuv420p10le_b(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing_b()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_10bit_videos_for_testing_b()
+        )
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -617,7 +619,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_yuv420p12le(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -674,7 +676,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_yuv420p16le(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -810,7 +812,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_float_moment(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -1319,7 +1321,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         # Coverage of "what does the *default* produce" moved to the fork-added
         # test python/test/default_model_test.py, per the rule that
         # fork-added tests live in separate files.
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset, asset_original],
@@ -1359,7 +1361,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(results[1]["VMAFEXEC_score"], 99.946416604585025, places=4)
 
     def test_run_vmafexec_runner_akiyo_multiply_4k_model(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
             [asset],
@@ -1649,7 +1651,7 @@ class VmafexecQualityRunnerSubsamplingTest(MyTestCase):
 
     def test_run_vmafexec_runner_with_subsample2(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         subsample = 5
 

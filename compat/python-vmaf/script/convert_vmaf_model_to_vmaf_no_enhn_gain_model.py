@@ -1,15 +1,17 @@
 import copy
-import os
 import pickle
 import shutil
 import sys
+from pathlib import Path
+
+from vmaf.tools.safe_pickle import load_pickle
 
 # from vmaf.config import VmafConfig
 
 
 def convert_vmaf_model_to_vmaf_no_enhn_gain_model(vmaf_model_path, output_vmaf_neg_model_path):
-    with open(vmaf_model_path, "rb") as file:
-        vmaf_model = pickle.load(
+    with Path(vmaf_model_path).open("rb") as file:
+        vmaf_model = load_pickle(
             file,
             # encoding='latin1',
         )
@@ -23,8 +25,8 @@ def convert_vmaf_model_to_vmaf_no_enhn_gain_model(vmaf_model_path, output_vmaf_n
             {"vif_enhn_gain_limit": 1.0},  # 'VMAF_feature_vif_scale3_score'
         ]
 
-    os.makedirs(os.path.dirname(output_vmaf_neg_model_path), exist_ok=True)
-    with open(output_vmaf_neg_model_path, "wb") as output_file:
+    Path(output_vmaf_neg_model_path).parent.mkdir(parents=True, exist_ok=True)
+    with Path(output_vmaf_neg_model_path).open("wb") as output_file:
         pickle.dump(vmaf_neg_model, output_file, protocol=1)
 
     vmaf_svm_model_path = vmaf_model_path + ".model"
@@ -32,10 +34,10 @@ def convert_vmaf_model_to_vmaf_no_enhn_gain_model(vmaf_model_path, output_vmaf_n
     shutil.copyfile(vmaf_svm_model_path, output_vmaf_neg_svm_model_path)
 
 
-if not sys.version_info[0] == 2:
+if sys.version_info[0] != 2:
     print(
         "warning: running {} skipped - must to use py2 to generate the output pickle file.".format(
-            os.path.basename(__file__)
+            Path(__file__).name
         )
     )
 else:

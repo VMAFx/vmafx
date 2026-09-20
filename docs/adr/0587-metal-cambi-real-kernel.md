@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0587: Real Metal Compute Kernels for CAMBI
 
 - **Status**: Accepted
@@ -32,7 +31,7 @@ is the precision target (places=4 cross-backend gate per ADR-0214).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Full GPU (all 5 stages on Metal) | No DtoH round-trips | `calculate_c_values` is a complex sliding-histogram; porting it to MSL is high risk and not needed for places=4 parity | Not chosen for v1; mirrors CUDA Strategy II rationale |
 | Strategy I (all CPU, Metal no-op) | Zero risk | No GPU acceleration | Does not deliver the requested real kernel |
 | Async per-scale (multiple command buffers in flight) | Better throughput | Requires per-scale MTLBuffer ping-pong and synchronisation complexity | Deferred to v2; CUDA v1 is synchronous for the same reason |

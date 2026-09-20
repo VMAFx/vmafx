@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0120: DNN-enabled matrix legs across compilers + macOS
 
 - **Status**: Accepted
@@ -43,7 +42,7 @@ Add three new entries to the `libvmaf-build` matrix in
 [libvmaf-build-matrix.yml](../../.github/workflows/libvmaf-build-matrix.yml):
 
 | Display name | OS | Compiler | ORT install | Required |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `Build — Ubuntu gcc (CPU) + DNN` | ubuntu-latest | gcc | MS tarball 1.22.0 | yes |
 | `Build — Ubuntu clang (CPU) + DNN` | ubuntu-latest | clang | MS tarball 1.22.0 | yes |
 | `Build — macOS clang (CPU) + DNN` | macos-latest | clang | Homebrew (`brew install onnxruntime`) | no (`experimental: true`) |
@@ -68,7 +67,7 @@ ADR can promote it.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Status quo (Tiny AI single leg only)** | Zero CI cost, simple. | Compiler-portability and macOS regressions only surface post-release. | The whole motivation for this ADR is closing exactly that hole. |
 | **Add only the gcc DNN leg as a sanity duplicate** | Minimal cost. | Already covered by the Tiny AI job — pure duplication, no new signal. | Net negative: more minutes, no new failure modes detected. |
 | **Add gcc + clang Linux only, skip macOS** | Half the new minutes; avoids Homebrew flakiness. | macOS ORT bit-rot keeps recurring; user explicitly asked for macOS coverage. | User scope = all three. macOS gated as `experimental` mitigates the flakiness concern. |

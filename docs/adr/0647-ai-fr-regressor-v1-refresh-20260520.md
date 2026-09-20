@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0647: Refresh `fr_regressor_v1` from the 2026-05-20 Netflix feature table
 
 - **Status**: Accepted
@@ -53,7 +52,7 @@ ship blocker: `fr_regressor_v1` has always been gated on PLCC vs the
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Refresh `fr_regressor_v1` from the new Netflix table only | Unblocked now; keeps the ADR-0249 C1 recipe stable; immediately proves whether the refreshed extractor path changed the baseline | Does not consume KoNViD/CHUG/HDR rows | Chosen. This is the smallest honest artifact refresh and gives a clean provenance boundary |
 | Wait for KoNViD and CHUG, then refresh every model in one PR | One large provenance reset | Blocks an already-ready C1 refresh behind unrelated corpus jobs; creates a very large model-artifact PR | Rejected. The backlog asks to keep learning while long jobs run |
 | Change architecture or ship gate during refresh | Could chase the BigBuckBunny SROCC caveat | Mixes a retrain/provenance update with a modeling decision; would invalidate ADR-0249 comparability | Rejected. Architecture and gate changes need their own decision after aggregate corpus refresh |

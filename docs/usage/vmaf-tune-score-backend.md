@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `vmaf-tune --score-backend` — GPU acceleration of the scoring loop
 
 `vmaf-tune corpus` and `vmaf-tune per-shot` invoke the

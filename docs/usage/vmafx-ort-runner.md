@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `vmafx-ort-runner` — ONNX Runtime subprocess for the Go tools
 
 `vmafx-ort-runner` runs one ONNX Runtime forward pass through libvmaf's
@@ -21,7 +20,7 @@ vmafx-ort-runner --model <path.onnx> --inputs '<JSON array of numbers>' [--input
 ```
 
 | Flag | Required | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--model` | yes | Path to the `.onnx` file. The caller resolves it (`pkg/ai` passes an absolute path from `VMAFX_MODEL_DIR`). |
 | `--inputs` | yes | One JSON array of numbers. Bound to the graph input as a float32 row vector of shape `[1, N]`, `N` = array length. |
 | `--input-name` | no | Bind to this graph input **name** instead of positionally (the first input). A wrong name fails with exit 1. |
@@ -33,7 +32,7 @@ of numbers (`[66.13961791992188]`). Nothing else is ever written to stdout;
 diagnostics — including ONNX Runtime's own provider log lines — go to stderr.
 
 | Exit | Meaning | What to do |
-|---|---|---|
+| --- | --- | --- |
 | 0 | Success; stdout holds the result. | — |
 | 1 | The model could not be opened or run: missing file, over libvmaf's 50 MB size cap, an operator outside the allowlist, a graph with more than one input or output, a wrong `--input-name`, or an ONNX Runtime failure. | Read stderr. Multi-input graphs (`fr_regressor_v2`) are outside the runner's protocol — see [Limits](#limits). |
 | 2 | Usage error: a flag is missing, or `--inputs` is not a non-empty JSON array of float32-representable numbers. | Fix the invocation. |

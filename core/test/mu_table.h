@@ -40,11 +40,6 @@ typedef struct MuTest {
 #define MU_TEST(test) {#test, (test)}
 #define MU_TABLE_LEN(table) (sizeof(table) / sizeof((table)[0]))
 
-/* NOLINTBEGIN(modernize-use-nullptr): C header. The fork builds C as C23, where
- * clang-tidy also proposes the `nullptr` keyword, but MSVC's documented
- * /std:clatest C23 feature set does not include `nullptr` while the required
- * Windows build compiles the tests including this header with cl.exe.
- * ADR-1138. */
 static inline mu_message_t mu_run_table(const MuTest *tests, size_t count)
 {
     for (size_t i = 0; i < count; i++) {
@@ -52,8 +47,7 @@ static inline mu_message_t mu_run_table(const MuTest *tests, size_t count)
         if (msg)
             return msg;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
-/* NOLINTEND(modernize-use-nullptr) */
 
 #endif /* VMAF_TEST_MU_TABLE_H_ */

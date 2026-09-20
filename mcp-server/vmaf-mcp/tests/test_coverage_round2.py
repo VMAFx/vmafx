@@ -66,13 +66,16 @@ import signal
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from vmaf_mcp import http_transport as ht
 from vmaf_mcp import server as srv
+
+if TYPE_CHECKING:
+    from aiohttp.test_utils import TestClient
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -379,8 +382,6 @@ def test_require_prometheus_raises_helpful_message_when_missing(
 aiohttp = pytest.importorskip("aiohttp")
 pytest.importorskip("prometheus_client")
 pytest_asyncio = pytest.importorskip("pytest_asyncio")
-
-from aiohttp.test_utils import TestClient  # noqa: E402
 
 
 def _fresh_metrics_for_round2() -> dict[str, Any]:

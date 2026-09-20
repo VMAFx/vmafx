@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Fix three RC-gate failures surfaced by the pre-release validation matrix:
 
 - **Go `t.Setenv` parallelism panic** (`cmd/vmafx-mcp/server_test.go`): removed

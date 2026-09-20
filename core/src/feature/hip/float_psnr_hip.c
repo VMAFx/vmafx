@@ -29,6 +29,8 @@
  *  the partial accumulation but are identical at the host log10 step.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -50,9 +52,9 @@
 #include "../../hip/picture_hip.h"
 #include "float_psnr_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -157,7 +159,7 @@ static int float_psnr_hip_resolve_peak_clamp(FloatPsnrStateHip *s, unsigned bpc)
 
 #ifdef HAVE_HIPCC
 /* Load the HSACO fat binary and resolve both kernel function handles. On
- * failure the module is unloaded again and `s->module` is NULL. */
+ * failure the module is unloaded again and `s->module` is VMAF_NULLPTR. */
 static int float_psnr_hip_module_load(FloatPsnrStateHip *s)
 {
     hipError_t hip_rc = hipModuleLoadData(&s->module, float_psnr_score_hsaco);
@@ -169,7 +171,7 @@ static int float_psnr_hip_module_load(FloatPsnrStateHip *s)
         hip_rc = hipModuleGetFunction(&s->funcbpc16, s->module, "float_psnr_kernel_16bpc");
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return hip_err(hip_rc);
 }
@@ -201,14 +203,15 @@ static int float_psnr_hip_launch_kernel(FloatPsnrStateHip *s, ptrdiff_t plane_pi
                       (void *)&s->frame_h,  (void *)&s->bpc};
     const bool is8 = (s->bpc == 8u);
     return hip_err(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, FPSNR_BX,
-                                         FPSNR_BY, 1, 0, str, is8 ? args8 : args16, NULL));
+                                         FPSNR_BY, 1, 0, str, is8 ? args8 : args16, VMAF_NULLPTR));
 }
 
 /*
  * Per-frame submit body: zero accumulator, HtoD copies, kernel launch,
  * submit-event record, DtoH copy.
  */
-static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
+static int float_psnr_hip_launch(FloatPsnrStateHip *s, const VmafPicture *ref_pic,
+                                 const VmafPicture *dist_pic)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * bpp);
@@ -252,23 +255,23 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Free the staging buffers and unload the module. Safe with NULL handles.
+/* Free the staging buffers and unload the module. Safe with VMAF_NULLPTR handles.
  * Returns the first error. */
 static int float_psnr_hip_module_free(FloatPsnrStateHip *s)
 {
     void **bufs[] = {&s->dis_in, &s->ref_in};
     int rc = 0;
     for (unsigned i = 0u; i < 2u; i++) {
-        if (*bufs[i] == NULL)
+        if (*bufs[i] == VMAF_NULLPTR)
             continue;
         const int e = hip_err(hipFree(*bufs[i]));
-        *bufs[i] = NULL;
+        *bufs[i] = VMAF_NULLPTR;
         if (rc == 0)
             rc = e;
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         const int e = hip_err(hipModuleUnload(s->module));
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         if (rc == 0)
             rc = e;
     }
@@ -296,13 +299,13 @@ static int float_psnr_hip_release(FloatPsnrStateHip *s)
     e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (rc == 0)
         rc = e;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         e = vmaf_dictionary_free(&s->feature_name_dict);
         if (rc == 0)
             rc = e;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -341,7 +344,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -358,8 +361,9 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* submit / collect                                                    */
 /* ------------------------------------------------------------------ */
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -430,13 +434,12 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 /* Registration                                                        */
 /* ------------------------------------------------------------------ */
 
-static const char *provided_features[] = {"float_psnr", NULL};
+static const char *provided_features[] = {"float_psnr", VMAF_NULLPTR};
 
 /* Load-bearing: declared `extern` in feature_extractor.c's
  * `feature_extractor_list[]` under `#if HAVE_HIP`. Making this static
  * would unlink the extractor from the registry. Same pattern as every
  * CUDA / SYCL / Vulkan extractor (see vmaf_fex_float_psnr_cuda). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_psnr_hip = {
     .name = "float_psnr_hip",
     .init = init_fex_hip,
@@ -455,5 +458,3 @@ VmafFeatureExtractor vmaf_fex_float_psnr_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

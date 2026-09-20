@@ -1,1 +1,5 @@
-| [ADR-0543](0543-adr-0498-enforcement-hardening.md) | ADR-0498 enforcement hardening — distinct exit code + structured JSON error + per-feature gate | Accepted | cli, libvmaf, bugfix, backend, exit-code, extends-adr-0498 |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0543](0543-adr-0498-enforcement-hardening.md) | enforcement hardening — distinct exit code + structured JSON error + per-feature gate | Accepted | `cli`, `libvmaf`, `bugfix`, `backend`, `exit-code`, `extends-adr-0498` |

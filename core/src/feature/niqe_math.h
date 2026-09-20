@@ -93,43 +93,59 @@ typedef struct NiqeAggd {
     double rsq; /* right_mean_sqrt (rms) */
 } NiqeAggd;
 
-/* Fit AGGD parameters of the float32 sample buffer x[0..n). `prec` is the
- * gamma table from niqe_build_gamma_table(). Zeros are classified RIGHT
- * (the x >= 0 boundary, matching the harness). */
-/* One numerical procedure — the AGGD moment fit — whose intermediate sums feed
- * a snapshot-gated score. Splitting it would either pass a dozen live
- * accumulators between functions or change the order they combine in, and the
- * fork pins these values. ADR-0141 §2. */
-/* NOLINTNEXTLINE(readability-function-size) */
-static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double *prec)
-{
-    assert(n > 0 && prec);
-    /* float32 reductions (harness parity). */
-    float left_sq_sum = 0.0f;
-    float right_sq_sum = 0.0f;
-    size_t left_cnt = 0;
-    size_t right_cnt = 0;
-    float abs_sum = 0.0f;
-    float sq_sum = 0.0f;
+typedef struct NiqeAggdMoments {
+    float left_sq_sum;
+    float right_sq_sum;
+    float abs_sum;
+    float sq_sum;
+    size_t left_cnt;
+    size_t right_cnt;
+} NiqeAggdMoments;
 
+static inline NiqeAggdMoments niqe_accumulate_aggd(const float *x, size_t n)
+{
+    NiqeAggdMoments m = {0};
     for (size_t i = 0; i < n; i++) {
         const float v = x[i];
         const float v2 = v * v;
-        sq_sum += v2;
-        abs_sum += (v < 0.0f) ? -v : v;
+        m.sq_sum += v2;
+        m.abs_sum += (v < 0.0f) ? -v : v;
         if (v < 0.0f) {
-            left_sq_sum += v2;
-            left_cnt++;
+            m.left_sq_sum += v2;
+            m.left_cnt++;
         } else {
-            right_sq_sum += v2;
-            right_cnt++;
+            m.right_sq_sum += v2;
+            m.right_cnt++;
         }
     }
+    return m;
+}
 
-    const float lms = (left_cnt > 0) ? sqrtf(left_sq_sum / (float)left_cnt) : 0.0f;
-    const float rms = (right_cnt > 0) ? sqrtf(right_sq_sum / (float)right_cnt) : 0.0f;
-    const float mean_abs = abs_sum / (float)n;
-    const float mean_sq = sq_sum / (float)n;
+static inline int niqe_find_gamma(const double *prec, float rhat_norm)
+{
+    int best = 0;
+    double best_d = fabs(prec[0] - (double)rhat_norm);
+    for (int i = 1; i < NIQE_GAMMA_COUNT; i++) {
+        const double d = fabs(prec[i] - (double)rhat_norm);
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+/* Fit AGGD parameters of the float32 sample buffer x[0..n). `prec` is the
+ * gamma table from niqe_build_gamma_table(). Zeros are classified RIGHT
+ * (the x >= 0 boundary, matching the harness). */
+static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double *prec)
+{
+    assert(n > 0 && prec);
+    const NiqeAggdMoments m = niqe_accumulate_aggd(x, n);
+    const float lms = (m.left_cnt > 0) ? sqrtf(m.left_sq_sum / (float)m.left_cnt) : 0.0f;
+    const float rms = (m.right_cnt > 0) ? sqrtf(m.right_sq_sum / (float)m.right_cnt) : 0.0f;
+    const float mean_abs = m.abs_sum / (float)n;
+    const float mean_sq = m.sq_sum / (float)n;
 
     /* Flat patch (mean_sq == 0): 0/0 would produce NaN.  Return the alpha
      * sentinel 0.2f (the lower bound of gamma_range in the Python harness),
@@ -161,16 +177,7 @@ static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double 
         const float rhat_norm = r_hat * (((gh3 + 1.0f) * (gamma_hat + 1.0f)) / denom);
         assert(isfinite((double)rhat_norm));
 
-        /* argmin over the gamma table (double comparison, robust to ties). */
-        best = 0;
-        double best_d = fabs(prec[0] - (double)rhat_norm);
-        for (int i = 1; i < NIQE_GAMMA_COUNT; i++) {
-            const double d = fabs(prec[i] - (double)rhat_norm);
-            if (d < best_d) {
-                best_d = d;
-                best = i;
-            }
-        }
+        best = niqe_find_gamma(prec, rhat_norm);
     }
     const double alpha = niqe_gamma_value(best);
 
@@ -290,7 +297,7 @@ static inline void niqe_jacobi_init(int n, const double *in, double *A, double *
  * and the branch count is the convergence tests. Splitting the sweep changes the
  * order the rotations are applied in, which changes the eigenvectors.
  * ADR-0141 §2. */
-/* NOLINTNEXTLINE(readability-function-size) */
+/* lint rationale -- ADR-0141 rationale above. */
 static inline void niqe_jacobi_sweep_pass(int n, double *A, double *V)
 {
     /* Cyclic Jacobi sweeps. n=36 converges well within this bound. */
@@ -350,7 +357,7 @@ static inline void niqe_jacobi_sweep_pass(int n, double *A, double *V)
 /* One pseudo-inverse reconstruction. The branch count is the singular-value
  * cutoff test inside the accumulation loops; hoisting those loops out would
  * change the accumulation order of a snapshot-gated result. ADR-0141 §2. */
-/* NOLINTNEXTLINE(readability-function-size) */
+/* lint rationale -- ADR-0141 rationale above. */
 static inline void niqe_pinv_reconstruct(int n, const double *A, const double *V, double *out,
                                          double rtol)
 {

@@ -46,9 +46,6 @@ extern "C" {
 int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
                         const int64_t *in_shape, size_t in_rank, const char *feature_name);
 
-/** Returns 1 if a tiny model is attached to @p ctx, else 0. */
-int vmaf_ctx_dnn_has_session(const VmafContext *ctx);
-
 /**
  * Populate the codec one-hot block of an attached codec-aware tiny model
  * (ADR-0519). Bridge for the public `vmaf_dnn_set_codec_context` API

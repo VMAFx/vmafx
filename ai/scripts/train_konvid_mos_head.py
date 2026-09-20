@@ -368,70 +368,57 @@ def _display_tone_mapping(mapping: dict[str, Any]) -> str:
     )
 
 
-def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
-    direct = _safe_float(mapping.get(name))
-    if math.isfinite(direct):
-        return direct
-    if name == "display_peak_luminance_nits_norm":
-        value = _mapping_first(
-            mapping,
+def _display_luminance_feature(mapping: dict[str, Any], name: str) -> float:
+    aliases = {
+        "display_peak_luminance_nits_norm": (
+            10000.0,
             "display_peak_luminance_nits",
             "peak_luminance_nits",
             "peak_nits",
             "max_luminance_nits",
-        )
-        return _normalise_positive(value, 10000.0)
-    if name == "display_black_luminance_nits_norm":
-        value = _mapping_first(
-            mapping,
+        ),
+        "display_black_luminance_nits_norm": (
+            1.0,
             "display_black_luminance_nits",
             "black_luminance_nits",
             "black_nits",
             "min_luminance_nits",
-        )
-        return _normalise_positive(value, 1.0)
-    if name == "display_contrast_ratio_log_norm":
-        contrast = _safe_float(_mapping_first(mapping, "display_contrast_ratio", "contrast_ratio"))
-        if not math.isfinite(contrast):
-            peak = _safe_float(
-                _mapping_first(
-                    mapping,
-                    "display_peak_luminance_nits",
-                    "peak_luminance_nits",
-                    "peak_nits",
-                    "max_luminance_nits",
-                )
-            )
-            black = _safe_float(
-                _mapping_first(
-                    mapping,
-                    "display_black_luminance_nits",
-                    "black_luminance_nits",
-                    "black_nits",
-                    "min_luminance_nits",
-                )
-            )
-            if math.isfinite(peak) and math.isfinite(black) and black > 0.0:
-                contrast = peak / black
-        if not math.isfinite(contrast) or contrast <= 1.0:
-            return math.nan
-        return _clamp01(math.log10(contrast) / 7.0)
-    if name == "display_ambient_lux_norm":
-        value = _mapping_first(mapping, "display_ambient_lux", "ambient_lux", "viewing_lux")
-        return _normalise_positive(value, 1000.0)
-    if name == "display_bt2020_coverage":
-        return _normalise_fraction(
+        ),
+        "display_ambient_lux_norm": (1000.0, "display_ambient_lux", "ambient_lux", "viewing_lux"),
+    }
+    if name in aliases:
+        scale, *keys = aliases[name]
+        return _normalise_positive(_mapping_first(mapping, *keys), scale)
+    contrast = _safe_float(_mapping_first(mapping, "display_contrast_ratio", "contrast_ratio"))
+    if not math.isfinite(contrast):
+        peak = _safe_float(
             _mapping_first(
                 mapping,
-                "display_bt2020_coverage",
-                "bt2020_coverage",
-                "rec2020_coverage",
+                "display_peak_luminance_nits",
+                "peak_luminance_nits",
+                "peak_nits",
+                "max_luminance_nits",
             )
         )
-    if name == "display_p3_coverage":
-        return _normalise_fraction(
-            _mapping_first(mapping, "display_p3_coverage", "p3_coverage", "dci_p3_coverage")
+        black = _safe_float(
+            _mapping_first(
+                mapping,
+                "display_black_luminance_nits",
+                "black_luminance_nits",
+                "black_nits",
+                "min_luminance_nits",
+            )
         )
+        if math.isfinite(peak) and math.isfinite(black) and black > 0.0:
+            contrast = peak / black
+    return (
+        _clamp01(math.log10(contrast) / 7.0)
+        if math.isfinite(contrast) and contrast > 1.0
+        else math.nan
+    )
+
+
+def _display_panel_feature(mapping: dict[str, Any], name: str) -> float:
     panel_type = _display_panel_type(mapping)
     if name == "display_panel_oled":
         return 1.0 if "oled" in panel_type else 0.0 if panel_type else math.nan
@@ -460,17 +447,48 @@ def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
             if any(token in panel_type for token in ("mini-led", "miniled", "fald"))
             else math.nan
         )
-    if name == "display_tone_mapping_dynamic":
-        value = _mapping_first(mapping, "display_tone_mapping_dynamic", "tone_mapping_dynamic")
-        if value is not None:
-            return _boolish_feature(value)
-        tone_mapping = _display_tone_mapping(mapping)
-        if not tone_mapping:
-            return math.nan
-        dynamic = any(
-            token in tone_mapping for token in ("dynamic", "hdr10+", "hdr10plus", "dolby", "vision")
+    return math.nan
+
+
+def _display_tone_mapping_feature(mapping: dict[str, Any]) -> float:
+    value = _mapping_first(mapping, "display_tone_mapping_dynamic", "tone_mapping_dynamic")
+    if value is not None:
+        return _boolish_feature(value)
+    tone_mapping = _display_tone_mapping(mapping)
+    if not tone_mapping:
+        return math.nan
+    dynamic = any(
+        token in tone_mapping for token in ("dynamic", "hdr10+", "hdr10plus", "dolby", "vision")
+    )
+    return 1.0 if dynamic else 0.0
+
+
+def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
+    direct = _safe_float(mapping.get(name))
+    if math.isfinite(direct):
+        return direct
+    if name in {
+        "display_peak_luminance_nits_norm",
+        "display_black_luminance_nits_norm",
+        "display_contrast_ratio_log_norm",
+        "display_ambient_lux_norm",
+    }:
+        return _display_luminance_feature(mapping, name)
+    if name == "display_bt2020_coverage":
+        return _normalise_fraction(
+            _mapping_first(mapping, name, "bt2020_coverage", "rec2020_coverage")
         )
-        return 1.0 if dynamic else 0.0
+    if name == "display_p3_coverage":
+        return _normalise_fraction(_mapping_first(mapping, name, "p3_coverage", "dci_p3_coverage"))
+    if name in {
+        "display_panel_oled",
+        "display_panel_qled",
+        "display_panel_lcd",
+        "display_local_dimming",
+    }:
+        return _display_panel_feature(mapping, name)
+    if name == "display_tone_mapping_dynamic":
+        return _display_tone_mapping_feature(mapping)
     return math.nan
 
 
@@ -691,6 +709,77 @@ def _heldout_split_indices(splits: np.ndarray) -> tuple[np.ndarray, np.ndarray] 
 # ---------------------------------------------------------------------
 
 
+def _synthetic_temporal_column(
+    name: str, base_map: dict[str, np.ndarray], rng, n_rows: int
+) -> np.ndarray | None:
+    if name.endswith("_p10") and name.removesuffix("_p10") in base_map:
+        return np.maximum(0.0, base_map[name.removesuffix("_p10")] * 0.90)
+    if name.endswith("_p90") and name.removesuffix("_p90") in base_map:
+        return base_map[name.removesuffix("_p90")] * 1.08
+    if name.endswith("_std") and name.removesuffix("_std") in base_map:
+        return rng.uniform(0.005, 0.05, size=n_rows).astype(np.float32)
+    return None
+
+
+def _synthetic_metadata_column(name: str, rng, n_rows: int) -> np.ndarray | None:
+    if name == "chug_bitrate_mbps":
+        return rng.choice([0.2, 0.5, 1.0, 2.0, 4.0], size=n_rows).astype(np.float32)
+    if name == "chug_orientation_portrait":
+        return rng.integers(0, 2, size=n_rows).astype(np.float32)
+    if name == "chug_ref":
+        return np.zeros(n_rows, dtype=np.float32)
+    if name in {
+        "distorted_width_norm",
+        "distorted_height_norm",
+        "reference_width_norm",
+        "reference_height_norm",
+    }:
+        return rng.uniform(0.16, 1.0, size=n_rows).astype(np.float32)
+    if name in {"duration_s_norm", "n_feature_frames_norm"}:
+        return rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32)
+    if name == "feature_bitdepth_norm":
+        return np.full(n_rows, 0.5, dtype=np.float32)
+    return None
+
+
+def _synthetic_display_column(name: str, rng, n_rows: int) -> np.ndarray | None:
+    uniform_ranges = {
+        "display_peak_luminance_nits_norm": (0.04, 0.20),
+        "display_black_luminance_nits_norm": (0.0001, 0.02),
+        "display_contrast_ratio_log_norm": (0.55, 0.95),
+        "display_ambient_lux_norm": (0.0, 0.25),
+        "display_bt2020_coverage": (0.65, 1.0),
+        "display_p3_coverage": (0.65, 1.0),
+    }
+    if name in uniform_ranges:
+        low, high = uniform_ranges[name]
+        return rng.uniform(low, high, size=n_rows).astype(np.float32)
+    binary = {
+        "display_panel_oled",
+        "display_panel_qled",
+        "display_panel_lcd",
+        "display_local_dimming",
+        "display_tone_mapping_dynamic",
+    }
+    return rng.integers(0, 2, size=n_rows).astype(np.float32) if name in binary else None
+
+
+def _synthetic_feature_column(
+    name: str, base_map: dict[str, np.ndarray], rng, n_rows: int
+) -> np.ndarray:
+    if name in base_map:
+        return base_map[name]
+    for resolver in (_synthetic_temporal_column,):
+        value = resolver(name, base_map, rng, n_rows)
+        if value is not None:
+            return value
+    for resolver in (_synthetic_metadata_column, _synthetic_display_column):
+        value = resolver(name, rng, n_rows)
+        if value is not None:
+            return value
+    return np.zeros(n_rows, dtype=np.float32)
+
+
 def _synthesize_corpus(
     n_rows: int = 600,
     seed: int = 0,
@@ -722,71 +811,7 @@ def _synthesize_corpus(
         ]
     ).astype(np.float32)
     base_map = {name: base_feats[:, idx] for idx, name in enumerate(FEATURE_COLUMNS)}
-    columns: list[np.ndarray] = []
-    for name in feature_columns:
-        if name in base_map:
-            columns.append(base_map[name])
-            continue
-        if name.endswith("_p10") and name.removesuffix("_p10") in base_map:
-            columns.append(np.maximum(0.0, base_map[name.removesuffix("_p10")] * 0.90))
-            continue
-        if name.endswith("_p90") and name.removesuffix("_p90") in base_map:
-            columns.append(base_map[name.removesuffix("_p90")] * 1.08)
-            continue
-        if name.endswith("_std") and name.removesuffix("_std") in base_map:
-            columns.append(rng.uniform(0.005, 0.05, size=n_rows).astype(np.float32))
-            continue
-        if name == "chug_bitrate_mbps":
-            columns.append(rng.choice([0.2, 0.5, 1.0, 2.0, 4.0], size=n_rows).astype(np.float32))
-            continue
-        if name == "chug_orientation_portrait":
-            columns.append(rng.integers(0, 2, size=n_rows).astype(np.float32))
-            continue
-        if name == "chug_ref":
-            columns.append(np.zeros(n_rows, dtype=np.float32))
-            continue
-        if name in {
-            "distorted_width_norm",
-            "distorted_height_norm",
-            "reference_width_norm",
-            "reference_height_norm",
-        }:
-            columns.append(rng.uniform(0.16, 1.0, size=n_rows).astype(np.float32))
-            continue
-        if name == "duration_s_norm":
-            columns.append(rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32))
-            continue
-        if name == "n_feature_frames_norm":
-            columns.append(rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32))
-            continue
-        if name == "feature_bitdepth_norm":
-            columns.append(np.full(n_rows, 0.5, dtype=np.float32))
-            continue
-        if name == "display_peak_luminance_nits_norm":
-            columns.append(rng.uniform(0.04, 0.20, size=n_rows).astype(np.float32))
-            continue
-        if name == "display_black_luminance_nits_norm":
-            columns.append(rng.uniform(0.0001, 0.02, size=n_rows).astype(np.float32))
-            continue
-        if name == "display_contrast_ratio_log_norm":
-            columns.append(rng.uniform(0.55, 0.95, size=n_rows).astype(np.float32))
-            continue
-        if name == "display_ambient_lux_norm":
-            columns.append(rng.uniform(0.0, 0.25, size=n_rows).astype(np.float32))
-            continue
-        if name in {"display_bt2020_coverage", "display_p3_coverage"}:
-            columns.append(rng.uniform(0.65, 1.0, size=n_rows).astype(np.float32))
-            continue
-        if name in {
-            "display_panel_oled",
-            "display_panel_qled",
-            "display_panel_lcd",
-            "display_local_dimming",
-            "display_tone_mapping_dynamic",
-        }:
-            columns.append(rng.integers(0, 2, size=n_rows).astype(np.float32))
-            continue
-        columns.append(np.zeros(n_rows, dtype=np.float32))
+    columns = [_synthetic_feature_column(name, base_map, rng, n_rows) for name in feature_columns]
     feats = np.column_stack(columns).astype(np.float32)
 
     feature_columns_list = list(feature_columns)
@@ -919,6 +944,43 @@ def _rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
 
+def _training_loader(
+    features: np.ndarray,
+    encoder: np.ndarray,
+    mos: np.ndarray,
+    batch_size: int,
+):
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    dataset = TensorDataset(
+        torch.from_numpy(features.astype(np.float32)),
+        torch.from_numpy(encoder.astype(np.float32)),
+        torch.from_numpy(mos.astype(np.float32)),
+    )
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=False)
+
+
+def _fit_loader(
+    model, loader, torch_device, *, epochs: int, lr: float, weight_decay: float
+) -> None:
+    import torch
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    loss_fn = torch.nn.MSELoss()
+    model.train()
+    for _epoch in range(epochs):
+        for features, encoder, target in loader:
+            features = features.to(torch_device)
+            encoder = encoder.to(torch_device)
+            target = target.to(torch_device)
+            optimizer.zero_grad()
+            loss = loss_fn(model(features, encoder), target)
+            loss.backward()
+            optimizer.step()
+    model.eval()
+
+
 def _train_one_fold(
     *,
     features_train: np.ndarray,
@@ -937,31 +999,12 @@ def _train_one_fold(
 ) -> tuple[np.ndarray, dict[str, float]]:
     """Train one fold; return ``(val_pred, fold_metrics)``."""
     import torch
-    from torch.utils.data import DataLoader, TensorDataset
 
     _set_seed(seed)
     torch_device = _resolve_device(device)
     model = _build_model(in_features=n_features).to(torch_device)
-    ds = TensorDataset(
-        torch.from_numpy(features_train.astype(np.float32)),
-        torch.from_numpy(encoder_train.astype(np.float32)),
-        torch.from_numpy(mos_train.astype(np.float32)),
-    )
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn = torch.nn.MSELoss()
-    model.train()
-    for _ep in range(epochs):
-        for fb, eb, yb in loader:
-            fb = fb.to(torch_device)
-            eb = eb.to(torch_device)
-            yb = yb.to(torch_device)
-            opt.zero_grad()
-            pred = model(fb, eb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            opt.step()
-    model.eval()
+    loader = _training_loader(features_train, encoder_train, mos_train, batch_size)
+    _fit_loader(model, loader, torch_device, epochs=epochs, lr=lr, weight_decay=weight_decay)
     with torch.no_grad():
         val_pred = (
             model(
@@ -996,32 +1039,11 @@ def _train_full(
     device: str = "cpu",
 ):  # type: ignore[no-untyped-def]
     """Train one model on the full corpus — the ship checkpoint."""
-    import torch
-    from torch.utils.data import DataLoader, TensorDataset
-
     _set_seed(seed)
     torch_device = _resolve_device(device)
     model = _build_model(in_features=n_features).to(torch_device)
-    ds = TensorDataset(
-        torch.from_numpy(features.astype(np.float32)),
-        torch.from_numpy(encoder.astype(np.float32)),
-        torch.from_numpy(mos.astype(np.float32)),
-    )
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn = torch.nn.MSELoss()
-    model.train()
-    for _ep in range(epochs):
-        for fb, eb, yb in loader:
-            fb = fb.to(torch_device)
-            eb = eb.to(torch_device)
-            yb = yb.to(torch_device)
-            opt.zero_grad()
-            pred = model(fb, eb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            opt.step()
-    model.eval()
+    loader = _training_loader(features, encoder, mos, batch_size)
+    _fit_loader(model, loader, torch_device, epochs=epochs, lr=lr, weight_decay=weight_decay)
     return model
 
 
@@ -1171,89 +1193,33 @@ def _build_manifest(
 # ---------------------------------------------------------------------
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    _konvid_1k_dir = Path(
-        os.environ.get(
-            "VMAF_KONVID_1K_DIR",
-            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-1k"),
-        )
+def _add_corpus_arguments(ap: argparse.ArgumentParser) -> None:
+    konvid_1k_dir = Path(
+        os.environ.get("VMAF_KONVID_1K_DIR", str(REPO_ROOT / ".corpus" / "konvid-1k"))
     )
-    _konvid_150k_dir = Path(
-        os.environ.get(
-            "VMAF_KONVID_150K_DIR",
-            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
-        )
+    konvid_150k_dir = Path(
+        os.environ.get("VMAF_KONVID_150K_DIR", str(REPO_ROOT / ".corpus" / "konvid-150k"))
     )
+    ap.add_argument("--konvid-1k", type=Path, default=konvid_1k_dir / "konvid_1k.jsonl")
+    ap.add_argument("--konvid-150k", type=Path, default=konvid_150k_dir / "konvid_150k.jsonl")
+    ap.add_argument("--feature-parquet", type=Path, action="append", default=[])
     ap.add_argument(
-        "--konvid-1k",
-        type=Path,
-        default=_konvid_1k_dir / "konvid_1k.jsonl",
-        help=(
-            "Path to the KonViD-1k JSONL corpus drop (Phase 1, PR #440). "
-            "Parent dir overridden via ``VMAF_KONVID_1K_DIR``."
-        ),
+        "--feature-jsonl", type=Path, action="append", default=[], help=argparse.SUPPRESS
     )
-    ap.add_argument(
-        "--konvid-150k",
-        type=Path,
-        default=_konvid_150k_dir / "konvid_150k.jsonl",
-        help=(
-            "Path to the KonViD-150k JSONL corpus drop (Phase 2, PR #447). "
-            "Parent dir overridden via ``VMAF_KONVID_150K_DIR``."
-        ),
-    )
-    ap.add_argument(
-        "--feature-parquet",
-        type=Path,
-        action="append",
-        default=[],
-        help=(
-            "FULL_FEATURES parquet corpus table from extract_k150k_features.py; "
-            "may be repeated for CHUG/K150K shards."
-        ),
-    )
-    ap.add_argument(
-        "--feature-jsonl",
-        type=Path,
-        action="append",
-        default=[],
-        help=argparse.SUPPRESS,
-    )
-    ap.add_argument(
-        "--model-id",
-        default=DEFAULT_MODEL_ID,
-        help=argparse.SUPPRESS,
-    )
+    ap.add_argument("--model-id", default=DEFAULT_MODEL_ID, help=argparse.SUPPRESS)
     ap.add_argument(
         "--feature-schema",
         choices=tuple(FEATURE_SCHEMAS),
         default=FEATURE_SCHEMA_KONVID_V1,
         help=argparse.SUPPRESS,
     )
-    ap.add_argument(
-        "--display-profile-json",
-        type=Path,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    ap.add_argument(
-        "--log-prefix",
-        default="konvid-mos",
-        help=argparse.SUPPRESS,
-    )
-    ap.add_argument(
-        "--smoke",
-        action="store_true",
-        help="Synthesize a deterministic-seeded corpus instead of loading "
-        "from disk; used by CI smoke + the test harness.",
-    )
-    ap.add_argument(
-        "--allow-synthetic-fallback",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
+    ap.add_argument("--display-profile-json", type=Path, default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--log-prefix", default="konvid-mos", help=argparse.SUPPRESS)
+
+
+def _add_training_arguments(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("--smoke", action="store_true", help="Use a deterministic synthetic corpus.")
+    ap.add_argument("--allow-synthetic-fallback", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--smoke-epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -1264,38 +1230,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument(
         "--device",
         default="cpu",
-        help=(
-            "PyTorch training device: cpu, cuda, cuda:N, or auto. Defaults to "
-            "cpu so CI smoke runs stay deterministic; local CHUG experiments "
-            "can pass --device cuda."
-        ),
+        help="PyTorch training device: cpu, cuda, cuda:N, or auto.",
+    )
+
+
+def _add_output_arguments(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument(
+        "--out-onnx", type=Path, default=REPO_ROOT / "model" / "konvid_mos_head_v1.onnx"
     )
     ap.add_argument(
-        "--out-onnx",
-        type=Path,
-        default=REPO_ROOT / "model" / "konvid_mos_head_v1.onnx",
+        "--out-card", type=Path, default=REPO_ROOT / "model" / "konvid_mos_head_v1_card.md"
     )
     ap.add_argument(
-        "--out-card",
-        type=Path,
-        default=REPO_ROOT / "model" / "konvid_mos_head_v1_card.md",
-        help="Model-card path (this script does not rewrite a hand-authored card; "
-        "set this to a tmp path to force the auto-generated stub).",
+        "--out-manifest", type=Path, default=REPO_ROOT / "model" / "konvid_mos_head_v1.json"
     )
-    ap.add_argument(
-        "--out-manifest",
-        type=Path,
-        default=REPO_ROOT / "model" / "konvid_mos_head_v1.json",
-    )
-    ap.add_argument(
-        "--no-export",
-        action="store_true",
-        help="Skip ONNX export + manifest write (dev mode).",
-    )
+    ap.add_argument("--no-export", action="store_true", help="Skip ONNX export + manifest write.")
     ap.add_argument("--run-entrypoint", type=Path, default=SCRIPT_PATH, help=argparse.SUPPRESS)
     ap.add_argument("--run-argv-json", default=None, help=argparse.SUPPRESS)
-    args = ap.parse_args(argv)
-    run_argv = raw_argv
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
+    _add_corpus_arguments(ap)
+    _add_training_arguments(ap)
+    _add_output_arguments(ap)
+    return ap.parse_args(argv)
+
+
+def _resolve_run_argv(args: argparse.Namespace, raw_argv: list[str]) -> list[str] | None:
+    if args.run_argv_json is None:
+        return raw_argv
     if args.run_argv_json is not None:
         try:
             parsed_argv = json.loads(args.run_argv_json)
@@ -1304,7 +1268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
                 file=sys.stderr,
             )
-            return 2
+            return None
         if not isinstance(parsed_argv, list) or not all(
             isinstance(item, str) for item in parsed_argv
         ):
@@ -1312,8 +1276,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
                 file=sys.stderr,
             )
-            return 2
-        run_argv = parsed_argv
+            return None
+        return parsed_argv
+    return raw_argv
+
+
+def _display_context(args: argparse.Namespace):
     feature_columns = _feature_columns_for_schema(args.feature_schema)
     display_profile = _load_display_profile(args.display_profile_json)
     uses_display_profile = any(name in feature_columns for name in CHUG_HDR_DISPLAY_FEATURES)
@@ -1324,108 +1292,69 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if display_profile is not None and not uses_display_profile:
         print(
-            f"[{args.log_prefix}] display profile ignored by feature schema "
-            f"{args.feature_schema}",
+            f"[{args.log_prefix}] display profile ignored by feature schema {args.feature_schema}",
             file=sys.stderr,
         )
+    return feature_columns, display_profile, display_profile_values, uses_display_profile
 
+
+def _load_training_arrays(args, feature_columns, display_profile_values):
     if args.smoke:
-        n_rows = 600
         features, encoder, mos = _synthesize_corpus(
-            n_rows=n_rows,
+            n_rows=600,
             seed=args.seed,
             feature_columns=feature_columns,
         )
         splits = np.empty((features.shape[0],), dtype="<U5")
-        epochs = args.smoke_epochs
-        synthetic = True
         print(
-            f"[{args.log_prefix}] smoke mode: {n_rows} synthetic rows, "
-            f"epochs={epochs}, seed={args.seed}, device={args.device}",
+            f"[{args.log_prefix}] smoke mode: 600 synthetic rows, "
+            f"epochs={args.smoke_epochs}, seed={args.seed}, device={args.device}",
             flush=True,
         )
-    else:
-        paths = [p for p in (args.konvid_1k, args.konvid_150k) if p is not None]
-        feature_jsonls = [p for p in args.feature_jsonl if p is not None]
-        feature_parquets = [p for p in args.feature_parquet if p is not None]
-        arrays = _load_corpus_arrays(
-            paths,
-            jsonl_paths=feature_jsonls,
-            parquet_paths=feature_parquets,
-            feature_columns=feature_columns,
-            display_profile=display_profile_values,
-        )
-        features, encoder, mos, splits = (
-            arrays.features,
-            arrays.encoder,
-            arrays.mos,
-            arrays.splits,
-        )
-        if features.shape[0] == 0:
-            attempted = [str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]
-            if not args.allow_synthetic_fallback:
-                print(
-                    f"[{args.log_prefix}] error: no real MOS-labelled rows found at "
-                    f"{attempted}. Add mos/mos_raw_0_100 with "
-                    "ai/scripts/materialize_mos_labels.py, or pass --smoke for an "
-                    "explicit synthetic pipeline run.",
-                    file=sys.stderr,
-                )
-                return 2
-            print(
-                f"[{args.log_prefix}] no real corpus rows found at {attempted}; "
-                "falling back to synthetic because --allow-synthetic-fallback was set. "
-                "Prefer --smoke for CI smoke runs.",
-                file=sys.stderr,
-            )
-            features, encoder, mos = _synthesize_corpus(
-                n_rows=600,
-                seed=args.seed,
-                feature_columns=feature_columns,
-            )
-            splits = np.empty((features.shape[0],), dtype="<U5")
-            synthetic = True
-        else:
-            synthetic = False
-        epochs = args.epochs
+        return features, encoder, mos, splits, args.smoke_epochs, True
+    paths = [path for path in (args.konvid_1k, args.konvid_150k) if path is not None]
+    jsonls = [path for path in args.feature_jsonl if path is not None]
+    parquets = [path for path in args.feature_parquet if path is not None]
+    arrays = _load_corpus_arrays(
+        paths,
+        jsonl_paths=jsonls,
+        parquet_paths=parquets,
+        feature_columns=feature_columns,
+        display_profile=display_profile_values,
+    )
+    if arrays.features.shape[0] == 0 and not args.allow_synthetic_fallback:
+        attempted = [str(path) for path in (*paths, *jsonls, *parquets)]
         print(
-            f"[{args.log_prefix}] {'real' if not synthetic else 'synthetic-fallback'} "
-            f"mode: {features.shape[0]} rows, epochs={epochs}, device={args.device}",
-            flush=True,
-        )
-
-    if features.shape[0] < args.k_folds * 2:
-        print(
-            f"[{args.log_prefix}] error: corpus has only {features.shape[0]} rows; "
-            f"need at least {args.k_folds * 2} for {args.k_folds}-fold CV.",
+            f"[{args.log_prefix}] error: no real MOS-labelled rows found at {attempted}.",
             file=sys.stderr,
         )
-        return 2
+        return None
+    if arrays.features.shape[0] == 0:
+        features, encoder, mos = _synthesize_corpus(600, args.seed, feature_columns)
+        splits = np.empty((features.shape[0],), dtype="<U5")
+        synthetic = True
+    else:
+        features, encoder, mos, splits = arrays.features, arrays.encoder, arrays.mos, arrays.splits
+        synthetic = False
+    print(
+        f"[{args.log_prefix}] {'synthetic-fallback' if synthetic else 'real'} mode: "
+        f"{features.shape[0]} rows, epochs={args.epochs}, device={args.device}",
+        flush=True,
+    )
+    return features, encoder, mos, splits, args.epochs, synthetic
 
-    # Per-corpus standardisation. The MLP carries a LayerNorm at its
-    # input so this is informational only (recorded in the sidecar so
-    # downstream consumers can replicate the recipe), but we still
-    # compute it for parity with the fr_regressor_v2_ensemble manifest.
-    feature_mean = features.mean(axis=0).astype(np.float32).tolist()
-    feature_std = features.std(axis=0).astype(np.float32).tolist()
 
-    t0 = time.time()
-    folds_report: list[dict[str, Any]] = []
+def _cross_validate(features, encoder, mos, splits, args, epochs, synthetic):
     split_indices = None if synthetic else _heldout_split_indices(splits)
     if split_indices is None:
         fold_indices = _kfold_indices(features.shape[0], args.k_folds, args.seed)
-        validation_policy = f"{args.k_folds}-fold-random"
+        policy = f"{args.k_folds}-fold-random"
     else:
-        train_idx, val_idx = split_indices
-        fold_indices = [(train_idx, val_idx)]
-        validation_policy = "explicit-corpus-split"
-        print(
-            f"[{args.log_prefix}] explicit split validation: "
-            f"n_train={len(train_idx)} n_val={len(val_idx)}",
-            flush=True,
-        )
-    for fold_idx, (train_idx, val_idx) in enumerate(fold_indices):
-        _val_pred, metrics = _train_one_fold(
+        fold_indices = [split_indices]
+        policy = "explicit-corpus-split"
+    reports: list[dict[str, Any]] = []
+    for index, (train_idx, val_idx) in enumerate(fold_indices):
+        _prediction, metrics = _train_one_fold(
             features_train=features[train_idx],
             encoder_train=encoder[train_idx],
             mos_train=mos[train_idx],
@@ -1436,60 +1365,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             batch_size=args.batch_size,
             lr=args.lr,
             weight_decay=args.weight_decay,
-            seed=args.seed + fold_idx,
+            seed=args.seed + index,
             n_features=features.shape[1],
             device=args.device,
         )
-        metrics["fold"] = fold_idx
-        metrics["validation_policy"] = validation_policy
-        folds_report.append(metrics)
+        metrics.update(fold=index, validation_policy=policy)
+        reports.append(metrics)
         print(
-            f"[{args.log_prefix}] fold {fold_idx}: "
-            f"plcc={metrics['plcc']:.4f} srocc={metrics['srocc']:.4f} "
-            f"rmse={metrics['rmse']:.4f} (n_val={metrics['n_val']})",
+            f"[{args.log_prefix}] fold {index}: plcc={metrics['plcc']:.4f} srocc={metrics['srocc']:.4f} rmse={metrics['rmse']:.4f} (n_val={metrics['n_val']})",
             flush=True,
         )
-    gate = _evaluate_gate(folds_report, synthetic=synthetic)
-    print(
-        f"[{args.log_prefix}] gate={'PASS' if gate['passed'] else 'FAIL'} "
-        f"mean_plcc={gate['mean_plcc']:.4f} "
-        f"mean_srocc={gate['mean_srocc']:.4f} "
-        f"mean_rmse={gate['mean_rmse']:.4f} "
-        f"spread={gate['plcc_spread']:.4f}",
-        flush=True,
-    )
+    return reports, _evaluate_gate(reports, synthetic=synthetic), split_indices
 
-    # Train the ship checkpoint on the full corpus once the LOSO
-    # report is in. Per ADR-0303 / fr_regressor_v3 §Training recipe
-    # the LOSO fold *is* the gate — the ship checkpoint goes on the
-    # entire corpus.
-    if args.no_export:
-        print(f"[{args.log_prefix}] --no-export: skipping ONNX + manifest write", flush=True)
-        return 0
-    if split_indices is None:
-        ship_features = features
-        ship_encoder = encoder
-        ship_mos = mos
-    else:
-        ship_idx = split_indices[0]
-        ship_features = features[ship_idx]
-        ship_encoder = encoder[ship_idx]
-        ship_mos = mos[ship_idx]
-    ship_model = _train_full(
-        features=ship_features,
-        encoder=ship_encoder,
-        mos=ship_mos,
-        epochs=epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        seed=args.seed,
-        n_features=features.shape[1],
-        device=args.device,
-    )
-    n_params = _count_parameters(ship_model)
-    sha256 = _export_onnx(ship_model, args.out_onnx, n_features=features.shape[1])
-    run_provenance = build_run_provenance(
+
+def _run_provenance(args, run_argv):
+    provenance = build_run_provenance(
         entrypoint=args.run_entrypoint,
         repo_root=REPO_ROOT,
         argv=run_argv,
@@ -1501,41 +1391,88 @@ def main(argv: Sequence[str] | None = None) -> int:
             "feature_parquet": args.feature_parquet,
             "display_profile_json": args.display_profile_json,
         },
-        outputs={
-            "onnx": args.out_onnx,
-            "card": args.out_card,
-            "manifest": args.out_manifest,
-        },
+        outputs={"onnx": args.out_onnx, "card": args.out_card, "manifest": args.out_manifest},
         exclude_args={"run_entrypoint", "run_argv_json"},
     )
     if args.run_entrypoint.resolve() != SCRIPT_PATH:
-        run_provenance["shared_trainer"] = describe_path(SCRIPT_PATH, repo_root=REPO_ROOT)
+        provenance["shared_trainer"] = describe_path(SCRIPT_PATH, repo_root=REPO_ROOT)
+    return provenance
+
+
+def _export_training_result(data, args, context, folds, gate, run_argv, started) -> None:
+    features, encoder, mos, _splits, epochs, synthetic, split_indices = data
+    feature_columns, display_profile, uses_display_profile = context
+    ship_idx = split_indices[0] if split_indices is not None else np.arange(features.shape[0])
+    model = _train_full(
+        features=features[ship_idx],
+        encoder=encoder[ship_idx],
+        mos=mos[ship_idx],
+        epochs=epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+        n_features=features.shape[1],
+        device=args.device,
+    )
+    n_params = _count_parameters(model)
+    digest = _export_onnx(model, args.out_onnx, n_features=features.shape[1])
     manifest = _build_manifest(
         onnx_path=args.out_onnx,
-        sha256=sha256,
+        sha256=digest,
         model_id=args.model_id,
         feature_schema=args.feature_schema,
         feature_columns=feature_columns,
-        folds=folds_report,
+        folds=folds,
         gate=gate,
-        feature_mean=feature_mean,
-        feature_std=feature_std,
+        feature_mean=features.mean(axis=0).astype(np.float32).tolist(),
+        feature_std=features.std(axis=0).astype(np.float32).tolist(),
         n_params=n_params,
         smoke=synthetic,
-        n_rows=int(ship_features.shape[0]),
+        n_rows=len(ship_idx),
         epochs=epochs,
         seed=args.seed,
         display_profile=display_profile if uses_display_profile else None,
-        run_provenance=run_provenance,
+        run_provenance=_run_provenance(args, run_argv),
     )
     write_manifest_json(args.out_manifest, manifest)
-    wall_s = time.time() - t0
     print(
-        f"[{args.log_prefix}] wrote {args.out_onnx} ({n_params} params, "
-        f"sha256={sha256[:16]}…); manifest={args.out_manifest.name}; "
-        f"wall={wall_s:.1f}s",
+        f"[{args.log_prefix}] wrote {args.out_onnx} ({n_params} params, sha256={digest[:16]}…); manifest={args.out_manifest.name}; wall={time.time() - started:.1f}s",
         flush=True,
     )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(argv)
+    run_argv = _resolve_run_argv(args, raw_argv)
+    if run_argv is None:
+        return 2
+    feature_columns, display_profile, display_values, uses_display_profile = _display_context(args)
+    loaded = _load_training_arrays(args, feature_columns, display_values)
+    if loaded is None:
+        return 2
+    features, encoder, mos, splits, epochs, synthetic = loaded
+    if features.shape[0] < args.k_folds * 2:
+        print(
+            f"[{args.log_prefix}] error: corpus has only {features.shape[0]} rows; need at least {args.k_folds * 2}.",
+            file=sys.stderr,
+        )
+        return 2
+    started = time.time()
+    folds, gate, split_indices = _cross_validate(
+        features, encoder, mos, splits, args, epochs, synthetic
+    )
+    print(
+        f"[{args.log_prefix}] gate={'PASS' if gate['passed'] else 'FAIL'} mean_plcc={gate['mean_plcc']:.4f} mean_srocc={gate['mean_srocc']:.4f} mean_rmse={gate['mean_rmse']:.4f} spread={gate['plcc_spread']:.4f}",
+        flush=True,
+    )
+    if args.no_export:
+        print(f"[{args.log_prefix}] --no-export: skipping ONNX + manifest write", flush=True)
+        return 0
+    data = features, encoder, mos, splits, epochs, synthetic, split_indices
+    context = feature_columns, display_profile, uses_display_profile
+    _export_training_result(data, args, context, folds, gate, run_argv, started)
     return 0
 
 

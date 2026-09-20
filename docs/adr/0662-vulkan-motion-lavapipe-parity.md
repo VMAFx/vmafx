@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0662: Vulkan Motion Lavapipe Parity
 
 - **Status**: Accepted
@@ -33,7 +32,7 @@ lavapipe matrix gate.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Raise tolerance or keep skipping `motion_v2` | Smallest CI change | Leaves a real CPU/GPU arithmetic bug and keeps the gate blind | Violates the fork's numerical-correctness posture |
 | Fix only Vulkan `motion_v2` | Closes the observed lavapipe drift | Leaves CUDA and SYCL on the same stale mirror literal | The CPU contract is backend-agnostic |
 | Delete the legacy `motion_vulkan` extractor | Removes the crash-prone name | Breaks explicit-name callers and historical docs | Compatibility can be preserved while routing automatic parity through the stable twin |

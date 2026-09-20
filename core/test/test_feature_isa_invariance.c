@@ -86,12 +86,6 @@ static const IsaCase CASES[] = {
 };
 #define NUM_CASES (sizeof(CASES) / sizeof(CASES[0]))
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
@@ -123,6 +117,41 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
     return 0;
 }
 
+/* Full-range, independently perturbed texture for integer ADM. Smooth ramps
+ * do not overflow the scale-0 centre-threshold term and therefore cannot
+ * distinguish the shipped scalar narrowing from a wider SIMD calculation. */
+static uint32_t noise_hash(unsigned row, unsigned col, uint32_t seed)
+{
+    uint32_t x = ((uint32_t)row << 16) ^ (uint32_t)col ^ seed;
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+
+static int fill_adm_noise_pic(VmafPicture *pic, int distorted)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    if (err)
+        return err;
+
+    uint8_t *y = (uint8_t *)pic->data[0];
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        for (unsigned col = 0; col < pic->w[0]; col++) {
+            const uint32_t seed = distorted ? 0x9E3779B9u : 0x85EBCA6Bu;
+            y[row * pic->stride[0] + col] = (uint8_t)(noise_hash(row, col, seed) >> 24);
+        }
+    }
+    for (unsigned p = 1; p < 3; p++) {
+        uint8_t *plane = (uint8_t *)pic->data[p];
+        for (unsigned row = 0; row < pic->h[p]; row++)
+            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+    }
+    return 0;
+}
+
 /* Run one feature end-to-end under the given cpumask.
  *
  * Returns 0 on success and a negative libvmaf error otherwise. Failures are
@@ -131,12 +160,12 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
 static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     if (err)
         return err;
 
-    err = vmaf_use_feature(vmaf, c->feature, NULL);
+    err = vmaf_use_feature(vmaf, c->feature, VMAF_NULLPTR);
     if (err)
         goto out;
 
@@ -155,7 +184,7 @@ static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
         if (err)
             goto out;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     if (err)
         goto out;
 
@@ -177,6 +206,72 @@ static int scores_bit_identical(double a, double b)
     memcpy(&a_bits, &a, sizeof(a_bits));
     memcpy(&b_bits, &b, sizeof(b_bits));
     return a_bits == b_bits;
+}
+
+static int run_adm_noise(uint64_t cpumask, double scores[2])
+{
+    static const char *const score_names[2] = {"integer_adm_scale0",
+                                               "VMAF_integer_feature_aim_score"};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
+    VmafContext *vmaf = VMAF_NULLPTR;
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        return err;
+
+    err = vmaf_use_feature(vmaf, "adm", VMAF_NULLPTR);
+    if (err)
+        goto out;
+    VmafPicture ref;
+    VmafPicture dist;
+    err = fill_adm_noise_pic(&ref, 0);
+    if (err)
+        goto out;
+    err = fill_adm_noise_pic(&dist, 1);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        goto out;
+    }
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (err)
+        goto out;
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0u);
+    if (err)
+        goto out;
+    for (unsigned i = 0; i < 2; i++) {
+        err = vmaf_feature_score_at_index(vmaf, score_names[i], &scores[i], 0u);
+        if (err)
+            goto out;
+    }
+
+out:
+    (void)vmaf_close(vmaf);
+    return err;
+}
+
+static char *test_adm_noise_isa_invariance(void)
+{
+    double host[2] = {0.0, 0.0};
+    double avx2[2] = {0.0, 0.0};
+    double scalar[2] = {0.0, 0.0};
+    const int host_err = run_adm_noise(0u, host);
+    const int avx2_err = run_adm_noise(16u, avx2); /* disable AVX-512, retain AVX2 */
+    const int scalar_err = run_adm_noise(CPUMASK_SCALAR, scalar);
+    mu_assert("integer ADM noise fixture failed under a CPU dispatch level",
+              !host_err && !avx2_err && !scalar_err);
+
+    static const char *const score_names[2] = {"integer_adm_scale0",
+                                               "VMAF_integer_feature_aim_score"};
+    for (unsigned i = 0; i < 2; i++) {
+        if (!scores_bit_identical(host[i], scalar[i]) ||
+            !scores_bit_identical(avx2[i], scalar[i])) {
+            (void)fprintf(stderr,
+                          "\nADM noise ISA invariance FAIL %s: host=%.17g avx2=%.17g "
+                          "scalar=%.17g\n",
+                          score_names[i], host[i], avx2[i], scalar[i]);
+            return "integer ADM full-range noise score depends on CPU ISA";
+        }
+    }
+    return VMAF_NULLPTR;
 }
 
 static char *test_isa_invariance(void)
@@ -228,17 +323,16 @@ static char *test_isa_invariance(void)
 
     if (unavailable == NUM_CASES) {
         (void)fprintf(stderr, "[skip: no feature in the table is available in this build] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     mu_assert("at least one feature scores differently with and without SIMD", failures == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_isa_invariance);
-    return NULL;
+    mu_run_test(test_adm_noise_isa_invariance);
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

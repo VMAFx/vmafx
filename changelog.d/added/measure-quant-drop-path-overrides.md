@@ -1,3 +1,5 @@
+# Changelog fragment
+
 **`measure_quant_drop.py --fp32 / --int8` path overrides** (Research-2029 gap 5)
 
 - `ai/scripts/measure_quant_drop.py` gained `--fp32 PATH --int8 PATH` to gate an

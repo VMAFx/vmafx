@@ -162,7 +162,7 @@ extern "C" int vmaf_sycl_picture_alloc(VmafPicture *pic, void *cookie)
     return 0;
 }
 
-extern "C" int vmaf_sycl_picture_free(VmafPicture *pic, void *cookie)
+extern "C" int vmaf_sycl_picture_free(VmafPicture *pic, const void *cookie)
 {
     if (!pic || !cookie)
         return -EINVAL;

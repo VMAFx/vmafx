@@ -39,14 +39,15 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from vmaftune import CORPUS_ROW_KEYS
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.jsonl_utils import iter_jsonl
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.jsonl_utils import iter_jsonl  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _REQUIRED_KEYS: frozenset[str] = frozenset(CORPUS_ROW_KEYS)
 
@@ -68,7 +69,7 @@ def _validate_row(path: Path, line_no: int, row: dict) -> None:
     missing = _REQUIRED_KEYS - row.keys()
     if missing:
         print(
-            f"error: {path}:{line_no}: missing required keys: " f"{sorted(missing)}",
+            f"error: {path}:{line_no}: missing required keys: {sorted(missing)}",
             file=sys.stderr,
         )
         raise SystemExit(1)

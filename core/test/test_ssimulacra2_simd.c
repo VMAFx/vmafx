@@ -69,11 +69,6 @@
 #if HAVE_SVE2
 #include "feature/arm64/ssimulacra2_sve2.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #endif
 #endif
 
@@ -116,6 +111,32 @@ static void fill_random(float *buf, size_t n, float lo, float hi, uint32_t seed)
         uint32_t r = xorshift32(&state);
         buf[i] = lo + range * ((float)(r & 0x00ffffff) / (float)0x01000000);
     }
+}
+
+static int float_buffers_bit_equal(const float *a, const float *b, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        uint32_t a_bits = 0;
+        uint32_t b_bits = 0;
+        (void)memcpy(&a_bits, &a[i], sizeof(a_bits));
+        (void)memcpy(&b_bits, &b[i], sizeof(b_bits));
+        if (a_bits != b_bits)
+            return 0;
+    }
+    return 1;
+}
+
+static int double_buffers_bit_equal(const double *a, const double *b, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        uint64_t a_bits = 0;
+        uint64_t b_bits = 0;
+        (void)memcpy(&a_bits, &a[i], sizeof(a_bits));
+        (void)memcpy(&b_bits, &b[i], sizeof(b_bits));
+        if (a_bits != b_bits)
+            return 0;
+    }
+    return 1;
 }
 
 /* Scalar reference: multiply_3plane */
@@ -171,7 +192,7 @@ static void ref_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w, unsi
 
 /* Scalar reference: downsample_2x2. Kept as a line-for-line copy of the
  * extractor's scalar reference for bit-exactness auditability. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
+
 static void ref_downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out,
                                unsigned *ow_out, unsigned *oh_out)
 {
@@ -310,7 +331,7 @@ static mul3_fn_t pick_mul3(void)
 #endif
     return ssimulacra2_multiply_3plane_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 static xyb_fn_t pick_xyb(void)
 {
@@ -330,7 +351,7 @@ static xyb_fn_t pick_xyb(void)
 #endif
     return ssimulacra2_linear_rgb_to_xyb_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 static down_fn_t pick_down(void)
 {
@@ -350,7 +371,7 @@ static down_fn_t pick_down(void)
 #endif
     return ssimulacra2_downsample_2x2_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 static ssim_fn_t pick_ssim(void)
 {
@@ -370,7 +391,7 @@ static ssim_fn_t pick_ssim(void)
 #endif
     return ssimulacra2_ssim_map_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 static edge_fn_t pick_edge(void)
 {
@@ -390,14 +411,14 @@ static edge_fn_t pick_edge(void)
 #endif
     return ssimulacra2_edge_diff_map_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_multiply(void)
 {
     mul3_fn_t fn = pick_mul3();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     float *a = malloc(RGB_SZ * sizeof(float));
     float *b = malloc(RGB_SZ * sizeof(float));
     float *out_ref = malloc(RGB_SZ * sizeof(float));
@@ -415,21 +436,21 @@ static char *test_multiply(void)
     fn(a, b, out_simd, W, H);
     /* memcmp on float buffers is deliberate: ADR-0161's SIMD contract
      * requires byte-for-byte equality under FLT_EVAL_METHOD == 0. */
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) — ADR-0161 / ADR-0278
-    int match = memcmp(out_ref, out_simd, RGB_SZ * sizeof(float)) == 0;
+
+    const int match = float_buffers_bit_equal(out_ref, out_simd, RGB_SZ);
     free(a);
     free(b);
     free(out_ref);
     free(out_simd);
     mu_assert("multiply_3plane SIMD not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_xyb(void)
 {
     xyb_fn_t fn = pick_xyb();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     float *lin = malloc(RGB_SZ * sizeof(float));
     float *out_ref = malloc(RGB_SZ * sizeof(float));
     float *out_simd = malloc(RGB_SZ * sizeof(float));
@@ -442,20 +463,20 @@ static char *test_xyb(void)
     fill_random(lin, RGB_SZ, 0.0f, 1.0f, 0xabcdef01u);
     ref_linear_rgb_to_xyb(lin, out_ref, W, H);
     fn(lin, out_simd, W, H);
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0161 byte-exact
-    int match = memcmp(out_ref, out_simd, RGB_SZ * sizeof(float)) == 0;
+
+    const int match = float_buffers_bit_equal(out_ref, out_simd, RGB_SZ);
     free(lin);
     free(out_ref);
     free(out_simd);
     mu_assert("linear_rgb_to_xyb SIMD not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_downsample(void)
 {
     down_fn_t fn = pick_down();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     float *in = malloc(RGB_SZ * sizeof(float));
     const size_t out_plane = (size_t)((W + 1) / 2) * (size_t)((H + 1) / 2);
     float *out_ref = malloc(3 * out_plane * sizeof(float));
@@ -473,21 +494,21 @@ static char *test_downsample(void)
     unsigned oh_s = 0;
     ref_downsample_2x2(in, W, H, out_ref, &ow_r, &oh_r);
     fn(in, W, H, out_simd, &ow_s, &oh_s);
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0161 byte-exact
-    const int mem_eq = memcmp(out_ref, out_simd, 3 * out_plane * sizeof(float)) == 0;
-    int match = (ow_r == ow_s) && (oh_r == oh_s) && mem_eq;
+
+    const int buffers_equal = float_buffers_bit_equal(out_ref, out_simd, 3u * out_plane);
+    const int match = (ow_r == ow_s) && (oh_r == oh_s) && buffers_equal;
     free(in);
     free(out_ref);
     free(out_simd);
     mu_assert("downsample_2x2 SIMD not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim(void)
 {
     ssim_fn_t fn = pick_ssim();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     float *m1 = malloc(RGB_SZ * sizeof(float));
     float *m2 = malloc(RGB_SZ * sizeof(float));
     float *s11 = malloc(RGB_SZ * sizeof(float));
@@ -510,15 +531,15 @@ static char *test_ssim(void)
     double simd[6] = {0};
     ref_ssim_map(m1, m2, s11, s22, s12, W, H, ref);
     fn(m1, m2, s11, s22, s12, W, H, simd);
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0161 byte-exact
-    int match = memcmp(ref, simd, sizeof(ref)) == 0;
+
+    const int match = double_buffers_bit_equal(ref, simd, sizeof(ref) / sizeof(ref[0]));
     free(m1);
     free(m2);
     free(s11);
     free(s22);
     free(s12);
     mu_assert("ssim_map SIMD averages not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Scalar reference: fast_gaussian_1d — verbatim copy of the extractor's
@@ -561,7 +582,7 @@ static void ref_fast_gaussian_1d(const float n2[3], const float d1[3], int radiu
 }
 
 /* Scalar reference: blur_plane. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
+
 static void ref_blur_plane(const float n2[3], const float d1[3], int radius, float *col_state,
                            const float *in, float *out, float *scratch, unsigned w, unsigned h)
 {
@@ -588,9 +609,9 @@ static void ref_blur_plane(const float n2[3], const float d1[3], int radius, flo
     for (ptrdiff_t n = -N + 1; n < ysize; n++) {
         const ptrdiff_t left = n - N - 1;
         const ptrdiff_t right = n + N - 1;
-        const float *lrow = (left >= 0) ? (scratch + (size_t)left * xsize) : NULL;
-        const float *rrow = (right < ysize) ? (scratch + (size_t)right * xsize) : NULL;
-        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : NULL;
+        const float *lrow = (left >= 0) ? (scratch + (size_t)left * xsize) : VMAF_NULLPTR;
+        const float *rrow = (right < ysize) ? (scratch + (size_t)right * xsize) : VMAF_NULLPTR;
+        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : VMAF_NULLPTR;
         for (size_t x = 0; x < xsize; x++) {
             const float lv = lrow ? lrow[x] : 0.f;
             const float rv = rrow ? rrow[x] : 0.f;
@@ -632,14 +653,14 @@ static blur_fn_t pick_blur(void)
 #endif
     return ssimulacra2_blur_plane_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_edge(void)
 {
     edge_fn_t fn = pick_edge();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     float *img1 = malloc(RGB_SZ * sizeof(float));
     float *mu1 = malloc(RGB_SZ * sizeof(float));
     float *img2 = malloc(RGB_SZ * sizeof(float));
@@ -659,14 +680,14 @@ static char *test_edge(void)
     double simd[12] = {0};
     ref_edge_diff_map(img1, mu1, img2, mu2, W, H, ref);
     fn(img1, mu1, img2, mu2, W, H, simd);
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0161 byte-exact
-    int match = memcmp(ref, simd, sizeof(ref)) == 0;
+
+    const int match = double_buffers_bit_equal(ref, simd, sizeof(ref) / sizeof(ref[0]));
     free(img1);
     free(mu1);
     free(img2);
     free(mu2);
     mu_assert("edge_diff_map SIMD averages not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Blur plane bit-exactness test. Uses realistic IIR coefficients
@@ -675,7 +696,7 @@ static char *test_blur(void)
 {
     blur_fn_t fn = pick_blur();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     /* Pre-computed coefficients for sigma=1.5 (from libjxl create_recursive_gaussian
      * reference output). Exact values are not critical for the bit-exactness test
      * — what matters is that scalar ref and SIMD use the same. */
@@ -704,8 +725,8 @@ static char *test_blur(void)
     fill_random(in, plane, -0.5f, 0.5f, 0xcafebabeu);
     ref_blur_plane(n2, d1, radius, col_state_ref, in, out_ref, scratch_ref, W, H);
     fn(n2, d1, radius, col_state_simd, in, out_simd, scratch_simd, W, H);
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0162 byte-exact
-    const int match = memcmp(out_ref, out_simd, plane * sizeof(float)) == 0;
+
+    const int match = float_buffers_bit_equal(out_ref, out_simd, plane);
     free(in);
     free(out_ref);
     free(out_simd);
@@ -714,7 +735,7 @@ static char *test_blur(void)
     free(col_state_ref);
     free(col_state_simd);
     mu_assert("blur_plane SIMD not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Scalar reference: sRGB EOTF — verbatim copy of extractor's inline helper. */
@@ -762,7 +783,7 @@ static inline float ref_read_plane(const simd_plane_t *p, unsigned lw, unsigned 
 }
 
 /* Scalar reference: picture_to_linear_rgb. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
+
 static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
                                       const simd_plane_t planes[3], float *out)
 {
@@ -862,14 +883,14 @@ static ptlr_fn_t pick_ptlr(void)
 #endif
     return ssimulacra2_picture_to_linear_rgb_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Test all 6 common (yuv_matrix × subsampling) combinations on small frames. */
 /* Test helper — drives all 5 format variants (420/422/444 × 8/10-bit)
  * through one parameterised entry point. Splitting would duplicate
  * the per-plane fixture setup + 3× xorshift fill + shell. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
+
 static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsigned uh_div)
 {
     /*
@@ -889,11 +910,11 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     (void)uh_div;
     (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
                           "(see TODO(ssimulacra2-ptlr-mingw))\n");
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     ptlr_fn_t fn = pick_ptlr();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     const unsigned LW = 24;
     const unsigned LH = 16;
     const unsigned UW = LW / uw_div;
@@ -964,15 +985,15 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     }
     ref_picture_to_linear_rgb(yuv_matrix, bpc, LW, LH, planes, out_ref);
     fn(yuv_matrix, bpc, LW, LH, planes, out_simd);
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0163 byte-exact
-    const int match = memcmp(out_ref, out_simd, out_sz * sizeof(float)) == 0;
+
+    const int match = float_buffers_bit_equal(out_ref, out_simd, out_sz);
     free(y_buf);
     free(u_buf);
     free(v_buf);
     free(out_ref);
     free(out_simd);
     mu_assert("picture_to_linear_rgb SIMD not bit-identical to scalar", match);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif /* _WIN32 / MINGW */
 }
 
@@ -1081,7 +1102,7 @@ static host_xyb_fn_t pick_host_xyb(void)
 #if ARCH_AARCH64
     return ssimulacra2_host_linear_rgb_to_xyb_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static host_down_fn_t pick_host_down(void)
@@ -1094,7 +1115,7 @@ static host_down_fn_t pick_host_down(void)
 #if ARCH_AARCH64
     return ssimulacra2_host_downsample_2x2_neon;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Use a plane_stride larger than w*h to exercise the Vulkan pyramid layout
@@ -1109,7 +1130,7 @@ static char *test_host_xyb(void)
 {
     host_xyb_fn_t fn = pick_host_xyb();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     float *lin = calloc(HOST_BUF_SZ, sizeof(float));
     float *out_ref = calloc(HOST_BUF_SZ, sizeof(float));
     float *out_simd = calloc(HOST_BUF_SZ, sizeof(float));
@@ -1118,7 +1139,7 @@ static char *test_host_xyb(void)
         free(out_ref);
         free(out_simd);
         mu_assert("test_host_xyb: calloc failed", 0);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     /* Fill only the active pixel region of each plane. */
     for (int c = 0; c < 3; c++) {
@@ -1131,9 +1152,10 @@ static char *test_host_xyb(void)
      * padding slots beyond w*h are not written by either implementation. */
     int match = 1;
     for (int c = 0; c < 3; c++) {
-        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0242
-        if (memcmp(out_ref + (size_t)c * HOST_PLANE_SZ, out_simd + (size_t)c * HOST_PLANE_SZ,
-                   (size_t)HOST_W * HOST_H * sizeof(float)) != 0) {
+
+        if (!float_buffers_bit_equal(out_ref + (size_t)c * HOST_PLANE_SZ,
+                                     out_simd + (size_t)c * HOST_PLANE_SZ,
+                                     (size_t)HOST_W * HOST_H)) {
             match = 0;
         }
     }
@@ -1141,14 +1163,14 @@ static char *test_host_xyb(void)
     free(out_ref);
     free(out_simd);
     mu_assert("host_linear_rgb_to_xyb SIMD not bit-identical to scalar (plane_stride form)", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_host_downsample(void)
 {
     host_down_fn_t fn = pick_host_down();
     if (!fn)
-        return NULL;
+        return VMAF_NULLPTR;
     const unsigned OW = (HOST_W + 1) / 2;
     const unsigned OH = (HOST_H + 1) / 2;
     float *in = calloc(HOST_BUF_SZ, sizeof(float));
@@ -1159,7 +1181,7 @@ static char *test_host_downsample(void)
         free(out_ref);
         free(out_simd);
         mu_assert("test_host_downsample: calloc failed", 0);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     for (int c = 0; c < 3; c++) {
         uint32_t seed = 0x5a5a5a5au ^ (uint32_t)(c * 0x789u);
@@ -1169,9 +1191,9 @@ static char *test_host_downsample(void)
     fn(in, HOST_W, HOST_H, out_simd, OW, OH, HOST_PLANE_SZ);
     int match = 1;
     for (int c = 0; c < 3; c++) {
-        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0242
-        if (memcmp(out_ref + (size_t)c * HOST_PLANE_SZ, out_simd + (size_t)c * HOST_PLANE_SZ,
-                   (size_t)OW * OH * sizeof(float)) != 0) {
+
+        if (!float_buffers_bit_equal(out_ref + (size_t)c * HOST_PLANE_SZ,
+                                     out_simd + (size_t)c * HOST_PLANE_SZ, (size_t)OW * OH)) {
             match = 0;
         }
     }
@@ -1179,14 +1201,14 @@ static char *test_host_downsample(void)
     free(out_ref);
     free(out_simd);
     mu_assert("host_downsample_2x2 SIMD not bit-identical to scalar (plane_stride form)", match);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 || ARCH_AARCH64 */
 
 /* Flat mu_run_test list — one line per subtest by design, not a
  * complexity violation. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
+
 char *run_tests(void)
 {
 #if ARCH_AARCH64
@@ -1221,7 +1243,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: arch without ssimulacra2 SIMD\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

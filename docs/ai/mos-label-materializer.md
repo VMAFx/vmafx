@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # MOS Label Materializer
 
 `ai/scripts/materialize_mos_labels.py` joins subjective MOS labels onto
@@ -20,7 +19,7 @@ explicit columns when the table is ambiguous.
 MOS labels may be stored as either:
 
 | Column | Scale | Output |
-|---|---|---|
+| --- | --- | --- |
 | `mos` | 1-5 | copied to `mos`, mapped to `mos_raw_0_100` |
 | `mos_raw_0_100` | 0-100 | mapped to `mos`, copied to `mos_raw_0_100` |
 
@@ -66,7 +65,7 @@ relative to the manifest file unless `--base-dir` is supplied.
 The repo ships ready-to-use batch manifests under `ai/configs/`:
 
 | Manifest | Corpora | Key schema |
-|---|---|---|
+| --- | --- | --- |
 | `ai/configs/mos-label-batch-konvid.json` | KonViD-1k, KonViD-150k | `key` (feature) ↔ `src` (label); 6+ digit numeric regex |
 | `ai/configs/mos-label-batch-chug.json` | CHUG UGC-HDR | `chug_video_id` on both sides; `key_normalize: raw` |
 
@@ -126,7 +125,7 @@ carries ADR-0661 `run_provenance`.
 ## Output Columns
 
 | Column | Meaning |
-|---|---|
+| --- | --- |
 | `mos` | Subjective MOS on the 1-5 training scale. |
 | `mos_raw_0_100` | Same MOS on a 0-100 scale for cross-corpus audits. |
 | `mos_label_status` | `ok` or `missing-label`. |

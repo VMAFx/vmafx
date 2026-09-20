@@ -25,13 +25,6 @@
 #include "libvmaf/picture.h"
 #include "ref.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — explicitly walks every alloc / fill / ref / unref state to keep failures localised; splitting hides the assertion that fired.
 static char *test_picture_alloc_ref_and_unref()
 {
     int err;
@@ -51,7 +44,7 @@ static char *test_picture_alloc_ref_and_unref()
     err = vmaf_picture_unref(&pic_b);
     mu_assert("problem during vmaf_picture_unref", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture_data_alignment()
@@ -68,7 +61,7 @@ static char *test_picture_data_alignment()
     err = vmaf_picture_unref(&pic);
     mu_assert("problem during vmaf_picture_unref", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -99,7 +92,7 @@ static char *test_picture_chroma_ceiling_420_odd(void)
     mu_assert("chroma h[2] must equal h[1]", pic.h[2] == pic.h[1]);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture_chroma_ceiling_420_even(void)
@@ -112,7 +105,7 @@ static char *test_picture_chroma_ceiling_420_even(void)
     mu_assert("chroma h must be 162 for even-height 4:2:0", pic.h[1] == 162);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture_chroma_ceiling_422(void)
@@ -125,7 +118,7 @@ static char *test_picture_chroma_ceiling_422(void)
     mu_assert("chroma h must equal luma h for 4:2:2", pic.h[1] == 323);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture_chroma_ceiling_444(void)
@@ -138,7 +131,7 @@ static char *test_picture_chroma_ceiling_444(void)
     mu_assert("chroma h must equal luma h for 4:4:4", pic.h[1] == 323);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -176,7 +169,7 @@ static char *test_picture_alloc_rejects_overflow_dimensions()
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed for 32768x32768", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -203,19 +196,19 @@ static char *test_picture_ref_null_error_paths()
     mu_assert("setup: vmaf_picture_alloc failed", !err);
 
     /* NULL dst: ref count on src must not change. */
-    err = vmaf_picture_ref(NULL, &src);
+    err = vmaf_picture_ref(VMAF_NULLPTR, &src);
     mu_assert("vmaf_picture_ref(NULL, src) must return -EINVAL", err == -EINVAL);
 
     /* NULL src: dst must remain untouched (unmodified zero-init). */
     memset(&dst, 0, sizeof(dst));
-    err = vmaf_picture_ref(&dst, NULL);
+    err = vmaf_picture_ref(&dst, VMAF_NULLPTR);
     mu_assert("vmaf_picture_ref(dst, NULL) must return -EINVAL", err == -EINVAL);
-    mu_assert("vmaf_picture_ref(dst, NULL) must not write to dst", dst.ref == NULL);
+    mu_assert("vmaf_picture_ref(dst, NULL) must not write to dst", dst.ref == VMAF_NULLPTR);
 
     err = vmaf_picture_unref(&src);
     mu_assert("vmaf_picture_unref (cleanup) failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture_unref_null_error_paths()
@@ -223,7 +216,7 @@ static char *test_picture_unref_null_error_paths()
     int err;
 
     /* NULL pic pointer → must return -EINVAL without crashing. */
-    err = vmaf_picture_unref(NULL);
+    err = vmaf_picture_unref(VMAF_NULLPTR);
     mu_assert("vmaf_picture_unref(NULL) must return -EINVAL", err == -EINVAL);
 
     /* Zeroed VmafPicture (pic->ref == NULL) → must return -EINVAL.
@@ -235,7 +228,7 @@ static char *test_picture_unref_null_error_paths()
     err = vmaf_picture_unref(&zeroed);
     mu_assert("vmaf_picture_unref(zeroed pic) must return -EINVAL", err == -EINVAL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Grouped so neither runner trips the readability-function-size branch budget:
@@ -246,7 +239,7 @@ static char *run_chroma_ceiling_tests(void)
     mu_run_test(test_picture_chroma_ceiling_420_even);
     mu_run_test(test_picture_chroma_ceiling_422);
     mu_run_test(test_picture_chroma_ceiling_444);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -257,7 +250,5 @@ char *run_tests()
     mu_run_test(test_picture_alloc_rejects_overflow_dimensions);
     mu_run_test(test_picture_ref_null_error_paths);
     mu_run_test(test_picture_unref_null_error_paths);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

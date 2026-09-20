@@ -52,28 +52,22 @@ __device__ __forceinline__ uint64_t moment_warp_reduce_u64(uint64_t v)
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
         const uint64_t other = ((uint64_t)thi << 32) | tlo;
-        const uint64_t self  = ((uint64_t)hi  << 32) | lo;
-        const uint64_t sum   = self + other;
+        const uint64_t self = ((uint64_t)hi << 32) | lo;
+        const uint64_t sum = self + other;
         lo = (uint32_t)sum;
         hi = (uint32_t)(sum >> 32);
     }
     return ((uint64_t)hi << 32) | lo;
 }
 
-extern "C" {
-
 /**
  * 8-bpc kernel: ref/dis are uint8_t row-major arrays with ref_stride /
  * dis_stride bytes per row. Accumulates four uint64 sums
  * [ref1st, dis1st, ref2nd, dis2nd] into `sums[0..3]` via atomicAdd.
  */
-__global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
-                                                  const uint8_t *__restrict__ dis,
-                                                  ptrdiff_t ref_stride,
-                                                  ptrdiff_t dis_stride,
-                                                  unsigned long long *__restrict__ sums,
-                                                  unsigned width,
-                                                  unsigned height)
+extern "C" __global__ void calculate_moment_hip_kernel_8bpc(
+    const uint8_t *__restrict__ ref, const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
+    ptrdiff_t dis_stride, unsigned long long *__restrict__ sums, unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -109,13 +103,9 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
  * exact integer sums by the bit-depth scaler (4/16/256) and by w*h to
  * recover the moment the CPU reference computes (ADR-1212). Same layout as 8bpc.
  */
-__global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
-                                                   const uint8_t *__restrict__ dis,
-                                                   ptrdiff_t ref_stride,
-                                                   ptrdiff_t dis_stride,
-                                                   unsigned long long *__restrict__ sums,
-                                                   unsigned width,
-                                                   unsigned height)
+extern "C" __global__ void calculate_moment_hip_kernel_16bpc(
+    const uint8_t *__restrict__ ref, const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
+    ptrdiff_t dis_stride, unsigned long long *__restrict__ sums, unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -123,10 +113,10 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
 
     uint64_t r1 = 0, r2 = 0, d1 = 0, d2 = 0;
     if (x < (int)width && y < (int)height) {
-        const uint64_t r = (uint64_t)reinterpret_cast<const uint16_t *>(
-            ref + (ptrdiff_t)y * ref_stride)[x];
-        const uint64_t d = (uint64_t)reinterpret_cast<const uint16_t *>(
-            dis + (ptrdiff_t)y * dis_stride)[x];
+        const uint64_t r =
+            (uint64_t)reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
+        const uint64_t d =
+            (uint64_t)reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
         r1 = r;
         r2 = r * r;
         d1 = d;
@@ -146,5 +136,3 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
         atomicAdd(&sums[3], (unsigned long long)d2);
     }
 }
-
-} /* extern "C" */

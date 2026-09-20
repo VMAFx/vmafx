@@ -50,12 +50,6 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* Two frames are the minimum to exercise the ping-pong diff path
  * (frame 0 always emits 0.0; the meaningful score is at frame 1). */
 #ifndef FIXTURE_W
@@ -90,14 +84,13 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu(double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "speed_temporal", NULL);
+    err = vmaf_use_feature(vmaf, "speed_temporal", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(speed_temporal) failed", !err);
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
@@ -109,36 +102,35 @@ static char *run_cpu(double *score)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err =
         vmaf_feature_score_at_index(vmaf, "Speed_temporal_feature_speed_temporal_score", score, 1u);
     mu_assert("CPU: speed_temporal score at idx=1 missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl(double *score, int *device_present)
 {
     *score = NAN;
     *device_present = 0;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     *device_present = 1;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "speed_temporal_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "speed_temporal_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(speed_temporal_sycl) failed", !err);
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
@@ -150,7 +142,7 @@ static char *run_sycl(double *score, int *device_present)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("SYCL: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err =
         vmaf_feature_score_at_index(vmaf, "Speed_temporal_feature_speed_temporal_score", score, 1u);
@@ -158,7 +150,7 @@ static char *run_sycl(double *score, int *device_present)
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* speed_temporal_sycl is a 705-LOC SYCL TU (ADR-0567) whose source
@@ -171,25 +163,25 @@ static char *run_sycl(double *score, int *device_present)
  * into libvmaf]` message that tracks the gap. */
 static int speed_temporal_sycl_present(void)
 {
-    return vmaf_get_feature_extractor_by_name("speed_temporal_sycl") != NULL;
+    return vmaf_get_feature_extractor_by_name("speed_temporal_sycl") != VMAF_NULLPTR;
 }
 
 static char *test_speed_temporal_sycl_registered_or_skip(void)
 {
     if (!speed_temporal_sycl_present()) {
         (void)fprintf(stderr, "[skip: speed_temporal_sycl not built into libvmaf] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_temporal_sycl");
     mu_assert("speed_temporal_sycl name matches", !strcmp(fex->name, "speed_temporal_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_temporal_cpu_sycl_parity(void)
 {
     if (!speed_temporal_sycl_present()) {
         (void)fprintf(stderr, "[skip: speed_temporal_sycl not built into libvmaf] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     double cpu_score = 0.0;
     double sycl_score = NAN;
@@ -201,7 +193,7 @@ static char *test_speed_temporal_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (!device_present)
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr,
@@ -210,14 +202,12 @@ static char *test_speed_temporal_cpu_sycl_parity(void)
     }
     mu_assert("speed_temporal CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_speed_temporal_sycl_registered_or_skip);
     mu_run_test(test_speed_temporal_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # GitHub Actions custom-action + reusable-workflow audit — 2026-05-31
 
 **Status**: Audit complete. No gaps found; two abstraction candidates
@@ -90,7 +89,7 @@ CPU build toolchain. Eight call sites repeat substantially the same
 list:
 
 | Workflow | Line |
-|---|---|
+| --- | --- |
 | `lint-and-format.yml` | L72, L414 |
 | `security-scans.yml` | L118 |
 | `supply-chain.yml` | L41 |

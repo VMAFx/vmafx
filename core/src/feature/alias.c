@@ -19,6 +19,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "alias.h"
+
 typedef struct {
     const char *name, *alias;
 } Alias;

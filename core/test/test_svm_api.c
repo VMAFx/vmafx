@@ -5,32 +5,7 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-/*
- * Coverage-targeted unit tests for the vendored libsvm runtime API
- * (svm_train + the inspector and predict family + svm_check_parameter
- * rejection branches + a save/load round-trip).
- *
- * This file is *complementary* to PR #381's test_svm_parser.c, which
- * focuses on the buffer-parser rejection paths added by ADR-0889. The
- * coverage gap left after PR #381 is the runtime side of svm.cpp —
- * train / predict / predict_values / predict_probability /
- * check_parameter / save / cross-validate. Those code paths account
- * for >70% of svm.cpp by line count and were at 9.6% coverage on
- * master before this file.
- *
- * The vendored libsvm 3.24 source is wrapped in a file-level
- * NOLINTBEGIN/NOLINTEND cordon and must not be modified semantically
- * (see core/src/AGENTS.md §10, ADR-0889). This test file is
- * observation-only — every assertion drives the existing public API
- * from svm.h.
- *
- * Tests use a tiny linearly-separable 2-class fixture so svm_train
- * converges in milliseconds while still touching the C_SVC training
- * loop, label assignment, and decision-function construction.
- */
-
 // ADR-1138/ADR-1166: preserve NULL for MSVC C builds.
-// NOLINTBEGIN(modernize-use-nullptr)
 
 #include <math.h>
 #include <stdio.h>
@@ -139,8 +114,8 @@ static char *test_check_param_accepts_default(void)
     default_c_svc_param(&p);
     const char *err = svm_check_parameter(&fx.prob, &p);
     free_binary_problem(&fx);
-    mu_assert("default C-SVC param accepted", err == NULL);
-    return NULL;
+    mu_assert("default C-SVC param accepted", err == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_check_param_rejects_unknown_svm_type(void)
@@ -152,9 +127,9 @@ static char *test_check_param_rejects_unknown_svm_type(void)
     p.svm_type = 99;
     const char *err = svm_check_parameter(&fx.prob, &p);
     free_binary_problem(&fx);
-    mu_assert("unknown svm type rejected", err != NULL);
-    mu_assert("error mentions svm type", strstr(err, "svm type") != NULL);
-    return NULL;
+    mu_assert("unknown svm type rejected", err != VMAF_NULLPTR);
+    mu_assert("error mentions svm type", strstr(err, "svm type") != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_check_param_rejects_unknown_kernel(void)
@@ -166,9 +141,9 @@ static char *test_check_param_rejects_unknown_kernel(void)
     p.kernel_type = 99;
     const char *err = svm_check_parameter(&fx.prob, &p);
     free_binary_problem(&fx);
-    mu_assert("unknown kernel rejected", err != NULL);
-    mu_assert("error mentions kernel", strstr(err, "kernel") != NULL);
-    return NULL;
+    mu_assert("unknown kernel rejected", err != VMAF_NULLPTR);
+    mu_assert("error mentions kernel", strstr(err, "kernel") != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* Per-case rejection helper. Builds the binary fixture, lets the
@@ -187,8 +162,8 @@ static char *expect_param_rejection(param_mutator_fn mutate)
     mutate(&p);
     const char *err = svm_check_parameter(&fx.prob, &p);
     free_binary_problem(&fx);
-    mu_assert("expected rejection but got NULL", err != NULL);
-    return NULL;
+    mu_assert("expected rejection but got NULL", err != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static void mut_cache_zero(struct svm_parameter *p)
@@ -290,13 +265,13 @@ static char *test_check_param_rejects_epsilon_svr_neg_p(void)
 static struct svm_model *train_default_csvc(struct binary_fixture *fx)
 {
     if (build_binary_problem(fx) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
     struct svm_parameter p;
     default_c_svc_param(&p);
     svm_set_print_string_function(&silence_svm_log);
-    if (svm_check_parameter(&fx->prob, &p) != NULL) {
+    if (svm_check_parameter(&fx->prob, &p) != VMAF_NULLPTR) {
         free_binary_problem(fx);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     return svm_train(&fx->prob, &p);
 }
@@ -325,7 +300,7 @@ static char *test_train_csvc_inspectors(void)
 {
     struct binary_fixture fx = {0};
     struct svm_model *m = train_default_csvc(&fx);
-    mu_assert("model trained", m != NULL);
+    mu_assert("model trained", m != VMAF_NULLPTR);
     mu_assert("svm_type == C_SVC", svm_get_svm_type(m) == C_SVC);
     mu_assert("nr_class == 2", svm_get_nr_class(m) == 2);
     mu_assert("nr_sv > 0", svm_get_nr_sv(m) > 0);
@@ -335,14 +310,14 @@ static char *test_train_csvc_inspectors(void)
     mu_assert("svr probability = 0", svm_get_svr_probability(m) == 0.0);
     svm_free_and_destroy_model(&m);
     free_binary_problem(&fx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_train_csvc_labels(void)
 {
     struct binary_fixture fx = {0};
     struct svm_model *m = train_default_csvc(&fx);
-    mu_assert("model trained", m != NULL);
+    mu_assert("model trained", m != VMAF_NULLPTR);
     int labels[2] = {0, 0};
     svm_get_labels(m, labels);
     int has_pos = labels[0] == 1 || labels[1] == 1;
@@ -350,14 +325,14 @@ static char *test_train_csvc_labels(void)
     svm_free_and_destroy_model(&m);
     free_binary_problem(&fx);
     mu_assert("labels include +1 and -1", has_pos && has_neg);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_train_csvc_predict(void)
 {
     struct binary_fixture fx = {0};
     struct svm_model *m = train_default_csvc(&fx);
-    mu_assert("model trained", m != NULL);
+    mu_assert("model trained", m != VMAF_NULLPTR);
 
     /* + side */
     const struct svm_node q_pos[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
@@ -372,12 +347,12 @@ static char *test_train_csvc_predict(void)
     int neg_ok = svm_predict(m, q_neg) == -1.0; /* sentinel: SVM label */
 
     svm_free_and_destroy_model(&m);
-    int model_nulled = m == NULL;
+    int model_nulled = m == VMAF_NULLPTR;
     free_binary_problem(&fx);
     mu_assert("+ side predicts +1 (predict == predict_values)", pos_ok);
     mu_assert("- side predicts -1", neg_ok);
     mu_assert("svm_free_and_destroy_model nulls the pointer", model_nulled);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Reduce per-test branch count by pulling the prob-vector validation
@@ -405,12 +380,12 @@ static char *test_predict_probability_csvc(void)
     svm_set_print_string_function(&silence_svm_log);
 
     struct svm_model *m = svm_train(&fx.prob, &p);
-    mu_assert("probability model trained", m != NULL);
+    mu_assert("probability model trained", m != VMAF_NULLPTR);
     mu_assert("flagged as probability model", svm_check_probability_model(m) == 1);
 
     int n = svm_get_nr_class(m);
     double *probs = (double *)calloc((size_t)n, sizeof(double));
-    mu_assert("alloc probs", probs != NULL);
+    mu_assert("alloc probs", probs != VMAF_NULLPTR);
 
     const struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     double y = svm_predict_probability(m, q, probs);
@@ -422,7 +397,7 @@ static char *test_predict_probability_csvc(void)
     free_binary_problem(&fx);
     mu_assert("predict_probability returns valid label", label_ok);
     mu_assert("probs in [0,1] and sum ~ 1.0", probs_ok);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_train_epsilon_svr(void)
@@ -448,10 +423,10 @@ static char *test_train_epsilon_svr(void)
     svm_set_print_string_function(&silence_svm_log);
 
     const char *err = svm_check_parameter(&fx.prob, &p);
-    mu_assert("epsilon-svr param ok", err == NULL);
+    mu_assert("epsilon-svr param ok", err == VMAF_NULLPTR);
 
     struct svm_model *m = svm_train(&fx.prob, &p);
-    mu_assert("svr model trained", m != NULL);
+    mu_assert("svr model trained", m != VMAF_NULLPTR);
     mu_assert("svr svm_type", svm_get_svm_type(m) == EPSILON_SVR);
     /* probA only path. */
     mu_assert("svr probability model", svm_check_probability_model(m) == 1);
@@ -465,7 +440,7 @@ static char *test_train_epsilon_svr(void)
 
     svm_free_and_destroy_model(&m);
     free_binary_problem(&fx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -528,7 +503,7 @@ static char *test_save_load_roundtrip(void)
 {
     struct binary_fixture fx = {0};
     struct svm_model *m = train_default_csvc(&fx);
-    mu_assert("model trained", m != NULL);
+    mu_assert("model trained", m != VMAF_NULLPTR);
 
     char path[260];
     int rc_tmp = make_svm_temp_path(path, sizeof(path));
@@ -538,7 +513,7 @@ static char *test_save_load_roundtrip(void)
     mu_assert("svm_save_model returns 0", rc == 0);
 
     struct svm_model *m2 = svm_load_model(path);
-    mu_assert("model reloaded", m2 != NULL);
+    mu_assert("model reloaded", m2 != VMAF_NULLPTR);
     int eq = models_inspector_equal(m, m2);
 
     svm_free_and_destroy_model(&m);
@@ -546,7 +521,7 @@ static char *test_save_load_roundtrip(void)
     (void)remove(path);
     free_binary_problem(&fx);
     mu_assert("reloaded model inspector + predict match original", eq);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -558,7 +533,7 @@ static char *run_check_param_simple_tests(void)
     mu_run_test(test_check_param_accepts_default);
     mu_run_test(test_check_param_rejects_unknown_svm_type);
     mu_run_test(test_check_param_rejects_unknown_kernel);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_check_param_numeric_tests(void)
@@ -568,7 +543,7 @@ static char *run_check_param_numeric_tests(void)
     mu_run_test(test_check_param_rejects_c_zero);
     mu_run_test(test_check_param_rejects_shrinking);
     mu_run_test(test_check_param_rejects_probability);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_check_param_kernel_svm_tests(void)
@@ -578,7 +553,7 @@ static char *run_check_param_kernel_svm_tests(void)
     mu_run_test(test_check_param_rejects_one_class_prob);
     mu_run_test(test_check_param_rejects_nu_svc_nu_zero);
     mu_run_test(test_check_param_rejects_epsilon_svr_neg_p);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_train_predict_tests(void)
@@ -588,7 +563,7 @@ static char *run_train_predict_tests(void)
     mu_run_test(test_train_csvc_predict);
     mu_run_test(test_predict_probability_csvc);
     mu_run_test(test_train_epsilon_svr);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -606,7 +581,5 @@ char *run_tests(void)
     if (msg)
         return msg;
     mu_run_test(test_save_load_roundtrip);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

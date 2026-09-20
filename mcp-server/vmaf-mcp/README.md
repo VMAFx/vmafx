@@ -1,37 +1,36 @@
-<!-- markdownlint-disable MD060 -->
 # vmaf-mcp
 
 > **DEPRECATED (ADR-1229).** The MCP server is now the Go binary `vmafx-mcp`
 > (`cmd/vmafx-mcp/`), installed at `/usr/local/bin/vmafx-mcp` in every container
-> image. Attach with `docker exec -i vmaf-dev-mcp vmafx-mcp`. This Python package
-> implements the same fifteen tools and is retained for one release as a
+> image. Attach with `docker exec -i vmaf-dev-mcp vmafx-mcp`. This Python
+> package implements the same fifteen tools and is retained for one release as a
 > reference implementation; it is no longer installed by `dev/Containerfile` and
 > a follow-up removes it. Do not add tools here — add them to `cmd/vmafx-mcp/`.
 
-MCP (Model Context Protocol) server that exposes the VMAFx fork's
-scoring CLI to LLM tooling via JSON-RPC over stdio.
+MCP (Model Context Protocol) server that exposes the VMAFx fork's scoring CLI to
+LLM tooling via JSON-RPC over stdio.
 
 ## Tools
 
-| Tool                    | Description                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `vmaf_score`            | Score a (ref, dis) raw YUV pair. Returns the full JSON report.                     |
-| `vmaf_score_encoded`    | Score encoded video (MP4/MKV/Y4M/…) — decodes via ffmpeg, then scores. (ADR-0608) |
-| `list_models`           | Enumerate models under `model/` (`.json`, `.pkl`, `.onnx`).                        |
-| `list_backends`         | Report which backends (`cpu`/`cuda`/`sycl`/`hip`/`metal`) are compiled in. |
-| `probe_backend`         | Runtime health check: compiled-in vs driver-functional distinction. (ADR-0608)     |
-| `vmaf_version`          | Return binary path, version string, and build flags. (ADR-0608)                    |
-| `run_benchmark`         | Run `testdata/bench_all.sh` on the built-in fixture pairs.                         |
-| `eval_model_on_split`   | Evaluate an ONNX tiny-AI model on a parquet feature split.                         |
-| `compare_models`        | Rank ONNX models on the same split by PLCC.                                        |
-| Tool            | Description                                                  |
-| --------------- | ------------------------------------------------------------ |
-| `vmaf_score`    | Score a (ref, dis) YUV pair. Returns the full JSON report.   |
-| `list_models`   | Enumerate models under `model/` (`.json`, `.pkl`, `.onnx`).  |
-| `list_backends` | Report which backends (`cpu`/`cuda`/`sycl`/`hip`) are live.  |
-| `run_benchmark` | Run `testdata/bench_all.sh` on a pair.                       |
-| `eval_model_on_split` | Evaluate an ONNX tiny-AI model on a parquet feature split. |
-| `compare_models` | Rank ONNX models on the same split by PLCC. |
+| Tool                    | Description                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `vmaf_score`            | Score a (ref, dis) raw YUV pair. Returns the full JSON report.                       |
+| `vmaf_score_encoded`    | Score encoded video (MP4/MKV/Y4M/…) — decodes via ffmpeg, then scores. (ADR-0608)    |
+| `list_models`           | Enumerate models under `model/` (`.json`, `.pkl`, `.onnx`).                          |
+| `list_backends`         | Report which backends (`cpu`/`cuda`/`sycl`/`hip`/`metal`) are compiled in.           |
+| `probe_backend`         | Runtime health check: compiled-in vs driver-functional distinction. (ADR-0608)       |
+| `vmaf_version`          | Return binary path, version string, and build flags. (ADR-0608)                      |
+| `run_benchmark`         | Run `testdata/bench_all.sh` on the built-in fixture pairs.                           |
+| `eval_model_on_split`   | Evaluate an ONNX tiny-AI model on a parquet feature split.                           |
+| `compare_models`        | Rank ONNX models on the same split by PLCC.                                          |
+| Tool                    | Description                                                                          |
+| ---------------         | ------------------------------------------------------------                         |
+| `vmaf_score`            | Score a (ref, dis) YUV pair. Returns the full JSON report.                           |
+| `list_models`           | Enumerate models under `model/` (`.json`, `.pkl`, `.onnx`).                          |
+| `list_backends`         | Report which backends (`cpu`/`cuda`/`sycl`/`hip`) are live.                          |
+| `run_benchmark`         | Run `testdata/bench_all.sh` on a pair.                                               |
+| `eval_model_on_split`   | Evaluate an ONNX tiny-AI model on a parquet feature split.                           |
+| `compare_models`        | Rank ONNX models on the same split by PLCC.                                          |
 | `describe_worst_frames` | Extract the lowest-VMAF frames and describe visible artefacts with local VLM extras. |
 
 ## Install
@@ -65,14 +64,14 @@ VMAF_MCP_ALLOW=/data/my-corpus:/mnt/yuv vmaf-mcp
 
 ```json
 {
-  "mcpServers": {
-    "vmaf": {
-      "command": "vmaf-mcp",
-      "env": {
-        "VMAF_BIN": "/home/you/dev/vmaf/build/tools/vmaf",
-        "VMAF_MCP_ALLOW": "/data/yuv-corpus"
-      }
+    "mcpServers": {
+        "vmaf": {
+            "command": "vmaf-mcp",
+            "env": {
+                "VMAF_BIN": "/home/you/dev/vmaf/build/tools/vmaf",
+                "VMAF_MCP_ALLOW": "/data/yuv-corpus"
+            }
+        }
     }
-  }
 }
 ```

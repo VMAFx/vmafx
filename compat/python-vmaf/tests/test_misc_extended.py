@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +27,8 @@ from vmaf.tools.misc import (
     make_absolute_path,
     make_parent_dirs_if_nonexist,
 )
+
+_COMPARISON_VALUE_3 = 3
 
 # ---------------------------------------------------------------------------
 # make_absolute_path
@@ -193,7 +195,7 @@ class TestDedupValueInDict:
     def test_no_duplicates_unchanged(self):
         d = {"x": 10, "y": 20, "z": 30}
         result = dedup_value_in_dict(d)
-        assert len(result) == 3
+        assert len(result) == _COMPARISON_VALUE_3
 
     def test_all_same_value_keeps_one(self):
         d = {"a": 99, "b": 99, "c": 99}
@@ -226,7 +228,7 @@ class TestMakeParentDirsIfNonexist:
     def test_creates_parent_dirs(self, tmp_path):
         target = str(tmp_path / "a" / "b" / "c" / "file.txt")
         make_parent_dirs_if_nonexist(target)
-        assert os.path.isdir(str(tmp_path / "a" / "b" / "c"))
+        assert Path(str(tmp_path / "a" / "b" / "c")).is_dir()
 
     def test_idempotent_if_dirs_exist(self, tmp_path):
         target = str(tmp_path / "existing" / "file.txt")

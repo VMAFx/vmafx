@@ -1,3 +1,5 @@
+# Changelog fragment
+
 **`qat_train.py` trains rank-4 image models for real** (Research-2029 gap 4)
 
 - `ai/scripts/qat_train.py` now picks the training loader from the rank of
@@ -6,8 +8,8 @@
   rank 4 goes to a new NCHW image loader that reads an `.npz` carrying `x`
   (aliases `images` / `degraded` / `input`, shape `(N, C, H, W)`) and `y`
   (aliases `targets` / `clean` / `reference` / `output`). Any other rank
-  downgrades to `--smoke` with a message on stderr instead of failing inside
-  the first `Conv2d`.
+  downgrades to `--smoke` with a message on stderr instead of failing inside the
+  first `Conv2d`.
 - Previously every config was handed to the tabular datamodule, so 2D CNN
   configs such as `ai/configs/learned_filter_v1_qat.yaml` could not train — they
   only appeared to work because their uncommitted parquet cache tripped the

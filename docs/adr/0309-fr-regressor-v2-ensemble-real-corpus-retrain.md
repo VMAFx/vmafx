@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0309: `fr_regressor_v2` ensemble — real-corpus retrain harness + flip workflow
 
 - **Status**: Accepted
@@ -74,7 +73,7 @@ the registry — easy to revert if anything regresses downstream.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Harness now, flip later (chosen)** | Reviewable without GPU access. Flip PR is a 5-line registry diff, trivially revertable. Verdict files (PROMOTE/HOLD) are auditable artefacts that pin the corpus sha256 to the gate result. Honours the [no-skip-shortcuts rule](../../CLAUDE.md#12-hard-rules-for-every-session) — a real-corpus run gates the flip. | Two PRs instead of one. Maintainer has to remember to open the follow-up. | Selected — the cost of two PRs is a 30-second mechanical step; the benefit is a clean rollback surface and a reviewable harness that doesn't depend on hours of GPU output. |
 | Bundle harness + retrain + flip in one PR | One PR end-to-end. | The PR can't be reviewed until the 6–12 h retrain finishes. CI artefact dependencies (LOSO JSONs as inputs to the flip step) are fragile. The flip diff hides inside a multi-thousand-LOC PR alongside the harness. Reverting the flip means reverting the harness too. | Rejected — review latency and revert hygiene both lose. |
 | Harness only, no verdict file (just print) | Smaller LOC. | Loses the corpus-snapshot audit trail. The flip PR has no machine-checkable artefact to cite. Re-running the validator to "check what it said last time" requires re-running the gate against the JSONs, which is fine until the JSONs are themselves regenerated and the corpus drifts silently. | Rejected — the PROMOTE/HOLD verdict is the load-bearing audit artefact; deleting it weakens the flip-PR audit trail. |

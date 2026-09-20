@@ -37,6 +37,7 @@
 
 #include "cli_parse.h"
 #include "libvmaf/feature.h"
+#include "../../src/vmaf_nullptr.h"
 
 /* Hard cap on input size: a real argv fits in tens of bytes; we
  * give the fuzzer 16 KiB of headroom to splice many tokens. Past
@@ -72,9 +73,9 @@ extern int optind;
  * override symbol (see compiler-rt/lib/asan/asan_flags.cpp). The
  * `__` prefix is mandated by that ABI; the
  * `bugprone-reserved-identifier` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
+
 const char *__asan_default_options(void);
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
+
 const char *__asan_default_options(void)
 {
     return "detect_leaks=0:allocator_may_return_null=1";
@@ -99,9 +100,9 @@ static int g_exit_jmp_armed;
  * `__wrap_exit`, and exposes the original symbol as
  * `__real_exit`. The `__` prefix is mandated by that ABI; the
  * `bugprone-reserved-identifier` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI (ADR-0141 / ADR-0278) */
+
 _Noreturn void __wrap_exit(int code);
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI (ADR-0141 / ADR-0278) */
+
 void __wrap_exit(int code)
 {
     if (g_exit_jmp_armed) {
@@ -113,7 +114,7 @@ void __wrap_exit(int code)
     /* If we somehow get here without an arm (e.g. a static-init
      * exit before LLVMFuzzerTestOneInput runs), call the real
      * exit so the process actually terminates. */
-    /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI (ADR-0141 / ADR-0278) */
+
     extern _Noreturn void __real_exit(int);
     __real_exit(code);
 }
@@ -169,12 +170,12 @@ static unsigned tokenise_argv(uint8_t *buf, size_t size, char **argv, unsigned a
 static void free_settings_dicts(CLISettings *settings)
 {
     for (unsigned i = 0u; i < settings->feature_cnt; i++) {
-        if (settings->feature_cfg[i].opts_dict != NULL)
+        if (settings->feature_cfg[i].opts_dict != VMAF_NULLPTR)
             (void)vmaf_feature_dictionary_free(&settings->feature_cfg[i].opts_dict);
     }
     for (unsigned i = 0u; i < settings->model_cnt; i++) {
         for (unsigned j = 0u; j < settings->model_config[i].overload_cnt; j++) {
-            if (settings->model_config[i].feature_overload[j].opts_dict != NULL) {
+            if (settings->model_config[i].feature_overload[j].opts_dict != VMAF_NULLPTR) {
                 (void)vmaf_feature_dictionary_free(
                     &settings->model_config[i].feature_overload[j].opts_dict);
             }
@@ -209,7 +210,7 @@ static void drive_parse(int argc, char **argv)
  * external linkage; the runtime resolves it by name at link time
  * (`-fsanitize=fuzzer`). Cannot be static — the
  * `misc-use-internal-linkage` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI (ADR-0141 / ADR-0278) */
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     if (size == 0u || size > FUZZ_MAX_INPUT_BYTES)
@@ -218,7 +219,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     /* Copy into a heap buffer so we can NUL-terminate tokens in
      * place without aliasing the const fuzzer-owned input. */
     uint8_t *buf = malloc(size);
-    if (buf == NULL)
+    if (buf == VMAF_NULLPTR)
         return 0;
     memcpy(buf, data, size);
 

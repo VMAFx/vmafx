@@ -33,6 +33,8 @@
  *  -ENOSYS, the scaffold contract every HIP extractor shares.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -52,9 +54,9 @@
 #include "../../hip/picture_hip.h"
 #include "integer_ssim_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -153,7 +155,7 @@ static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
         rc = hipModuleGetFunction(&s->func_vert, s->module, "integer_ssim_vert_combine");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return issim_hip_rc(rc);
 #else
@@ -176,10 +178,10 @@ static int issim_hip_bufs_free(IssimStateHip *s)
 
     int err = 0;
     for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS + 2u; i++) {
-        if (*bufs[i] == NULL)
+        if (*bufs[i] == VMAF_NULLPTR)
             continue;
         const int e = issim_hip_rc(hipFree(*bufs[i]));
-        *bufs[i] = NULL;
+        *bufs[i] = VMAF_NULLPTR;
         if (err == 0)
             err = e;
     }
@@ -215,9 +217,9 @@ static int issim_hip_release(IssimStateHip *s)
     int e = issim_hip_bufs_free(s);
     if (rc == 0)
         rc = e;
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         e = issim_hip_rc(hipModuleUnload(s->module));
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         if (rc == 0)
             rc = e;
     }
@@ -227,13 +229,13 @@ static int issim_hip_release(IssimStateHip *s)
     e = vmaf_hip_kernel_readback_free(&s->rb_ssim, s->ctx);
     if (rc == 0)
         rc = e;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         e = vmaf_dictionary_free(&s->feature_name_dict);
         if (rc == 0)
             rc = e;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -269,7 +271,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -294,7 +296,7 @@ static int issim_hip_launch_horiz(IssimStateHip *s, hipStream_t str)
     };
     hipFunction_t fn = (s->bpc <= 8u) ? s->func_horiz_8 : s->func_horiz_16;
     return issim_hip_rc(hipModuleLaunchKernel(fn, s->grid_x, s->grid_y, 1u, ISSIM_HIP_BLOCK_X,
-                                              ISSIM_HIP_BLOCK_Y, 1u, 0u, str, args, NULL));
+                                              ISSIM_HIP_BLOCK_Y, 1u, 0u, str, args, VMAF_NULLPTR));
 }
 
 /* Pass 2. Implicitly ordered after pass 1: both run on `str`. */
@@ -308,7 +310,7 @@ static int issim_hip_launch_vert(IssimStateHip *s, hipStream_t str)
     };
     return issim_hip_rc(hipModuleLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u,
                                               ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0u, str,
-                                              args, NULL));
+                                              args, VMAF_NULLPTR));
 }
 
 /* Copy both per-block partial arrays back and record the `finished` event
@@ -359,8 +361,9 @@ static int issim_hip_upload(const IssimStateHip *s, const VmafPicture *ref_pic,
     return vmaf_hip_picture_upload(planes, 2u, s->lc.str);
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -402,12 +405,11 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                                    total_term / (double)total_weight, index);
 }
 
-static const char *provided_features[] = {"ssim", NULL};
+static const char *provided_features[] = {"ssim", VMAF_NULLPTR};
 
 /* integer_ssim on HIP (ADR-0564): the 9-tap int64 algorithm of the CPU
  * `ssim` extractor, flagged for model-driven dispatch under --backend hip.
  * Declared via extern in feature_extractor.cpp. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_ssim_hip = {
     .name = "integer_ssim_hip",
     .init = init_fex_hip,
@@ -426,5 +428,3 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

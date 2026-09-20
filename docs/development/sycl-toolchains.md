@@ -1,11 +1,10 @@
-<!-- markdownlint-disable MD060 -->
 # SYCL toolchain options — Intel oneAPI vs AdaptiveCpp
 
 The fork's `-Denable_sycl=true` build path supports **two** SYCL
 toolchains:
 
 | Toolchain | Default? | Install size | Source | Use case |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Intel oneAPI `icpx` | yes | ~2.6 GB | closed-binary | Production builds, Intel hardware (iGPU, Arc, Battlemage), OpenVINO / NPU enablement. |
 | AdaptiveCpp `acpp` | no | ~50 MB | open-source (BSL) | Contributor builds without Intel hardware, second-toolchain CI lane, AMD HIP / NVIDIA CUDA SYCL targets. |
 
@@ -62,7 +61,7 @@ ninja -C build-acpp
 string. Common values:
 
 | Value | Meaning |
-|---|---|
+| --- | --- |
 | `generic` | Single-source SPIR-V — runs on any SPIR-V-capable runtime. **Recommended default.** |
 | `omp` | OpenMP CPU only — useful for CI runners without GPUs. |
 | `omp;cuda:sm_80` | CPU + NVIDIA CUDA (Ampere; sm_75 and older are unsupported per ADR-1223). |
@@ -89,7 +88,7 @@ reference implementation against which the fork is bit-identity
 tested.
 
 | Feature | icpx (default) | AdaptiveCpp `acpp` | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `sycl::queue`, `nd_range`, `parallel_for` | yes | yes | Core SYCL 2020. |
 | `sycl::usm` (`malloc_device`, `malloc_host`, `memcpy`) | yes | yes | All targets. |
 | `sycl::local_accessor` | yes | yes | All targets. |

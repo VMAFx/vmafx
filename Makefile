@@ -127,13 +127,11 @@ cythonize-deps: $(VENV_PIP)
 lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
 	@echo "=== all lints passed ==="
 
-# Go security scan (gosec). Skips generated files by default; surfaces every
-# G* finding outside the gen/ tree. Source of truth for the gate added by
-# the gosec-findings-fix sweep — keep the touched-file rule honest.
+# Go security scan (gosec). Every package and generated source is in scope.
 lint-go:
 	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
-	@echo "--- gosec (exclude-generated) ---"
-	@gosec -exclude-generated -quiet ./...
+	@echo "--- gosec (whole tree) ---"
+	@gosec -quiet ./...
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
 # docs/adr/README.md are in sync with fragments, and ADR tags/nav match sources.
@@ -163,13 +161,14 @@ lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
 	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
 	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
-# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip
+# ADR-1267 — whole-tree clang-tidy zero-debt gate. LANE=cpu|cuda|sycl|hip
 # (default cpu). The build dir must be configured for the lane
 # (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)); the GPU lanes pass the
 # extra clang-tidy arguments the 2026-09-02 measurement used and the SYCL
-# lane goes through scripts/ci/clang-tidy-sycl.sh. `tidy-ratchet-write`
-# regenerates scripts/ci/tidy-baseline-$(LANE).json after a cleanup —
-# commit it in the same PR; never hand-edit a baseline.
+# lane goes through scripts/ci/clang-tidy-sycl.sh. The default target requires
+# zero warnings and zero uncited NOLINTs. `tidy-ratchet-write` only updates the
+# migration inventory after a cleanup; it is not an acceptance gate. Never
+# hand-edit a baseline.
 LANE ?= cpu
 TIDY_RATCHET_BUILD_DIR ?= $(BUILD_DIR)
 TIDY_RATCHET_EXTRA_cpu :=
@@ -180,7 +179,8 @@ TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
 tidy-ratchet:
 	$(call require-tool,clang-tidy,install clang-tools)
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) \
-	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
+	    --build-dir $(TIDY_RATCHET_BUILD_DIR) --require-zero \
+	    $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
 tidy-ratchet-write:
 	$(call require-tool,clang-tidy,install clang-tools)
@@ -207,17 +207,10 @@ preflight:
 
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
-	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
-	ruff check python/ ai/ scripts/
-	$(call require-tool,black,pip install black==$(BLACK_VERSION))
-	black --check python/ ai/ scripts/
-# mypy is advisory (leading `-`): it currently reports ~295 module-resolution
-# errors ("duplicate module", "adding __init__.py somewhere") that stop it
-# before it type-checks anything real. That is a mypy-configuration gap
-# (needs --explicit-package-bases / a mypy_path), not type debt, and fixing it
-# is tracked separately. Kept running so the output stays visible.
-	@command -v mypy >/dev/null || { echo "note: mypy not installed, skipping advisory check"; exit 0; }
-	-mypy ai/scripts/ ai/tests/ ai/train/ ai/lpips_export.py scripts/
+	$(call require-tool,ruff,make lint-tools)
+	$(call require-tool,black,make lint-tools)
+	$(call require-tool,mypy,make lint-tools)
+	@scripts/ci/lint-python-all.sh
 
 lint-sh:
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)
@@ -232,60 +225,37 @@ lint-sh:
 	@scripts/ci/check-base-image-single-source.sh
 	@python3 scripts/githooks/tests/test_install.py
 
-# Markdown lint (ADR-0866). Default scope is the touched-file delta vs
-# origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't
-# gate innocent PRs. Override MDLINT_SCOPE=all to run against the full
-# corpus (docs/**/*.md changelog.d/**/*.md README.md CLAUDE.md AGENTS.md).
-#
-# The hook reads .markdownlint.json from the repo root (PR #332's tuned
-# config). markdownlint-cli2 is unsafe under --fix for 7 default rules
-# (ADR-0864); this target never passes --fix.
-MDLINT_SCOPE ?= changed
-
+# Markdown lint (ADR-1267). Every tracked Markdown file is checked on every
+# run, including generated projections, vendored trees, fixtures, and history.
+# The runner deliberately never passes --fix because several Markdown rules
+# can change prose meaning when applied mechanically.
 lint-md:
-	@command -v npx >/dev/null || { echo "npx not found (install Node.js to enable lint-md); skipping"; exit 0; }
-	@if [ "$(MDLINT_SCOPE)" = "all" ]; then \
-	    echo "--- markdownlint-cli2 (all files) ---"; \
-	    npx --yes markdownlint-cli2 \
-	        'docs/**/*.md' \
-	        'README.md' 'CLAUDE.md' 'AGENTS.md' \
-	        '!docs/adr/README.md' '!docs/adr/_index_fragments/**'; \
-	else \
-	    echo "--- markdownlint-cli2 (changed vs origin/master) ---"; \
-	    files=$$(git diff --name-only --diff-filter=d origin/master...HEAD -- '*.md' 2>/dev/null \
-	             | grep -E '^(docs/|README\.md|CLAUDE\.md|AGENTS\.md)' \
-	             | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' || true); \
-	    if [ -z "$$files" ]; then \
-	        echo "no markdown changes vs origin/master — skipping"; \
-	    else \
-	        echo "$$files"; \
-	        npx --yes markdownlint-cli2 $$files; \
-	    fi; \
-	fi
+	@echo "--- markdownlint-cli2 (all tracked Markdown) ---"
+	@bash scripts/ci/markdownlint-all.sh
 
 # Formatters — writes changes.
 format:
-	@command -v clang-format >/dev/null && \
-	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
-	                   | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	                   | grep -v '^core/src/interop/pelorus_' \
-	                   | grep -v '^core/include/libvmaf/pelorus/') || true
-	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
-	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ || true
-	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
+	$(call require-tool,clang-format,your package manager, e.g. pacman -S clang)
+	clang-format -i $$(git ls-files '*.c' '*.h' '*.cc' '*.cpp' '*.cxx' \
+	    '*.hpp' '*.hxx' '*.cu' '*.cuh' '*.m' '*.mm')
+	$(call require-tool,ruff,make lint-tools)
+	$(call require-tool,black,make lint-tools)
+	@scripts/ci/format-python-all.sh
+	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1)
+	shfmt -w -i 2 -ci $$(git ls-files '*.sh')
 
 # Formatters — check-only (CI gate, no writes).
 format-check:
 	$(call require-tool,clang-format,your package manager, e.g. pacman -S clang)
 	clang-format --dry-run --Werror \
-	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
-	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	      | grep -v '^core/src/interop/pelorus_' \
-	      | grep -v '^core/include/libvmaf/pelorus/')
+	   $$(git ls-files '*.c' '*.h' '*.cc' '*.cpp' '*.cxx' \
+	      '*.hpp' '*.hxx' '*.cu' '*.cuh' '*.m' '*.mm')
 	$(call require-tool,black,pip install black==$(BLACK_VERSION))
-	black --check python/ ai/ scripts/
+	@mapfile -d '' pyfiles < <(git ls-files -z -- '*.py' '*.pyi'); \
+	 black --check "$${pyfiles[@]}"
 	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
-	ruff check --select I python/ ai/ scripts/
+	@mapfile -d '' pyfiles < <(git ls-files -z -- '*.py' '*.pyi'); \
+	 ruff check --select I "$${pyfiles[@]}"
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
 	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
 
@@ -378,7 +348,7 @@ coverage-check: coverage
 	    $(COVERAGE_MIN_OVERALL) $(COVERAGE_MIN_CRITICAL)
 
 # Power-of-10 rule 5 density check (≥2 asserts per function average across
-# fork-added code). Warns on any non-trivial fork-added function with 0 asserts.
+# the whole tracked C-family tree). Fails on any non-trivial function with 0 asserts.
 assertion-density:
 	@scripts/ci/assertion-density.sh
 
@@ -511,7 +481,7 @@ help:
 	@echo "Fork-specific targets:"
 	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
 	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
-	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
+	@echo "  make lint-md          — markdownlint-cli2 on every tracked Markdown file"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"

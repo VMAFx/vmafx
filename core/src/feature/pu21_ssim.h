@@ -19,6 +19,8 @@
 #ifndef VMAF_SRC_FEATURE_PU21_SSIM_H
 #define VMAF_SRC_FEATURE_PU21_SSIM_H
 
+#include "vmaf_nullptr.h"
+
 #include <stddef.h>
 
 /**
@@ -46,15 +48,15 @@ struct pu21_ssim_workspace {
  * On failure all partially-acquired buffers are freed and the struct is left
  * fully NULLed, so it is safe to pass to pu21_ssim_workspace_free() again.
  *
- * @param ws workspace to populate (must be non-NULL, fields ignored on entry)
+ * @param ws workspace to populate (must be non-VMAF_NULLPTR, fields ignored on entry)
  * @param n  element count per buffer (w*h)
  * @return 0 on success, -1 on allocation failure
  */
 int pu21_ssim_workspace_alloc(struct pu21_ssim_workspace *ws, size_t n);
 
 /**
- * @brief Free every workspace buffer. NULL-safe per buffer (free(NULL) no-op).
- * @param ws workspace to release (must be non-NULL)
+ * @brief Free every workspace buffer. VMAF_NULLPTR-safe per buffer (free(VMAF_NULLPTR) no-op).
+ * @param ws workspace to release (must be non-VMAF_NULLPTR)
  */
 void pu21_ssim_workspace_free(struct pu21_ssim_workspace *ws);
 

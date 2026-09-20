@@ -28,11 +28,11 @@ static char *test_cpu()
     mu_assert("flags should be zero before vmaf_init_cpu()", !flags);
     vmaf_init_cpu();
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_cpu);
-    return NULL;
+    return VMAF_NULLPTR;
 }

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0135: VIF CUDA shared-memory staging (wins #1 and #4)
 
 ## Scope
@@ -56,7 +55,7 @@ Both fit comfortably.
 ## Decision matrix for tile size alternatives
 
 | Tile strategy | Smem per block | Expected L2 reduction | Bank conflicts | Chosen |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Block-width tile (chosen) | 7644 B horizontal, 5–10 KB vertical | 7–8× per inner-loop load | None (272 % 32 = 16) | Yes |
 | Half-block-width tile | 3.9 KB horiz | Partial; halo threads still miss | None | No — still requires two smem loads per tap on boundaries |
 | 2D tile for horizontal | >32 KB | Marginal gain (BLOCKY=1 already) | Row-stride aliasing | No — BLOCKY=1 makes rows irrelevant |

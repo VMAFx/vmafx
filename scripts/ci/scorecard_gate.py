@@ -245,7 +245,7 @@ def blob_bytes(path: Path, mode: str) -> tuple[bytes, str | None]:
     if mode == "120000":
         if not stat.S_ISLNK(info.st_mode):
             raise InvalidReport(f"expected symlink: {path}")
-        target = os.readlink(path)  # noqa: PTH115 -- ADR-1247: literal symlink bytes
+        target = os.readlink(path)
         return os.fsencode(target), target
     if not stat.S_ISREG(info.st_mode) or bool(info.st_mode & 0o111) != (mode == "100755"):
         raise InvalidReport(f"unexpected file mode: {path}")
@@ -347,7 +347,8 @@ def markdown(assessment: Assessment) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the three-mode Scorecard receipt CLI."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["snapshot", "local", "master"])
     parser.add_argument("--sha", required=True)
@@ -358,69 +359,85 @@ def main() -> int:
     parser.add_argument("--master-ref", type=Path)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--summary", type=Path)
-    args = parser.parse_args()
-    try:
-        if args.mode == "snapshot":
-            if args.receipt.resolve().is_relative_to(args.root.resolve()):
-                raise InvalidReport("snapshot must be outside the scanned checkout")
-            receipt = source_identity(args.root, args.sha)
-            receipt.update(
-                repository=args.repository,
-                run_id=os.environ.get("GITHUB_RUN_ID"),
-                run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
-            )
-            args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
-            return 0
-        if args.report is None:
-            raise InvalidReport("--report is required")
-        binding: dict[str, object] | None = None
-        if args.mode == "local":
-            if args.snapshot is None:
-                raise InvalidReport("local mode requires a before-scan source snapshot")
-            binding = source_identity(
-                args.root,
-                args.sha,
-                (
-                    str(args.report.relative_to(args.root))
-                    if args.report.is_absolute()
-                    else str(args.report)
-                ),
-            )
-            before = load_json(args.snapshot)
-            expected_binding = dict(
-                binding,
-                repository=args.repository,
-                run_id=os.environ.get("GITHUB_RUN_ID"),
-                run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
-            )
-            if before != expected_binding:
-                raise InvalidReport(
-                    "before/after source, repository or workflow-run binding differs"
-                )
-        if args.mode == "master":
-            if args.master_ref is None:
-                raise InvalidReport("master mode requires the final live master-ref receipt")
-            binding = master_identity(load_json(args.master_ref), args.sha)
-        report = load_json(args.report)
-        assessment = assess(report, args.mode, args.repository, args.sha)
-        receipt = asdict(assessment)
-        receipt.update(
+    return parser
+
+
+def write_snapshot(args: argparse.Namespace) -> int:
+    """Bind a pre-scan receipt to the exact local checkout."""
+    if args.receipt.resolve().is_relative_to(args.root.resolve()):
+        raise InvalidReport("snapshot must be outside the scanned checkout")
+    receipt = source_identity(args.root, args.sha)
+    receipt.update(
+        repository=args.repository,
+        run_id=os.environ.get("GITHUB_RUN_ID"),
+        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
+    )
+    args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
+    return 0
+
+
+def report_binding(args: argparse.Namespace) -> dict[str, object] | None:
+    """Validate and return the source identity appropriate to the mode."""
+    if args.mode == "local":
+        if args.snapshot is None:
+            raise InvalidReport("local mode requires a before-scan source snapshot")
+        binding = source_identity(
+            args.root,
+            args.sha,
+            (
+                str(args.report.relative_to(args.root))
+                if args.report.is_absolute()
+                else str(args.report)
+            ),
+        )
+        expected = dict(
+            binding,
             repository=args.repository,
-            commit=args.sha,
-            source=binding,
-            report_sha256=hashlib.sha256(args.report.read_bytes()).hexdigest(),
-            scorecard=report["scorecard"],
-            action_commit=ACTION_COMMIT,
             run_id=os.environ.get("GITHUB_RUN_ID"),
             run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
         )
-        args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
-        summary = markdown(assessment)
-        print(summary)
-        if args.summary:
-            with args.summary.open("a") as stream:
-                stream.write(summary)
-        return int(bool(assessment.failures))
+        if load_json(args.snapshot) != expected:
+            raise InvalidReport("before/after source, repository or workflow-run binding differs")
+        return binding
+    if args.mode == "master":
+        if args.master_ref is None:
+            raise InvalidReport("master mode requires the final live master-ref receipt")
+        return master_identity(load_json(args.master_ref), args.sha)
+    return None
+
+
+def write_assessment(args: argparse.Namespace, binding: dict[str, object] | None) -> int:
+    """Validate a report and write its durable receipt and summary."""
+    report = load_json(args.report)
+    assessment = assess(report, args.mode, args.repository, args.sha)
+    receipt = asdict(assessment)
+    receipt.update(
+        repository=args.repository,
+        commit=args.sha,
+        source=binding,
+        report_sha256=hashlib.sha256(args.report.read_bytes()).hexdigest(),
+        scorecard=report["scorecard"],
+        action_commit=ACTION_COMMIT,
+        run_id=os.environ.get("GITHUB_RUN_ID"),
+        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
+    )
+    args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
+    summary = markdown(assessment)
+    print(summary)
+    if args.summary:
+        with args.summary.open("a") as stream:
+            stream.write(summary)
+    return int(bool(assessment.failures))
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        if args.mode == "snapshot":
+            return write_snapshot(args)
+        if args.report is None:
+            raise InvalidReport("--report is required")
+        return write_assessment(args, report_binding(args))
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"Scorecard gate failed: {error}", file=sys.stderr)
         return 1

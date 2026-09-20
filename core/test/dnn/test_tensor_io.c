@@ -13,23 +13,35 @@
 
 #include "dnn/tensor_io.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+static VmafTensorDType invalid_tensor_dtype(void)
+{
+    _Static_assert(sizeof(VmafTensorDType) == sizeof(int), "enum ABI must match int");
+    const int raw = 99;
+    VmafTensorDType value;
+    (void)memcpy(&value, &raw, sizeof(value));
+    return value;
+}
+
+static VmafTinyResize invalid_resize_mode(void)
+{
+    _Static_assert(sizeof(VmafTinyResize) == sizeof(int), "enum ABI must match int");
+    const int raw = 99;
+    VmafTinyResize value;
+    (void)memcpy(&value, &raw, sizeof(value));
+    return value;
+}
 
 static char *test_luma_to_f32_unnormalized(void)
 {
     const uint8_t src[16] = {0, 64, 128, 192, 255, 0, 128, 255, 10, 20, 30, 40, 50, 60, 70, 80};
     float dst[16];
     int err = vmaf_tensor_from_luma(src, 16, 16, 1, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
-                                    NULL, NULL, dst);
+                                    VMAF_NULLPTR, VMAF_NULLPTR, dst);
     mu_assert("vmaf_tensor_from_luma failed", err == 0);
     mu_assert("0 did not map to 0", dst[0] == 0.0f);
     mu_assert("255 did not map to 1", fabsf(dst[4] - 1.0f) < 1e-6f);
     mu_assert("128 did not round correctly", fabsf(dst[2] - (128.0f / 255.0f)) < 1e-6f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_f16_roundtrip(void)
@@ -44,7 +56,7 @@ static char *test_f16_roundtrip(void)
         float tol = fabsf(inputs[i]) * 1e-3f + 1e-3f;
         mu_assert("f16 roundtrip exceeded tolerance", fabsf(inputs[i] - back[i]) <= tol);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_luma_roundtrip(void)
@@ -55,28 +67,28 @@ static char *test_luma_roundtrip(void)
     for (int i = 0; i < 64; ++i)
         src[i] = (uint8_t)(i * 4 % 256);
     int err = vmaf_tensor_from_luma(src, 8, 8, 8, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
-                                    NULL, NULL, tensor);
+                                    VMAF_NULLPTR, VMAF_NULLPTR, tensor);
     mu_assert("luma→tensor failed", err == 0);
-    err = vmaf_tensor_to_luma(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 8, 8, NULL,
-                              NULL, dst, 8);
+    err = vmaf_tensor_to_luma(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 8, 8,
+                              VMAF_NULLPTR, VMAF_NULLPTR, dst, 8);
     mu_assert("tensor→luma failed", err == 0);
     for (int i = 0; i < 64; ++i) {
         mu_assert("luma roundtrip differed", src[i] == dst[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_rejects_bad_args(void)
 {
     const uint8_t src[4] = {0};
     float dst[4];
-    int err = vmaf_tensor_from_luma(NULL, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
-                                    NULL, NULL, dst);
+    int err = vmaf_tensor_from_luma(VMAF_NULLPTR, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW,
+                                    VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR, dst);
     mu_assert("expected -EINVAL on NULL src", err < 0);
-    err = vmaf_tensor_from_luma(src, 1, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, NULL,
-                                NULL, dst);
+    err = vmaf_tensor_from_luma(src, 1, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
+                                VMAF_NULLPTR, VMAF_NULLPTR, dst);
     mu_assert("expected -EINVAL on stride < width", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_rgb_imagenet_zero_values(void)
@@ -101,7 +113,7 @@ static char *check_rgb_imagenet_zero_values(void)
         mu_assert("B plane mismatch at zero", fabsf(dst[8 + i] - expected_b) < 1e-5f);
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_rgb_imagenet_max_values(void)
@@ -121,13 +133,13 @@ static char *check_rgb_imagenet_max_values(void)
         mu_assert("G plane mismatch at 255", fabsf(dst[4 + i] - g255) < 1e-5f);
         mu_assert("B plane mismatch at 255", fabsf(dst[8 + i] - b255) < 1e-5f);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_rgb_imagenet_known_values(void)
 {
     char *error = check_rgb_imagenet_zero_values();
-    if (error != NULL)
+    if (error != VMAF_NULLPTR)
         return error;
     return check_rgb_imagenet_max_values();
 }
@@ -150,22 +162,22 @@ static char *test_rgb_imagenet_nchw_layout(void)
     mu_assert("R plane not first in NCHW order", fabsf(dst[0] - first_r) < 1e-5f);
     mu_assert("G plane not second in NCHW order", fabsf(dst[6] - first_g) < 1e-5f);
     mu_assert("B plane not third in NCHW order", fabsf(dst[12] - first_b) < 1e-5f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_rgb_imagenet_rejects_null_args(void)
 {
     const uint8_t c[4] = {0};
     float dst[12];
-    int err = vmaf_tensor_from_rgb_imagenet(NULL, 2, c, 2, c, 2, 2, 2, dst);
+    int err = vmaf_tensor_from_rgb_imagenet(VMAF_NULLPTR, 2, c, 2, c, 2, 2, 2, dst);
     mu_assert("expected -EINVAL on NULL R", err < 0);
-    err = vmaf_tensor_from_rgb_imagenet(c, 2, NULL, 2, c, 2, 2, 2, dst);
+    err = vmaf_tensor_from_rgb_imagenet(c, 2, VMAF_NULLPTR, 2, c, 2, 2, 2, dst);
     mu_assert("expected -EINVAL on NULL G", err < 0);
-    err = vmaf_tensor_from_rgb_imagenet(c, 2, c, 2, NULL, 2, 2, 2, dst);
+    err = vmaf_tensor_from_rgb_imagenet(c, 2, c, 2, VMAF_NULLPTR, 2, 2, 2, dst);
     mu_assert("expected -EINVAL on NULL B", err < 0);
-    err = vmaf_tensor_from_rgb_imagenet(c, 2, c, 2, c, 2, 2, 2, NULL);
+    err = vmaf_tensor_from_rgb_imagenet(c, 2, c, 2, c, 2, 2, 2, VMAF_NULLPTR);
     mu_assert("expected -EINVAL on NULL dst", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_rgb_imagenet_rejects_bad_geometry(void)
@@ -182,13 +194,13 @@ static char *check_rgb_imagenet_rejects_bad_geometry(void)
     mu_assert("expected -EINVAL on zero width", err < 0);
     err = vmaf_tensor_from_rgb_imagenet(c, 2, c, 2, c, 2, 2, 0, dst);
     mu_assert("expected -EINVAL on zero height", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_rgb_imagenet_rejects_bad_args(void)
 {
     char *error = check_rgb_imagenet_rejects_null_args();
-    if (error != NULL)
+    if (error != VMAF_NULLPTR)
         return error;
     return check_rgb_imagenet_rejects_bad_geometry();
 }
@@ -219,7 +231,7 @@ static char *test_f16_special_values(void)
     mu_assert("tiny positive becomes subnormal or zero", back[3] >= 0.0f && back[3] < 1e-3f);
     mu_assert("tiny negative becomes subnormal or zero", back[4] <= 0.0f && back[4] > -1e-3f);
     mu_assert("underflow flushes to zero", back[5] == 0.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression: a large *finite* f32 that overflows the f16 range must
@@ -242,7 +254,7 @@ static char *test_f16_finite_overflow_to_inf(void)
     mu_assert("1e30 overflows to +inf, not NaN", isinf(back[1]) && back[1] > 0.0f);
     mu_assert("-1e30 overflows to -inf, not NaN", isinf(back[2]) && back[2] < 0.0f);
     mu_assert("large -finite overflows to -inf, not NaN", isinf(back[3]) && back[3] < 0.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Drives the subnormal-rounding branch (lines 33-35) of f32_to_f16_one.
@@ -271,7 +283,7 @@ static char *test_f16_subnormal_range(void)
               back[0] >= 0.0f && back[0] < 1e-3f);
     mu_assert("subnormal-range 2e-5 round-trips near input",
               back[1] >= 0.0f && fabsf(back[1] - 2.0e-5f) < 5.0e-5f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_f16_to_f32_subnormal(void)
@@ -285,7 +297,7 @@ static char *test_f16_to_f32_subnormal(void)
     const float expected = 1.0f / (float)(1u << 24);
     mu_assert("smallest positive subnormal", fabsf(out[0] - expected) < 1e-9f);
     mu_assert("smallest negative subnormal", fabsf(out[1] + expected) < 1e-9f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_from_luma_zero_std_rejected(void)
@@ -298,7 +310,7 @@ static char *test_from_luma_zero_std_rejected(void)
     int err = vmaf_tensor_from_luma(src, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
                                     &zero_mean, &zero_std, dst);
     mu_assert("zero std must be rejected", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_from_luma_f16_path(void)
@@ -307,13 +319,13 @@ static char *test_from_luma_f16_path(void)
     const uint8_t src[4] = {0, 64, 128, 255};
     uint16_t dst[4] = {0xffffu, 0xffffu, 0xffffu, 0xffffu};
     int err = vmaf_tensor_from_luma(src, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F16,
-                                    NULL, NULL, dst);
+                                    VMAF_NULLPTR, VMAF_NULLPTR, dst);
     mu_assert("F16 luma conversion ok", err == 0);
     /* 0 must round to fp16 +0.0 (0x0000). */
     mu_assert("0 maps to fp16 zero", dst[0] == 0x0000u);
     /* 255 maps to ~1.0; fp16 1.0 is 0x3c00. */
     mu_assert("255 maps near fp16 1.0", dst[3] == 0x3c00u);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Intentional unsupported dtype/resize values exercise tensor_io.h's -EINVAL
@@ -327,11 +339,11 @@ static char *test_from_luma_invalid_dtype(void)
      * value as dtype is a coding error we still want to fail closed on. */
     const uint8_t src[4] = {0, 0, 0, 0};
     float dst[4];
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
-    int err = vmaf_tensor_from_luma(src, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, (VmafTensorDType)99,
-                                    NULL, NULL, dst);
+
+    int err = vmaf_tensor_from_luma(src, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, invalid_tensor_dtype(),
+                                    VMAF_NULLPTR, VMAF_NULLPTR, dst);
     mu_assert("unknown dtype rejected", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_to_luma_rejects_bad_args(void)
@@ -339,20 +351,20 @@ static char *test_to_luma_rejects_bad_args(void)
     /* Drive the input-validation branch in vmaf_tensor_to_luma (line 166). */
     const float src[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     uint8_t dst[4];
-    int err = vmaf_tensor_to_luma(NULL, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2, NULL,
-                                  NULL, dst, 2);
+    int err = vmaf_tensor_to_luma(VMAF_NULLPTR, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2,
+                                  2, VMAF_NULLPTR, VMAF_NULLPTR, dst, 2);
     mu_assert("NULL src rejected", err < 0);
-    err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2, NULL, NULL,
-                              NULL, 2);
+    err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2,
+                              VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR, 2);
     mu_assert("NULL dst rejected", err < 0);
-    err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2, NULL, NULL,
-                              dst, 1);
+    err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2,
+                              VMAF_NULLPTR, VMAF_NULLPTR, dst, 1);
     mu_assert("stride < width rejected", err < 0);
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
-    err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, (VmafTensorDType)99, 2, 2, NULL, NULL,
-                              dst, 2);
+
+    err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, invalid_tensor_dtype(), 2, 2,
+                              VMAF_NULLPTR, VMAF_NULLPTR, dst, 2);
     mu_assert("unknown dtype rejected", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_to_luma_clamps_out_of_range(void)
@@ -362,15 +374,15 @@ static char *test_to_luma_clamps_out_of_range(void)
      * -255 (clamped to 0). */
     const float src[4] = {-1.0f, 2.0f, 0.5f, 0.0f};
     uint8_t dst[4] = {99, 99, 99, 99};
-    int err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2, NULL,
-                                  NULL, dst, 2);
+    int err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2,
+                                  VMAF_NULLPTR, VMAF_NULLPTR, dst, 2);
     mu_assert("to_luma ok", err == 0);
     mu_assert("negative clamps to 0", dst[0] == 0);
     mu_assert(">1.0 clamps to 255", dst[1] == 255);
     /* 0.5 * 255 = 127.5 → round-to-even → 128. */
     mu_assert("0.5 rounds to 128", dst[2] == 128);
     mu_assert("0.0 maps to 0", dst[3] == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_to_luma_f16_path(void)
@@ -379,14 +391,14 @@ static char *test_to_luma_f16_path(void)
      * 0x0000 is fp16 0. */
     const uint16_t src[4] = {0x0000u, 0x3c00u, 0x3800u, 0x0000u}; /* 0, 1, 0.5, 0 */
     uint8_t dst[4] = {99, 99, 99, 99};
-    int err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F16, 2, 2, NULL,
-                                  NULL, dst, 2);
+    int err = vmaf_tensor_to_luma(src, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F16, 2, 2,
+                                  VMAF_NULLPTR, VMAF_NULLPTR, dst, 2);
     mu_assert("f16 to_luma ok", err == 0);
     mu_assert("fp16 0 → 0", dst[0] == 0);
     mu_assert("fp16 1.0 → 255", dst[1] == 255);
     /* 0.5 * 255 = 127.5 → round-to-even → 128. */
     mu_assert("fp16 0.5 → 128", dst[2] == 128);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_plane16_10bit_roundtrip(void)
@@ -404,19 +416,19 @@ static char *test_plane16_10bit_roundtrip(void)
 
     int err =
         vmaf_tensor_from_plane16(src, W * sizeof(uint16_t), W, H, BPC, VMAF_TENSOR_LAYOUT_NCHW,
-                                 VMAF_TENSOR_DTYPE_F32, NULL, NULL, tensor);
+                                 VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR, tensor);
     mu_assert("from_plane16 failed", err == 0);
     /* Spot-check normalisation against (1<<bpc)-1 = 1023. */
     mu_assert("0 → 0.0f", tensor[0] == 0.0f);
     mu_assert("1023 → 1.0f", tensor[4] == 1.0f);
 
     err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, W, H, BPC,
-                                 NULL, NULL, dst, W * sizeof(uint16_t));
+                                 VMAF_NULLPTR, VMAF_NULLPTR, dst, W * sizeof(uint16_t));
     mu_assert("to_plane16 failed", err == 0);
     for (int i = 0; i < W * H; ++i) {
         mu_assert("10-bit round-trip byte-identical", dst[i] == src[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_plane16_rejects_bad_bpc(void)
@@ -424,14 +436,14 @@ static char *test_plane16_rejects_bad_bpc(void)
     const uint16_t src[4] = {0};
     float tensor[4];
     int err = vmaf_tensor_from_plane16(src, 4u * sizeof(uint16_t), 2, 2, 8, /* bpc too low */
-                                       VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, NULL, NULL,
-                                       tensor);
+                                       VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR,
+                                       VMAF_NULLPTR, tensor);
     mu_assert("bpc=8 must be rejected (plane16 is for >=9 bits)", err < 0);
     err = vmaf_tensor_from_plane16(src, 4u * sizeof(uint16_t), 2, 2, 17, /* bpc too high */
-                                   VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, NULL, NULL,
-                                   tensor);
+                                   VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR,
+                                   VMAF_NULLPTR, tensor);
     mu_assert("bpc=17 must be rejected", err < 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_plane16_12bit_clamps(void)
@@ -441,13 +453,13 @@ static char *test_plane16_12bit_clamps(void)
     const float tensor[4] = {-0.25f, 0.0f, 1.0f, 1.5f};
     uint16_t dst[4] = {0};
     int err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2,
-                                     12, NULL, NULL, dst, 2u * sizeof(uint16_t));
+                                     12, VMAF_NULLPTR, VMAF_NULLPTR, dst, 2u * sizeof(uint16_t));
     mu_assert("to_plane16 12-bit failed", err == 0);
     mu_assert("-0.25 → clamped to 0", dst[0] == 0);
     mu_assert("0.0 → 0", dst[1] == 0);
     mu_assert("1.0 → 4095 (12-bit max)", dst[2] == 4095);
     mu_assert("1.5 → clamped to 4095", dst[3] == 4095);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_plane16_f16_roundtrip(void)
@@ -457,14 +469,14 @@ static char *test_plane16_f16_roundtrip(void)
     uint16_t dst[4] = {0};
     int err =
         vmaf_tensor_from_plane16(src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
-                                 VMAF_TENSOR_DTYPE_F16, NULL, NULL, tensor);
+                                 VMAF_TENSOR_DTYPE_F16, VMAF_NULLPTR, VMAF_NULLPTR, tensor);
     mu_assert("from_plane16 f16 failed", err == 0);
     err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F16, 2, 2, 10,
-                                 NULL, NULL, dst, 2u * sizeof(uint16_t));
+                                 VMAF_NULLPTR, VMAF_NULLPTR, dst, 2u * sizeof(uint16_t));
     mu_assert("to_plane16 f16 failed", err == 0);
     mu_assert("0 survives f16 plane path", dst[0] == 0);
     mu_assert("max survives f16 plane path", dst[3] == 1023);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_plane16_rejects_more_bad_args(void)
@@ -475,21 +487,20 @@ static char *test_plane16_rejects_more_bad_args(void)
     float zero = 0.0f;
     int err =
         vmaf_tensor_from_plane16(src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
-                                 VMAF_TENSOR_DTYPE_F32, NULL, &zero, tensor);
+                                 VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, &zero, tensor);
     mu_assert("from_plane16 zero std rejected", err == -EINVAL);
-    err = vmaf_tensor_from_plane16(
-        src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
-        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
-        (VmafTensorDType)99, NULL, NULL, tensor);
+    err = vmaf_tensor_from_plane16(src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
+
+                                   invalid_tensor_dtype(), VMAF_NULLPTR, VMAF_NULLPTR, tensor);
     mu_assert("from_plane16 unknown dtype rejected", err == -EINVAL);
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
-    err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, (VmafTensorDType)99, 2, 2, 10,
-                                 NULL, NULL, dst, 2u * sizeof(uint16_t));
+
+    err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, invalid_tensor_dtype(), 2, 2, 10,
+                                 VMAF_NULLPTR, VMAF_NULLPTR, dst, 2u * sizeof(uint16_t));
     mu_assert("to_plane16 unknown dtype rejected", err == -EINVAL);
     err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2, 10,
-                                 NULL, NULL, dst, sizeof(uint16_t));
+                                 VMAF_NULLPTR, VMAF_NULLPTR, dst, sizeof(uint16_t));
     mu_assert("to_plane16 short stride rejected", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* --- ADR-0550 — auto-resize for NR tiny-model NCHW dispatch --- */
@@ -504,9 +515,9 @@ static char *test_resize_identity_matches_legacy(void)
     float legacy[16];
     float resized[16];
     int e1 = vmaf_tensor_from_luma(src, 4u, 4, 4, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
-                                   NULL, NULL, legacy);
+                                   VMAF_NULLPTR, VMAF_NULLPTR, legacy);
     int e2 = vmaf_tensor_from_luma_resize(src, 4u, 4, 4, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
                                           VMAF_TINY_RESIZE_BILINEAR, resized);
     mu_assert("identity legacy call failed", e1 == 0);
     mu_assert("identity resize call failed", e2 == 0);
@@ -515,7 +526,7 @@ static char *test_resize_identity_matches_legacy(void)
          * produce bit-identical output to the legacy path. */
         mu_assert("identity path must be bit-identical", legacy[i] == resized[i]); /* bit-exact */
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_disabled_returns_einval(void)
@@ -526,10 +537,10 @@ static char *test_resize_disabled_returns_einval(void)
     const uint8_t src[4] = {10, 20, 30, 40};
     float dst[16] = {0};
     int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
                                           VMAF_TINY_RESIZE_DISABLED, dst);
     mu_assert("DISABLED must -EINVAL when reached", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_bilinear_2x_upsample(void)
@@ -541,7 +552,7 @@ static char *test_resize_bilinear_2x_upsample(void)
     const uint8_t src[4] = {0, 200, 100, 50};
     float dst[16] = {0};
     int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
                                           VMAF_TINY_RESIZE_BILINEAR, dst);
     mu_assert("bilinear 2x upsample failed", rc == 0);
     mu_assert("top-left corner clamps to source[0,0]", dst[0] == 0.0f);
@@ -559,7 +570,7 @@ static char *test_resize_bilinear_2x_upsample(void)
      * interpolating with the other three corners. Sanity-check it
      * lives strictly inside the source corner bounding box. */
     mu_assert("interior sample is between corners", dst[5] > 0.0f && dst[5] < (200.0f / 255.0f));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_nearest_downsample(void)
@@ -572,7 +583,7 @@ static char *test_resize_nearest_downsample(void)
     const uint8_t src[16] = {10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27};
     float dst[4] = {0};
     int rc = vmaf_tensor_from_luma_resize(src, 4u, 4, 4, 2, 2, VMAF_TENSOR_LAYOUT_NCHW,
-                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
                                           VMAF_TINY_RESIZE_NEAREST, dst);
     mu_assert("nearest 2x downsample failed", rc == 0);
     /* dst[0,0] -> src[0,0]=10; dst[0,1] -> src[0,2]=12;
@@ -586,7 +597,7 @@ static char *test_resize_nearest_downsample(void)
     mu_assert("nearest dst[0,1] = src[0,2]", fabsf(dst[1] - e01) < tol);
     mu_assert("nearest dst[1,0] = src[2,0]", fabsf(dst[2] - e10) < tol);
     mu_assert("nearest dst[1,1] = src[2,2]", fabsf(dst[3] - e11) < tol);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_bicubic_and_f16_paths(void)
@@ -594,12 +605,12 @@ static char *test_resize_bicubic_and_f16_paths(void)
     const uint8_t src[9] = {0, 30, 60, 90, 120, 150, 180, 210, 240};
     uint16_t dst[16] = {0};
     int rc = vmaf_tensor_from_luma_resize(src, 3u, 3, 3, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                          VMAF_TENSOR_DTYPE_F16, NULL, NULL,
+                                          VMAF_TENSOR_DTYPE_F16, VMAF_NULLPTR, VMAF_NULLPTR,
                                           VMAF_TINY_RESIZE_BICUBIC, dst);
     mu_assert("bicubic f16 resize failed", rc == 0);
     mu_assert("bicubic f16 writes nonzero interior", dst[5] != 0u);
     mu_assert("bicubic f16 writes nonzero tail", dst[15] != 0u);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_zero_std_rejected(void)
@@ -608,22 +619,22 @@ static char *test_resize_zero_std_rejected(void)
     float dst[16] = {0};
     float zero = 0.0f;
     int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                          VMAF_TENSOR_DTYPE_F32, NULL, &zero,
+                                          VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, &zero,
                                           VMAF_TINY_RESIZE_BILINEAR, dst);
     mu_assert("resize zero std rejected", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_unknown_dtype_rejected_after_sampling(void)
 {
     const uint8_t src[4] = {0, 64, 128, 255};
     float dst[16] = {0};
-    int rc = vmaf_tensor_from_luma_resize(
-        src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
-        (VmafTensorDType)99, NULL, NULL, VMAF_TINY_RESIZE_BILINEAR, dst);
+    int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+
+                                          invalid_tensor_dtype(), VMAF_NULLPTR, VMAF_NULLPTR,
+                                          VMAF_TINY_RESIZE_BILINEAR, dst);
     mu_assert("resize unknown dtype rejected after dispatch", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_rejects_bad_args(void)
@@ -631,19 +642,19 @@ static char *test_resize_rejects_bad_args(void)
     const uint8_t src[4] = {0};
     float dst[16] = {0};
     mu_assert("NULL src must -EINVAL",
-              vmaf_tensor_from_luma_resize(NULL, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                           VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+              vmaf_tensor_from_luma_resize(VMAF_NULLPTR, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                           VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
                                            VMAF_TINY_RESIZE_BILINEAR, dst) == -EINVAL);
     mu_assert("dst_w<=0 must -EINVAL",
               vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 0, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                                           VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                           VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
                                            VMAF_TINY_RESIZE_BILINEAR, dst) == -EINVAL);
     mu_assert("unknown mode must -EINVAL",
-              vmaf_tensor_from_luma_resize(
-                  src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
-                  /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
-                  VMAF_TENSOR_DTYPE_F32, NULL, NULL, (VmafTinyResize)99, dst) == -EINVAL);
-    return NULL;
+              vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+
+                                           VMAF_TENSOR_DTYPE_F32, VMAF_NULLPTR, VMAF_NULLPTR,
+                                           invalid_resize_mode(), dst) == -EINVAL);
+    return VMAF_NULLPTR;
 }
 
 static char *run_luma_and_rgb_tests(void)
@@ -655,7 +666,7 @@ static char *run_luma_and_rgb_tests(void)
     mu_run_test(test_rgb_imagenet_known_values);
     mu_run_test(test_rgb_imagenet_nchw_layout);
     mu_run_test(test_rgb_imagenet_rejects_bad_args);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_f16_and_luma_input_tests(void)
@@ -667,7 +678,7 @@ static char *run_f16_and_luma_input_tests(void)
     mu_run_test(test_from_luma_zero_std_rejected);
     mu_run_test(test_from_luma_f16_path);
     mu_run_test(test_from_luma_invalid_dtype);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_luma_output_and_plane_tests(void)
@@ -679,7 +690,7 @@ static char *run_luma_output_and_plane_tests(void)
     mu_run_test(test_plane16_rejects_bad_bpc);
     mu_run_test(test_plane16_12bit_clamps);
     mu_run_test(test_plane16_f16_roundtrip);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_plane_validation_and_resize_tests(void)
@@ -691,31 +702,29 @@ static char *run_plane_validation_and_resize_tests(void)
     mu_run_test(test_resize_nearest_downsample);
     mu_run_test(test_resize_bicubic_and_f16_paths);
     mu_run_test(test_resize_zero_std_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_resize_rejection_tests(void)
 {
     mu_run_test(test_resize_unknown_dtype_rejected_after_sampling);
     mu_run_test(test_resize_rejects_bad_args);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     char *error = run_luma_and_rgb_tests();
-    if (error != NULL)
+    if (error != VMAF_NULLPTR)
         return error;
     error = run_f16_and_luma_input_tests();
-    if (error != NULL)
+    if (error != VMAF_NULLPTR)
         return error;
     error = run_luma_output_and_plane_tests();
-    if (error != NULL)
+    if (error != VMAF_NULLPTR)
         return error;
     error = run_plane_validation_and_resize_tests();
-    if (error != NULL)
+    if (error != VMAF_NULLPTR)
         return error;
     return run_resize_rejection_tests();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

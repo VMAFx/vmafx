@@ -42,6 +42,8 @@
  *    Target: places=6 vs CPU on the Netflix golden fixture (576×324 8bpc).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -61,9 +63,9 @@
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -109,6 +111,54 @@ static const VmafOption options[] = {
     {0},
 };
 
+static void free_issim_buffer(VmafFeatureExtractor *fex, VmafCudaBuffer **buffer, int *status)
+{
+    if (!*buffer)
+        return;
+    const int err = vmaf_cuda_buffer_free(fex->cu_state, *buffer);
+    free(*buffer);
+    *buffer = VMAF_NULLPTR;
+    if (*status == 0)
+        *status = err;
+}
+
+static void cleanup_issim_init(VmafFeatureExtractor *fex)
+{
+    IssimStateCuda *s = fex->priv;
+    VmafCudaBuffer **buffers[] = {&s->d_mux, &s->d_muy, &s->d_x2, &s->d_xy, &s->d_y2, &s->d_w};
+    int ignored = 0;
+    for (unsigned i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        free_issim_buffer(fex, buffers[i], &ignored);
+    (void)vmaf_cuda_kernel_readback_free(&s->rb_wgt, fex->cu_state);
+    (void)vmaf_cuda_kernel_readback_free(&s->rb_ssim, fex->cu_state);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+}
+
+static int init_issim_buffers(VmafFeatureExtractor *fex, size_t plane_bytes,
+                              size_t ssim_partials_bytes, size_t weight_partials_bytes)
+{
+    IssimStateCuda *s = fex->priv;
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mux, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_muy, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_x2, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_xy, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_y2, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_w, plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb_ssim, fex->cu_state, ssim_partials_bytes);
+    if (!ret)
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb_wgt, fex->cu_state, weight_partials_bytes);
+    if (!ret) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            ret = -ENOMEM;
+    }
+    if (ret)
+        cleanup_issim_init(fex);
+    return ret;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -125,7 +175,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return err;
 
     CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_lc);
     ctx_pushed = 1;
@@ -139,8 +189,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail_ctx);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_vert, s->module, "integer_ssim_vert_combine"), fail_ctx);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_ctx);
-    ctx_pushed = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_ctx);
 
     s->width = w;
     s->height = h;
@@ -153,73 +202,39 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     const size_t double_partials_bytes = (size_t)s->block_count * sizeof(double);
     const size_t int64_partials_bytes = (size_t)s->block_count * sizeof(int64_t);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mux, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_muy, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_x2, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_xy, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_y2, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_w, int64_plane_bytes);
-    if (ret)
-        goto free_bufs;
-
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_ssim, fex->cu_state, double_partials_bytes);
-    if (ret)
-        goto free_bufs;
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_wgt, fex->cu_state, int64_partials_bytes);
-    if (ret)
-        goto free_rb_ssim;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_rb_wgt;
-    }
-    return 0;
-
-free_rb_wgt:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb_wgt, fex->cu_state);
-free_rb_ssim:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb_ssim, fex->cu_state);
-free_bufs:
-    if (s->d_mux) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_mux);
-        free(s->d_mux);
-    }
-    if (s->d_muy) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_muy);
-        free(s->d_muy);
-    }
-    if (s->d_x2) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_x2);
-        free(s->d_x2);
-    }
-    if (s->d_xy) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_xy);
-        free(s->d_xy);
-    }
-    if (s->d_y2) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_y2);
-        free(s->d_y2);
-    }
-    if (s->d_w) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_w);
-        free(s->d_w);
-    }
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return init_issim_buffers(fex, int64_plane_bytes, double_partials_bytes, int64_partials_bytes);
 
 fail_ctx:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_lc:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int launch_issim_horizontal(IssimStateCuda *s, const VmafPicture *ref_pic,
+                                   const VmafPicture *dist_pic, CUstream stream,
+                                   CudaFunctions *cu_f)
+{
+    ptrdiff_t ref_stride = ref_pic->stride[0];
+    ptrdiff_t cmp_stride = dist_pic->stride[0];
+    uint8_t *ref_data = ref_pic->data[0];
+    uint8_t *dist_data = dist_pic->data[0];
+    void *params[] = {
+        (void *)&ref_data, &ref_stride,     (void *)&dist_data, &cmp_stride,
+        &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
+        &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
+    };
+    CUfunction function = s->bpc == 8u ? s->func_horiz_8 : s->func_horiz_16;
+    CHECK_CUDA_RETURN(cu_f,
+                      cuLaunchKernel(function, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
+                                     ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params, VMAF_NULLPTR));
+    return 0;
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -233,36 +248,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                               CU_EVENT_WAIT_DEFAULT));
 
     CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
-    ptrdiff_t ref_stride = ref_pic->stride[0];
-    ptrdiff_t cmp_stride = dist_pic->stride[0];
-
-    /* Pass 1 — horizontal int64 moment accumulation.
-     * cuLaunchKernel kernelParams: each element is a void * that points
-     * to the argument value. For device-pointer kernel params (const uint8_t *):
-     *   - ref_pic->data[0] is already a void * device address; we need
-     *     &ref_pic->data[0] so the driver reads the 8-byte VA from that slot.
-     * For CUdeviceptr intermediate buffers: &buf->data gives the address
-     * of the 8-byte CUdeviceptr value the driver writes into the kernel arg.
-     * For scalar params (ptrdiff_t, unsigned): pass address of local var. */
-    if (s->bpc == 8u) {
-        void *params[] = {
-            &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
-            &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
-            &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz_8, s->grid_x, s->grid_y, 1u,
-                                               ISSIM_CUDA_BLOCK_X, ISSIM_CUDA_BLOCK_Y, 1u, 0,
-                                               stream, params, NULL));
-    } else {
-        void *params[] = {
-            &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
-            &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
-            &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz_16, s->grid_x, s->grid_y, 1u,
-                                               ISSIM_CUDA_BLOCK_X, ISSIM_CUDA_BLOCK_Y, 1u, 0,
-                                               stream, params, NULL));
-    }
+    int err = launch_issim_horizontal(s, ref_pic, dist_pic, stream, cu_f);
+    if (err)
+        return err;
 
     /* Pass 2 — vertical accumulation + SSIM formula + block reduction. */
     int64_t samplemax = (int64_t)((1u << s->bpc) - 1u);
@@ -281,7 +269,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     };
     CHECK_CUDA_RETURN(cu_f,
                       cuLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
-                                     ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params2, NULL));
+                                     ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params2, VMAF_NULLPTR));
 
     /* Async DtoH for both readback buffers. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
@@ -328,48 +316,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
-    if (s->d_mux) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_mux);
-        free(s->d_mux);
-        s->d_mux = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_muy) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_muy);
-        free(s->d_muy);
-        s->d_muy = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_x2) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_x2);
-        free(s->d_x2);
-        s->d_x2 = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_xy) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_xy);
-        free(s->d_xy);
-        s->d_xy = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_y2) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_y2);
-        free(s->d_y2);
-        s->d_y2 = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_w) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_w);
-        free(s->d_w);
-        s->d_w = NULL;
-        if (rc == 0)
-            rc = e;
-    }
+    VmafCudaBuffer **buffers[] = {&s->d_mux, &s->d_muy, &s->d_x2, &s->d_xy, &s->d_y2, &s->d_w};
+    for (unsigned i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        free_issim_buffer(fex, buffers[i], &rc);
 
     int e2 = vmaf_cuda_kernel_readback_free(&s->rb_ssim, fex->cu_state);
     if (rc == 0)
@@ -388,14 +337,13 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {"ssim", NULL};
+static const char *provided_features[] = {"ssim", VMAF_NULLPTR};
 
 /* Real integer_ssim GPU extractor (ADR-0564). Bit-exact with the CPU
  * `vmaf_fex_ssim` using fixed-point int64 accumulation and boundary-
  * truncation matching the CPU's ring-buffer algorithm.
  * Named `integer_ssim_cuda` to distinguish it from the CPU `ssim`
  * and from `float_ssim_cuda` which uses floating-point Gaussian weights. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_ssim_cuda = {
     .name = "integer_ssim_cuda",
     .init = init_fex_cuda,
@@ -414,5 +362,3 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-1252: Declare the single maintainer's bypass actor
 
 - **Status**: Accepted, Supersedes [ADR-1248](1248-repository-security-enforcement.md)

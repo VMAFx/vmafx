@@ -1,17 +1,19 @@
-### dev-mcp container: ubuntu:26.04 + CUDA 13.2 + hipcc + ocloc (ADR-0573)
+# Changelog fragment
+
+## dev-mcp container: ubuntu:26.04 + CUDA 13.2 + hipcc + ocloc (ADR-0573)
 
 - Base image bumped from `ubuntu:24.04` to `ubuntu:26.04` (Resolute Raccoon,
   April 2026 LTS) in `dev/Containerfile`.
 - CUDA bumped from the unversioned `cuda-toolkit` to `cuda-toolkit-13-2`
-  (13.2.0). A two-repo strategy is used: ubuntu2604 keyring + ubuntu2404
-  toolkit packages. CUDA 13.2 resolves the glibc 2.43 `rsqrt`
-  double-declaration conflict that blocked ubuntu:26.04 in PR #1330.
+  (13.2.0). A two-repo strategy is used: ubuntu2604 keyring + ubuntu2404 toolkit
+  packages. CUDA 13.2 resolves the glibc 2.43 `rsqrt` double-declaration
+  conflict that blocked ubuntu:26.04 in PR #1330.
 - `hipcc` (HIP device compiler) explicitly installed from the ROCm 7.2.3 noble
   apt channel and verified via `apt-mark showmanual`. Required for
   `-Denable_hipcc=true` HSACO fat-binary builds.
 - `ocloc` (Intel offline OpenCL/SYCL kernel compiler) installed from the Intel
-  NEO 26.18.38308.1 GitHub release (`intel-ocloc_26.18.38308.1-0_amd64.deb`,
-  a separate package from `intel-opencl-icd`). Required for
+  NEO 26.18.38308.1 GitHub release (`intel-ocloc_26.18.38308.1-0_amd64.deb`, a
+  separate package from `intel-opencl-icd`). Required for
   `icpx -fsycl-targets=spir64_gen` SYCL AOT compilation (PR #1340).
 - ROCm 7.2.3 retained via `repo.radeon.com` `noble` apt channel (resolute
   channel not yet published by AMD).

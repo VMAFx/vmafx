@@ -1,1 +1,5 @@
-| [ADR-0676](0676-mos-corpus-adapter-manifests.md) | Requires MOS corpus JSONL adapters to emit replayable manifest sidecars with run counters, effective ingest config, path evidence, and ADR-0661 provenance. | Accepted | ai, mos, corpus, provenance, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0676](0676-mos-corpus-adapter-manifests.md) | MOS Corpus Adapter Manifests | Accepted | ai, mos, corpus, provenance, fork-local |

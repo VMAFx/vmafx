@@ -29,15 +29,15 @@
 
 static char *test_cuda_buffer_alloc_oom_returns_enomem(void)
 {
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cfg = {VMAF_NULLPTR};
 
     int err = vmaf_cuda_state_init(&cu_state, cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         /* No CUDA runtime / no device — skip. The wholesale rewrite is
          * still exercised on a host where the driver is present. */
         (void)fprintf(stderr, "[skip: no CUDA runtime] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* Request 1 TiB from the device allocator. On every GPU the fork
@@ -45,20 +45,21 @@ static char *test_cuda_buffer_alloc_oom_returns_enomem(void)
      * which the mapping table converts to -ENOMEM. Before the rewrite
      * this would assert(0). */
     const size_t huge = (size_t)1 << 40;
-    VmafCudaBuffer *buf = NULL;
+    VmafCudaBuffer *buf = VMAF_NULLPTR;
     int alloc_err = vmaf_cuda_buffer_alloc(cu_state, &buf, huge);
 
     mu_assert("vmaf_cuda_buffer_alloc must fail for 1 TiB request", alloc_err != 0);
     mu_assert("vmaf_cuda_buffer_alloc must return -ENOMEM on OOM", alloc_err == -ENOMEM);
-    mu_assert("vmaf_cuda_buffer_alloc must NULL out the output buffer on failure", buf == NULL);
+    mu_assert("vmaf_cuda_buffer_alloc must NULL out the output buffer on failure",
+              buf == VMAF_NULLPTR);
 
     (void)vmaf_cuda_release(cu_state);
     (void)vmaf_cuda_state_free(cu_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_cuda_buffer_alloc_oom_returns_enomem);
-    return NULL;
+    return VMAF_NULLPTR;
 }

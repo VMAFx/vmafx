@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **`integer_vif_metal` `vif_skip_scale0` option gap** (`integer_vif_metal.mm`):
   `integer_vif_metal` had no `vif_skip_scale0` option registration and no
   suppression logic in `collect_fex_metal`, so scale-0 was always included in

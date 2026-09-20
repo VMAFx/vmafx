@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0492: Promote Vulkan VIF g/sv_sq Computation to double Precision
 
 - **Status**: Superseded by [ADR-0512](0512-vulkan-vif-two-variant-shader.md)
@@ -38,7 +37,7 @@ that do not expose it, falling back to CPU.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A (chosen): promote to double | Exact CPU parity; eliminates systematic bias; GPU supports it natively | Requires shaderFloat64 device feature; breaks MoltenVK (no Metal fp64 buffer ops) | Best correctness / compatibility trade-off for discrete GPU targets |
 | B: pure-integer arithmetic (carry sigma12 numerator + sigma1_sq denominator through the log2 LUT) | No fp64 dependency; works on all Vulkan targets including MoltenVK | Significant implementation complexity; requires redesigned LUT indexing; risk of new integer-overflow bugs | Deferred; viable fallback if fp64 adoption is blocked on Apple targets |
 | C: keep `precise float` + per-pixel epsilon compensation | No device-feature requirement | Does not close the systematic ~7 ULP/px bias; fails ADR-0214 gate | Rejected — gate failure is not acceptable |

@@ -1,4 +1,7 @@
-Fix dispatch-strategy registry gaps across SYCL, Vulkan, HIP, and Metal backends:
+# Changelog fragment
+
+Fix dispatch-strategy registry gaps across SYCL, Vulkan, HIP, and Metal
+backends:
 
 - Remove ~45 duplicate pointer entries from `feature_extractor_list[]` for SYCL
   (6 symbols doubled) and Vulkan (some symbols repeated up to 11 times).

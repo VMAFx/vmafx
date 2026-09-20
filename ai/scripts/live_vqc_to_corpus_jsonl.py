@@ -45,13 +45,9 @@ from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from corpus import base as _corpus_base  # noqa: E402
-from corpus.base import (  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from corpus import base as _corpus_base
+from corpus.base import (
     CorpusIngestBase,
     RunStats,
     normalise_clip_name,
@@ -59,6 +55,11 @@ from corpus.base import (  # noqa: E402
     utc_now_iso,
     write_ingest_manifest,
 )
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
 
 save_progress = _corpus_base.save_progress
 
@@ -353,6 +354,36 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _write_manifest(
+    args: argparse.Namespace, raw_argv: list[str], stats: RunStats, max_rows: int | None
+) -> None:
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="live-vqc-corpus-jsonl-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "live_vqc_dir": args.live_vqc_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "clip_suffix": args.clip_suffix,
+            "min_csv_rows": _LIVE_VQC_MIN_ROWS,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
@@ -383,38 +414,14 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         print(
-            "hint: obtain LIVE-VQC from " "https://live.ece.utexas.edu/research/LIVEVQC/index.html",
+            "hint: obtain LIVE-VQC from https://live.ece.utexas.edu/research/LIVEVQC/index.html",
             file=sys.stderr,
         )
         return 2
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    write_ingest_manifest(
-        args.manifest_out,
-        schema="live-vqc-corpus-jsonl-manifest-v1",
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        corpus_label=_CORPUS_LABEL,
-        stats=stats,
-        inputs={
-            "live_vqc_dir": args.live_vqc_dir,
-            "manifest_csv": args.manifest_csv,
-            "progress_path": args.progress_path,
-        },
-        outputs={"jsonl": args.output, "manifest": args.manifest_out},
-        config={
-            "clips_subdir": args.clips_subdir,
-            "clip_suffix": args.clip_suffix,
-            "min_csv_rows": _LIVE_VQC_MIN_ROWS,
-            "max_rows": max_rows,
-            "full": args.full,
-            "corpus_version": args.corpus_version,
-            "attrition_warn_threshold": args.attrition_warn_threshold,
-        },
-    )
+    _write_manifest(args, raw_argv, stats, max_rows)
     return 0
 
 

@@ -1,1 +1,5 @@
-| [ADR-0128](0128-embedded-mcp-in-libvmaf.md) | Embedded MCP server inside libvmaf — SSE + UDS + stdio transports, build-flag-gated, new `libvmaf_mcp.h` header, Power-of-10 compliant via dedicated MCP thread + SPSC queue | Accepted | mcp, agents, api, build, docs |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0128](0128-embedded-mcp-in-libvmaf.md) | Embedded MCP server in libvmaf — SSE + UDS + stdio transports, build-flag-gated | Accepted | mcp, agents, api, build, docs |

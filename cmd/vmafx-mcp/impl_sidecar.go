@@ -438,16 +438,20 @@ func handleVmafBench(ctx context.Context, args map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return vmafBenchResult(validate, stdout, stderr, code)
+}
+
+func vmafBenchResult(validate bool, stdout, stderr string, code int) (any, error) {
 	payload := map[string]any{
 		"exit_code": code,
 		"stdout":    stdout,
 		"stderr":    stderr,
 		"mode":      map[bool]string{true: "validate", false: "benchmark"}[validate],
 	}
-	// --validate exits 1 to report "some GPU/CPU comparison failed"; that is a
-	// legitimate answer, not a tool error. Every other non-zero exit is.
-	if validate {
-		payload["validation_failed"] = code != 0
+	// --validate exits 1 only when completed comparisons found deltas. Exit 2
+	// means validation aborted and must remain a tool error.
+	if validate && (code == 0 || code == 1) {
+		payload["validation_failed"] = code == 1
 		return payload, nil
 	}
 	if code != 0 {

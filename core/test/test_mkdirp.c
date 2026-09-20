@@ -19,11 +19,6 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,18 +54,18 @@ static char *portable_mkdtemp(char *tmpl, size_t tmpl_len)
     char base[MAX_PATH];
     DWORD baselen = GetTempPathA((DWORD)sizeof(base), base);
     if (baselen == 0 || baselen >= (DWORD)sizeof(base))
-        return NULL;
+        return VMAF_NULLPTR;
     int n =
         snprintf(tmpl, tmpl_len, "%svmaf_mkdirp_%lu", base, (unsigned long)GetCurrentProcessId());
     if (n <= 0 || (size_t)n >= tmpl_len)
-        return NULL;
-    if (!CreateDirectoryA(tmpl, NULL))
-        return NULL;
+        return VMAF_NULLPTR;
+    if (!CreateDirectoryA(tmpl, VMAF_NULLPTR))
+        return VMAF_NULLPTR;
     return tmpl;
 #else
     int n = snprintf(tmpl, tmpl_len, "/tmp/vmaf_mkdirp_XXXXXX");
     if (n <= 0 || (size_t)n >= tmpl_len)
-        return NULL;
+        return VMAF_NULLPTR;
     return mkdtemp(tmpl);
 #endif
 }
@@ -83,17 +78,17 @@ static char *portable_mkdtemp(char *tmpl, size_t tmpl_len)
 
 static char *test_mkdirp_null_path(void)
 {
-    int rc = mkdirp(NULL, 0770);
+    int rc = mkdirp(VMAF_NULLPTR, 0770);
     mu_assert("mkdirp(NULL) must return -1", rc == -1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_mkdirp_single_level(void)
 {
     /* Use portable mkdtemp to get a unique parent the test owns. */
     char tmpl[260];
-    char *parent = MKDTEMP(tmpl, sizeof(tmpl));
-    mu_assert("mkdtemp must succeed", parent != NULL);
+    const char *parent = MKDTEMP(tmpl, sizeof(tmpl));
+    mu_assert("mkdtemp must succeed", parent != VMAF_NULLPTR);
 
     char path[256];
     (void)snprintf(path, sizeof(path), "%s/leaf", parent);
@@ -108,14 +103,14 @@ static char *test_mkdirp_single_level(void)
     /* Cleanup. */
     RMDIR(path);
     RMDIR(parent);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_mkdirp_idempotent_eexist(void)
 {
     char tmpl[260];
-    char *parent = MKDTEMP(tmpl, sizeof(tmpl));
-    mu_assert("mkdtemp must succeed", parent != NULL);
+    const char *parent = MKDTEMP(tmpl, sizeof(tmpl));
+    mu_assert("mkdtemp must succeed", parent != VMAF_NULLPTR);
 
     char path[256];
     (void)snprintf(path, sizeof(path), "%s/once", parent);
@@ -129,7 +124,7 @@ static char *test_mkdirp_idempotent_eexist(void)
 
     RMDIR(path);
     RMDIR(parent);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_mkdirp_normalize_double_slash(void)
@@ -137,8 +132,8 @@ static char *test_mkdirp_normalize_double_slash(void)
     /* path_normalize must collapse consecutive slashes; verify the
      * recursive walk produces a single nested directory regardless. */
     char tmpl[260];
-    char *parent = MKDTEMP(tmpl, sizeof(tmpl));
-    mu_assert("mkdtemp must succeed", parent != NULL);
+    const char *parent = MKDTEMP(tmpl, sizeof(tmpl));
+    mu_assert("mkdtemp must succeed", parent != VMAF_NULLPTR);
 
     char path[512];
     (void)snprintf(path, sizeof(path), "%s//a///b///c", parent);
@@ -162,7 +157,7 @@ static char *test_mkdirp_normalize_double_slash(void)
     RMDIR(d2);
     RMDIR(d1);
     RMDIR(parent);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -171,7 +166,5 @@ char *run_tests(void)
     mu_run_test(test_mkdirp_single_level);
     mu_run_test(test_mkdirp_idempotent_eexist);
     mu_run_test(test_mkdirp_normalize_double_slash);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

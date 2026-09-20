@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
@@ -24,6 +26,7 @@
 #include <stdlib.h>
 
 #include "feature/integer_motion.h"
+#include "feature/x86/motion_avx512.h"
 #include "libvmaf/picture.h"
 #include "feature/common/alignment.h"
 
@@ -138,7 +141,8 @@ uint64_t motion_score_pipeline_16_avx512(const uint8_t *prev_u8, ptrdiff_t prev_
     uint64_t sad = 0;
 
     for (unsigned i = 0; i < h; i++) {
-        const uint16_t *pp[5], *cp[5];
+        const uint16_t *pp[5];
+        const uint16_t *cp[5];
         for (int k = 0; k < 5; k++) {
             int r = mirror((int)i - 2 + k, (int)h);
             pp[k] = prev + r * p_stride;
@@ -230,7 +234,8 @@ uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stri
     uint64_t sad = 0;
 
     for (unsigned i = 0; i < h; i++) {
-        const uint8_t *p[5], *c[5];
+        const uint8_t *p[5];
+        const uint8_t *c[5];
         for (int k = 0; k < 5; k++) {
             int r = mirror((int)i - 2 + k, (int)h);
             p[k] = prev + r * prev_stride;
@@ -332,11 +337,11 @@ uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stri
  * same dimensions and bit-depth.  Processes 32 uint16 samples per SIMD
  * iteration using _mm512_abs_epi16 + widening accumulation.
  * ----------------------------------------------------------------------- */
-void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad_out)
+void sad_avx512(VmafPicture *pic_a, const VmafPicture *pic_b, uint64_t *sad_out)
 {
-    assert(pic_a != NULL);
-    assert(pic_b != NULL);
-    assert(sad_out != NULL);
+    assert(pic_a != VMAF_NULLPTR);
+    assert(pic_b != VMAF_NULLPTR);
+    assert(sad_out != VMAF_NULLPTR);
     const unsigned w = pic_a->w[0];
     const unsigned h = pic_a->h[0];
     const ptrdiff_t stride_a = pic_a->stride[0] / 2; /* stride in uint16 samples */
@@ -401,10 +406,11 @@ void y_convolution_8_avx512(const void *src_void, uint16_t *dst, unsigned width,
             uint32_t accum = 0;
             for (int k = 0; k < filter_width; k++) {
                 int i_tap = (int)i - (int)radius + k;
-                if (i_tap < 0)
+                if (i_tap < 0) {
                     i_tap = -i_tap;
-                else if (i_tap >= (int)height)
+                } else if (i_tap >= (int)height) {
                     i_tap = (int)height - (i_tap - (int)height + 2);
+                }
                 accum += filter[k] * src[(ptrdiff_t)i_tap * src_stride + j];
             }
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
@@ -487,10 +493,11 @@ void y_convolution_8_avx512(const void *src_void, uint16_t *dst, unsigned width,
             uint32_t accum = 0;
             for (int k = 0; k < filter_width; k++) {
                 int i_tap = (int)i - (int)radius + k;
-                if (i_tap < 0)
+                if (i_tap < 0) {
                     i_tap = -i_tap;
-                else if (i_tap >= (int)height)
+                } else if (i_tap >= (int)height) {
                     i_tap = (int)height - (i_tap - (int)height + 2);
+                }
                 accum += (uint32_t)filter[k] * (uint32_t)src[(ptrdiff_t)i_tap * src_stride + j];
             }
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);

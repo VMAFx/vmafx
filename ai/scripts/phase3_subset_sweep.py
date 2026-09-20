@@ -29,6 +29,7 @@ metrics + summary table. Stdout pretty-prints the comparison.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -39,12 +40,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SUBSETS: dict[str, tuple[str, ...]] = {
     "canonical6": (
@@ -255,8 +257,7 @@ def _summary(per_fold: dict[str, dict[str, float]]) -> dict[str, float]:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(
         prog="phase3_subset_sweep.py",
         description=__doc__,
@@ -293,7 +294,96 @@ def main(argv: list[str] | None = None) -> int:
             "Research-0028 §'Decision'."
         ),
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
+
+
+def _validate_subsets(df, requested: list[str]) -> bool:
+    for name in requested:
+        if name not in SUBSETS:
+            print(f"[phase3] unknown subset {name!r}; valid: {sorted(SUBSETS)}", file=sys.stderr)
+            return False
+        missing = [column for column in SUBSETS[name] if column not in df.columns]
+        if missing:
+            print(f"[phase3] subset {name}: parquet missing cols {missing}", file=sys.stderr)
+            return False
+    return True
+
+
+def _summarize_seed_results(
+    per_seed: dict[int, dict[str, dict[str, float]]],
+) -> dict[str, float | int]:
+    flat = [metric for fold_map in per_seed.values() for metric in fold_map.values()]
+    plccs = [metric["plcc"] for metric in flat]
+    sroccs = [metric["srocc"] for metric in flat]
+    rmses = [metric["rmse"] for metric in flat]
+    seed_means = [
+        float(np.mean([metric["plcc"] for metric in fold_map.values()]))
+        for fold_map in per_seed.values()
+    ]
+    return {
+        "mean_plcc": float(np.mean(plccs)),
+        "std_plcc": float(np.std(plccs, ddof=1)) if len(plccs) > 1 else 0.0,
+        "mean_srocc": float(np.mean(sroccs)),
+        "std_srocc": float(np.std(sroccs, ddof=1)) if len(sroccs) > 1 else 0.0,
+        "mean_rmse": float(np.mean(rmses)),
+        "std_rmse": float(np.std(rmses, ddof=1)) if len(rmses) > 1 else 0.0,
+        "n_folds": len(plccs),
+        "seed_mean_plcc_std": float(np.std(seed_means, ddof=1)) if len(seed_means) > 1 else 0.0,
+        "n_seeds": len(per_seed),
+    }
+
+
+def _run_subset(df, name: str, seeds: list[int], args: argparse.Namespace) -> dict:
+    feat_cols = SUBSETS[name]
+    print(f"\n=== Subset {name} ({len(feat_cols)} features) ===")
+    print(f"  features: {list(feat_cols)}")
+    per_seed: dict[int, dict[str, dict[str, float]]] = {}
+    for seed in seeds:
+        print(f"  --- seed={seed} ---")
+        per_seed[seed] = _loso_sweep(
+            df,
+            feat_cols,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            seed=seed,
+            standardize=args.standardize,
+        )
+    summary = _summarize_seed_results(per_seed)
+    print(
+        f"  → mean PLCC={summary['mean_plcc']:.4f}"
+        f" (fold-std {summary['std_plcc']:.4f}, "
+        f"seed-mean-std {summary['seed_mean_plcc_std']:.4f})  "
+        f"SROCC={summary['mean_srocc']:.4f}±{summary['std_srocc']:.4f}  "
+        f"RMSE={summary['mean_rmse']:.3f}±{summary['std_rmse']:.3f}"
+    )
+    return {
+        "features": list(feat_cols),
+        "per_seed": {str(key): value for key, value in per_seed.items()},
+        "summary": summary,
+    }
+
+
+def _print_comparison(results: dict[str, dict]) -> None:
+    print(f"\n{'=' * 64}")
+    print(
+        f"{'Subset':<14} {'Features':>10} {'Mean PLCC':>12} {'± std':>10} {'Δ vs canonical6':>18}"
+    )
+    print("-" * 64)
+    base = results.get("canonical6", {}).get("summary", {}).get("mean_plcc", 0.0)
+    for name, result in results.items():
+        summary = result["summary"]
+        delta = summary["mean_plcc"] - base if name != "canonical6" else 0.0
+        delta_str = "—" if name == "canonical6" else f"{delta:+.4f}"
+        print(
+            f"{name:<14} {len(result['features']):>10} "
+            f"{summary['mean_plcc']:>12.4f} {summary['std_plcc']:>10.4f} {delta_str:>18}"
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     import pandas as pd
 
@@ -302,82 +392,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[phase3] sources: {sorted(df['source'].unique())}")
 
     requested = [s.strip() for s in args.subsets.split(",")]
-    results: dict[str, dict] = {}
+    if not _validate_subsets(df, requested):
+        return 2
     seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else [args.seed]
-    for name in requested:
-        if name not in SUBSETS:
-            print(f"[phase3] unknown subset {name!r}; valid: {sorted(SUBSETS)}", file=sys.stderr)
-            return 2
-        feat_cols = SUBSETS[name]
-        missing = [c for c in feat_cols if c not in df.columns]
-        if missing:
-            print(f"[phase3] subset {name}: parquet missing cols {missing}", file=sys.stderr)
-            return 2
-        print(f"\n=== Subset {name} ({len(feat_cols)} features) ===")
-        print(f"  features: {list(feat_cols)}")
-        per_seed: dict[int, dict[str, dict[str, float]]] = {}
-        for s in seeds:
-            print(f"  --- seed={s} ---")
-            per_fold = _loso_sweep(
-                df,
-                feat_cols,
-                epochs=args.epochs,
-                batch_size=args.batch_size,
-                lr=args.lr,
-                seed=s,
-                standardize=args.standardize,
-            )
-            per_seed[s] = per_fold
-        # Aggregate: mean PLCC etc. across all (seed, fold) pairs.
-        flat = [m for fold_map in per_seed.values() for m in fold_map.values()]
-        plccs = [m["plcc"] for m in flat]
-        sroccs = [m["srocc"] for m in flat]
-        rmses = [m["rmse"] for m in flat]
-        # Per-seed mean PLCC for seed-only variance.
-        seed_means = [
-            float(np.mean([m["plcc"] for m in fold_map.values()])) for fold_map in per_seed.values()
-        ]
-        summary = {
-            "mean_plcc": float(np.mean(plccs)),
-            "std_plcc": float(np.std(plccs, ddof=1)) if len(plccs) > 1 else 0.0,
-            "mean_srocc": float(np.mean(sroccs)),
-            "std_srocc": float(np.std(sroccs, ddof=1)) if len(sroccs) > 1 else 0.0,
-            "mean_rmse": float(np.mean(rmses)),
-            "std_rmse": float(np.std(rmses, ddof=1)) if len(rmses) > 1 else 0.0,
-            "n_folds": len(plccs),
-            "seed_mean_plcc_std": (
-                float(np.std(seed_means, ddof=1)) if len(seed_means) > 1 else 0.0
-            ),
-            "n_seeds": len(seeds),
-        }
-        results[name] = {
-            "features": list(feat_cols),
-            "per_seed": {str(k): v for k, v in per_seed.items()},
-            "summary": summary,
-        }
-        print(
-            f"  → mean PLCC={summary['mean_plcc']:.4f}"
-            f" (fold-std {summary['std_plcc']:.4f}, "
-            f"seed-mean-std {summary['seed_mean_plcc_std']:.4f})  "
-            f"SROCC={summary['mean_srocc']:.4f}±{summary['std_srocc']:.4f}  "
-            f"RMSE={summary['mean_rmse']:.3f}±{summary['std_rmse']:.3f}"
-        )
-
-    # Comparison table
-    print(f"\n{'=' * 64}")
-    print(
-        f"{'Subset':<14} {'Features':>10} {'Mean PLCC':>12} {'± std':>10} {'Δ vs canonical6':>18}"
-    )
-    print("-" * 64)
-    base = results.get("canonical6", {}).get("summary", {}).get("mean_plcc", 0.0)
-    for name, r in results.items():
-        s = r["summary"]
-        delta = s["mean_plcc"] - base if name != "canonical6" else 0.0
-        delta_str = "—" if name == "canonical6" else f"{delta:+.4f}"
-        print(
-            f"{name:<14} {len(r['features']):>10} "
-            f"{s['mean_plcc']:>12.4f} {s['std_plcc']:>10.4f} {delta_str:>18}"
-        )
+    results = {name: _run_subset(df, name, seeds, args) for name in requested}
+    _print_comparison(results)
 
     results["run_provenance"] = build_run_provenance(
         entrypoint=SCRIPT_PATH,

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0399: `vmaf-tune` codec-adapter contract becomes a runtime contract (HP-1)
 
 - **Status**: Accepted
@@ -67,7 +66,7 @@ Promote `ffmpeg_codec_args` from a documented-only contract to a
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Dispatcher pivot via `get_adapter().ffmpeg_codec_args()`** *(chosen)* | Honours the existing Protocol; one source of truth per codec; legacy fallback keeps unregistered encoders working; smoke-tested across all 16 adapters | Adds an indirection in the hot path of `build_ffmpeg_command` (one dict lookup + one method call per encode invocation — negligible vs. ffmpeg startup). | — |
 | Keep the hardcode and special-case the codecs that need different flags | Minimal indirection; matches the pre-Phase A shape | Defeats the codec-adapter design (ADR-0237's "search loop never branches on codec identity" invariant); each new codec re-opens `encode.py`; libaom would still crash | Rejected — directly contradicts ADR-0237's stated invariant |
 | Bake the codec slice into `EncodeRequest` so the harness doesn't dispatch at composition time | No registry lookup at compose time | Pushes the dispatcher one layer up (every caller composes an `EncodeRequest`); `EncodeRequest` becomes codec-aware; cache key shape (ADR-0298) leaks the slice | Rejected — moves the problem rather than solving it |

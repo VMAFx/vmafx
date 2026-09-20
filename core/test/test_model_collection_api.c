@@ -23,6 +23,7 @@
  */
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,12 +33,6 @@
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 
 /* vmaf_b_v0.6.3 uses the same six integer features as vmaf_v0.6.1. */
 static const char *const FEAT_NAMES[] = {
@@ -81,61 +76,61 @@ static int seed_ctx(VmafContext *vmaf)
 
 static char *test_model_collection_load_valid(void)
 {
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
 
     int err = vmaf_model_collection_load(&model, &mc, &cfg, "vmaf_b_v0.6.3");
     mu_assert("vmaf_model_collection_load failed", err == 0);
-    mu_assert("vmaf_model_collection_load returned NULL model", model != NULL);
-    mu_assert("vmaf_model_collection_load returned NULL collection", mc != NULL);
+    mu_assert("vmaf_model_collection_load returned NULL model", model != VMAF_NULLPTR);
+    mu_assert("vmaf_model_collection_load returned NULL collection", mc != VMAF_NULLPTR);
 
     vmaf_model_destroy(model);
     vmaf_model_collection_destroy(mc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_collection_load_bad_version(void)
 {
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
 
     int err = vmaf_model_collection_load(&model, &mc, &cfg, "nonexistent_version_xyz");
     mu_assert("bad version must not return 0", err != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
 
 static char *test_use_features_from_model_collection_null_ctx(void)
 {
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
 
     int err = vmaf_model_collection_load(&model, &mc, &cfg, "vmaf_b_v0.6.3");
     mu_assert("load failed", err == 0);
 
-    err = vmaf_use_features_from_model_collection(NULL, mc);
+    err = vmaf_use_features_from_model_collection(VMAF_NULLPTR, mc);
     mu_assert("NULL vmaf ctx must return error", err != 0);
 
     vmaf_model_destroy(model);
     vmaf_model_collection_destroy(mc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_use_features_from_model_collection_null_mc(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
-    int err = vmaf_use_features_from_model_collection(vmaf, NULL);
+    int err = vmaf_use_features_from_model_collection(vmaf, VMAF_NULLPTR);
     mu_assert("NULL collection must return error", err != 0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -147,21 +142,24 @@ static char *test_use_features_from_model_collection_null_mc(void)
 static char *check_score_at_index_null_guards(VmafContext *vmaf, VmafModelCollection *mc,
                                               VmafModelCollectionScore *score)
 {
-    mu_assert("NULL vmaf -> error", vmaf_score_at_index_model_collection(NULL, mc, score, 0u) != 0);
-    mu_assert("NULL mc -> error", vmaf_score_at_index_model_collection(vmaf, NULL, score, 0u) != 0);
-    mu_assert("NULL score -> error", vmaf_score_at_index_model_collection(vmaf, mc, NULL, 0u) != 0);
-    return NULL;
+    mu_assert("NULL vmaf -> error",
+              vmaf_score_at_index_model_collection(VMAF_NULLPTR, mc, score, 0u) != 0);
+    mu_assert("NULL mc -> error",
+              vmaf_score_at_index_model_collection(vmaf, VMAF_NULLPTR, score, 0u) != 0);
+    mu_assert("NULL score -> error",
+              vmaf_score_at_index_model_collection(vmaf, mc, VMAF_NULLPTR, 0u) != 0);
+    return VMAF_NULLPTR;
 }
 
 static char *test_score_at_index_model_collection(void)
 {
     VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, vcfg) == 0);
 
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig mcfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig mcfg = {VMAF_NULLPTR};
     int err = vmaf_model_collection_load(&model, &mc, &mcfg, "vmaf_b_v0.6.3");
     mu_assert("collection load failed", err == 0);
 
@@ -185,7 +183,7 @@ static char *test_score_at_index_model_collection(void)
     vmaf_close(vmaf);
     vmaf_model_destroy(model);
     vmaf_model_collection_destroy(mc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -196,26 +194,26 @@ static char *check_score_pooled_null_guards(VmafContext *vmaf, VmafModelCollecti
                                             VmafModelCollectionScore *score)
 {
     mu_assert("NULL vmaf -> error",
-              vmaf_score_pooled_model_collection(NULL, mc, VMAF_POOL_METHOD_MEAN, score, 0u,
+              vmaf_score_pooled_model_collection(VMAF_NULLPTR, mc, VMAF_POOL_METHOD_MEAN, score, 0u,
                                                  N_FRAMES - 1u) != 0);
     mu_assert("NULL mc -> error",
-              vmaf_score_pooled_model_collection(vmaf, NULL, VMAF_POOL_METHOD_MEAN, score, 0u,
-                                                 N_FRAMES - 1u) != 0);
+              vmaf_score_pooled_model_collection(vmaf, VMAF_NULLPTR, VMAF_POOL_METHOD_MEAN, score,
+                                                 0u, N_FRAMES - 1u) != 0);
     mu_assert("NULL score -> error",
-              vmaf_score_pooled_model_collection(vmaf, mc, VMAF_POOL_METHOD_MEAN, NULL, 0u,
+              vmaf_score_pooled_model_collection(vmaf, mc, VMAF_POOL_METHOD_MEAN, VMAF_NULLPTR, 0u,
                                                  N_FRAMES - 1u) != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_score_pooled_model_collection(void)
 {
     VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, vcfg) == 0);
 
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig mcfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig mcfg = {VMAF_NULLPTR};
     int err = vmaf_model_collection_load(&model, &mc, &mcfg, "vmaf_b_v0.6.3");
     mu_assert("collection load failed", err == 0);
 
@@ -239,7 +237,7 @@ static char *test_score_pooled_model_collection(void)
     vmaf_close(vmaf);
     vmaf_model_destroy(model);
     vmaf_model_collection_destroy(mc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -253,31 +251,31 @@ static char *test_score_pooled_model_collection(void)
  */
 static char *test_model_collection_load_from_path_valid(void)
 {
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
 
     int err = vmaf_model_collection_load_from_path(&model, &mc, &cfg, path);
     mu_assert("vmaf_model_collection_load_from_path failed", err == 0);
-    mu_assert("vmaf_model_collection_load_from_path returned NULL model", model != NULL);
-    mu_assert("vmaf_model_collection_load_from_path returned NULL collection", mc != NULL);
+    mu_assert("vmaf_model_collection_load_from_path returned NULL model", model != VMAF_NULLPTR);
+    mu_assert("vmaf_model_collection_load_from_path returned NULL collection", mc != VMAF_NULLPTR);
 
     vmaf_model_destroy(model);
     vmaf_model_collection_destroy(mc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_collection_load_from_path_bad_path(void)
 {
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
 
     int err =
         vmaf_model_collection_load_from_path(&model, &mc, &cfg, "/nonexistent/path/to/model.json");
     mu_assert("bad path must return non-zero", err != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -290,23 +288,23 @@ static char *test_model_collection_load_from_path_bad_path(void)
  */
 static char *test_model_collection_feature_overload_null_guard(void)
 {
-    VmafModel *model = NULL;
-    VmafModelCollection *mc = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *mc = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     int err = vmaf_model_collection_load(&model, &mc, &cfg, "vmaf_b_v0.6.3");
     mu_assert("load failed", err == 0);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     (void)vmaf_feature_dictionary_set(&opts, "enable_temporal", "1");
 
     /* NULL model_collection pointer -> -EINVAL per the implementation guard. */
-    err = vmaf_model_collection_feature_overload(model, NULL, "VMAF_feature_adm2", opts);
+    err = vmaf_model_collection_feature_overload(model, VMAF_NULLPTR, "VMAF_feature_adm2", opts);
     mu_assert("NULL mc pointer must return error", err != 0);
 
     (void)vmaf_feature_dictionary_free(&opts);
     vmaf_model_destroy(model);
     vmaf_model_collection_destroy(mc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -343,34 +341,36 @@ int vmaf_read_json_model_collection_from_buffer(VmafModel **model,
 /* Read all of @p in into a new NUL-terminated buffer. Returns the failure
  * message, or NULL with *out / *out_len set; the buffer is freed on every
  * failure path. The caller owns and closes @p in. */
-static char *read_open_file(FILE *in, char **out, long *out_len)
+#define TEST_MODEL_JSON_MAX_BYTES ((size_t)4194304)
+#define TEST_COLLECTION_JSON_CAPACITY (2u * TEST_MODEL_JSON_MAX_BYTES + (size_t)256)
+
+static char *read_open_file(FILE *in, char **out, size_t *out_len)
 {
-    mu_assert("seek end failed", fseek(in, 0L, SEEK_END) == 0);
-    long len = ftell(in);
-    mu_assert("ftell failed", len > 0);
-    mu_assert("seek start failed", fseek(in, 0L, SEEK_SET) == 0);
-    char *buf = malloc((size_t)len + 1);
-    mu_assert("oom reading model json", buf != NULL);
-    size_t got = fread(buf, 1, (size_t)len, in);
-    if (got != (size_t)len) {
+    if (fseek(in, 0L, SEEK_END) != 0)
+        return "seek end failed";
+    const long len = ftell(in);
+    if (len <= 0 || (unsigned long)len > TEST_MODEL_JSON_MAX_BYTES)
+        return "model json has an invalid size";
+    if (fseek(in, 0L, SEEK_SET) != 0)
+        return "seek start failed";
+    const size_t file_len = (size_t)len;
+    char *buf = calloc(file_len + 1u, 1u);
+    if (!buf)
+        return "oom reading model json";
+    const size_t got = fread(buf, 1, file_len, in);
+    if (got != file_len) {
         free(buf);
         return "short read of model json";
     }
-    /* buf is malloc((size_t)len + 1), so index len is the terminator slot and is
-     * in bounds; the analyzer loses that relationship across the fread. The
-     * suppression is trailing on purpose: clang-tidy honours a next-line
-     * directive only on the line directly before the diagnostic, so putting one
-     * above a multi-line justification suppresses nothing. */
-    buf[len] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound) — ADR-0278
     *out = buf;
-    *out_len = len;
-    return NULL;
+    *out_len = file_len;
+    return VMAF_NULLPTR;
 }
 
-static char *read_whole_file(const char *path, char **out, long *out_len)
+static char *read_whole_file(const char *path, char **out, size_t *out_len)
 {
     FILE *in = fopen(path, "rb");
-    mu_assert("could not open source model json", in != NULL);
+    mu_assert("could not open source model json", in != VMAF_NULLPTR);
     char *msg = read_open_file(in, out, out_len);
     (void)fclose(in);
     return msg;
@@ -379,8 +379,8 @@ static char *read_whole_file(const char *path, char **out, long *out_len)
 static char *test_model_collection_partial_failure_no_leak(void)
 {
     /* A valid single model reused verbatim as sub-models "0" and "1". */
-    char *valid = NULL;
-    long valid_len = 0;
+    char *valid = VMAF_NULLPTR;
+    size_t valid_len = 0;
     char *msg = read_whole_file(JSON_MODEL_PATH "vmaf_v0.6.1.json", &valid, &valid_len);
     if (msg) {
         free(valid);
@@ -393,27 +393,30 @@ static char *test_model_collection_partial_failure_no_leak(void)
     const char *prefix = "{\"0\": ";
     const char *mid = ", \"1\": ";
     const char *suffix = ", \"2\": {\"unused\": 0}}";
-    size_t cap =
-        strlen(prefix) + (size_t)valid_len + strlen(mid) + (size_t)valid_len + strlen(suffix) + 1;
+    const size_t cap = TEST_COLLECTION_JSON_CAPACITY;
     char *json = malloc(cap);
     if (!json) {
         free(valid);
-        mu_assert("oom building collection json", json != NULL);
+        mu_assert("oom building collection json", json != VMAF_NULLPTR);
     }
     int n = snprintf(json, cap, "%s%s%s%s%s", prefix, valid, mid, valid, suffix);
     free(valid);
-    mu_assert("snprintf truncated collection json", n > 0 && (size_t)n < cap);
+    if (n <= 0 || (size_t)n >= cap) {
+        free(json);
+        return "snprintf truncated collection json";
+    }
 
     VmafModel *model = (VmafModel *)0x1;                  /* poison: must be NULLed */
     VmafModelCollection *mc = (VmafModelCollection *)0x1; /* poison: must be NULLed */
-    VmafModelConfig cfg = {0};
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     int err = vmaf_read_json_model_collection_from_buffer(&model, &mc, &cfg, json, n);
     free(json);
 
     mu_assert("partial collection load must fail", err != 0);
-    mu_assert("leaked sub-model 0: *model not NULL after failure", model == NULL);
-    mu_assert("leaked partial collection: *model_collection not NULL after failure", mc == NULL);
-    return NULL;
+    mu_assert("leaked sub-model 0: *model not NULL after failure", model == VMAF_NULLPTR);
+    mu_assert("leaked partial collection: *model_collection not NULL after failure",
+              mc == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -434,5 +437,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0326: vmaf-tune Phase B — target-VMAF bisect
 
 - **Status**: Accepted
@@ -117,7 +116,7 @@ existing `compare` / `recommend-saliency` / `predict` / `tune-per-shot`
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Binary search (chosen)** | `O(log range)` encodes; mirrors the proven `predictor.pick_crf` shape; trivial to reason about | Assumes monotone-decreasing VMAF in CRF (real-world content satisfies this for every modern codec; we hard-bail when it doesn't) | Clear winner — the assumption is sound and the algorithm is the smallest correct primitive |
 | Golden-section search | Optimal for unimodal continuous functions; one fewer evaluation per halving | CRF is integer-valued; golden-section's `(φ, 1/φ)` partition does not respect integer steps; convergence becomes irregular below 4-CRF windows | Cost outweighs the saving once we cap at 8 iterations |
 | Full coarse-to-fine grid (ADR-0306) | Explores the (preset, CRF) plane; robust against pathological curves | Encodes the entire grid; ~15–25 encodes per call vs the bisect's 6–8; over-budget for any per-shot or per-resolution outer loop | Already shipped (`corpus.coarse_to_fine_search`) for the use case it fits — Phase B is the single-axis inner loop, not a replacement |

@@ -1,7 +1,9 @@
-`vmaf-tune compare` / `tune-per-shot`: fix BBB v13 1080p ENOSPC caused by
-3 concurrent codec bisects each materialising a 110 GB reference YUV decode
-in parallel (330 GB peak on a 420 GB `/probes` volume). Three complementary
-fixes: (1) `--max-concurrent-decodes N` CLI flag (default 1) backed by a
+# Changelog fragment
+
+`vmaf-tune compare` / `tune-per-shot`: fix BBB v13 1080p ENOSPC caused by 3
+concurrent codec bisects each materialising a 110 GB reference YUV decode in
+parallel (330 GB peak on a 420 GB `/probes` volume). Three complementary fixes:
+(1) `--max-concurrent-decodes N` CLI flag (default 1) backed by a
 `threading.Semaphore` in `bisect_target_vmaf` serialises reference-YUV decodes
 across threads; (2) the decoded reference YUV is deleted in the bisect `finally`
 block immediately after each (codec, target) pair completes, capping peak disk

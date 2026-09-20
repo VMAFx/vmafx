@@ -16,7 +16,7 @@
 //     every exit path — including early returns — leak-free by construction.
 //   - Recursion replaced with an iterative prefix-walk (Power of 10 #1;
 //     adversarial review 2026-05-28 finding #11).
-//   - `nullptr` replaces `NULL` in C++ code.
+//   - `nullptr` replaces `nullptr` in C++ code.
 //   - `std::string_view` is used for the normalized path to avoid copies when
 //     finding the last separator.
 //

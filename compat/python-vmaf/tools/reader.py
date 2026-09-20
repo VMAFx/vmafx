@@ -1,4 +1,6 @@
-import os
+from contextlib import ExitStack, contextmanager
+from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 
@@ -6,30 +8,36 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
+@contextmanager
+def _open_binary_reader(filepath):
+    with Path(filepath).open("rb") as file_handle:
+        yield file_handle
+
+
 class YuvReader(object):
 
-    SUPPORTED_YUV_8BIT_TYPES = [
+    SUPPORTED_YUV_8BIT_TYPES: ClassVar = [
         "yuv420p",
         "yuv422p",
         "yuv444p",
         "gray",
     ]
 
-    SUPPORTED_YUV_10BIT_LE_TYPES = [
+    SUPPORTED_YUV_10BIT_LE_TYPES: ClassVar = [
         "yuv420p10le",
         "yuv422p10le",
         "yuv444p10le",
         "gray10le",
     ]
 
-    SUPPORTED_YUV_12BIT_LE_TYPES = [
+    SUPPORTED_YUV_12BIT_LE_TYPES: ClassVar = [
         "yuv420p12le",
         "yuv422p12le",
         "yuv444p12le",
         "gray12le",
     ]
 
-    SUPPORTED_YUV_16BIT_LE_TYPES = [
+    SUPPORTED_YUV_16BIT_LE_TYPES: ClassVar = [
         "yuv420p16le",
         "yuv422p16le",
         "yuv444p16le",
@@ -37,7 +45,7 @@ class YuvReader(object):
     ]
 
     # ex: for yuv420p, the width and height of U/V is 0.5x, 0.5x of Y
-    UV_WIDTH_HEIGHT_MULTIPLIERS_DICT = {
+    UV_WIDTH_HEIGHT_MULTIPLIERS_DICT: ClassVar = {
         "yuv420p": (0.5, 0.5),
         "yuv422p": (0.5, 1.0),
         "yuv444p": (1.0, 1.0),
@@ -65,10 +73,11 @@ class YuvReader(object):
 
         self._asserts()
 
-        self.file = open(self.filepath, "rb")
+        self._exit_stack = ExitStack()
+        self.file = self._exit_stack.enter_context(_open_binary_reader(self.filepath))
 
     def close(self):
-        self.file.close()
+        self._exit_stack.close()
 
     # make YuvReader withable, e.g.:
     # with YuvReader(...) as yuv_reader:
@@ -92,7 +101,7 @@ class YuvReader(object):
     @property
     def num_bytes(self):
         self._assert_file_exist()
-        return os.path.getsize(self.filepath)
+        return Path(self.filepath).stat().st_size
 
     @property
     def num_frms(self):
@@ -116,7 +125,7 @@ class YuvReader(object):
             )
 
         else:
-            assert False
+            raise AssertionError()
 
         assert num_frms.is_integer(), "Number of frames is not integer: {}".format(num_frms)
 
@@ -135,7 +144,7 @@ class YuvReader(object):
         ), "Unsupported YUV type: {}".format(self.yuv_type)
 
     def _assert_file_exist(self):
-        assert os.path.exists(self.filepath), "File does not exist: {}".format(self.filepath)
+        assert Path(self.filepath).exists(), "File does not exist: {}".format(self.filepath)
 
     def _asserts(self):
 
@@ -163,9 +172,34 @@ class YuvReader(object):
     def convert_format(self, value, bit_depth):
         return value.astype(np.double) / (2.0**bit_depth - 1.0)
 
+    def _pixel_type_word_and_depth(self):
+        if self._is_8bit():
+            return np.uint8, 1, 8
+        if self._is_10bitle():
+            return np.uint16, 2, 10
+        if self._is_12bitle():
+            return np.uint16, 2, 12
+        if self._is_16bitle():
+            return np.uint16, 2, 16
+        raise AssertionError()
+
+    def _read_chroma(self, uv_width, uv_height, word, pix_type):
+        if uv_width == 0 and uv_height == 0:
+            return None, None
+        if uv_width <= 0 or uv_height <= 0:
+            raise AssertionError(f"Unsupported uv_width and uv_height: {uv_width}, {uv_height}")
+        plane_size = uv_width * uv_height * word
+        u = np.frombuffer(self.file.read(plane_size), pix_type)
+        if u.size == 0:
+            raise StopIteration
+        v = np.frombuffer(self.file.read(plane_size), pix_type)
+        if v.size == 0:
+            raise StopIteration
+        return u, v
+
     def next(self, format="uint"):
 
-        assert format == "uint" or format == "float"
+        assert format in {"uint", "float"}
 
         y_width = self.width
         y_height = self.height
@@ -173,56 +207,21 @@ class YuvReader(object):
         uv_width = int(y_width * uv_w_multiplier)
         uv_height = int(y_height * uv_h_multiplier)
 
-        if self._is_8bit():
-            pix_type = np.uint8
-            word = 1
-        elif self._is_10bitle() or self._is_12bitle() or self._is_16bitle():
-            pix_type = np.uint16
-            word = 2
-        else:
-            assert False
+        pix_type, word, bit_depth = self._pixel_type_word_and_depth()
 
         y = np.frombuffer(self.file.read(y_width * y_height * word), pix_type)
 
         if y.size == 0:
             raise StopIteration
 
-        if uv_width == 0 and uv_height == 0:
-            u = None
-            v = None
-        elif uv_width > 0 and uv_height > 0:
-            u = np.frombuffer(self.file.read(uv_width * uv_height * word), pix_type)
-            if u.size == 0:
-                raise StopIteration
-            v = np.frombuffer(self.file.read(uv_width * uv_height * word), pix_type)
-            if v.size == 0:
-                raise StopIteration
-        else:
-            assert False, f"Unsupported uv_width and uv_height: {uv_width}, {uv_height}"
+        u, v = self._read_chroma(uv_width, uv_height, word, pix_type)
 
         y = y.reshape(y_height, y_width)
         u = u.reshape(uv_height, uv_width) if u is not None else None
         v = v.reshape(uv_height, uv_width) if v is not None else None
 
-        if format == "uint":
-            return y, u, v
-
-        elif format == "float":
-            if self._is_8bit():
-                bit_depth = 8
-            elif self._is_10bitle():
-                bit_depth = 10
-            elif self._is_12bitle():
-                bit_depth = 12
-            elif self._is_16bitle():
-                bit_depth = 16
-            else:
-                assert False
-
+        if format == "float":
             y = self.convert_format(y, bit_depth)
             u = self.convert_format(u, bit_depth) if u is not None else None
             v = self.convert_format(v, bit_depth) if v is not None else None
-            return y, u, v
-
-        else:
-            assert False
+        return y, u, v

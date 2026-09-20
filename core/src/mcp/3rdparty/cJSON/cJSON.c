@@ -63,12 +63,6 @@
  * saturates at INT_MAX, and the jump-based and over-long functions are split into helpers without
  * changing behaviour. A re-vendor must re-apply this delta; see AGENTS.md next to this file. */
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* define our own boolean type */
 #ifdef true
 #undef true
@@ -348,7 +342,6 @@ static cJSON_bool parse_number(cJSON *const item, parse_buffer *const input_buff
     unsigned char *after_end = NULL;
     unsigned char *number_c_string;
     unsigned char decimal_point = get_decimal_point();
-    size_t i = 0;
     size_t number_string_length = 0;
     cJSON_bool has_decimal_point = false;
 
@@ -371,7 +364,7 @@ static cJSON_bool parse_number(cJSON *const item, parse_buffer *const input_buff
     number_c_string[number_string_length] = '\0';
 
     if (has_decimal_point) {
-        for (i = 0; i < number_string_length; i++) {
+        for (size_t i = 0; i < number_string_length; i++) {
             if (number_c_string[i] == '.') {
                 /* replace '.' with the decimal point of the current locale (for strtod) */
                 number_c_string[i] = decimal_point;
@@ -460,9 +453,7 @@ CJSON_PUBLIC(char *) cJSON_SetValuestring(cJSON *object, const char *valuestring
     if (copy == NULL) {
         return NULL;
     }
-    if (object->valuestring != NULL) {
-        cJSON_free(object->valuestring);
-    }
+    cJSON_free(object->valuestring);
     object->valuestring = copy;
 
     return copy;
@@ -1370,7 +1361,7 @@ CJSON_PUBLIC(char *) cJSON_PrintBuffered(const cJSON *item, int prebuffer, cJSON
 }
 
 CJSON_PUBLIC(cJSON_bool)
-cJSON_PrintPreallocated(cJSON *item, char *buffer, const int length, const cJSON_bool format)
+cJSON_PrintPreallocated(const cJSON *item, char *buffer, const int length, const cJSON_bool format)
 {
     printbuffer p = {0, 0, 0, 0, 0, 0, {0, 0, 0}};
 
@@ -1617,8 +1608,7 @@ static cJSON_bool parse_array(cJSON *const item, parse_buffer *const input_buffe
 static cJSON_bool print_array(const cJSON *const item, printbuffer *const output_buffer)
 {
     unsigned char *output_pointer = NULL;
-    size_t length = 0;
-    cJSON *current_element = item->child;
+    const cJSON *current_element = item->child;
 
     if (output_buffer == NULL) {
         return false;
@@ -1641,7 +1631,7 @@ static cJSON_bool print_array(const cJSON *const item, printbuffer *const output
         }
         update_offset(output_buffer);
         if (current_element->next) {
-            length = (size_t)(output_buffer->format ? 2 : 1);
+            const size_t length = (size_t)(output_buffer->format ? 2 : 1);
             output_pointer = ensure(output_buffer, length + 1);
             if (output_pointer == NULL) {
                 return false;
@@ -1843,7 +1833,7 @@ static cJSON_bool print_object(const cJSON *const item, printbuffer *const outpu
 {
     unsigned char *output_pointer = NULL;
     size_t length = 0;
-    cJSON *current_item = item->child;
+    const cJSON *current_item = item->child;
 
     if (output_buffer == NULL) {
         return false;
@@ -1891,7 +1881,7 @@ static cJSON_bool print_object(const cJSON *const item, printbuffer *const outpu
 /* Get Array size/item / object item. */
 CJSON_PUBLIC(int) cJSON_GetArraySize(const cJSON *array)
 {
-    cJSON *child = NULL;
+    const cJSON *child = NULL;
     size_t size = 0;
 
     if (array == NULL) {
@@ -2047,22 +2037,15 @@ CJSON_PUBLIC(cJSON_bool) cJSON_AddItemToArray(cJSON *array, cJSON *item)
     return add_item_to_array(array, item);
 }
 
-#if defined(__clang__) ||                                                                          \
-    (defined(__GNUC__) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 5))))
-#pragma GCC diagnostic push
-#endif
-#ifdef __GNUC__
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#endif
-/* helper function to cast away const */
+/* Preserve the pointer representation for APIs that explicitly retain a
+ * caller-owned constant string or node. The matching cJSON_StringIsConst /
+ * cJSON_IsReference flags prevent those borrowed objects from being freed. */
 static void *cast_away_const(const void *string)
 {
-    return (void *)string;
+    void *mutable_pointer = NULL;
+    memcpy((void *)&mutable_pointer, (const void *)&string, sizeof(mutable_pointer));
+    return mutable_pointer;
 }
-#if defined(__clang__) ||                                                                          \
-    (defined(__GNUC__) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 5))))
-#pragma GCC diagnostic pop
-#endif
 
 static cJSON_bool add_item_to_object(cJSON *const object, const char *const string,
                                      cJSON *const item, const internal_hooks *const hooks,
@@ -2108,7 +2091,7 @@ CJSON_PUBLIC(cJSON_bool) cJSON_AddItemToObjectCS(cJSON *object, const char *stri
     return add_item_to_object(object, string, item, &global_hooks, true);
 }
 
-CJSON_PUBLIC(cJSON_bool) cJSON_AddItemReferenceToArray(cJSON *array, cJSON *item)
+CJSON_PUBLIC(cJSON_bool) cJSON_AddItemReferenceToArray(cJSON *array, const cJSON *item)
 {
     if (array == NULL) {
         return false;
@@ -2118,7 +2101,7 @@ CJSON_PUBLIC(cJSON_bool) cJSON_AddItemReferenceToArray(cJSON *array, cJSON *item
 }
 
 CJSON_PUBLIC(cJSON_bool)
-cJSON_AddItemReferenceToObject(cJSON *object, const char *string, cJSON *item)
+cJSON_AddItemReferenceToObject(cJSON *object, const char *string, const cJSON *item)
 {
     if ((object == NULL) || (string == NULL)) {
         return false;
@@ -2986,8 +2969,8 @@ static cJSON_bool is_comparable_type(const int type)
 static cJSON_bool compare_arrays(const cJSON *const a, const cJSON *const b,
                                  const cJSON_bool case_sensitive)
 {
-    cJSON *a_element = a->child;
-    cJSON *b_element = b->child;
+    const cJSON *a_element = a->child;
+    const cJSON *b_element = b->child;
 
     for (; (a_element != NULL) && (b_element != NULL);) {
         if (!cJSON_Compare(a_element, b_element, case_sensitive)) {
@@ -3006,7 +2989,7 @@ static cJSON_bool compare_arrays(const cJSON *const a, const cJSON *const b,
 static cJSON_bool object_is_subset(const cJSON *const a, const cJSON *const b,
                                    const cJSON_bool case_sensitive)
 {
-    cJSON *a_element = NULL;
+    const cJSON *a_element = NULL;
 
     cJSON_ArrayForEach(a_element, a)
     {
@@ -3081,5 +3064,3 @@ CJSON_PUBLIC(void) cJSON_free(void *object)
 {
     global_hooks.deallocate(object);
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

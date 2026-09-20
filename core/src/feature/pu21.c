@@ -28,9 +28,11 @@
  * See docs/metrics/pu21.md and docs/adr/<NNNN>-pu21-hdr-metric.md.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -174,10 +176,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
 free_dist_enc:
     aligned_free(s->dist_enc);
-    s->dist_enc = NULL;
+    s->dist_enc = VMAF_NULLPTR;
 free_ref_enc:
     aligned_free(s->ref_enc);
-    s->ref_enc = NULL;
+    s->ref_enc = VMAF_NULLPTR;
     return -ENOMEM;
 }
 
@@ -239,8 +241,9 @@ static double pu21_compute_psnr(const double *ref, const double *dist, unsigned 
     return 10.0 * log10(PU21_PSNR_PEAK * PU21_PSNR_PEAK / denom);
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     Pu21State *s = fex->priv;
@@ -277,15 +280,14 @@ static int close(VmafFeatureExtractor *fex)
         aligned_free(s->ref_enc);
     if (s->dist_enc)
         aligned_free(s->dist_enc);
-    /* pu21_ssim_workspace_free is per-buffer NULL-safe (free(NULL) no-op), so
+    /* pu21_ssim_workspace_free is per-buffer VMAF_NULLPTR-safe (free(VMAF_NULLPTR) no-op), so
      * it is safe even after a partially-failed init(). */
     pu21_ssim_workspace_free(&s->ssim_ws);
     return 0;
 }
 
-static const char *provided_features[] = {"pu21_psnr", "pu21_ssim", NULL};
+static const char *provided_features[] = {"pu21_psnr", "pu21_ssim", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_pu21 = {
     .name = "pu21",
     .init = init,
@@ -306,5 +308,3 @@ VmafFeatureExtractor vmaf_fex_pu21 = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

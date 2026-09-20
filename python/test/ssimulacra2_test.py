@@ -45,12 +45,11 @@ described above.
 """
 
 import json
-import os
-import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
-from vmaf import ExternalProgram
+from vmaf import ExternalProgram, run_process
 from vmaf.config import VmafConfig
 
 
@@ -74,11 +73,11 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         }
 
     def setUp(self):
-        self.output_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".json").name
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.output_file_path = Path(self.temp_dir.name) / "output.json"
 
     def tearDown(self):
-        if os.path.exists(self.output_file_path):
-            os.remove(self.output_file_path)
+        self.temp_dir.cleanup()
 
     def _run_ssimulacra2(self, ref, dis, width, height, bitdepth=8, model=None):
         """Invoke `vmaf --feature ssimulacra2` and return the parsed JSON."""
@@ -106,9 +105,9 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         ]
         if model:
             cmd.extend(["--model", model])
-        ret = subprocess.call(cmd)
+        ret = run_process(cmd)
         self.assertEqual(ret, self.RC_SUCCESS, f"vmaf exited {ret}: {cmd}")
-        with open(self.output_file_path) as fo:
+        with self.output_file_path.open(encoding="utf-8") as fo:
             return json.load(fo)
 
     def test_ssimulacra2_src01_576x324(self):

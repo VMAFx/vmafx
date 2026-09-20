@@ -12,13 +12,12 @@ from typing import Any
 
 import pandas as pd
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
+from ai.scripts import eval_loso_vmaf_tiny_v3 as eval_v3
+from ai.scripts import eval_loso_vmaf_tiny_v4 as eval_v4
+from ai.scripts import eval_loso_vmaf_tiny_v5 as eval_v5
+from ai.scripts import eval_multiseed_v3_v4 as eval_ms
 
-from ai.scripts import eval_loso_vmaf_tiny_v3 as eval_v3  # noqa: E402
-from ai.scripts import eval_loso_vmaf_tiny_v4 as eval_v4  # noqa: E402
-from ai.scripts import eval_loso_vmaf_tiny_v5 as eval_v5  # noqa: E402
-from ai.scripts import eval_multiseed_v3_v4 as eval_ms  # noqa: E402
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 FEATURES = ("adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2")
 

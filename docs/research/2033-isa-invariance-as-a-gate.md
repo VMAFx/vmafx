@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 
 # Research-2033: Testing the property instead of the proxy (2026-09-06)
 

@@ -1,8 +1,6 @@
 /* Copyright 2026 Lusoris */
 /* SPDX-License-Identifier: EUPL-1.2 */
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain upstream C NULL
- * compatibility and the required Windows MSVC C build. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,12 +31,11 @@ static char *test_invalid_stack_increment(void)
     mu_assert("invalid growth never allocates", allocation_calls == 0);
     mu_assert("failed growth leaves depth unchanged", depth == 0);
     mu_assert("existing allocation error preserved", out_of_memory);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_invalid_stack_increment);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-/* NOLINTEND(modernize-use-nullptr) */

@@ -54,8 +54,8 @@ def test_qat_run_smoke(tmp_path: Path) -> None:
     import numpy as np
     import onnxruntime as ort
 
-    from ai.src.vmaf_train.models import LearnedFilter
     from ai.train.qat import QatConfig, run_qat
+    from vmaf_train.models import LearnedFilter
 
     int8_path = tmp_path / "smoke.int8.onnx"
     cfg = QatConfig(

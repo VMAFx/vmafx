@@ -1,4 +1,7 @@
-Close T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION state.md drift; remove stale Vulkan reference from cambi docs.
+# Changelog fragment
+
+Close T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION state.md drift; remove stale
+Vulkan reference from cambi docs.
 
 `docs/state.md`: Move T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION from Open to
 Recently Closed — the deprecation entry was already present in

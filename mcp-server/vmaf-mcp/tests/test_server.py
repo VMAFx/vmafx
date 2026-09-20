@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import asyncio
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -57,15 +59,10 @@ def test_list_backends_always_includes_cpu():
 
 
 def _has_eval_deps() -> bool:
-    try:
-        import numpy  # noqa: F401
-        import onnx  # noqa: F401
-        import onnxruntime  # noqa: F401
-        import pandas  # noqa: F401
-        import scipy  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return all(
+        find_spec(module) is not None
+        for module in ("numpy", "onnx", "onnxruntime", "pandas", "scipy")
+    )
 
 
 pytestmark_eval = pytest.mark.skipif(
@@ -332,9 +329,9 @@ def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkey
     # exist after the call returns — callers must copy files out if they need
     # persistence beyond the tool-handler lifetime.
     for resp in (r1, r2):
-        assert not Path(
-            resp["frames"][0]["png"]
-        ).exists(), "TemporaryDirectory leaked: PNG file still present after _describe_worst_frames returned"
+        assert not Path(resp["frames"][0]["png"]).exists(), (
+            "TemporaryDirectory leaked: PNG file still present after _describe_worst_frames returned"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -403,9 +400,9 @@ def test_score_tempfile_uses_unique_path(tmp_path, monkeypatch):
     anyio.run(run_concurrent)
 
     assert len(captured_paths) == 10, "expected exactly 10 calls"
-    assert (
-        len(set(str(p) for p in captured_paths)) == 10
-    ), "task-name collision: two concurrent calls produced the same output path"
+    assert len(set(str(p) for p in captured_paths)) == 10, (
+        "task-name collision: two concurrent calls produced the same output path"
+    )
     # All temp files must have been cleaned up by the finally block.
     for p in captured_paths:
         assert not p.exists(), f"tempfile not cleaned up: {p}"
@@ -514,8 +511,7 @@ def test_score_sem_limits_concurrent_vmaf_subprocesses(tmp_path, monkeypatch):
 
     async def fake_subprocess(*argv, **_kwargs):
         current_concurrent[0] += 1
-        if current_concurrent[0] > peak_concurrent[0]:
-            peak_concurrent[0] = current_concurrent[0]
+        peak_concurrent[0] = max(peak_concurrent[0], current_concurrent[0])
         proc = _FakeProc()
         # Write the minimal JSON payload the caller expects.
         args = list(argv)

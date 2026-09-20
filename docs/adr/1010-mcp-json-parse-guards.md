@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1010: MCP server JSON parse guards — vmaf output and ffprobe output
 
@@ -41,7 +40,7 @@ RuntimeError(…) from exc` with a diagnostic message that names the likely caus
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Let JSONDecodeError propagate | Minimal diff | No actionable message; confuses callers | Rejected |
 | Return None on parse failure | Avoids raising | Silently suppresses the error | Rejected |
 | Wrap + reraise as RuntimeError | Clear message, consistent with other handlers | Slightly more verbose | Chosen |

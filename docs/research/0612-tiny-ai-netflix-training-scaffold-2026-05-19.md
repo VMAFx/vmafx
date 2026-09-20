@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0607 — Tiny-AI Netflix corpus training: 2024–2026 literature refresh
 
 **Date**: 2026-05-19
@@ -108,7 +107,7 @@ is replaced by an equivalent MLP at the cost of slightly lower interpretability.
 Benchmark sizes on the Netflix 79-clip corpus (6-element feature vector input):
 
 | Architecture | Params | ONNX size | PLCC (teacher) | Inference (CPU) |
-|-------------|--------|-----------|----------------|-----------------|
+| ------------- | -------- | ----------- | ---------------- | ----------------- |
 | SVM baseline (`vmaf_v0.6.1`) | ~5 K | — | 1.000 (teacher) | 0.1 ms/frame |
 | MLP 2×64 | 4 608 | ≈8 KB | ~0.997 (estimated) | 0.05 ms/frame |
 | MLP 3×128 | 25 088 | ≈45 KB | ~0.998 (estimated) | 0.08 ms/frame |
@@ -176,7 +175,7 @@ redistribute or reference them in CI fixtures.
 ## 6. Summary of actionable findings for ADR-0612
 
 | Finding | ADR-0612 item | Priority |
-|---------|---------------|----------|
+| --------- | --------------- | ---------- |
 | MLP 2×64 is the natural A1 default | §A "nano" target | High |
 | Temperature τ = 1.5 optimal for IQA distillation | B1 distillation config | Medium |
 | ORT 1.19/1.20 MatMul opt relevant for CPU inference | ONNX export notes | Medium |

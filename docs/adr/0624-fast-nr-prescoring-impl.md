@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0624: Fast NR Pre-Scoring Implementation (ADR-0615 impl)
 
 - **Status**: Accepted (Implemented)
@@ -53,7 +52,7 @@ scoped above. Key design choices made during implementation:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | Widen `BisectResult` with an `nr_skipped` bool field | Cleaner API | Changes the frozen dataclass shape; breaks existing callers that pattern-match on fields | Sentinel string avoids the shape change with zero downstream impact |
 | Construct `NRProxyBackend` per-predicate | Each predicate has its own cache | Model loaded N times (N = n_codecs × n_targets); GPU EP initialisation adds ~2 s per load | Single shared instance is correct and fast |
 | Expose `nr_proxy_backend` in `BisectResult` telemetry fields directly | More observable | Adds a non-serialisable object to the result; breaks JSON export | `fr_calls_total` / `fr_calls_saved` integer fields carry the observable signal without coupling |

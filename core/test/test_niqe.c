@@ -48,12 +48,6 @@
 #include "feature/niqe_math.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #ifndef NIQE_TESTDATA_DIR
 #define NIQE_TESTDATA_DIR "."
 #endif
@@ -96,7 +90,7 @@ static char *test_niqe_gauss_window(void)
         sum += w[i];
     }
     mu_assert("gauss_window does not sum to 1.0", close_abs(sum, 1.0, 1e-15));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* AGGD oracle 1: extract_aggd_features([-2,-1,0,1,2,3]).
@@ -120,7 +114,7 @@ static char *test_niqe_aggd_oracle1(void)
     mu_assert("aggd1 br", close_abs(a.br, 3.2641978243651293, 1e-6));
     mu_assert("aggd1 lsq", close_abs(a.lsq, 1.5811388300841898, 1e-6));
     mu_assert("aggd1 rsq", close_abs(a.rsq, 1.8708286933869707, 1e-6));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* AGGD oracle 3: extract_aggd_features(RandomState(42).standard_normal(96*96)).
@@ -153,7 +147,7 @@ static char *test_niqe_aggd_large(void)
     mu_assert("aggd_large lsq finite/positive", isfinite(a.lsq) && a.lsq > 0.0);
     mu_assert("aggd_large rsq finite/positive", isfinite(a.rsq) && a.rsq > 0.0);
     mu_assert("aggd_large alpha in plausible band", a.alpha > 0.2 && a.alpha < 10.0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* AGGD degenerate-patch guards. Two reachable one-sided/flat cases that would
@@ -175,7 +169,7 @@ static char *check_aggd_flat_patch(const double *prec)
     mu_assert("flat patch N not finite/zero", isfinite(z.N) && close_abs(z.N, 0.0, 1e-15));
     mu_assert("flat patch bl not finite/zero", isfinite(z.bl) && close_abs(z.bl, 0.0, 1e-15));
     mu_assert("flat patch br not finite/zero", isfinite(z.br) && close_abs(z.br, 0.0, 1e-15));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Shape/finiteness checks for the all-negative patch below. */
@@ -185,7 +179,7 @@ static char *check_aggd_all_negative_shape(const NiqeAggd *a)
     mu_assert("all-neg N not finite", isfinite(a->N));
     mu_assert("all-neg bl not finite", isfinite(a->bl));
     mu_assert("all-neg br != 0", close_abs(a->br, 0.0, 1e-15));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Harness reference for [-2,-1,-3,-1] at alpha=0.2 (aggdratio is tiny). */
@@ -195,7 +189,7 @@ static char *check_aggd_all_negative_values(const NiqeAggd *a)
     mu_assert("all-neg rms != 0", close_abs(a->rsq, 0.0, 1e-15));
     mu_assert("all-neg N value", close_abs(a->N, -8.060654877743004e-06, 1e-9));
     mu_assert("all-neg bl value", close_abs(a->bl, 3.213047092940099e-05, 1e-9));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* (b) all-negative patch -> rms == 0, mean_sq != 0. The pre-fix code would
@@ -257,7 +251,7 @@ static char *test_niqe_bicubic_coeffs(void)
     mu_assert("bicubic ramp out[0] in range", out[0] > 12.0 && out[0] < 24.0);
     mu_assert("bicubic ramp out[1] in range", out[1] > 26.0 && out[1] < 40.0001);
     mu_assert("bicubic monotone on ramp", out[1] > out[0]);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* niqe_sym_pinv on a well-conditioned symmetric 3x3: compare to the analytic
@@ -282,7 +276,7 @@ static char *test_niqe_sym_pinv(void)
             mu_assert("sym_pinv * M != I", close_abs(acc, expect, 1e-10));
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -345,11 +339,11 @@ static void niqe_teardown(VmafPicture *pic, VmafFeatureCollector *fc,
 static char *niqe_e2e_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
                             VmafPicture *pic, unsigned w, unsigned h)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
     if (!fex)
         return (char *)"niqe extractor not registered";
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     if (err)
         return (char *)"niqe context_create failed";
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
@@ -361,15 +355,16 @@ static char *niqe_e2e_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollec
     err = load_yuv420p8_frame0(pic, NIQE_TESTDATA_DIR "/ref_576x324_48f.yuv", w, h);
     if (err)
         return (char *)"could not load ref_576x324_48f.yuv frame 0";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run the extraction and read back the score. NR metric: ref and dist are the
  * same picture (only dist is scored). */
 static char *niqe_e2e_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
-                                  VmafPicture *pic, double *score)
+                                  const VmafPicture *pic, double *score)
 {
-    int err = vmaf_feature_extractor_context_extract(ctx, pic, NULL, pic, NULL, 0, fc);
+    int err =
+        vmaf_feature_extractor_context_extract(ctx, pic, VMAF_NULLPTR, pic, VMAF_NULLPTR, 0, fc);
     if (err)
         return (char *)"niqe extract failed";
     err = vmaf_feature_collector_get_score(fc, "niqe", score, 0);
@@ -377,7 +372,7 @@ static char *niqe_e2e_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureC
         return (char *)"could not read niqe score";
     if (!isfinite(*score))
         return (char *)"niqe score is not finite";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_niqe_end_to_end(void)
@@ -388,8 +383,8 @@ static char *test_niqe_end_to_end(void)
     const unsigned W = 576;
     const unsigned H = 324;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
 
@@ -425,11 +420,11 @@ cleanup:
 static char *niqe_odd_dim_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
                                 VmafPicture *pic, unsigned w, unsigned h)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
     if (!fex)
         return (char *)"niqe extractor not registered (odd-dim)";
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     if (err)
         return (char *)"odd-dim: context_create failed";
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
@@ -441,7 +436,7 @@ static char *niqe_odd_dim_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCo
     err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8, w, h);
     if (err)
         return (char *)"odd-dim: picture alloc failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Fill luma with a deterministic sinusoidal pattern (non-flat, non-random)
@@ -466,9 +461,10 @@ static void niqe_fill_odd_dim_pattern(VmafPicture *pic, unsigned w, unsigned h)
 /* Run the extraction and read back the score, using the odd-dim test's own
  * message prefixes (distinct from niqe_e2e_check_score's). */
 static char *niqe_odd_dim_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
-                                      VmafPicture *pic, double *score)
+                                      const VmafPicture *pic, double *score)
 {
-    int err = vmaf_feature_extractor_context_extract(ctx, pic, NULL, pic, NULL, 0, fc);
+    int err =
+        vmaf_feature_extractor_context_extract(ctx, pic, VMAF_NULLPTR, pic, VMAF_NULLPTR, 0, fc);
     if (err)
         return (char *)"odd-dim: extract failed";
     err = vmaf_feature_collector_get_score(fc, "niqe", score, 0);
@@ -476,7 +472,7 @@ static char *niqe_odd_dim_check_score(VmafFeatureExtractorContext *ctx, VmafFeat
         return (char *)"odd-dim: could not read niqe score";
     if (!isfinite(*score))
         return (char *)"odd-dim: niqe score is not finite";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression test for BLOCKER-1 (heap overflow for odd frame dimensions).
@@ -491,8 +487,8 @@ static char *test_niqe_odd_dim(void)
     const unsigned W = 577;
     const unsigned H = 325;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
 
@@ -520,5 +516,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

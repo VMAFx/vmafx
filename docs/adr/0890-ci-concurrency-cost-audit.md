@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0890: CI concurrency + cost audit follow-up to PR #301
 
 - **Status**: Accepted
@@ -68,7 +67,7 @@ elsewhere in `lint-and-format.yml`).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Land the five gaps as one consolidated CI hygiene PR (chosen) | One review, one CI cycle, one rebase note. All five changes share the same "follow-up to PR #301" framing and decision logic. | Slightly larger diff than five micro-PRs. | Matches the user's "ONE PR active at a time — strict" rule. Five micro-PRs would burn more reviewer time + more CI cycles than the saving justifies. |
 | Five micro-PRs (one per workflow) | Each can be reverted independently. | 5× CI cycles, 5× review queue slots, violates the one-PR-in-flight constraint, no shared decision context. | Cost outweighs the (negligible) revert-granularity benefit; the five changes are all CI-YAML hygiene with no source/header/patch impact. |
 | Adopt a third-party reusable concurrency action (e.g. `softprops/turnstyle`) | Centralises the concurrency-group shape across all workflows. | New external dependency on the supply chain, no benefit over native `concurrency:`. | The native GitHub Actions `concurrency:` block already does exactly what we need; a third-party action adds attack surface for zero functional gain. |

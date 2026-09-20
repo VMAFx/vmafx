@@ -62,3 +62,15 @@ def bootstrap_ai_script(
     if include_vmaf_tune_src:
         _prepend_path(paths.vmaf_tune_src)
     return paths
+
+
+# Direct scripts import this private helper before their repository modules.
+# Install every fixed, repository-owned root as part of that import so those
+# modules remain in one ordinary static import block (ADR-1268). Calls from the
+# scripts themselves still return script-specific metadata for manifests.
+_IMPORT_PATHS = bootstrap_ai_script(
+    __file__,
+    include_repo_root=True,
+    include_ai_scripts=True,
+    include_vmaf_tune_src=True,
+)

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # vmafx-mcp HTTP transport
 
 > **Added in**: VMAFX Phase 3A (ADR-0701)
@@ -35,7 +34,7 @@ Returns `200 OK` while the process is alive after the request passes the shared
 authentication middleware. Suitable for an authenticated Kubernetes
 `livenessProbe`.
 
-**Response**
+#### Response
 
 ```json
 { "status": "healthy" }
@@ -51,13 +50,13 @@ Returns `503 Service Unavailable` if the binary is absent. Suitable for Kubernet
 
 The check is a lightweight `stat` call — no subprocess is spawned.
 
-**Response (ready)**
+#### Response (ready)
 
 ```json
 { "status": "ready", "vmaf_binary": "/usr/local/bin/vmaf" }
 ```
 
-**Response (not ready)**
+##### Response (not ready)
 
 ```json
 { "status": "not_ready", "reason": "vmaf binary not found at /usr/local/bin/vmaf" }
@@ -70,10 +69,10 @@ The check is a lightweight `stat` call — no subprocess is spawned.
 Returns metrics in [Prometheus exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/).
 Suitable for `prometheusRule` scraping.
 
-**Exposed metrics**
+#### Exposed metrics
 
 | Metric | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `vmaf_scoring_requests_total{endpoint, status}` | Counter | Total scoring requests, labelled by endpoint and HTTP status |
 | `vmaf_scoring_errors_total` | Counter | Total scoring requests that resulted in a 500-level error |
 | `vmaf_scoring_duration_seconds` | Histogram | Scoring request latencies (buckets: 0.1s … 300s) |
@@ -85,10 +84,10 @@ Suitable for `prometheusRule` scraping.
 Submits a VMAF scoring request for a raw YUV pair. This is a thin REST wrapper
 over the `vmaf_score` MCP tool.
 
-**Request body (JSON)**
+#### Request body (JSON)
 
 | Field | Type | Required | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `reference` | string | yes | Absolute path to the reference YUV file |
 | `distorted` | string | yes | Absolute path to the distorted YUV file |
 | `width` | integer | yes | Frame width in pixels |
@@ -99,7 +98,7 @@ over the `vmaf_score` MCP tool.
 | `backend` | string | no | Backend: `"cpu"`, `"cuda"`, `"sycl"`, or `"auto"` (default: `"auto"`) |
 | `precision` | string | no | Output precision: `"legacy"` (`%.6f`, the C-CLI default per ADR-0119) or `"max"` (lossless `%.17g`). Default: `"legacy"` |
 
-**Example request**
+#### Example request
 
 ```bash
 curl -X POST http://localhost:8080/v1/score \
@@ -115,7 +114,7 @@ curl -X POST http://localhost:8080/v1/score \
   }'
 ```
 
-**Response (200 OK)**
+##### Response (200 OK)
 
 The vmaf JSON payload plus a `request_id` field:
 
@@ -128,10 +127,10 @@ The vmaf JSON payload plus a `request_id` field:
 }
 ```
 
-**Error responses**
+#### Error responses
 
 | Status | Condition |
-|---|---|
+| --- | --- |
 | `400` | Missing required fields, invalid JSON body (including non-object JSON values such as `null`, arrays, or integers), or path outside allowlisted roots |
 | `401` | Missing or invalid `Authorization: Bearer` token (when auth is enabled) |
 | `413` | Request body exceeds 4 MiB (enforced by both `Content-Length` pre-flight and `client_max_size` for chunked bodies) |
@@ -145,7 +144,7 @@ CLI flags take precedence over environment variables; environment variables take
 precedence over compiled-in defaults.
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_PORT` | `8080` | HTTP listen port (overridden by `--port`) |
 | `VMAFX_LOG_LEVEL` | `INFO` | Python log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `VMAFX_VMAF_BINARY` | *(auto-detected)* | Explicit path to the `vmaf` binary; falls through to `VMAF_BIN` |
@@ -158,7 +157,7 @@ both the Python (`vmaf-mcp`) and the Go (`vmafx-mcp`) servers, so a single
 deployment config secures either implementation:
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_MCP_HTTP_TOKEN` | *(none)* | Bearer token. When set (and `NO_AUTH` is unset), every request must carry `Authorization: Bearer <token>`, matched in constant time. |
 | `VMAFX_MCP_HTTP_NO_AUTH` | *(unset)* | Set to `1` to disable authentication entirely (explicit operator opt-out). |
 | `VMAFX_MCP_HTTP_BIND` | `127.0.0.1` | Bind host. Loopback-only by default; set to `0.0.0.0` to listen on all interfaces. |
@@ -178,7 +177,7 @@ HTTP mode replaces the root logger's handlers with a single-line JSON formatter.
 Each log line is a JSON object with the following fields:
 
 | Field | Example | Description |
-|---|---|---|
+| --- | --- | --- |
 | `timestamp` | `"2026-05-28T12:34:56.789Z"` | ISO-8601 with millisecond precision |
 | `level` | `"INFO"` | Python log level |
 | `message` | `"POST /v1/score done in 420ms"` | Human-readable message |

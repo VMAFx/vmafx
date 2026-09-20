@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0618: Content-Aware Classifier for Encoder Routing
 
 - **Status**: Proposed
@@ -19,9 +18,9 @@ intervention.
 
 ## Decision
 
-We will implement a Hybrid A4 classifier (Research 0614): run FFmpeg `siti`
-for spatial complexity and motion intensity (deterministic, no GPU, ~5–10 s
-per clip), infer dynamic range from container metadata, and use CAMBI as a
+We will implement a Hybrid A4 classifier (Research 0614): run FFmpeg `siti` for
+spatial complexity and motion intensity (deterministic, no GPU, ~5–10 s per
+clip), infer dynamic range from container metadata, and use CAMBI as a
 source-quality proxy. For genre and subjective tags (the only tags that cannot
 be derived from signal statistics), run a single local VLM call via Ollama
 (Gemma 3B Vision or Llama 3.2 11B Vision) on 3 sampled frames. Results are
@@ -33,25 +32,25 @@ params, VMAF model, and ladder priors.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
-| A1 — VLM-only (Ollama local) | Zero training; all tags covered | GPU required; 2–5 s latency; non-deterministic | Retained as partial contributor in A4 |
-| A1b — Claude Vision API | Zero training; natural language | Content leaves premises; API cost; latency | Unacceptable for unreleased content |
-| A2 — Train small CNN | Zero runtime overhead; deterministic | 1–2 weeks training; taxonomy crosswalk; genre-only | Deferred; requires labeled corpus |
-| A3 — CAMBI + SI/TI only | Deterministic; fast; no GPU | No genre; no semantic tags | Covers 5 of 7 tag categories; adopted as A4 base |
-| A4 — Hybrid SI/TI + selective VLM (chosen) | Covers all tags; deterministic for signal tags; VLM only when needed | VLM non-determinism on genre tags; Ollama dependency | — |
+| Option                                     | Pros                                                                 | Cons                                                 | Why not chosen                                   |
+| ------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
+| A1 — VLM-only (Ollama local)               | Zero training; all tags covered                                      | GPU required; 2–5 s latency; non-deterministic       | Retained as partial contributor in A4            |
+| A1b — Claude Vision API                    | Zero training; natural language                                      | Content leaves premises; API cost; latency           | Unacceptable for unreleased content              |
+| A2 — Train small CNN                       | Zero runtime overhead; deterministic                                 | 1–2 weeks training; taxonomy crosswalk; genre-only   | Deferred; requires labeled corpus                |
+| A3 — CAMBI + SI/TI only                    | Deterministic; fast; no GPU                                          | No genre; no semantic tags                           | Covers 5 of 7 tag categories; adopted as A4 base |
+| A4 — Hybrid SI/TI + selective VLM (chosen) | Covers all tags; deterministic for signal tags; VLM only when needed | VLM non-determinism on genre tags; Ollama dependency | —                                                |
 
 ## Consequences
 
 - **Positive**: Zero training burden; all 7 tag categories covered; enables
   automatic routing for NEG (ADR-0616), ladder priors, and encoder `tune`
   params; caching means the classifier runs once per title.
-- **Negative**: Ollama dependency adds GPU requirement to the pre-encoding
-  step when genre tags are needed; non-deterministic genre tags (LLM-sampled)
-  may produce inconsistent routing on re-runs without a fixed seed.
-- **Neutral / follow-ups**: A deterministic fallback (A3-only, no genre) must
-  be available when Ollama is absent (CI environments, CPU-only runners).
-  CNN classifier (A2) is the long-term upgrade path once a labeled corpus is
+- **Negative**: Ollama dependency adds GPU requirement to the pre-encoding step
+  when genre tags are needed; non-deterministic genre tags (LLM-sampled) may
+  produce inconsistent routing on re-runs without a fixed seed.
+- **Neutral / follow-ups**: A deterministic fallback (A3-only, no genre) must be
+  available when Ollama is absent (CI environments, CPU-only runners). CNN
+  classifier (A2) is the long-term upgrade path once a labeled corpus is
   assembled.
 
 ## Dependencies
@@ -66,22 +65,24 @@ params, VMAF model, and ladder priors.
 
 ## Implementation phases
 
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| P1 | `classify.py` skeleton; `ContentTags` dataclass; FFmpeg SI/TI extraction | 2 days |
-| P2 | CAMBI source-quality proxy; container metadata HDR detection | 1 day |
-| P3 | Ollama VLM genre tagger; fallback to `genre=unknown` when Ollama absent | 2 days |
-| P4 | Routing table: `ContentTags` → encoder params + VMAF model + ladder priors | 1 day |
-| P5 | Cache (xxHash128 fingerprint + sidecar JSON); CLI `--classify` subcommand | 1 day |
-| P6 | Docs `docs/usage/vmaf-tune-classifier.md`; routing table docs | 1 day |
+| Phase | Description                                                                | Effort |
+| ----- | -------------------------------------------------------------------------- | ------ |
+| P1    | `classify.py` skeleton; `ContentTags` dataclass; FFmpeg SI/TI extraction   | 2 days |
+| P2    | CAMBI source-quality proxy; container metadata HDR detection               | 1 day  |
+| P3    | Ollama VLM genre tagger; fallback to `genre=unknown` when Ollama absent    | 2 days |
+| P4    | Routing table: `ContentTags` → encoder params + VMAF model + ladder priors | 1 day  |
+| P5    | Cache (xxHash128 fingerprint + sidecar JSON); CLI `--classify` subcommand  | 1 day  |
+| P6    | Docs `docs/usage/vmaf-tune-classifier.md`; routing table docs              | 1 day  |
 
 Total estimate: 8 days (largest item on the roadmap).
 
 ## References
 
-- Research digest: [docs/research/0614-content-aware-classifier-research.md](../research/0614-content-aware-classifier-research.md).
+- Research digest:
+  [docs/research/0614-content-aware-classifier-research.md](../research/0614-content-aware-classifier-research.md).
 - FFmpeg `siti` filter: ITU-T P.910 SI/TI.
-- CAMBI: `resource/doc/cambi.md` (Netflix/vmaf upstream; retrieved via GitHub API 2026-05-19).
+- CAMBI: `resource/doc/cambi.md` (Netflix/vmaf upstream; retrieved via GitHub
+  API 2026-05-19).
 - MediaPipe Video Classification (mediapipe.dev; 2023).
 - Anthropic Claude Vision API (claude.ai/docs; 2025).
 - `tools/vmaf-tune/src/vmaftune/saliency.py` — existing visual-feature pipeline.

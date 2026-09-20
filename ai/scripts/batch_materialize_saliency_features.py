@@ -14,14 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
-
-_SCRIPT_PATHS = bootstrap_ai_script(
-    __file__,
-    include_repo_root=True,
-    include_ai_scripts=True,
-    include_vmaf_tune_src=True,
-)
-from materialize_saliency_features import (  # noqa: E402
+from materialize_saliency_features import (
     REPO_ROOT,
     SaliencyFn,
     SaliencyMaterializeConfig,
@@ -31,12 +24,19 @@ from materialize_saliency_features import (  # noqa: E402
     write_table,
 )
 
-from aiutils.cli_helpers import (  # noqa: E402
+from aiutils.cli_helpers import (
     add_batch_manifest_arguments,
     collect_cli_argv,
     make_argument_parser,
 )
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(
+    __file__,
+    include_repo_root=True,
+    include_ai_scripts=True,
+    include_vmaf_tune_src=True,
+)
 
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _CONFIG_FIELDS = {field.name for field in fields(SaliencyMaterializeConfig)}

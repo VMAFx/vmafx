@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0670: AI Legacy Corpus Extraction Manifests
 
 - **Status**: Proposed
@@ -47,7 +46,7 @@ unavailable defaults so stale cached BVI rows no longer fail the current
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Default sibling manifests | Replayable expensive artifacts; keeps row schemas stable; matches ADR-0668/0669 | Adds one small JSON file per run | Chosen; it closes the evidence gap with low operational cost. |
 | Append provenance columns/rows to the parquets and JSONL | Self-contained output files | Changes trainer-facing schemas and repeats run metadata per row | Rejected; run-level evidence belongs in sidecars. |
 | Only document operator commands | No code change | Still loses input hashes, parsed arguments, row counts, and failure counters | Rejected; docs are not evidence for local artifacts. |

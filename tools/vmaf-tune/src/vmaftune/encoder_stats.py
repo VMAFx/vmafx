@@ -268,7 +268,7 @@ def aggregate_stats(frames: Iterable[PerFrameStats]) -> dict[str, float]:
     populate the schema so downstream readers don't see ragged JSONL.
     """
     frame_list = list(frames)
-    out: dict[str, float] = {col: 0.0 for col in ENCODER_STATS_COLUMNS}
+    out: dict[str, float] = dict.fromkeys(ENCODER_STATS_COLUMNS, 0.0)
     if not frame_list:
         return out
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0963: ai/src: guard NaN propagation in eval + tune (round-25 audit C.1 + C.2)
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ pulling in pytorch_lightning (enabling lightweight unit tests).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Return NaN for empty/degenerate (status quo) | No code change | Silently fails gate comparisons; bisect returns wrong answer | Correctness violation |
 | Return `Result[EvalReport, str]` type | Explicit error path | Introduces a new algebraic type not used elsewhere in the codebase | Inconsistent with existing `ValueError` patterns |
 | Return `plcc=float("-inf")` for degenerate | Also fails `>=` gates | Still has NaN-propagation risk if consumer does arithmetic | 0.0 is the conventional "worst correlation" and does not NaN-propagate |

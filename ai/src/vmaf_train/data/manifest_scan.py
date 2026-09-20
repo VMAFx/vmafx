@@ -30,10 +30,7 @@ _CHUNK = 1 << 20  # 1 MiB
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(_CHUNK)
-            if not chunk:
-                break
+        for chunk in iter(lambda: fh.read(_CHUNK), b""):
             h.update(chunk)
     return h.hexdigest()
 

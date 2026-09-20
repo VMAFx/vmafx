@@ -7,10 +7,16 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
 from importlib.resources import files
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 HOOKS = ("pre-commit", "commit-msg", "pre-push", "pre-rebase")
 SOURCES = {
@@ -24,8 +30,16 @@ def git(*args: str) -> str:
     executable = shutil.which("git")
     if executable is None:
         raise SystemExit("install-hooks: Git is missing from PATH")
-    # ADR-1241: callers supply fixed Git queries as argv; never a shell command.
-    return subprocess.check_output((executable, *args), text=True).strip()  # noqa: S603
+    result = run_command(
+        (executable, *args),
+        allowed_executables=(executable,),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=60,
+    )
+    assert isinstance(result.stdout, str)
+    return result.stdout.strip()
 
 
 def framework_hook(path: Path) -> bool:
@@ -107,11 +121,19 @@ def main() -> None:
             + "\n".join(unknown)
         )
     # Validate and prepare environments before replacing any live hook.
-    subprocess.run(  # noqa: S603 -- ADR-1241: fixed argv and resolved executable.
-        (framework, "validate-config"), cwd=root, check=True
+    run_command(
+        (framework, "validate-config"),
+        allowed_executables=(framework,),
+        cwd=root,
+        check=True,
+        timeout_seconds=120,
     )
-    subprocess.run(  # noqa: S603 -- ADR-1241: fixed argv and resolved executable.
-        (framework, "install-hooks"), cwd=root, check=True
+    run_command(
+        (framework, "install-hooks"),
+        allowed_executables=(framework,),
+        cwd=root,
+        check=True,
+        timeout_seconds=120,
     )
     hooks.mkdir(parents=True, exist_ok=True)
     content = template.replace(b"mode=framework", b"mode=native") if mode == "1" else template

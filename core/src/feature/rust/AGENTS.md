@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD029 -->
 # AGENTS.md — core/src/feature/rust/
 
 Rust feature extractor crates (ADR-0707 cbindgen pilot).
@@ -39,7 +38,7 @@ Rust feature extractor crates (ADR-0707 cbindgen pilot).
    MUST follow same pattern (or use plain `BSD-3-Clause` declaration
    parser recognises). See
    [ADR-0917](../../../../docs/adr/0917-cargo-deny-supply-chain-policy.md).
-6. **Codegen-only `build-dependencies` get `[package.metadata.cargo-machete]`
+7. **Codegen-only `build-dependencies` get `[package.metadata.cargo-machete]`
    ignore**. `cargo-machete --with-metadata` does not introspect
    `build.rs` symbol usage, so build-only deps (`bindgen`, `cbindgen`,
    etc.) get mis-flagged unused. Every new Rust crate whose only

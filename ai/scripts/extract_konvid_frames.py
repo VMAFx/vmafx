@@ -36,12 +36,16 @@ import pandas as pd
 import yaml
 from PIL import Image
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from aiutils.run_manifest import write_run_manifest
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 MANIFEST = REPO_ROOT / "ai" / "src" / "vmaf_train" / "data" / "manifests" / "konvid-1k.yaml"
 DATA_DIR = REPO_ROOT / "ai" / "data"
@@ -159,8 +163,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
@@ -180,7 +183,47 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Replay manifest JSON sidecar (default: ai/data/konvid_frames_manifest.json).",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(argv)
+
+
+def _extract_entries(args: argparse.Namespace, root: Path, entries: list[dict]):
+    c2_dir = root / "_frames_c2"
+    c3_dir = root / "_frames_c3_pairs"
+    c2_dir.mkdir(parents=True, exist_ok=True)
+    c3_dir.mkdir(parents=True, exist_ok=True)
+    c2_rows, c3_rows, missing_count, error_count = [], [], 0, 0
+    for index, entry in enumerate(entries):
+        key, mp4 = entry["key"], root / entry["path"]
+        if not mp4.is_file():
+            print(f"[skip] missing {mp4}")
+            missing_count += 1
+            continue
+        c2_path = c2_dir / f"{key}.npy"
+        if c2_path.exists():
+            clean = np.load(c2_path)
+        else:
+            try:
+                clean = _extract_middle_frame_y(mp4, args.target_hw)
+            except Exception as exc:
+                print(f"[error] {mp4.name}: {exc}")
+                error_count += 1
+                continue
+            np.save(c2_path, clean)
+        c3_clean_path = c3_dir / f"{key}_clean.npy"
+        c3_deg_path = c3_dir / f"{key}_deg.npy"
+        if not c3_clean_path.exists() or not c3_deg_path.exists():
+            np.save(c3_clean_path, clean)
+            np.save(c3_deg_path, _make_degraded(clean))
+        c2_rows.append({"key": key, "frame_path": str(c2_path), "mos": float(entry["mos"])})
+        c3_rows.append({"key": key, "deg_path": str(c3_deg_path), "clean_path": str(c3_clean_path)})
+        if (index + 1) % 50 == 0 or index + 1 == len(entries):
+            print(f"[extract] {index + 1}/{len(entries)} clips")
+    return c2_rows, c3_rows, missing_count, error_count
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = DATA_DIR / "konvid_frames_manifest.json"
 
@@ -197,54 +240,9 @@ def main(argv: list[str] | None = None) -> int:
     if not root.is_dir():
         sys.exit(f"dataset root not found: {root}")
 
-    c2_dir = root / "_frames_c2"
-    c3_dir = root / "_frames_c3_pairs"
-    c2_dir.mkdir(parents=True, exist_ok=True)
-    c3_dir.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    c2_rows = []
-    c3_rows = []
-    missing_count = 0
-    error_count = 0
     n = len(entries)
-    for i, e in enumerate(entries):
-        key = e["key"]
-        mp4 = root / e["path"]
-        if not mp4.is_file():
-            print(f"[skip] missing {mp4}")
-            missing_count += 1
-            continue
-
-        c2_path = c2_dir / f"{key}.npy"
-        c3_clean_path = c3_dir / f"{key}_clean.npy"
-        c3_deg_path = c3_dir / f"{key}_deg.npy"
-
-        if not c2_path.exists():
-            try:
-                clean = _extract_middle_frame_y(mp4, args.target_hw)
-            except Exception as exc:
-                print(f"[error] {mp4.name}: {exc}")
-                error_count += 1
-                continue
-            np.save(c2_path, clean)
-        else:
-            clean = np.load(c2_path)
-
-        if not c3_clean_path.exists() or not c3_deg_path.exists():
-            np.save(c3_clean_path, clean)
-            np.save(c3_deg_path, _make_degraded(clean))
-
-        c2_rows.append({"key": key, "frame_path": str(c2_path), "mos": float(e["mos"])})
-        c3_rows.append(
-            {
-                "key": key,
-                "deg_path": str(c3_deg_path),
-                "clean_path": str(c3_clean_path),
-            }
-        )
-        if (i + 1) % 50 == 0 or i + 1 == n:
-            print(f"[extract] {i + 1}/{n} clips")
+    c2_rows, c3_rows, missing_count, error_count = _extract_entries(args, root, entries)
 
     pd.DataFrame(c2_rows).to_parquet(C2_PARQUET, index=False)
     pd.DataFrame(c3_rows).to_parquet(C3_PARQUET, index=False)

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-2048: Feature registration option-copy ownership
 
 ## Confirmed defect

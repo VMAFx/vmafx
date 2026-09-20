@@ -14,10 +14,13 @@ import tempfile
 
 import pytest
 
-torch = pytest.importorskip("torch", reason="PyTorch not installed — skipping SGD+EMA tests")
-import torch.nn as nn  # noqa: E402 — after pytest.importorskip guard
+try:
+    import torch
+    from torch import nn
+except ImportError:
+    pytest.skip("PyTorch not installed — skipping SGD+EMA tests", allow_module_level=True)
 
-from ai.sidecar.sgd_ema import SGDEMAConfig, SGDEMATrainer  # noqa: E402
+from ai.sidecar.sgd_ema import SGDEMAConfig, SGDEMATrainer
 
 # ---------------------------------------------------------------------------
 # Helpers

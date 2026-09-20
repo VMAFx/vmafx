@@ -54,12 +54,6 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #define FIXTURE_W 256u
 #define FIXTURE_H 192u
 #define FIXTURE_BPC 8u
@@ -111,20 +105,20 @@ static char *feed_fixture_pair(VmafContext *vmaf)
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     if (err)
         return "vmaf_read_pictures failed";
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     if (err)
         return "vmaf_read_pictures(EOS) failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_float_ms_ssim(double *out_score)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ms_ssim", NULL);
+    err = vmaf_use_feature(vmaf, "float_ms_ssim", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
 
     char *feed_err = feed_fixture_pair(vmaf);
@@ -136,7 +130,7 @@ static char *run_cpu_float_ms_ssim(double *out_score)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_metal_float_ms_ssim(double *out_score)
@@ -145,20 +139,20 @@ static char *run_metal_float_ms_ssim(double *out_score)
     int err = 0;
 
     VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
+    VmafMetalState *mstate = VMAF_NULLPTR;
     err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    if (err != 0 || mstate == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no Metal device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("Metal: vmaf_init failed", !err);
     err = vmaf_metal_import_state(vmaf, mstate);
     mu_assert("Metal: vmaf_metal_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ms_ssim_metal", NULL);
+    err = vmaf_use_feature(vmaf, "float_ms_ssim_metal", VMAF_NULLPTR);
     mu_assert("Metal: vmaf_use_feature(float_ms_ssim_metal) failed", !err);
 
     char *feed_err = feed_fixture_pair(vmaf);
@@ -171,7 +165,7 @@ static char *run_metal_float_ms_ssim(double *out_score)
     err = vmaf_close(vmaf);
     mu_assert("Metal: vmaf_close failed", !err);
     vmaf_metal_state_free(&mstate);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ms_ssim_cpu_metal_parity(void)
@@ -186,7 +180,7 @@ static char *test_float_ms_ssim_cpu_metal_parity(void)
     if (msg)
         return msg;
     if (isnan(metal_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - metal_score);
     if (delta > PARITY_TOL) {
@@ -195,13 +189,11 @@ static char *test_float_ms_ssim_cpu_metal_parity(void)
                       cpu_score, metal_score, delta, PARITY_TOL);
     }
     mu_assert("float_ms_ssim CPU vs. Metal exceeds 1e-3 tolerance (ADR-0589)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_ms_ssim_cpu_metal_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

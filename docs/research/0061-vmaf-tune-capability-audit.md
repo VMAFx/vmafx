@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0061: `vmaf-tune` capability audit — beyond Phases A/B + the fast path
 
 - **Status**: Active
@@ -30,7 +29,7 @@ against a real corpus.
 ## Existing fork primitives (the library this audit shops from)
 
 | Primitive | Path | Audit relevance |
-|---|---|---|
+| --- | --- | --- |
 | Codec adapter interface | `tools/vmaf-tune/src/vmaftune/codec_adapters/` (x264 only today) | Every multi-codec bucket assumes more adapters land here |
 | `vmaf_tiny_v{1..4}` proxy regressors | `model/tiny/vmaf_tiny_v*.onnx` | Cheap "what would VMAF be?" estimator (canonical-6 features) |
 | `fr_regressor_v1`, scaffold for `_v2` | `model/tiny/fr_regressor_v1.onnx` (+ ADR-0235) | Codec-aware FR proxy — drives the fast path |
@@ -381,7 +380,7 @@ Methodology: scored each bucket on a 1–4 impact axis
 "shipping the underlying primitive is already in flight".
 
 | Rank | Bucket | Impact | Effort | Score | Reasoning |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 1 | **#5** Quality-floor mode | High (3) | S (1) | 3.0 | Already implicit in Phase B; ship the docs + flag, done |
 | 1 | **#4** Bitrate-budget mode | High (3) | S (1) | 3.0 | Symmetric to #5; same orchestration, different predicate |
 | 3 | **#6** Bitrate-ladder (Phase E) | Game-changer (4) | L (3) | 1.33 | The *single* biggest product differentiator; effort dominated by manifest tooling we can stop short of |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0415: CAMBI SYCL port — closes last CUDA-to-SYCL parity gap
 
 - **Status**: Accepted
@@ -60,7 +59,7 @@ The host residual runs the exact CPU code from `cambi_internal.h`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Full GPU CAMBI (histogram on GPU too) | Eliminates DtoH readback per scale; potentially higher throughput | Sliding histogram is hard to parallelise bit-exactly; would break `places=4` contract; deferred even for CUDA in ADR-0360 | Deferred — Strategy II already acceptable |
 | Reuse CUDA .cu kernels via SYCL compatibility layer | Less new code | SYCL compat layer is not in the fork's toolchain; complexity risk with AdaptiveCpp | Not available in this toolchain stack |
 | Vulkan compute shaders for CAMBI stages | Maximum portability | Three new GLSL shaders + specialisation constants; the Vulkan twin (ADR-0210) already provides this path | Vulkan twin already covers Vulkan; SYCL twin covers Intel/AMD/NVIDIA SYCL path |

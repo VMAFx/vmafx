@@ -43,6 +43,8 @@
  * 8/16-bit plane reads, double-precision per-pixel math and frame sum.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
@@ -56,9 +58,9 @@
 #include "opt.h"
 #include "picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -79,7 +81,7 @@
 typedef struct DeltaEItpState {
     VmafPicture ref;
     VmafPicture dist;
-    void (*scale_chroma_planes)(VmafPicture *in, VmafPicture *out);
+    void (*scale_chroma_planes)(const VmafPicture *in, VmafPicture *out);
     char *transfer;
     char *matrix;
     char *range;
@@ -90,7 +92,7 @@ typedef struct DeltaEItpState {
     int full_range;
 } DeltaEItpState;
 
-static void scale_chroma_planes_hbd(VmafPicture *in, VmafPicture *out)
+static void scale_chroma_planes_hbd(const VmafPicture *in, VmafPicture *out)
 {
     const int ss_hor = in->pix_fmt != VMAF_PIX_FMT_YUV444P;
     const int ss_ver = in->pix_fmt == VMAF_PIX_FMT_YUV420P;
@@ -108,7 +110,7 @@ static void scale_chroma_planes_hbd(VmafPicture *in, VmafPicture *out)
     }
 }
 
-static void scale_chroma_planes(VmafPicture *in, VmafPicture *out)
+static void scale_chroma_planes(const VmafPicture *in, VmafPicture *out)
 {
     const int ss_hor = in->pix_fmt != VMAF_PIX_FMT_YUV444P;
     const int ss_ver = in->pix_fmt == VMAF_PIX_FMT_YUV420P;
@@ -211,16 +213,15 @@ static int read_yuv_sample(const VmafPicture *pic, unsigned i, unsigned j, doubl
         return 0;
     case 10:
     case 12:
-    case 16:
-        // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: `stride / 2` is the byte->element
-        // step for the uint16_t plane index, not a value flowing into the double
-        // `yuv[*]` destinations. The index arithmetic itself is exact integer math
-        // (mirrors the ciede.c HBD read pattern).
-        yuv[0] = ((const uint16_t *)pic->data[0])[i * (pic->stride[0] / 2) + j];
-        yuv[1] = ((const uint16_t *)pic->data[1])[i * (pic->stride[1] / 2) + j];
-        yuv[2] = ((const uint16_t *)pic->data[2])[i * (pic->stride[2] / 2) + j];
-        // NOLINTEND(bugprone-integer-division)
+    case 16: {
+        const size_t stride16[3] = {(size_t)pic->stride[0] / sizeof(uint16_t),
+                                    (size_t)pic->stride[1] / sizeof(uint16_t),
+                                    (size_t)pic->stride[2] / sizeof(uint16_t)};
+        yuv[0] = ((const uint16_t *)pic->data[0])[(size_t)i * stride16[0] + j];
+        yuv[1] = ((const uint16_t *)pic->data[1])[(size_t)i * stride16[1] + j];
+        yuv[2] = ((const uint16_t *)pic->data[2])[(size_t)i * stride16[2] + j];
         return 0;
+    }
     default:
         return -EINVAL;
     }
@@ -288,7 +289,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return err;
     }
 
-    s->scale_chroma_planes = NULL;
+    s->scale_chroma_planes = VMAF_NULLPTR;
 
     if (pix_fmt == VMAF_PIX_FMT_YUV444P) {
         return 0;
@@ -336,8 +337,9 @@ static int pixel_to_itp(const DeltaEItpState *s, const VmafPicture *pic, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     assert(fex && fex->priv && ref_pic && dist_pic);
@@ -345,8 +347,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    VmafPicture *ref;
-    VmafPicture *dist;
+    const VmafPicture *ref;
+    const VmafPicture *dist;
 
     if (ref_pic->pix_fmt == VMAF_PIX_FMT_YUV444P) {
         ref = ref_pic;
@@ -354,8 +356,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     } else {
         ref = &s->ref;
         dist = &s->dist;
-        s->scale_chroma_planes(ref_pic, ref);
-        s->scale_chroma_planes(dist_pic, dist);
+        s->scale_chroma_planes(ref_pic, &s->ref);
+        s->scale_chroma_planes(dist_pic, &s->dist);
     }
 
     double de_sum = 0.0;
@@ -384,10 +386,10 @@ static int close(VmafFeatureExtractor *fex)
 {
     assert(fex && fex->priv);
     DeltaEItpState *s = fex->priv;
-    if (s->ref.ref != NULL) {
+    if (s->ref.ref != VMAF_NULLPTR) {
         (void)vmaf_picture_unref(&s->ref);
     }
-    if (s->dist.ref != NULL) {
+    if (s->dist.ref != VMAF_NULLPTR) {
         (void)vmaf_picture_unref(&s->dist);
     }
     return 0;
@@ -425,9 +427,8 @@ static const VmafOption options[] = {
     {0},
 };
 
-static const char *provided_features[] = {"delta_e_itp", NULL};
+static const char *provided_features[] = {"delta_e_itp", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_delta_e_itp` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_delta_e_itp = {
     .name = "delta_e_itp",
     .init = init,
@@ -448,5 +449,3 @@ VmafFeatureExtractor vmaf_fex_delta_e_itp = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

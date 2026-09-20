@@ -156,7 +156,7 @@ def test_konvid_vmaf_pairs_writes_manifest(tmp_path: Path, monkeypatch) -> None:
             {
                 "key": key,
                 "frame_index": 0,
-                **{feature: 1.0 for feature in mod.DEFAULT_FEATURES},
+                **dict.fromkeys(mod.DEFAULT_FEATURES, 1.0),
                 "vmaf": 88.0,
             }
         ]

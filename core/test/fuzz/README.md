@@ -26,7 +26,7 @@ CC=clang CXX=clang++ \
     --buildtype=debug \
     -Db_sanitize=address \
     -Dfuzz=true \
-    -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled
+    -Denable_cuda=false -Denable_sycl=false
 ninja -C build-fuzz libvmaf/test/fuzz/fuzz_y4m_input
 ```
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0275: `vmaf_tiny_v3` and `vmaf_tiny_v4` join dynamic-PTQ family (T5-3d follow-up)
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ budget.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Static PTQ with calibration data | Slightly tighter accuracy; per-channel scales | Requires shipping a calibration `.npz` (~1 MB of canonical-6 vectors); dynamic already inside budget by ~70× | Rejected. ADR-0174 precedent: don't add the calibration-asset cost until a budget violation forces it. |
 | Per-channel dynamic (`--per-channel`) | Marginal accuracy improvement on weight-rich models | Negligible PLCC delta on graphs this small (already at 1e-4 drop); slightly larger int8 file from per-row scale arrays | Rejected. The per-tensor default already lands two orders below budget; per-channel is a follow-up only if a future architecture rung erodes headroom. |
 | Skip v3 entirely (it shrinks only 5 %) | Avoids shipping a barely-smaller sidecar | Breaks "every quantisable rung is registered" CI invariant; runtime redirect would surprise operators who set `quant_mode=dynamic` on v3 | Rejected. The size win is small, but the gate-coverage and registry-completeness wins justify the 4 KB on-disk cost. |

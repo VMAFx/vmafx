@@ -1,7 +1,7 @@
-import os
-import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from vmaf import ExternalProgram, run_process
 from vmaf.config import VmafConfig
@@ -14,17 +14,41 @@ __license__ = "BSD+Patent"
 class RunProcessTest(MyTestCase):
 
     def test_run_process(self):
-        ret = run_process("echo hello", shell=True)
+        ret = run_process([sys.executable, "-c", "print('hello')"])
         self.assertEqual(ret, 0)
 
     def test_run_process_false_cmd(self):
         with self.assertRaises(AssertionError) as e:
-            run_process("echoo hello", shell=True)
-        self.assertTrue("Process returned 127, cmd: echoo hello" in e.exception.args[0])
+            run_process(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('not found', file=sys.stderr); sys.exit(127)",
+                ]
+            )
+        self.assertTrue("Process returned 127" in e.exception.args[0])
         self.assertTrue("not found" in e.exception.args[0])
 
 
 class CommandLineTest(MyTestCase):
+
+    @staticmethod
+    def _python_script(script_name, *args):
+        return [
+            sys.executable,
+            VmafConfig.root_path("python", "vmaf", "script", script_name),
+            *map(str, args),
+        ]
+
+    @staticmethod
+    def _default_yuv_args():
+        return [
+            "yuv420p",
+            "576",
+            "324",
+            VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv"),
+            VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv"),
+        ]
 
     def setUp(self):
         super().setUp()
@@ -35,162 +59,176 @@ class CommandLineTest(MyTestCase):
         self.batch_filename = VmafConfig.workdir_path("test_batch_input")
 
     def tearDown(self):
-        if os.path.exists(self.out_model_filepath):
-            os.remove(self.out_model_filepath)
-        if os.path.exists(self.out_model_filepath + ".model"):
-            os.remove(self.out_model_filepath + ".model")
-        if os.path.exists(self.batch_filename):
-            os.remove(self.batch_filename)
+        for path in (
+            Path(self.out_model_filepath),
+            Path(f"{self.out_model_filepath}.model"),
+            Path(self.batch_filename),
+        ):
+            if path.exists():
+                path.unlink()
         super().tearDown()
 
     def test_run_testing_vmaf(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_testing.py")
-        cmd = "{exe} VMAF {dataset} --parallelize --suppress-plot".format(
-            exe=exe, dataset=self.dataset_filename
+        ret = run_process(
+            self._python_script(
+                "run_testing.py",
+                "VMAF",
+                self.dataset_filename,
+                "--parallelize",
+                "--suppress-plot",
+            )
         )
-        ret = run_process(cmd, shell=True)
         self.assertEqual(ret, 0)
 
     def test_run_testing_vmaf_raw_dataset(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_testing.py")
-        cmd = "{exe} VMAF {dataset} --parallelize --suppress-plot".format(
-            exe=exe, dataset=self.raw_dataset_filename
+        ret = run_process(
+            self._python_script(
+                "run_testing.py",
+                "VMAF",
+                self.raw_dataset_filename,
+                "--parallelize",
+                "--suppress-plot",
+            )
         )
-        ret = run_process(cmd, shell=True)
         self.assertEqual(ret, 0)
 
     def test_run_testing_psnr(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_testing.py")
-        cmd = "{exe} PSNR {dataset} --parallelize --suppress-plot".format(
-            exe=exe, dataset=self.dataset_filename
+        ret = run_process(
+            self._python_script(
+                "run_testing.py",
+                "PSNR",
+                self.dataset_filename,
+                "--parallelize",
+                "--suppress-plot",
+            )
         )
-        ret = run_process(cmd, shell=True)
         self.assertEqual(ret, 0)
 
     def test_run_testing_proccesses0(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_testing.py")
-        cmd = "{exe} PSNR {dataset} --parallelize --suppress-plot --processes 0".format(
-            exe=exe, dataset=self.dataset_filename
-        )
         with self.assertRaises(AssertionError):
-            run_process(cmd, shell=True)
+            run_process(
+                self._python_script(
+                    "run_testing.py",
+                    "PSNR",
+                    self.dataset_filename,
+                    "--parallelize",
+                    "--suppress-plot",
+                    "--processes",
+                    "0",
+                )
+            )
 
     def test_run_testing_proccesses2_without_parallelize(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_testing.py")
-        cmd = "{exe} PSNR {dataset} --suppress-plot --processes 2".format(
-            exe=exe, dataset=self.dataset_filename
-        )
         with self.assertRaises(AssertionError):
-            run_process(cmd, shell=True)
+            run_process(
+                self._python_script(
+                    "run_testing.py",
+                    "PSNR",
+                    self.dataset_filename,
+                    "--suppress-plot",
+                    "--processes",
+                    "2",
+                )
+            )
 
     def test_run_vmaf_training(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf_training.py")
-        cmd = "{exe} {dataset} {param} {param} {output} --parallelize --suppress-plot".format(
-            exe=exe,
-            dataset=self.dataset_filename,
-            param=self.param_filename,
-            output=self.out_model_filepath,
+        ret = run_process(
+            self._python_script(
+                "run_vmaf_training.py",
+                self.dataset_filename,
+                self.param_filename,
+                self.param_filename,
+                self.out_model_filepath,
+                "--parallelize",
+                "--suppress-plot",
+            )
         )
-        ret = run_process(cmd, shell=True)
         self.assertEqual(ret, 0)
 
     def test_run_vmaf_training_processes0(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf_training.py")
-        cmd = "{exe} {dataset} {param} {param} {output} --parallelize --suppress-plot --processes 0".format(
-            exe=exe,
-            dataset=self.dataset_filename,
-            param=self.param_filename,
-            output=self.out_model_filepath,
-        )
         with self.assertRaises(AssertionError):
-            run_process(cmd, shell=True)
+            run_process(
+                self._python_script(
+                    "run_vmaf_training.py",
+                    self.dataset_filename,
+                    self.param_filename,
+                    self.param_filename,
+                    self.out_model_filepath,
+                    "--parallelize",
+                    "--suppress-plot",
+                    "--processes",
+                    "0",
+                )
+            )
 
     def test_run_vmaf_training_processes2_without_parallelize(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf_training.py")
-        cmd = "{exe} {dataset} {param} {param} {output} --suppress-plot --processes 2".format(
-            exe=exe,
-            dataset=self.dataset_filename,
-            param=self.param_filename,
-            output=self.out_model_filepath,
-        )
         with self.assertRaises(AssertionError):
-            run_process(cmd, shell=True)
+            run_process(
+                self._python_script(
+                    "run_vmaf_training.py",
+                    self.dataset_filename,
+                    self.param_filename,
+                    self.param_filename,
+                    self.out_model_filepath,
+                    "--suppress-plot",
+                    "--processes",
+                    "2",
+                )
+            )
 
     def test_run_vmaf_training_raw_dataset(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf_training.py")
-        cmd = "{exe} {dataset} {param} {param} {output} --parallelize --suppress-plot".format(
-            exe=exe,
-            dataset=self.raw_dataset_filename,
-            param=self.param_filename,
-            output=self.out_model_filepath,
+        ret = run_process(
+            self._python_script(
+                "run_vmaf_training.py",
+                self.raw_dataset_filename,
+                self.param_filename,
+                self.param_filename,
+                self.out_model_filepath,
+                "--parallelize",
+                "--suppress-plot",
+            )
         )
-        ret = run_process(cmd, shell=True)
         self.assertEqual(ret, 0)
 
     def test_run_vmaf(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf.py")
-        line = (
-            "yuv420p 576 324 {root}/python/test/resource/yuv/src01_hrc00_576x324.yuv "
-            "{root}/python/test/resource/yuv/src01_hrc01_576x324.yuv".format(
-                root=VmafConfig.root_path()
-            )
-        )
-        cmd = "{exe} {line} >/dev/null 2>&1".format(line=line, exe=exe)
-        ret = run_process(cmd, shell=True)
+        ret = run_process(self._python_script("run_vmaf.py", *self._default_yuv_args()))
         self.assertEqual(ret, 0)
 
     def test_run_vmaf_ci(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf.py")
-        line = (
-            "yuv420p 576 324 {root}/python/test/resource/yuv/src01_hrc00_576x324.yuv "
-            "{root}/python/test/resource/yuv/src01_hrc01_576x324.yuv".format(
-                root=VmafConfig.root_path()
-            )
-        )
-        cmd = "{exe} {line} --ci >/dev/null 2>&1".format(line=line, exe=exe)
-        ret = run_process(cmd, shell=True)
+        ret = run_process(self._python_script("run_vmaf.py", *self._default_yuv_args(), "--ci"))
         self.assertEqual(ret, 0)
 
     def test_run_vmaf_both_local_explain_and_ci(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf.py")
-        line = (
-            "yuv420p 576 324 {root}/python/test/resource/yuv/src01_hrc00_576x324.yuv "
-            "{root}/python/test/resource/yuv/src01_hrc01_576x324.yuv".format(
-                root=VmafConfig.root_path()
+        with self.assertRaisesRegex(AssertionError, r"Process returned 2"):
+            run_process(
+                self._python_script(
+                    "run_vmaf.py",
+                    *self._default_yuv_args(),
+                    "--local-explain",
+                    "--ci",
+                )
             )
-        )
-        cmd = "{exe} {line} --local-explain --ci >/dev/null 2>&1".format(line=line, exe=exe)
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
-        self.assertEqual(ret, 2)
 
     def test_run_psnr(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_psnr.py")
-        line = (
-            "yuv420p 576 324 {root}/python/test/resource/yuv/src01_hrc00_576x324.yuv "
-            "{root}/python/test/resource/yuv/src01_hrc01_576x324.yuv".format(
-                root=VmafConfig.root_path()
-            )
-        )
-        cmd = "{exe} {line} >/dev/null 2>&1".format(line=line, exe=exe)
-        ret = run_process(cmd, shell=True)
+        ret = run_process(self._python_script("run_psnr.py", *self._default_yuv_args()))
         self.assertEqual(ret, 0)
 
     def test_run_cleaning_cache_psnr(self):
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_testing.py")
-        cmd = "{exe} PSNR {dataset} --parallelize --cache-result --suppress-plot".format(
-            exe=exe, dataset=self.dataset_filename
+        ret = run_process(
+            self._python_script(
+                "run_testing.py",
+                "PSNR",
+                self.dataset_filename,
+                "--parallelize",
+                "--cache-result",
+                "--suppress-plot",
+            )
         )
-        ret = run_process(cmd, shell=True)
         self.assertEqual(ret, 0)
 
-        exe = VmafConfig.root_path("python", "vmaf", "script", "run_cleaning_cache.py")
-        cmd = "{exe} PSNR {dataset}".format(exe=exe, dataset=self.dataset_filename)
-        ret = run_process(cmd, shell=True)
+        ret = run_process(
+            self._python_script("run_cleaning_cache.py", "PSNR", self.dataset_filename)
+        )
         self.assertEqual(ret, 0)
 
 
@@ -200,33 +238,43 @@ class VmafexecCommandLineTest(MyTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.output_file_path = tempfile.NamedTemporaryFile().name
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.output_file_path = Path(self.temp_dir.name) / "vmaf.xml"
 
     def tearDown(self) -> None:
-        if os.path.exists(self.output_file_path):
-            os.remove(self.output_file_path)
+        self.temp_dir.cleanup()
         super().tearDown()
 
+    def _command(self, *extra_args):
+        return [
+            ExternalProgram.vmafexec,
+            "--reference",
+            VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv"),
+            "--distorted",
+            VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv"),
+            "--width",
+            "576",
+            "--height",
+            "324",
+            "--pixel_format",
+            "420",
+            "--bitdepth",
+            "8",
+            "--xml",
+            "--feature",
+            "psnr",
+            "--model",
+            f"path={VmafConfig.model_path('other_models', 'vmaf_v0.6.0.json')}",
+            "--quiet",
+            "--output",
+            self.output_file_path,
+            *extra_args,
+        ]
+
     def test_run_vmafexec(self):
-        exe = ExternalProgram.vmafexec
-        cmd = (
-            "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
-            "--model path={model} --quiet --output {output}".format(
-                exe=exe,
-                ref=VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv"),
-                dis=VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv"),
-                model=VmafConfig.model_path("other_models", "vmaf_v0.6.0.json"),
-                output=self.output_file_path,
-            )
-        )
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = run_process(self._command())
         self.assertEqual(ret, self.RC_SUCCESS)
-        with open(self.output_file_path, "rt") as fo:
+        with self.output_file_path.open(encoding="utf-8") as fo:
             fc = fo.read()
             self.assertTrue(
                 '<metric name="psnr_y" min="29.640688" max="34.760779" mean="30.755064" harmonic_mean="30.727905" />'
@@ -234,25 +282,9 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
     def test_run_vmafexec_with_frame_skipping(self):
-        exe = ExternalProgram.vmafexec
-        cmd = (
-            "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
-            "--model path={model} --quiet --output {output} --frame_skip_ref 2 --frame_skip_dist 2".format(
-                exe=exe,
-                ref=VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv"),
-                dis=VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv"),
-                model=VmafConfig.model_path("other_models", "vmaf_v0.6.0.json"),
-                output=self.output_file_path,
-            )
-        )
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = run_process(self._command("--frame_skip_ref", "2", "--frame_skip_dist", "2"))
         self.assertEqual(ret, self.RC_SUCCESS)
-        with open(self.output_file_path, "rt") as fo:
+        with self.output_file_path.open(encoding="utf-8") as fo:
             fc = fo.read()
             self.assertTrue(
                 '<metric name="psnr_y" min="29.640688" max="33.788213" mean="30.643458" harmonic_mean="30.626214" />'
@@ -260,25 +292,9 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
     def test_run_vmafexec_with_frame_skipping_unequal(self):
-        exe = ExternalProgram.vmafexec
-        cmd = (
-            "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
-            "--model path={model} --quiet --output {output} --frame_skip_ref 2 --frame_skip_dist 5".format(
-                exe=exe,
-                ref=VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv"),
-                dis=VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv"),
-                model=VmafConfig.model_path("other_models", "vmaf_v0.6.0.json"),
-                output=self.output_file_path,
-            )
-        )
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = run_process(self._command("--frame_skip_ref", "2", "--frame_skip_dist", "5"))
         self.assertEqual(ret, self.RC_SUCCESS)
-        with open(self.output_file_path, "rt") as fo:
+        with self.output_file_path.open(encoding="utf-8") as fo:
             fc = fo.read()
             self.assertTrue(
                 '<metric name="psnr_y" min="19.019327" max="21.084954" mean="20.269606" harmonic_mean="20.258113" />'

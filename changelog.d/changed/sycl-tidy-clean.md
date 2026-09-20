@@ -1,3 +1,4 @@
+# Changelog fragment
 
 - **The 24 SYCL sources and parity tests the train touches are clang-tidy
   clean.** ADR-0141's touched-file rule applies to them, and the advisory
@@ -8,10 +9,10 @@
   now compute in `size_t`, 11 multi-declarations are one per line, and the
   `VmafOption` terminators use designated initialisers. The 390
   `modernize-use-nullptr` findings in the C parity tests take the cited
-  `NOLINTBEGIN` band that `core/test/test_picture.c` established, because
-  MSVC's `/std:clatest` has no C23 `nullptr` and those TUs build on the Windows
-  lanes (ADR-1138). The `misc-use-anonymous-namespace` findings take the band
-  `integer_motion_sycl.cpp` and `integer_adm_sycl.cpp` already carry: the
-  entry points live inside `extern "C"` because their addresses populate a
-  C-ABI dispatch struct, and a namespace cannot appear in a linkage
-  specification at all.
+  `NOLINTBEGIN` band that `core/test/test_picture.c` established, because MSVC's
+  `/std:clatest` has no C23 `nullptr` and those TUs build on the Windows lanes
+  (ADR-1138). The `misc-use-anonymous-namespace` findings take the band
+  `integer_motion_sycl.cpp` and `integer_adm_sycl.cpp` already carry: the entry
+  points live inside `extern "C"` because their addresses populate a C-ABI
+  dispatch struct, and a namespace cannot appear in a linkage specification at
+  all.

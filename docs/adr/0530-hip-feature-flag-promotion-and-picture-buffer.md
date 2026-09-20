@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0530: HIP feature-extractor flag promotion and HIP_DEVICE picture-buffer type
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ it requires its own kernel-level fix and its own ADR.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Promote ALL HIP-flagged extractors at once | One PR closes the whole gap | `integer_vif_hip` crashes on first frame; would regress every `--backend hip` user | Recommended: gate per-extractor on a verified end-to-end run |
 | Add a per-feature `requires_hip_state` gate instead of the flag bit | No global behavioural change | Duplicates the per-feature flag-bit pattern that CUDA / SYCL / Vulkan / Metal already use | Pattern symmetry beats the marginal isolation win |
 | Skip the buffer-type plumbing until the HIP picture pool lands | Smaller diff | Future HIP-pool work then has to revisit the dispatch site twice; cross-GPU mismatch checks stay one-sided | Reserving the tag now costs one enum entry and lets the dispatch reject mixed backings in one place |

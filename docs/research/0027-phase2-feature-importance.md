@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 -->
 # Research-0027 — Phase-2 feature correlation, MI, and importance results
 
 _Updated: 2026-04-29._
@@ -278,7 +277,7 @@ when comparing refreshed feature-correlation runs across corpora.
 
 ## References
 
-- **`req`** (user, 2026-04-29): *"and rebase #185"* + *"yeah write up"*
+- **`req`** (user, 2026-04-29): _"and rebase #185"_ + _"yeah write up"_
   in response to Phase-2 result summary.
 - [Research-0026](0026-cross-metric-feature-fusion.md) — the
   4-phase plan this digest closes Phase 2 of.

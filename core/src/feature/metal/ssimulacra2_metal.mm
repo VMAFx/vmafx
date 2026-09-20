@@ -275,7 +275,7 @@ static const VmafOption options[] = {
 /* Recursive Gaussian coefficient setup — bit-identical port of
  * ssimulacra2.c::create_recursive_gaussian. Splitting the linear-system
  * solve would obscure the scalar-diff audit trail (ADR-0141).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * lint rationale */
 static void ss2m_setup_gaussian(Ssimu2StateMetal *s, double sigma)
 {
     const double radius = round(3.2795 * sigma + 0.2546);
@@ -376,7 +376,7 @@ static inline float ss2m_read_plane(const VmafPicture *pic, int plane, int x, in
 
 /* Verbatim port of ssimulacra2.c::picture_to_linear_rgb (ADR-0141
  * carve-out: line-for-line scalar-diff parity).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * lint rationale */
 static void ss2m_picture_to_linear_rgb(const Ssimu2StateMetal *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->width;
@@ -540,7 +540,7 @@ static inline double ss2m_quartic(double x)
  * ssimulacra2.c::ssim_map + ::edge_diff_map (and ssimulacra2_cuda.c::
  * ss2c_host_combine). Splitting would obscure the scalar-diff audit
  * trail (ADR-0141).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * lint rationale */
 static void ss2m_host_combine(const Ssimu2StateMetal *s, unsigned cw, unsigned ch,
                               const float *h_mu1, const float *h_mu2, const float *h_s11,
                               const float *h_s22, const float *h_s12, const float *h_ref_xyb,
@@ -637,7 +637,7 @@ static int build_pipelines(Ssimu2StateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -687,7 +687,7 @@ static void ss2m_release_device_buffers(Ssimu2StateMetal *s)
     for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
         if (*slots[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)(*slots[i]);
-            *slots[i] = NULL;
+            *slots[i] = nullptr;
         }
     }
 }
@@ -723,13 +723,13 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->h_dis_lin    = (float *)malloc(s->three_plane_bytes);
     s->h_ref_lin_ds = (float *)malloc(s->three_plane_bytes);
     s->h_dis_lin_ds = (float *)malloc(s->three_plane_bytes);
-    if (s->h_ref_lin == NULL || s->h_dis_lin == NULL || s->h_ref_lin_ds == NULL ||
-        s->h_dis_lin_ds == NULL) {
+    if (s->h_ref_lin == nullptr || s->h_dis_lin == nullptr || s->h_ref_lin_ds == nullptr ||
+        s->h_dis_lin_ds == nullptr) {
         free(s->h_ref_lin);
         free(s->h_dis_lin);
         free(s->h_ref_lin_ds);
         free(s->h_dis_lin_ds);
-        s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = NULL;
+        s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = nullptr;
         return -ENOMEM;
     }
 
@@ -741,7 +741,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_lc; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         err = ss2m_alloc_device_buffers(s, device);
@@ -753,26 +753,26 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = NULL; }
-    if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = NULL; }
-    if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = NULL; }
+    if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = nullptr; }
+    if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = nullptr; }
+    if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = nullptr; }
 fail_bufs:
     ss2m_release_device_buffers(s);
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
 fail_host:
     free(s->h_ref_lin);
     free(s->h_dis_lin);
     free(s->h_ref_lin_ds);
     free(s->h_dis_lin_ds);
-    s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = NULL;
+    s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = nullptr;
     return err;
 }
 
@@ -845,7 +845,7 @@ static void ss2m_encode_blur3(Ssimu2StateMetal *s, id<MTLCommandBuffer> cmd, id<
  * buffer. Mirrors ssimulacra2_cuda.c::ss2c_run_scale_gpu step-by-step;
  * splitting would obscure the dispatch ordering required for parity
  * audit (ADR-0141).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * lint rationale */
 static int ss2m_run_scale_gpu(Ssimu2StateMetal *s, id<MTLCommandQueue> queue, unsigned cw,
                               unsigned ch)
 {
@@ -883,10 +883,10 @@ static int ss2m_run_scale_gpu(Ssimu2StateMetal *s, id<MTLCommandQueue> queue, un
 
 /* submit: orchestrate the per-scale pyramid. Mirrors the CPU/CUDA
  * extract loop step-by-step (ADR-0141).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+ * lint rationale */
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -895,7 +895,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
     /* Stage 1: host YUV -> linear RGB on the full-res frame. */
@@ -970,9 +970,9 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     Ssimu2StateMetal *s = (Ssimu2StateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = NULL; }
-    if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = NULL; }
-    if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = NULL; }
+    if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = nullptr; }
+    if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = nullptr; }
+    if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = nullptr; }
 
     ss2m_release_device_buffers(s);
 
@@ -980,7 +980,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     free(s->h_dis_lin);
     free(s->h_ref_lin_ds);
     free(s->h_dis_lin_ds);
-    s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = NULL;
+    s->h_ref_lin = s->h_dis_lin = s->h_ref_lin_ds = s->h_dis_lin_ds = nullptr;
 
     if (s->feature_name_dict) {
         int err = vmaf_dictionary_free(&s->feature_name_dict);
@@ -988,25 +988,24 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
 
-static const char *provided_features[] = {"ssimulacra2", NULL};
+static const char *provided_features[] = {"ssimulacra2", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_ssimulacra2_metal = {
     .name              = "ssimulacra2_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(Ssimu2StateMetal),

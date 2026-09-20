@@ -34,36 +34,12 @@
  *  Host-only: no GPU, no device runtime.
  */
 
-/* Define _USE_MATH_DEFINES before <math.h> so MSVC exposes `M_PI`. POSIX
- * libcs export it unconditionally; MSVC gates it on this macro, and MinGW64
- * hides it whenever `__STRICT_ANSI__` is on -- which `-std=c23` sets, so the
- * `Windows MinGW64` lane sees no `M_PI` at all without the fallback below.
- * Same two-step as core/src/feature/adm_csf_tools.h and adm_tools.h; the
- * literal matches adm_tools.h so this test computes cos(1deg) from exactly
- * the constant integer_adm.c uses. */
-#ifndef _USE_MATH_DEFINES
-/* The leading underscore is not ours to choose: `_USE_MATH_DEFINES` is the name
- * MSVC's and MinGW's <math.h> look for, so renaming it defeats the whole point
- * of defining it. Same posture as the feature-test macro in
- * core/src/libvmaf.c. ADR-1142 rule 12: a NOLINT cites what forces it. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
-#define _USE_MATH_DEFINES
-#endif
 #include <math.h>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846264338327
-#endif
 #include <stdint.h>
 #include <stdio.h>
 
 #include "adm_angle_flag.h"
 #include "test.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/test/test_compat_clz.c. ADR-1138. */
 
 /* ------------------------------------------------------------------ */
 /*  The three legacy GPU spellings, kept verbatim as the anti-oracle.  */
@@ -123,7 +99,8 @@ static void quad_operands(const struct band_quad *q, int64_t *ot, int64_t *om, i
 /* cos(1deg)^2 exactly as integer_adm.c computes it at run time. */
 static float golden_cos_1deg_sq(void)
 {
-    return (float)(cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0));
+    static const double pi = 3.14159265358979323846264338327;
+    return (float)(cos(pi / 180.0) * cos(pi / 180.0));
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,7 +117,7 @@ static char *test_cos_constant_is_one_float_everywhere(void)
               (double)ADM_ANGLE_FLAG_COS_1DEG_SQ * 16777216.0 == (double)ADM_ANGLE_FLAG_MC);
     mu_assert("ADM_ANGLE_FLAG_D must be 2^24 - MC",
               ADM_ANGLE_FLAG_D == UINT64_C(16777216) - ADM_ANGLE_FLAG_MC);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_golden_expression_on_divergent_quads(void)
@@ -155,7 +132,7 @@ static char *test_golden_expression_on_divergent_quads(void)
         mu_assert("adm_angle_flag_fp64 must reproduce the golden angle_flag",
                   adm_angle_flag_fp64(ot, om, tm, c) == divergent_quads[i].expect);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The corpus is only a regression corpus if the legacy forms fail on it. */
@@ -182,7 +159,7 @@ static char *test_legacy_gpu_forms_are_the_divergent_ones(void)
     mu_assert("legacy SYCL all-float form must disagree with the golden one here",
               all_f32_diffs > 0);
     mu_assert("legacy Metal exact-product-to-float form must disagree here", exact_f32_diffs > 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* This is the assertion that goes red if the shipped SYCL / Metal predicate
@@ -201,7 +178,7 @@ static char *test_i64_helper_matches_golden_on_divergent_quads(void)
         mu_assert("adm_angle_flag_i64 must match adm_angle_flag_fp64",
                   adm_angle_flag_i64(ot, om, tm) == adm_angle_flag_fp64(ot, om, tm, c));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Operands that sit on a rounding boundary of the int64 -> float narrowing, on
@@ -244,7 +221,7 @@ static char *test_i64_helper_handles_degenerate_operands(void)
         mu_assert("adm_angle_flag_i64 must match adm_angle_flag_fp64 on edge operands",
                   adm_angle_flag_i64(ot, om, tm) == adm_angle_flag_fp64(ot, om, tm, c));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* xoroshiro128+ — deterministic, no libc rand() (banned, principles.md
@@ -285,7 +262,7 @@ static char *test_i64_helper_matches_golden_on_scale0_sweep(void)
         mu_assert("adm_angle_flag_i64 must match adm_angle_flag_fp64 on scale-0 bands",
                   adm_angle_flag_i64(ot, om, tm) == adm_angle_flag_fp64(ot, om, tm, c));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Boundary walk: pick magnitudes across the whole int64 range (scales 1-3 use
@@ -324,7 +301,7 @@ static char *test_i64_helper_matches_golden_on_boundary_walk(void)
                       adm_angle_flag_i64(ot, om, tm) == adm_angle_flag_fp64(ot, om, tm, c));
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -336,7 +313,5 @@ char *run_tests(void)
     mu_run_test(test_i64_helper_handles_degenerate_operands);
     mu_run_test(test_i64_helper_matches_golden_on_scale0_sweep);
     mu_run_test(test_i64_helper_matches_golden_on_boundary_walk);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Every allocation in the bundled libsvm predictor is checked, and the whole
   file now meets the project's size limit.** A newer cppcheck, which arrived
   with the newer CI runner image, found 88 places where a `malloc` result was

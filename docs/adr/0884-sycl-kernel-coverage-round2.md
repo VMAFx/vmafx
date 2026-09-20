@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0884: SYCL kernel coverage round 2 — five additional CPU-vs-SYCL parity gates
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ run in the pre-push gate when a SYCL toolchain is present.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Five per-kernel parity tests (chosen)** | Each test owns a single feature, clear blame on failure; mirrors round 1 / ADR-0868 exactly. | Five new files; some duplication of the fill_pic + feed_frame harness. | Selected — the round 1 pattern is established and reviewers know how to read it. |
 | One combined `test_sycl_kernel_parity.c` | Less duplication; one binary to build. | Single failing assertion would obscure which kernel regressed; one-failure-stops-the-run hides cascading issues. | Per-kernel blame is worth the small per-file scaffold cost. |
 | Wire kernels into `/cross-backend-diff` only | No new test files; relies on the existing skill. | The skill is an interactive dev-time tool; it doesn't run in CI on every PR. Regressions can land for weeks before the next manual run. | Defeats the purpose of an automated gate. |

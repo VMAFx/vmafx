@@ -14,17 +14,12 @@
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "mu_table.h"
 #include "test.h"
 
 #include "opt.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 
 struct cfg {
     bool b;
@@ -32,6 +27,15 @@ struct cfg {
     double d;
     char *s;
 };
+
+static enum VmafOptionType invalid_option_type(void)
+{
+    _Static_assert(sizeof(enum VmafOptionType) == sizeof(int), "enum ABI must match int");
+    const int raw = 9999;
+    enum VmafOptionType value;
+    (void)memcpy(&value, &raw, sizeof(value));
+    return value;
+}
 
 static char *test_dispatch_null_obj(void)
 {
@@ -41,15 +45,16 @@ static char *test_dispatch_null_obj(void)
         .offset = offsetof(struct cfg, b),
         .default_val.b = false,
     };
-    mu_assert("NULL obj must return -EINVAL", vmaf_option_set(&opt, NULL, "true") == -EINVAL);
-    return NULL;
+    mu_assert("NULL obj must return -EINVAL",
+              vmaf_option_set(&opt, VMAF_NULLPTR, "true") == -EINVAL);
+    return VMAF_NULLPTR;
 }
 
 static char *test_dispatch_null_opt(void)
 {
     struct cfg c = {0};
-    mu_assert("NULL opt must return -EINVAL", vmaf_option_set(NULL, &c, "true") == -EINVAL);
-    return NULL;
+    mu_assert("NULL opt must return -EINVAL", vmaf_option_set(VMAF_NULLPTR, &c, "true") == -EINVAL);
+    return VMAF_NULLPTR;
 }
 
 static char *test_dispatch_unknown_type(void)
@@ -57,13 +62,13 @@ static char *test_dispatch_unknown_type(void)
     struct cfg c = {0};
     const VmafOption opt = {
         .name = "x",
-        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range option type (ADR-0141) */
-        .type = (enum VmafOptionType)9999,
+
+        .type = invalid_option_type(),
         .offset = offsetof(struct cfg, i),
         .default_val.i = 0,
     };
     mu_assert("unknown type must return -EINVAL", vmaf_option_set(&opt, &c, "1") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_bool_default_when_null_val(void)
@@ -75,9 +80,9 @@ static char *test_bool_default_when_null_val(void)
         .offset = offsetof(struct cfg, b),
         .default_val.b = true,
     };
-    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, NULL) == 0);
+    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, VMAF_NULLPTR) == 0);
     mu_assert("default applied when val NULL", c.b == true);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_bool_true_string(void)
@@ -91,7 +96,7 @@ static char *test_bool_true_string(void)
     };
     mu_assert("rc=0 for 'true'", vmaf_option_set(&opt, &c, "true") == 0);
     mu_assert("value=true", c.b == true);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_bool_false_string(void)
@@ -105,7 +110,7 @@ static char *test_bool_false_string(void)
     };
     mu_assert("rc=0 for 'false'", vmaf_option_set(&opt, &c, "false") == 0);
     mu_assert("value=false", c.b == false);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_bool_invalid_string(void)
@@ -118,7 +123,7 @@ static char *test_bool_invalid_string(void)
         .default_val.b = false,
     };
     mu_assert("invalid bool returns -EINVAL", vmaf_option_set(&opt, &c, "yes") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_default_when_null_val(void)
@@ -132,9 +137,9 @@ static char *test_int_default_when_null_val(void)
         .min = -100,
         .max = 100,
     };
-    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, NULL) == 0);
+    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, VMAF_NULLPTR) == 0);
     mu_assert("int default applied", c.i == 42);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_valid_in_range(void)
@@ -150,7 +155,7 @@ static char *test_int_valid_in_range(void)
     };
     mu_assert("rc=0 for '50'", vmaf_option_set(&opt, &c, "50") == 0);
     mu_assert("parsed value", c.i == 50);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_below_min(void)
@@ -165,7 +170,7 @@ static char *test_int_below_min(void)
         .max = 100,
     };
     mu_assert("below min returns -EINVAL", vmaf_option_set(&opt, &c, "5") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_above_max(void)
@@ -180,7 +185,7 @@ static char *test_int_above_max(void)
         .max = 10,
     };
     mu_assert("above max returns -EINVAL", vmaf_option_set(&opt, &c, "11") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_unparseable(void)
@@ -195,7 +200,7 @@ static char *test_int_unparseable(void)
         .max = 100,
     };
     mu_assert("non-numeric returns -EINVAL", vmaf_option_set(&opt, &c, "abc") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_trailing_garbage(void)
@@ -210,7 +215,7 @@ static char *test_int_trailing_garbage(void)
         .max = 100,
     };
     mu_assert("trailing garbage returns -EINVAL", vmaf_option_set(&opt, &c, "12abc") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_int_overflow(void)
@@ -227,7 +232,7 @@ static char *test_int_overflow(void)
     /* strtol on "999999999999999999999" sets errno=ERANGE. */
     mu_assert("ERANGE returns -EINVAL",
               vmaf_option_set(&opt, &c, "999999999999999999999") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_default_when_null_val(void)
@@ -241,9 +246,9 @@ static char *test_double_default_when_null_val(void)
         .min = 0.0,
         .max = 10.0,
     };
-    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, NULL) == 0);
+    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, VMAF_NULLPTR) == 0);
     mu_assert("double default applied", c.d == 1.5);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_valid_in_range(void)
@@ -259,7 +264,7 @@ static char *test_double_valid_in_range(void)
     };
     mu_assert("rc=0 for '3.14'", vmaf_option_set(&opt, &c, "3.14") == 0);
     mu_assert("parsed value approx 3.14", fabs(c.d - 3.14) < 1e-9);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_below_min(void)
@@ -274,7 +279,7 @@ static char *test_double_below_min(void)
         .max = 10.0,
     };
     mu_assert("below min returns -EINVAL", vmaf_option_set(&opt, &c, "0.5") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_above_max(void)
@@ -289,7 +294,7 @@ static char *test_double_above_max(void)
         .max = 1.0,
     };
     mu_assert("above max returns -EINVAL", vmaf_option_set(&opt, &c, "1.5") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_unparseable(void)
@@ -304,7 +309,7 @@ static char *test_double_unparseable(void)
         .max = 1e9,
     };
     mu_assert("non-numeric returns -EINVAL", vmaf_option_set(&opt, &c, "xyz") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_trailing_garbage(void)
@@ -319,7 +324,7 @@ static char *test_double_trailing_garbage(void)
         .max = 1e9,
     };
     mu_assert("trailing garbage returns -EINVAL", vmaf_option_set(&opt, &c, "1.5x") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_double_overflow(void)
@@ -335,7 +340,7 @@ static char *test_double_overflow(void)
     };
     /* strtod on "1e500" sets errno=ERANGE. */
     mu_assert("ERANGE returns -EINVAL", vmaf_option_set(&opt, &c, "1e500") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T-ROUND8-OPT-NAN-BYPASS: strtod("nan") returns NaN whose ordered
@@ -359,7 +364,7 @@ static char *test_double_nan_is_rejected(void)
     mu_assert("dst must remain at default after NaN rejection", c.d == 42.0);
     mu_assert("NaN uppercase must return -EINVAL", vmaf_option_set(&opt, &c, "NaN") == -EINVAL);
     mu_assert("NAN uppercase must return -EINVAL", vmaf_option_set(&opt, &c, "NAN") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Inf with a finite upper bound is already rejected by the `n > max` check
@@ -378,12 +383,12 @@ static char *test_double_inf_rejected_when_max_finite(void)
     };
     mu_assert("inf rejected when max is finite", vmaf_option_set(&opt, &c, "inf") == -EINVAL);
     mu_assert("-inf rejected when min is finite", vmaf_option_set(&opt, &c, "-inf") == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_string_default_when_null_val(void)
 {
-    struct cfg c = {.s = NULL};
+    struct cfg c = {.s = VMAF_NULLPTR};
     char *deflt = (char *)"hello";
     const VmafOption opt = {
         .name = "x",
@@ -391,9 +396,9 @@ static char *test_string_default_when_null_val(void)
         .offset = offsetof(struct cfg, s),
         .default_val.s = deflt,
     };
-    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, NULL) == 0);
+    mu_assert("rc=0 when val NULL", vmaf_option_set(&opt, &c, VMAF_NULLPTR) == 0);
     mu_assert("string default applied", c.s == deflt);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_string_assign(void)
@@ -403,12 +408,12 @@ static char *test_string_assign(void)
         .name = "x",
         .type = VMAF_OPT_TYPE_STRING,
         .offset = offsetof(struct cfg, s),
-        .default_val.s = NULL,
+        .default_val.s = VMAF_NULLPTR,
     };
     const char *val = "abc";
     mu_assert("rc=0 for non-NULL val", vmaf_option_set(&opt, &c, val) == 0);
     mu_assert("pointer captured", c.s == val);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -442,5 +447,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

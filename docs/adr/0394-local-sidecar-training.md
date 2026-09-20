@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0394: Local sidecar training — on-host bias-correction model
 
 - **Status**: Accepted
@@ -66,7 +65,7 @@ degenerates exactly to the shipped predictor.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Sidecar bias-correction on top of read-only predictor (chosen) | Predictor stays deterministic and shippable. Sidecar is local-only by default — no privacy surface to defend in this PR. Online ridge fits in <100 LOC, no new ML dep. Cold-start is trivially safe (zero correction → pass-through). Sidecar invalidates cleanly on predictor version bump. | Linear correction can't model curvature the shipped MLP missed. Fixed-dim feature vector means changing the predictor's inputs requires also bumping `SIDECAR_SCHEMA_VERSION`. | — |
 | Replace shipped predictor entirely with online-trained model | Maximises personalisation; one model, not two. | Predictor scores become non-reproducible across hosts — every CI run, every collaborator, every fresh install diverges. Loses the offline-training corpus's coverage of codecs the operator has never run. The whole `vmaf-tune` cache layer assumes deterministic predictions. | Reproducibility is a load-bearing project invariant (Netflix-golden-style determinism on the predictor surface). Disqualifies the option. |
 | Server-side training of personalised models | Heaviest per-feature lift; centralises drift detection. | Requires a server; conflicts with the fork's local-only data posture (`docs/ai/training-data.md`); adds operational cost the project doesn't carry. The user explicitly asked for an *on-host* loop in the ChatGPT-vision text. | Out of scope for an open-source fork. |

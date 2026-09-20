@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD029 MD049 MD060 -->
 # Research-0026 — Cross-metric feature fusion for tiny-AI
 
 _Updated: 2026-04-28._
@@ -10,7 +9,7 @@ combined trainer) currently uses **only the 6 features** from the
 canonical `vmaf_v0.6.1` model:
 
 | Feature | Source | Type |
-|---|---|---|
+| --- | --- | --- |
 | `adm2` | float_adm | Detail-loss aggregate |
 | `vif_scale0` | float_vif | Visual-info fidelity scale 0 |
 | `vif_scale1` | float_vif | Visual-info fidelity scale 1 |
@@ -22,7 +21,7 @@ The fork **registers 19 extractors** that produce a much wider feature
 set:
 
 | Extractor | Features produced |
-|---|---|
+| --- | --- |
 | float_adm / integer_adm | `adm`, `adm2`, `adm_scale0..3` |
 | float_vif / integer_vif | `vif`, `vif_scale0..3` |
 | float_motion | `motion`, `motion2` |
@@ -97,17 +96,17 @@ Documented in `docs/ai/training-data.md`. No model change yet.
 
 ### Phase 2 — Correlation + mutual-information analysis
 
-4. Pairwise Pearson correlation matrix over the 27 features on the
+1. Pairwise Pearson correlation matrix over the 27 features on the
    combined corpus (~280 K frames). Heatmap in
    `docs/research/0026-feature-correlation-heatmap.png`.
    Hypothesis: VIF scales 0-3 are highly intra-correlated; PSNR-Y
    and SSIM correlate strongly; `motion2` and `motion` are nearly
    redundant; `adm` and `adm2` track within ~0.95.
-5. Pairwise mutual-information matrix (handles non-linear
+2. Pairwise mutual-information matrix (handles non-linear
    relations Pearson misses). Hypothesis: `cambi` and `ssimulacra2`
    carry information orthogonal to the canonical 6 (banding +
    perceptual color, neither captured by VIF/ADM/motion).
-6. **Feature-importance ranking** via three independent methods,
+3. **Feature-importance ranking** via three independent methods,
    targets = `vmaf_v0.6.1` per-frame teacher score:
    - LASSO regression on standardized features (sparsity-inducing).
    - Random-forest feature importance (model-free non-linear).
@@ -120,17 +119,17 @@ or `.py` (whichever ships); aggregated tables in this digest.
 
 ### Phase 3 — Tiny-AI v2 architecture sweep
 
-7. Train `mlp_small` / `mlp_medium` on three feature subsets:
+1. Train `mlp_small` / `mlp_medium` on three feature subsets:
    - **Canonical-6** (baseline; what we have today).
    - **Top-K** = canonical-6 ∪ top-K-additional from Phase 2's
      consensus ranking, K ∈ {2, 4, 6, 12}.
    - **Full-27** (sanity ceiling).
    30 epochs each, `--val-mode netflix-source-and-konvid-holdout`,
    same seed.
-8. **LOSO sweep on the winning subset** — 9-fold per-source held
+2. **LOSO sweep on the winning subset** — 9-fold per-source held
    out (matches Research-0025 §"LOSO sweep" methodology). Mean ±
    std PLCC / SROCC / RMSE.
-9. **Per-failure-mode evaluation:**
+3. **Per-failure-mode evaluation:**
    - Banding-heavy clips (need separate CAMBI fixture set).
    - Chroma-artifact clips (need 4:4:4 distorted pairs).
    - High-motion + low-light (FoxBird-class — already covered).
@@ -141,12 +140,12 @@ recommended `vmaf_tiny_v2.onnx` registration if outcome (1) or
 
 ### Phase 4 — Latency + size tradeoff
 
-10. Measure `vmaf` CLI extraction time per (ref, dis) pair on each
+ 1. Measure `vmaf` CLI extraction time per (ref, dis) pair on each
     feature set. Tradeoff: full-27 extraction is bounded by the
     slowest extractor (CAMBI on 4K, ~30 % of frame time).
-11. ONNX file-size comparison: `vmaf_tiny_v1.onnx` (1.3 KB) vs
+ 2. ONNX file-size comparison: `vmaf_tiny_v1.onnx` (1.3 KB) vs
     Full-27 mlp_small (~5 KB) — both still tiny.
-12. Decide: which subset becomes default for `vmaf-tiny`? Per
+ 3. Decide: which subset becomes default for `vmaf-tiny`? Per
     ADR-0042 / ADR-0049 doc-substance + sidecar policy, ship as
     `vmaf_tiny_v2.onnx` with explicit `feature_set` field in the
     sidecar JSON so downstream tooling knows.
@@ -171,7 +170,7 @@ recommended `vmaf_tiny_v2.onnx` registration if outcome (1) or
 ## Cost estimate
 
 | Phase | Wall time | New artefacts |
-|---|---|---|
+| --- | --- | --- |
 | 1 — full-feature parquet | 2-3 h re-extraction | 2 parquets, gitignored |
 | 2 — correlation/MI/importance | 30 min compute | 1 notebook, 3 plots, in-digest tables |
 | 3 — arch sweep | 1-2 h training | ~12 ONNXes per arch, in `runs/` (gitignored) |
@@ -196,9 +195,9 @@ expected upside.
 
 ## References
 
-- **`req`** (user, 2026-04-28): *"are we actually training the
+- **`req`** (user, 2026-04-28): _"are we actually training the
   ai models on all metrics combined? and try to find more
-  usage/overlaps/relations whatever?"*
+  usage/overlaps/relations whatever?"_
 - [Research-0019](0019-tiny-ai-netflix-training.md) — Netflix
   training methodology survey.
 - [Research-0023](0023-loso-3arch-results.md) — 3-arch LOSO on

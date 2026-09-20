@@ -1,9 +1,9 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-server gRPC service
 
-`vmafx-server` is a single Go binary that exposes VMAF scoring over both gRPC and HTTP/JSON.
-This page covers the gRPC interface; see [http-transport.md](../mcp/http-transport.md) for the
-HTTP endpoints (`/healthz`, `/readyz`, `/metrics`, `/v1/score`).
+`vmafx-server` is a single Go binary that exposes VMAF scoring over both gRPC
+and HTTP/JSON. This page covers the gRPC interface; see
+[http-transport.md](../mcp/http-transport.md) for the HTTP endpoints
+(`/healthz`, `/readyz`, `/metrics`, `/v1/score`).
 
 ## Quick start
 
@@ -73,13 +73,13 @@ Expected response (Netflix golden pair):
 
 ```json
 {
-  "score": 76.6683,
-  "features": {
-    "vmaf":       76.6683,
-    "vif_scale0": 0.8912,
-    "adm2":       0.9876,
-    "motion2":    2.3456
-  }
+    "score": 76.6683,
+    "features": {
+        "vmaf": 76.6683,
+        "vif_scale0": 0.8912,
+        "adm2": 0.9876,
+        "motion2": 2.3456
+    }
 }
 ```
 
@@ -113,14 +113,14 @@ environment-only. The sole process switch is `--version`, which prints the
 build-time version and exits without constructing the fx application or binding
 listeners.
 
-| Env var | Config key | Default | Description |
-|---|---|---|---|
-| `VMAFX_HTTP_ADDR` | `http.addr` | `:8080` | HTTP listen address |
-| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `:9090` | gRPC listen address |
-| `VMAFX_LOG_LEVEL` | `log.level` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
-| `VMAFX_VMAF_BINARY` | `vmaf.binary` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
-| `VMAFX_MODEL_DIR` | `model.dir` | _(none)_ | Directory containing VMAF `.json` model files |
-| `VMAFX_MAX_CONCURRENT_SCORES` | `max.concurrent.scores` | _(NumCPU)_ | Cap on simultaneous `Score` calls |
+| Env var                       | Config key              | Default         | Description                                   |
+| ----------------------------- | ----------------------- | --------------- | --------------------------------------------- |
+| `VMAFX_HTTP_ADDR`             | `http.addr`             | `:8080`         | HTTP listen address                           |
+| `VMAFX_GRPC_LISTEN`           | `grpc.listen`           | `:9090`         | gRPC listen address                           |
+| `VMAFX_LOG_LEVEL`             | `log.level`             | `INFO`          | slog level (DEBUG/INFO/WARN/ERROR)            |
+| `VMAFX_VMAF_BINARY`           | `vmaf.binary`           | _(PATH lookup)_ | Path to the `vmaf` CLI binary                 |
+| `VMAFX_MODEL_DIR`             | `model.dir`             | _(none)_        | Directory containing VMAF `.json` model files |
+| `VMAFX_MAX_CONCURRENT_SCORES` | `max.concurrent.scores` | _(NumCPU)_      | Cap on simultaneous `Score` calls             |
 
 > **Config-key note.** The golusoris env transform strips the `VMAFX_` prefix,
 > lowercases, and turns **every** `_` into the `.` delimiter — so
@@ -138,23 +138,29 @@ listeners.
 
 ## Prometheus metrics
 
-The `/metrics` endpoint exposes the following counters and histograms
-in Prometheus exposition format, plus Go runtime and process metrics.
+The `/metrics` endpoint exposes the following counters and histograms in
+Prometheus exposition format, plus Go runtime and process metrics.
 
-| Metric | Type | Description |
-|---|---|---|
-| `vmafx_server_score_requests_total` | Counter | Total Score requests (HTTP + gRPC) |
-| `vmafx_server_score_errors_total` | Counter | Score requests that returned an error |
-| `vmafx_server_score_duration_seconds` | Histogram | End-to-end scoring latency |
-| `vmafx_server_health_requests_total` | Counter | Health / `/healthz` calls |
-| `vmafx_server_ready_requests_total` | Counter | `/readyz` calls |
+| Metric                                | Type      | Description                           |
+| ------------------------------------- | --------- | ------------------------------------- |
+| `vmafx_server_score_requests_total`   | Counter   | Total Score requests (HTTP + gRPC)    |
+| `vmafx_server_score_errors_total`     | Counter   | Score requests that returned an error |
+| `vmafx_server_score_duration_seconds` | Histogram | End-to-end scoring latency            |
+| `vmafx_server_health_requests_total`  | Counter   | Health / `/healthz` calls             |
+| `vmafx_server_ready_requests_total`   | Counter   | `/readyz` calls                       |
 
 ## Logging
 
 All log lines are emitted as single-line JSON objects on stdout. Example:
 
 ```json
-{"time":"2026-05-28T12:00:00.000Z","level":"INFO","msg":"grpc Score completed","score":"76.6683","duration_s":0.823}
+{
+    "time": "2026-05-28T12:00:00.000Z",
+    "level": "INFO",
+    "msg": "grpc Score completed",
+    "score": "76.6683",
+    "duration_s": 0.823
+}
 ```
 
 ## Graceful shutdown
@@ -167,15 +173,19 @@ The server listens for `SIGTERM` and `SIGINT`. On receipt it:
 
 ## Relationship to the Python HTTP server (ADR-0701)
 
-The Python `vmaf-mcp --transport http` server (PR #1583, ADR-0701) remains the default
-transport for MCP/stdio IDE integrations and is **not removed by this PR**. The Go server
-is an additive Phase-4 deliverable targeting k8s deployments where startup time and gRPC
-are material. The Python layer will be retired in a separate Stage-3 cleanup PR after the
-Go server confirms production parity.
+The Python `vmaf-mcp --transport http` server (PR #1583, ADR-0701) remains the
+default transport for MCP/stdio IDE integrations and is **not removed by this
+PR**. The Go server is an additive Phase-4 deliverable targeting k8s deployments
+where startup time and gRPC are material. The Python layer will be retired in a
+separate Stage-3 cleanup PR after the Go server confirms production parity.
 
 ## Further reading
 
-- [ADR-0703](../adr/0703-vmafx-server-go-grpc.md) — decision record for this service.
-- [ADR-0701](../adr/0701-vmafx-cloud-native-redesign.md) — Python HTTP transport foundation.
-- [HTTP transport docs](../mcp/http-transport.md) — `/healthz`, `/readyz`, `/metrics`, `/v1/score`.
-- [k8s deployment guide](../development/k8s-deployment.md) — Helm chart configuration.
+- [ADR-0703](../adr/0703-vmafx-server-go-grpc.md) — decision record for this
+  service.
+- [ADR-0701](../adr/0701-vmafx-cloud-native-redesign.md) — Python HTTP transport
+  foundation.
+- [HTTP transport docs](../mcp/http-transport.md) — `/healthz`, `/readyz`,
+  `/metrics`, `/v1/score`.
+- [k8s deployment guide](../development/k8s-deployment.md) — Helm chart
+  configuration.

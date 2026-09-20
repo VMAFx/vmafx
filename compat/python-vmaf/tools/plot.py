@@ -25,7 +25,7 @@ def get_pdf(data, num_bins=20):
 def plot_distribution(plot_type, df, key, slice_name, slices, colors=None, ax=None):
     if colors is None:
         colors = [None for _ in slices]
-    for slice, color in zip(slices, colors):
+    for slice, color in zip(slices, colors, strict=False):
         if isinstance(slice, (list, tuple)):
             data = df.loc[df[slice_name].isin(slice)][key].tolist()
         else:
@@ -37,7 +37,7 @@ def plot_distribution(plot_type, df, key, slice_name, slices, colors=None, ax=No
             ys, xs = get_pdf(data)
             plt.ylabel("PDF")
         else:
-            assert False, "Unknown plot type: {}".format(plot_type)
+            raise AssertionError("Unknown plot type: {}".format(plot_type))
         if ax:
             ax.plot(xs, ys, label="{}".format(str(slice)), color=color)
             ax.grid(which="major")
@@ -71,7 +71,7 @@ def plot_distribution_fit(
         _plot_distribution_fit(ax, data, distribution_fcn, plot_type, "", colors[0], **kwargs)
 
     else:
-        for slice, color in zip(slices, colors):
+        for slice, color in zip(slices, colors, strict=False):
             if isinstance(slice, (list, tuple)):
                 data = df.loc[df[slice_name].isin(slice)][key].tolist()
             else:
@@ -85,7 +85,7 @@ def _plot_distribution_fit(ax, data, distribution_fcn, plot_type, tag, color, **
     xmax = max(data)
     xs = np.linspace(xmin, xmax)
 
-    fit_params = kwargs["fit_params"] if "fit_params" in kwargs else dict()
+    fit_params = kwargs.get("fit_params", {})
 
     params = distribution_fcn.fit(data, **fit_params)
     if plot_type == "cdf":
@@ -95,11 +95,11 @@ def _plot_distribution_fit(ax, data, distribution_fcn, plot_type, tag, color, **
         ys = distribution_fcn.pdf(xs, *params)
         plt.ylabel("PDF")
     else:
-        assert False, "Unknown plot type: {}".format(plot_type)
+        raise AssertionError("Unknown plot type: {}".format(plot_type))
     label = "{tag} {dis_name} fit {param}".format(
         tag=tag,
         dis_name=distribution_fcn.name,
-        param=", ".join(map(lambda p: "{:.4f}".format(p), params)),
+        param=", ".join(("{:.4f}".format(p) for p in params)),
     )
 
     if ax:

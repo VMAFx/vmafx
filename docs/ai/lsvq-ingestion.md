@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # LSVQ → MOS-corpus JSONL ingestion
 
 The fork's `nr_metric_v1` tiny no-reference VQA model is trained
@@ -98,7 +97,7 @@ DOVER / FAST-VQA redistributions. The adapter accepts every
 observed alias:
 
 | Logical column | Recognised header spellings |
-|---|---|
+| --- | --- |
 | filename | `name`, `video_name`, `filename`, `file_name` |
 | URL (optional) | `url`, `download_url`, `video_url` |
 | MOS | `mos`, `MOS`, `mos_score` |

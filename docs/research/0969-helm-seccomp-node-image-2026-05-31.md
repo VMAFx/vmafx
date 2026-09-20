@@ -1,9 +1,7 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest — Helm Chart PSA B.1 + B.3 Fixes (ADR-0969)
 
-**Date**: 2026-05-31
-**PR**: fix/helm-seccomp-and-node-image
-**ADR**: [ADR-0969](../adr/0969-helm-seccomp-default-plus-node-image-helper.md)
+**Date**: 2026-05-31 **PR**: fix/helm-seccomp-and-node-image **ADR**:
+[ADR-0969](../adr/0969-helm-seccomp-default-plus-node-image-helper.md)
 
 ## Summary
 
@@ -18,10 +16,10 @@ documents the investigation and resolution.
 
 ```yaml
 podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 65534
-  runAsGroup: 65534
-  fsGroup: 65534
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
 ```
 
 The Kubernetes PSA "restricted" profile requires `seccompProfile.type` be set
@@ -37,19 +35,20 @@ to (...))
 ### Deduplication with PR #439
 
 PR #439 (`chore/helm-networkpolicy-pss`, ADR-0930) is DRAFT and CONFLICTING.
-Inspection of its diff confirms it adds `seccompProfile: { type: RuntimeDefault }`
-to `values.yaml` plus changes UID/GID to 65532 (distroless nonroot, ADR-0878).
-Because PR #439 is DRAFT/CONFLICTING and installations fail without the fix,
-we ship the minimal `seccompProfile` addition here. PR #439 can rebase cleanly
-on top; its additional changes (UID flip, container-scope seccompProfile,
-NetworkPolicy) are independent and non-conflicting.
+Inspection of its diff confirms it adds
+`seccompProfile: { type: RuntimeDefault }` to `values.yaml` plus changes UID/GID
+to 65532 (distroless nonroot, ADR-0878). Because PR #439 is DRAFT/CONFLICTING
+and installations fail without the fix, we ship the minimal `seccompProfile`
+addition here. PR #439 can rebase cleanly on top; its additional changes (UID
+flip, container-scope seccompProfile, NetworkPolicy) are independent and
+non-conflicting.
 
 ### Fix
 
 Add to `values.yaml` `podSecurityContext`:
 
 ```yaml
-  seccompProfile:
+seccompProfile:
     type: RuntimeDefault
 ```
 
@@ -103,7 +102,7 @@ The inline expression in `node-deployment.yaml` bypassed this helper entirely.
 Replace the inline expression with:
 
 ```yaml
-image: {{ include "vmafx.nodeImage" . }}
+image: { { include "vmafx.nodeImage" . } }
 ```
 
 ### Verification
@@ -132,12 +131,12 @@ image: ghcr.io/vmafx/vmafx-server-node:3.0.0
 
 ## Files changed
 
-| File | Change |
-|---|---|
-| `deploy/helm/vmafx/values.yaml` | Add `seccompProfile: { type: RuntimeDefault }` to podSecurityContext |
-| `deploy/helm/vmafx/templates/node-deployment.yaml` | Replace inline image expr with `{{ include "vmafx.nodeImage" . }}` |
-| `deploy/helm/vmafx/AGENTS.md` | Add invariant note: every new podSecurityContext consumer must include seccompProfile |
-| `docs/adr/0969-helm-seccomp-default-plus-node-image-helper.md` | ADR |
-| `docs/research/0969-helm-seccomp-node-image-2026-05-31.md` | This digest |
-| `changelog.d/fixed/0969-helm-seccomp-and-node-image.md` | Changelog fragment |
-| `docs/rebase-notes.md` | No rebase impact entry |
+| File                                                           | Change                                                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `deploy/helm/vmafx/values.yaml`                                | Add `seccompProfile: { type: RuntimeDefault }` to podSecurityContext                  |
+| `deploy/helm/vmafx/templates/node-deployment.yaml`             | Replace inline image expr with `{{ include "vmafx.nodeImage" . }}`                    |
+| `deploy/helm/vmafx/AGENTS.md`                                  | Add invariant note: every new podSecurityContext consumer must include seccompProfile |
+| `docs/adr/0969-helm-seccomp-default-plus-node-image-helper.md` | ADR                                                                                   |
+| `docs/research/0969-helm-seccomp-node-image-2026-05-31.md`     | This digest                                                                           |
+| `changelog.d/fixed/0969-helm-seccomp-and-node-image.md`        | Changelog fragment                                                                    |
+| `docs/rebase-notes.md`                                         | No rebase impact entry                                                                |

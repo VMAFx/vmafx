@@ -42,6 +42,7 @@ import os
 import pickle
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import numpy as np
@@ -83,6 +84,7 @@ from vmaf.tools.misc import (
     round_up_to_odd,
     unroll_dict_of_lists,
 )
+from vmaf.tools.safe_pickle import load_pickle
 from vmaf.tools.scanf import (
     CharacterBufferFromIterable,
     FormatError,
@@ -114,13 +116,13 @@ class TopLevelInitTest(unittest.TestCase):
     def test_module_constants(self):
         self.assertIsInstance(vmaf_pkg.__version__, str)
         self.assertTrue(vmaf_pkg.VMAF_PYTHON_ROOT)
-        self.assertTrue(os.path.isabs(vmaf_pkg.VMAF_PYTHON_ROOT))
-        self.assertTrue(os.path.isabs(vmaf_pkg.VMAF_ROOT))
+        self.assertTrue(Path(vmaf_pkg.VMAF_PYTHON_ROOT).is_absolute())
+        self.assertTrue(Path(vmaf_pkg.VMAF_ROOT).is_absolute())
 
     def test_project_path_joins_relative(self):
         result = project_path("a/b/c")
-        self.assertTrue(result.endswith(os.path.join("a", "b", "c")))
-        self.assertTrue(os.path.isabs(result))
+        self.assertTrue(result.endswith(str(Path("a") / "b" / "c")))
+        self.assertTrue(Path(result).is_absolute())
 
     def test_required_returns_path_when_exists(self):
         with tempfile.NamedTemporaryFile(delete=False) as fp:
@@ -129,7 +131,7 @@ class TopLevelInitTest(unittest.TestCase):
         try:
             self.assertEqual(required(path), path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
     def test_required_raises_on_missing(self):
         with self.assertRaises(AssertionError):
@@ -137,7 +139,7 @@ class TopLevelInitTest(unittest.TestCase):
 
     def test_model_path_joins(self):
         result = model_path("foo", "bar.json")
-        self.assertTrue(result.endswith(os.path.join("model", "foo", "bar.json")))
+        self.assertTrue(result.endswith(str(Path("model") / "foo" / "bar.json")))
 
     def test_convert_pixel_format_8bit(self):
         for fmt, expected in [
@@ -231,11 +233,17 @@ class ProcessRunnerTest(unittest.TestCase):
 class ExternalProgramCallerVmafexecTest(unittest.TestCase):
     """`ExternalProgramCaller.call_vmafexec` — command-line builder.
 
-    We mock `run_process` and assert on the assembled shell command instead
+    We mock `run_process` and assert on the assembled argument vector instead
     of actually invoking the vmaf binary. The construction logic is the
     fork-local surface worth covering; the binary itself is exercised by
     the Netflix golden suite.
     """
+
+    @staticmethod
+    def _option_values(command, option):
+        return [
+            command[index + 1] for index, argument in enumerate(command[:-1]) if argument == option
+        ]
 
     def _capture(self, **kwargs):
         captured = []
@@ -253,44 +261,46 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         return captured[0]
 
     def _base_kwargs(self):
-        return dict(
-            reference="ref.yuv",
-            distorted="dis.yuv",
-            width=320,
-            height=240,
-            pixel_format="420",
-            bitdepth=8,
-            float_psnr=False,
-            psnr=False,
-            float_ssim=False,
-            ssim=False,
-            float_ms_ssim=False,
-            ms_ssim=False,
-            float_moment=False,
-            no_prediction=True,
-            models=None,
-            subsample=1,
-            n_threads=1,
-            disable_avx=False,
-            output="out.xml",
-            exe="/fake/vmaf",
-            logger=None,
-        )
+        return {
+            "reference": "ref.yuv",
+            "distorted": "dis.yuv",
+            "width": 320,
+            "height": 240,
+            "pixel_format": "420",
+            "bitdepth": 8,
+            "float_psnr": False,
+            "psnr": False,
+            "float_ssim": False,
+            "ssim": False,
+            "float_ms_ssim": False,
+            "ms_ssim": False,
+            "float_moment": False,
+            "no_prediction": True,
+            "models": None,
+            "subsample": 1,
+            "n_threads": 1,
+            "disable_avx": False,
+            "output": "out.xml",
+            "exe": "/fake/vmaf",
+            "logger": None,
+        }
 
     def test_no_prediction_smoke(self):
         cmd = self._capture(**self._base_kwargs())
-        self.assertIn("--reference ref.yuv", cmd)
-        self.assertIn("--distorted dis.yuv", cmd)
-        self.assertIn("--width 320", cmd)
-        self.assertIn("--height 240", cmd)
+        self.assertEqual(self._option_values(cmd, "--reference"), ["ref.yuv"])
+        self.assertEqual(self._option_values(cmd, "--distorted"), ["dis.yuv"])
+        self.assertEqual(self._option_values(cmd, "--width"), ["320"])
+        self.assertEqual(self._option_values(cmd, "--height"), ["240"])
         self.assertIn("--no_prediction", cmd)
 
     def test_float_features_appended(self):
         kw = self._base_kwargs()
         kw.update(float_psnr=True, float_ssim=True, float_ms_ssim=True, float_moment=True)
         cmd = self._capture(**kw)
-        for f in ("float_psnr", "float_ssim", "float_ms_ssim", "float_moment"):
-            self.assertIn(f"--feature {f}", cmd)
+        self.assertEqual(
+            self._option_values(cmd, "--feature"),
+            ["float_psnr", "float_ssim", "float_ms_ssim", "float_moment"],
+        )
 
     def test_ssim_deprecation_assertion(self):
         kw = self._base_kwargs()
@@ -305,14 +315,14 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         # 4294967295 == 0xFFFFFFFF: all ISA-extension bits masked.
         # parse_unsigned() rejects "-1" (ADR-1088); the harness now emits
         # the unsigned equivalent so the CLI accepts it.
-        self.assertIn("--cpumask 4294967295", cmd)
+        self.assertEqual(self._option_values(cmd, "--cpumask"), ["4294967295"])
 
     def test_subsample_and_threads_emitted_when_nontrivial(self):
         kw = self._base_kwargs()
         kw.update(subsample=4, n_threads=8)
         cmd = self._capture(**kw)
-        self.assertIn("--subsample 4", cmd)
-        self.assertIn("--threads 8", cmd)
+        self.assertEqual(self._option_values(cmd, "--subsample"), ["4"])
+        self.assertEqual(self._option_values(cmd, "--threads"), ["8"])
 
     def test_model_with_enhn_gain_limits(self):
         kw = self._base_kwargs()
@@ -324,10 +334,11 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
             motion_force_zero=True,
         )
         cmd = self._capture(**kw)
-        self.assertIn("--model /m/vmaf_v0.6.1.json", cmd)
-        self.assertIn("vif.vif_enhn_gain_limit=1.5", cmd)
-        self.assertIn("adm.adm_enhn_gain_limit=2.0", cmd)
-        self.assertIn("motion.motion_force_zero=true", cmd)
+        model_spec = self._option_values(cmd, "--model")[0]
+        self.assertEqual(model_spec.split(":", maxsplit=1)[0], "/m/vmaf_v0.6.1.json")
+        self.assertIn("vif.vif_enhn_gain_limit=1.5", model_spec)
+        self.assertIn("adm.adm_enhn_gain_limit=2.0", model_spec)
+        self.assertIn("motion.motion_force_zero=true", model_spec)
 
     def test_model_with_cambi_enc_overrides(self):
         # The CAMBI enc_width/enc_height/enc_bitdepth overrides flow through
@@ -342,10 +353,11 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
             enc_bitdepth=8,
         )
         cmd = self._capture(**kw)
-        self.assertIn("--model /m/vmaf_v1.0.16_3d0h.json", cmd)
-        self.assertIn("cambi.enc_width=576", cmd)
-        self.assertIn("cambi.enc_height=324", cmd)
-        self.assertIn("cambi.enc_bitdepth=8", cmd)
+        model_spec = self._option_values(cmd, "--model")[0]
+        self.assertEqual(model_spec.split(":", maxsplit=1)[0], "/m/vmaf_v1.0.16_3d0h.json")
+        self.assertIn("cambi.enc_width=576", model_spec)
+        self.assertIn("cambi.enc_height=324", model_spec)
+        self.assertIn("cambi.enc_bitdepth=8", model_spec)
 
     def test_cambi_enc_overrides_omitted_when_none(self):
         # When enc params are None (no override and no asset enc dims), the
@@ -353,21 +365,22 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         kw = self._base_kwargs()
         kw.update(no_prediction=False, models=["/m/vmaf_v0.6.1.json"])
         cmd = self._capture(**kw)
-        self.assertNotIn("cambi.enc_width", cmd)
-        self.assertNotIn("cambi.enc_height", cmd)
-        self.assertNotIn("cambi.enc_bitdepth", cmd)
+        model_spec = self._option_values(cmd, "--model")[0]
+        self.assertNotIn("cambi.enc_width", model_spec)
+        self.assertNotIn("cambi.enc_height", model_spec)
+        self.assertNotIn("cambi.enc_bitdepth", model_spec)
 
     def test_backend_parameter_emits_flag(self):
         kw = self._base_kwargs()
         kw["backend"] = "cuda"
         cmd = self._capture(**kw)
-        self.assertIn("--backend cuda", cmd)
+        self.assertEqual(self._option_values(cmd, "--backend"), ["cuda"])
 
     def test_backend_env_var_emits_flag(self):
         kw = self._base_kwargs()
         with mock.patch.dict(os.environ, {"VMAF_FORCE_BACKEND": "cuda"}):
             cmd = self._capture(**kw)
-        self.assertIn("--backend cuda", cmd)
+        self.assertEqual(self._option_values(cmd, "--backend"), ["cuda"])
 
     def test_backend_multi_features_options(self):
         captured = []
@@ -383,7 +396,7 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
                     "out.xml",
                     options={"backend": "sycl"},
                 )
-        self.assertIn("--backend sycl", captured[0])
+        self.assertEqual(self._option_values(captured[0], "--backend"), ["sycl"])
 
     def test_backend_multi_features_env_var(self):
         captured = []
@@ -393,7 +406,7 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
                     ExternalProgramCaller.call_vmafexec_multi_features(
                         ["psnr"], "yuv420p", "ref.yuv", "dis.yuv", 320, 240, "out.xml"
                     )
-        self.assertIn("--backend sycl", captured[0])
+        self.assertEqual(self._option_values(captured[0], "--backend"), ["sycl"])
 
 
 class MiscPureFunctionsTest(unittest.TestCase):
@@ -435,7 +448,8 @@ class MiscPureFunctionsTest(unittest.TestCase):
         self.assertEqual(result, '{"a": 1, "b": 2, "c": {"x": 0, "y": 1}}')
 
     def test_indices(self):
-        self.assertEqual(indices([10, 20, 30, 40], lambda x: x > 20), [2, 3])
+        threshold = 20
+        self.assertEqual(indices([10, 20, 30, 40], lambda x: x > threshold), [2, 3])
         self.assertEqual(indices([], lambda x: True), [])
 
     def test_empty_object_returns_unique_instance(self):
@@ -522,9 +536,9 @@ class MiscPureFunctionsTest(unittest.TestCase):
 
     def test_make_parent_dirs_if_nonexist(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = os.path.join(tmp, "a", "b", "c.txt")
+            target = Path(tmp) / "a" / "b" / "c.txt"
             make_parent_dirs_if_nonexist(target)
-            self.assertTrue(os.path.isdir(os.path.join(tmp, "a", "b")))
+            self.assertTrue((Path(tmp) / "a" / "b").is_dir())
 
 
 class SigprocPureMathTest(unittest.TestCase):
@@ -641,8 +655,9 @@ class TestUtilsHelpersTest(unittest.TestCase):
     """`tools/testutils.py` — pure regex/string helpers."""
 
     def test_replace_uuid(self):
-        path = "/tmp/72b3a7af-204c-4455-afe5-be2d536f2fdd/out.h265"
-        self.assertEqual(replace_uuid(path), "/tmp/[UUID]/out.h265")
+        temp_root = Path(tempfile.gettempdir())
+        path = temp_root / "72b3a7af-204c-4455-afe5-be2d536f2fdd" / "out.h265"
+        self.assertEqual(replace_uuid(str(path)), str(temp_root / "[UUID]" / "out.h265"))
 
     def test_replace_uuid_no_match_returns_input(self):
         self.assertEqual(replace_uuid("/no/uuid/here"), "/no/uuid/here")
@@ -696,20 +711,20 @@ class KimchiPickleConvertTest(unittest.TestCase):
     def test_convert_roundtrips_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
             payload = {"a": 1, "b": [1, 2, 3]}
-            src = os.path.join(tmp, "input.pkl")
-            with open(src, "wb") as fh:
+            src = Path(tmp) / "input.pkl"
+            with src.open("wb") as fh:
                 pickle.dump(payload, fh, protocol=2)
 
             # convert() writes to CWD next to original basename — run inside
             # the tmp dir so we don't litter the test rootdir.
-            cwd = os.getcwd()
+            cwd = Path.cwd()
             try:
                 os.chdir(tmp)
                 kimchi.convert(src)
-                out = os.path.join(tmp, "input_p3.pkl")
-                self.assertTrue(os.path.exists(out))
-                with open(out, "rb") as fh:
-                    loaded = pickle.load(fh)
+                out = Path(tmp) / "input_p3.pkl"
+                self.assertTrue(out.exists())
+                with out.open("rb") as fh:
+                    loaded = load_pickle(fh)
                 self.assertEqual(loaded, payload)
             finally:
                 os.chdir(cwd)
@@ -719,12 +734,13 @@ class CoreMixinTest(unittest.TestCase):
     """`core/mixin.py` — WorkdirEnabled + TypeVersionEnabled coverage."""
 
     def test_workdir_enabled_unique_uuid_subdir(self):
-        a = WorkdirEnabled("/tmp/root")
-        b = WorkdirEnabled("/tmp/root")
-        self.assertTrue(a.workdir.startswith("/tmp/root/"))
-        self.assertTrue(b.workdir.startswith("/tmp/root/"))
+        root = str(Path(tempfile.gettempdir()) / "root")
+        a = WorkdirEnabled(root)
+        b = WorkdirEnabled(root)
+        self.assertTrue(a.workdir.startswith(f"{root}/"))
+        self.assertTrue(b.workdir.startswith(f"{root}/"))
         self.assertNotEqual(a.workdir, b.workdir)
-        self.assertEqual(a.workdir_root, "/tmp/root")
+        self.assertEqual(a.workdir_root, root)
 
     def test_type_version_enabled_valid(self):
         class _Good(TypeVersionEnabled):

@@ -6,8 +6,11 @@
 #   $REPO_ROOT/docs/adr/_index_fragments/_header.md   verbatim README prelude
 #       (everything before the "## Index" table — the table row itself stays
 #       in this file too).
-#   $REPO_ROOT/docs/adr/_index_fragments/NNNN-slug.md one Markdown table
-#       row per ADR, named by full ADR slug (the same NNNN-kebab-case
+#   $REPO_ROOT/docs/adr/_index_fragments/NNNN-slug.md one standalone
+#       Markdown document per ADR. Each document contains an H1, a four-column
+#       table header, and exactly one index data row. The renderer emits only
+#       that data row into README.md. Fragments are named by full ADR slug
+#       (the same NNNN-kebab-case
 #       used for the ADR file itself). Slug-keyed for historical
 #       reasons: the 2026-05-02 dedup sweep renumbered duplicate-NNNN
 #       ADRs (`0199-tiny-ai-netflix-training-corpus.md` →
@@ -56,10 +59,7 @@ render() {
       [[ -z "$slug" || "$slug" == \#* ]] && continue
       local frag="$FRAG_ROOT/$slug.md"
       if [[ -f "$frag" ]]; then
-        cat "$frag"
-        # Each fragment is a single table row terminated by exactly
-        # one newline (validated via `tail -c1`). Do NOT append an
-        # extra newline — Markdown tables require contiguous rows.
+        awk '/^\| \[ADR-[0-9][0-9][0-9][0-9]\]\(/ { print; exit }' "$frag"
         seen["$slug"]=1
       else
         printf 'WARNING: _order.txt lists missing fragment %s\n' "$slug" >&2
@@ -71,7 +71,7 @@ render() {
   while IFS= read -r frag; do
     slug="$(basename "$frag" .md)"
     [[ -n "${seen[$slug]:-}" ]] && continue
-    cat "$frag"
+    awk '/^\| \[ADR-[0-9][0-9][0-9][0-9]\]\(/ { print; exit }' "$frag"
   done < <(find "$FRAG_ROOT" -maxdepth 1 -type f -name '[0-9]*.md' \
     ! -name '_*' | LC_ALL=C sort)
 }

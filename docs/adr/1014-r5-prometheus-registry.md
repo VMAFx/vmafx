@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # ADR-1014: Prometheus registry isolation for SetControllerSources
 
 - **Status**: Accepted

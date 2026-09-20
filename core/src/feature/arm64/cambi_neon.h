@@ -38,7 +38,7 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
                                  uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                  const float *reciprocal_lut);
 
-void calculate_c_values_neon(struct VmafPicture *pic, const struct VmafPicture *mask_pic,
+void calculate_c_values_neon(const struct VmafPicture *pic, const struct VmafPicture *mask_pic,
                              float *c_values, uint16_t *histograms, uint16_t window_size,
                              const uint16_t num_diffs, const uint16_t *tvi_for_diff,
                              uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,

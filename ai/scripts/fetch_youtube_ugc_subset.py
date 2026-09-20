@@ -23,13 +23,15 @@ import sys
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 GCS_LIST_URL = "https://storage.googleapis.com/storage/v1/b/ugc-dataset/o"
 GCS_OBJ_URL = "https://storage.googleapis.com/ugc-dataset/{name}"
@@ -85,10 +87,7 @@ def _download(url: str, dest: Path) -> None:
     # nosec B310: scheme restricted to https above; URL built from the
     # GCS_OBJ_URL module constant plus a bucket-object name.
     with urllib.request.urlopen(url) as r, tmp.open("wb") as f:  # nosec B310
-        while True:
-            chunk = r.read(1 << 20)
-            if not chunk:
-                break
+        for chunk in iter(lambda: r.read(1 << 20), b""):
             f.write(chunk)
     tmp.rename(dest)
 

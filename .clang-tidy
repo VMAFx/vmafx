@@ -1,7 +1,8 @@
 # See docs/principles.md §2 for the philosophy. We enable the families that map
 # directly to NASA Power-of-10, JPL-C-STD, CERT-C, and MISRA-C:2012 informative.
-# Vendored upstream code (subprojects/, libvmaf/test/data/) is excluded by
-# HeaderFilterRegex below.
+# Source origin is never an exclusion (ADR-1267). Dependency subprojects and
+# generated build output are outside this first-party header filter; vendored
+# sources shipped inside core/ are included and fixed in place.
 
 Checks: >
   -*,
@@ -44,7 +45,8 @@ WarningsAsErrors: >
   clang-analyzer-security.*,
   performance-no-int-to-ptr
 
-# Lint our code; skip vendored / generated.
+# Lint every shipped project header; generated build output is measured at its
+# generator and dependency subprojects keep their own toolchain contract.
 HeaderFilterRegex: '(^|/)(core/(include|src|tools|test)|python|ai)/.*\.(h|hpp|hxx|cuh)$'
 
 FormatStyle: file
@@ -56,9 +58,8 @@ CheckOptions:
     value: 'assert,VMAF_ASSERT_DEBUG'
   - key: cert-msc32-c.DisallowedSeedTypes
     value: 'time_t,std::time_t'
-  # Power-of-10 rule 4 — a printed page. Upstream Netflix functions that
-  # exceed this budget are explicitly marked with NOLINT and tracked for
-  # refactor in .workingdir2/OPEN.md.
+  # Power-of-10 rule 4 — a printed page. Origin grants no exception; oversized
+  # functions are split while numerical and public-ABI invariants stay pinned.
   - key: readability-function-size.LineThreshold
     value: '60'
   - key: readability-function-size.StatementThreshold

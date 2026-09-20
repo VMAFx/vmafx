@@ -23,59 +23,58 @@ unsigned fail_name_call;
 const void *fail_grow_pointer;
 } // namespace
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
-extern "C" char *__real_vmaf_feature_name_from_options(const char *, const VmafOption *,
-                                                       const void *);
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
-extern "C" void *__real_realloc(void *, size_t);
+extern "C" char *
+real_vmaf_feature_name_from_options(const char *, const VmafOption *,
+                                    const void *) __asm__("__real_vmaf_feature_name_from_options");
+
+extern "C" void *real_realloc(void *, size_t) __asm__("__real_realloc");
 
 /* Visible on purpose — the library builds `-fvisibility=hidden` and a `--wrap`
  * interposer that a DSO has to reach cannot be hidden. See the same note in
  * test_fex_pool_growth.c, where icpx rejected the hidden form outright. */
 #define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
 
-// cppcheck-suppress unusedFunction
 // The signature does not fit on one line once VMAF_WRAP_EXPORT is in it, so
 // clang-format breaks after the return type and the identifier lands two lines
 // below the marker. A begin/end band is used instead of a next-line marker
 // because it survives any future reflow of this signature.
-// NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
+
+extern "C" VMAF_WRAP_EXPORT char *wrap_vmaf_feature_name_from_options(
+    const char *name, const VmafOption *opts,
+    const void *obj) __asm__("__wrap_vmaf_feature_name_from_options");
 extern "C" VMAF_WRAP_EXPORT char *
-__wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, const void *obj)
+wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, const void *obj)
 {
     if (fail_name_call && ++name_calls == fail_name_call)
         return nullptr;
-    return __real_vmaf_feature_name_from_options(name, opts, obj);
+    return real_vmaf_feature_name_from_options(name, opts, obj);
 }
-// NOLINTEND(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage)
 
-// cppcheck-suppress unusedFunction
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-extern "C" VMAF_WRAP_EXPORT void *__wrap_realloc(void *ptr, size_t bytes)
+extern "C" VMAF_WRAP_EXPORT void *wrap_realloc(void *ptr, size_t bytes) __asm__("__wrap_realloc");
+extern "C" VMAF_WRAP_EXPORT void *wrap_realloc(void *ptr, size_t bytes)
 {
     if (fail_grow_pointer && ptr == fail_grow_pointer) {
         fail_grow_pointer = nullptr;
         return nullptr;
     }
-    return __real_realloc(ptr, bytes);
+    return real_realloc(ptr, bytes);
 }
 #endif
 
 namespace
 {
-
-struct ContextDeleter {
+struct FexContextDeleter {
     void operator()(VmafFeatureExtractorContext *ctx) const noexcept
     {
         (void)vmaf_feature_extractor_context_destroy(ctx);
     }
 };
-using Context = std::unique_ptr<VmafFeatureExtractorContext, ContextDeleter>;
+using FexContext = std::unique_ptr<VmafFeatureExtractorContext, FexContextDeleter>;
 
-class Vector
+class FexVector
 {
   public:
-    ~Vector()
+    ~FexVector()
     {
         feature_extractor_vector_destroy(&entries_);
     }
@@ -88,7 +87,7 @@ class Vector
     RegisteredFeatureExtractors entries_{};
 };
 
-Context make_context(const VmafFeatureExtractor *fex, const char *key, const char *value)
+FexContext make_context(const VmafFeatureExtractor *fex, const char *key, const char *value)
 {
     VmafDictionary *options = nullptr;
     if (key && vmaf_dictionary_set(&options, key, value, 0) != 0) {
@@ -100,10 +99,10 @@ Context make_context(const VmafFeatureExtractor *fex, const char *key, const cha
         (void)vmaf_dictionary_free(&options);
         return {};
     }
-    return Context(ctx);
+    return FexContext(ctx);
 }
 
-int append_context(RegisteredFeatureExtractors *entries, Context ctx)
+int append_context(RegisteredFeatureExtractors *entries, FexContext ctx)
 {
     if (!ctx)
         return -ENOMEM;
@@ -113,7 +112,10 @@ int append_context(RegisteredFeatureExtractors *entries, Context ctx)
         ctx.reset(raw);
     return err;
 }
+} // namespace
 
+namespace
+{
 mu_message_t check_motion_pair(const char *first, const char *second, unsigned count,
                                bool twin = false, bool legacy = false,
                                const char *second_key = "motion_force_zero")
@@ -126,7 +128,7 @@ mu_message_t check_motion_pair(const char *first, const char *second, unsigned c
         b.name = "motion_mock_gpu";
     if (legacy)
         b.provided_features = nullptr;
-    Vector vector;
+    FexVector vector;
     mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
     auto first_ctx = make_context(&a, first ? "motion_force_zero" : nullptr, first);
     auto *const first_ptr = first_ctx.get();
@@ -137,7 +139,10 @@ mu_message_t check_motion_pair(const char *first, const char *second, unsigned c
     mu_assert("first registration was not preserved", vector.get().fex_ctx[0] == first_ptr);
     return nullptr;
 }
+} // namespace
 
+namespace
+{
 mu_message_t test_distinct_motion_options()
 {
     return check_motion_pair("false", "true", 2);
@@ -174,7 +179,10 @@ mu_message_t test_legacy_different_name()
 {
     return check_motion_pair(nullptr, "false", 2, true, true);
 }
+} // namespace
 
+namespace
+{
 mu_message_t test_capacity_arithmetic()
 {
     mu_assert("zero capacity must not grow", vmaf_next_fex_capacity(0) == 0);
@@ -216,10 +224,13 @@ bool unused_slots_clear(const RegisteredFeatureExtractors *entries)
     return entries->cnt == count && entries->capacity == capacity &&
            static_cast<const void *>(entries->fex_ctx) == storage;
 }
+} // namespace
 
+namespace
+{
 mu_message_t test_native_growth()
 {
-    Vector vector;
+    FexVector vector;
     mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
     mu_assert("first append failed", append_motion_variant(&vector.get(), 0) == 0);
     const auto *const first = vector.get().fex_ctx[0];
@@ -231,9 +242,12 @@ mu_message_t test_native_growth()
     mu_assert("unused slots must be null", unused_slots_clear(&vector.get()));
     return nullptr;
 }
+} // namespace
 
 #ifdef FEX_VECTOR_ALLOC_TEST
-mu_message_t check_retry(RegisteredFeatureExtractors *entries, Context incoming, unsigned count,
+namespace
+{
+mu_message_t check_retry(RegisteredFeatureExtractors *entries, FexContext incoming, unsigned count,
                          unsigned capacity)
 {
     mu_assert("incoming ownership must permit retry",
@@ -247,7 +261,7 @@ mu_message_t check_name_allocation_failure(unsigned failure)
 {
     const auto *motion = vmaf_get_feature_extractor_by_name("motion");
     mu_assert("motion extractor missing", motion);
-    Vector vector;
+    FexVector vector;
     mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
     mu_assert("first append failed",
               append_context(&vector.get(), make_context(motion, nullptr, nullptr)) == 0);
@@ -271,10 +285,13 @@ mu_message_t test_second_name_allocation_failure()
 {
     return check_name_allocation_failure(2);
 }
+} // namespace
 
+namespace
+{
 mu_message_t test_growth_allocation_failure()
 {
-    Vector vector;
+    FexVector vector;
     mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
     for (unsigned i = 0; i < 8; i++)
         mu_assert("initial append failed", append_motion_variant(&vector.get(), i) == 0);
@@ -293,8 +310,11 @@ mu_message_t test_growth_allocation_failure()
               vector_unchanged(&vector.get(), storage, 8, 8));
     return check_retry(&vector.get(), std::move(incoming), 9, 16);
 }
+} // namespace
 #endif
 
+namespace
+{
 mu_message_t run_identity_tests()
 {
     mu_run_test(test_distinct_motion_options);
@@ -315,7 +335,6 @@ mu_message_t run_legacy_and_growth_tests()
     mu_run_test(test_native_growth);
     return nullptr;
 }
-
 } // namespace
 
 mu_message_t run_tests()

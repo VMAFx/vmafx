@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `vmaf-tune ladder` — uncertainty-aware ABR ladder construction
 
 `vmaf-tune ladder` builds a per-title bitrate ladder by sampling the
@@ -43,7 +42,7 @@ invariant is preserved.
 ## Flag surface
 
 | Flag | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `--with-uncertainty` | off | Apply uncertainty-aware rung pruning/insertion. Sampled `vmaf_interval` payloads win; point-only rows use a conservative centred interval based on `wide_interval_min_width`. |
 | `--uncertainty-sidecar PATH` | none | Calibration sidecar JSON (same schema as `recommend --uncertainty-sidecar`). Falls back to the documented Research-0067 floor. |
 | `--rung-overlap-threshold F` | 0.5 | Overlap fraction above which two adjacent rungs are treated as indistinguishable and the lower-bitrate one is dropped. |
@@ -147,7 +146,7 @@ tight rung is left alone.
 ## Decision rules
 
 | Transform | Condition | Action |
-|---|---|---|
+| --- | --- | --- |
 | Prune | overlap fraction > `rung_overlap_threshold` | Drop the lower-bitrate rung. |
 | Insert | pair-averaged width >= `wide_interval_min_width` | Add a synthetic mid-rung. |
 

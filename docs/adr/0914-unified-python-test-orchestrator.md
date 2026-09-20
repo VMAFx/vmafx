@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0914: Unified Python test orchestrator (nox at repo root)
 
 - **Status**: Accepted
@@ -12,7 +11,7 @@ The fork ships eight independent Python distributions, each with its own
 `pyproject.toml`, `tests/` directory, and `requires-python` range:
 
 | Package | Path | Python range |
-|---|---|---|
+| --- | --- | --- |
 | Legacy harness | `python/` | 3.11 (tox-driven) |
 | Tiny-AI training | `ai/` | 3.11 – 3.14 |
 | MCP server | `mcp-server/vmaf-mcp/` | 3.10+ |
@@ -56,7 +55,7 @@ ad-hoc venv recipes that already match the per-package CI matrix.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **nox at repo root** *(chosen)* | Pythonic, no `setup.py` needed, each session is plain Python, easy to read/edit, used by Pallets/scientific-python projects | One more dev dep (nox itself) | Wins on every axis except adding 1 dep |
 | Extend `python/tox.ini` to cover every package | Re-uses existing tooling | tox config is INI-based + harder to compose across N packages with different Python pins; `usedevelop` model collides with `pyproject.toml`-only packages; mixing the Cython golden-data env with pure-Python suites is fragile | Configuration density goes up faster than the package count |
 | `Makefile` targets per package (`make ai-test`, `make mcp-test`, …) | No new dep, fits existing `make lint` / `make format` muscle memory | No isolation — each target runs in the developer's ambient Python and pollutes site-packages with editable installs; reproducing CI venv layout requires reimplementing `pip install` recipes inside the Makefile | Loses the "throw-away venv per session" guarantee the CI lanes rely on |

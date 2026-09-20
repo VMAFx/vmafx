@@ -22,12 +22,21 @@ import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from testdata._command import run_command
+else:
+    try:
+        from testdata._command import run_command
+    except ModuleNotFoundError:
+        from _command import run_command
 
 BASEDIR = Path(__file__).resolve().parent
 DEFAULT_FFMPEG = os.environ.get("VMAF_FFMPEG", "ffmpeg")
 DEFAULT_RUNS = int(os.environ.get("VMAF_BENCH_RUNS", "3"))
 DEFAULT_TIMEOUT_S = float(os.environ.get("VMAF_BENCH_TIMEOUT_S", "1200"))
+MULTIPLICATION_SIGN = "\N{MULTIPLICATION SIGN}"
 
 
 def build_tests(base_dir: Path, *, bbb_mp4_ref: Path | None = None) -> list[dict[str, Any]]:
@@ -230,7 +239,7 @@ def run_vmaf(
     env = build_env(backend, ld_library_path=ld_library_path)
     start = time.time()
     try:
-        result = subprocess.run(
+        result = run_command(
             cmd,
             capture_output=True,
             text=True,
@@ -281,7 +290,10 @@ def _run_one_test(
     results: dict[str, Any] = {}
     nframes = test["frames"] or "auto"
     print(f"{'━' * 78}")
-    print(f"  {test['name']}   ({test['width']}×{test['height']}, {nframes} frames)")
+    print(
+        f"  {test['name']}   "
+        f"({test['width']}{MULTIPLICATION_SIGN}{test['height']}, {nframes} frames)"
+    )
     print(f"{'━' * 78}")
 
     for backend in backends:
@@ -380,7 +392,7 @@ def _print_summary(
 
             speedup = ""
             if cpu_time and "best_time" in result:
-                speedup = f"{cpu_time / float(result['best_time']):.2f}×"
+                speedup = f"{cpu_time / float(result['best_time']):.2f}{MULTIPLICATION_SIGN}"
             print(
                 f"║ {name:>12} │ {result['pooled']:>8.4f} │ {result['best_fps']:>9.1f} │ "
                 f"{result['avg_fps']:>9.1f} │ {result['best_time']:>8.2f}s  "

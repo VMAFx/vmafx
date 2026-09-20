@@ -235,15 +235,15 @@ static const VmafOption options_float_motion_sycl[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = true}},
     {.name = "motion_force_zero",
-     .alias = "force_0",
      .help = "force motion score to zero",
+     .alias = "force_0",
      .offset = offsetof(FloatMotionStateSycl, motion_force_zero),
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "motion_fps_weight",
-     .alias = "mfw",
      .help = "fps-aware multiplicative weight/correction",
+     .alias = "mfw",
      .offset = offsetof(FloatMotionStateSycl, motion_fps_weight),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 1.0},
@@ -252,7 +252,6 @@ static const VmafOption options_float_motion_sycl[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {nullptr}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -321,8 +320,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                           const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                           const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic;
@@ -471,4 +471,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_motion_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

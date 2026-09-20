@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0696: `--netflix-compat` flag for restoring legacy defaults
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ inspect it.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `--precision=legacy` alias (Phase 1A already has this) | Zero new code | Only reverts precision, not backend; does not scale to future vmafx modernizations | Insufficient — does not address backend and is not a complete escape hatch |
 | Separate `vmaf-legacy` binary / script wrapper | Obvious name | Installs a third binary, adds maintenance surface, does not compose with existing flags | Overhead disproportionate to the use case |
 | Environment variable `VMAF_NETFLIX_COMPAT=1` | Scriptable without flag passing | Invisible from `--help`; env vars are harder to audit in CI logs | Environment variables for behavior are harder to discover and review than flags |

@@ -23,28 +23,31 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
 #include "vidinput.h"
+#include "vmaf_nullptr.h"
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
 int raw_input_open(video_input *_vid, FILE *_fin, unsigned width, unsigned height, int pix_fmt,
                    unsigned bitdepth)
 {
+    errno = 0;
     void *ctx = YUV_INPUT_VTBL.open_raw(_fin, width, height, pix_fmt, bitdepth);
-    if (ctx != NULL) {
+    if (ctx != VMAF_NULLPTR) {
         _vid->vtbl = &YUV_INPUT_VTBL;
         _vid->ctx = ctx;
         _vid->fin = _fin;
         return 0;
-    } else {
+    } else if (errno != EINVAL) {
         (void)fprintf(stderr, "Unknown file type.\n");
     }
-    return -1;
+    return errno == EINVAL ? 2 : -1;
 }
 
 int video_input_open(video_input *_vid, FILE *_fin)
 {
     void *ctx = Y4M_INPUT_VTBL.open(_fin);
-    if (ctx != NULL) {
+    if (ctx != VMAF_NULLPTR) {
         _vid->vtbl = &Y4M_INPUT_VTBL;
         _vid->ctx = ctx;
         _vid->fin = _fin;

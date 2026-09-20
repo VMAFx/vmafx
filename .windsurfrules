@@ -1,7 +1,6 @@
 <!-- markdownlint-disable MD013 -->
 <!-- Compiled automatically by praetorctl compile-context from AGENTS.md. DO NOT EDIT DIRECTLY. -->
 
-<!-- markdownlint-disable MD013 MD025 -->
 # vmafx Agent Operating Harness
 
 Before concluding any turn:
@@ -10,42 +9,57 @@ Before concluding any turn:
 make verify-all
 ```
 
-`make verify-all` = `praetorctl audit` + `praetorctl compile-context --verify` + repository tests. All pass -> Ed25519 Exit-0 receipt. Fail -> SARIF diagnostic distillation (<= 1500 tokens).
+`make verify-all` = `praetorctl audit` + `praetorctl compile-context --verify` +
+repository tests. All pass -> Ed25519 Exit-0 receipt. Fail -> SARIF diagnostic
+distillation (<= 1500 tokens).
 
 ## Core Directives & Invariants (Modernized NASA JPL Power-of-10)
 
-| Invariant | Scope | NASA Rule | Enforcement Mechanism | Failure Action |
-| :--- | :--- | :--- | :--- | :--- |
-| **HISS-01** | Control Flow | Rule 1 | Recursion strictly prohibited; call graph must be DAG; zero `goto`. | Immediate build failure |
-| **HISS-02** | Loops & I/O | Rule 2 | Scalar upper bound on all loops; explicit `context.Context` timeout on all I/O. | Semgrep / AST error |
-| **HISS-03** | Memory | Rule 3 | Zero dynamic heap allocation (`malloc` / `free`) in hot simulation/tick loops. | Allocation audit sweep |
-| **HISS-04** | Complexity | Rule 4 | Function length $\le 60$ LOC, McCabe Cyclomatic $\le 10$, Statements $\le 50$. | AST sweep blocker |
-| **HISS-07** | Error Handling | Rule 7 | Zero `.unwrap()` / `.expect()`; all errors handled or wrapped with context. | Linter / Compiler error |
-| **HISS-08** | Determinism | Rule 8 | Zero dynamic execution (`eval` / `exec`); zero banned unsafe libc (`gets` / `strcpy` / `sprintf`). | AST / Linter error |
-| **HISS-09** | Reference Safety | Rule 9 | Mandatory `// SAFETY:` proofs for all pointer arithmetic and `unsafe` blocks. | AST check blocker |
-| **HISS-10** | Warning Hygiene | Rule 10 | Zero-warning tolerance across compiler, linter, and format sweeps. | Exit code 1 |
-| **HISS-15** | 3D Testing | Rule 5 | Positive, negative, and boundary tests mandatory for all public interfaces. | CI coverage gate |
-| **HISS-16** | Context Integrity | Fleet | Single canonical `AGENTS.md`; vendor files compiled via `praetorctl compile-context`. | Pre-commit blocker |
+| Invariant   | Scope             | NASA Rule | Enforcement Mechanism                                                                              | Failure Action          |
+| :---------- | :---------------- | :-------- | :------------------------------------------------------------------------------------------------- | :---------------------- |
+| **HISS-01** | Control Flow      | Rule 1    | Recursion strictly prohibited; call graph must be DAG; zero `goto`.                                | Immediate build failure |
+| **HISS-02** | Loops & I/O       | Rule 2    | Scalar upper bound on all loops; explicit `context.Context` timeout on all I/O.                    | Semgrep / AST error     |
+| **HISS-03** | Memory            | Rule 3    | Zero dynamic heap allocation (`malloc` / `free`) in hot simulation/tick loops.                     | Allocation audit sweep  |
+| **HISS-04** | Complexity        | Rule 4    | Function length $\le 60$ LOC, McCabe Cyclomatic $\le 10$, Statements $\le 50$.                     | AST sweep blocker       |
+| **HISS-07** | Error Handling    | Rule 7    | Zero `.unwrap()` / `.expect()`; all errors handled or wrapped with context.                        | Linter / Compiler error |
+| **HISS-08** | Determinism       | Rule 8    | Zero dynamic execution (`eval` / `exec`); zero banned unsafe libc (`gets` / `strcpy` / `sprintf`). | AST / Linter error      |
+| **HISS-09** | Reference Safety  | Rule 9    | Mandatory `// SAFETY:` proofs for all pointer arithmetic and `unsafe` blocks.                      | AST check blocker       |
+| **HISS-10** | Warning Hygiene   | Rule 10   | Zero-warning tolerance across compiler, linter, and format sweeps.                                 | Exit code 1             |
+| **HISS-15** | 3D Testing        | Rule 5    | Positive, negative, and boundary tests mandatory for all public interfaces.                        | CI coverage gate        |
+| **HISS-16** | Context Integrity | Fleet     | Single canonical `AGENTS.md`; vendor files compiled via `praetorctl compile-context`.              | Pre-commit blocker      |
 
 ## Operational Rules
 
-1. **Act on verified state.** Read source files, run real commands before hypothesis or edit. Never guess flag names, library signatures, repo configuration from memory.
+1. **Act on verified state.** Read source files, run real commands before
+   hypothesis or edit. Never guess flag names, library signatures, repo
+   configuration from memory.
 
-2. **Lead with output.** Direct answers, diffs, commands. No filler preamble, no "Based on", no restatement, no chatter.
+2. **Lead with output.** Direct answers, diffs, commands. No filler preamble, no
+   "Based on", no restatement, no chatter.
 
-3. **Context transpiler first.** Never edit `CLAUDE.md`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md` manually. All agent instruction updates -> `AGENTS.md`, then:
+3. **Context transpiler first.** Never edit `CLAUDE.md`, `.cursor/rules/*.mdc`,
+   `.windsurfrules`, `.github/copilot-instructions.md` manually. All agent
+   instruction updates -> `AGENTS.md`, then:
 
-   ```bash
-   praetorctl compile-context
-   ```
+    ```bash
+    praetorctl compile-context
+    ```
 
-   - `AGENTS.md` = agent-only text -> caveman (internal register). `praetorctl compile-context --verify` + `praetorctl audit` run caveman lint; findings fail gate; no opt-out. Check first:`praetorctl caveman check AGENTS.md`.
+    - `AGENTS.md` = agent-only text -> caveman (internal register).
+      `praetorctl compile-context --verify` + `praetorctl audit` run caveman
+      lint; findings fail gate; no opt-out. Check
+      first:`praetorctl caveman check AGENTS.md`.
 
-4. **SARIF diagnostic distillation.** Compiler/linter errors -> distill to $\le 1,500$ tokens ($< 60$ lines): top 3 root-cause failures with file/line pointers; full SARIF logs -> ephemeral storage.
+4. **SARIF diagnostic distillation.** Compiler/linter errors -> distill to
+   $\le 1,500$ tokens ($< 60$ lines): top 3 root-cause failures with file/line
+   pointers; full SARIF logs -> ephemeral storage.
 
-5. **No evasion.** Never attempt `--no-verify`, `LEFTHOOK=0`, or modifying `.git/hooks`. `cordana-standards[bot]` re-checks every pull request in ephemeral isolated sandbox.
+5. **No evasion.** Never attempt `--no-verify`, `LEFTHOOK=0`, or modifying
+   `.git/hooks`. `cordana-standards[bot]` re-checks every pull request in
+   ephemeral isolated sandbox.
 
-6. **Anti-loop interception.** Same AST diff + error category repeats $\ge 3$ times -> halt immediately. Re-evaluate design; no micro-textual retries.
+6. **Anti-loop interception.** Same AST diff + error category repeats $\ge 3$
+   times -> halt immediately. Re-evaluate design; no micro-textual retries.
 
 ## Text Register
 
@@ -65,50 +79,48 @@ Register follows the audience, then the task label of your brief (`register:` in
 
 ## Primary Verification Commands
 
-```bash
-# Fast local test suite
-# Declared commands only; run them before claiming application verification.
-'make' 'verify-all'
-
-# Recompile and verify cross-agent context outputs
-praetorctl compile-context --verify
-
-# Audit repository against declared HISS-16 standards
-praetorctl audit
-
-# Run all formatting, linting, and security gates
-make verify-all
-```
+- `make verify-all`: all formatting, linting, security, and test gates.
+- `praetorctl compile-context --verify`: cross-agent context integrity.
+- `praetorctl audit`: declared HISS invariants.
 
 <!-- praetor:harness:end -->
 
 ---
 
-<!-- markdownlint-disable MD013 -->
-# AGENTS.md — VMAFx
-
-> **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
-> Fork renamed + transferred. All new work, PRs, gh commands -> `VMAFx/vmafx`.
+> **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)** Fork
+> renamed + transferred. All new work, PRs, gh commands -> `VMAFx/vmafx`.
 > Session start, before any `gh` command: `gh repo set-default VMAFx/vmafx`.
 
 ## GLOBAL PROJECT RULES (TOP PRIORITY)
 
-Two rules. Scope: ALL agents, ALL tools, ALL commits, no exception. Override everything else in this file.
+Two rules. Scope: ALL agents, ALL tools, ALL commits, no exception. Override
+everything else in this file.
 
-1. **NEVER modify Netflix golden-data assertions** (`python/test/` `assertAlmostEqual` values).
-   Numerical-correctness ground truth. Scores drift -> fix code, not assertions.
-2. **EVERY user-discoverable surface gets human-readable documentation in the same PR** as the code.
-   No docs = unmergeable PR. ADRs, code comments: no substitute.
+1. **NEVER modify Netflix golden-data assertions** (`python/test/`
+   `assertAlmostEqual` values). Numerical-correctness ground truth. Scores drift
+   -> fix code, not assertions.
+2. **EVERY user-discoverable surface gets human-readable documentation in the
+   same PR** as the code. No docs = unmergeable PR. ADRs, code comments: no
+   substitute.
 
-Audience: any coding agent (Cursor, Copilot, Aider, Continue, Cody, Codeium, etc.).
-[CLAUDE.md](CLAUDE.md) = compiled projection of this file, never edited by hand. Claude Code–specific tooling (skills, hooks, agents): `.claude/`.
+Audience: any coding agent (Cursor, Copilot, Aider, Continue, Cody, Codeium,
+etc.). [CLAUDE.md](CLAUDE.md) = compiled projection of this file, never edited
+by hand. Claude Code–specific tooling (skills, hooks, agents): `.claude/`.
 
 ## 1. What this repo is
 
-- Fork of [Netflix/vmaf](https://github.com/Netflix/vmaf): perceptual video quality assessment.
-- Additions over upstream: SYCL / CUDA / HIP GPU backends (runtime-selected); AVX2/AVX-512/NEON SIMD; tiny-AI surface (ONNX Runtime; `ai/`, `core/src/dnn/`); MCP server (`mcp-server/vmaf-mcp/`).
-- `--precision` CLI flag: default `%.6f` Netflix-compat; `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless. ADR-0119 supersedes ADR-0006.
-- License: per-file `SPDX-License-Identifier` authoritative ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited code keeps its terms: BSD-2-Clause-Patent, upstream license preserved ([LICENSE](LICENSE)). Fork-authored code: EUPL-1.2 ([LICENSES/EUPL-1.2.txt](LICENSES/EUPL-1.2.txt)).
+- Fork of [Netflix/vmaf](https://github.com/Netflix/vmaf): perceptual video
+  quality assessment.
+- Additions over upstream: SYCL / CUDA / HIP GPU backends (runtime-selected);
+  AVX2/AVX-512/NEON SIMD; tiny-AI surface (ONNX Runtime; `ai/`,
+  `core/src/dnn/`); MCP server (`mcp-server/vmaf-mcp/`).
+- `--precision` CLI flag: default `%.6f` Netflix-compat; `--precision=max` opts
+  in to `%.17g` IEEE-754 round-trip lossless. ADR-0119 supersedes ADR-0006.
+- License: per-file `SPDX-License-Identifier` authoritative
+  ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited
+  code keeps its terms: BSD-2-Clause-Patent, upstream license preserved
+  ([LICENSE](LICENSE)). Fork-authored code: EUPL-1.2
+  ([LICENSES/EUPL-1.2.txt](LICENSES/EUPL-1.2.txt)).
 - Default branch: `master`. Upstream tracked as remote `upstream`.
 
 ## 2. Build
@@ -120,9 +132,16 @@ meson setup build core [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
 ```
 
-- CPU configuration: [source-build guide](docs/getting-started/index.md#build-from-source-any-platform). SDK setup + GPU configurations: [backend guides](docs/backends/index.md).
+- CPU configuration:
+  [source-build guide](docs/getting-started/index.md#build-from-source-any-platform).
+  SDK setup + GPU configurations: [backend guides](docs/backends/index.md).
 - Skill shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all`.
-- IDE: clangd / VS Code C/C++ extension read `${workspaceFolder}/build/` ([`.vscode/c_cpp_properties.json`](.vscode/c_cpp_properties.json)). Configure it with every backend toolchain present; else `compile_commands.json` lacks CUDA / SYCL include paths -> "undeclared identifier" on every backend file. Vulkan removed (ADR-0726): `volk.h` / `vk_mem_alloc.h` no longer needed. See [docs/development/ide-setup.md](docs/development/ide-setup.md).
+- IDE: clangd / VS Code C/C++ extension read `${workspaceFolder}/build/`
+  ([`.vscode/c_cpp_properties.json`](.vscode/c_cpp_properties.json)). Configure
+  it with every backend toolchain present; else `compile_commands.json` lacks
+  CUDA / SYCL include paths -> "undeclared identifier" on every backend file.
+  Vulkan removed (ADR-0726): `volk.h` / `vk_mem_alloc.h` no longer needed. See
+  [docs/development/ide-setup.md](docs/development/ide-setup.md).
 
 ## 3. Test
 
@@ -142,115 +161,132 @@ make format        # clang-format + black + ruff (writes)
 make format-check  # dry-run (CI / pre-commit)
 ```
 
-`make preflight` before push: `make lint` builds with one compiler, misses portability breaks (ADR-1234). Skills: `/format-all`, `/lint-all`.
+`make preflight` before push: `make lint` builds with one compiler, misses
+portability breaks (ADR-1234). Skills: `/format-all`, `/lint-all`.
 
 ## 5. Repository layout
 
 Former [CLAUDE.md §5](CLAUDE.md) layout, merged here:
 
-- `core/` — C library + build root (was `libvmaf/`, ADR-0700); `core/include/libvmaf/` public C API headers; `core/test/` C unit tests
+- `core/` — C library + build root (was `libvmaf/`, ADR-0700);
+  `core/include/libvmaf/` public C API headers; `core/test/` C unit tests
 - `core/src/` — C engine: metric engine, feature extractors
-- `core/src/{cuda,sycl,dnn}/` — GPU / DNN backends: CUDA runtime (picture, dispatch), SYCL runtime (queue, USM, dmabuf), ONNX Runtime integration
-- `core/src/feature/{x86,arm64,cuda,sycl}/` — per-platform feature implementations: AVX2 / AVX-512, NEON, CUDA kernels, SYCL kernels
-- `core/tools/` — `vmaf` CLI (`vmaf.cpp`, `cli_parse.cpp`, `vmafx` symlink / Windows exe) + `vmaf_bench`
+- `core/src/{cuda,sycl,dnn}/` — GPU / DNN backends: CUDA runtime (picture,
+  dispatch), SYCL runtime (queue, USM, dmabuf), ONNX Runtime integration
+- `core/src/feature/{x86,arm64,cuda,sycl}/` — per-platform feature
+  implementations: AVX2 / AVX-512, NEON, CUDA kernels, SYCL kernels
+- `core/tools/` — `vmaf` CLI (`vmaf.cpp`, `cli_parse.cpp`, `vmafx` symlink /
+  Windows exe) + `vmaf_bench`
 - `compat/python-vmaf/` — Python harness package (was `python/vmaf/`, ADR-0700)
-- `python/vmaf/` + `python/test/` — Python shim re-exporting `compat/python-vmaf/` + tests (golden-data here)
+- `python/vmaf/` + `python/test/` — Python shim re-exporting
+  `compat/python-vmaf/` + tests (golden-data here)
 - `ai/` — PyTorch + Lightning tiny-model training
 - `mcp-server/` — MCP JSON-RPC server (`mcp-server/vmaf-mcp/`, Python)
 - `model/` — VMAF models (.json / .pkl / .onnx)
 - `testdata/` — fork-added YUV + snapshot JSONs
-- `dev/` — dev-MCP Docker container (`Containerfile`, `docker-compose.yml`, `scripts/`)
-- `docs/` — all documentation, upstream-mirrored + fork-added; `docs/principles.md` — canonical engineering standards
+- `dev/` — dev-MCP Docker container (`Containerfile`, `docker-compose.yml`,
+  `scripts/`)
+- `docs/` — all documentation, upstream-mirrored + fork-added;
+  `docs/principles.md` — canonical engineering standards
 - `.claude/` — Claude Code config: skills, agents, hooks
-- `.workingdir/` — live session state: OPEN, BACKLOG, BUGS, QUESTIONS (gitignored); `.workingdir2/` — historical planning dossier (gitignored)
+- `.workingdir/` — live session state: OPEN, BACKLOG, BUGS, QUESTIONS
+  (gitignored); `.workingdir2/` — historical planning dossier (gitignored)
 
 ## 6. Coding standards
 
-Read [docs/principles.md](docs/principles.md) before writing C. All C code conforms to:
+Read [docs/principles.md](docs/principles.md) before writing C. All C code
+conforms to:
 
 - NASA/JPL Power of 10 (enforced by `.clang-tidy`)
 - JPL Institutional Coding Standard for C (applicable subset)
 - SEI CERT C & CERT C++ (mandatory)
 - MISRA C:2012 (informative subset)
 
-Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks codifying them: [docs/principles.md](docs/principles.md). Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2 rule 30). Every non-void return value checked or explicitly `(void)`-discarded.
+Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks
+codifying them: [docs/principles.md](docs/principles.md). Banned: `gets`,
+`strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2
+rule 30). Every non-void return value checked or explicitly `(void)`-discarded.
 
 Style: K&R, 4-space indent, 100-char line budget (see `.clang-format`).
 
 ## 7. Conventional entry points for common tasks
 
-Each workflow = Claude skill under `.claude/skills/`. Agents without slash-command routing: read matching `SKILL.md`, follow steps by hand.
+Workflows live at `.claude/skills/<task>/SKILL.md`. Without slash-command
+routing, read the matching file and execute it manually. Key routes:
 
-| Task                              | See                                               |
-|-----------------------------------|---------------------------------------------------|
-| Build against a backend           | `.claude/skills/build-vmaf/SKILL.md`              |
-| Build ffmpeg w/ libvmaf patches   | `.claude/skills/build-ffmpeg-with-vmaf/SKILL.md`  |
-| Refresh ffmpeg-patches/ series    | `.claude/skills/refresh-ffmpeg-patches/SKILL.md`  |
-| Add new GPU backend               | `.claude/skills/add-gpu-backend/SKILL.md`         |
-| Add SIMD path                     | `.claude/skills/add-simd-path/SKILL.md`           |
-| Add feature extractor             | `.claude/skills/add-feature-extractor/SKILL.md`   |
-| Add a model                       | `.claude/skills/add-model/SKILL.md`               |
-| Add/audit AI run manifest         | `.claude/skills/ai-run-manifest/SKILL.md`         |
-| Cross-backend numeric diff        | `.claude/skills/cross-backend-diff/SKILL.md`      |
-| Validate scores (per-backend ULP) | `.claude/skills/validate-scores/SKILL.md`         |
-| Run Netflix bench harness         | `.claude/skills/run-netflix-bench/SKILL.md`       |
-| Profile a hot path                | `.claude/skills/profile-hotpath/SKILL.md`         |
-| Bisect a code regression          | `.claude/skills/bisect-regression/SKILL.md`       |
-| Bisect ONNX checkpoint quality    | `.claude/skills/bisect-model-quality/SKILL.md`    |
-| Port upstream commit              | `.claude/skills/port-upstream-commit/SKILL.md`    |
-| Sync with upstream master         | `.claude/skills/sync-upstream/SKILL.md`           |
-| Regenerate test snapshots         | `.claude/skills/regen-snapshots/SKILL.md`         |
-| Regenerate Doxygen / Sphinx docs  | `.claude/skills/regen-docs/SKILL.md`              |
-| Format all (clang-format / black) | `.claude/skills/format-all/SKILL.md`              |
-| Lint all (clang-tidy / cppcheck)  | `.claude/skills/lint-all/SKILL.md`                |
-| Local-LLM commit-msg draft        | `.claude/skills/dev-llm-commitmsg/SKILL.md`       |
-| Local-LLM Doxygen docgen          | `.claude/skills/dev-llm-docgen/SKILL.md`          |
-| Local-LLM tiny-AI model card      | `.claude/skills/dev-llm-modelcard/SKILL.md`       |
-| Local-LLM file review             | `.claude/skills/dev-llm-review/SKILL.md`          |
-| Release dry-run                   | `.claude/skills/prep-release/SKILL.md`            |
+- Build: `build-vmaf`, `build-ffmpeg-with-vmaf`, `refresh-ffmpeg-patches`.
+- Extend: `add-gpu-backend`, `add-simd-path`, `add-feature-extractor`,
+  `add-model`, `add-mcp-tool`, `ai-run-manifest`.
+- Validate: `cross-backend-diff`, `validate-scores`, `run-netflix-bench`,
+  `profile-hotpath`, both `bisect-*` and both `regen-*` skills.
+- Maintain: `sync-upstream`, `port-upstream-commit`, `format-all`, `lint-all`,
+  the four `dev-llm-*` skills, and `prep-release`.
 
 ## 8. Netflix golden-data gate — never modify
 
-Three Netflix-authored CPU reference test pairs = numerical-correctness ground truth:
+Three Netflix-authored CPU reference test pairs = numerical-correctness ground
+truth:
 
 1. **Normal** — `src01_hrc00_576x324.yuv` ↔ `src01_hrc01_576x324.yuv`
 2. **Checkerboard 1-px** — `checkerboard_1920_1080_10_3_0_0.yuv` ↔ `..._1_0.yuv`
-3. **Checkerboard 10-px** — `checkerboard_1920_1080_10_3_0_0.yuv` ↔ `..._10_0.yuv`
+3. **Checkerboard 10-px** — `checkerboard_1920_1080_10_3_0_0.yuv` ↔
+   `..._10_0.yuv`
 
 - YUV files: `python/test/resource/yuv/`.
-- Golden-score assertions: hardcoded `assertAlmostEqual(...)` calls in `python/test/` (`quality_runner_test.py`, `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, `feature_extractor_test.py`, `result_test.py`).
+- Golden-score assertions: hardcoded `assertAlmostEqual(...)` calls in
+  `python/test/` (`quality_runner_test.py`, `vmafexec_test.py`,
+  `vmafexec_feature_extractor_test.py`, `feature_extractor_test.py`,
+  `result_test.py`).
 - **Never modified by any PR.** Run in CI as required status check.
 - Fork-added tests: separate files + directories.
 
 ## 9. Snapshot regeneration
 
-`testdata/scores_cpu_*.json` + `testdata/netflix_benchmark_results.json` = fork-added GPU/SIMD snapshots, NOT Netflix golden data. Intentional numerical change -> regenerate them (`/regen-snapshots`), justification in commit message. Unjustified changes in these files: rejected in review.
+`testdata/scores_cpu_*.json` + `testdata/netflix_benchmark_results.json` =
+fork-added GPU/SIMD snapshots, NOT Netflix golden data. Intentional numerical
+change -> regenerate them (`/regen-snapshots`), justification in commit message.
+Unjustified changes in these files: rejected in review.
 
 ## 10. Upstream sync
 
-`git remote add upstream https://github.com/Netflix/vmaf.git` (once), then `.claude/skills/sync-upstream/SKILL.md` -> sync PR. Single commits: `port-upstream-commit`.
+`git remote add upstream https://github.com/Netflix/vmaf.git` (once), then
+`.claude/skills/sync-upstream/SKILL.md` -> sync PR. Single commits:
+`port-upstream-commit`.
 
 ## 11. Release
 
 - `release-please`, triggered by pushes to `master`.
-- One ordinary SemVer stream (`vMAJOR.MINOR.PATCH`), independent of Netflix release cadence (ADR-1127 supersedes ADR-0011). Root release aligns release-owned Python packages + Helm `appVersion`.
+- One ordinary SemVer stream (`vMAJOR.MINOR.PATCH`), independent of Netflix
+  release cadence (ADR-1127 supersedes ADR-0011). Root release aligns
+  release-owned Python packages + Helm `appVersion`.
 - Signing: keyless, Sigstore / GitHub OIDC. Local dry-run: `/prep-release`.
 
 ## 12. Hard rules, worktree discipline and rebase invariants
 
-Three bodies of binding rules live on own pages -> harness stays inside 300-line budget per compiled vendor context file. Not optional: import lines below pull them in for agents expanding imports; every other agent follows links.
+Three bodies of binding rules live on own pages -> harness stays inside 300-line
+budget per compiled vendor context file. Not optional: import lines below pull
+them in for agents expanding imports; every other agent follows links.
 
 @docs/development/agent-hard-rules.md
 @docs/development/rebase-sensitive-invariants.md
 
-- [Agent hard rules](docs/development/agent-hard-rules.md) — golden-data gate, branch + commit rules, same-PR documentation requirement, licence headers, container preference, `docs/state.md` bug tracking.
-- [Worktree discipline](docs/development/agent-worktree-discipline.md) — isolated agent worktrees, [ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md) host-side hard guard.
-- [Rebase-sensitive invariants](docs/development/rebase-sensitive-invariants.md) — project-wide index every upstream-sync or rebase agent must preserve.
+- [Agent hard rules](docs/development/agent-hard-rules.md) — golden-data gate,
+  branch + commit rules, same-PR documentation requirement, licence headers,
+  container preference, `docs/state.md` bug tracking.
+- [Worktree discipline](docs/development/agent-worktree-discipline.md) —
+  isolated agent worktrees,
+  [ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md) host-side hard
+  guard.
+- [Rebase-sensitive invariants](docs/development/rebase-sensitive-invariants.md)
+  — project-wide index every upstream-sync or rebase agent must preserve.
 
 ## 14. Interaction style — prefer structured popup questions
 
-- Host agent exposes structured-question UI (Claude Code's `AskUserQuestion`, Cursor's choice prompt, Aider's multi-choice, etc.) -> **use it; no wall of numbered questions in prose**. User clicks options in seconds; prose questionnaires force scroll, parse, typed structured reply.
+- Host agent exposes structured-question UI (Claude Code's `AskUserQuestion`,
+  Cursor's choice prompt, Aider's multi-choice, etc.) -> **use it; no wall of
+  numbered questions in prose**. User clicks options in seconds; prose
+  questionnaires force scroll, parse, typed structured reply.
 - 2–4 focused questions per round, 2–4 concrete options each.
 - Recommended option marked `(Recommended)` when one clearly wins.
 - Prose sets up question; question itself goes in UI.
-- Answers + reports in prose: fine. Rule covers *asking*, not reporting.
+- Answers + reports in prose: fine. Rule covers _asking_, not reporting.

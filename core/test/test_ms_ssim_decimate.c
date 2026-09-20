@@ -22,11 +22,6 @@
 
 #include <stdint.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -99,13 +94,13 @@ static char *check_variant(const float *src, int w, int h, const float *dst_scal
                            decimate_fn fn, int poison, char *fail_rc, char *fail_cmp)
 {
     float *dst = (float *)malloc(dst_n * sizeof(float));
-    mu_assert("malloc failed", dst != NULL);
+    mu_assert("malloc failed", dst != VMAF_NULLPTR);
     memset(dst, poison, dst_n * sizeof(float));
-    const int rc = fn(src, w, h, dst, NULL, NULL);
+    const int rc = fn(src, w, h, dst, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert(fail_rc, rc == 0);
     mu_assert(fail_cmp, compare_bitexact(dst_scalar, dst, dst_n));
     free(dst);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 || ARCH_AARCH64 */
@@ -115,7 +110,7 @@ static char *check_variant(const float *src, int w, int h, const float *dst_scal
 static char *check_simd_variants(const float *src, int w, int h, const float *dst_scalar,
                                  size_t dst_n)
 {
-    char *msg = NULL;
+    char *msg = VMAF_NULLPTR;
     /* Unused on hosts with neither an x86 nor an aarch64 SIMD variant. */
     (void)src;
     (void)w;
@@ -163,7 +158,8 @@ static char *check_case(int w, int h, uint32_t seed)
     fill_pattern(src, src_n, seed);
     memset(dst_scalar, 0xAA, dst_n * sizeof(float));
 
-    const int rc_scalar = ms_ssim_decimate_scalar(src, w, h, dst_scalar, NULL, NULL);
+    const int rc_scalar =
+        ms_ssim_decimate_scalar(src, w, h, dst_scalar, VMAF_NULLPTR, VMAF_NULLPTR);
     char *msg = (rc_scalar != 0) ? "scalar decimate failed" :
                                    check_simd_variants(src, w, h, dst_scalar, dst_n);
     free(src);
@@ -229,7 +225,7 @@ char *run_tests(void)
 #if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
     (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
                           "(see TODO(ms-ssim-mingw))\n");
-    return NULL;
+    return VMAF_NULLPTR;
 #else
 #if ARCH_X86
     const unsigned cpu_flags = vmaf_get_cpu_flags_x86();
@@ -237,7 +233,7 @@ char *run_tests(void)
     g_has_avx512 = (cpu_flags & VMAF_X86_CPU_FLAG_AVX512) ? 1 : 0;
     if (!g_has_avx2 && !g_has_avx512) {
         (void)fprintf(stderr, "skipping: CPU has neither AVX2 nor AVX-512\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 #endif
 
@@ -249,5 +245,3 @@ char *run_tests(void)
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 #endif
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

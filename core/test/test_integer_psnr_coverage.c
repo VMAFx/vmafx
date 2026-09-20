@@ -34,12 +34,6 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Helper: locate the psnr extractor or return a test-fail string. */
 static const VmafFeatureExtractor *psnr_fex_or_fail(char **fail_out)
 {
@@ -81,41 +75,41 @@ static int alloc_grey(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned b
 
 static char *test_psnr_init_yuv400p_disables_chroma(void)
 {
-    char *fail = NULL;
+    char *fail = VMAF_NULLPTR;
     const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("psnr context_create", err == 0 && ctx != NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
+    mu_assert("psnr context_create", err == 0 && ctx != VMAF_NULLPTR);
 
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV400P, 8u, 32u, 32u);
     mu_assert("psnr init YUV400P", err == 0);
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_init_yuv444p_no_chroma_subsample(void)
 {
-    char *fail = NULL;
+    char *fail = VMAF_NULLPTR;
     const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     mu_assert("psnr context_create", err == 0);
 
     /* Drive the `min_sse>0` branch (psnr_max ceiling); use the
      * feature_param option dict to pass min_sse + reduced_hbd_peak. */
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     err = vmaf_dictionary_set(&opts, "min_sse", "1.0", 0);
     mu_assert("set min_sse opt", err == 0);
 
-    VmafFeatureExtractorContext *ctx2 = NULL;
+    VmafFeatureExtractorContext *ctx2 = VMAF_NULLPTR;
     err = vmaf_feature_extractor_context_create(&ctx2, fex, opts);
     mu_assert("psnr context_create with opts", err == 0);
 
@@ -127,21 +121,21 @@ static char *test_psnr_init_yuv444p_no_chroma_subsample(void)
     (void)vmaf_feature_extractor_context_close(ctx2);
     (void)vmaf_feature_extractor_context_destroy(ctx2);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_init_yuv422p_horizontal_only_subsample(void)
 {
-    char *fail = NULL;
+    char *fail = VMAF_NULLPTR;
     const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "min_sse", "0.5", 0);
     mu_assert("set min_sse opt", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("psnr context_create with opts", err == 0);
 
@@ -152,7 +146,7 @@ static char *test_psnr_init_yuv422p_horizontal_only_subsample(void)
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -162,12 +156,12 @@ static char *test_psnr_init_yuv422p_horizontal_only_subsample(void)
 static char *init_extract_hbd_identical(VmafFeatureExtractorContext **ctx,
                                         VmafFeatureCollector **fc, unsigned bpc)
 {
-    char *fail = NULL;
+    char *fail = VMAF_NULLPTR;
     const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("psnr context_create", err == 0);
 
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, bpc, 16u, 16u);
@@ -175,13 +169,13 @@ static char *init_extract_hbd_identical(VmafFeatureExtractorContext **ctx,
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_extract_hbd_identical(unsigned bpc)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_extract_hbd_identical(&ctx, &fc, bpc);
     if (setup_error)
         return setup_error;
@@ -194,7 +188,8 @@ static char *run_extract_hbd_identical(unsigned bpc)
     err = alloc_grey(&dist, VMAF_PIX_FMT_YUV420P, bpc, 16u, 16u, 100u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract hbd identical", err == 0);
 
     /* Identical inputs → SSE = 0 → MSE clamped to 1e-16 → psnr at psnr_max. */
@@ -209,7 +204,7 @@ static char *run_extract_hbd_identical(unsigned bpc)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_extract_hbd_10bit(void)
@@ -229,12 +224,12 @@ static char *test_psnr_extract_hbd_12bit(void)
 static char *init_psnr_flush_apsnr_enabled(VmafFeatureExtractorContext **ctx,
                                            VmafFeatureCollector **fc)
 {
-    char *fail = NULL;
+    char *fail = VMAF_NULLPTR;
     const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "enable_apsnr", "true", 0);
     mu_assert("set enable_apsnr", err == 0);
 
@@ -246,13 +241,13 @@ static char *init_psnr_flush_apsnr_enabled(VmafFeatureExtractorContext **ctx,
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_flush_apsnr_enabled(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_psnr_flush_apsnr_enabled(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -268,7 +263,8 @@ static char *test_psnr_flush_apsnr_enabled(void)
     err = alloc_grey(&dist, VMAF_PIX_FMT_YUV420P, 8u, 16u, 16u, 110u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract for apsnr accumulation", err == 0);
 
     err = vmaf_feature_extractor_context_flush(ctx, fc);
@@ -285,7 +281,7 @@ static char *test_psnr_flush_apsnr_enabled(void)
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -306,7 +302,5 @@ char *run_tests(void)
     mu_run_test(test_psnr_extract_hbd_12bit);
     mu_run_test(test_psnr_extract_hbd_16bit);
     mu_run_test(test_psnr_flush_apsnr_enabled);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

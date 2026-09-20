@@ -1,6 +1,5 @@
-# Centralizes Python linter/formatter config for the fork-added Python tooling
-# (ai/, scripts/) and the existing python/ tree. Upstream-authored python/
-# tests are formatted but not lint-failed (see [tool.ruff.lint.per-file-ignores]).
+# Centralizes Python linter/formatter config for every tracked Python source.
+# Source origin, generated status, and historical ownership never exempt a file.
 
 [project]
 name = "vmafx-tooling"
@@ -30,10 +29,6 @@ extend-exclude = '''
     \.git
   | build
   | dist
-  | subprojects
-  | python/test/resource
-  | compat/python-vmaf/resource
-  | compat/python-vmaf/matlab
 )/
 '''
 
@@ -42,10 +37,6 @@ line-length = 100
 target-version = "py310"
 extend-exclude = [
   "build",
-  "subprojects",
-  "python/test/resource",
-  "compat/python-vmaf/resource",
-  "compat/python-vmaf/matlab",
 ]
 
 [tool.ruff.lint]
@@ -104,48 +95,6 @@ ignore = [
 # deadlocked `pre-commit run --all-files`. aiutils lives in ai/src/ (#908).
 known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 
-[tool.ruff.lint.per-file-ignores]
-# Upstream Netflix Python is not our style canon. Keep F821 (undefined
-# name) and real-bug pyflakes catching defects; silence bugbear /
-# security / simplify / style families and the hygiene-only F/E codes
-# (unused imports, unused vars, bare except) — those represent style
-# drift Netflix owns, not regressions we introduced.
-"python/**" = [
-    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001", "PTH",
-    "F401", "F522", "F541", "F841",
-    "E402", "E711", "E722", "E731", "E741",
-]
-# Ad-hoc developer benchmark + one-off comparison scripts. They are
-# manually invoked by humans, not shipped as part of libvmaf, so style
-# drift is acceptable and the bandit `S` warnings (subprocess,
-# try/except pass) are known-and-accepted in a dev context.
-"testdata/**" = [
-    "S", "PL", "B", "SIM", "RUF", "I001", "PTH",
-    "F401", "F541", "F841",
-    "E401", "E402", "E701", "E722", "W291", "W292",
-]
-# Upstream Netflix Python harness, relocated from python/vmaf/ to
-# compat/python-vmaf/ by the VMAFX repo-layout refactor (ADR-0700).
-# Same intent as the python/** exception above — Netflix style drift is
-# not our canon. Mutable-class-attribute annotations (RUF012), dict()
-# literal rewrites (C408), and the broader upstream style families are
-# suppressed to keep upstream-parity code free from fork noise.
-"compat/python-vmaf/**" = [
-    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001", "PTH",
-    "F401", "F522", "F541", "F841",
-    "E402", "E711", "E722", "E731", "E741",
-]
-# Upstream Netflix dataset / model config scripts. Pure data, not
-# business logic — they ship as fixtures and are not in our hot path.
-# (Resource tree is also in [tool.ruff] extend-exclude; this per-file
-# ignore block stays as a belt-and-suspenders guard for any files that
-# slip past the directory exclude.)
-"compat/python-vmaf/resource/**" = [
-    "S", "PL", "B", "SIM", "RUF", "I001", "PTH",
-    "F401", "F541", "F841",
-    "E401", "E402", "E701", "E711", "E722", "W291", "W292",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["python/test", "ai/tests", "compat/vmaf/tests"]
 addopts = "-ra --strict-markers"
@@ -163,31 +112,13 @@ markers = [
 [tool.mypy]
 python_version = "3.10"
 strict = true
-# ai/src/ is the vmaf_train package source root. Declaring it via mypy_path lets
-# mypy resolve `vmaf_train.*` imports in ai/scripts/ and ai/tests/ without the
-# package being pip-installed. ai/src/ itself is excluded from the file-scan list
-# to prevent the duplicate-module-name error (mypy would otherwise see each module
-# twice: once as "ai.src.vmaf_train.X" from the ai/ argument and once as
-# "vmaf_train.X" from mypy_path).
+# ai/src/ is the vmaf_train package source root. Explicit package bases keep the
+# source tree canonical without hiding the same files behind an excluded alias.
 mypy_path = "ai/src"
+explicit_package_bases = true
 exclude = [
   "build/",
-  "subprojects/",
-  "python/test/resource/",
-  "ai/src/",
 ]
-
-[[tool.mypy.overrides]]
-module = "vmaf.*"
-ignore_errors = true   # upstream library — not our type stubs to maintain
-
-[[tool.mypy.overrides]]
-# Suppress "Source file found twice" errors for the ai.src.vmaf_train.* namespace.
-# This fires when a script imports vmaf_train.X (resolved via mypy_path → ai/src/)
-# and mypy also sees the same file in the ai.src namespace via the legacy ai/ scan.
-# The ai.src namespace is never used at runtime; only vmaf_train.* is.
-module = ["ai.src.*", "ai.src.vmaf_train.*"]
-ignore_errors = true
 
 [[tool.mypy.overrides]]
 # Packages that ship no py.typed marker and have no usable third-party stubs.

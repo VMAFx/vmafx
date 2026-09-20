@@ -1,5 +1,4 @@
-<!-- markdownlint-disable MD013 MD038 MD060 -->
-# ADR-0913: Changelog fragment renderer — splice contract is `^## \[`, not `^## `
+# ADR-0913: Changelog fragment renderer — splice contract is `^## \[`, not `^##`
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
@@ -39,19 +38,19 @@ self-similar duplicates against the in-tree file.
 The Unreleased-block splice sentinel is `^## \[`, anchored on the open
 square bracket that release-please always writes (and that
 `## [Unreleased]` itself uses). Fragment bodies may legitimately
-contain `## ` or `### ` headers; only the bracketed `## [version]`
+contain `##` or `###` headers; only the bracketed `## [version]`
 form ends the Unreleased block.
 
 Three companion fixes ride alongside:
 
 1. **Renderer-side defense-in-depth**: `emit_fragment()` demotes any
-   leading-line `# ` / `## ` in a fragment body to `**bold**`
+   leading-line `#` / `##` in a fragment body to `**bold**`
    pseudo-headers at render time, so a careless author cannot
    re-introduce the splice-contract violation.
 2. **Source-side normalisation**: all 102 in-tree fragments had stray
    `## Section` / `### Section` first-line headers stripped (where they
    duplicated the section name the renderer emits itself) or demoted
-   from `## ` to `### ` (so source tree matches the splice contract
+   from `##` to `###` (so source tree matches the splice contract
    directly, without relying on render-time demotion).
 3. **Unknown-subdir guard**: `changelog.d/<dir>/` outside the known
    Keep-a-Changelog set (`added/`, `changed/`, `deprecated/`,
@@ -70,9 +69,9 @@ is preserved at the top of the block.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Anchor sentinel on `^## \[`** (chosen) | Matches the only header shape release-please writes; immune to any fragment-body content shape; idempotent | Requires updating both awk passes + comment | Correct fix at the contract level |
-| Strip all `## ` from fragment bodies and keep the `^## [^[]` sentinel | No renderer change | Doesn't actually fix the bug — any *future* fragment with a `## ` regresses it; relies on an enforcement gate the project lacks | Source-side cleanup alone is fragile |
+| Strip all `##` from fragment bodies and keep the `^## [^[]` sentinel | No renderer change | Doesn't actually fix the bug — any *future* fragment with a `##` regresses it; relies on an enforcement gate the project lacks | Source-side cleanup alone is fragile |
 | Quote the Unreleased block with HTML comment fences (`<!-- BEGIN UNRELEASED --> ... <!-- END UNRELEASED -->`) | Sentinel becomes literal, immune to all markdown shapes | Conflicts with release-please's `## [version]` injection convention; would require forking release-please's `release-type: simple` driver | Too invasive for a regex fix |
 | Replace bash+awk renderer with a Python tool | Stronger parser, structured warnings | The shell tool is small, fast, already in CI; rewrite is unjustified for one regex bug | Yagni |
 
@@ -81,7 +80,7 @@ is preserved at the top of the block.
 - **Positive**: `--write` is idempotent across re-runs (verified). The
   drift class that bit PR #332, PR #383, PR #401, PR #384 is closed
   at the contract level. Future fragment authors can no longer trip
-  the bug by adding a `## ` heading.
+  the bug by adding a `##` heading.
 - **Positive**: stderr warnings on unknown subdirs surface the PR #384
   failure mode (perf/, performance/) for any future author who names a
   wrong directory.

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0338: macOS Vulkan-via-MoltenVK CI lane (advisory) for the Vulkan backend
 
 - **Status**: Accepted
@@ -88,7 +87,7 @@ Add a single **advisory** CI lane to
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | MoltenVK CI lane (chosen) | Validates SPIR-V → MSL on real Apple Silicon hardware; reuses existing kernel set; closes the macOS GPU coverage gap today | One extra runner-minute cost; bounded by MoltenVK's translation gaps (atomicInt64, external memory) | Cheapest credible coverage of the fork's macOS GPU story |
 | Wait for native Metal backend | Zero CI cost change | Leaves macOS without GPU coverage for the entire Metal port window (months); doesn't validate the SPIR-V translation path at all | Validation gap is real and the cost differential is small |
 | MoltenVK on a self-hosted Apple Silicon runner | Stable hardware; no GHA macOS-runner billing | Requires a self-hosted runner registration we don't have today; secret-management overhead; inconsistent with the lavapipe lane shape | Premature optimisation — the GHA macOS runner is fine for advisory coverage |

@@ -25,6 +25,24 @@ SIDECAR = REPO / "model/tiny/vmaf_tiny_v2.json"
 PARQUET = REPO / "runs/full_features_4corpus.parquet"
 SAMPLE_N = 5000
 N_SEEDS = 5
+ImportanceRow = tuple[str, float, float, float, float]
+
+
+def print_ranking(rows: list[ImportanceRow], base_plcc: float) -> None:
+    """Print the final importance table in descending PLCC-drop order."""
+    rows.sort(key=lambda row: row[3], reverse=True)
+    print("\nRanked by importance (drop):", flush=True)
+    print(
+        "| Rank | Feature | Baseline PLCC | After permutation | Drop ± std |",
+        flush=True,
+    )
+    print("|---|---|---|---|---|", flush=True)
+    for rank, (fname, mean_plcc, std_plcc, drop, _drop_std) in enumerate(rows, 1):
+        print(
+            f"| {rank} | `{fname}` | {base_plcc:.4f} | "
+            f"{mean_plcc:.4f} | {drop:+.4f} ± {std_plcc:.4f} |",
+            flush=True,
+        )
 
 
 def main() -> int:
@@ -56,7 +74,7 @@ def main() -> int:
     base_plcc, _ = pearsonr(base_pred, y)
     print(f"Baseline PLCC: {base_plcc:.6f}", flush=True)
 
-    rows = []
+    rows: list[ImportanceRow] = []
     for j, fname in enumerate(feats):
         plccs: list[float] = []
         for seed in range(N_SEEDS):
@@ -78,19 +96,7 @@ def main() -> int:
             flush=True,
         )
 
-    rows.sort(key=lambda r: r[3], reverse=True)
-    print("\nRanked by importance (drop):", flush=True)
-    print(
-        "| Rank | Feature | Baseline PLCC | After permutation | Drop ± std |",
-        flush=True,
-    )
-    print("|---|---|---|---|---|", flush=True)
-    for rank, (fname, mean_plcc, std_plcc, drop, _drop_std) in enumerate(rows, 1):
-        print(
-            f"| {rank} | `{fname}` | {base_plcc:.4f} | "
-            f"{mean_plcc:.4f} | {drop:+.4f} ± {std_plcc:.4f} |",
-            flush=True,
-        )
+    print_ranking(rows, float(base_plcc))
 
     return 0
 

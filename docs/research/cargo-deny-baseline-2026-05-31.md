@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest — cargo-deny baseline scan (2026-05-31)
 
 **Scope:** Initial dependency-graph audit of the Rust workspace
@@ -31,7 +30,7 @@ advisories ok, bans ok, licenses ok, sources ok
 Three duplicate-version warnings (warn-only, not gating):
 
 | Crate | Versions | Root cause |
-|---|---|---|
+| --- | --- | --- |
 | `linux-raw-sys` | 0.4.15, 0.12.1 | `bindgen 0.69` pulls `rustix 0.38` → `linux-raw-sys 0.4`; `cbindgen 0.27` pulls `rustix 1.1` → `linux-raw-sys 0.12`. |
 | `rustix` | 0.38.44, 1.1.4 | Same: `which 4.4` (via bindgen) pins old; `tempfile 3.27` (via cbindgen) pins new. |
 | `windows-sys` | 0.59.0, 0.61.2 | Old via `bindgen` → `which 4.4` → `errno 0.3` → `windows-sys 0.59`; new via `cbindgen` → `clap 4.6` → `anstream 1.0` → `windows-sys 0.61`. |

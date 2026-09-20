@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0125: Tiny-AI RGB Extractors High-Bit-Depth Input
 
 Date: 2026-05-15
@@ -24,7 +23,7 @@ ABI.
 ## Alternatives Considered
 
 | Option | Result | Rationale |
-|--------|--------|-----------|
+| -------- | -------- | ----------- |
 | Keep LPIPS / DISTS-Sq 8-bit only | Rejected | HDR / high-bit-depth corpus work would need pre-conversion outside libvmaf even though the model ABI can remain unchanged. |
 | Add new high-bit-depth ONNX inputs | Rejected | It would fork the model ABI and require new model cards / exporters without improving the existing RGB checkpoint semantics. |
 | Normalise high-bit-depth YUV into RGB8 before ImageNet normalisation | Accepted | It removes the input limitation while preserving graph ABI, output keys, and existing 8-bit behaviour. |

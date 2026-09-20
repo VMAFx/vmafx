@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0487: Wire adm_min_val option into integer_adm GPU backends
 
 - **Status**: Accepted
@@ -28,7 +27,7 @@ after the `score = num / den` computation in each backend's collect path.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | GPU kernel clamp | Keeps all logic on device | Requires shader changes, recompile, extra push constant; overkill for a single scalar compare | Not chosen — host-side clamp is cheaper and equivalent |
 | Document as intentional gap | Zero code change | Caller still silently drops the option; parity gap persists | Not chosen — gap is a genuine bug, not a design limitation |
 

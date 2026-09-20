@@ -129,9 +129,10 @@ static inline void PADDING_SQ_DATA_2(const VifBuffer *buf, int w, unsigned fwidt
     }
 }
 
-void vif_statistic_8(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h);
-void vif_statistic_16(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
-                      int bpc, int scale);
+void vif_statistic_8(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                     unsigned h);
+void vif_statistic_16(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                      unsigned h, int bpc, int scale);
 
 /*
  * Compute vif residuals on a vertically filtered line

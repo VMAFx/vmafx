@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # vmaf-roi-score (Option C)
 
 Region-of-interest VMAF *scoring* for the VMAFx fork.
@@ -42,7 +41,7 @@ tools/vmaf-roi-score/
 ## Status
 
 | Surface | Status |
-|---|---|
+| --- | --- |
 | Combine math (`blend_scores`) | shipped, tested |
 | CLI (`--reference / --distorted / --weight / --synthetic-mask`) | shipped, tested |
 | `vmaf` subprocess seam | shipped, tested (mocked) |

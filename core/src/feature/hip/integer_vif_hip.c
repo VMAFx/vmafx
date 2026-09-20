@@ -30,6 +30,8 @@
  *  feature engine falls through to the CPU path.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -50,9 +52,9 @@
 
 #include "../../hip/hip_handle.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -259,7 +261,7 @@ typedef struct VifHipKernelSlot {
 } VifHipKernelSlot;
 
 /* Load the kernel blob and resolve the ten kernels by name. On failure the
- * module is unloaded again and `s->module` is NULL. */
+ * module is unloaded again and `s->module` is VMAF_NULLPTR. */
 static int vif_hip_module_load(VifStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, vif_statistics_hsaco);
@@ -283,7 +285,7 @@ static int vif_hip_module_load(VifStateHip *s)
         rc = hipModuleGetFunction(kernels[i].slot, s->module, kernels[i].name);
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return vif_hip_err(rc);
 }
@@ -304,9 +306,9 @@ static int vif_hip_filter1d_8(VifStateHip *s, uint8_t *ref_in, uint8_t *dis_in, 
     void *vif_filt_dev = s->vif_filt_dev;
     void *args_vert[] = {(void *)buf, (void *)&ref_in, (void *)&dis_in,
                          (void *)&w,  (void *)&h,      (void *)&vif_filt_dev};
-    hipError_t rc =
-        hipModuleLaunchKernel(s->func_vert_8_17_9, (unsigned)GX_V, (unsigned)GY_V, 1u,
-                              (unsigned)BX_V, (unsigned)BY_V, 1u, 0u, stream, args_vert, NULL);
+    hipError_t rc = hipModuleLaunchKernel(s->func_vert_8_17_9, (unsigned)GX_V, (unsigned)GY_V, 1u,
+                                          (unsigned)BX_V, (unsigned)BY_V, 1u, 0u, stream, args_vert,
+                                          VMAF_NULLPTR);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
@@ -322,7 +324,7 @@ static int vif_hip_filter1d_8(VifStateHip *s, uint8_t *ref_in, uint8_t *dis_in, 
                          (void *)&s->vif_enhn_gain_limit,
                          (void *)&accum_ptr};
     rc = hipModuleLaunchKernel(s->func_hori_8_17_9, (unsigned)GX_H, (unsigned)GY_H, 1u,
-                               (unsigned)BX_H, 1u, 1u, 0u, stream, args_hori, NULL);
+                               (unsigned)BX_H, 1u, 1u, 0u, stream, args_hori, VMAF_NULLPTR);
     return vif_hip_err(rc);
 }
 
@@ -368,8 +370,8 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
     if (raw)
         add_shift_VP_sq = (bpc == 8) ? 0 : 1 << (shift_VP_sq - 1);
 
-    hipFunction_t vert_func = NULL;
-    hipFunction_t hori_func = NULL;
+    hipFunction_t vert_func = VMAF_NULLPTR;
+    hipFunction_t hori_func = VMAF_NULLPTR;
     const int pick_err = vif_hip_pick_16(s, scale, &vert_func, &hori_func);
     if (pick_err != 0)
         return pick_err;
@@ -387,7 +389,7 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
         (void *)&shift_VP_sq, (void *)&vif_filt_dev};
     hipError_t rc =
         hipModuleLaunchKernel(vert_func, (unsigned)GX_V, (unsigned)GY_V, 1u, (unsigned)BX_V,
-                              (unsigned)BY_V, 1u, 0u, stream, args_vert, NULL);
+                              (unsigned)BY_V, 1u, 0u, stream, args_vert, VMAF_NULLPTR);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
@@ -405,7 +407,7 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
                          (void *)&s->vif_enhn_gain_limit,
                          (void *)&accum_ptr};
     rc = hipModuleLaunchKernel(hori_func, (unsigned)GX_H, (unsigned)GY_H, 1u, (unsigned)BX_H, 1u,
-                               1u, 0u, stream, args_hori, NULL);
+                               1u, 0u, stream, args_hori, VMAF_NULLPTR);
     return vif_hip_err(rc);
 }
 
@@ -508,39 +510,39 @@ static int vif_hip_bufs_alloc(VifStateHip *s, size_t data_sz, unsigned h)
 static int vif_hip_release(VifStateHip *s)
 {
     int ret = 0;
-    if (s->str != NULL)
+    if (s->str != VMAF_NULLPTR)
         ret = vif_hip_err(hipStreamSynchronize(s->str));
 
-    hipError_t rc = (s->accum_host != NULL) ? hipHostFree(s->accum_host) : hipSuccess;
-    s->accum_host = NULL;
+    hipError_t rc = (s->accum_host != VMAF_NULLPTR) ? hipHostFree(s->accum_host) : hipSuccess;
+    s->accum_host = VMAF_NULLPTR;
     if (ret == 0)
         ret = vif_hip_err(rc);
 
     void **dev_bufs[] = {&s->accum_dev, &s->ref_in_dev, &s->dis_in_dev, &s->data_buf,
                          &s->vif_filt_dev};
     for (unsigned i = 0; i < 5u; i++) {
-        rc = (*dev_bufs[i] != NULL) ? hipFree(*dev_bufs[i]) : hipSuccess;
-        *dev_bufs[i] = NULL;
+        rc = (*dev_bufs[i] != VMAF_NULLPTR) ? hipFree(*dev_bufs[i]) : hipSuccess;
+        *dev_bufs[i] = VMAF_NULLPTR;
         if (ret == 0)
             ret = vif_hip_err(rc);
     }
-    s->rd_ref = NULL;
-    s->rd_dis = NULL;
+    s->rd_ref = VMAF_NULLPTR;
+    s->rd_dis = VMAF_NULLPTR;
 
     const hipError_t rcs[] = {
-        (s->module != NULL) ? hipModuleUnload(s->module) : hipSuccess,
-        (s->finished != NULL) ? hipEventDestroy(s->finished) : hipSuccess,
-        (s->submit != NULL) ? hipEventDestroy(s->submit) : hipSuccess,
-        (s->str != NULL) ? hipStreamDestroy(s->str) : hipSuccess,
+        (s->module != VMAF_NULLPTR) ? hipModuleUnload(s->module) : hipSuccess,
+        (s->finished != VMAF_NULLPTR) ? hipEventDestroy(s->finished) : hipSuccess,
+        (s->submit != VMAF_NULLPTR) ? hipEventDestroy(s->submit) : hipSuccess,
+        (s->str != VMAF_NULLPTR) ? hipStreamDestroy(s->str) : hipSuccess,
     };
-    s->module = NULL;
-    s->finished = NULL;
-    s->submit = NULL;
-    s->str = NULL;
+    s->module = VMAF_NULLPTR;
+    s->finished = VMAF_NULLPTR;
+    s->submit = VMAF_NULLPTR;
+    s->str = VMAF_NULLPTR;
     for (unsigned i = 0; i < 4u && ret == 0; i++)
         ret = vif_hip_err(rcs[i]);
 
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         const int e = vmaf_dictionary_free(&s->feature_name_dict);
         if (ret == 0)
             ret = e;
@@ -621,8 +623,9 @@ static int vif_hip_launch_scales(VifStateHip *s, unsigned w0, unsigned h0, unsig
 }
 #endif /* HAVE_HIPCC */
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -735,11 +738,10 @@ static const char *provided_features[] = {
     "integer_vif_den_scale2",
     "integer_vif_num_scale3",
     "integer_vif_den_scale3",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 /* Declared via extern in feature_extractor.cpp's registry. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_vif_hip = {
     .name = "vif_hip",
     .init = init_fex_hip,
@@ -755,5 +757,3 @@ VmafFeatureExtractor vmaf_fex_integer_vif_hip = {
      * write path added).  ADR-0530 cleared this flag pending the fix. */
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0298: vmaf-tune content-addressed encode/score cache
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ properties:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Content-addressed local cache (chosen)** | Re-runs collapse to ms; key is content-stable; no daemon, no service. | Disk pressure if sweeps run on >100 GB of YUVs (mitigated by 10 GiB LRU cap). | Selected — matches the dominant workflow (iterative re-runs after a flag tweak). |
 | Path-keyed cache (filename instead of `src_sha256`) | Cheaper key (no full-file hash). | Two YUVs with the same path but different content (overwritten ref) silently return wrong cached scores. | Rejected — silent correctness bug for a tiny perf win on the warm path. |
 | Cache only the parsed tuple, not the artifact | Smaller on disk; no blob copy. | A future Phase B that wants to re-score with a different VMAF model can't, because the encode is gone. | Rejected — the artifact blob is the load-bearing asset; without it the cache is useless to any downstream consumer that varies a non-encode-affecting knob. |

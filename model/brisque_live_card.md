@@ -26,7 +26,8 @@ under a documented research-use attribution exception — see
 - **Source**: `C++/allmodel` from
   <https://github.com/krshrimali/No-Reference-Image-Quality-Assessment-using-BRISQUE-Model>,
   a verbatim mirror of the original LIVE-lab model also shipped by the MATLAB
-  pipeline `gregfreeman/image_quality_toolbox` (`+brisque/allmodel`) that trained it.
+  pipeline `gregfreeman/image_quality_toolbox` (`+brisque/allmodel`) that
+  trained it.
 - **Format**: native libsvm text. Embedded into the libvmaf binary at build
   time by an `xxd -i` Meson `custom_target` (the same path libvmaf's JSON
   models take), exposing the `src_brisque_live_model[]` / `_len` symbols

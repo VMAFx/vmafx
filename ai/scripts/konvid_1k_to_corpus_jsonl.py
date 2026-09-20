@@ -68,12 +68,13 @@ from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from corpus.base import CorpusIngestBase, pick, utc_now_iso, write_ingest_manifest
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from corpus.base import CorpusIngestBase, pick, utc_now_iso, write_ingest_manifest  # noqa: E402
 
 _LOG = logging.getLogger("konvid_1k_to_corpus_jsonl")
 
@@ -335,8 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         # spares users a search through the README.
         if "Corpus directory not found" in str(exc) or "MOS CSV not found" in str(exc):
             print(
-                "hint: download KonViD-1k from "
-                "http://database.mmsp-kn.de/konvid-1k-database.html",
+                "hint: download KonViD-1k from http://database.mmsp-kn.de/konvid-1k-database.html",
                 file=sys.stderr,
             )
         return 2

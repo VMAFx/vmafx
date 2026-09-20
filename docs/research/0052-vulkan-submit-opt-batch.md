@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0052: Vulkan submit-side template + fence pool + descriptor pre-alloc
 
 Date: 2026-05-02
@@ -41,7 +40,7 @@ implementation plan.
 ### Audit of template-adoption status on `master` at PR base
 
 | Extractor | T-item | PR | Adopted on master? |
-|-----------|--------|----|--------------------|
+| ----------- | -------- | ---- | -------------------- |
 | `psnr_hvs_vulkan` | T-GPU-DEDUP-18 | #284 | Yes |
 | `vif_vulkan` | T-GPU-DEDUP-19 | #285 | Yes |
 | `float_vif_vulkan` | T-GPU-DEDUP-20 | #286 | Yes |

@@ -1,11 +1,10 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
-
 # ADR-1220: The GPU float-ADM kernels honour `adm_p_norm`, `adm_bypass_cm` and `adm_skip_scale0`
 
 - **Status**: Proposed
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
-- **Tags**: `cuda`, `sycl`, `hip`, `metal`, `correctness`, `feature-extractor`, `testing`
+- **Tags**: `cuda`, `sycl`, `hip`, `metal`, `correctness`, `feature-extractor`,
+  `testing`
 
 ## Context
 
@@ -22,8 +21,8 @@ which is `powf(w * h * weight, 1.0f / p)`.
 
 All four twins hardcoded the cube in their kernels and `1.0f / 3.0f` in their
 host pooling, and applied `adm_p_norm` to the AIM exponent alone. A non-default
-`apn` therefore produced a hybrid: a sum of cubes raised to `1/p`, with the
-adm2 and `adm_scaleN` sub-scores left entirely at `p = 3`.
+`apn` therefore produced a hybrid: a sum of cubes raised to `1/p`, with the adm2
+and `adm_scaleN` sub-scores left entirely at `p = 3`.
 
 **`adm_bypass_cm`** (alias `bcm`, default `0`) drops the 3x3 contrast-masking
 threshold from the numerator — `adm_tools.c::adm_cm_accum_px_s` computes `thr`
@@ -36,7 +35,7 @@ at all, so they reject it rather than ignoring it.
 **`adm_skip_scale0`** (alias `ssz`, default `false`) makes `adm.c` take the
 lo-pass-only DWT at scale 0 and leave `num_scale = 0` with `den_scale = 1e-10`,
 so scale 0 contributes nothing to the pooled `adm2` / `aim`. The Metal twin —
-the only one of the four that declares the option — zeroed only the *reported*
+the only one of the four that declares the option — zeroed only the _reported_
 `adm_scale0` sub-score while still folding the full scale-0 numerator and
 denominator into the pooled score.
 
@@ -48,26 +47,26 @@ spot as ADR-1216 and ADR-1217.
 ## Decision
 
 We will pass `adm_p_norm` into the CSF/CM and AIM-CM kernels on all four
-backends and use `1.0f / adm_p_norm` in the host pooling and the noise
-constant; pass `adm_bypass_cm` into both kernels on CUDA and Metal and skip the
-masking threshold when it is set; and give the Metal host the CPU's
+backends and use `1.0f / adm_p_norm` in the host pooling and the noise constant;
+pass `adm_bypass_cm` into both kernels on CUDA and Metal and skip the masking
+threshold when it is set; and give the Metal host the CPU's
 `num_scale = 0, den_scale = 1e-10` treatment for scale 0 under
 `adm_skip_scale0`. Each backend's float-ADM parity test gains a variant per
 option it declares, reading the ADR-1183-derived key.
 
-The kernels mirror the CPU's own `p == 3` fast path exactly, so the default
-path stays bit-identical — confirmed by the pre-existing parity tests, which
-remain green.
+The kernels mirror the CPU's own `p == 3` fast path exactly, so the default path
+stays bit-identical — confirmed by the pre-existing parity tests, which remain
+green.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Thread the options into the kernels (chosen) | The advertised surface starts working on GPU; default path provably unchanged | Two extra kernel arguments; on Metal, two uniform slots | — |
-| Reject non-default values in `init()` with `-EINVAL` | Small, honest, no numerical risk | Turns a silent wrong answer into a hard failure for a documented option, on four backends at once | Removes a working surface instead of implementing it |
-| Drop the three options from the GPU option tables | Makes the declared surface match behaviour | The ADR-1183-derived feature name would then differ from the CPU's for the same model, so model lookup would miss; and it deletes documented options | Breaks name derivation and removes surfaces |
-| Always call `powf(x, p)` in the kernels, no `p == 3` branch | Simpler kernel | Device `powf(x, 3.0f)` is not guaranteed to equal `x * x * x`, so the default path — every shipped model — could drift | Unacceptable risk to the default |
-| Add `adm_bypass_cm` to the SYCL and HIP tables too | Full four-way parity of the option surface | Those twins currently *reject* it, which is a loud failure rather than a wrong answer; adding it is a feature, not a fix | Deferred; tracked in `docs/state.md` |
+| Option                                                      | Pros                                                                          | Cons                                                                                                                                                 | Why not chosen                                       |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Thread the options into the kernels (chosen)                | The advertised surface starts working on GPU; default path provably unchanged | Two extra kernel arguments; on Metal, two uniform slots                                                                                              | —                                                    |
+| Reject non-default values in `init()` with `-EINVAL`        | Small, honest, no numerical risk                                              | Turns a silent wrong answer into a hard failure for a documented option, on four backends at once                                                    | Removes a working surface instead of implementing it |
+| Drop the three options from the GPU option tables           | Makes the declared surface match behaviour                                    | The ADR-1183-derived feature name would then differ from the CPU's for the same model, so model lookup would miss; and it deletes documented options | Breaks name derivation and removes surfaces          |
+| Always call `powf(x, p)` in the kernels, no `p == 3` branch | Simpler kernel                                                                | Device `powf(x, 3.0f)` is not guaranteed to equal `x * x * x`, so the default path — every shipped model — could drift                               | Unacceptable risk to the default                     |
+| Add `adm_bypass_cm` to the SYCL and HIP tables too          | Full four-way parity of the option surface                                    | Those twins currently _reject_ it, which is a loud failure rather than a wrong answer; adding it is a feature, not a fix                             | Deferred; tracked in `docs/state.md`                 |
 
 ## Consequences
 

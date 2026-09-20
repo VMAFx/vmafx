@@ -1,1 +1,5 @@
-| [ADR-0719](0719-vmafx-node-rclone-integration.md) | vmafx-node rclone Integration — Remote-Asset Streaming Without Disk Materialisation | Accepted | architecture, go, node, rclone, storage, ffmpeg, phase4b, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0719](0719-vmafx-node-rclone-integration.md) | vmafx-node rclone Integration — Remote-Asset Streaming Without Disk Materialisation | Accepted | `architecture`, `go`, `node`, `rclone`, `storage`, `ffmpeg`, `phase4b`, `fork-local` |

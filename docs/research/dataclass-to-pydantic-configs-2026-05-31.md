@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research: User-input dataclass → pydantic v2 migration triage — 2026-05-31
 
 - **Status**: Closed (implemented in ADR-0934)
@@ -27,7 +26,7 @@ nothing else.
 ## Triage table
 
 | Class | Module | Source | Migration | Reason |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `TrainConfig` | `train.py` | `yaml.safe_load` → `load_config()` | **MIGRATE** | User-supplied YAML; `int(doc.get(...))` ingestion |
 | `ModelMetadata` | `registry.py` | `json.loads(sidecar)` → `load()` via `**doc` | **MIGRATE** | JSON sidecar; `**doc` splat silently accepts unknown fields |
 | `ManifestEntry` | `data/datasets.py` | `yaml.safe_load` → `load_manifest()` | **MIGRATE** | YAML manifest row; sha256 / mos malformedness should surface at parse time |

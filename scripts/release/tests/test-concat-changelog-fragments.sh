@@ -88,6 +88,8 @@ cat >"$TMPDIR_D2/CHANGELOG.md" <<'EOF'
 EOF
 
 cat >"$TMPDIR_D2/changelog.d/fixed/test-frag.md" <<'EOF'
+# Changelog fragment
+
 - test fragment entry
 EOF
 
@@ -151,6 +153,8 @@ cat >"$TMPDIR_HAPPY/CHANGELOG.md" <<'EOF'
 EOF
 
 cat >"$TMPDIR_HAPPY/changelog.d/fixed/d2-test.md" <<'EOF'
+# Changelog fragment
+
 - D.2 test: concat-changelog-fragments tempfile trap
 EOF
 
@@ -182,8 +186,10 @@ TMPDIR_UNKNOWN="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_HAPPY" "$TMPDIR_UNKNOWN"' EXIT
 
 mkdir -p "$TMPDIR_UNKNOWN/changelog.d/added" "$TMPDIR_UNKNOWN/changelog.d/docs"
-printf -- '- a real entry\n' >"$TMPDIR_UNKNOWN/changelog.d/added/ok.md"
-printf -- '- an entry that would be silently lost\n' >"$TMPDIR_UNKNOWN/changelog.d/docs/lost.md"
+printf '%s\n' '# Changelog fragment' '' '- a real entry' \
+  >"$TMPDIR_UNKNOWN/changelog.d/added/ok.md"
+printf '%s\n' '# Changelog fragment' '' '- an entry that would be silently lost' \
+  >"$TMPDIR_UNKNOWN/changelog.d/docs/lost.md"
 cat >"$TMPDIR_UNKNOWN/CHANGELOG.md" <<'EOF'
 # Changelog
 

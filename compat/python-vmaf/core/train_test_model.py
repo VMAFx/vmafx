@@ -1,9 +1,10 @@
 import json
-import os
 import pickle
 import tempfile
 from abc import ABCMeta, abstractmethod
+from importlib import import_module
 from numbers import Number
+from pathlib import Path
 
 import numpy as np
 from libsvm import svmutil
@@ -23,6 +24,9 @@ from vmaf.core.perf_metric import (
 from vmaf.tools.decorator import deprecated, override
 from vmaf.tools.exceptions import MissingLabelStddevError
 from vmaf.tools.misc import NoPrint, indices, linear_fit, linear_func
+from vmaf.tools.safe_pickle import load_pickle
+
+_COMPARISON_VALUE_3 = 3
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -32,235 +36,157 @@ class RegressorMixin(object):
 
     DEFAULT_N_SPLITS_TEST_INDICES = 5
 
-    @classmethod
-    def get_stats(cls, ys_label, ys_label_pred, **kwargs):
-
-        # cannot have None
-        assert all(x is not None for x in ys_label)
-        assert all(x is not None for x in ys_label_pred)
-
-        # RMSE
-        rmse = RmsePerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        # spearman
-        srcc = SrccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        # pearson
-        pcc = PccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        # kendall
-        kendall = KendallPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        stats = {
-            "RMSE": rmse,
-            "SRCC": srcc,
-            "PCC": pcc,
-            "KENDALL": kendall,
+    @staticmethod
+    def _base_stats(ys_label, ys_label_pred):
+        return {
+            "RMSE": RmsePerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"],
+            "SRCC": SrccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"],
+            "PCC": PccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"],
+            "KENDALL": KendallPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)[
+                "score"
+            ],
             "ys_label": list(ys_label),
             "ys_label_pred": list(ys_label_pred),
         }
 
-        # create perf metric distributions, if multiple predictions are passed in as kwargs
-        # spearman distribution for now
-        if "ys_label_pred_all_models" in kwargs:
-
-            ys_label_pred_all_models = kwargs["ys_label_pred_all_models"]
-
-            srcc_all_models = []
-            pcc_all_models = []
-            rmse_all_models = []
-
-            for ys_label_pred_some_model in ys_label_pred_all_models:
-                srcc_some_model = SrccPerfMetric(ys_label, ys_label_pred_some_model).evaluate(
-                    enable_mapping=True
-                )["score"]
-                pcc_some_model = PccPerfMetric(ys_label, ys_label_pred_some_model).evaluate(
-                    enable_mapping=True
-                )["score"]
-                rmse_some_model = RmsePerfMetric(ys_label, ys_label_pred_some_model).evaluate(
-                    enable_mapping=True
-                )["score"]
-                srcc_all_models.append(srcc_some_model)
-                pcc_all_models.append(pcc_some_model)
-                rmse_all_models.append(rmse_some_model)
-
-            stats["SRCC_across_model_distribution"] = srcc_all_models
-            stats["PCC_across_model_distribution"] = pcc_all_models
-            stats["RMSE_across_model_distribution"] = rmse_all_models
-
-        split_test_indices_for_perf_ci = (
-            kwargs["split_test_indices_for_perf_ci"]
-            if "split_test_indices_for_perf_ci" in kwargs
-            else False
+    @staticmethod
+    def _add_across_model_distributions(stats, ys_label, predictions):
+        metric_specs = (
+            ("SRCC", SrccPerfMetric),
+            ("PCC", PccPerfMetric),
+            ("RMSE", RmsePerfMetric),
         )
+        for name, metric_class in metric_specs:
+            stats[f"{name}_across_model_distribution"] = [
+                metric_class(ys_label, prediction).evaluate(enable_mapping=True)["score"]
+                for prediction in predictions
+            ]
 
-        ys_label_raw = kwargs["ys_label_raw"] if "ys_label_raw" in kwargs else None
+    @staticmethod
+    def _add_raw_label_stats(stats, ys_label_raw, ys_label_pred):
+        if isinstance(ys_label_raw[0], dict):
+            ys_label_raw = [list(raw_label.values()) for raw_label in ys_label_raw]
+        try:
+            result = AucPerfMetric(ys_label_raw, ys_label_pred).evaluate()
+            stats["AUC_DS"] = result["AUC_DS"]
+            stats["AUC_BW"] = result["AUC_BW"]
+        except TypeError:
+            stats["AUC_DS"] = float("nan")
+            stats["AUC_BW"] = float("nan")
 
+        mapping_specs = (("ResPow", False), ("ResPowNormalized", True))
+        for name, enable_mapping in mapping_specs:
+            try:
+                stats[name] = ResolvingPowerPerfMetric(ys_label_raw, ys_label_pred).evaluate(
+                    enable_mapping=enable_mapping
+                )["score"]
+            except (TypeError, AssertionError):
+                stats[name] = float("nan")
+
+    @classmethod
+    def _add_test_split_distributions(cls, stats, ys_label, ys_label_pred, kwargs):
+        ys_label = np.asarray(ys_label)
+        ys_label_pred = np.asarray(ys_label_pred)
+        sample_size = len(ys_label)
+        split_count = kwargs.get("n_splits_test_indices", cls.DEFAULT_N_SPLITS_TEST_INDICES)
+        distributions = {"SRCC": [], "PCC": [], "RMSE": []}
+        metric_specs = (
+            ("SRCC", SrccPerfMetric),
+            ("PCC", PccPerfMetric),
+            ("RMSE", RmsePerfMetric),
+        )
+        for split_index in range(split_count):
+            np.random.seed(split_index)
+            indexes = np.random.choice(range(sample_size), size=sample_size, replace=True)
+            for name, metric_class in metric_specs:
+                distributions[name].append(
+                    metric_class(ys_label[indexes], ys_label_pred[indexes]).evaluate(
+                        enable_mapping=True
+                    )["score"]
+                )
+        for name, distribution in distributions.items():
+            stats[f"{name}_across_test_splits_distribution"] = distribution
+
+    @classmethod
+    def get_stats(cls, ys_label, ys_label_pred, **kwargs):
+        assert all(x is not None for x in ys_label)
+        assert all(x is not None for x in ys_label_pred)
+        stats = cls._base_stats(ys_label, ys_label_pred)
+        if "ys_label_pred_all_models" in kwargs:
+            cls._add_across_model_distributions(stats, ys_label, kwargs["ys_label_pred_all_models"])
+        ys_label_raw = kwargs.get("ys_label_raw")
         if ys_label_raw is not None:
-
-            ys_label_raw_list = []
-            if isinstance(ys_label_raw[0], dict):
-                for d in ys_label_raw:
-                    ys_label_raw_list.append(list(d.values()))
-            else:
-                ys_label_raw_list = ys_label_raw
-
-            try:
-                # AUC
-                result = AucPerfMetric(ys_label_raw_list, ys_label_pred).evaluate()
-                stats["AUC_DS"] = result["AUC_DS"]
-                stats["AUC_BW"] = result["AUC_BW"]
-            except TypeError:
-                stats["AUC_DS"] = float("nan")
-                stats["AUC_BW"] = float("nan")
-
-            try:
-                # ResPow
-                respow = ResolvingPowerPerfMetric(ys_label_raw_list, ys_label_pred).evaluate(
-                    enable_mapping=False
-                )["score"]
-                stats["ResPow"] = respow
-            except (TypeError, AssertionError):
-                stats["ResPow"] = float("nan")
-
-            try:
-                # ResPow
-                respow_norm = ResolvingPowerPerfMetric(ys_label_raw_list, ys_label_pred).evaluate(
-                    enable_mapping=True
-                )["score"]
-                stats["ResPowNormalized"] = respow_norm
-            except (TypeError, AssertionError):
-                stats["ResPowNormalized"] = float("nan")
-
-        if (
-            "ys_label_stddev" in kwargs
-            and "ys_label_stddev"
-            and kwargs["ys_label_stddev"] is not None
-        ):
+            cls._add_raw_label_stats(stats, ys_label_raw, ys_label_pred)
+        if kwargs.get("ys_label_stddev") is not None:
             stats["ys_label_stddev"] = kwargs["ys_label_stddev"]
-
-        if split_test_indices_for_perf_ci:
-
-            # ensure labels and predictions are arrays
-            if type(ys_label) is not np.array:
-                ys_label = np.asarray(ys_label)
-            if type(ys_label_pred) is not np.array:
-                ys_label_pred = np.asarray(ys_label_pred)
-
-            # replicate logic of BootstrapVmafQualityRunner
-            sample_size = len(ys_label)
-            n_splits_test_indices = (
-                kwargs["n_splits_test_indices"]
-                if "n_splits_test_indices" in kwargs
-                else cls.DEFAULT_N_SPLITS_TEST_INDICES
-            )
-
-            srcc_distribution = []
-            pcc_distribution = []
-            rmse_distribution = []
-
-            for i_test_split in range(n_splits_test_indices):
-
-                np.random.seed(i_test_split)  # seed is i_test_split
-                # random sample with replacement
-                idxs = np.random.choice(range(sample_size), size=sample_size, replace=True)
-
-                ys_label_resampled = ys_label[idxs]
-                ys_label_pred_resampled = ys_label_pred[idxs]
-
-                srcc_distribution.append(
-                    SrccPerfMetric(ys_label_resampled, ys_label_pred_resampled).evaluate(
-                        enable_mapping=True
-                    )["score"]
-                )
-
-                pcc_distribution.append(
-                    PccPerfMetric(ys_label_resampled, ys_label_pred_resampled).evaluate(
-                        enable_mapping=True
-                    )["score"]
-                )
-
-                rmse_distribution.append(
-                    RmsePerfMetric(ys_label_resampled, ys_label_pred_resampled).evaluate(
-                        enable_mapping=True
-                    )["score"]
-                )
-
-            stats["SRCC_across_test_splits_distribution"] = srcc_distribution
-            stats["PCC_across_test_splits_distribution"] = pcc_distribution
-            stats["RMSE_across_test_splits_distribution"] = rmse_distribution
-
+        if kwargs.get("split_test_indices_for_perf_ci", False):
+            cls._add_test_split_distributions(stats, ys_label, ys_label_pred, kwargs)
         return stats
 
     @staticmethod
     def format_stats_for_plot(stats):
         if stats is None:
             return "(Invalid Stats)"
-        else:
-            if (
-                "AUC_DS" in stats
-                and "AUC_BW" in stats
-                and "ResPow" in stats
-                and "ResPowNormalized" in stats
-            ):
-                return (
-                    "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f},\n AUC: {auc_ds:.3f}/{auc_bw:.3f}, "
-                    "ResPow: {respow:.3f}/{respownorm:.3f})".format(
-                        srcc=stats["SRCC"],
-                        pcc=stats["PCC"],
-                        rmse=stats["RMSE"],
-                        auc_ds=stats["AUC_DS"],
-                        auc_bw=stats["AUC_BW"],
-                        respow=stats["ResPow"],
-                        respownorm=stats["ResPowNormalized"],
-                    )
+        if (
+            "AUC_DS" in stats
+            and "AUC_BW" in stats
+            and "ResPow" in stats
+            and "ResPowNormalized" in stats
+        ):
+            return (
+                "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f},\n AUC: {auc_ds:.3f}/{auc_bw:.3f}, "
+                "ResPow: {respow:.3f}/{respownorm:.3f})".format(
+                    srcc=stats["SRCC"],
+                    pcc=stats["PCC"],
+                    rmse=stats["RMSE"],
+                    auc_ds=stats["AUC_DS"],
+                    auc_bw=stats["AUC_BW"],
+                    respow=stats["ResPow"],
+                    respownorm=stats["ResPowNormalized"],
                 )
-            else:
-                return "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f})".format(
-                    srcc=stats["SRCC"], pcc=stats["PCC"], rmse=stats["RMSE"]
-                )
+            )
+        return "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f})".format(
+            srcc=stats["SRCC"], pcc=stats["PCC"], rmse=stats["RMSE"]
+        )
 
     @staticmethod
     def format_stats_for_print(stats):
         if stats is None:
             return "(Invalid Stats)"
-        else:
-            if (
-                "AUC_DS" in stats
-                and "AUC_BW" in stats
-                and "ResPow" in stats
-                and "ResPowNormalized" in stats
-            ):
-                return (
-                    "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f}, AUC: {auc_ds:.3f}/{auc_bw:.3f}, "
-                    "ResPow: {respow:.3f}/{respownorm:.3f})".format(
-                        srcc=stats["SRCC"],
-                        pcc=stats["PCC"],
-                        rmse=stats["RMSE"],
-                        auc_ds=stats["AUC_DS"],
-                        auc_bw=stats["AUC_BW"],
-                        respow=stats["ResPow"],
-                        respownorm=stats["ResPowNormalized"],
-                    )
+        if (
+            "AUC_DS" in stats
+            and "AUC_BW" in stats
+            and "ResPow" in stats
+            and "ResPowNormalized" in stats
+        ):
+            return (
+                "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f}, AUC: {auc_ds:.3f}/{auc_bw:.3f}, "
+                "ResPow: {respow:.3f}/{respownorm:.3f})".format(
+                    srcc=stats["SRCC"],
+                    pcc=stats["PCC"],
+                    rmse=stats["RMSE"],
+                    auc_ds=stats["AUC_DS"],
+                    auc_bw=stats["AUC_BW"],
+                    respow=stats["ResPow"],
+                    respownorm=stats["ResPowNormalized"],
                 )
-            else:
-                return "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f})".format(
-                    srcc=stats["SRCC"], pcc=stats["PCC"], rmse=stats["RMSE"]
-                )
+            )
+        return "(SRCC: {srcc:.3f}, PCC: {pcc:.3f}, RMSE: {rmse:.3f})".format(
+            srcc=stats["SRCC"], pcc=stats["PCC"], rmse=stats["RMSE"]
+        )
 
     @staticmethod
     def format_stats_across_test_splits_for_print(stats):
         if stats is None:
             return "(Invalid Stats)"
-        else:
-            return "(SRCC: {srcc:.3f}+/-{srcc_ci:.3f}, PCC: {pcc:.3f}+/-{pcc_ci:.3f}, RMSE: {rmse:.3f}+/-{rmse_ci:.3f})".format(
-                srcc=stats["SRCC"],
-                srcc_ci=stats["SRCC_across_test_splits_ci"],
-                pcc=stats["PCC"],
-                pcc_ci=stats["PCC_across_test_splits_ci"],
-                rmse=stats["RMSE"],
-                rmse_ci=stats["RMSE_across_test_splits_ci"],
-            )
+        return "(SRCC: {srcc:.3f}+/-{srcc_ci:.3f}, PCC: {pcc:.3f}+/-{pcc_ci:.3f}, RMSE: {rmse:.3f}+/-{rmse_ci:.3f})".format(
+            srcc=stats["SRCC"],
+            srcc_ci=stats["SRCC_across_test_splits_ci"],
+            pcc=stats["PCC"],
+            pcc_ci=stats["PCC_across_test_splits_ci"],
+            rmse=stats["RMSE"],
+            rmse_ci=stats["RMSE_across_test_splits_ci"],
+        )
 
     @staticmethod
     def extract_across_test_splits_stats(stats):
@@ -283,15 +209,14 @@ class RegressorMixin(object):
     def format_across_model_stats_for_print(stats):
         if stats is None:
             return "(Invalid Stats)"
-        else:
-            return "(SRCC: {srcc:.3f}+/-{srcc_ci:.3f}, PCC: {pcc:.3f}+/-{pcc_ci:.3f}, RMSE: {rmse:.3f})+/-{rmse_ci:.3f}".format(
-                srcc=stats["SRCC"],
-                srcc_ci=stats["SRCC_across_model_ci"],
-                pcc=stats["PCC"],
-                pcc_ci=stats["PCC_across_model_ci"],
-                rmse=stats["RMSE"],
-                rmse_ci=stats["RMSE_across_model_ci"],
-            )
+        return "(SRCC: {srcc:.3f}+/-{srcc_ci:.3f}, PCC: {pcc:.3f}+/-{pcc_ci:.3f}, RMSE: {rmse:.3f})+/-{rmse_ci:.3f}".format(
+            srcc=stats["SRCC"],
+            srcc_ci=stats["SRCC_across_model_ci"],
+            pcc=stats["PCC"],
+            pcc_ci=stats["PCC_across_model_ci"],
+            rmse=stats["RMSE"],
+            rmse_ci=stats["RMSE_across_model_ci"],
+        )
 
     @staticmethod
     def extract_across_model_stats(stats):
@@ -313,10 +238,9 @@ class RegressorMixin(object):
     def format_stats2(stats):
         if stats is None:
             return "Invalid Stats"
-        else:
-            return "RMSE: {rmse:.3f}\nPCC: {pcc:.3f}\nSRCC: {srcc:.3f}".format(
-                srcc=stats["SRCC"], pcc=stats["PCC"], rmse=stats["RMSE"]
-            )
+        return "RMSE: {rmse:.3f}\nPCC: {pcc:.3f}\nSRCC: {srcc:.3f}".format(
+            srcc=stats["SRCC"], pcc=stats["PCC"], rmse=stats["RMSE"]
+        )
 
     @classmethod
     def aggregate_stats_list(cls, stats_list):
@@ -342,13 +266,10 @@ class RegressorMixin(object):
         return tuple(xlim), tuple(ylim)
 
     @classmethod
-    def plot_scatter(cls, ax, stats, **kwargs):
-
+    def _scatter_arrays(cls, stats, assume_unit_stddev):
         ys_label = np.array(stats["ys_label"])
         ys_label_pred = np.array(stats["ys_label_pred"])
         assert len(ys_label_pred) == len(ys_label)
-
-        assume_unit_stddev = kwargs.get("assume_unit_stddev", False)
         if "ys_label_stddev" in stats:
             ys_label_stddev = np.array(stats["ys_label_stddev"])
         elif assume_unit_stddev:
@@ -362,180 +283,213 @@ class RegressorMixin(object):
         try:
             ys_label_stddev[np.isnan(ys_label_stddev)] = 0
         except TypeError:
-            # np.isnan raises TypeError on object-dtype arrays containing
-            # Python None; fall back to elementwise None comparison.
-            # (CodeQL py/catch-base-exception)
-            ys_label_stddev[ys_label_stddev == None] = 0  # noqa: E711
+            ys_label_stddev[np.equal(ys_label_stddev, None)] = 0
         assert len(ys_label_stddev) == len(ys_label)
-
         xlim, ylim = cls.get_xlim_ylim(ys_label, ys_label_pred, ys_label_stddev)
-        content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
-        if content_ids is not None:
-            assert len(content_ids) == len(ys_label)
-        point_labels = kwargs["point_labels"] if "point_labels" in kwargs else None
-        if point_labels is not None:
-            assert len(point_labels) == len(ys_label)
-        plot_linear_fit = kwargs["plot_linear_fit"] if "plot_linear_fit" in kwargs else False
-        assert isinstance(plot_linear_fit, bool)
+        return ys_label, ys_label_pred, ys_label_stddev, xlim, ylim
 
-        do_plot = kwargs["do_plot"] if "do_plot" in kwargs else ["aggregate"]
+    @staticmethod
+    def _scatter_options(kwargs, sample_count):
+        content_ids = kwargs.get("content_ids")
+        point_labels = kwargs.get("point_labels")
+        if content_ids is not None:
+            assert len(content_ids) == sample_count
+        if point_labels is not None:
+            assert len(point_labels) == sample_count
+        plot_linear_fit = kwargs.get("plot_linear_fit", False)
+        assert isinstance(plot_linear_fit, bool)
+        do_plot = kwargs.get("do_plot", ["aggregate"])
         accepted_options = ["aggregate", "per_content", "groundtruth_predicted_in_parallel"]
         assert isinstance(do_plot, list), (
             f"do_plot needs to be a list of plotting options. Accepted options are "
             f"{accepted_options}"
         )
+        assert all(
+            option in accepted_options for option in do_plot
+        ), f"do_plot contains an option that is not in {accepted_options}"
+        return content_ids, point_labels, plot_linear_fit, do_plot
 
-        for option in do_plot:
-            assert option in accepted_options, f"{option} is not in {accepted_options}"
+    @staticmethod
+    def _add_fit_line(ax, xlim, fit, color):
+        ax.axline(
+            (xlim[0], linear_func(xlim[0], fit[0][0], fit[0][1])),
+            (xlim[1], linear_func(xlim[1], fit[0][0], fit[0][1])),
+            color=color,
+            linestyle="--",
+        )
 
+    @staticmethod
+    def _parallel_axes(do_plot, sample_count, xlim, ylim):
+        if "groundtruth_predicted_in_parallel" not in do_plot:
+            return None, None, None
+        width, height = _get_plot_width_and_height(sample_count)
+        figure, [groundtruth_ax, predicted_ax] = plt.subplots(
+            figsize=[width, height * 2], ncols=1, nrows=2
+        )
+        groundtruth_ax.set_xlabel("Stimuli")
+        groundtruth_ax.set_ylabel("True Score")
+        groundtruth_ax.grid()
+        groundtruth_ax.set_ylim(xlim)
+        predicted_ax.set_xlabel("Stimuli")
+        predicted_ax.set_ylabel("Predicted Score")
+        predicted_ax.grid()
+        predicted_ax.set_ylim(ylim)
+        return figure, groundtruth_ax, predicted_ax
+
+    @staticmethod
+    def _annotate(ax, labels, xs, ys):
+        if labels is None:
+            return
+        assert len(labels) == len(xs)
+        for label, x_value, y_value in zip(labels, xs, ys, strict=True):
+            ax.annotate(label, (x_value, y_value))
+
+    @classmethod
+    def _plot_single_content(
+        cls,
+        ax,
+        content_id,
+        color,
+        labels,
+        predictions,
+        stddev,
+        xlim,
+        ylim,
+        point_labels,
+        plot_linear_fit,
+        overall_linear_fit,
+    ):
+        _figure, content_ax = plt.subplots(1, 1, figsize=ax.figure.get_size_inches())
+        content_ax.update_from(ax)
+        content_ax.set_xlim(xlim)
+        content_ax.set_ylim(ylim)
+        if plot_linear_fit:
+            cls._add_fit_line(content_ax, xlim, overall_linear_fit, "gray")
+            cls._add_fit_line(content_ax, xlim, linear_fit(labels, predictions), "red")
+            content_ax.legend(["overall fit", "current fit"])
+        content_ax.errorbar(
+            labels,
+            predictions,
+            xerr=1.96 * stddev,
+            marker="o",
+            linestyle="",
+            label=content_id,
+            color=color,
+        )
+        content_ax.set_title(f"Content id {content_id!s}")
+        content_ax.set_xlabel("True Score")
+        content_ax.set_ylabel("Predicted Score")
+        content_ax.grid()
+        cls._annotate(content_ax, point_labels, labels, predictions)
+
+    @classmethod
+    def _plot_content_groups(
+        cls,
+        ax,
+        content_ids,
+        ys_label,
+        ys_label_pred,
+        ys_label_stddev,
+        xlim,
+        ylim,
+        point_labels,
+        plot_linear_fit,
+        overall_linear_fit,
+        do_plot,
+        groundtruth_ax,
+        predicted_ax,
+    ):
+        unique_content_ids = list(set(content_ids))
+        cmap = plt.get_cmap("jet")
+        colors = [cmap(value) for value in np.linspace(0, 1, len(unique_content_ids))]
+        for index, content_id in enumerate(unique_content_ids):
+            content_indexes = indices(
+                content_ids, lambda candidate, expected=content_id: candidate == expected
+            )
+            labels = ys_label[content_indexes]
+            predictions = ys_label_pred[content_indexes]
+            stddev = ys_label_stddev[content_indexes]
+            color = colors[index % len(colors)]
+            if "aggregate" in do_plot:
+                ax.errorbar(
+                    labels,
+                    predictions,
+                    xerr=1.96 * stddev,
+                    marker="o",
+                    linestyle="",
+                    label=content_id,
+                    color=color,
+                )
+            if "per_content" in do_plot:
+                labels_for_points = (
+                    None if point_labels is None else np.array(point_labels)[content_indexes]
+                )
+                cls._plot_single_content(
+                    ax,
+                    content_id,
+                    color,
+                    labels,
+                    predictions,
+                    stddev,
+                    xlim,
+                    ylim,
+                    labels_for_points,
+                    plot_linear_fit,
+                    overall_linear_fit,
+                )
+            if "groundtruth_predicted_in_parallel" in do_plot:
+                legend_label = f"Content id {content_id!s}"
+                groundtruth_ax.plot(content_indexes, labels, "-^", color=color, label=legend_label)
+                predicted_ax.plot(
+                    content_indexes, predictions, "-^", color=color, label=legend_label
+                )
+
+    @classmethod
+    def plot_scatter(cls, ax, stats, **kwargs):
+        assume_unit_stddev = kwargs.get("assume_unit_stddev", False)
+        ys_label, ys_label_pred, ys_label_stddev, xlim, ylim = cls._scatter_arrays(
+            stats, assume_unit_stddev
+        )
+        content_ids, point_labels, plot_linear_fit, do_plot = cls._scatter_options(
+            kwargs, len(ys_label)
+        )
         overall_linear_fit = None
         if plot_linear_fit:
             overall_linear_fit = linear_fit(ys_label, ys_label_pred)
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
-            ax.axline(
-                (xlim[0], linear_func(xlim[0], overall_linear_fit[0][0], overall_linear_fit[0][1])),
-                (xlim[1], linear_func(xlim[1], overall_linear_fit[0][0], overall_linear_fit[0][1])),
-                color="gray",
-                linestyle="--",
-            )
+            cls._add_fit_line(ax, xlim, overall_linear_fit, "gray")
             ax.legend(["overall fit"])
-
-        if "groundtruth_predicted_in_parallel" in do_plot:
-            w, h = _get_plot_width_and_height(len(ys_label))
-            fig_gt_pred, [ax_groundtruth, ax_predicted] = plt.subplots(
-                figsize=[w, h * 2], ncols=1, nrows=2
-            )
-            ax_groundtruth.set_xlabel("Stimuli")
-            ax_groundtruth.set_ylabel("True Score")
-            ax_groundtruth.grid()
-            ax_groundtruth.set_ylim(xlim)
-            ax_predicted.set_xlabel("Stimuli")
-            ax_predicted.set_ylabel("Predicted Score")
-            ax_predicted.grid()
-            ax_predicted.set_ylim(ylim)
-        else:
-            fig_gt_pred = None
-            ax_groundtruth = None
-            ax_predicted = None
-
+        parallel_figure, groundtruth_ax, predicted_ax = cls._parallel_axes(
+            do_plot, len(ys_label), xlim, ylim
+        )
         if content_ids is None:
             ax.errorbar(
                 ys_label, ys_label_pred, xerr=1.96 * ys_label_stddev, marker="o", linestyle=""
             )
         else:
-            assert len(ys_label) == len(content_ids)
-
-            unique_content_ids = list(set(content_ids))
-            cmap = plt.get_cmap("jet")
-            colors = [cmap(i) for i in np.linspace(0, 1, len(unique_content_ids))]
-            for idx, curr_content_id in enumerate(unique_content_ids):
-                curr_idxs = indices(content_ids, lambda cid: cid == curr_content_id)
-                curr_ys_label = ys_label[curr_idxs]
-                curr_ys_label_pred = ys_label_pred[curr_idxs]
-
-                curr_ys_label_stddev = ys_label_stddev[curr_idxs]
-                if "aggregate" in do_plot:
-                    ax.errorbar(
-                        curr_ys_label,
-                        curr_ys_label_pred,
-                        xerr=1.96 * curr_ys_label_stddev,
-                        marker="o",
-                        linestyle="",
-                        label=curr_content_id,
-                        color=colors[idx % len(colors)],
-                    )
-
-                if "per_content" in do_plot:
-                    new_fig, new_ax = plt.subplots(1, 1, figsize=ax.figure.get_size_inches())
-                    new_ax.update_from(ax)
-                    new_ax.set_xlim(xlim)
-                    new_ax.set_ylim(ylim)
-
-                    if plot_linear_fit:
-                        curr_linear_fit = linear_fit(curr_ys_label, curr_ys_label_pred)
-                        new_ax.axline(
-                            (
-                                xlim[0],
-                                linear_func(
-                                    xlim[0], overall_linear_fit[0][0], overall_linear_fit[0][1]
-                                ),
-                            ),
-                            (
-                                xlim[1],
-                                linear_func(
-                                    xlim[1], overall_linear_fit[0][0], overall_linear_fit[0][1]
-                                ),
-                            ),
-                            color="gray",
-                            linestyle="--",
-                        )
-                        new_ax.axline(
-                            (
-                                xlim[0],
-                                linear_func(xlim[0], curr_linear_fit[0][0], curr_linear_fit[0][1]),
-                            ),
-                            (
-                                xlim[1],
-                                linear_func(xlim[1], curr_linear_fit[0][0], curr_linear_fit[0][1]),
-                            ),
-                            color="red",
-                            linestyle="--",
-                        )
-                        new_ax.legend(["overall fit", "current fit"])
-
-                    new_ax.errorbar(
-                        curr_ys_label,
-                        curr_ys_label_pred,
-                        xerr=1.96 * curr_ys_label_stddev,
-                        marker="o",
-                        linestyle="",
-                        label=curr_content_id,
-                        color=colors[idx % len(colors)],
-                    )
-
-                    new_ax.set_title(f"Content id {str(curr_content_id)}")
-                    new_ax.set_xlabel("True Score")
-                    new_ax.set_ylabel("Predicted Score")
-                    new_ax.grid()
-
-                    if point_labels:
-                        curr_point_labels = np.array(point_labels)[curr_idxs]
-                        assert len(curr_point_labels) == len(curr_ys_label)
-                        for i, curr_point_label in enumerate(curr_point_labels):
-                            new_ax.annotate(
-                                curr_point_label, (curr_ys_label[i], curr_ys_label_pred[i])
-                            )
-
-                if "groundtruth_predicted_in_parallel" in do_plot:
-                    ax_groundtruth.plot(
-                        curr_idxs,
-                        curr_ys_label,
-                        "-^",
-                        color=colors[idx % len(colors)],
-                        label=f"Content id {str(curr_content_id)}",
-                    )
-                    ax_predicted.plot(
-                        curr_idxs,
-                        curr_ys_label_pred,
-                        "-^",
-                        color=colors[idx % len(colors)],
-                        label=f"Content id {str(curr_content_id)}",
-                    )
-
+            cls._plot_content_groups(
+                ax,
+                content_ids,
+                ys_label,
+                ys_label_pred,
+                ys_label_stddev,
+                xlim,
+                ylim,
+                point_labels,
+                plot_linear_fit,
+                overall_linear_fit,
+                do_plot,
+                groundtruth_ax,
+                predicted_ax,
+            )
         if "aggregate" in do_plot and point_labels is not None:
-            assert len(point_labels) == len(ys_label)
-            for i, point_label in enumerate(point_labels):
-                ax.annotate(point_label, (ys_label[i], ys_label_pred[i]))
-
-        # need the following because ax is passed anyway; if not used for aggregate, close it
-        # TODO: can be improved
+            cls._annotate(ax, point_labels, ys_label, ys_label_pred)
         if "aggregate" not in do_plot:
             plt.close(ax.figure)
-
         if "groundtruth_predicted_in_parallel" in do_plot:
-            ax_groundtruth.legend()
-            fig_gt_pred.tight_layout()
+            groundtruth_ax.legend()
+            parallel_figure.tight_layout()
 
     @staticmethod
     def get_objective_score(result, score_type="SRCC"):
@@ -547,14 +501,13 @@ class RegressorMixin(object):
         """
         if score_type == "SRCC":
             return result["SRCC"]
-        elif score_type == "PCC":
+        if score_type == "PCC":
             return result["PCC"]
-        elif score_type == "KENDALL":
+        if score_type == "KENDALL":
             return result["KENDALL"]
-        elif score_type == "RMSE":
+        if score_type == "RMSE":
             return -result["RMSE"]
-        else:
-            assert False, "Unknow type: {} for get_objective_score().".format(score_type)
+        raise AssertionError("Unknow type: {} for get_objective_score().".format(score_type))
 
 
 class ClassifierMixin(object):
@@ -572,32 +525,29 @@ class ClassifierMixin(object):
         f1 = f1_score(ys_label_pred, ys_label)
         # error rate
         errorrate = np.mean(np.array(ys_label) != np.array(ys_label_pred))
-        stats = {
+        return {
             "RMSE": rmse,
             "f1": f1,
             "errorrate": errorrate,
             "ys_label": list(ys_label),
             "ys_label_pred": list(ys_label_pred),
         }
-        return stats
 
     @staticmethod
     def format_stats(stats):
         if stats is None:
             return "(Invalid Stats)"
-        else:
-            return "(F1: {f1:.3f}, Error: {err:.3f}, RMSE: {rmse:.3f})".format(
-                f1=stats["f1"], err=stats["errorrate"], rmse=stats["RMSE"]
-            )
+        return "(F1: {f1:.3f}, Error: {err:.3f}, RMSE: {rmse:.3f})".format(
+            f1=stats["f1"], err=stats["errorrate"], rmse=stats["RMSE"]
+        )
 
     @staticmethod
     def format_stats2(stats):
         if stats is None:
             return "Invalid Stats"
-        else:
-            return "RMSE: {rmse:.3f}\nF1: {f1:.3f}\nError: {err:.3f}".format(
-                f1=stats["f1"], err=stats["errorrate"], rmse=stats["RMSE"]
-            )
+        return "RMSE: {rmse:.3f}\nF1: {f1:.3f}\nError: {err:.3f}".format(
+            f1=stats["f1"], err=stats["errorrate"], rmse=stats["RMSE"]
+        )
 
     @classmethod
     def aggregate_stats_list(cls, stats_list):
@@ -618,12 +568,11 @@ class ClassifierMixin(object):
         """
         if score_type == "f1":
             return result["f1"]
-        elif score_type == "errorrate":
+        if score_type == "errorrate":
             return -result["errorrate"]
-        elif score_type == "RMSE":
+        if score_type == "RMSE":
             return -result["RMSE"]
-        else:
-            assert False, "Unknow type: {} for get_objective_score().".format(score_type)
+        raise AssertionError("Unknow type: {} for get_objective_score().".format(score_type))
 
 
 class TrainTestModel(TypeVersionEnabled):
@@ -668,7 +617,7 @@ class TrainTestModel(TypeVersionEnabled):
         assert "model" in self.model_dict
 
         norm_type = self.model_dict["norm_type"]
-        assert norm_type == "none" or norm_type == "linear_rescale"
+        assert norm_type in {"none", "linear_rescale"}
 
         if norm_type == "linear_rescale":
             assert "slopes" in self.model_dict
@@ -686,7 +635,7 @@ class TrainTestModel(TypeVersionEnabled):
         """
         Retrieve info added via the append_info method.
         """
-        return self.model_dict[key] if key in self.model_dict else None
+        return self.model_dict.get(key, None)
 
     @property
     def feature_names(self):
@@ -700,11 +649,7 @@ class TrainTestModel(TypeVersionEnabled):
     @property
     def feature_opts_dicts(self):
         self._assert_trained()
-        return (
-            self.model_dict["feature_opts_dicts"]
-            if "feature_opts_dicts" in self.model_dict
-            else None
-        )
+        return self.model_dict.get("feature_opts_dicts", None)
 
     @feature_opts_dicts.setter
     def feature_opts_dicts(self, value):
@@ -778,30 +723,30 @@ class TrainTestModel(TypeVersionEnabled):
 
     @staticmethod
     def _to_file(filename, param_dict, model_dict, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         assert fmt in ["pkl"], f"format must be pkl, but got: {fmt}"
 
         info_to_save = {"param_dict": param_dict, "model_dict": model_dict}
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, "wb") as file:
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        with Path(filename).open("wb") as file:
             pickle.dump(info_to_save, file)
 
     @classmethod
     def from_file(cls, filename, logger=None, optional_dict2=None, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_format = ["pkl", "json"]
         assert fmt in supported_format, f"format must be in {supported_format} but is {fmt}"
 
-        assert os.path.exists(filename), "File name {} does not exist.".format(filename)
+        assert Path(filename).exists(), "File name {} does not exist.".format(filename)
 
         if fmt == "pkl":
-            with open(filename, "rb") as file:
-                info_loaded = pickle.load(file)
+            with Path(filename).open("rb") as file:
+                info_loaded = load_pickle(file)
         elif fmt == "json":
-            with open(filename, "rt") as file:
+            with Path(filename).open("rt") as file:
                 info_loaded = json.load(file)
         else:
-            assert False
+            raise AssertionError()
 
         model_type = info_loaded["model_dict"]["model_type"]
         model_class = TrainTestModel.find_subclass(model_type)
@@ -819,7 +764,7 @@ class TrainTestModel(TypeVersionEnabled):
 
     @classmethod
     def _from_info_loaded(cls, info_loaded, filename, logger, optional_dict2, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_format = ["pkl"]
         assert fmt in supported_format, f"format must be in {supported_format} but is {fmt}"
 
@@ -829,9 +774,7 @@ class TrainTestModel(TypeVersionEnabled):
         return train_test_model
 
     def _preproc_train(self, xys, **kwargs):
-        feature_option_dict = (
-            kwargs["feature_option_dict"] if "feature_option_dict" in kwargs else None
-        )
+        feature_option_dict = kwargs.get("feature_option_dict")
         self.model_type = self.TYPE
         assert "label" in xys
         assert "content_id" in xys
@@ -848,8 +791,7 @@ class TrainTestModel(TypeVersionEnabled):
         # calculate normalization parameters,
         self._calculate_normalization_params(xys_2d)
         # normalize
-        xys_2d = self._normalize_xys(xys_2d)
-        return xys_2d
+        return self._normalize_xys(xys_2d)
 
     def train(self, xys, **kwargs):
         xys_2d = self._preproc_train(xys, **kwargs)
@@ -888,7 +830,7 @@ class TrainTestModel(TypeVersionEnabled):
         """
         feature_opts_dicts = []
         for feature_name in feature_names:
-            d = dict()
+            d = {}
             for aggr_feature, aggr_feature_d in feature_option_dict.items():
                 for opt_key, opt_val in aggr_feature_d.items():
                     if (
@@ -901,7 +843,7 @@ class TrainTestModel(TypeVersionEnabled):
 
     def _calculate_normalization_params(self, xys_2d):
 
-        norm_type = self.param_dict["norm_type"] if "norm_type" in self.param_dict else "none"
+        norm_type = self.param_dict.get("norm_type", "none")
 
         if norm_type == "normalize":
             mus = np.mean(xys_2d, axis=0)
@@ -924,8 +866,8 @@ class TrainTestModel(TypeVersionEnabled):
         elif norm_type == "none":
             self.norm_type = "none"
         else:
-            assert False, "Incorrect parameter norm type selected: {}".format(
-                self.param_dict["norm_type"]
+            raise AssertionError(
+                "Incorrect parameter norm type selected: {}".format(self.param_dict["norm_type"])
             )
 
     def _calculate_normalization_params_clip_0to1(self, xys_2d):
@@ -967,7 +909,7 @@ class TrainTestModel(TypeVersionEnabled):
         elif self.norm_type == "none":
             pass
         else:
-            assert False, "Incorrect model norm type selected: {}".format(self.norm_type)
+            raise AssertionError("Incorrect model norm type selected: {}".format(self.norm_type))
         return xys_2d
 
     def denormalize_ys(self, ys_vec):
@@ -976,7 +918,7 @@ class TrainTestModel(TypeVersionEnabled):
         elif self.norm_type == "none":
             pass
         else:
-            assert False, "Incorrect model norm type selected: {}".format(self.norm_type)
+            raise AssertionError("Incorrect model norm type selected: {}".format(self.norm_type))
         return ys_vec
 
     def normalize_xs(self, xs_2d):
@@ -985,7 +927,7 @@ class TrainTestModel(TypeVersionEnabled):
         elif self.norm_type == "none":
             pass
         else:
-            assert False, "Incorrect model norm type selected: {}".format(self.norm_type)
+            raise AssertionError("Incorrect model norm type selected: {}".format(self.norm_type))
         return xs_2d
 
     def _preproc_predict(self, xs):
@@ -995,8 +937,7 @@ class TrainTestModel(TypeVersionEnabled):
             assert name in xs
         xs_2d = self._to_tabular_xs(feature_names, xs)
         # normalize xs
-        xs_2d = self.normalize_xs(xs_2d)
-        return xs_2d
+        return self.normalize_xs(xs_2d)
 
     def predict(self, xs):
         xs_2d = self._preproc_predict(xs)
@@ -1015,22 +956,19 @@ class TrainTestModel(TypeVersionEnabled):
 
         # combine them
         ys_vec = xys["label"]
-        xys_2d = np.array(np.hstack((np.array([ys_vec]).T, xs_2d)))
-        return xys_2d
+        return np.array(np.hstack((np.array([ys_vec]).T, xs_2d)))
 
     @classmethod
     def _to_tabular_xs(cls, xkeys, xs):
         xs_2d = []
         for name in xkeys:
             xs_2d.append(np.array(xs[name]))
-        xs_2d = np.vstack(xs_2d).T
-        return xs_2d
+        return np.vstack(xs_2d).T
 
     def evaluate(self, xs, ys):
         ys_label_pred = self.predict(xs)["ys_label_pred"]
         ys_label = ys["label"]
-        stats = self.get_stats(ys_label, ys_label_pred)
-        return stats
+        return self.get_stats(ys_label, ys_label_pred)
 
     @classmethod
     def delete(cls, filename, **more):
@@ -1038,11 +976,11 @@ class TrainTestModel(TypeVersionEnabled):
 
     @staticmethod
     def _delete(filename, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         assert fmt in ["pkl"], f"format must be pkl, but got: {fmt}"
 
-        if os.path.exists(filename):
-            os.remove(filename)
+        if Path(filename).exists():
+            Path(filename).unlink()
 
     @classmethod
     def get_xs_from_results(cls, results, indexs=None, aggregate=True, features=None):
@@ -1070,11 +1008,8 @@ class TrainTestModel(TypeVersionEnabled):
         # collect results into xs
         xs = {}
         for name in feature_names:
-            if indexs is not None:
-                _results = list(map(lambda i: results[i], indexs))
-            else:
-                _results = results
-            xs[name] = list(map(lambda result: result[name], _results))
+            _results = [results[i] for i in indexs] if indexs is not None else results
+            xs[name] = [result[name] for result in _results]
         return xs
 
     @classmethod
@@ -1097,7 +1032,7 @@ class TrainTestModel(TypeVersionEnabled):
         feature_names = result.get_ordered_list_scores_key()
         new_feature_names = result.get_ordered_list_score_key()
         xs = {}
-        for name, new_name in zip(feature_names, new_feature_names):
+        for name, new_name in zip(feature_names, new_feature_names, strict=False):
             xs[new_name] = np.array(result[name])
         return xs
 
@@ -1108,12 +1043,9 @@ class TrainTestModel(TypeVersionEnabled):
         :param indexs: indices of results to be used
         """
         ys = {}
-        if indexs is not None:
-            _results = list(map(lambda i: results[i], indexs))
-        else:
-            _results = results
-        ys["label"] = np.array(list(map(lambda result: result.asset.groundtruth, _results)))
-        ys["content_id"] = np.array(list(map(lambda result: result.asset.content_id, _results)))
+        _results = [results[i] for i in indexs] if indexs is not None else results
+        ys["label"] = np.array([result.asset.groundtruth for result in _results])
+        ys["content_id"] = np.array([result.asset.content_id for result in _results])
         return ys
 
     @classmethod
@@ -1146,11 +1078,11 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
         :param xys_2d:
         :return:
         """
-        kernel = model_param["kernel"] if "kernel" in model_param else "rbf"
-        gamma = model_param["gamma"] if "gamma" in model_param else 0.0
-        C = model_param["C"] if "C" in model_param else 1.0
-        nu = model_param["nu"] if "nu" in model_param else 0.5
-        cache_size = model_param["cache_size"] if "cache_size" in model_param else 200
+        kernel = model_param.get("kernel", "rbf")
+        gamma = model_param.get("gamma", 0.0)
+        C = model_param.get("C", 1.0)
+        nu = model_param.get("nu", 0.5)
+        cache_size = model_param.get("cache_size", 200)
 
         # Recent libsvm wheels (≥ 3.32) moved the kernel-type constants from
         # module-level attributes (svmutil.RBF / .LINEAR / …) to a nested
@@ -1182,9 +1114,7 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
         for i, item in enumerate(f):
             f[i] = list(item)
         prob = svmutil.svm_problem(xys_2d[:, 0], f)
-        model = svmutil.svm_train(prob, param)
-
-        return model
+        return svmutil.svm_train(prob, param)
 
     @classmethod
     @override(TrainTestModel)
@@ -1196,13 +1126,12 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
             f[i] = list(item)
         with NoPrint():
             score, _, _ = svmutil.svm_predict([0] * len(f), f, model)
-        ys_label_pred = np.array(score)
-        return ys_label_pred
+        return np.array(score)
 
     @staticmethod
     @override(TrainTestModel)
     def _to_file(filename, param_dict, model_dict, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_formats = ["pkl", "json"]
         assert fmt in supported_formats, f"format must be in {supported_formats}, but got: {fmt}"
 
@@ -1213,21 +1142,21 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
             svm_model = info_to_save["model_dict"]["model"]
             info_to_save["model_dict"]["model"] = None
 
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            with open(filename, "wb") as file:
+            Path(filename).parent.mkdir(parents=True, exist_ok=True)
+            with Path(filename).open("wb") as file:
                 pickle.dump(info_to_save, file)
             svmutil.svm_save_model(filename + ".model", svm_model)
         elif fmt == "json":
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            Path(filename).parent.mkdir(parents=True, exist_ok=True)
             # special handling of libsvmnusvr: save model into a string
-            tmp_svm_filename = os.path.basename(filename) + ".svm"
+            tmp_svm_filename = Path(filename).name + ".svm"
             info_to_save = LibsvmNusvrTrainTestModel._to_json(
                 param_dict, model_dict, tmp_svm_filename
             )
-            with open(filename, "wt") as file:
+            with Path(filename).open("wt") as file:
                 json.dump(info_to_save, file, indent=4)
         else:
-            assert False
+            raise AssertionError()
 
     @staticmethod
     def _to_json(param_dict, model_dict, tmp_svm_filename):
@@ -1235,9 +1164,9 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
         info_to_save = {"param_dict": param_dict, "model_dict": model_dict.copy()}
         svm_model = info_to_save["model_dict"]["model"]
         with tempfile.TemporaryDirectory() as tmpdir:
-            svm_model_temppath = os.path.join(tmpdir, tmp_svm_filename)
+            svm_model_temppath = str(Path(tmpdir).joinpath(tmp_svm_filename))
             svmutil.svm_save_model(svm_model_temppath, svm_model)
-            with open(svm_model_temppath, "rt") as file:
+            with Path(svm_model_temppath).open("rt") as file:
                 svm_model_str = file.read()
         info_to_save["model_dict"]["model"] = svm_model_str
         return info_to_save
@@ -1245,7 +1174,7 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
     @classmethod
     @override(TrainTestModel)
     def _from_info_loaded(cls, info_loaded, filename, logger, optional_dict2, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_format = ["pkl", "json"]
         assert fmt in supported_format, f"format must be in {supported_format} but is {fmt}"
 
@@ -1265,30 +1194,30 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
                 with tempfile.NamedTemporaryFile(mode="w+t", delete=False) as tmpfile:
                     tmpfile.write(svm_model_str)
                 model = svmutil.svm_load_model(tmpfile.name)
-                os.unlink(tmpfile.name)
+                Path(tmpfile.name).unlink()
                 train_test_model.model_dict["model"] = model
             else:
-                assert False
+                raise AssertionError()
 
         return train_test_model
 
     @classmethod
     @override(TrainTestModel)
     def _delete(cls, filename, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_formats = ["pkl", "json"]
         assert fmt in supported_formats, f"format must be in {supported_formats}, but got: {fmt}"
 
         if fmt == "pkl":
-            if os.path.exists(filename):
-                os.remove(filename)
-            if os.path.exists(filename + ".model"):
-                os.remove(filename + ".model")
+            if Path(filename).exists():
+                Path(filename).unlink()
+            if Path(filename + ".model").exists():
+                Path(filename + ".model").unlink()
         elif fmt == "json":
-            if os.path.exists(filename):
-                os.remove(filename)
+            if Path(filename).exists():
+                Path(filename).unlink()
         else:
-            assert False
+            raise AssertionError()
 
     @classmethod
     def from_raw_file(cls, model_filename, additional_model_dict, logger):
@@ -1305,7 +1234,7 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
         assert "feature_names" in additional_model_dict
         assert "norm_type" in additional_model_dict
         norm_type = additional_model_dict["norm_type"]
-        assert norm_type == "none" or norm_type == "linear_rescale"
+        assert norm_type in {"none", "linear_rescale"}
         if norm_type == "linear_rescale":
             assert "slopes" in additional_model_dict
             assert "intercepts" in additional_model_dict
@@ -1346,7 +1275,7 @@ class SklearnRandomForestTrainTestModel(TrainTestModel, RegressorMixin):
         if "num_models" in model_param_:
             del model_param_["num_models"]
 
-        from sklearn import ensemble
+        ensemble = import_module("sklearn.ensemble")
 
         model = ensemble.RandomForestRegressor(**model_param_)
         model.fit(xys_2d[:, 1:], np.ravel(xys_2d[:, 0]))
@@ -1356,8 +1285,7 @@ class SklearnRandomForestTrainTestModel(TrainTestModel, RegressorMixin):
     @classmethod
     def _predict(cls, model, xs_2d):
         # directly call sklearn's model's predict() function
-        ys_label_pred = model.predict(xs_2d)
-        return ys_label_pred
+        return model.predict(xs_2d)
 
 
 class SklearnLinearRegressionTrainTestModel(TrainTestModel, RegressorMixin):
@@ -1386,7 +1314,7 @@ class SklearnLinearRegressionTrainTestModel(TrainTestModel, RegressorMixin):
         if "num_models" in model_param_:
             del model_param_["num_models"]
 
-        from sklearn import linear_model
+        linear_model = import_module("sklearn.linear_model")
 
         model = linear_model.LinearRegression(**model_param_)
         model.fit(xys_2d[:, 1:], np.ravel(xys_2d[:, 0]))
@@ -1396,8 +1324,7 @@ class SklearnLinearRegressionTrainTestModel(TrainTestModel, RegressorMixin):
     @classmethod
     def _predict(cls, model, xs_2d):
         # directly call sklearn's model's predict() function
-        ys_label_pred = model.predict(xs_2d)
-        return ys_label_pred
+        return model.predict(xs_2d)
 
 
 class SklearnExtraTreesTrainTestModel(TrainTestModel, RegressorMixin):
@@ -1426,7 +1353,7 @@ class SklearnExtraTreesTrainTestModel(TrainTestModel, RegressorMixin):
         if "num_models" in model_param_:
             del model_param_["num_models"]
 
-        from sklearn import ensemble
+        ensemble = import_module("sklearn.ensemble")
 
         model = ensemble.ExtraTreesRegressor(**model_param_)
         model.fit(xys_2d[:, 1:], np.ravel(xys_2d[:, 0]))
@@ -1436,8 +1363,7 @@ class SklearnExtraTreesTrainTestModel(TrainTestModel, RegressorMixin):
     @classmethod
     def _predict(cls, model, xs_2d):
         # directly call sklearn's model's predict() function
-        ys_label_pred = model.predict(xs_2d)
-        return ys_label_pred
+        return model.predict(xs_2d)
 
 
 class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
@@ -1454,7 +1380,7 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
 
         H. R. Sheikh, M. F. Sabir, and A. C. Bovik,
         "A statistical evaluation of recent full reference image quality assessment algorithms"
-        IEEE Trans. Image Process., vol. 15, no. 11, pp. 3440–3451, Nov. 2006.
+        IEEE Trans. Image Process., vol. 15, no. 11, pp. 3440-3451, Nov. 2006.
 
         :param model_param:
         :param xys_2d:
@@ -1472,7 +1398,7 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
         if "num_models" in model_param_:
             del model_param_["num_models"]
 
-        from scipy.optimize import curve_fit
+        curve_fit = import_module("scipy.optimize").curve_fit
 
         [[b1, b2, b3, b4, b5], _] = curve_fit(
             lambda x, b1, b2, b3, b4, b5: b1
@@ -1485,27 +1411,27 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
             maxfev=20000,
         )
 
-        return dict(b1=b1, b2=b2, b3=b3, b4=b4, b5=b5)
+        return {"b1": b1, "b2": b2, "b3": b3, "b4": b4, "b5": b5}
 
     @staticmethod
     @override(TrainTestModel)
     def _to_file(filename, param_dict, model_dict, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_formats = ["pkl", "json"]
         assert fmt in supported_formats, f"format must be in {supported_formats}, but got: {fmt}"
 
         info_to_save = {"param_dict": param_dict, "model_dict": model_dict.copy()}
 
         if fmt == "pkl":
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            with open(filename, "wb") as file:
+            Path(filename).parent.mkdir(parents=True, exist_ok=True)
+            with Path(filename).open("wb") as file:
                 pickle.dump(info_to_save, file)
         elif fmt == "json":
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            with open(filename, "wt") as file:
+            Path(filename).parent.mkdir(parents=True, exist_ok=True)
+            with Path(filename).open("wt") as file:
                 json.dump(info_to_save, file, indent=4)
         else:
-            assert False
+            raise AssertionError()
 
     @classmethod
     def _predict(cls, model, xs_2d):
@@ -1515,10 +1441,10 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
         b4 = model["b4"]
         b5 = model["b5"]
 
-        curve = lambda x: b1 + (0.5 - 1 / (1 + np.exp(b2 * (x - b3)))) + b4 * x + b5
-        predicted = [curve(x) for x in np.ravel(xs_2d)]
+        def curve(x):
+            return b1 + (0.5 - 1 / (1 + np.exp(b2 * (x - b3)))) + b4 * x + b5
 
-        return predicted
+        return [curve(x) for x in np.ravel(xs_2d)]
 
 
 class RawVideoTrainTestModelMixin(object):
@@ -1536,7 +1462,7 @@ class RawVideoTrainTestModelMixin(object):
         for result in results:
             for feature_name in feature_names:
                 # esult[feature_name] is video of dims: frames, height, width
-                assert len(result[feature_name].shape) == 3
+                assert len(result[feature_name].shape) == _COMPARISON_VALUE_3
 
 
 class MomentRandomForestTrainTestModel(
@@ -1566,9 +1492,7 @@ class MomentRandomForestTrainTestModel(
 
         # combine with ys
         ys_vec = xys["label"]
-        xys_2d = np.array(np.hstack((np.array([ys_vec]).T, xs_2d)))
-
-        return xys_2d
+        return np.array(np.hstack((np.array([ys_vec]).T, xs_2d)))
 
     @classmethod
     @override(TrainTestModel)
@@ -1594,9 +1518,7 @@ class MomentRandomForestTrainTestModel(
                 video_stats_list.append(video_stats)
             video_stats_2d = np.vstack(video_stats_list)
             xs_list.append(video_stats_2d)
-        xs_2d = np.hstack(xs_list)
-
-        return xs_2d
+        return np.hstack(xs_list)
 
 
 class BootstrapRegressorMixin(RegressorMixin):
@@ -1619,21 +1541,68 @@ class BootstrapRegressorMixin(RegressorMixin):
         except AssertionError:
             return super(BootstrapRegressorMixin, cls).get_stats(ys_label, ys_label_pred, **kwargs)
 
+    @staticmethod
+    def _draw_content_errorbar(ax, stats, indexes, content_id, color, yerr):
+        labels = np.array(stats["ys_label"])[indexes]
+        predictions = np.array(stats["ys_label_pred"])[indexes]
+        common = {
+            "yerr": yerr,
+            "capsize": 2,
+            "marker": "o",
+            "linestyle": "",
+            "label": content_id,
+            "color": color,
+        }
+        try:
+            label_stddev = np.array(stats["ys_label_stddev"])[indexes]
+            ax.errorbar(labels, predictions, xerr=1.96 * label_stddev, **common)
+        except (ValueError, TypeError):
+            ax.errorbar(labels, predictions, **common)
+
+    @classmethod
+    def _plot_by_content(cls, ax, stats, content_ids, assume_gaussian):
+        assert len(stats["ys_label"]) == len(content_ids)
+        unique_content_ids = list(set(content_ids))
+        color_map = import_module("vmaf").plt.get_cmap("jet")
+        colors = [color_map(index) for index in np.linspace(0, 1, len(unique_content_ids))]
+        for index, content_id in enumerate(unique_content_ids):
+            indexes = indices(content_ids, lambda value, expected=content_id: value == expected)
+            bagging = np.array(stats["ys_label_pred_bagging"])[indexes]
+            if assume_gaussian:
+                yerr = 1.96 * np.array(stats["ys_label_pred_stddev"])[indexes]
+            else:
+                ci_low = np.array(stats["ys_label_pred_ci95_low"])[indexes]
+                ci_high = np.array(stats["ys_label_pred_ci95_high"])[indexes]
+                yerr = [bagging - ci_low, ci_high - bagging]
+            cls._draw_content_errorbar(
+                ax, stats, indexes, content_id, colors[index % len(colors)], yerr
+            )
+
+    @staticmethod
+    def _plot_without_content(ax, stats, assume_gaussian, average_low, average_high):
+        bagging = stats["ys_label_pred_bagging"]
+        yerr = (
+            1.96 * stats["ys_label_pred_stddev"]
+            if assume_gaussian
+            else [bagging - average_low, average_high - bagging]
+        )
+        ax.errorbar(
+            stats["ys_label"],
+            stats["ys_label_pred"],
+            yerr=yerr,
+            capsize=2,
+            marker="o",
+            linestyle="",
+        )
+
     @classmethod
     @override(RegressorMixin)
     def plot_scatter(cls, ax, stats, **kwargs):
-
         assert len(stats["ys_label"]) == len(stats["ys_label_pred"])
-
-        content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
-        point_labels = kwargs["point_labels"] if "point_labels" in kwargs else None
-
+        content_ids = kwargs.get("content_ids")
+        point_labels = kwargs.get("point_labels")
         try:
-
-            ci_assume_gaussian = (
-                kwargs["ci_assume_gaussian"] if "ci_assume_gaussian" in kwargs else False
-            )
-
+            ci_assume_gaussian = kwargs.get("ci_assume_gaussian", False)
             assert "ys_label_pred_bagging" in stats
             assert "ys_label_pred_stddev" in stats
             assert "ys_label_pred_ci95_low" in stats
@@ -1642,77 +1611,11 @@ class BootstrapRegressorMixin(RegressorMixin):
             avg_ci95_low = np.mean(stats["ys_label_pred_ci95_low"])
             avg_ci95_high = np.mean(stats["ys_label_pred_ci95_high"])
             if content_ids is None:
-                if ci_assume_gaussian:
-                    yerr = 1.96 * stats["ys_label_pred_stddev"]  # 95% C.I. (assume Gaussian)
-                else:
-                    yerr = [
-                        stats["ys_label_pred_bagging"] - avg_ci95_low,
-                        avg_ci95_high - stats["ys_label_pred_bagging"],
-                    ]  # 95% C.I.
-                ax.errorbar(
-                    stats["ys_label"],
-                    stats["ys_label_pred"],
-                    yerr=yerr,
-                    capsize=2,
-                    marker="o",
-                    linestyle="",
+                cls._plot_without_content(
+                    ax, stats, ci_assume_gaussian, avg_ci95_low, avg_ci95_high
                 )
             else:
-                assert len(stats["ys_label"]) == len(content_ids)
-
-                unique_content_ids = list(set(content_ids))
-                from vmaf import plt
-
-                cmap = plt.get_cmap("jet")
-                colors = [cmap(i) for i in np.linspace(0, 1, len(unique_content_ids))]
-                for idx, curr_content_id in enumerate(unique_content_ids):
-                    curr_idxs = indices(content_ids, lambda cid: cid == curr_content_id)
-                    curr_ys_label = np.array(stats["ys_label"])[curr_idxs]
-                    curr_ys_label_pred = np.array(stats["ys_label_pred"])[curr_idxs]
-                    curr_ys_label_pred_bagging = np.array(stats["ys_label_pred_bagging"])[curr_idxs]
-                    curr_ys_label_pred_stddev = np.array(stats["ys_label_pred_stddev"])[curr_idxs]
-                    curr_ys_label_pred_ci95_low = np.array(stats["ys_label_pred_ci95_low"])[
-                        curr_idxs
-                    ]
-                    curr_ys_label_pred_ci95_high = np.array(stats["ys_label_pred_ci95_high"])[
-                        curr_idxs
-                    ]
-                    if ci_assume_gaussian:
-                        yerr = 1.96 * curr_ys_label_pred_stddev  # 95% C.I. (assume Gaussian)
-                    else:
-                        yerr = [
-                            curr_ys_label_pred_bagging - curr_ys_label_pred_ci95_low,
-                            curr_ys_label_pred_ci95_high - curr_ys_label_pred_bagging,
-                        ]  # 95% C.I.
-                    try:
-                        curr_ys_label_stddev = np.array(stats["ys_label_stddev"])[curr_idxs]
-                        ax.errorbar(
-                            curr_ys_label,
-                            curr_ys_label_pred,
-                            yerr=yerr,
-                            xerr=1.96 * curr_ys_label_stddev,
-                            capsize=2,
-                            marker="o",
-                            linestyle="",
-                            label=curr_content_id,
-                            color=colors[idx % len(colors)],
-                        )
-                    except (ValueError, TypeError):
-                        # matplotlib raises ValueError for malformed xerr/yerr
-                        # shapes and TypeError when curr_ys_label_stddev is
-                        # None. Fall back to the y-only errorbar variant.
-                        # (CodeQL py/catch-base-exception)
-                        ax.errorbar(
-                            curr_ys_label,
-                            curr_ys_label_pred,
-                            yerr=yerr,
-                            capsize=2,
-                            marker="o",
-                            linestyle="",
-                            label=curr_content_id,
-                            color=colors[idx % len(colors)],
-                        )
-
+                cls._plot_by_content(ax, stats, content_ids, ci_assume_gaussian)
             ax.text(
                 0.45,
                 0.1,
@@ -1727,7 +1630,6 @@ class BootstrapRegressorMixin(RegressorMixin):
                 assert len(point_labels) == len(stats["ys_label"])
                 for i, point_label in enumerate(point_labels):
                     ax.annotate(point_label, (stats["ys_label"][i], stats["ys_label_pred"][i]))
-
         except AssertionError:
             super(BootstrapRegressorMixin, cls).plot_scatter(ax, stats, **kwargs)
 
@@ -1763,19 +1665,11 @@ class BootstrapMixin(object):
 
     def _get_num_models(self):
         # without this line Pycharm highlights the self.param_dict
-        num_models = (
-            self.param_dict["num_models"]
-            if "num_models" in self.param_dict
-            else self.DEFAULT_NUM_MODELS
-        )
-        return num_models
+        return self.param_dict.get("num_models", self.DEFAULT_NUM_MODELS)
 
     @classmethod
     def _get_num_models_from_param_dict(cls, param_dict):
-        num_models = (
-            param_dict["num_models"] if "num_models" in param_dict else cls.DEFAULT_NUM_MODELS
-        )
-        return num_models
+        return param_dict.get("num_models", cls.DEFAULT_NUM_MODELS)
 
     @override(TrainTestModel)
     def predict(self, xs):
@@ -1811,10 +1705,9 @@ class BootstrapMixin(object):
                 "ys_label_pred_ci95_low": ys_label_pred_ci95_low,
                 "ys_label_pred_ci95_high": ys_label_pred_ci95_high,
             }
-        else:
-            return {
-                "ys_label_pred": ys_label_pred,
-            }
+        return {
+            "ys_label_pred": ys_label_pred,
+        }
 
     def evaluate_stddev(self, xs):
         prediction = self.predict(xs)
@@ -1827,16 +1720,15 @@ class BootstrapMixin(object):
     def evaluate_bagging(self, xs, ys):
         ys_label_pred_bagging = self.predict(xs)["ys_label_pred_bagging"]
         ys_label = ys["label"]
-        stats = self.get_stats(ys_label, ys_label_pred_bagging)
-        return stats
+        return self.get_stats(ys_label, ys_label_pred_bagging)
 
     @override(TrainTestModel)
     def to_file(self, filename, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_formats = ["pkl", "json"]
         assert fmt in supported_formats, f"format must be in {supported_formats}, but got: {fmt}"
 
-        combined = more["combined"] if "combined" in more else False
+        combined = more.get("combined", False)
         assert isinstance(combined, bool)
 
         if combined is True:
@@ -1849,7 +1741,7 @@ class BootstrapMixin(object):
         if combined is True:
             assert issubclass(
                 self.__class__, LibsvmNusvrTrainTestModel
-            ), f"combined=True only supports subclass of LibsvmNusvrTrainTestModel"
+            ), "combined=True only supports subclass of LibsvmNusvrTrainTestModel"
 
         self._assert_trained()
         param_dict = self.param_dict
@@ -1859,25 +1751,25 @@ class BootstrapMixin(object):
         num_models = self._get_num_models()
         assert num_models == len(models)
         if combined is True:
-            meta_model = dict()
+            meta_model = {}
             for i_model, model in enumerate(models):
                 model_dict_ = model_dict.copy()
                 model_dict_["model"] = model
                 if fmt == "json" and issubclass(self.__class__, LibsvmNusvrTrainTestModel):
-                    tmp_svm_filename = os.path.basename(filename) + ".svm"
+                    tmp_svm_filename = Path(filename).name + ".svm"
                     info_to_save = LibsvmNusvrTrainTestModel._to_json(
                         param_dict, model_dict_, tmp_svm_filename
                     )
                     meta_model[str(i_model)] = info_to_save
                 else:
-                    assert False
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            with open(filename, "wt") as file:
+                    raise AssertionError()
+            Path(filename).parent.mkdir(parents=True, exist_ok=True)
+            with Path(filename).open("wt") as file:
                 json.dump(meta_model, file, indent=4)
         else:
             for i_model, model in enumerate(models):
                 filename_ = self._get_model_i_filename(filename, i_model)
-                os.makedirs(os.path.dirname(filename_), exist_ok=True)
+                Path(filename_).parent.mkdir(parents=True, exist_ok=True)
                 model_dict_ = model_dict.copy()
                 model_dict_["model"] = model
                 self._to_file(filename_, param_dict, model_dict_, **more)
@@ -1885,111 +1777,82 @@ class BootstrapMixin(object):
     @staticmethod
     def _get_model_i_filename(filename, i_model):
         # first model doesn't have suffix - so it have the same file name as a regular model
-        if i_model == 0:
-            filename_ = "{}".format(filename)
-        else:
-            filename_ = "{}.{:04d}".format(filename, i_model)
-        return filename_
+        return "{}".format(filename) if i_model == 0 else "{}.{:04d}".format(filename, i_model)
+
+    @staticmethod
+    def _load_model_info(filename, fmt):
+        assert Path(filename).exists(), "File name {} does not exist.".format(filename)
+        if fmt == "pkl":
+            with Path(filename).open("rb") as file:
+                return load_pickle(file)
+        if fmt == "json":
+            with Path(filename).open("rt") as file:
+                return json.load(file)
+        raise AssertionError()
+
+    @classmethod
+    def _from_combined_file(cls, filename, logger, optional_dict2, more):
+        with Path(filename).open("rt") as file:
+            loaded_models = json.load(file)
+        assert str(0) in loaded_models
+        first_info = loaded_models[str(0)]
+        model_class = TrainTestModel.find_subclass(first_info["model_dict"]["model_type"])
+        assert issubclass(
+            model_class, LibsvmNusvrTrainTestModel
+        ), "combined=True only supports subclass of LibsvmNusvrTrainTestModel"
+        first_model = model_class._from_info_loaded(
+            first_info, None, logger, optional_dict2, **more
+        )
+        model_count = cls._get_num_models_from_param_dict(first_info["param_dict"])
+        first_model.model = [
+            model_class._from_info_loaded(
+                loaded_models[str(model_index)], None, logger, optional_dict2, **more
+            ).model
+            for model_index in range(model_count)
+        ]
+        return first_model
+
+    @classmethod
+    def _from_separate_files(cls, filename, fmt, logger, optional_dict2, more):
+        first_filename = cls._get_model_i_filename(filename, 0)
+        first_info = cls._load_model_info(first_filename, fmt)
+        model_class = TrainTestModel.find_subclass(first_info["model_dict"]["model_type"])
+        first_model = model_class._from_info_loaded(
+            first_info, first_filename, logger, optional_dict2, **more
+        )
+        model_count = cls._get_num_models_from_param_dict(first_info["param_dict"])
+        models = []
+        for model_index in range(model_count):
+            model_filename = cls._get_model_i_filename(filename, model_index)
+            model_info = cls._load_model_info(model_filename, fmt)
+            models.append(
+                model_class._from_info_loaded(
+                    model_info, model_filename, logger, optional_dict2, **more
+                ).model
+            )
+        first_model.model = models
+        return first_model
 
     @classmethod
     @override(TrainTestModel)
     def from_file(cls, filename, logger=None, optional_dict2=None, **more):
-        fmt = more["format"] if "format" in more else "pkl"
-        supported_format = ["pkl", "json"]
-        assert fmt in supported_format, f"format must be in {supported_format} but is {fmt}"
-
-        combined = more["combined"] if "combined" in more else False
+        fmt = more.get("format", "pkl")
+        assert fmt in ["pkl", "json"], f"format must be pkl or json but is {fmt}"
+        combined = more.get("combined", False)
         assert isinstance(combined, bool)
-
-        if combined is True:
-            supported_formats_for_combined = ["json"]
-            assert fmt in supported_formats_for_combined, (
-                f"combine=True only supports format in "
-                f"{supported_formats_for_combined}, but format is {fmt}"
-            )
-
-        if combined is True:
-
-            if fmt == "json":
-                with open(filename, "rt") as file:
-                    info_loaded_meta = json.load(file)
-                assert str(0) in info_loaded_meta
-                info_loaded_0 = info_loaded_meta[str(0)]
-                model_type = info_loaded_0["model_dict"]["model_type"]
-                model_class = TrainTestModel.find_subclass(model_type)
-
-                assert issubclass(
-                    model_class, LibsvmNusvrTrainTestModel
-                ), f"combined=True only supports subclass of LibsvmNusvrTrainTestModel"
-
-                train_test_model_0 = model_class._from_info_loaded(
-                    info_loaded_0, None, logger, optional_dict2, **more
-                )
-                num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
-
-                models = []
-                for i_model in range(num_models):
-                    info_loaded_ = info_loaded_meta[str(i_model)]
-                    train_test_model_ = model_class._from_info_loaded(
-                        info_loaded_, None, logger, optional_dict2, **more
-                    )
-                    model_ = train_test_model_.model
-                    models.append(model_)
-
-                train_test_model_0.model = models
-
-                return train_test_model_0
-
-            else:
-                assert False
-
-        else:
-
-            filename_0 = cls._get_model_i_filename(filename, 0)
-            assert os.path.exists(filename_0), "File name {} does not exist.".format(filename_0)
-            if fmt == "pkl":
-                with open(filename_0, "rb") as file:
-                    info_loaded_0 = pickle.load(file)
-            elif fmt == "json":
-                with open(filename_0, "rt") as file:
-                    info_loaded_0 = json.load(file)
-            else:
-                assert False
-            model_type = info_loaded_0["model_dict"]["model_type"]
-            model_class = TrainTestModel.find_subclass(model_type)
-            train_test_model_0 = model_class._from_info_loaded(
-                info_loaded_0, filename_0, logger, optional_dict2, **more
-            )
-            num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
-
-            models = []
-            for i_model in range(num_models):
-                filename_ = cls._get_model_i_filename(filename, i_model)
-                assert os.path.exists(filename_), "File name {} does not exist.".format(filename_)
-                if fmt == "pkl":
-                    with open(filename_, "rb") as file:
-                        info_loaded_ = pickle.load(file)
-                elif fmt == "json":
-                    with open(filename_, "rt") as file:
-                        info_loaded_ = json.load(file)
-                train_test_model_ = model_class._from_info_loaded(
-                    info_loaded_, filename_, logger, optional_dict2, **more
-                )
-                model_ = train_test_model_.model
-                models.append(model_)
-
-            train_test_model_0.model = models
-
-            return train_test_model_0
+        if combined:
+            assert fmt == "json", f"combine=True only supports json, but format is {fmt}"
+            return cls._from_combined_file(filename, logger, optional_dict2, more)
+        return cls._from_separate_files(filename, fmt, logger, optional_dict2, more)
 
     @classmethod
     @override(TrainTestModel)
     def delete(cls, filename, **more):
-        fmt = more["format"] if "format" in more else "pkl"
+        fmt = more.get("format", "pkl")
         supported_formats = ["pkl", "json"]
         assert fmt in supported_formats, f"format must be in {supported_formats} but got {fmt}"
 
-        combined = more["combined"] if "combined" in more else False
+        combined = more.get("combined", False)
         assert isinstance(combined, bool)
 
         if combined is True:
@@ -2003,15 +1866,15 @@ class BootstrapMixin(object):
             cls._delete(filename, **more)
         else:
             filename_0 = cls._get_model_i_filename(filename, 0)
-            assert os.path.exists(filename_0)
+            assert Path(filename_0).exists()
             if fmt == "pkl":
-                with open(filename_0, "rb") as file:
-                    info_loaded_0 = pickle.load(file)
+                with Path(filename_0).open("rb") as file:
+                    info_loaded_0 = load_pickle(file)
             elif fmt == "json":
-                with open(filename_0, "rt") as file:
+                with Path(filename_0).open("rt") as file:
                     info_loaded_0 = json.load(file)
             else:
-                assert False
+                raise AssertionError()
             num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
             for i_model in range(num_models):
                 filename_ = cls._get_model_i_filename(filename, i_model)

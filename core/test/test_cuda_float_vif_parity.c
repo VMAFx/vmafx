@@ -127,11 +127,11 @@ static char *run_cpu(bool neg_opts, const char *const *keys, double *out_scores)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (neg_opts) {
         err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
         mu_assert("CPU: dictionary_set(vif_enhn_gain_limit) failed", !err);
@@ -145,7 +145,8 @@ static char *run_cpu(bool neg_opts, const char *const *keys, double *out_scores)
     mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CPU: fill_ref failed", !err);
         err = fill_dist(&dist, i);
@@ -153,7 +154,7 @@ static char *run_cpu(bool neg_opts, const char *const *keys, double *out_scores)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
@@ -163,7 +164,7 @@ static char *run_cpu(bool neg_opts, const char *const *keys, double *out_scores)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(bool neg_opts, const char *const *keys, double *out_scores, int *skipped)
@@ -173,24 +174,24 @@ static char *run_cuda(bool neg_opts, const char *const *keys, double *out_scores
         out_scores[s] = NAN;
 
     int err = 0;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (neg_opts) {
         err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
         mu_assert("CUDA: dictionary_set(vif_enhn_gain_limit) failed", !err);
@@ -204,7 +205,8 @@ static char *run_cuda(bool neg_opts, const char *const *keys, double *out_scores
     mu_assert("CUDA: vmaf_use_feature(float_vif_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CUDA: fill_ref failed", !err);
         err = fill_dist(&dist, i);
@@ -212,7 +214,7 @@ static char *run_cuda(bool neg_opts, const char *const *keys, double *out_scores
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
@@ -224,7 +226,7 @@ static char *run_cuda(bool neg_opts, const char *const *keys, double *out_scores
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_cpu_cuda_parity(void)
@@ -240,7 +242,7 @@ static char *test_float_vif_cpu_cuda_parity(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
         mu_assert("CPU float_vif scale score is non-finite", isfinite(cpu_scores[s]));
@@ -256,7 +258,7 @@ static char *test_float_vif_cpu_cuda_parity(void)
         mu_assert("float_vif CPU vs. CUDA scale delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -281,7 +283,7 @@ static char *test_float_vif_options_reach_kernel(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
         mu_assert("CPU float_vif NEG score is non-finite", isfinite(cpu_scores[s]));
@@ -297,12 +299,12 @@ static char *test_float_vif_options_reach_kernel(void)
         mu_assert("float_vif with non-default egl/snsq drifts from the CPU reference",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_vif_cpu_cuda_parity);
     mu_run_test(test_float_vif_options_reach_kernel);
-    return NULL;
+    return VMAF_NULLPTR;
 }

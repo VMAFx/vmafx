@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0669: AI Materializer Audit Provenance
 
 ## Summary
@@ -37,7 +36,7 @@ checkpoint is produced in the same command.
 ## Decision Matrix
 
 | Option | Pros | Cons | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add `run_provenance` only to trainers | Smallest scope | Materialized feature tables remain hard to reproduce | Rejected |
 | Add bespoke audit metadata per materializer | Localized fields | Repeats path and argv normalization; drifts from ADR-0661 | Rejected |
 | Reuse `aiutils.run_manifest` for materializer/audit JSON | Shared schema; hashes source inputs; keeps report targets deterministic | Slightly larger audit JSON | Chosen |

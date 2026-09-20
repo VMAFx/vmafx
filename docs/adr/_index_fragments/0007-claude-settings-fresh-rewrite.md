@@ -1,1 +1,5 @@
-| [ADR-0007](0007-claude-settings-fresh-rewrite.md) | Rewrite `.claude/settings.json` from scratch | Accepted | claude, agents |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0007](0007-claude-settings-fresh-rewrite.md) | Rewrite .claude/settings.json from scratch | Accepted | claude, agents |

@@ -1,1 +1,5 @@
-| [ADR-0669](0669-ai-corpus-jsonl-provenance.md) | AI corpus JSONL merge and aggregation scripts emit replayable manifest sidecars with shared `run_provenance`. | Proposed | ai, training, provenance, corpus |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0669](0669-ai-corpus-jsonl-provenance.md) | AI Corpus JSONL Provenance | Proposed | ai, training, provenance, corpus |

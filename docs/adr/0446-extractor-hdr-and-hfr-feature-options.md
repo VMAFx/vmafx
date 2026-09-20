@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0446: K150K/CHUG extractor passes HDR and HFR per-feature options
 
 - **Status**: Accepted
@@ -93,7 +92,7 @@ Extend `extract_k150k_features.py` to:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Per-clip auto-detect + emit options (chosen)** | Closes both gaps with one mechanism; works on the existing pipeline shape; backward-compatible (SDR sources unchanged); per-clip metadata surfaced in parquet for trainer stratification | Adds 4 ffprobe fields per clip (zero perf cost — same probe call) | Chosen — minimal scope, maximal coverage |
 | **Force HDR options for the entire CHUG run via env var** | Simplest implementation | Mis-applies HDR options to SDR clips in mixed corpora; doesn't address HFR at all; doesn't surface metadata for stratification | Rejected — coarser, breaks SDR clips |
 | **Skip the fix; add a downstream feature-set normalisation pass** | No extractor change | Requires re-running the entire CHUG extraction with the same buggy options + then a second pass to "correct" them; also doesn't help live MCP usage | Rejected — wastes the 14 h CHUG run twice |

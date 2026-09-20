@@ -1,19 +1,21 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1040: integer ssim moments type non x86
 
-# ADR-1040: Promote `integer_ssim_moments_t` to shared header (macOS / Windows arm64 build fix)
+**Decision:** Promote `integer_ssim_moments_t` to shared header (macOS / Windows
+arm64 build fix)
 
 - **Status**: Accepted
 - **Date**: 2026-06-04
 - **Deciders**: Lusoris
-- **Tags**: `build`, `simd`, `arm64`, `macos`, `windows`, `integer-ssim`, `fork-local`
+- **Tags**: `build`, `simd`, `arm64`, `macos`, `windows`, `integer-ssim`,
+  `fork-local`
 
 ## Context
 
 `integer_ssim_moments_t` was defined only inside `#if ARCH_X86` in
-`core/src/feature/x86/integer_ssim_avx2.h`. The type was used unconditionally
-in `integer_ssim.c` for function-pointer typedefs and scalar wrappers (e.g.
-`integer_ssim_score`). On macOS arm64 and Windows arm64 builds the x86 header
-is not included, so the compiler saw 8 "unknown type name `integer_ssim_moments_t`"
+`core/src/feature/x86/integer_ssim_avx2.h`. The type was used unconditionally in
+`integer_ssim.c` for function-pointer typedefs and scalar wrappers (e.g.
+`integer_ssim_score`). On macOS arm64 and Windows arm64 builds the x86 header is
+not included, so the compiler saw 8 "unknown type name `integer_ssim_moments_t`"
 errors and the build failed entirely.
 
 The breakage was introduced when ADR-0784 added the AVX2 integer SSIM horizontal

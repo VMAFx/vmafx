@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0352: Vulkan submit-pool migration — PR A (adm, motion, psnr)
 
 - Status: Accepted
@@ -67,11 +66,11 @@ are freed implicitly when the descriptor pool is destroyed by
 
 Per-frame Vulkan API round-trip reduction:
 
-| Extractor    | Legacy calls/frame | Pool calls/frame | Eliminated per-frame |
-|--------------|-------------------|------------------|----------------------|
-| adm_vulkan   | 1 create + 1 free fence; 1 alloc + 1 free cmdbuf; 4 alloc + 4 free desc_sets | acquire + end_and_wait + free | vkCreateFence, vkAllocateCommandBuffers, 4× vkAllocateDescriptorSets, 4× vkFreeDescriptorSets, vkDestroyFence, vkFreeCommandBuffers |
+| Extractor | Legacy calls/frame | Pool calls/frame | Eliminated per-frame |
+| -------------- | ------------------- | ------------------ | ---------------------- |
+| adm_vulkan | 1 create + 1 free fence; 1 alloc + 1 free cmdbuf; 4 alloc + 4 free desc_sets | acquire + end_and_wait + free | vkCreateFence, vkAllocateCommandBuffers, 4× vkAllocateDescriptorSets, 4× vkFreeDescriptorSets, vkDestroyFence, vkFreeCommandBuffers |
 | motion_vulkan | 1+1 fence; 1+1 cmdbuf; 1+1 desc_set | acquire + update_desc + end_and_wait + free | fence create/destroy, cmdbuf alloc/free, desc_set alloc/free |
-| psnr_vulkan  | 1+1 fence; 1+1 cmdbuf; 3+3 desc_sets | acquire + end_and_wait + free | fence create/destroy, cmdbuf alloc/free, 3× desc_set alloc/free |
+| psnr_vulkan | 1+1 fence; 1+1 cmdbuf; 3+3 desc_sets | acquire + end_and_wait + free | fence create/destroy, cmdbuf alloc/free, 3× desc_set alloc/free |
 
 Numerical correctness: bit-identical to the prior per-frame-alloc path.
 The pool infrastructure does not touch compute dispatch, push constants,

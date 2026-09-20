@@ -515,7 +515,7 @@ static void scan_slide_neon(const CambiCValuesFrame *f, int row_sub, int row_add
     }
 }
 
-void calculate_c_values_neon(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+void calculate_c_values_neon(const VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
                              uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
                              const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                              const int *diff_weights, const int *all_diffs, int width, int height)

@@ -1,1 +1,5 @@
-| [ADR-0136](0136-ci-deliverables-checker-strip-markdown.md) | Strip markdown emphasis/code characters (`` ` ``, `*`, `_`) from the PR body before the `Deep-Dive Deliverables Checklist` grep. The template ships label bullets like ``- [ ] **`AGENTS.md` invariant note**`` — backticks inserted characters between tokens and broke the literal-item regex, rejecting conforming PRs. One-line `tr -d` pass applied to both parse and diff-verification steps. | Accepted | ci, rule-enforcement, adr-0108 |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0136](0136-ci-deliverables-checker-strip-markdown.md) | Strip markdown emphasis/code characters before ADR-0108 deliverables grep | Accepted | ci, rule-enforcement, adr-0108 |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD010 -->
 # Research-0973: Master CI regressions — verified reproduction and root-cause analysis
 
 **Date**: 2026-05-31
@@ -207,14 +206,14 @@ $ docker exec vmaf-dev-mcp bash -c \
 Excerpt from the loop body of the inlined `ref_linear_rgb_to_xyb`:
 
 ```text
-    vmovups	32(%rbx,%rax,4), %ymm3       # r
-    vmovups	2804(%rbx,%rax,4), %ymm4     # g
-    vmovups	5576(%rbx,%rax,4), %ymm2     # b
-    vbroadcastss	.LCPI3_2(%rip), %ymm1    # m01 = 0.622
-    vmulps	%ymm1, %ymm4, %ymm1
-    vfmadd231ps	%ymm14, %ymm3, %ymm1     # FMA: m01*g  +=  kM00*r   ← contracted
-    vfmadd231ps	%ymm15, %ymm2, %ymm1     # FMA: m01*g + kM00*r += kM02*b
-    vaddps	%ymm1, %ymm10, %ymm1         # + kOpsinBias
+    vmovups 32(%rbx,%rax,4), %ymm3       # r
+    vmovups 2804(%rbx,%rax,4), %ymm4     # g
+    vmovups 5576(%rbx,%rax,4), %ymm2     # b
+    vbroadcastss .LCPI3_2(%rip), %ymm1    # m01 = 0.622
+    vmulps %ymm1, %ymm4, %ymm1
+    vfmadd231ps %ymm14, %ymm3, %ymm1     # FMA: m01*g  +=  kM00*r   ← contracted
+    vfmadd231ps %ymm15, %ymm2, %ymm1     # FMA: m01*g + kM00*r += kM02*b
+    vaddps %ymm1, %ymm10, %ymm1         # + kOpsinBias
 ```
 
 The corresponding SIMD lib `libx86_ssimulacra2_avx2.a` (compiled with the
@@ -243,12 +242,12 @@ EOF
      source /opt/intel/oneapi/setvars.sh > /dev/null 2>&1 && \
      icx -O3 -mavx2 -mfma -ffp-contract=off -fp-model=precise \
          -S -o - /tmp/icx_test.c | grep -E 'vfmadd|vmulss|vaddss' | head"
-    vmulss	.LCPI0_0(%rip), %xmm0, %xmm0
-    vmulss	.LCPI0_1(%rip), %xmm1, %xmm1
-    vaddss	%xmm1, %xmm0, %xmm0
-    vmulss	.LCPI0_2(%rip), %xmm2, %xmm1
-    vaddss	%xmm1, %xmm0, %xmm0
-    vaddss	.LCPI0_3(%rip), %xmm0, %xmm0
+    vmulss .LCPI0_0(%rip), %xmm0, %xmm0
+    vmulss .LCPI0_1(%rip), %xmm1, %xmm1
+    vaddss %xmm1, %xmm0, %xmm0
+    vmulss .LCPI0_2(%rip), %xmm2, %xmm1
+    vaddss %xmm1, %xmm0, %xmm0
+    vaddss .LCPI0_3(%rip), %xmm0, %xmm0
 ```
 
 No `vfmadd`. icx is clang-based, so the clang FP pragma is honoured;

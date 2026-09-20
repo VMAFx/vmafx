@@ -360,7 +360,7 @@ static int cambi_metal_init_tvi(IntegerCambiStateMetal *s)
     const int num_diffs = 1 << s->max_log_contrast;
     return vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
                                        s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                       s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
+                                       s->buffers.tvi_for_diff, &s->vlt_luma, nullptr, nullptr);
 }
 
 /* ------------------------------------------------------------------ */
@@ -376,7 +376,7 @@ static int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -400,15 +400,15 @@ static int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
 
 static void release_host_buffers(IntegerCambiStateMetal *s)
 {
-    free(s->buffers.diffs_to_consider);   s->buffers.diffs_to_consider   = NULL;
-    free(s->buffers.diff_weights);        s->buffers.diff_weights        = NULL;
-    free(s->buffers.all_diffs);           s->buffers.all_diffs           = NULL;
-    free(s->buffers.tvi_for_diff);        s->buffers.tvi_for_diff        = NULL;
-    free(s->buffers.c_values);            s->buffers.c_values            = NULL;
-    free(s->buffers.c_values_histograms); s->buffers.c_values_histograms = NULL;
-    free(s->buffers.mask_dp);             s->buffers.mask_dp             = NULL;
-    free(s->buffers.filter_mode_buffer);  s->buffers.filter_mode_buffer  = NULL;
-    free(s->buffers.derivative_buffer);   s->buffers.derivative_buffer   = NULL;
+    free(s->buffers.diffs_to_consider);   s->buffers.diffs_to_consider   = nullptr;
+    free(s->buffers.diff_weights);        s->buffers.diff_weights        = nullptr;
+    free(s->buffers.all_diffs);           s->buffers.all_diffs           = nullptr;
+    free(s->buffers.tvi_for_diff);        s->buffers.tvi_for_diff        = nullptr;
+    free(s->buffers.c_values);            s->buffers.c_values            = nullptr;
+    free(s->buffers.c_values_histograms); s->buffers.c_values_histograms = nullptr;
+    free(s->buffers.mask_dp);             s->buffers.mask_dp             = nullptr;
+    free(s->buffers.filter_mode_buffer);  s->buffers.filter_mode_buffer  = nullptr;
+    free(s->buffers.derivative_buffer);   s->buffers.derivative_buffer   = nullptr;
 }
 
 /* ------------------------------------------------------------------ */
@@ -540,7 +540,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_hostbuf; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_hostbuf; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         /* Device (Shared-storage) buffers, one flat uint16 plane each. */
@@ -562,18 +562,18 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
 
     return 0;
 
 fail_pso:
-    if (s->pso_filter_mode) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_filter_mode; s->pso_filter_mode = NULL; }
-    if (s->pso_decimate)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;    s->pso_decimate    = NULL; }
-    if (s->pso_mask)        { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mask;        s->pso_mask        = NULL; }
+    if (s->pso_filter_mode) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_filter_mode; s->pso_filter_mode = nullptr; }
+    if (s->pso_decimate)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;    s->pso_decimate    = nullptr; }
+    if (s->pso_mask)        { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mask;        s->pso_mask        = nullptr; }
 fail_bufs:
-    if (s->d_tmp)   { (void)(__bridge_transfer id<MTLBuffer>)s->d_tmp;   s->d_tmp   = NULL; }
-    if (s->d_mask)  { (void)(__bridge_transfer id<MTLBuffer>)s->d_mask;  s->d_mask  = NULL; }
-    if (s->d_image) { (void)(__bridge_transfer id<MTLBuffer>)s->d_image; s->d_image = NULL; }
+    if (s->d_tmp)   { (void)(__bridge_transfer id<MTLBuffer>)s->d_tmp;   s->d_tmp   = nullptr; }
+    if (s->d_mask)  { (void)(__bridge_transfer id<MTLBuffer>)s->d_mask;  s->d_mask  = nullptr; }
+    if (s->d_image) { (void)(__bridge_transfer id<MTLBuffer>)s->d_image; s->d_image = nullptr; }
 fail_hostbuf:
     release_host_buffers(s);
     (void)vmaf_picture_unref(&s->pics[1]);
@@ -583,7 +583,7 @@ fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -623,9 +623,9 @@ static void copy_buf_to_pic(id<MTLBuffer> buf, VmafPicture *pic, unsigned scaled
 /* ------------------------------------------------------------------ */
 /* submit: full synchronous CAMBI pipeline (GPU stages + host residual).*/
 /* ------------------------------------------------------------------ */
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic; (void)ref_pic_90; (void)dist_pic_90; (void)index;
     IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
@@ -639,7 +639,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue   = (__bridge id<MTLCommandQueue>)qh;
     id<MTLBuffer>       d_image = (__bridge id<MTLBuffer>)s->d_image;
     id<MTLBuffer>       d_mask  = (__bridge id<MTLBuffer>)s->d_mask;
@@ -766,24 +766,24 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_filter_mode) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_filter_mode; s->pso_filter_mode = NULL; }
-    if (s->pso_decimate)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;    s->pso_decimate    = NULL; }
-    if (s->pso_mask)        { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mask;        s->pso_mask        = NULL; }
-    if (s->d_tmp)   { (void)(__bridge_transfer id<MTLBuffer>)s->d_tmp;   s->d_tmp   = NULL; }
-    if (s->d_mask)  { (void)(__bridge_transfer id<MTLBuffer>)s->d_mask;  s->d_mask  = NULL; }
-    if (s->d_image) { (void)(__bridge_transfer id<MTLBuffer>)s->d_image; s->d_image = NULL; }
+    if (s->pso_filter_mode) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_filter_mode; s->pso_filter_mode = nullptr; }
+    if (s->pso_decimate)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;    s->pso_decimate    = nullptr; }
+    if (s->pso_mask)        { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mask;        s->pso_mask        = nullptr; }
+    if (s->d_tmp)   { (void)(__bridge_transfer id<MTLBuffer>)s->d_tmp;   s->d_tmp   = nullptr; }
+    if (s->d_mask)  { (void)(__bridge_transfer id<MTLBuffer>)s->d_mask;  s->d_mask  = nullptr; }
+    if (s->d_image) { (void)(__bridge_transfer id<MTLBuffer>)s->d_image; s->d_image = nullptr; }
 
     (void)vmaf_picture_unref(&s->pics[0]);
     (void)vmaf_picture_unref(&s->pics[1]);
     release_host_buffers(s);
 
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
 static const char *provided_features[] = {
-    "Cambi_feature_cambi_score", NULL
+    "Cambi_feature_cambi_score", nullptr
 };
 
 extern "C" {
@@ -791,13 +791,12 @@ extern "C" {
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_cambi_metal = {
     .name              = "integer_cambi_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerCambiStateMetal),

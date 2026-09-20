@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0089: `saliency_student_v2` — Resize-decoder ablation
 
 **Date**: 2026-05-09
@@ -56,7 +55,7 @@ checkerboard artefacts and yields cleaner gradients).
 ## Findings
 
 | Field | v1 (ConvTranspose) | v2 (Resize + 3×3 Conv) |
-|---|---|---|
+| --- | --- | --- |
 | Trainable params | 112 841 | 123 721 |
 | Best val IoU (5 % DUTS-TR fold) | 0.6558 | _filled in by training run — see model card_ |
 | ONNX op set | `Conv`, `Concat`, `MaxPool`, `Relu`, `Sigmoid`, `ConvTranspose` | `Conv`, `Concat`, `Constant`, `MaxPool`, `Relu`, `Resize`, `Sigmoid` |

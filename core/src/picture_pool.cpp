@@ -19,7 +19,9 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <pthread.h>
+#include <type_traits>
 
 #include "picture_pool.h"
 #include "libvmaf/picture.h"
@@ -33,9 +35,13 @@
  */
 struct PooledPicturePriv {
     VmafPicturePrivate base;
-    VmafPicturePool *pool;
-    unsigned pic_idx;
+    VmafPicturePool *pool{};
+    unsigned pic_idx{};
 };
+
+/* vmaf_picture_unref releases pic->priv with free(), so this placement-
+ * constructed extension must remain trivially destructible. */
+static_assert(std::is_trivially_destructible_v<PooledPicturePriv>);
 
 /**
  * CPU Picture Pool implementation.
@@ -43,22 +49,53 @@ struct PooledPicturePriv {
  * Uses a free list (stack) for O(1) allocation instead of O(n) linear scan.
  */
 struct VmafPicturePool {
-    VmafPicturePoolConfig cfg;
-    pthread_mutex_t lock;
-    pthread_cond_t available;
+    VmafPicturePoolConfig cfg{};
+    pthread_mutex_t lock{};
+    pthread_cond_t available{};
 
-    VmafPicture *pictures; /* Array of pre-allocated pictures */
+    VmafPicture *pictures{}; /* Array of pre-allocated pictures */
 
-    unsigned *free_list;    /* Stack of available picture indices */
-    unsigned free_list_top; /* Index of top of stack (# of free pictures) */
+    unsigned *free_list{};    /* Stack of available picture indices */
+    unsigned free_list_top{}; /* Index of top of stack (# of free pictures) */
 };
+
+static_assert(std::is_trivially_destructible_v<VmafPicturePool>);
+
+static VmafPicturePool *picture_pool_create(void)
+{
+    void *const storage = std::malloc(sizeof(VmafPicturePool));
+    if (!storage)
+        return nullptr;
+    return ::new (storage) VmafPicturePool{};
+}
+
+static int default_condition_init(pthread_cond_t *condition)
+{
+#ifdef _WIN32
+    pthread_condattr_t attributes = nullptr;
+    return pthread_cond_init(condition, &attributes);
+#else
+    pthread_condattr_t attributes;
+    const int attributes_init_err = pthread_condattr_init(&attributes);
+    if (attributes_init_err)
+        return attributes_init_err;
+
+    const int condition_init_err = pthread_cond_init(condition, &attributes);
+    const int attributes_destroy_err = pthread_condattr_destroy(&attributes);
+    if (!condition_init_err && attributes_destroy_err) {
+        const int condition_destroy_err = pthread_cond_destroy(condition);
+        return condition_destroy_err ? condition_destroy_err : attributes_destroy_err;
+    }
+    return condition_init_err ? condition_init_err : attributes_destroy_err;
+#endif
+}
 
 /**
  * Release callback invoked when vmaf_picture_unref() brings refcount to 0.
  * Instead of freeing the data, we return the picture to the pool and signal
  * any waiting threads.
  */
-static int pooled_picture_release(VmafPicture *pic, void *cookie)
+static int pooled_picture_release(VmafPicture *pic, const void *cookie)
 {
     (void)cookie;
 
@@ -76,6 +113,20 @@ static int pooled_picture_release(VmafPicture *pic, void *cookie)
     pthread_mutex_unlock(&pool->lock);
 
     return 0;
+}
+
+static VmafPicturePrivate *pooled_picture_priv_create(VmafPicturePool *pool, unsigned pic_idx)
+{
+    void *const storage = std::malloc(sizeof(PooledPicturePriv));
+    if (!storage)
+        return nullptr;
+
+    return &(::new (storage) PooledPicturePriv{
+                 .base = {},
+                 .pool = pool,
+                 .pic_idx = pic_idx,
+             })
+                ->base;
 }
 
 static int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolConfig &cfg)
@@ -127,33 +178,38 @@ int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg)
     if (!cfg.w || !cfg.h)
         return -EINVAL;
 
-    int err = 0;
-
-    VmafPicturePool *const p = *pool = static_cast<VmafPicturePool *>(std::malloc(sizeof(*p)));
-    if (!p)
-        goto fail;
-    std::memset(p, 0, sizeof(*p));
+    VmafPicturePool *const p = picture_pool_create();
+    if (!p) {
+        *pool = nullptr;
+        return -ENOMEM;
+    }
+    *pool = p;
     p->cfg = cfg;
 
     p->pictures = static_cast<VmafPicture *>(std::malloc(sizeof(*p->pictures) * cfg.pic_cnt));
     if (!p->pictures) {
-        err = -ENOMEM;
-        goto free_pool;
+        p->~VmafPicturePool();
+        std::free(p);
+        *pool = nullptr;
+        return -ENOMEM;
     }
     std::memset(p->pictures, 0, sizeof(*p->pictures) * cfg.pic_cnt);
 
     /* Allocate free list (stack of available picture indices) */
     p->free_list = static_cast<unsigned *>(std::malloc(sizeof(*p->free_list) * cfg.pic_cnt));
     if (!p->free_list) {
-        err = -ENOMEM;
-        goto free_pictures;
+        std::free(p->pictures);
+        p->~VmafPicturePool();
+        std::free(p);
+        *pool = nullptr;
+        return -ENOMEM;
     }
 
-    err = pthread_mutex_init(&p->lock, nullptr);
+    int err = pthread_mutex_init(&p->lock, nullptr);
     if (err)
         goto free_free_list;
 
-    err = pthread_cond_init(&p->available, nullptr);
+    err = default_condition_init(&p->available);
     if (err)
         goto free_mutex;
 
@@ -169,13 +225,11 @@ free_mutex:
     pthread_mutex_destroy(&p->lock);
 free_free_list:
     std::free(p->free_list);
-free_pictures:
     std::free(p->pictures);
-free_pool:
+    p->~VmafPicturePool();
     std::free(p);
-fail:
     *pool = nullptr;
-    return err ? err : -ENOMEM;
+    return err;
 }
 
 int vmaf_picture_pool_close(VmafPicturePool *pool)
@@ -201,6 +255,7 @@ int vmaf_picture_pool_close(VmafPicturePool *pool)
 
     std::free(pool->free_list);
     std::free(pool->pictures);
+    pool->~VmafPicturePool();
     std::free(pool);
     return 0;
 }
@@ -242,22 +297,16 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     *pic = pic_snapshot;
 
     /* Set up extended priv with pool information */
-    PooledPicturePriv *priv = static_cast<PooledPicturePriv *>(std::malloc(sizeof(*priv)));
-    if (!priv) {
+    pic->priv = pooled_picture_priv_create(pool, idx);
+    if (!pic->priv) {
         err = -ENOMEM;
         goto return_to_pool;
     }
-    std::memset(priv, 0, sizeof(*priv));
-    priv->pool = pool;
-    priv->pic_idx = idx;
-    /* C-style inheritance: VmafPicturePrivate is the first member of
-     * PooledPicturePriv at offset 0; reinterpret_cast is safe here. */
-    pic->priv = reinterpret_cast<VmafPicturePrivate *>(priv);
 
     /* Set custom release callback to return picture to pool */
     err = vmaf_picture_set_release_callback(pic, nullptr, pooled_picture_release);
     if (err) {
-        std::free(priv);
+        std::free(pic->priv);
         /* ADR-0960 (round-25 audit A.3) — null pic->priv after free so
          * any caller that inspects it after a failed fetch does not read
          * freed memory. */
@@ -268,7 +317,7 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     /* Initialize refcount to 1 */
     err = vmaf_ref_init(&pic->ref);
     if (err) {
-        std::free(priv);
+        std::free(pic->priv);
         /* ADR-0960 (round-25 audit A.3) — same dangling-priv guard. */
         pic->priv = nullptr;
         goto return_to_pool;

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1049: Exponential backoff for vmafx-node online-feedback drainLoop
 
 - **Status**: Accepted
@@ -32,7 +31,7 @@ The cap at 2 minutes is chosen so that:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fixed interval (status quo) | Simple | Steady log noise during extended outages; wastes connection slots | Removed |
 | Full `grpc.WaitForReady` with service-config retry policy | gRPC-native | Requires migrating from Unix socket to gRPC transport; out of scope | Future work |
 | Jitter (full jitter / equal jitter) | Prevents thundering herd | Thundering herd not a concern for a single-node sidecar connection | Not needed |

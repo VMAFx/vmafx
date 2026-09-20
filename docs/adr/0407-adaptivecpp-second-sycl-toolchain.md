@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0407: AdaptiveCpp as a second SYCL toolchain
 
 - **Status**: Accepted
@@ -74,7 +73,7 @@ ships the build plumbing only).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Stay icpx-only | Zero new code; one supported path; bit-identical-to-icpx is the only acceptance bar. | 2.6 GB closed-source toolchain remains a contributor blocker; CI runners without Intel hardware cannot exercise SYCL TUs. | Solves the wrong problem — Research-0086 Topic B specifically flagged contributor friction as a real cost. |
 | Replace icpx with AdaptiveCpp | One toolchain, open source, smaller install. | Loses Intel discrete-GPU codegen quality; OpenVINO / NPU enablement story is icpx-coupled; published-binary ABI changes. | Net regression for the fork's primary user — Intel hardware. icpx stays primary. |
 | Wrap differences in a pure CMake/meson "compatibility shim" without source-level macros | No source churn. | Pre-processor branch logic still has to live somewhere; `[[intel::reqd_sub_group_size]]` cannot be hidden behind a meson flag because it appears in kernel-lambda attribute position. | Source-level macro is the minimal-surface fix. |

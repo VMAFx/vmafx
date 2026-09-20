@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1127: Use one independent SemVer release stream
 
 - **Status**: Superseded by [ADR-1151](1151-vmafx-first-release-1-0-0.md)
@@ -34,7 +33,7 @@ supersedes [ADR-0011](0011-versioning-lusoris-suffix.md).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `vX.Y.Z-lusoris.N` | Encodes the upstream baseline in each tag | Non-standard ordering, verbose, couples fork identity to upstream | The fork now releases independently and consumers benefit from ordinary SemVer |
 | Keep separate component release streams | Components can publish at different cadences | Colliding unqualified tags and ambiguous whole-project release fan-out | The shipped product is one coordinated distribution |
 | One ordinary SemVer stream | Standard tooling, one release PR and tag, clear patch progression | Upstream baseline is no longer visible in the tag | Chosen; upstream provenance remains available in Git history and release notes |

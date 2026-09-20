@@ -26,16 +26,8 @@
  * broken one. ASan in CI is the load-bearing gate.
  */
 
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro for fmemopen (ADR-0141 / ADR-0278) */
-#define _POSIX_C_SOURCE 200809L
-
 #include <stdio.h>
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+#include <string.h>
 
 #include "test.h"
 #include "vidinput.h"
@@ -107,10 +99,53 @@ static const unsigned char kY4m411W2H4[] = {
     0x11,
 };
 
+static char *check_rejected_header(const char *const header)
+{
+    FILE *const fin = fmemopen((void *)header, strlen(header), "rb");
+    mu_assert("fmemopen failed", fin != VMAF_NULLPTR);
+
+    video_input vid = {
+        .vtbl = VMAF_NULLPTR,
+        .ctx = VMAF_NULLPTR,
+        .fin = VMAF_NULLPTR,
+    };
+    const int err = video_input_open(&vid, fin);
+    if (err == 0) {
+        video_input_close(&vid);
+    } else {
+        (void)fclose(fin);
+    }
+
+    mu_assert("video_input_open accepted a malformed numeric Y4M tag", err != 0);
+    return VMAF_NULLPTR;
+}
+
+static char *test_y4m_rejects_malformed_numeric_tags(void)
+{
+    static const char *const kMalformedHeaders[] = {
+        "YUV4MPEG2 W2147483648 H4 F30:1 Ip C420\n",
+        "YUV4MPEG2 W2junk H4 F30:1 Ip C420\n",
+        "YUV4MPEG2 W2 H4junk F30:1 Ip C420\n",
+        "YUV4MPEG2 W2 H4 F30:1junk Ip C420\n",
+        "YUV4MPEG2 W2 H4 F30 Ip C420\n",
+        "YUV4MPEG2 W2 H4 F30: Ip C420\n",
+        "YUV4MPEG2 W2 H4 F:1 Ip C420\n",
+        "YUV4MPEG2 W2 H4 F30:1:2 Ip C420\n",
+        "YUV4MPEG2 W2 H4 F30:1 A1:x Ip C420\n",
+    };
+
+    for (size_t i = 0; i < sizeof(kMalformedHeaders) / sizeof(kMalformedHeaders[0]); i++) {
+        char *const message = check_rejected_header(kMalformedHeaders[i]);
+        if (message)
+            return message;
+    }
+    return VMAF_NULLPTR;
+}
+
 static char *test_y4m_411_w2_h4_no_oob(void)
 {
     FILE *fin = fmemopen((void *)kY4m411W2H4, sizeof(kY4m411W2H4), "rb");
-    mu_assert("fmemopen failed", fin != NULL);
+    mu_assert("fmemopen failed", fin != VMAF_NULLPTR);
 
     video_input vid;
     int err = video_input_open(&vid, fin);
@@ -131,7 +166,7 @@ static char *test_y4m_411_w2_h4_no_oob(void)
 
     video_input_close(&vid);
     /* fmemopen-backed FILE is closed by video_input_close via fclose. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 int mu_tests_run;
@@ -139,19 +174,18 @@ int mu_tests_run;
 char *run_tests(void)
 {
     mu_run_test(test_y4m_411_w2_h4_no_oob);
-    return NULL;
+    mu_run_test(test_y4m_rejects_malformed_numeric_tags);
+    return VMAF_NULLPTR;
 }
 
 int main(void)
 {
-    char *msg = run_tests();
+    const char *msg = run_tests();
     if (msg) {
         (void)fprintf(stderr, "\033[31m%s\n%d tests run, 1 failed\033[0m\n", msg, mu_tests_run);
     } else {
         (void)fprintf(stderr, "\033[32m%d tests run, %d passed\033[0m\n", mu_tests_run,
                       mu_tests_run);
     }
-    return msg != NULL;
+    return msg != VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

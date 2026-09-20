@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +34,7 @@
 #include "common/convolution.h"
 #include "common/convolution_internal.h"
 #include "motion_tools.h"
+#include "motion.h"
 
 #define convolution_f32_c convolution_f32_c_s
 #define FILTER_3 FILTER_3_s
@@ -114,7 +117,7 @@ float vmaf_image_sad_c(const float *img1, const float *img2, int width, int heig
         int scaled_float_stride = ALIGN_CEIL(scaled_width * sizeof(float));
         float *img1_scaled = aligned_malloc((size_t)scaled_float_stride * scaled_height, 32);
         float *img2_scaled = aligned_malloc((size_t)scaled_float_stride * scaled_height, 32);
-        /* Guard OOM: aligned_malloc may return NULL. */
+        /* Guard OOM: aligned_malloc may return VMAF_NULLPTR. */
         if (!img1_scaled || !img2_scaled) {
             aligned_free(img1_scaled);
             aligned_free(img2_scaled);

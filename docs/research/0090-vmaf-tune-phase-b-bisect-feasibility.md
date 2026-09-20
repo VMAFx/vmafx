@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0090: vmaf-tune Phase B target-VMAF bisect — feasibility
 
 - **Date**: 2026-05-08
@@ -18,7 +17,7 @@ Three candidates, evaluated against integer-CRF, monotone-VMAF-in-CRF
 real-encode constraints:
 
 | Algorithm | Encodes per call | Convergence | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Integer binary search (chosen) | `ceil(log2(range)) ≈ 6` for `range=51` | Tight `O(log)` | Mirrors `predictor.pick_crf`; clean monotonicity assertion |
 | Golden-section search | ~`log_φ(range) ≈ 8.4` for `range=51` | Same asymptote, irregular below 4-CRF windows | Continuous-domain assumption fights integer rounding |
 | Brute-force linear scan | `range = 52` for x264 | `O(n)` | ~9× more encodes; ignores monotonicity instead of asserting it |

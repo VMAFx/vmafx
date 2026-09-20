@@ -54,12 +54,6 @@
 #include "libvmaf_priv.h"
 #include "output.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* Portable temp-file-path helper. Produces a path to a freshly created (and
  * already closed) zero-byte file suitable for handing to writer APIs that
  * fopen() the path themselves. POSIX uses mkstemp() against $TMPDIR (falling
@@ -102,7 +96,7 @@ static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
      * already created the file atomically; realpath() resolves any symlinks
      * and ensures the final path is absolute and normalised. */
     char resolved[4096];
-    if (realpath(out_buf, resolved) == NULL)
+    if (realpath(out_buf, resolved) == VMAF_NULLPTR)
         return -1;
     size_t rlen = strlen(resolved);
     if (rlen + 1 > out_buf_sz)
@@ -118,20 +112,20 @@ static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
 static char *slurp(FILE *f)
 {
     if (fseek(f, 0, SEEK_END) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
     long sz = ftell(f);
     if (sz < 0 || sz > (1L << 16))
-        return NULL;
+        return VMAF_NULLPTR;
     if (fseek(f, 0, SEEK_SET) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
     const size_t file_sz = (size_t)sz;
     char *buf = calloc(file_sz + 1u, 1u);
     if (!buf)
-        return NULL;
+        return VMAF_NULLPTR;
     size_t n = fread(buf, 1, file_sz, f);
     if (n < file_sz && ferror(f) != 0) {
         free(buf);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     return buf;
 }
@@ -192,12 +186,12 @@ static char *check_csv_basic_output(const char *out)
     mu_assert("csv: frame 2 should not appear (no scores written)", !strstr(out, "\n2,"));
     /* Frame 3 present. */
     mu_assert("csv: frame 3 missing", strstr(out, "\n3,"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_csv_basic(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -205,7 +199,7 @@ static char *test_csv_basic(void)
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_csv(vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
-                                /*score_format=*/NULL);
+                                /*score_format=*/VMAF_NULLPTR);
     mu_assert("vmaf_write_output_csv returned non-zero", !err);
 
     char *out = slurp(f);
@@ -226,12 +220,12 @@ static char *check_csv_subsample_output(const char *out)
     mu_assert("csv: subsample=2 should drop frame 1", !strstr(out, "\n1,"));
     /* Frame 3 dropped by subsample (odd). */
     mu_assert("csv: subsample=2 should drop frame 3", !strstr(out, "\n3,"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_csv_subsample_and_custom_format(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -263,12 +257,12 @@ static char *check_sub_basic_output(const char *out)
     mu_assert("sub: missing frame 3 marker", strstr(out, "{3}{4}frame: 3|"));
     mu_assert("sub: missing feat_a:", strstr(out, "feat_a: "));
     mu_assert("sub: missing feat_b:", strstr(out, "feat_b: "));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sub_basic(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -276,7 +270,7 @@ static char *test_sub_basic(void)
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_sub(vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
-                                /*score_format=*/NULL);
+                                /*score_format=*/VMAF_NULLPTR);
     mu_assert("vmaf_write_output_sub returned non-zero", !err);
 
     char *out = slurp(f);
@@ -290,26 +284,26 @@ static char *test_sub_basic(void)
 static char *test_xml_einval_guards(void)
 {
     /* All three guards live at the head of vmaf_write_output_xml. */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
-    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
+    const VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
 
-    err = vmaf_write_output_xml(NULL, fc, f, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(VMAF_NULLPTR, fc, f, 0, 64, 64, 30.0, 1, VMAF_NULLPTR);
     mu_assert("xml: NULL vmaf must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_xml(vmaf, NULL, f, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(vmaf, VMAF_NULLPTR, f, 0, 64, 64, 30.0, 1, VMAF_NULLPTR);
     mu_assert("xml: NULL fc must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_xml(vmaf, fc, NULL, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(vmaf, fc, VMAF_NULLPTR, 0, 64, 64, 30.0, 1, VMAF_NULLPTR);
     mu_assert("xml: NULL outfile must return -EINVAL", err == -EINVAL);
 
-    teardown(vmaf, f, NULL);
-    return NULL;
+    teardown(vmaf, f, VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* Regression for fix/core-lifecycle-memory-audit:
@@ -318,29 +312,29 @@ static char *test_xml_einval_guards(void)
  * SIGSEGV on the very first fprintf instead of returning -EINVAL. */
 static char *test_csv_sub_einval_guards(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
-    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
+    const VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
 
-    err = vmaf_write_output_csv(NULL, f, 0, NULL);
+    err = vmaf_write_output_csv(VMAF_NULLPTR, f, 0, VMAF_NULLPTR);
     mu_assert("csv: NULL fc must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_csv(fc, NULL, 0, NULL);
+    err = vmaf_write_output_csv(fc, VMAF_NULLPTR, 0, VMAF_NULLPTR);
     mu_assert("csv: NULL outfile must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_sub(NULL, f, 0, NULL);
+    err = vmaf_write_output_sub(VMAF_NULLPTR, f, 0, VMAF_NULLPTR);
     mu_assert("sub: NULL fc must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_sub(fc, NULL, 0, NULL);
+    err = vmaf_write_output_sub(fc, VMAF_NULLPTR, 0, VMAF_NULLPTR);
     mu_assert("sub: NULL outfile must return -EINVAL", err == -EINVAL);
 
-    teardown(vmaf, f, NULL);
-    return NULL;
+    teardown(vmaf, f, VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *check_xml_basic_structure(const char *out)
@@ -352,7 +346,7 @@ static char *check_xml_basic_structure(const char *out)
     mu_assert("xml: missing <fyi fps=\"29.97\"", strstr(out, "<fyi fps=\"29.97\""));
     mu_assert("xml: missing <frames>", strstr(out, "<frames>"));
     mu_assert("xml: missing </frames>", strstr(out, "</frames>"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_xml_basic_metrics(const char *out)
@@ -362,7 +356,7 @@ static char *check_xml_basic_metrics(const char *out)
     mu_assert("xml: missing <aggregate_metrics", strstr(out, "<aggregate_metrics "));
     mu_assert("xml: missing agg_x in aggregate_metrics", strstr(out, "agg_x=\""));
     mu_assert("xml: missing pooled mean for feat_a", strstr(out, "mean=\""));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_xml_basic_output(const char *out)
@@ -381,7 +375,7 @@ static char *test_xml_basic(void)
      * index. Use a dense 2-frame x 2-feature collector here. The
      * count_written_at skip branch is already covered by test_csv_basic /
      * test_sub_basic (which use seed_normal). */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -402,7 +396,7 @@ static char *test_xml_basic(void)
 
     err = vmaf_write_output_xml(vmaf, fc, f, /*subsample=*/0,
                                 /*width=*/640, /*height=*/360, /*fps=*/29.97,
-                                /*pic_cnt=*/2, /*score_format=*/NULL);
+                                /*pic_cnt=*/2, /*score_format=*/VMAF_NULLPTR);
     mu_assert("xml: writer returned non-zero", !err);
 
     char *out = slurp(f);
@@ -422,7 +416,7 @@ static char *check_json_basic_structure(const char *out)
     mu_assert("json: missing \"frames\":", strstr(out, "\"frames\":"));
     mu_assert("json: missing \"frameNum\"", strstr(out, "\"frameNum\":"));
     mu_assert("json: missing \"metrics\":", strstr(out, "\"metrics\":"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_json_basic_pooled(const char *out)
@@ -434,7 +428,7 @@ static char *check_json_basic_pooled(const char *out)
     mu_assert("json: missing \"max\" inside pooled_metrics", strstr(out, "\"max\":"));
     mu_assert("json: missing \"harmonic_mean\" inside pooled_metrics",
               strstr(out, "\"harmonic_mean\":"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_json_basic_aggregates(const char *out)
@@ -447,7 +441,7 @@ static char *check_json_basic_aggregates(const char *out)
      * from the default "%.6f" which would render "80.000000". */
     mu_assert("json: %.17g should produce \"80,\" or \"80\\n\" not \"80.000000\"",
               !strstr(out, "80.000000"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_json_basic_output(const char *out)
@@ -466,7 +460,7 @@ static char *test_json_basic_and_format(void)
     /* Dense 2x2 collector so json_write_pooled_entry / json_write_pool_score
      * produce per-method numbers (otherwise vmaf_feature_score_pooled
      * returns -EAGAIN and the writer emits an empty per-feature block). */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -509,7 +503,7 @@ static char *check_json_nan_inf_output(const char *out)
     mu_assert("json: Inf aggregate must serialize as null", strstr(out, "\"agg_inf\": null"));
     /* Aggregate normal value still emitted. */
     mu_assert("json: agg_ok must still appear", strstr(out, "\"agg_ok\":"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_json_nan_and_inf(void)
@@ -517,7 +511,7 @@ static char *test_json_nan_and_inf(void)
     /* Force NaN / +Inf into both frame metrics, pooled (via mean over the
      * frame values), and aggregates / fps. The writers route every numeric
      * branch through fpclassify(); NaN + Inf must serialize as JSON null. */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -538,7 +532,7 @@ static char *test_json_nan_and_inf(void)
 
     /* fps=NaN -> top-level "fps": null branch in vmaf_write_output_json. */
     err = vmaf_write_output_json(vmaf, fc, f, /*subsample=*/0,
-                                 /*fps=*/NAN, /*pic_cnt=*/1, NULL);
+                                 /*fps=*/NAN, /*pic_cnt=*/1, VMAF_NULLPTR);
     mu_assert("json: writer returned non-zero", !err);
 
     char *out = slurp(f);
@@ -557,7 +551,7 @@ static char *check_json_empty_collector_output(const char *out)
               strstr(out, "\"pooled_metrics\":"));
     mu_assert("json: empty collector emits aggregate_metrics block",
               strstr(out, "\"aggregate_metrics\":"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_json_empty_collector(void)
@@ -565,7 +559,7 @@ static char *test_json_empty_collector(void)
     /* Zero features, zero frames — exercises the "no frames" branch where
      * max_capacity returns 0 and the for-loop body never executes. The
      * writer must still emit valid JSON skeleton. */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -574,7 +568,7 @@ static char *test_json_empty_collector(void)
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_json(vmaf, vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
-                                 /*fps=*/30.0, /*pic_cnt=*/0, NULL);
+                                 /*fps=*/30.0, /*pic_cnt=*/0, VMAF_NULLPTR);
     mu_assert("json: writer returned non-zero on empty collector", !err);
 
     char *out = slurp(f);
@@ -592,7 +586,7 @@ static char *slurp_path(const char *path)
 {
     FILE *f = fopen(path, "r");
     if (!f)
-        return NULL;
+        return VMAF_NULLPTR;
     char *out = slurp(f);
     (void)fclose(f);
     return out;
@@ -603,7 +597,7 @@ static char *test_vmaf_version(void)
     /* vmaf_version() must return a non-NULL string that looks like a
      * semver-ish version (contains at least one ASCII digit). */
     const char *ver = vmaf_version();
-    mu_assert("vmaf_version returned NULL", ver != NULL);
+    mu_assert("vmaf_version returned NULL", ver != VMAF_NULLPTR);
     /* Verify at least one digit present — a version string with no digit
      * would be clearly wrong. */
     bool has_digit = false;
@@ -614,7 +608,7 @@ static char *test_vmaf_version(void)
         }
     }
     mu_assert("vmaf_version string contains no digit", has_digit);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_write_output_json(const char *out)
@@ -622,14 +616,14 @@ static char *check_write_output_json(const char *out)
     mu_assert("write_output json: missing '{' open brace", strstr(out, "{"));
     mu_assert("write_output json: missing frames block", strstr(out, "\"frames\":"));
     mu_assert("write_output json: missing feat_a score", strstr(out, "feat_a"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_write_output_json_path(void)
 {
     /* vmaf_write_output() — public path-based dispatcher — must produce a
      * well-formed JSON file for VMAF_OUTPUT_FORMAT_JSON. */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -660,7 +654,7 @@ static char *check_write_output_format(const char *out)
      * indicate the format string was ignored. */
     mu_assert("write_output_with_format: default format leaked despite custom",
               !strstr(out, "80.00000000000000"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_write_output_with_format_custom(void)
@@ -668,7 +662,7 @@ static char *test_write_output_with_format_custom(void)
     /* vmaf_write_output_with_format() must honour a caller-supplied printf
      * format string.  "%.3f" of 80.0 yields "80.000"; the default "%.17g"
      * would yield "80" or "80.000000000000000" — never "80.000" exactly. */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -723,7 +717,7 @@ static char *check_pic_cnt_zero_json(const char *out)
     mu_assert("JSON pc0: missing frames block", strstr(out, "\"frames\":"));
     mu_assert("JSON pc0: missing feat_injected in output", strstr(out, "feat_injected"));
     mu_assert("JSON pc0: missing pooled_metrics block", strstr(out, "\"pooled_metrics\":"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Sub-test: JSON output with pic_cnt == 0. */
@@ -746,7 +740,7 @@ static char *check_pic_cnt_zero_xml(const char *out)
 {
     mu_assert("XML pc0: missing <VMAF> root", strstr(out, "<VMAF"));
     mu_assert("XML pc0: missing pooled_metrics block", strstr(out, "<pooled_metrics>"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Sub-test: XML output with pic_cnt == 0. */
@@ -768,7 +762,7 @@ static char *test_write_output_pic_cnt_zero_xml(VmafContext *vmaf)
 /* Top-level ADR-0602 regression entry point. */
 static char *test_write_output_pic_cnt_zero(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = make_pic_cnt_zero_ctx(&vmaf);
     mu_assert("make_pic_cnt_zero_ctx failed", !err);
 
@@ -785,15 +779,15 @@ static char *test_write_output_pic_cnt_zero(void)
 
     /* NULL-argument guards: vmaf NULL must not reach open() or
      * feature_collector dereference (ADR-0602). */
-    char dummy_path[] = "/tmp/vmaf_null_guard_test";
-    err = vmaf_write_output(NULL, dummy_path, VMAF_OUTPUT_FORMAT_JSON);
+    const char dummy_path[] = "/tmp/vmaf_null_guard_test";
+    err = vmaf_write_output(VMAF_NULLPTR, dummy_path, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL vmaf) must fail", err);
 
-    err = vmaf_write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON);
+    err = vmaf_write_output(vmaf, VMAF_NULLPTR, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL path) must fail", err);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_output_tests_part1(void)
@@ -805,7 +799,7 @@ static char *run_output_tests_part1(void)
     mu_run_test(test_csv_sub_einval_guards);
     mu_run_test(test_xml_basic);
     mu_run_test(test_json_basic_and_format);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_output_tests_part2(void)
@@ -816,7 +810,7 @@ static char *run_output_tests_part2(void)
     mu_run_test(test_write_output_json_path);
     mu_run_test(test_write_output_with_format_custom);
     mu_run_test(test_write_output_pic_cnt_zero);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -826,5 +820,3 @@ char *run_tests(void)
         return msg;
     return run_output_tests_part2();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

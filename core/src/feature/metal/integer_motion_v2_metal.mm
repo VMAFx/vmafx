@@ -121,7 +121,7 @@ static const VmafOption options[] = {
         .help = "fps-aware multiplicative weight/correction",
         .offset = offsetof(MotionV2StateMetal, motion_fps_weight),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 1.0,
+        .default_val = {.d = 1.0},
         .min = 0.0,
         .max = 5.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -132,7 +132,7 @@ static const VmafOption options[] = {
         .help = "blend motion score given an offset",
         .offset = offsetof(MotionV2StateMetal, motion_blend_factor),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 1.0,
+        .default_val = {.d = 1.0},
         .min = 0.0,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -143,7 +143,7 @@ static const VmafOption options[] = {
         .help = "blend motion score starting from this offset",
         .offset = offsetof(MotionV2StateMetal, motion_blend_offset),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 40.0,
+        .default_val = {.d = 40.0},
         .min = 0.0,
         .max = 1000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -154,7 +154,7 @@ static const VmafOption options[] = {
         .help = "maximum value allowed; larger values will be clipped to this value",
         .offset = offsetof(MotionV2StateMetal, motion_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = MOTION_V2_METAL_DEFAULT_MAX_VAL,
+        .default_val = {.d = MOTION_V2_METAL_DEFAULT_MAX_VAL},
         .min = 0.0,
         .max = 10000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -165,7 +165,7 @@ static const VmafOption options[] = {
         .help = "smooth motion3 with a 2-frame moving average",
         .offset = offsetof(MotionV2StateMetal, motion_moving_average),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {0}};
@@ -181,7 +181,7 @@ static int build_pipelines(MotionV2StateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) {
+    if (data == nullptr) {
         return -ENOMEM;
     }
 
@@ -274,7 +274,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *device_handle = vmaf_metal_context_device_handle(s->ctx);
-        if (device_handle == NULL) {
+        if (device_handle == nullptr) {
             err = -ENODEV;
             goto fail_after_rb;
         }
@@ -297,7 +297,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
+    if (s->feature_name_dict == nullptr) {
         err = -ENOMEM;
         goto fail_after_pso;
     }
@@ -305,22 +305,22 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     return 0;
 
 fail_after_pso:
-    if (s->pso_8bpc != NULL) {
+    if (s->pso_8bpc != nullptr) {
         id<MTLComputePipelineState> p __attribute__((unused)) =
             (__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
-    if (s->pso_16bpc != NULL) {
+    if (s->pso_16bpc != nullptr) {
         id<MTLComputePipelineState> p __attribute__((unused)) =
             (__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
 fail_after_prev:
-    if (s->prev_ref_buf != NULL) {
+    if (s->prev_ref_buf != nullptr) {
         id<MTLBuffer> b __attribute__((unused)) =
             (__bridge_transfer id<MTLBuffer>)s->prev_ref_buf;
-        s->prev_ref_buf = NULL;
-        s->prev_ref_contents = NULL;
+        s->prev_ref_buf = nullptr;
+        s->prev_ref_contents = nullptr;
     }
 fail_after_rb:
     (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
@@ -328,7 +328,7 @@ fail_after_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_after_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -342,9 +342,9 @@ static void copy_y_plane(VmafPicture *pic, void *dst, size_t row_bytes)
     }
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)dist_pic;
     (void)ref_pic_90;
@@ -364,7 +364,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *device_handle = vmaf_metal_context_device_handle(s->ctx);
     void *queue_handle  = vmaf_metal_context_queue_handle(s->ctx);
-    if (device_handle == NULL || queue_handle == NULL) {
+    if (device_handle == nullptr || queue_handle == nullptr) {
         return -ENODEV;
     }
     id<MTLDevice> device       = (__bridge id<MTLDevice>)device_handle;
@@ -440,7 +440,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
          * sidesteps Apple MSL's lack of 64-bit atomic_fetch_add
          * (CI run 25685703780 / job 75408804495). */
         const uint32_t *partials = (const uint32_t *)s->rb.host_view;
-        if (partials != NULL) {
+        if (partials != nullptr) {
             double sad_d = 0.0;
             for (size_t i = 0; i < s->partials_count; ++i) {
                 sad_d += (double)partials[i];
@@ -573,50 +573,49 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_16bpc != NULL) {
+    if (s->pso_16bpc != nullptr) {
         id<MTLComputePipelineState> p __attribute__((unused)) =
             (__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
-    if (s->pso_8bpc != NULL) {
+    if (s->pso_8bpc != nullptr) {
         id<MTLComputePipelineState> p __attribute__((unused)) =
             (__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
-    if (s->prev_ref_buf != NULL) {
+    if (s->prev_ref_buf != nullptr) {
         id<MTLBuffer> b __attribute__((unused)) =
             (__bridge_transfer id<MTLBuffer>)s->prev_ref_buf;
-        s->prev_ref_buf = NULL;
-        s->prev_ref_contents = NULL;
+        s->prev_ref_buf = nullptr;
+        s->prev_ref_contents = nullptr;
     }
 
     int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) {
         rc = err;
     }
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != nullptr) {
         err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0) {
             rc = err;
         }
     }
-    if (s->ctx != NULL) {
+    if (s->ctx != nullptr) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
-                                          "VMAF_integer_feature_motion3_v2_score", NULL};
+                                          "VMAF_integer_feature_motion3_v2_score", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0421 Metal
  * first-kernel motion_v2; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0421 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal = {
     .name = "motion_v2_metal",
     .init = init_fex_metal,

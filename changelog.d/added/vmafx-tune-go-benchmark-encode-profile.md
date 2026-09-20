@@ -1,10 +1,12 @@
+# Changelog fragment
+
 Ported the `benchmark` and `encode-profile` subcommands of `vmaf-tune` to Go in
-`vmafx-tune-go`, replacing their loud-fail stubs (ADR-0705 / ADR-0730 /
-ADR-0770 staged port). `benchmark` ranks encoders from an existing Phase-A
-corpus JSONL at a matched target VMAF in Markdown / JSON / CSV; `encode-profile`
-reads the `encoder_profile` payload out of a report JSON, HTML or Markdown
-file, selects one recommendation, and reproduces that encode with FFmpeg
-(`--dry-run` prints the argv instead), propagating FFmpeg's own exit status.
+`vmafx-tune-go`, replacing their loud-fail stubs (ADR-0705 / ADR-0730 / ADR-0770
+staged port). `benchmark` ranks encoders from an existing Phase-A corpus JSONL
+at a matched target VMAF in Markdown / JSON / CSV; `encode-profile` reads the
+`encoder_profile` payload out of a report JSON, HTML or Markdown file, selects
+one recommendation, and reproduces that encode with FFmpeg (`--dry-run` prints
+the argv instead), propagating FFmpeg's own exit status.
 
 Three new packages back them — `pkg/benchmark` (corpus summarisation and
 renderers), `pkg/codecadapter` (the argv-shaping half of

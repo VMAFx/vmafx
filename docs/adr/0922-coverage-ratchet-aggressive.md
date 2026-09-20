@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0922: Aggressive coverage ratchet + per-PR coverage-delta gate
 
 - **Status**: Accepted
@@ -96,7 +95,7 @@ We will:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Raise only the overall floor (37 → 70) without delta gate | Simplest change | Doesn't stop one-PR-at-a-time decay below 70.49 % | Solves half the problem; the delta gate is the structural fix |
 | Raise floors incrementally (37 → 45 → 55 → 70 over months) | Less disruption to in-flight PRs | Delays the upward pressure for weeks; humans forget to ratchet | The 30-day grace window achieves the same softness without sustained planning overhead |
 | Lower the delta tolerance to 0.1pp | Tighter ratchet | Too noisy — gcov small-loop hit-count variance can move per-file percentages by ~0.2pp without any source change | 0.5pp is comfortably above measured variance and still catches real regressions |

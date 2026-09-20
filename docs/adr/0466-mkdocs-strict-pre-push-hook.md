@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0466: mkdocs strict-mode pre-push hook
 
 - **Status**: Accepted
@@ -53,7 +52,7 @@ delegation call.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A — Standalone pre-push hook + pre-commit wiring (chosen)** | 5 s local catch; zero CI round-trips for docs errors; no new dependencies beyond existing mkdocs toolchain | mkdocs must be installed in the active env; skips silently when absent | Best fit — identical pattern to ADR-0435's validate-pr-body hook |
 | **B — `make docs-check` target only** | Zero-friction manual invocation | Requires contributor to remember; does not block a push; agents skip it | Does not eliminate the CI round-trip failure mode |
 | **C — CI path-filter to skip docs.yml on non-docs pushes** | Reduces CI load | Removes the gate entirely for those pushes; errors only caught on docs-touching PRs | Weaker coverage; the gate should fire on every docs touch |

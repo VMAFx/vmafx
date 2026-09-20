@@ -32,12 +32,6 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #define S2_W (32u)
 #define S2_H (32u)
 
@@ -100,17 +94,17 @@ static char *ssimulacra2_fixture_open(VmafFeatureExtractorContext **ctx, VmafFea
                                       enum VmafPixelFormat pix_fmt, unsigned bpc, char *create_msg,
                                       char *init_msg)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
-    mu_assert("ssimulacra2 extractor missing", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
+    mu_assert("ssimulacra2 extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert(create_msg, err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, pix_fmt, bpc, S2_W, S2_H);
     mu_assert(init_msg, err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -119,8 +113,8 @@ static char *ssimulacra2_fixture_open(VmafFeatureExtractorContext **ctx, VmafFea
 
 static char *test_ssimulacra2_default_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
                                          "context_init");
     if (msg)
@@ -133,7 +127,8 @@ static char *test_ssimulacra2_default_extract(void)
     err = alloc_grey8_420(&dist, 150u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract ssimulacra2", err == 0);
 
     double score = NAN;
@@ -146,7 +141,7 @@ static char *test_ssimulacra2_default_extract(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -155,8 +150,8 @@ static char *test_ssimulacra2_default_extract(void)
 
 static char *test_ssimulacra2_identical_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
                                          "context_init");
     if (msg)
@@ -169,7 +164,8 @@ static char *test_ssimulacra2_identical_extract(void)
     err = alloc_grey8_420(&dist, 128u);
     mu_assert("alloc dist identical", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract identical", err == 0);
 
     double score = NAN;
@@ -184,7 +180,7 @@ static char *test_ssimulacra2_identical_extract(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -193,8 +189,8 @@ static char *test_ssimulacra2_identical_extract(void)
 
 static char *test_ssimulacra2_10bit_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 10u,
                                          "context_create 10bit", "context_init 10bit");
     if (msg)
@@ -207,7 +203,8 @@ static char *test_ssimulacra2_10bit_extract(void)
     err = alloc_grey10_420(&dist, 700u);
     mu_assert("alloc dist 10bit", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract ssimulacra2 10bit", err == 0);
 
     double score = NAN;
@@ -220,7 +217,7 @@ static char *test_ssimulacra2_10bit_extract(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -229,8 +226,8 @@ static char *test_ssimulacra2_10bit_extract(void)
 
 static char *test_ssimulacra2_yuv444p_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV444P, 8u, "context_create 444",
                                          "context_init 444");
     if (msg)
@@ -243,7 +240,8 @@ static char *test_ssimulacra2_yuv444p_extract(void)
     err = alloc_grey8_444(&dist, 140u);
     mu_assert("alloc dist 444", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err =
+        vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract ssimulacra2 444", err == 0);
 
     double score = NAN;
@@ -256,7 +254,7 @@ static char *test_ssimulacra2_yuv444p_extract(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -265,7 +263,5 @@ char *run_tests(void)
     mu_run_test(test_ssimulacra2_identical_extract);
     mu_run_test(test_ssimulacra2_10bit_extract);
     mu_run_test(test_ssimulacra2_yuv444p_extract);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

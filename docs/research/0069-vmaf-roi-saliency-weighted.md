@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0069: Region-of-interest VMAF — option-space digest
 
 - **Status**: digest (informs ADR-0288)
@@ -40,7 +39,7 @@ where saliency could attach are, in order from "deepest" to "outermost":
 ## Decision matrix
 
 | # | Surface | Per-pixel correctness | C changes | Bit-exactness risk | Wall-clock | Time-to-ship |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | 1 | Feature kernels | exact | every backend | very high | 1× | weeks (full GPU-parity matrix) |
 | 2 | Feature collector | exact | one file | high | 1× | days (numerical validation needed) |
 | 3 | Model JSON `feature_norm` | approximate | minimal | low | 1× | days (schema bump + regen) |

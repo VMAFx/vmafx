@@ -1,1 +1,5 @@
-| [ADR-0674](0674-second-opinion-materializer-batch-manifest.md) | Adds a manifest-driven batch runner for second-opinion feature materialization so refreshed AI tables can join external NR/MOS scorer sidecars with per-table audits and one provenance-backed batch report. | Accepted | ai, second-opinion, materializer, provenance, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0674](0674-second-opinion-materializer-batch-manifest.md) | Second-Opinion Materializer Batch Manifest | Accepted | ai, second-opinion, materializer, provenance, fork-local |

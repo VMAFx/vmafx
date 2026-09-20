@@ -252,7 +252,7 @@ def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict:
     }
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--arch",
@@ -282,31 +282,28 @@ def main() -> int:
         default="",
         help="Free-form label for the output JSON (e.g. 'netflix-loso', 'konvid-5fold').",
     )
-    args = ap.parse_args()
+    return ap.parse_args()
 
+
+def _load_frame(args: argparse.Namespace):
     import pandas as pd
 
     df = pd.read_parquet(args.parquet)
     if "source" not in df.columns:
         print("error: parquet missing 'source' column", file=sys.stderr)
-        return 2
+        return None
     missing = [c for c in CANONICAL_6 if c not in df.columns]
     if missing:
         print(f"error: parquet missing feature columns: {missing}", file=sys.stderr)
-        return 2
+        return None
     if "vmaf" not in df.columns:
         print("error: parquet missing 'vmaf' target column", file=sys.stderr)
-        return 2
+        return None
+    return df
 
-    sources = sorted(df["source"].unique().tolist())
-    print(
-        f"[ms-{args.arch}] parquet={args.parquet} rows={len(df)} "
-        f"sources={sources} seeds={args.seeds}",
-        flush=True,
-    )
 
-    per_seed: dict[int, dict[str, dict[str, float]]] = {}
-    t_start = time.monotonic()
+def _run_seeds(df, args: argparse.Namespace, sources: list[str]) -> dict[int, dict]:
+    per_seed: dict[int, dict] = {}
     for seed in args.seeds:
         print(f"[ms-{args.arch}] === seed {seed} ===", flush=True)
         per_seed[seed] = _run_one_seed(
@@ -318,7 +315,53 @@ def main() -> int:
             batch_size=args.batch_size,
             lr=args.lr,
         )
+    return per_seed
 
+
+def _write_report(
+    args: argparse.Namespace, sources: list[str], per_seed: dict[int, dict], agg: dict
+) -> None:
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    report = {
+        "arch": args.arch,
+        "label": args.label,
+        "parquet": str(args.parquet),
+        "n_folds": len(sources),
+        "sources": sources,
+        "seeds": args.seeds,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch_size": args.batch_size,
+        "per_seed_per_fold": {str(seed): per_seed[seed] for seed in args.seeds},
+        **agg,
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=args,
+            inputs={"parquet": args.parquet},
+            outputs={"report_target": str(args.out_json)},
+        ),
+    }
+    write_manifest_json(args.out_json, report)
+
+
+def main() -> int:
+    args = _parse_args()
+    df = _load_frame(args)
+    if df is None:
+        return 2
+
+    sources = sorted(df["source"].unique().tolist())
+    print(
+        f"[ms-{args.arch}] parquet={args.parquet} rows={len(df)} "
+        f"sources={sources} seeds={args.seeds}",
+        flush=True,
+    )
+
+    t_start = time.monotonic()
+    per_seed = _run_seeds(df, args, sources)
     agg = _aggregate(per_seed)
     print(
         f"[ms-{args.arch}] === overall across {len(args.seeds)} seeds ===\n"
@@ -332,30 +375,7 @@ def main() -> int:
         flush=True,
     )
 
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
-
-    report = {
-        "arch": args.arch,
-        "label": args.label,
-        "parquet": str(args.parquet),
-        "n_folds": len(sources),
-        "sources": sources,
-        "seeds": args.seeds,
-        "epochs": args.epochs,
-        "lr": args.lr,
-        "batch_size": args.batch_size,
-        "per_seed_per_fold": {str(s): per_seed[s] for s in args.seeds},
-        **agg,
-        "run_provenance": build_run_provenance(
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
-            args=args,
-            inputs={"parquet": args.parquet},
-            outputs={"report_target": str(args.out_json)},
-        ),
-    }
-    write_manifest_json(args.out_json, report)
+    _write_report(args, sources, per_seed, agg)
     print(f"[ms-{args.arch}] wrote {args.out_json}")
     return 0
 

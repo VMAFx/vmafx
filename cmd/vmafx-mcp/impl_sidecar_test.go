@@ -170,3 +170,35 @@ func TestSidecarFailureMessage(t *testing.T) {
 		t.Fatalf("unexpected message %q", err.Error())
 	}
 }
+
+func TestVmafBenchValidationExitContract(t *testing.T) {
+	tests := []struct {
+		name             string
+		code             int
+		wantFailed       bool
+		wantErrorSnippet string
+	}{
+		{name: "pass", code: 0, wantFailed: false},
+		{name: "numeric_mismatch", code: 1, wantFailed: true},
+		{name: "aborted", code: 2, wantErrorSnippet: "vmaf_bench exited 2"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := vmafBenchResult(true, "stdout", "stderr", tc.code)
+			if tc.wantErrorSnippet != "" {
+				assertErrContains(t, err, tc.wantErrorSnippet)
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			payload, ok := result.(map[string]any)
+			if !ok {
+				t.Fatalf("unexpected payload type %T", result)
+			}
+			if got := payload["validation_failed"]; got != tc.wantFailed {
+				t.Fatalf("validation_failed=%v, want %v", got, tc.wantFailed)
+			}
+		})
+	}
+}

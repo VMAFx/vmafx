@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # `vmaf-train` — tiny AI training harness
 
 Training, exporting, registering, and evaluating **tiny perceptual-quality
@@ -7,11 +6,11 @@ models** for libvmaf. Shipped artefacts are ONNX; runtime loading happens in
 
 Three model families:
 
-| Family            | What it does                                          | File                                             |
-|-------------------|-------------------------------------------------------|--------------------------------------------------|
-| `fr_regressor`    | feature-vector → MOS (C1, replaces/augments SVM)      | `src/vmaf_train/models/fr_regressor.py`          |
-| `nr_metric`       | distorted frame → MOS, no reference (C2)              | `src/vmaf_train/models/nr_metric.py`             |
-| `learned_filter`  | frame → frame residual CNN, encoder pre-filter (C3)   | `src/vmaf_train/models/learned_filter.py`        |
+| Family           | What it does                                        | File                                      |
+| ---------------- | --------------------------------------------------- | ----------------------------------------- |
+| `fr_regressor`   | feature-vector → MOS (C1, replaces/augments SVM)    | `src/vmaf_train/models/fr_regressor.py`   |
+| `nr_metric`      | distorted frame → MOS, no reference (C2)            | `src/vmaf_train/models/nr_metric.py`      |
+| `learned_filter` | frame → frame residual CNN, encoder pre-filter (C3) | `src/vmaf_train/models/learned_filter.py` |
 
 ## Install
 
@@ -83,10 +82,10 @@ ai/
 
 ## Determinism
 
-`vmaf-train fit` seeds torch / numpy / python / lightning with `--seed` (default 0)
-and enables `Trainer(deterministic=True)`. The sidecar records the train commit,
-config hash, and dataset manifest hash so a retrain is reproducible to float-
-rounding nondeterminism.
+`vmaf-train fit` seeds torch / numpy / python / lightning with `--seed`
+(default 0) and enables `Trainer(deterministic=True)`. The sidecar records the
+train commit, config hash, and dataset manifest hash so a retrain is
+reproducible to float- rounding nondeterminism.
 
 ## License
 

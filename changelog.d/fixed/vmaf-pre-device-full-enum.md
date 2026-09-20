@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - `ffmpeg-patches/0002`: expand `vmaf_pre` filter `parse_device()` to cover all
   twelve `VmafDnnDevice` values (`openvino-npu`, `openvino-cpu`, `openvino-gpu`,
   `coreml`, `coreml-ane`, `coreml-gpu`, `coreml-cpu` were silently returning

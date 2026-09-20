@@ -40,6 +40,8 @@
  * docs/metrics/brisque.md and docs/adr/1115-brisque-nr-metric.md.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
@@ -58,9 +60,9 @@
 #include "mem.h"
 #include "svm.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -90,7 +92,7 @@ static const double brisque_max[BRISQUE_FEAT_DIM] = {
 static const int brisque_shifts[BRISQUE_NUM_SHIFTS][2] = {{0, 1}, {1, 0}, {1, 1}, {-1, 1}};
 
 typedef struct BrisqueState {
-    /* Option: override path to an on-disk libsvm model. NULL (the default)
+    /* Option: override path to an on-disk libsvm model. VMAF_NULLPTR (the default)
      * uses the build-time-embedded allmodel; required when built_in_models is
      * disabled. Owned by the options machinery — do not free here. */
     char *model_path;
@@ -306,7 +308,7 @@ static void brisque_read_luma(const VmafPicture *pic, double *out, unsigned w, u
 
 /* Allocate every working buffer + coefficient table into `s`. Returns 0 on
  * success, -ENOMEM on the first failed allocation. close() frees whatever was
- * acquired (aligned_free(NULL) is a no-op), so a partial failure unwinds
+ * acquired (aligned_free(VMAF_NULLPTR) is a no-op), so a partial failure unwinds
  * cleanly. Split out of init() to stay under the function-size threshold. */
 static int brisque_alloc_buffers(BrisqueState *s)
 {
@@ -338,7 +340,7 @@ static int brisque_alloc_buffers(BrisqueState *s)
     return 0;
 }
 
-/* Free all aligned buffers (NULL-guarded; aligned_free(NULL) is a no-op).
+/* Free all aligned buffers (VMAF_NULLPTR-guarded; aligned_free(VMAF_NULLPTR) is a no-op).
  * Used by close() AND by the init() failure paths — the framework does NOT
  * call close() after a failed init(), so init() must free its own partials. */
 static void brisque_free_buffers(BrisqueState *s)
@@ -402,8 +404,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                 unsigned h)
 {
     (void)pix_fmt;
-    assert(fex != NULL);
-    assert(fex->priv != NULL);
+    assert(fex != VMAF_NULLPTR);
+    assert(fex->priv != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
     BrisqueState *s = fex->priv;
 
@@ -463,17 +465,18 @@ static void brisque_maybe_warn_hdr(BrisqueState *s, const VmafPicture *pic)
     }
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic_90;
-    assert(fex != NULL);
-    assert(fex->priv != NULL);
-    assert(dist_pic != NULL);
-    assert(feature_collector != NULL);
+    assert(fex != VMAF_NULLPTR);
+    assert(fex->priv != VMAF_NULLPTR);
+    assert(dist_pic != VMAF_NULLPTR);
+    assert(feature_collector != VMAF_NULLPTR);
     BrisqueState *s = fex->priv;
 
     brisque_maybe_warn_hdr(s, dist_pic);
@@ -515,7 +518,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
 static int close(VmafFeatureExtractor *fex)
 {
-    assert(fex != NULL);
+    assert(fex != VMAF_NULLPTR);
     BrisqueState *s = fex->priv;
     if (!s)
         return 0;
@@ -525,7 +528,7 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"brisque", NULL};
+static const char *provided_features[] = {"brisque", VMAF_NULLPTR};
 
 static const VmafOption options[] = {
     {
@@ -535,14 +538,13 @@ static const VmafOption options[] = {
                 "built with built_in_models disabled.",
         .offset = offsetof(BrisqueState, model_path),
         .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = NULL,
+        .default_val.s = VMAF_NULLPTR,
     },
     {0},
 };
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in core/src/feature/feature_extractor.cpp. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_brisque = {
     .name = "brisque",
     .init = init,
@@ -552,5 +554,3 @@ VmafFeatureExtractor vmaf_fex_brisque = {
     .priv_size = sizeof(BrisqueState),
     .provided_features = provided_features,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

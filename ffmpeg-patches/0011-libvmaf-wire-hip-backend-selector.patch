@@ -86,7 +86,7 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index baf35892fb865be020e529737a6d2c8f1e727866..d8b582902257109bf8c0fb0cdc40137a60295514 100644
+index 98a267498fc53816fe2e9c3984f728cda93c3bb6..fff85bcb2e4192eeb44d7638665d7ecff9d45ad8 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -68,6 +68,10 @@
@@ -119,7 +119,7 @@ index baf35892fb865be020e529737a6d2c8f1e727866..d8b582902257109bf8c0fb0cdc40137a
      { NULL }
  };
  
-@@ -650,6 +659,35 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -651,6 +660,35 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
  
@@ -155,7 +155,7 @@ index baf35892fb865be020e529737a6d2c8f1e727866..d8b582902257109bf8c0fb0cdc40137a
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -886,6 +924,13 @@ clean_up:
+@@ -887,6 +925,13 @@ clean_up:
          s->cu_state = NULL;
      }
  #endif

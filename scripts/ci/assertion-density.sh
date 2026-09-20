@@ -3,47 +3,34 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # Power of 10 rule 5 — density check.
-# Policy: every fork-added C function ≥MIN_LINES lines (default 20) must
+# Policy: every project C-family function ≥MIN_LINES lines (default 20) must
 # contain ≥1 assert() call. NASA/JPL recommends ≥2 per function on
-# average; we enforce "any non-trivial fork-added function has at least
+# average; we enforce "any non-trivial project function has at least
 # one assert" in CI, and report the ≥2 average informationally.
 #
-# Scope: files whose copyright header contains a Lusoris copyright line
-# in either the legacy "Lusoris and Claude (Anthropic)" format or the
-# current "Copyright YYYY Lusoris" format (rebrand decided 2026-05-27;
-# memory: project_copyright_lusoris_only). Upstream Netflix files are
-# exempted (separate cleanup ticket).
+# Scope: every tracked C-family source, regardless of whether it originated in
+# Netflix, another vendor, or the fork. ADR-1267 forbids origin-based tiers.
+# Generated tracked sources are checked here too; fix their generator rather
+# than excluding the output.
 #
-# Exit 0 on pass, 1 on any fork-added function ≥MIN_LINES lines with zero asserts.
+# Exit 0 on pass, 1 on any project function ≥MIN_LINES lines with zero asserts.
 
 set -euo pipefail
 
 MIN_LINES="${MIN_LINES:-20}"
 
-# Collect fork-added files by header scan.
-#
-# Vendored verbatim mirrors are excluded: they carry a "Copyright 2026 Lusoris"
-# header (same license) but are byte-identical to their single source of truth
-# and cannot absorb fork-local asserts without breaking the sync guard. The
-# Pelorus interop ABI (core/src/interop/pelorus_*.c, ADR-1113) is the only such
-# mirror today; pelorus uses explicit `return PEL_ERR_*` validation instead of
-# assert(). Fix lint findings upstream in pelorus and re-sync.
-mapfile -t FILES < <(
-  git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
-    2>/dev/null | grep -v '^core/src/interop/pelorus_' | while read -r f; do
-    [ -f "$f" ] || continue
-    if head -n 20 "$f" 2>/dev/null | grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"; then
-      echo "$f"
-    fi
-  done
+# Git supplies only tracked paths, so build output is absent without a brittle
+# directory denylist. NUL delimiters preserve unusual but valid filenames.
+mapfile -d '' -t FILES < <(
+  git ls-files -z -- '*.c' '*.cc' '*.cpp' '*.cxx' '*.cu' '*.hip' '*.m' '*.mm' 2>/dev/null
 )
 
 if [ "${#FILES[@]}" -eq 0 ]; then
-  echo "assertion-density: no fork-added files found; skipping"
+  echo "assertion-density: no tracked C-family sources found; skipping"
   exit 0
 fi
 
-echo "assertion-density: scanning ${#FILES[@]} fork-added files"
+echo "assertion-density: scanning ${#FILES[@]} tracked project files"
 
 # One awk pass per file; awk prints one line per function on stdout:
 #   FILE:LINE NAME NLINES NASSERTS
@@ -55,7 +42,7 @@ for f in "${FILES[@]}"; do
   awk -v FILE="$f" '
         # Function start heuristic:
         #   - line starts at column 0 (no leading whitespace)
-        #   - first token is NOT a C/C++ keyword (if/for/while/switch/do/return/else/goto/case/default)
+        #   - the identifier immediately before `(` is not a control keyword
         #   - the line ends with `{` (definition-on-one-line)
         #   - or the line ends with `)` and the NEXT line is `{` (K&R opening brace on its own line)
         # Track brace depth until depth == 0 to find the end.
@@ -63,10 +50,9 @@ for f in "${FILES[@]}"; do
         function is_keyword(t) {
             return t == "if" || t == "for" || t == "while" || t == "switch" ||
                    t == "do" || t == "return" || t == "else" || t == "goto" ||
-                   t == "case" || t == "default" || t == "using" || t == "namespace" ||
-                   t == "struct" || t == "enum" || t == "union" || t == "typedef" ||
-                   t == "extern" || t == "static" || t == "inline" || t == "const" ||
-                   t == "volatile" || t == "auto" || t == "register"
+                   t == "case" || t == "default" || t == "catch" ||
+                   t == "sizeof" || t == "alignof" || t == "decltype" ||
+                   t == "static_assert"
         }
 
         function looks_like_funcdef(line) {
@@ -75,26 +61,46 @@ for f in "${FILES[@]}"; do
             if (line ~ /^#/) return 0           # preprocessor
             if (line ~ /^\/\//) return 0        # comment
             if (line ~ /^\/\*/) return 0
-            # Must contain `(` and not start with a keyword as the first word
+            # Must contain `(` and name a function rather than a control-flow
+            # construct. Storage-class and return-type tokens such as `static`,
+            # `extern`, `inline`, `const`, `struct`, and `enum` are deliberately
+            # allowed: excluding them silently hid most ordinary definitions.
             if (line !~ /\(/) return 0
-            # grab first word
-            m = line
-            sub(/[^a-zA-Z_].*/, "", m)
-            if (m == "") return 0
+            m = extract_name(line)
+            if (m !~ /^(~?[a-zA-Z_][a-zA-Z0-9_]*)(::(~?[a-zA-Z_][a-zA-Z0-9_]*))*$/) return 0
+            sub(/^.*::/, "", m)
             if (is_keyword(m)) return 0
             # Exclude typedef/struct declarations masquerading as funcs
             if (line ~ /^typedef/) return 0
             return 1
         }
 
-        function extract_name(line) {
-            # Find the identifier immediately before the first `(`.
-            s = line
-            sub(/\(.*/, "", s)       # drop everything from `(`
-            sub(/[[:space:]]+$/, "", s)
-            # take the last token
-            n = split(s, parts, /[[:space:]*&]+/)
-            return parts[n]
+        function extract_name(line,    i, c, depth, prefix, token, base, name) {
+            # Find the last identifier that opens a top-level parenthesis list.
+            # This skips return-type wrappers such as CJSON_PUBLIC(type) while
+            # ignoring calls/default expressions nested inside the real
+            # parameter list.
+            depth = 0
+            name = ""
+            for (i = 1; i <= length(line); i++) {
+                c = substr(line, i, 1)
+                if (c == "(") {
+                    if (depth == 0) {
+                        prefix = substr(line, 1, i - 1)
+                        if (match(prefix, /(~?[a-zA-Z_][a-zA-Z0-9_]*)(::(~?[a-zA-Z_][a-zA-Z0-9_]*))*[[:space:]]*$/)) {
+                            token = substr(prefix, RSTART, RLENGTH)
+                            sub(/[[:space:]]+$/, "", token)
+                            base = token
+                            sub(/^.*::/, "", base)
+                            if (!is_keyword(base)) name = token
+                        }
+                    }
+                    depth++
+                } else if (c == ")" && depth > 0) {
+                    depth--
+                }
+            }
+            return name
         }
 
         {
@@ -109,6 +115,14 @@ for f in "${FILES[@]}"; do
                         inside = 1
                         depth = gsub(/\{/, "{", line) - gsub(/\}/, "}", line)
                         n_asserts = 0
+                        if (line ~ /(^|[^a-zA-Z_])assert[[:space:]]*\(/) n_asserts++
+                        if (line ~ /VMAF_ASSERT_DEBUG[[:space:]]*\(/) n_asserts++
+                        if (depth <= 0) {
+                            printf "%s:%d %s %d %d\n", FILE, start_line, fname, 0, n_asserts
+                            inside = 0
+                            depth = 0
+                            n_asserts = 0
+                        }
                         next
                     } else if (line ~ /\)[[:space:]]*$/) {
                         # peek: candidate header line
@@ -165,12 +179,12 @@ done <"$tmpfile"
 if [ "$total_funcs" -gt 0 ]; then
   avg=$(awk -v a="$total_asserts" -v f="$total_funcs" 'BEGIN{printf "%.2f", a/f}')
   echo
-  echo "assertion-density: ${total_asserts} asserts across ${total_funcs} fork-added functions (avg ${avg})"
+  echo "assertion-density: ${total_asserts} asserts across ${total_funcs} project functions (avg ${avg})"
 fi
 
 if [ "$fail" -gt 0 ]; then
-  echo "FAIL: ${fail} fork-added functions ≥${MIN_LINES} lines have zero asserts" >&2
+  echo "FAIL: ${fail} project functions ≥${MIN_LINES} lines have zero asserts" >&2
   exit 1
 fi
 
-echo "PASS: every fork-added function ≥${MIN_LINES} lines has ≥1 assert"
+echo "PASS: every project function ≥${MIN_LINES} lines has ≥1 assert"

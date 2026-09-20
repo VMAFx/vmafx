@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0959: Metal kernel parity coverage round 4 — closeout
 
 - **Status**: Accepted
@@ -16,7 +15,7 @@ source per kernel: `float_moment`, `float_motion`, `float_ms_ssim`,
 across three rounds:
 
 | Round | PR | Kernels covered |
-|---|---|---|
+| --- | --- | --- |
 | 1 (registration) | #351 | 8 extractors discoverable via `vmaf_get_feature_extractor_by_name` |
 | 2 (parity, batch A) | #379 | `motion_v2`, `integer_psnr`, `float_psnr`, `float_ssim` |
 | 3 (parity, batch B) | #447 | `integer_motion`, `float_motion`, `float_moment`, `float_ms_ssim` |
@@ -67,7 +66,7 @@ needed.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Don't add a closeout audit; rely on rounds 1–3 | Zero new code | Silent gap the day a 9th kernel lands; manual re-audit cost compounds | Defeats the point of ADR-0214 cross-backend gate — gate must enforce coverage, not just per-pair parity |
 | Generate the audit list from a build-time `glob()` over `core/src/feature/metal/*.mm` | Auto-syncs with the source tree | Meson `files()` doesn't allow globs; build-time codegen adds a CI step; SYCL r4 (PR #465) explicitly rejected this pattern for the same reason | Hand-maintained list with an explicit `EXPECTED_KERNEL_COUNT` is the SYCL / CUDA precedent; trade auto-discovery for one-line audit edit per kernel |
 | Add 8 individual `test_metal_<kernel>_registration.c` files | Per-kernel granularity | 8× test binaries for what is one audit; round-1 PR #351 already does per-kernel registration | Already covered by PR #351; round 4 is the *structural* gate, not per-kernel |

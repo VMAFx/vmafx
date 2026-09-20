@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1094](1094-helm-rolling-update-correctness.md) | Helm chart rolling-update correctness — node strategy, PDB default, probe fix, grace period | Accepted | `helm`, `kubernetes`, `deploy`, `fork-local` |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1102: Container-only canonical artifact publishing (Phase 4b.9)
 
 - **Status**: Accepted
@@ -8,13 +7,13 @@
 
 ## Context
 
-The fork now ships five backends (CUDA, SYCL, HIP, Metal scaffolds, CPU) and
-a production image stack at `ghcr.io/vmafx/vmafx`. The `vmaf-dev-mcp`
-container at `dev/Containerfile` pins every toolchain version, GPU SDK, Python
-dependency, and model file needed to produce a reproducible build. Host-side
-meson/ninja builds do not pin these dependencies and diverge as host OS
-packages update (compiler versions, CUDA driver ABI, Python interpreter
-version, numpy ABI, libsvm API).
+The fork now ships five backends (CUDA, SYCL, HIP, Metal scaffolds, CPU) and a
+production image stack at `ghcr.io/vmafx/vmafx`. The `vmaf-dev-mcp` container at
+`dev/Containerfile` pins every toolchain version, GPU SDK, Python dependency,
+and model file needed to produce a reproducible build. Host-side meson/ninja
+builds do not pin these dependencies and diverge as host OS packages update
+(compiler versions, CUDA driver ABI, Python interpreter version, numpy ABI,
+libsvm API).
 
 Phase 4b.9 of the VMAFX modernization plan extended the container-first rule
 (ADR-0496) to artifact publishing: the container is not merely the preferred
@@ -35,9 +34,9 @@ distinguish a "canonical" build from a "diagnostic" build, which risks:
 
 We will treat the `vmaf-dev-mcp` container as the **exclusive source** for all
 canonical artifacts (release binaries, published container images, CI
-benchmark/snapshot artifacts used downstream). Host-side builds remain
-available for IDE integration, debugger sessions, and sanitizer sweeps, but
-must not produce published artifacts.
+benchmark/snapshot artifacts used downstream). Host-side builds remain available
+for IDE integration, debugger sessions, and sanitizer sweeps, but must not
+produce published artifacts.
 
 The policy is documented in `docs/development/publishing.md`, which defines:
 
@@ -47,17 +46,17 @@ The policy is documented in `docs/development/publishing.md`, which defines:
 - CI integration (release.yml and cross-backend.yml run inside the container
   image, making local container builds a reliable CI predictor).
 
-CLAUDE.md §15 already encodes the "default to container" rule (ADR-0496);
-this ADR extends it to cover the publishing surface and adds the `publishing.md`
+CLAUDE.md §15 already encodes the "default to container" rule (ADR-0496); this
+ADR extends it to cover the publishing surface and adds the `publishing.md`
 reference document.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
-| Status quo (no explicit publishing policy) | No new rule to maintain | Agents and contributors cannot distinguish canonical from diagnostic builds; host-side drift silently enters release artifacts | Risk of unpinned toolchain creeping into releases |
-| Container-only for release builds, host-side allowed for CI artifacts | Reduces required container rebuilds in CI | CI artifacts produced from an unpinned environment become difficult to reproduce | The consistency argument applies equally to CI artifacts |
-| Nix/Guix instead of Docker for reproducibility | Cryptographically reproducible builds | Adds a new toolchain (Nix) on top of the existing Docker stack; no existing GPU passthrough story for Nix on this repo | Strictly more moving pieces; Docker is already first-class on all CI runners |
+| Option                                                                | Pros                                      | Cons                                                                                                                           | Why not chosen                                                               |
+| --------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Status quo (no explicit publishing policy)                            | No new rule to maintain                   | Agents and contributors cannot distinguish canonical from diagnostic builds; host-side drift silently enters release artifacts | Risk of unpinned toolchain creeping into releases                            |
+| Container-only for release builds, host-side allowed for CI artifacts | Reduces required container rebuilds in CI | CI artifacts produced from an unpinned environment become difficult to reproduce                                               | The consistency argument applies equally to CI artifacts                     |
+| Nix/Guix instead of Docker for reproducibility                        | Cryptographically reproducible builds     | Adds a new toolchain (Nix) on top of the existing Docker stack; no existing GPU passthrough story for Nix on this repo         | Strictly more moving pieces; Docker is already first-class on all CI runners |
 
 ## Consequences
 
@@ -71,8 +70,8 @@ reference document.
   must have Docker and (for GPU artifacts) the NVIDIA Container Toolkit
   installed.
 - **Neutral**: the Containerfile becomes a hard dependency for the release
-  pipeline. Drift in the Containerfile that breaks a backend must be treated
-  as a release blocker.
+  pipeline. Drift in the Containerfile that breaks a backend must be treated as
+  a release blocker.
 
 ## References
 
@@ -81,4 +80,5 @@ reference document.
 - ADR-0698 — production Dockerfile design.
 - `docs/development/publishing.md` — human-readable policy.
 - `docs/development/dev-mcp.md` — container operator guide.
-- Source: req (user direction: Phase 4b.9 — container-only canonical artifact policy decided verbally, needs documentation).
+- Source: req (user direction: Phase 4b.9 — container-only canonical artifact
+  policy decided verbally, needs documentation).

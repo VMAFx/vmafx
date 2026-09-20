@@ -5,18 +5,12 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
-
-from export_vmaf_tiny_v2 import _write_sidecar as write_v2_sidecar  # noqa: E402
-from export_vmaf_tiny_v3 import _write_sidecar as write_v3_sidecar  # noqa: E402
-from export_vmaf_tiny_v4 import _write_sidecar as write_v4_sidecar  # noqa: E402
+from export_vmaf_tiny_v2 import _write_sidecar as write_v2_sidecar
+from export_vmaf_tiny_v3 import _write_sidecar as write_v3_sidecar
+from export_vmaf_tiny_v4 import _write_sidecar as write_v4_sidecar
 
 FEATURES = ["adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2"]
 

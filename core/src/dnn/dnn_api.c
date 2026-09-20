@@ -355,7 +355,7 @@ void vmaf_dnn_session_close(VmafDnnSession *sess)
     free(sess);
 }
 
-const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess)
+const char *vmaf_dnn_session_attached_ep(const VmafDnnSession *sess)
 {
     if (!sess || !sess->ort)
         return NULL;
@@ -426,7 +426,7 @@ void vmaf_dnn_session_close(VmafDnnSession *sess)
     (void)sess;
 }
 
-const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess)
+const char *vmaf_dnn_session_attached_ep(const VmafDnnSession *sess)
 {
     (void)sess;
     return NULL;

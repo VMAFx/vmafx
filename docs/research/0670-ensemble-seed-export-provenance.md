@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0670: Ensemble Seed Export Provenance
 
 ## Summary
@@ -33,7 +32,7 @@ export.
 ## Decision Matrix
 
 | Option | Pros | Cons | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep legacy direct sidecar JSON | Smallest diff | Fresh seed exports remain less traceable than other model sidecars | Rejected |
 | Add a bespoke `export` object | Localized fields | Duplicates ADR-0661 path and argv normalization | Rejected |
 | Attach ADR-0661 `run_provenance` to each per-seed sidecar | Shared schema; records corpus, PROMOTE verdict, argv, and output targets | Slightly larger sidecars | Chosen |

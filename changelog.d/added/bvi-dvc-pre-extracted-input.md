@@ -1,4 +1,6 @@
-# `bvi_dvc_to_full_features.py` accepts `--bvi-dir` for pre-extracted YUVs
+# Changelog fragment
+
+## `bvi_dvc_to_full_features.py` accepts `--bvi-dir` for pre-extracted YUVs
 
 `ai/scripts/bvi_dvc_to_full_features.py` gains a `--bvi-dir PATH` argument
 (ADR-0527) that accepts a directory of already-extracted BVI-DVC `.mp4` or

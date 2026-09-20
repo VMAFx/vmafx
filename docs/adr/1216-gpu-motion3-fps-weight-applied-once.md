@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1216: The GPU motion3 twins apply `motion_fps_weight` exactly once
 
@@ -46,7 +45,7 @@ does. Each of the three motion3 parity tests gains a variant that pins
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Remove the weighting from `motion3_postprocess_*` (chosen) | One-line change per twin; the surviving application sits exactly where the CPU applies it; callers stay untouched | None material | — |
 | Strip the weight from the callers and keep it inside `motion3_postprocess_*` | Also yields a single application for motion3 | The callers' weighted value is *also* the `motion2` emission, which must stay weighted; stripping it would break motion2 to fix motion3 | Trades one bug for another |
 | Divide the weight back out inside `motion3_postprocess_*` | Smallest textual diff | Introduces a division by an option whose declared `min` is `0.0`; a `motion_fps_weight = 0` run would produce NaN instead of `0` | Numerically unsafe |

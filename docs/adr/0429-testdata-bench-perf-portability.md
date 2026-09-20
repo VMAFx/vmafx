@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0429: testdata bench_perf is configurable
 
 - **Status**: Accepted
@@ -27,7 +26,7 @@ surfaces.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep hardcoded local paths | Zero migration for the original host. | Fresh checkouts and worktrees fail before measuring available raw fixtures. | Keeps the gap open. |
 | Delete `bench_perf.py` and use `bench_all.sh` only | Fewer harnesses. | `bench_all.sh` measures the `vmaf` CLI path, not FFmpeg decode/upload/filter overhead. | The workloads answer different questions. |
 | Require every fixture by default | Makes lab runs strict. | Optional external MP4 absence blocks the committed raw fixture benchmarks. | Strictness remains available through `--require-all`. |

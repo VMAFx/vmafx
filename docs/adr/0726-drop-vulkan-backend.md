@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0726: Drop Vulkan backend
 
 - **Status**: Accepted
@@ -68,7 +67,7 @@ follows. Any future reuse of these slots requires an explicit ABI-bump ADR.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep Vulkan | Preserves cross-vendor single-binary portability story | 3 unresolvable open bugs, highest CI footprint, 30 000 LOC to maintain, no k8s-native representation | The portability story is moot in the k8s model where each vendor has its own node pool and native backend |
 | Drop only kernels, keep Vulkan runtime | Reduces LOC burden while preserving the framework for future reuse | Still requires maintaining the VMA/volk integration, CI slots, and public API surface; the 3 open bugs all require real GPU hardware to verify resolution | The maintenance cost is in the runtime + CI, not just the kernels |
 | Defer until Phase X | No immediate disruption | The 3 bugs have no resolution timeline; deferring means carrying them indefinitely; Research-0733 recommends immediate action | The decision cost only grows; containers already deploy native backends |

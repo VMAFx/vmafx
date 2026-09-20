@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0673 — Feature-correlation report provenance
 
 ## Summary
@@ -31,7 +30,7 @@ ranking parameters in ADR-0661 `run_provenance`.
 ## Decision matrix
 
 | Option | Benefits | Costs | Decision |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave the report as plain JSON | No code churn | Report cannot prove which parquet / thresholds produced a ranking | Rejected |
 | Add an ad hoc `source` object | Small local diff | Duplicates ADR-0661 path hashing and argument normalization | Rejected |
 | Attach ADR-0661 `run_provenance` | Shared schema; hashes the source parquet; records argv and ranking parameters | Slightly larger report JSON | Chosen |

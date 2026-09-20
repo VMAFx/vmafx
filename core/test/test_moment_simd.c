@@ -49,12 +49,6 @@
 #include "feature/arm64/moment_sve2.h"
 #include "cpu.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 #endif
 #endif
 
@@ -129,7 +123,7 @@ static char *check_avx2(uint32_t seed, int w, int h)
                                   "compute_1st_moment_avx2 outside relative tolerance");
     SIMD_BITEXACT_ASSERT_RELATIVE(t_scalar, t_avx2, MOMENT_REL_TOL,
                                   "compute_2nd_moment_avx2 outside relative tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_avx2_seed_a(void)
@@ -162,7 +156,7 @@ static char *test_avx2_tail_bitexact(void)
     (void)compute_2nd_moment(buf, 7, 1, stride_bytes, &t_scalar);
     (void)compute_2nd_moment_avx2(buf, 7, 1, stride_bytes, &t_avx2);
     mu_assert("compute_2nd_moment_avx2 tail not bit-exact to scalar", t_avx2 == t_scalar);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if HAVE_AVX512
@@ -198,7 +192,7 @@ static char *check_avx512(uint32_t seed, int w, int h)
                                   "compute_1st_moment_avx512 outside relative tolerance");
     SIMD_BITEXACT_ASSERT_RELATIVE(t_scalar, t_avx512, MOMENT_REL_TOL,
                                   "compute_2nd_moment_avx512 outside relative tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_avx512_seed_a(void)
@@ -236,7 +230,7 @@ static char *test_avx512_tail_bitexact(void)
     (void)compute_2nd_moment(buf, 15, 1, stride_bytes, &t_scalar);
     (void)compute_2nd_moment_avx512(buf, 15, 1, stride_bytes, &t_avx512);
     mu_assert("compute_2nd_moment_avx512 tail not bit-exact to scalar", t_avx512 == t_scalar);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* HAVE_AVX512 */
 
@@ -273,7 +267,7 @@ static char *check_neon(uint32_t seed, int w, int h)
                                   "compute_1st_moment_neon outside relative tolerance");
     SIMD_BITEXACT_ASSERT_RELATIVE(t_scalar, t_neon, MOMENT_REL_TOL,
                                   "compute_2nd_moment_neon outside relative tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_neon_seed_a(void)
@@ -308,7 +302,7 @@ static char *test_neon_tail_bitexact(void)
     (void)compute_2nd_moment(buf, 3, 1, stride_bytes, &t_scalar);
     (void)compute_2nd_moment_neon(buf, 3, 1, stride_bytes, &t_neon);
     mu_assert("compute_2nd_moment_neon tail not bit-exact to scalar", t_neon == t_scalar);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if HAVE_SVE2
@@ -319,7 +313,7 @@ static char *check_sve2(uint32_t seed, int w, int h)
 {
     if (!(vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_SVE2)) {
         (void)fprintf(stderr, "  skipping SVE2 moment test: HWCAP2_SVE2 not set\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* Stride aligned to 4 floats — matches the NEON sibling convention.
@@ -351,7 +345,7 @@ static char *check_sve2(uint32_t seed, int w, int h)
                                   "compute_1st_moment_sve2 outside relative tolerance");
     SIMD_BITEXACT_ASSERT_RELATIVE(t_scalar, t_sve2, MOMENT_REL_TOL,
                                   "compute_2nd_moment_sve2 outside relative tolerance");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sve2_seed_a(void)
@@ -382,21 +376,21 @@ static char *test_sve2_tiny(void)
 static char *run_tests_avx512(void)
 {
     if (!simd_test_have_avx512()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_avx512_seed_a);
     mu_run_test(test_avx512_seed_b);
     mu_run_test(test_avx512_aligned_w);
     mu_run_test(test_avx512_tiny);
     mu_run_test(test_avx512_tail_bitexact);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* HAVE_AVX512 */
 
 static char *run_tests_x86(void)
 {
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_avx2_seed_a);
     mu_run_test(test_avx2_seed_b);
@@ -410,7 +404,7 @@ static char *run_tests_x86(void)
             return r;
     }
 #endif /* HAVE_AVX512 */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #elif ARCH_AARCH64
 static char *run_tests_aarch64(void)
@@ -426,7 +420,7 @@ static char *run_tests_aarch64(void)
     mu_run_test(test_sve2_aligned_w);
     mu_run_test(test_sve2_tiny);
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -438,8 +432,6 @@ char *run_tests(void)
     return run_tests_aarch64();
 #else
     (void)fprintf(stderr, "skipping: arch lacks moment SIMD\n");
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,5 @@
-<!-- markdownlint-disable MD041 -->
+# Model-card prompt
+
 You are writing a model card for a shipped VMAF tiny-AI model in the
 VMAFx fork. The audience is a practitioner evaluating whether to
 deploy this model — they want facts, not marketing.
@@ -7,49 +8,48 @@ Use ONLY the facts in the "Collected facts" block. Do not invent
 metrics, datasets, licenses, or intended use statements. If a field is
 missing, write "not recorded" — do not guess.
 
-Structure the output as a Markdown document with these sections, in
-this order:
+Structure the output as a Markdown document with this title and these sections,
+in order:
 
-# {{MODEL_NAME}}
-
-## Identity
+- H1 title: `{{MODEL_NAME}}`
+- H2 section: `Identity`
 
 - schema version, kind (fr / nr / filter), file format, input / output
   names, input shape, opset.
 
-## Training provenance
+- H2 section: `Training provenance`
 
 - training commit, training config path, manifest path, dataset name,
   license. Call out missing fields.
 
-## Feature contract
+- H2 section: `Feature contract`
 
 - For FR models: list the feature columns the model consumes and
   confirm count matches FEATURE_COLUMNS. Flag any mismatch explicitly.
 - For NR / filter models: describe the tensor shape and channel count.
 
-## Normalization
+- H2 section: `Normalization`
 
 - Declared per-feature mean / std if present. If absent, say
   "no normalization — model consumes raw features".
 
-## Measured quality
+- H2 section: `Measured quality`
 
 - If a parquet eval block is present, quote PLCC / SROCC / RMSE / n per
   split. If absent, say "no local evaluation run — see CI artifacts".
 
-## Intended use & limitations
+- H2 section: `Intended use & limitations`
 
 - One paragraph, grounded in the recorded kind + dataset. Be
   conservative: "trained on Netflix public dataset — do not assume
   generalization to screen content / HDR without revalidation".
 
-## Safety checks
+- H2 section: `Safety checks`
 
 - Quote the op-allowlist status (ok / forbidden ops).
 - Quote the cross-backend parity status (ok / drift), if recorded.
 
-## Hash & reproducibility
+- H2 section: `Hash & reproducibility`
 
 - Quote the SHA-256 of the .onnx file and the sidecar path verbatim.
 

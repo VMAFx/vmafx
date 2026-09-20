@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1092: framesync producer-death deadlock — abort flag + shutdown broadcast
 
 - **Status**: Accepted
@@ -59,7 +58,7 @@ extractors, libvmaf.c error paths) can invoke it directly on producer failure.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `pthread_cancel` + cancellation points | No new API | Non-deterministic; interacts badly with cleanup handlers; cancellation state is thread-scoped, not context-scoped; POSIX discourages it in production code | Not chosen |
 | Timed wait (`pthread_cond_timedwait`) | No new API surface | Adds latency on the happy path; retry interval is a policy decision with no right answer; does not actually fix the root cause | Not chosen |
 | Abort flag only (no broadcast in destroy) | Simpler destroy | Still leaves a POSIX UB window if a waiter is in flight when destroy is called | Not chosen — defence-in-depth broadcast kept |

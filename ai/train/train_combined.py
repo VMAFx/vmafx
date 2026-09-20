@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib import import_module
 from pathlib import Path
 
 import numpy as np
@@ -68,16 +69,8 @@ _VAL_MODES = (
 )
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="ai/train/train_combined.py",
-        description=(
-            "Train a tiny-AI model on the union of the Netflix Public "
-            "corpus and KoNViD-1k VMAF pairs."
-        ),
-    )
-    p.add_argument("--netflix-root", type=Path, default=_DEFAULT_NETFLIX_ROOT)
-    p.add_argument("--konvid-parquet", type=Path, default=_DEFAULT_KONVID_PARQUET)
+def _add_training_args(p: argparse.ArgumentParser) -> None:
+    """Add model training and output arguments to ``p``."""
     p.add_argument(
         "--model-arch",
         choices=("linear", "mlp_small", "mlp_medium"),
@@ -86,16 +79,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--out-dir", type=Path, default=Path("runs/tiny_combined"))
     p.add_argument(
-        "--out-dir",
-        type=Path,
-        default=Path("runs/tiny_combined"),
+        "--no-export-onnx",
+        dest="export_onnx",
+        action="store_false",
+        help="Skip ONNX export after each epoch.",
     )
+    p.set_defaults(export_onnx=True)
+    p.add_argument("--seed", type=int, default=0)
+
+
+def _add_dataset_args(p: argparse.ArgumentParser) -> None:
+    """Add Netflix and KoNViD corpus arguments to ``p``."""
+    p.add_argument("--netflix-root", type=Path, default=_DEFAULT_NETFLIX_ROOT)
+    p.add_argument("--konvid-parquet", type=Path, default=_DEFAULT_KONVID_PARQUET)
     p.add_argument(
         "--val-mode",
         choices=_VAL_MODES,
         default="netflix-source",
-        help=("How to construct the val split. See module docstring for " "the matrix of options."),
+        help=("How to construct the val split. See module docstring for the matrix of options."),
     )
     p.add_argument("--val-source", type=str, default="Tennis")
     p.add_argument(
@@ -123,14 +126,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         metavar="WxH",
         help="Stamp every Netflix pair with these dimensions (smoke fixtures only).",
     )
-    p.add_argument(
-        "--no-export-onnx",
-        dest="export_onnx",
-        action="store_false",
-        help="Skip ONNX export after each epoch.",
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="ai/train/train_combined.py",
+        description=(
+            "Train a tiny-AI model on the union of the Netflix Public "
+            "corpus and KoNViD-1k VMAF pairs."
+        ),
     )
-    p.set_defaults(export_onnx=True)
-    p.add_argument("--seed", type=int, default=0)
+    _add_dataset_args(p)
+    _add_training_args(p)
     return p
 
 
@@ -164,7 +171,7 @@ def _load_netflix(args, payload_provider):  # type: ignore[no-untyped-def]
         return empty, empty
     if not args.netflix_root.is_dir():
         print(
-            f"[train_combined] netflix-root {args.netflix_root} missing; " "skipping Netflix slice",
+            f"[train_combined] netflix-root {args.netflix_root} missing; skipping Netflix slice",
             file=sys.stderr,
         )
         return empty, empty
@@ -204,8 +211,7 @@ def _load_netflix(args, payload_provider):  # type: ignore[no-untyped-def]
         val_xy = empty
 
     print(
-        f"[train_combined] netflix train_samples={len(train_ds)} "
-        f"val_samples={val_xy[0].shape[0]}"
+        f"[train_combined] netflix train_samples={len(train_ds)} val_samples={val_xy[0].shape[0]}"
     )
     return train_ds.numpy_arrays(), val_xy
 
@@ -270,27 +276,8 @@ def _concat_xy(*pairs):  # type: ignore[no-untyped-def]
     return np.concatenate(xs, axis=0), np.concatenate(ys, axis=0)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        import torch  # noqa: F401
-    except ImportError as e:
-        print(f"error: PyTorch is required for training: {e}", file=sys.stderr)
-        return 2
-
-    from ..data.feature_extractor import DEFAULT_FEATURES
-    from .train import _build_model, _train_loop, count_params, export_onnx
-
-    feature_dim = len(DEFAULT_FEATURES)
-    module = _build_model(args.model_arch, feature_dim)
-    n_params = count_params(module)
-    print(
-        f"[train_combined] arch={args.model_arch} params={n_params} "
-        f"feature_dim={feature_dim} val_mode={args.val_mode}"
-    )
-
+def _load_combined_arrays(args):  # type: ignore[no-untyped-def]
+    """Load enabled corpus slices and return their combined train/val arrays."""
     payload_provider = None
     if args.epochs == 0:
         from .dataset import _make_zero_payload
@@ -306,28 +293,28 @@ def main(argv: list[str] | None = None) -> int:
         f"[train_combined] combined train_samples={train_xy[0].shape[0]} "
         f"val_samples={val_xy[0].shape[0]}"
     )
+    return train_xy, val_xy
 
-    if train_xy[0].shape[0] == 0:
-        print(
-            "[train_combined] no training samples — exporting initial-weights ONNX only",
-            file=sys.stderr,
-        )
-        out = export_onnx(
-            module,
-            feature_dim,
-            args.out_dir / f"{args.model_arch}_combined_final.onnx",
-        )
-        print(f"[train_combined] exported {out}")
-        return 0
 
+def _export_initial(module, feature_dim: int, args) -> int:  # type: ignore[no-untyped-def]
+    """Export initial weights for empty/smoke training requests."""
+    from .train import export_onnx
+
+    out = export_onnx(
+        module,
+        feature_dim,
+        args.out_dir / f"{args.model_arch}_combined_final.onnx",
+    )
     if args.epochs == 0:
-        out = export_onnx(
-            module,
-            feature_dim,
-            args.out_dir / f"{args.model_arch}_combined_final.onnx",
-        )
         print(f"[train_combined] epochs=0 — exported initial-weights ONNX to {out}")
-        return 0
+    else:
+        print(f"[train_combined] exported {out}")
+    return 0
+
+
+def _train_and_report(module, feature_dim, train_xy, val_xy, args):  # type: ignore[no-untyped-def]
+    """Run the shared training loop and report each durable checkpoint."""
+    from .train import _train_loop
 
     last: Path | None = None
     for ckpt in _train_loop(
@@ -348,6 +335,37 @@ def main(argv: list[str] | None = None) -> int:
     if last is not None:
         print(f"[train_combined] final checkpoint: {last}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        import_module("torch")
+    except ImportError as error:
+        print(f"error: PyTorch is required for training: {error}", file=sys.stderr)
+        return 2
+
+    from ..data.feature_extractor import DEFAULT_FEATURES
+    from .train import _build_model, count_params
+
+    feature_dim = len(DEFAULT_FEATURES)
+    module = _build_model(args.model_arch, feature_dim)
+    print(
+        f"[train_combined] arch={args.model_arch} params={count_params(module)} "
+        f"feature_dim={feature_dim} val_mode={args.val_mode}"
+    )
+    train_xy, val_xy = _load_combined_arrays(args)
+
+    if train_xy[0].shape[0] == 0:
+        print(
+            "[train_combined] no training samples — exporting initial-weights ONNX only",
+            file=sys.stderr,
+        )
+        return _export_initial(module, feature_dim, args)
+    if args.epochs == 0:
+        return _export_initial(module, feature_dim, args)
+    return _train_and_report(module, feature_dim, train_xy, val_xy, args)
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests

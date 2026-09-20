@@ -56,7 +56,7 @@ def test_encoder_vocab_matches_sidecar() -> None:
     """Python ENCODER_VOCAB_V2 matches fr_regressor_v2.json sidecar exactly."""
     sidecar = load_proxy_sidecar(DEFAULT_PROXY_MODEL_ID)
     sidecar_vocab = tuple(sidecar["encoder_vocab"])
-    assert ENCODER_VOCAB_V2 == sidecar_vocab, (
+    assert sidecar_vocab == ENCODER_VOCAB_V2, (
         f"ENCODER_VOCAB_V2 drifted from {DEFAULT_PROXY_MODEL_ID}.json: "
         f"{ENCODER_VOCAB_V2} != {sidecar_vocab}"
     )

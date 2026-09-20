@@ -41,12 +41,6 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* 320×180 is above the 11×11 Gaussian footprint minimum and within the
  * scale=1 auto-detect threshold (min(w,h)/256 = 180/256 ≈ 0.7 → scale=1).
  * The kernel requires scale=1; auto-detect with this fixture avoids the
@@ -109,42 +103,41 @@ static int feed_frame(VmafContext *vmaf)
 static char *run_cpu_float_ssim(double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ssim", NULL);
+    err = vmaf_use_feature(vmaf, "float_ssim", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(float_ssim) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ssim", score, 0u);
     mu_assert("CPU: float_ssim score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl_float_ssim(double *score, int *device_present)
 {
     *score = NAN;
     *device_present = 0;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     *device_present = 1;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ssim_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "float_ssim_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(float_ssim_sycl) failed", !err);
     err = feed_frame(vmaf);
     /* `float_ssim_sycl` is a v1 scale=1-only extractor: its init rejects any
@@ -165,25 +158,25 @@ static char *run_sycl_float_ssim(double *score, int *device_present)
         *device_present = 0; /* reuse the caller's skip path */
         (void)vmaf_close(vmaf);
         vmaf_sycl_state_free(&sycl_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ssim", score, 0u);
     mu_assert("SYCL: float_ssim score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ssim_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim_sycl");
-    mu_assert("float_ssim_sycl extractor must be registered", fex != NULL);
+    mu_assert("float_ssim_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_ssim_sycl name matches", !strcmp(fex->name, "float_ssim_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ssim_cpu_sycl_parity(void)
@@ -198,7 +191,7 @@ static char *test_float_ssim_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (!device_present)
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr,
@@ -211,14 +204,12 @@ static char *test_float_ssim_cpu_sycl_parity(void)
      * See Research-0985 §3.4 for full rationale. */
     mu_assert("float_ssim CPU vs. SYCL delta exceeds places=3 tolerance (5e-04)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_ssim_sycl_registered);
     mu_run_test(test_float_ssim_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

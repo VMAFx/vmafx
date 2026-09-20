@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0316: cli_parse — handle long-only options in `error()`
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ fuzzer carries it as a permanent regression seed.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Pass `ARG_*` enum value to `parse_unsigned()` (chosen)** | 3-line diff; brings the three call-sites into parity with the seven sibling handlers that already do this; no API change to `error()`. | None. | Chosen — minimum-diff fix that exploits an already-correct branch in `error()`. |
 | Extend `error()` with an explicit long-option-name parameter | Self-documenting; future-proofs against new long-only call-sites. | Touches every existing call-site, expands the function signature, and the `long_opts[n].val < 256` branch in `error()` already does the right thing. | Larger diff with no extra correctness over the chosen variant. |
 | Wrap `parse_unsigned()` with a `parse_unsigned_long()` trampoline | Surfaces "long-only" intent at the type level. | Two parallel parsers to maintain; the underlying `error()` already supports both shapes via one parameter. | Unjustified API surface for a 3-character bug. |

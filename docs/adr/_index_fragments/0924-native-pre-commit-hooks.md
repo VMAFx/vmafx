@@ -1,1 +1,5 @@
-| [ADR-0924](0924-native-pre-commit-hooks.md) | Native bash pre-commit hook as opt-in alternative to the pre-commit framework (~10x faster on small commits; CI unchanged) | Accepted | 2026-05-31 | build, ci, dx, tooling, fork-local, vmafx-modernization |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0924](0924-native-pre-commit-hooks.md) | Native bash pre-commit hook as opt-in alternative to the pre-commit framework | Accepted | build, ci, dx, tooling, fork-local, vmafx-modernization |

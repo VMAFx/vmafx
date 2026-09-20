@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0914: Python test orchestrator audit (2026-05-31)
 
 ## Question
@@ -31,7 +30,7 @@ Does this repo have a unified Python test orchestrator (`tox.ini` /
 ### Python packages without an orchestrator
 
 | Package | Path | `requires-python` | Test runner used in CI |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Tiny-AI training | `ai/` | 3.11 – 3.14 | Ad-hoc venv + pytest in `tests-and-quality-gates.yml` lines 349 – 356 |
 | MCP server | `mcp-server/vmaf-mcp/` | 3.10+ | Ad-hoc venv + pytest, lines 435 – 460 |
 | vmaf-tune | `tools/vmaf-tune/` | 3.10 – 3.14 | Direct pytest (no dedicated CI job audited; runs via pre-commit + manual) |

@@ -9,11 +9,19 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -36,6 +44,37 @@ def snapshot(directory: Path) -> dict[str, bytes]:
     }
 
 
+def clean_git_environment() -> dict[str, str]:
+    """Return a deterministic environment with all caller Git state removed."""
+    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
+    return clean
+
+
+def run_git(path: Path, *args: str, environment: dict[str, str]) -> CommandResult:
+    """Run Git only inside a disposable fixture repository."""
+    return run_command(
+        [GIT, "-C", str(path), *args],
+        allowed_executables=(GIT,),
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout_seconds=60,
+    )
+
+
+def linked_hook_command(root: Path, old_command: bool) -> list[str]:
+    """Select the destructive control or the isolated fixed helper."""
+    if old_command:
+        return [GIT, "init", "-q", str(root / "old-fixture")]
+    return [
+        sys.executable,
+        str(ROOT / "scripts/ci/tests/test_level_zero_single_source.py"),
+        "LevelZeroSingleSource.test_workflow_checker_entrypoint_retains_container_validation",
+    ]
+
+
 class GitFixtureIsolation(unittest.TestCase):
     def exercise(self, helper: str, variables: tuple[str, ...]) -> None:
         with tempfile.TemporaryDirectory(prefix="git-fixture-isolation-") as directory:
@@ -46,17 +85,10 @@ class GitFixtureIsolation(unittest.TestCase):
             temporary.mkdir()
             # Even the adversarial test's setup must never inherit a real
             # caller's repository, index, object store or config overrides.
-            clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-            clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
+            clean = clean_git_environment()
 
             def git(*args: str) -> None:
-                subprocess.run(  # noqa: S603 -- disposable caller, isolated environment
-                    [GIT, "-C", str(caller), *args],
-                    env=clean,
-                    text=True,
-                    capture_output=True,
-                    check=True,
-                )
+                run_git(caller, *args, environment=clean)
 
             git("init", "-q", "-b", "master")
             git("config", "user.name", "Isolation Test")
@@ -81,13 +113,14 @@ class GitFixtureIsolation(unittest.TestCase):
             }
             before = snapshot(caller)
             executable = sys.executable if helper.endswith(".py") else BASH
-            result = subprocess.run(  # noqa: S603 -- shipped fixture; poison points only inside temporary root
+            result = run_command(
                 [executable, str(ROOT / helper)],
+                allowed_executables=(executable,),
                 cwd=root,
                 env=environment,
                 text=True,
                 capture_output=True,
-                timeout=90,
+                timeout_seconds=90,
                 check=False,
             )
             after = snapshot(caller)
@@ -132,21 +165,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 caller = root / "caller"
                 linked = root / "linked"
                 caller.mkdir()
-                clean = {
-                    key: value for key, value in os.environ.items() if not key.startswith("GIT_")
-                }
-                clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
-
-                def git(
-                    path: Path, *args: str, environment: dict[str, str] = clean
-                ) -> subprocess.CompletedProcess[str]:
-                    return subprocess.run(  # noqa: S603 -- isolated disposable Git caller
-                        [GIT, "-C", str(path), *args],
-                        env=environment,
-                        text=True,
-                        capture_output=True,
-                        check=True,
-                    )
+                git = partial(run_git, environment=clean_git_environment())
 
                 git(caller, "init", "-q", "-b", "master")
                 git(caller, "config", "user.name", "Linked Hook Test")
@@ -163,15 +182,7 @@ class GitFixtureIsolation(unittest.TestCase):
                     git(caller, "config", "--local", "--get", "core.bare").stdout, "false\n"
                 )
                 marker = root / "hook-environment.json"
-                command = (
-                    [GIT, "init", "-q", str(root / "old-fixture")]
-                    if old_command
-                    else [
-                        sys.executable,
-                        str(ROOT / "scripts/ci/tests/test_level_zero_single_source.py"),
-                        "LevelZeroSingleSource.test_workflow_checker_entrypoint_retains_container_validation",
-                    ]
-                )
+                command = linked_hook_command(root, old_command)
                 hook = caller / ".git/hooks/pre-commit"
                 hook.write_text(
                     f"#!{sys.executable}\n"

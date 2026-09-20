@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1208: The ssimulacra2 edge-diff SIMD loops take their difference in double
 
@@ -48,7 +47,7 @@ vector subtract contributed was the rounding error.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fold the subtraction into the existing scalar per-lane loop (chosen) | Bit-identical to the reference by construction; smallest diff; uniform across all four ISAs | Drops one vector operation from a loop that was already scalar | — |
 | Widen to double vectors (`_mm512_cvtps_pd` + `_mm512_sub_pd`) | Keeps the subtraction vectorised and correct | More code and more intrinsic-availability surface per ISA, for a loop whose cost is dominated by the scalar divide and quartic | Rejected — complexity without measurable benefit |
 | Change the scalar reference to subtract in float | One-line change | Makes the reference *less* accurate to match an implementation detail, and moves every published score | Rejected — the reference is the contract |

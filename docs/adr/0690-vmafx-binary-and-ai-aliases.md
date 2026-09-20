@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0690: VMAFX Binary and AI Tool Aliases
 
 - **Status**: Accepted
@@ -48,7 +47,7 @@ are **not changed**: this is purely additive.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Option A — symlink + argv[0] | One binary; no exec overhead; clean | Slightly non-obvious for maintainers unfamiliar with multi-call patterns | **Chosen** — minimal on-disk footprint, established pattern |
 | Option B — separate vmafx.c exec()s vmaf | Clean separation; no argv[0] logic | Extra fork/exec per invocation; two binaries to maintain; Windows exec() semantics differ | Rejected — overhead not justified when argv[0] detection suffices |
 | Option C — vmafx.c with duplicated main() | No runtime detection needed | Full code duplication; two diverging binaries over time | Rejected — maintenance burden unacceptable |

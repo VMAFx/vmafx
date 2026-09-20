@@ -15,11 +15,6 @@
 
 #include <stdint.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +32,7 @@ static char *test_decimate_scalar_null_outputs(void)
     float dst[16];
     memset(dst, 0xCD, sizeof(dst));
 
-    int rc = ms_ssim_decimate_scalar(src, 8, 8, dst, NULL, NULL);
+    int rc = ms_ssim_decimate_scalar(src, 8, 8, dst, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("scalar NULL rw/rh succeeds", rc == 0);
 
     /* Any non-default value indicates the destination was written. */
@@ -49,7 +44,7 @@ static char *test_decimate_scalar_null_outputs(void)
         }
     }
     mu_assert("scalar wrote destination", wrote_any != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_decimate_dispatch_matches_scalar(void)
@@ -87,7 +82,7 @@ static char *test_decimate_dispatch_matches_scalar(void)
     mu_assert("dispatch byte-identical to scalar",
               memcmp(bytes_scalar, bytes_dispatch, sizeof(float) * (size_t)w_out * (size_t)h_out) ==
                   0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_decimate_dispatch_null_outputs(void)
@@ -99,9 +94,9 @@ static char *test_decimate_dispatch_null_outputs(void)
     for (unsigned i = 0; i < 64; ++i)
         src[i] = (float)(i * 3 % 13) / 13.0f;
     float dst[16];
-    int rc = ms_ssim_decimate(src, 8, 8, dst, NULL, NULL);
+    int rc = ms_ssim_decimate(src, 8, 8, dst, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("dispatch NULL rw/rh succeeds", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -109,7 +104,5 @@ char *run_tests(void)
     mu_run_test(test_decimate_scalar_null_outputs);
     mu_run_test(test_decimate_dispatch_matches_scalar);
     mu_run_test(test_decimate_dispatch_null_outputs);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

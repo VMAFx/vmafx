@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0463: ADM p-norm fast-path split and VIF scalar-fallback malloc hoist
 
 - **Status**: Accepted
@@ -52,7 +51,7 @@ the three scalar VIF filter fallbacks with direct use of the caller-supplied
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Function cloning via `__attribute__((optimize))` or `-fprofile-generate` PGO | Zero code duplication | Compiler-specific; not guaranteed to specialize; violates JPL-P10 rule (no compiler extensions not in C99/C11 portable subset) | Non-portable, unreliable |
 | Macro-based specialization | No duplication of logic | NOLINT-heavy; hard to read; macros banned by coding standard for non-trivial bodies | Violates style guide |
 | Move dispatch from `compute_adm` to `adm.h` wrapper inline | Slightly cleaner call site | Inline expansion in header increases build time; wrapper still required | Marginal gain; not worth it |

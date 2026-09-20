@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **`float_vif` no longer scores differently with and without SIMD.** ADR-1207's
   `test_feature_isa_invariance` drives the public API twice — once on the host's
   real ISA, once with `cpumask` disabling every SIMD flag — and asserts

@@ -600,6 +600,47 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     return "\n".join(out)
 
 
+def _actionable_rows(findings: Sequence[Finding]) -> list[list[str]]:
+    return [
+        [
+            str(finding.severity),
+            finding.area,
+            finding.kind,
+            f"`{finding.path}`" + (f":{finding.line}" if finding.line else ""),
+            finding.evidence,
+            finding.action,
+        ]
+        for finding in findings
+    ]
+
+
+def _cluster_rows(findings: Sequence[Finding]) -> list[list[str]]:
+    return [
+        [
+            str(finding.severity),
+            finding.area,
+            finding.title,
+            finding.evidence,
+            finding.action,
+        ]
+        for finding in findings
+    ]
+
+
+def _blocked_rows(findings: Sequence[Finding]) -> list[list[str]]:
+    return [
+        [
+            str(finding.severity),
+            finding.area,
+            finding.kind,
+            f"`{finding.path}`" + (f":{finding.line}" if finding.line else ""),
+            finding.blocked_reason,
+            finding.evidence,
+        ]
+        for finding in findings
+    ]
+
+
 def render_markdown(report: AuditReport, *, max_findings: int = 30) -> str:
     all_findings = report.findings + report.clusters
     summary = summarize_findings(all_findings)
@@ -635,50 +676,21 @@ def render_markdown(report: AuditReport, *, max_findings: int = 30) -> str:
         "",
         _table(
             ["Score", "Area", "Kind", "Location", "Evidence", "Action"],
-            [
-                [
-                    str(finding.severity),
-                    finding.area,
-                    finding.kind,
-                    f"`{finding.path}`" + (f":{finding.line}" if finding.line else ""),
-                    finding.evidence,
-                    finding.action,
-                ]
-                for finding in top
-            ],
+            _actionable_rows(top),
         ),
         "",
         "## Modernization Clusters",
         "",
         _table(
             ["Score", "Area", "Cluster", "Evidence", "Action"],
-            [
-                [
-                    str(finding.severity),
-                    finding.area,
-                    finding.title,
-                    finding.evidence,
-                    finding.action,
-                ]
-                for finding in sorted(report.clusters, key=lambda finding: -finding.severity)
-            ],
+            _cluster_rows(sorted(report.clusters, key=lambda finding: -finding.severity)),
         ),
         "",
         "## Blocked Or Deferred Findings",
         "",
         _table(
             ["Score", "Area", "Kind", "Location", "Reason", "Evidence"],
-            [
-                [
-                    str(finding.severity),
-                    finding.area,
-                    finding.kind,
-                    f"`{finding.path}`" + (f":{finding.line}" if finding.line else ""),
-                    finding.blocked_reason,
-                    finding.evidence,
-                ]
-                for finding in blocked_top
-            ],
+            _blocked_rows(blocked_top),
         ),
         "",
         "## Operating Notes",

@@ -16,7 +16,8 @@
  *     limitations under the License.
  *
  */
-// NOLINTBEGIN(modernize-use-nullptr) — ADR-1138: preserve NULL for MSVC C.
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
@@ -34,8 +35,8 @@
 // in-place operation is safe. Vectorizes via uint32-mask + packus + permute.
 void decimate_avx2(VmafPicture *image, unsigned width, unsigned height)
 {
-    assert(image != NULL);
-    assert(image->data[0] != NULL);
+    assert(image != VMAF_NULLPTR);
+    assert(image->data[0] != VMAF_NULLPTR);
     assert(width > 0u);
     assert(height > 0u);
     uint16_t *data = image->data[0];
@@ -64,8 +65,8 @@ void decimate_avx2(VmafPicture *image, unsigned width, unsigned height)
 // Vectorized across 16 uint16 lanes using zero-extended uint32 sums to avoid overflow.
 void anti_dithering_filter_avx2(VmafPicture *pic, unsigned width, unsigned height)
 {
-    assert(pic != NULL);
-    assert(pic->data[0] != NULL);
+    assert(pic != VMAF_NULLPTR);
+    assert(pic->data[0] != VMAF_NULLPTR);
     assert(width > 0u);
     assert(height > 0u);
     uint16_t *data = pic->data[0];
@@ -146,9 +147,9 @@ static inline uint16_t mode3_scalar(uint16_t a, uint16_t b, uint16_t c)
 
 void filter_mode_avx2(const VmafPicture *image, int width, int height, uint16_t *buffer)
 {
-    assert(image != NULL);
-    assert(image->data[0] != NULL);
-    assert(buffer != NULL);
+    assert(image != VMAF_NULLPTR);
+    assert(image->data[0] != VMAF_NULLPTR);
+    assert(buffer != VMAF_NULLPTR);
     assert(width > 0);
     assert(height > 0);
     uint16_t *data = image->data[0];
@@ -571,7 +572,7 @@ static void c_values_bottom_edge_avx2(float *c_values, uint16_t *histograms, con
     }
 }
 
-void calculate_c_values_avx2(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+void calculate_c_values_avx2(const VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
                              uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
                              const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                              const int *diff_weights, const int *all_diffs, int width, int height)
@@ -780,13 +781,13 @@ CAMBI_SCAN_NOINLINE_AVX2 static void scan_slide_avx2(const CambiCValuesFrame *f,
     }
 }
 
-void calculate_c_values_scan_avx2(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
-                                  uint16_t *histograms, uint16_t window_size,
+void calculate_c_values_scan_avx2(const VmafPicture *pic, const VmafPicture *mask_pic,
+                                  float *c_values, uint16_t *histograms, uint16_t window_size,
                                   const uint16_t num_diffs, const uint16_t *tvi_for_diff,
                                   uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                   int width, int height)
 {
-    assert(pic != NULL && mask_pic != NULL);
+    assert(pic != VMAF_NULLPTR && mask_pic != VMAF_NULLPTR);
     assert(width > 0 && height > 0);
     CambiCValuesFrame f = {
         .c_values = c_values,
@@ -812,5 +813,3 @@ void calculate_c_values_scan_avx2(VmafPicture *pic, const VmafPicture *mask_pic,
     };
     cambi_calculate_c_values_frame(&f, k);
 }
-
-// NOLINTEND(modernize-use-nullptr) — ADR-1138.

@@ -102,15 +102,16 @@ void vmaf_picture_pool_flush(void)
 }
 
 // Release callback that returns buffer to pool instead of freeing
-static int pool_release_picture(VmafPicture *pic, void *cookie)
+static int pool_release_picture(VmafPicture *pic, const void *cookie)
 {
-    size_t pic_size = (size_t)(uintptr_t)cookie;
+    (void)cookie;
+    const size_t pic_size = pic->stride[0] * pic->h[0] + 2u * pic->stride[1] * pic->h[1];
     pic_pool_release(pic->data[0], pic_size);
     return 0;
 }
 
-int vmaf_picture_set_release_callback(VmafPicture *pic, void *cookie,
-                                      int (*release_picture)(VmafPicture *pic, void *cookie))
+int vmaf_picture_set_release_callback(VmafPicture *pic, const void *cookie,
+                                      int (*release_picture)(VmafPicture *pic, const void *cookie))
 {
     if (!pic)
         return -EINVAL;
@@ -203,11 +204,7 @@ int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned 
     if (err)
         goto free_data;
 
-    /* The callback userdata slot stores pic_size inline as a tagged value,
-     * never dereferenced — standard uintptr_t idiom. pic->priv is guaranteed
-     * non-NULL here because vmaf_picture_priv_init succeeded above. */
-    // NOLINTNEXTLINE(performance-no-int-to-ptr) — ADR-0141 / ADR-0278: uintptr_t payload in pool release callback
-    err = vmaf_picture_set_release_callback(pic, (void *)(uintptr_t)pic_size, pool_release_picture);
+    err = vmaf_picture_set_release_callback(pic, NULL, pool_release_picture);
     if (err)
         goto free_priv;
 
@@ -225,7 +222,7 @@ fail:
     return -ENOMEM;
 }
 
-int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src)
+int vmaf_picture_ref(VmafPicture *dst, const VmafPicture *src)
 {
     if (!dst || !src)
         return -EINVAL;

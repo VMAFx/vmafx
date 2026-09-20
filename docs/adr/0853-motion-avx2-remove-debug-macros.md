@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0853: Remove dead debug-print macros from motion_avx2.c
 
 - **Status**: Accepted
@@ -35,7 +34,7 @@ local temporary `printf` that never reaches a commit.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `#ifdef DEBUG` guard | Preserves macros for future debug use | Adds conditional compilation noise; dead code stays in tree | The macros have not been used since the file was authored; the cost of keeping them exceeds any conceivable future benefit |
 | Keep as-is with a `// NOLINT` | Silences lint | Violates ADR-0141 (NOLINT requires a load-bearing invariant citation, which dead debug macros do not have) | Against project policy |
 

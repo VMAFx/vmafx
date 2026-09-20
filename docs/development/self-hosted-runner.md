@@ -1,62 +1,59 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Self-hosted GPU runner — enrollment guide
 
 A small set of CI jobs (`coverage-gpu` in
 [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml),
-plus future SYCL / CUDA-specific suites) require a self-hosted runner
-that exposes both NVIDIA and Intel GPUs alongside an AVX-512-capable
-CPU. Hosted GitHub runners can't reach those code paths.
+plus future SYCL / CUDA-specific suites) require a self-hosted runner that
+exposes both NVIDIA and Intel GPUs alongside an AVX-512-capable CPU. Hosted
+GitHub runners can't reach those code paths.
 
 The `coverage-gpu` job runs only when the repository variable
-`GPU_COVERAGE_ENABLED` is `true` and the PR is not a draft. Enroll a runner
-with the matching labels before enabling that variable; an enabled job
-waits for a matching runner. This guide describes that enrollment.
+`GPU_COVERAGE_ENABLED` is `true` and the PR is not a draft. Enroll a runner with
+the matching labels before enabling that variable; an enabled job waits for a
+matching runner. This guide describes that enrollment.
 
-Historical backlog reference: T7-3. The local `.workingdir2/BACKLOG.md`
-notebook is not part of the published documentation; the linked workflow
-is the current configuration source.
+Historical backlog reference: T7-3. The local `.workingdir2/BACKLOG.md` notebook
+is not part of the published documentation; the linked workflow is the current
+configuration source.
 
 ## Required labels
 
 The workflows match on a label triple. Match these exactly:
 
-| Label | Meaning |
-|---|---|
-| `self-hosted` | GitHub default for any non-hosted runner. |
-| `linux` | OS family. Bare-metal Linux only — WSL2 and containers can't pass `cudaSetDevice` to the host driver reliably. |
-| `gpu-full` | The fork's "has all the GPUs we test against" tag — at minimum NVIDIA + Intel + AVX-512. Add additional fine-grained labels (`gpu-cuda`, `gpu-intel`, `avx512`) so future jobs can target a subset without re-tagging. |
+| Label         | Meaning                                                                                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `self-hosted` | GitHub default for any non-hosted runner.                                                                                                                                                                              |
+| `linux`       | OS family. Bare-metal Linux only — WSL2 and containers can't pass `cudaSetDevice` to the host driver reliably.                                                                                                         |
+| `gpu-full`    | The fork's "has all the GPUs we test against" tag — at minimum NVIDIA + Intel + AVX-512. Add additional fine-grained labels (`gpu-cuda`, `gpu-intel`, `avx512`) so future jobs can target a subset without re-tagging. |
 
 ## Hardware expectations
 
 The runner needs to satisfy the union of all jobs that target it:
 
-- **NVIDIA GPU + driver + CUDA toolkit ≥ 12.0** — drives the
-  `coverage-gpu` CUDA build (`-Denable_cuda=true`) and the CUDA test
-  suite. `nvidia-smi` must succeed without `sudo`.
-- **Intel GPU + Level Zero + oneAPI Base Toolkit ≥ 2024.2** — drives
-  the SYCL build (`-Denable_sycl=true`). `sycl-ls` must list at least
-  one Intel GPU device.
-- **AVX-512-capable CPU** (Ice Lake or newer / Zen 4 or newer) — the
-  AVX-512 SIMD code paths. `lscpu | grep avx512f` should return a hit.
-- **≥ 16 GB RAM** — coverage + multi-backend builds peak around 8 GB
-  resident; doubling that gives headroom for the parallel meson test
-  runs.
-- **≥ 60 GB free disk** — coverage builds + nightly artifact retention
-  rotate through ~30 GB.
+- **NVIDIA GPU + driver + CUDA toolkit ≥ 12.0** — drives the `coverage-gpu` CUDA
+  build (`-Denable_cuda=true`) and the CUDA test suite. `nvidia-smi` must
+  succeed without `sudo`.
+- **Intel GPU + Level Zero + oneAPI Base Toolkit ≥ 2024.2** — drives the SYCL
+  build (`-Denable_sycl=true`). `sycl-ls` must list at least one Intel GPU
+  device.
+- **AVX-512-capable CPU** (Ice Lake or newer / Zen 4 or newer) — the AVX-512
+  SIMD code paths. `lscpu | grep avx512f` should return a hit.
+- **≥ 16 GB RAM** — coverage + multi-backend builds peak around 8 GB resident;
+  doubling that gives headroom for the parallel meson test runs.
+- **≥ 60 GB free disk** — coverage builds + nightly artifact retention rotate
+  through ~30 GB.
 
-A typical workstation that runs the fork's local dev loop already
-satisfies all of the above; the user's primary dev box has been
-greenlit (per popup 2026-04-25) as the first runner.
+A typical workstation that runs the fork's local dev loop already satisfies all
+of the above; the user's primary dev box has been greenlit (per popup
+2026-04-25) as the first runner.
 
 ## Enrollment steps
 
-These are the canonical GitHub Actions runner setup steps, lightly
-adapted for this fork's labels.
+These are the canonical GitHub Actions runner setup steps, lightly adapted for
+this fork's labels.
 
 ### 1. Generate a registration token
 
-The token is short-lived (1 hour) and single-use. Generate one in
-the GitHub UI:
+The token is short-lived (1 hour) and single-use. Generate one in the GitHub UI:
 
 `https://github.com/VMAFx/vmafx/settings/actions/runners/new`
 
@@ -95,9 +92,9 @@ tar xzf "actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
   --replace
 ```
 
-The fine-grained labels (`gpu-cuda`, `gpu-intel`, `avx512`) are not
-required by any current workflow but are reserved so future jobs can
-match a subset of capabilities without forcing a label change.
+The fine-grained labels (`gpu-cuda`, `gpu-intel`, `avx512`) are not required by
+any current workflow but are reserved so future jobs can match a subset of
+capabilities without forcing a label change.
 
 ### 4. Run as a systemd service (recommended)
 
@@ -116,37 +113,36 @@ The service auto-starts on boot and respawns on crash. Logs land in
 gh api /repos/VMAFx/vmafx/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
 ```
 
-The runner should appear with `"status": "online"` and the full label
-set. Trigger the `coverage-gpu` job once with `gh workflow run` to
-confirm end-to-end:
+The runner should appear with `"status": "online"` and the full label set.
+Trigger the `coverage-gpu` job once with `gh workflow run` to confirm
+end-to-end:
 
 ```bash
 gh variable set GPU_COVERAGE_ENABLED -b true
 gh workflow run tests-and-quality-gates.yml
 ```
 
-Once the job completes green twice in a row, the runner is considered
-stable; the workflow's `continue-on-error` flag can be flipped to
-required (separate ADR + PR).
+Once the job completes green twice in a row, the runner is considered stable;
+the workflow's `continue-on-error` flag can be flipped to required (separate
+ADR + PR).
 
 ## Operational notes
 
-- **GPU driver upgrades**: stop the agent (`sudo ./svc.sh stop`),
-  drain in-flight jobs (the runner finishes the current job before
-  exiting), upgrade, restart. The runner deregisters automatically
-  on prolonged offline.
-- **Disk hygiene**: GitHub Actions does **not** clean `_work/` on its
-  own. A nightly `find _work -mtime +14 -delete` is standard. The
-  fork's coverage artifacts retain for 14 days on the GitHub side, so
-  local rotation at the same cadence is safe.
-- **Secrets**: this runner has access to repo + organisation secrets
-  scoped to the `gpu-coverage` environment if and when one is added.
-  Treat the host as security-sensitive — no third-party SSH keys, no
-  shared user accounts, audit `~/.ssh/authorized_keys` quarterly.
-- **Concurrency**: a single runner serialises GPU jobs. Adding a
-  second runner with the same label set (e.g. a remote Intel-only or
-  NVIDIA-only host) lets `coverage-gpu` parallelise with whatever
-  fine-grained-label job comes next without label collisions.
+- **GPU driver upgrades**: stop the agent (`sudo ./svc.sh stop`), drain
+  in-flight jobs (the runner finishes the current job before exiting), upgrade,
+  restart. The runner deregisters automatically on prolonged offline.
+- **Disk hygiene**: GitHub Actions does **not** clean `_work/` on its own. A
+  nightly `find _work -mtime +14 -delete` is standard. The fork's coverage
+  artifacts retain for 14 days on the GitHub side, so local rotation at the same
+  cadence is safe.
+- **Secrets**: this runner has access to repo + organisation secrets scoped to
+  the `gpu-coverage` environment if and when one is added. Treat the host as
+  security-sensitive — no third-party SSH keys, no shared user accounts, audit
+  `~/.ssh/authorized_keys` quarterly.
+- **Concurrency**: a single runner serialises GPU jobs. Adding a second runner
+  with the same label set (e.g. a remote Intel-only or NVIDIA-only host) lets
+  `coverage-gpu` parallelise with whatever fine-grained-label job comes next
+  without label collisions.
 
 ## Decommissioning
 
@@ -160,10 +156,10 @@ rm -rf ~/actions-runner
 
 ## References
 
-- Historical T7-3 reference: `.workingdir2/BACKLOG.md` (local notebook,
-  not shipped with this documentation).
-- [`tests-and-quality-gates.yml` § coverage-gpu](../../.github/workflows/tests-and-quality-gates.yml) —
-  the first consumer of the `gpu-full` label.
+- Historical T7-3 reference: `.workingdir2/BACKLOG.md` (local notebook, not
+  shipped with this documentation).
+- [`tests-and-quality-gates.yml` § coverage-gpu](../../.github/workflows/tests-and-quality-gates.yml)
+  — the first consumer of the `gpu-full` label.
 - [GitHub Actions: self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners)
-- `req` — user popup choice 2026-04-25: "we can test cuda and intel
-  on my pc, so just use my local gpu's for now lol".
+- `req` — user popup choice 2026-04-25: "we can test cuda and intel on my pc, so
+  just use my local gpu's for now lol".

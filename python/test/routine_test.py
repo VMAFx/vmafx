@@ -1,7 +1,6 @@
-import glob
-import os
 import shutil
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -19,6 +18,8 @@ from vmaf.routine import (
     compare_two_quality_runners_on_dataset,
     generate_dataset_from_raw,
     read_dataset,
+    run_test_on_dataset,
+    train_test_vmaf_on_dataset,
 )
 from vmaf.tools.misc import import_python_file
 
@@ -34,16 +35,16 @@ class TestReadDataset(unittest.TestCase):
         train_assets = read_dataset(train_dataset)
 
         self.assertEqual(len(train_assets), 9)
-        self.assertTrue("groundtruth" in train_assets[0].asset_dict.keys())
-        self.assertTrue("os" not in train_assets[0].asset_dict.keys())
-        self.assertFalse("width" in train_assets[0].asset_dict.keys())
-        self.assertTrue("ref_width" in train_assets[0].asset_dict.keys())
-        self.assertTrue("dis_width" in train_assets[0].asset_dict.keys())
-        self.assertFalse("height" in train_assets[0].asset_dict.keys())
-        self.assertTrue("ref_height" in train_assets[0].asset_dict.keys())
-        self.assertTrue("dis_height" in train_assets[0].asset_dict.keys())
-        self.assertTrue("quality_width" not in train_assets[0].asset_dict.keys())
-        self.assertTrue("quality_height" not in train_assets[0].asset_dict.keys())
+        self.assertTrue("groundtruth" in train_assets[0].asset_dict)
+        self.assertTrue("os" not in train_assets[0].asset_dict)
+        self.assertFalse("width" in train_assets[0].asset_dict)
+        self.assertTrue("ref_width" in train_assets[0].asset_dict)
+        self.assertTrue("dis_width" in train_assets[0].asset_dict)
+        self.assertFalse("height" in train_assets[0].asset_dict)
+        self.assertTrue("ref_height" in train_assets[0].asset_dict)
+        self.assertTrue("dis_height" in train_assets[0].asset_dict)
+        self.assertTrue("quality_width" not in train_assets[0].asset_dict)
+        self.assertTrue("quality_height" not in train_assets[0].asset_dict)
 
     def test_read_dataset_qualitywh(self):
         train_dataset_path = VmafConfig.test_resource_path(
@@ -52,12 +53,12 @@ class TestReadDataset(unittest.TestCase):
         train_dataset = import_python_file(train_dataset_path)
         train_assets = read_dataset(train_dataset)
 
-        self.assertTrue("quality_width" in train_assets[0].asset_dict.keys())
-        self.assertTrue("quality_height" in train_assets[0].asset_dict.keys())
-        self.assertTrue("resampling_type" in train_assets[0].asset_dict.keys())
-        self.assertTrue("quality_width" in train_assets[1].asset_dict.keys())
-        self.assertTrue("quality_height" in train_assets[1].asset_dict.keys())
-        self.assertTrue("resampling_type" in train_assets[1].asset_dict.keys())
+        self.assertTrue("quality_width" in train_assets[0].asset_dict)
+        self.assertTrue("quality_height" in train_assets[0].asset_dict)
+        self.assertTrue("resampling_type" in train_assets[0].asset_dict)
+        self.assertTrue("quality_width" in train_assets[1].asset_dict)
+        self.assertTrue("quality_height" in train_assets[1].asset_dict)
+        self.assertTrue("resampling_type" in train_assets[1].asset_dict)
         self.assertEqual(train_assets[0].asset_dict["quality_width"], 200)
         self.assertEqual(train_assets[0].asset_dict["quality_height"], 100)
         self.assertEqual(train_assets[0].asset_dict["resampling_type"], "bicubic")
@@ -72,12 +73,12 @@ class TestReadDataset(unittest.TestCase):
         train_dataset = import_python_file(train_dataset_path)
         train_assets = read_dataset(train_dataset)
 
-        self.assertTrue("quality_width" in train_assets[0].asset_dict.keys())
-        self.assertTrue("quality_height" in train_assets[0].asset_dict.keys())
-        self.assertTrue("resampling_type" in train_assets[0].asset_dict.keys())
-        self.assertTrue("quality_width" not in train_assets[1].asset_dict.keys())
-        self.assertTrue("quality_height" not in train_assets[1].asset_dict.keys())
-        self.assertTrue("resampling_type" not in train_assets[1].asset_dict.keys())
+        self.assertTrue("quality_width" in train_assets[0].asset_dict)
+        self.assertTrue("quality_height" in train_assets[0].asset_dict)
+        self.assertTrue("resampling_type" in train_assets[0].asset_dict)
+        self.assertTrue("quality_width" not in train_assets[1].asset_dict)
+        self.assertTrue("quality_height" not in train_assets[1].asset_dict)
+        self.assertTrue("resampling_type" not in train_assets[1].asset_dict)
         self.assertEqual(train_assets[0].asset_dict["quality_width"], 200)
         self.assertEqual(train_assets[0].asset_dict["quality_height"], 100)
         self.assertEqual(train_assets[0].asset_dict["resampling_type"], "bicubic")
@@ -87,22 +88,22 @@ class TestReadDataset(unittest.TestCase):
         train_dataset = import_python_file(train_dataset_path)
         train_assets = read_dataset(train_dataset)
 
-        self.assertTrue("fps" in train_assets[0].asset_dict.keys())
-        self.assertTrue("rebuf_indices" in train_assets[0].asset_dict.keys())
+        self.assertTrue("fps" in train_assets[0].asset_dict)
+        self.assertTrue("rebuf_indices" in train_assets[0].asset_dict)
 
     def test_read_dataset_bad_fps_rebuf_indices(self):
         train_dataset_path = VmafConfig.test_resource_path("test_dataset_bad_fps_rebufinds.py")
         train_dataset = import_python_file(train_dataset_path)
 
         with self.assertRaises(AssertionError):
-            train_assets = read_dataset(train_dataset)
+            read_dataset(train_dataset)
 
     def test_read_dataset_fps_bad_rebuf_indices(self):
         train_dataset_path = VmafConfig.test_resource_path("test_dataset_fps_bad_rebufinds.py")
         train_dataset = import_python_file(train_dataset_path)
 
         with self.assertRaises(AssertionError):
-            train_assets = read_dataset(train_dataset)
+            read_dataset(train_dataset)
 
     def test_read_dataset_diffyuv(self):
         train_dataset_path = VmafConfig.test_resource_path("test_dataset_diffyuv.py")
@@ -149,8 +150,8 @@ class TestReadDataset(unittest.TestCase):
         assets = read_dataset(dataset)
 
         self.assertEqual(len(assets), 4)
-        self.assertTrue("groundtruth" in assets[0].asset_dict.keys())
-        self.assertTrue("os" not in assets[0].asset_dict.keys())
+        self.assertTrue("groundtruth" in assets[0].asset_dict)
+        self.assertTrue("os" not in assets[0].asset_dict)
         self.assertEqual(assets[0].quality_width_height, (1920, 1080))
         self.assertEqual(assets[0].ref_resampling_type, "bicubic")
         self.assertEqual(assets[0].dis_resampling_type, "bicubic")
@@ -260,8 +261,8 @@ class TestTrainOnDatasetJsonFormat(unittest.TestCase):
         self.output_model_filepath = VmafConfig.workspace_path("model", "test_output_model.json")
 
     def tearDown(self):
-        if os.path.exists(self.output_model_filepath):
-            os.remove(self.output_model_filepath)
+        if Path(self.output_model_filepath).exists():
+            Path(self.output_model_filepath).unlink()
 
     def test_train_test_on_dataset_with_dis1st_thr(self):
         pytest.skip(
@@ -269,30 +270,34 @@ class TestTrainOnDatasetJsonFormat(unittest.TestCase):
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
-        from vmaf.routine import train_test_vmaf_on_dataset
-
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
         model_param = import_python_file(VmafConfig.test_resource_path("model_param_sample.py"))
         feature_param = import_python_file(VmafConfig.test_resource_path("feature_param_sample.py"))
 
-        train_fassembler, train_assets, train_stats, test_fassembler, test_assets, test_stats, _ = (
-            train_test_vmaf_on_dataset(
-                train_dataset=train_dataset,
-                test_dataset=train_dataset,
-                feature_param=feature_param,
-                model_param=model_param,
-                train_ax=None,
-                test_ax=None,
-                result_store=None,
-                parallelize=False,
-                logger=None,
-                fifo_mode=False,
-                output_model_filepath=self.output_model_filepath,
-            )
+        (
+            train_fassembler,
+            _train_assets,
+            train_stats,
+            _test_fassembler,
+            _test_assets,
+            test_stats,
+            _,
+        ) = train_test_vmaf_on_dataset(
+            train_dataset=train_dataset,
+            test_dataset=train_dataset,
+            feature_param=feature_param,
+            model_param=model_param,
+            train_ax=None,
+            test_ax=None,
+            result_store=None,
+            parallelize=False,
+            logger=None,
+            fifo_mode=False,
+            output_model_filepath=self.output_model_filepath,
         )
 
         self.train_fassembler = train_fassembler
-        self.assertTrue(os.path.exists(self.output_model_filepath))
+        self.assertTrue(Path(self.output_model_filepath).exists())
         self.assertAlmostEqual(train_stats["ys_label_pred"][0], 90.753010402770798, places=3)
         self.assertAlmostEqual(test_stats["ys_label_pred"][0], 90.753010402770798, places=3)
 
@@ -303,8 +308,8 @@ class TestTrainOnDataset(unittest.TestCase):
         self.output_model_filepath = VmafConfig.workspace_path("model", "test_output_model.pkl")
 
     def tearDown(self):
-        if os.path.exists(self.output_model_filepath):
-            os.remove(self.output_model_filepath)
+        if Path(self.output_model_filepath).exists():
+            Path(self.output_model_filepath).unlink()
 
     def test_train_test_on_dataset_with_dis1st_thr(self):
         pytest.skip(
@@ -312,30 +317,34 @@ class TestTrainOnDataset(unittest.TestCase):
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
-        from vmaf.routine import train_test_vmaf_on_dataset
-
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
         model_param = import_python_file(VmafConfig.test_resource_path("model_param_sample.py"))
         feature_param = import_python_file(VmafConfig.test_resource_path("feature_param_sample.py"))
 
-        train_fassembler, train_assets, train_stats, test_fassembler, test_assets, test_stats, _ = (
-            train_test_vmaf_on_dataset(
-                train_dataset=train_dataset,
-                test_dataset=train_dataset,
-                feature_param=feature_param,
-                model_param=model_param,
-                train_ax=None,
-                test_ax=None,
-                result_store=None,
-                parallelize=False,
-                logger=None,
-                fifo_mode=False,
-                output_model_filepath=self.output_model_filepath,
-            )
+        (
+            train_fassembler,
+            train_assets,
+            train_stats,
+            _test_fassembler,
+            _test_assets,
+            test_stats,
+            _,
+        ) = train_test_vmaf_on_dataset(
+            train_dataset=train_dataset,
+            test_dataset=train_dataset,
+            feature_param=feature_param,
+            model_param=model_param,
+            train_ax=None,
+            test_ax=None,
+            result_store=None,
+            parallelize=False,
+            logger=None,
+            fifo_mode=False,
+            output_model_filepath=self.output_model_filepath,
         )
 
         self.train_fassembler = train_fassembler
-        self.assertTrue(os.path.exists(self.output_model_filepath))
+        self.assertTrue(Path(self.output_model_filepath).exists())
         self.assertAlmostEqual(train_stats["ys_label_pred"][0], 90.753010402770798, places=3)
         self.assertAlmostEqual(test_stats["ys_label_pred"][0], 90.753010402770798, places=3)
 
@@ -361,36 +370,38 @@ class TestTrainOnDataset(unittest.TestCase):
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
-        from vmaf.routine import train_test_vmaf_on_dataset
-
         train_dataset = import_python_file(VmafConfig.test_resource_path("raw_dataset_sample.py"))
         model_param = import_python_file(VmafConfig.test_resource_path("model_param_sample.py"))
         feature_param = import_python_file(VmafConfig.test_resource_path("feature_param_sample.py"))
 
-        train_fassembler, train_assets, train_stats, test_fassembler, test_assets, test_stats, _ = (
-            train_test_vmaf_on_dataset(
-                train_dataset=train_dataset,
-                test_dataset=train_dataset,
-                feature_param=feature_param,
-                model_param=model_param,
-                train_ax=None,
-                test_ax=None,
-                result_store=None,
-                parallelize=False,
-                logger=None,
-                fifo_mode=False,
-                output_model_filepath=self.output_model_filepath,
-            )
+        (
+            train_fassembler,
+            _train_assets,
+            train_stats,
+            _test_fassembler,
+            _test_assets,
+            test_stats,
+            _,
+        ) = train_test_vmaf_on_dataset(
+            train_dataset=train_dataset,
+            test_dataset=train_dataset,
+            feature_param=feature_param,
+            model_param=model_param,
+            train_ax=None,
+            test_ax=None,
+            result_store=None,
+            parallelize=False,
+            logger=None,
+            fifo_mode=False,
+            output_model_filepath=self.output_model_filepath,
         )
 
         self.train_fassembler = train_fassembler
-        self.assertTrue(os.path.exists(self.output_model_filepath))
+        self.assertTrue(Path(self.output_model_filepath).exists())
         self.assertAlmostEqual(train_stats["ys_label_pred"][0], 93.565459224020742, places=3)
         self.assertAlmostEqual(test_stats["ys_label_pred"][0], 93.565459224020742, places=3)
 
     def test_test_on_dataset(self):
-        from vmaf.routine import run_test_on_dataset
-
         test_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
         test_assets, results = run_test_on_dataset(
             test_dataset,
@@ -432,15 +443,17 @@ class TestTrainOnDataset(unittest.TestCase):
             fifo_mode=False,
         )
         self.assertAlmostEqual(
-            np.nanmean(list(zip(*result["plcc"]))[0]), 0.8655928449687122, places=4
+            np.nanmean(next(zip(*result["plcc"], strict=False))), 0.8655928449687122, places=4
         )
         self.assertAlmostEqual(
-            np.nanmean(list(zip(*result["plcc"]))[1]), 0.9875440797696373, places=4
+            np.nanmean(list(zip(*result["plcc"], strict=False))[1]), 0.9875440797696373, places=4
         )
         self.assertAlmostEqual(
-            np.nanmean(list(zip(*result["srocc"]))[0]), 0.8642507701111302, places=4
+            np.nanmean(next(zip(*result["srocc"], strict=False))), 0.8642507701111302, places=4
         )
-        self.assertAlmostEqual(np.nanmean(list(zip(*result["srocc"]))[1]), 1.0, places=4)
+        self.assertAlmostEqual(
+            np.nanmean(list(zip(*result["srocc"], strict=False))[1]), 1.0, places=4
+        )
 
         self.assertTrue(np.isnan(result["plcc_ci95_first"][0]))
         self.assertTrue(np.isnan(result["plcc_ci95_first"][1]))
@@ -457,12 +470,10 @@ class TestTrainOnDataset(unittest.TestCase):
         self.assertTrue(np.isnan(result["srocc_ci95_diff"][1]))
 
     def test_test_on_dataset_plot_per_content(self):
-        from vmaf.routine import run_test_on_dataset
-
         test_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
-        import matplotlib.pyplot as plt
+        plt = pytest.importorskip("matplotlib.pyplot")
 
-        fig, ax = plt.subplots(1, 1, figsize=[20, 20])
+        _fig, ax = plt.subplots(1, 1, figsize=[20, 20])
         run_test_on_dataset(
             test_dataset,
             VmafQualityRunner,
@@ -483,16 +494,14 @@ class TestTrainOnDataset(unittest.TestCase):
 
         output_dir = VmafConfig.workspace_path("output", "test_output")
         DisplayConfig.show(write_to_dir=output_dir)
-        self.assertEqual(len(glob.glob(os.path.join(output_dir, "*.png"))), 4)
+        self.assertEqual(len(list(Path(output_dir).glob("*.png"))), 4)
 
-        if os.path.exists(output_dir):
+        if Path(output_dir).exists():
             shutil.rmtree(output_dir)
 
     def test_test_on_dataset_bootstrap_quality_runner(self):
-        from vmaf.routine import run_test_on_dataset
-
         test_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
-        test_assets, results = run_test_on_dataset(
+        _test_assets, results = run_test_on_dataset(
             test_dataset,
             BootstrapVmafQualityRunner,
             None,
@@ -531,15 +540,13 @@ class TestTrainOnDataset(unittest.TestCase):
             expecteds
         ), "Expected and actual bootstrap prediction lists do not match in length."
 
-        for actual, expected in zip(actuals, expecteds):
+        for actual, expected in zip(actuals, expecteds, strict=False):
             self.assertAlmostEqual(actual, expected, places=4)
         self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 99.32876664539778, places=4)
 
     def test_test_on_dataset_split_test_indices_for_perf_ci(self):
-        from vmaf.routine import run_test_on_dataset
-
         test_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
-        test_assets, results = run_test_on_dataset(
+        _test_assets, results = run_test_on_dataset(
             test_dataset,
             VmafQualityRunner,
             None,
@@ -554,8 +561,6 @@ class TestTrainOnDataset(unittest.TestCase):
         self.assertAlmostEqual(results[0]["VMAF_score"], 99.142659046424384, places=4)
 
     def test_test_on_dataset_raw(self):
-        from vmaf.routine import run_test_on_dataset
-
         test_dataset = import_python_file(VmafConfig.test_resource_path("raw_dataset_sample.py"))
         test_assets, results = run_test_on_dataset(
             test_dataset,
@@ -581,8 +586,6 @@ class TestTrainOnDataset(unittest.TestCase):
         self.assertAlmostEqual(test_assets[3].groundtruth_std, 3.5355339059327373, places=4)
 
     def test_test_on_dataset_mle(self):
-        from vmaf.routine import run_test_on_dataset
-
         test_dataset = import_python_file(VmafConfig.test_resource_path("raw_dataset_sample.py"))
         test_assets, results = run_test_on_dataset(
             test_dataset,
@@ -609,8 +612,6 @@ class TestTrainOnDataset(unittest.TestCase):
         self.assertAlmostEqual(test_assets[3].groundtruth_std, 3.5355339059327373, places=4)
 
     def test_train_test_on_dataset_with_dis1st_thr_with_feature_optional_dict(self):
-        from vmaf.routine import train_test_vmaf_on_dataset
-
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
         model_param = import_python_file(VmafConfig.test_resource_path("model_param_sample.py"))
         feature_param = import_python_file(
@@ -620,12 +621,12 @@ class TestTrainOnDataset(unittest.TestCase):
         with self.assertRaises(AssertionError):
             # adm_ref_display_height 108000 exceeds the maximum allowed
             (
-                train_fassembler,
-                train_assets,
-                train_stats,
-                test_fassembler,
-                test_assets,
-                test_stats,
+                _train_fassembler,
+                _train_assets,
+                _train_stats,
+                _test_fassembler,
+                _test_assets,
+                _test_stats,
                 _,
             ) = train_test_vmaf_on_dataset(
                 train_dataset=train_dataset,
@@ -647,32 +648,36 @@ class TestTrainOnDataset(unittest.TestCase):
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
-        from vmaf.routine import train_test_vmaf_on_dataset
-
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
         model_param = import_python_file(VmafConfig.test_resource_path("model_param_sample.py"))
         feature_param = import_python_file(
             VmafConfig.test_resource_path("feature_param_sample_with_optional_dict_good.py")
         )
 
-        train_fassembler, train_assets, train_stats, test_fassembler, test_assets, test_stats, _ = (
-            train_test_vmaf_on_dataset(
-                train_dataset=train_dataset,
-                test_dataset=train_dataset,
-                feature_param=feature_param,
-                model_param=model_param,
-                train_ax=None,
-                test_ax=None,
-                result_store=None,
-                parallelize=False,
-                logger=None,
-                fifo_mode=False,
-                output_model_filepath=self.output_model_filepath,
-            )
+        (
+            train_fassembler,
+            train_assets,
+            train_stats,
+            _test_fassembler,
+            _test_assets,
+            test_stats,
+            _,
+        ) = train_test_vmaf_on_dataset(
+            train_dataset=train_dataset,
+            test_dataset=train_dataset,
+            feature_param=feature_param,
+            model_param=model_param,
+            train_ax=None,
+            test_ax=None,
+            result_store=None,
+            parallelize=False,
+            logger=None,
+            fifo_mode=False,
+            output_model_filepath=self.output_model_filepath,
         )
 
         self.train_fassembler = train_fassembler
-        self.assertTrue(os.path.exists(self.output_model_filepath))
+        self.assertTrue(Path(self.output_model_filepath).exists())
         self.assertAlmostEqual(train_stats["ys_label_pred"][0], 90.753010402770798, places=3)
         self.assertAlmostEqual(test_stats["ys_label_pred"][0], 90.753010402770798, places=3)
 
@@ -703,10 +708,10 @@ class TestGenerateDatasetFromRaw(unittest.TestCase):
         self.derived_dataset_path_pyc = VmafConfig.workdir_path("test_derived_dataset.pyc")
 
     def tearDown(self):
-        if os.path.exists(self.derived_dataset_path):
-            os.remove(self.derived_dataset_path)
-        if os.path.exists(self.derived_dataset_path_pyc):
-            os.remove(self.derived_dataset_path_pyc)
+        if Path(self.derived_dataset_path).exists():
+            Path(self.derived_dataset_path).unlink()
+        if Path(self.derived_dataset_path_pyc).exists():
+            Path(self.derived_dataset_path_pyc).unlink()
 
     def test_generate_dataset_from_raw_default(self):  # DMOS
         generate_dataset_from_raw(

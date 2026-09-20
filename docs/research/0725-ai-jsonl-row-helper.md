@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0725 — AI strict JSONL row helper
 
 ## Problem
@@ -27,7 +26,7 @@ refresh job is not invalidated mid-run.
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave row writers local | Smallest diff | Serializer behavior keeps drifting by script | Rejected |
 | Use `write_manifest_json()` for JSONL rows | Reuses strict normalization | Wrong abstraction for line-oriented streams | Rejected |
 | Add `dumps_jsonl_row()` | One explicit row boundary for all JSONL writers | Small helper and test surface | Chosen |

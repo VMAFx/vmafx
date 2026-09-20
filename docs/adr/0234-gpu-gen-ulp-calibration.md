@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0234: GPU-generation-aware ULP calibration head
 
 - **Status**: Accepted (2026-05-03 — calibration-table tier landed; ONNX-head
@@ -79,7 +78,7 @@ least one real GPU.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **(a) Per-arch calibration head (this proposal)** | Deterministic per-arch correction; doesn't touch kernel arithmetic; composes with the parity gate; small ONNX (probably < 50 KiB per arch); user opts in via `--gpu-calibrated`; reuses the tiny-AI runtime already on disk; fits the ADR-0214 "verify, don't modify" philosophy | Adds a new CLI surface, a per-arch training corpus to maintain, and a registry entry with `smoke: true` until measured; requires a per-arch detection mechanism that works for Vulkan/CUDA/SYCL/HIP; calibration only helps callers that opt in | Picked because it's the only option that closes the residual without re-litigating ADR-0220's fp64-free contract |
 | (b) Fix the divergence at the kernel level (matches ADR-0220's approach for SYCL fp64) | Truly closes the gap at the source; no calibration corpus, no new CLI surface, no model registry entry; per ADR-0220 the int64 Q31 path is already the right answer for ADM gain limiting | Requires bit-exact fp32 reductions across every feature × backend cell — a multi-quarter project; some GPUs (Arc A380 et al.) lack the fp64 fallback that would make this trivial; the residual is *already* below the production tolerance so the ROI on a kernel-level fix is hard to justify against the rebase/maintenance cost; doesn't generalise to future ULP-sensitive consumers (HIP, Metal) | Not chosen *yet* — kernel-level fixes happen on a per-feature, per-backend basis as their own follow-ups (ADR-0220 was one such); the calibration-head approach is orthogonal and ships in weeks rather than quarters |
 | (c) Accept the divergence and do nothing | Zero diff; the parity gate already proves we're within tolerance | Some downstream callers (golden-replay validators, regulatory comparisons) want bit-exactness, not "within tolerance"; the ADR-0220 / ADR-0214 audit explicitly named ULP divergence as a known floor — leaving it untreated forecloses future use cases that need bit-exact CPU equivalence on a GPU runner | Default on the table but rejected because the proposal in (a) is cheap to scope and the corpus collection is a prerequisite for *any* future treatment, including (b) |

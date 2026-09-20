@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0133: Clang-Tidy push-event should scan push delta, not full tree
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ SHA is reachable locally without a second `git fetch` step.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave full-tree scan, silence svm.cpp warnings via `// NOLINTNEXTLINE` or `.clang-tidy` `HeaderFilterRegex` | No workflow change; addresses the specific finding | Only fixes the currently-visible case. Next vendored-code push or clang-tidy upgrade re-exposes the same class of issue. Vendored libsvm is not ours to annotate | Treats symptom, not cause |
 | Exclude vendored paths (`core/src/svm.cpp`, `core/src/compat/`, `core/src/cuda/`) via a negative-glob list | Pragmatic; keeps the "scan everything" posture | Exclude list drifts from reality; CUDA files *should* be linted under a CUDA-enabled job (future ADR), not permanently excluded | Would hide genuine issues in those paths on the PR that modifies them |
 | Push-delta (this ADR) | Restores the semantic promised by the job name. Auto-scales: any file a PR touches still gets linted, on both PR and the post-merge push. No per-path exclude maintenance | Slight risk that a warning regresses through a file nobody touches for a while; acceptable because that file would have stayed silent under the full-tree scan too | Chosen |

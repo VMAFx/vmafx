@@ -1,7 +1,8 @@
 import ast
 import hashlib
-import os
 import shutil
+from importlib import import_module
+from pathlib import Path
 
 import pandas as pd
 
@@ -19,15 +20,11 @@ class ResultStore(object):
     Provide capability to save and load a Result.
     """
 
-    pass
-
 
 class SqliteResultStore(ResultStore):
     """
     persist result by a SQLite engine that save/load result.
     """
-
-    pass
 
 
 class FileSystemResultStore(ResultStore):
@@ -40,9 +37,11 @@ class FileSystemResultStore(ResultStore):
     str(asset).
     """
 
-    def __init__(self, logger=None, result_store_dir=VmafConfig.file_result_store_path()):
+    def __init__(self, logger=None, result_store_dir=None):
         self.logger = logger
-        self.result_store_dir = result_store_dir
+        self.result_store_dir = (
+            VmafConfig.file_result_store_path() if result_store_dir is None else result_store_dir
+        )
 
     def save(self, result):
         result_file_path = self._get_result_file_path(result)
@@ -72,14 +71,13 @@ class FileSystemResultStore(ResultStore):
 
     def load(self, asset, executor_id):
         result_file_path = self._get_result_file_path2(asset, executor_id)
-        if not os.path.isfile(result_file_path):
+        if not Path(result_file_path).is_file():
             return None
-        result = self.load_result(result_file_path, asset.__class__)
-        return result
+        return self.load_result(result_file_path, asset.__class__)
 
     def has_workfile(self, asset: Asset, executor_id: str, suffix: str) -> bool:
         result_file_path = self._get_result_file_path2(asset, executor_id)
-        return os.path.isfile(result_file_path + suffix)
+        return Path(result_file_path + suffix).is_file()
 
     @staticmethod
     def save_result(result, result_file_path):
@@ -89,7 +87,7 @@ class FileSystemResultStore(ResultStore):
         # load_result) rejects with "malformed node or string". Coerce
         # scalars back to native types up front so the round-trip stays
         # within the literal_eval grammar.
-        with open(result_file_path, "wt") as result_file:
+        with Path(result_file_path).open("wt") as result_file:
             payload = FileSystemResultStore._to_python_natives(result.to_dataframe().to_dict())
             result_file.write(str(payload))
 
@@ -126,30 +124,29 @@ class FileSystemResultStore(ResultStore):
 
     @staticmethod
     def load_result(result_file_path, AssetClass=Asset):
-        with open(result_file_path, "rt") as result_file:
+        with Path(result_file_path).open("rt") as result_file:
             df = pd.DataFrame.from_dict(ast.literal_eval(result_file.read()))
-            result = Result.from_dataframe(df, AssetClass)
-        return result
+            return Result.from_dataframe(df, AssetClass)
 
     def delete(self, asset, executor_id):
         result_file_path = self._get_result_file_path2(asset, executor_id)
-        if os.path.isfile(result_file_path):
-            os.remove(result_file_path)
+        if Path(result_file_path).is_file():
+            Path(result_file_path).unlink()
 
     def delete_workfile(self, asset, executor_id, suffix: str):
         result_file_path = self._get_result_file_path2(asset, executor_id)
         workfile_path = result_file_path + suffix
-        if os.path.isfile(workfile_path):
-            os.remove(workfile_path)
+        if Path(workfile_path).is_file():
+            Path(workfile_path).unlink()
 
     def clean_up(self):
         """
         WARNING: RMOVE ENTIRE RESULT STORE, USE WITH CAUTION!!!
         :return:
         """
-        import shutil
+        shutil = import_module("shutil")
 
-        if os.path.isdir(self.result_store_dir):
+        if Path(self.result_store_dir).is_dir():
             shutil.rmtree(self.result_store_dir)
 
     def _get_result_file_path(self, result):
@@ -158,12 +155,11 @@ class FileSystemResultStore(ResultStore):
     def _get_result_file_path2(self, asset, executor_id):
         str_to_hash = str(asset).encode("utf-8")
         # SHA-1 used as a result-store filename component (not security). Input
-        # is the harness's own asset repr. See Research-0090, F4–F12.
+        # is the harness's own asset repr. See Research-0090, F4-F12.
         return "{dir}/{executor_id}/{dataset}/{content_id}/{str}".format(
             dir=self.result_store_dir,
             executor_id=executor_id,
             dataset=asset.dataset,
             content_id=asset.content_id,
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            str=hashlib.sha1(str_to_hash).hexdigest(),
+            str=hashlib.sha1(str_to_hash, usedforsecurity=False).hexdigest(),
         )

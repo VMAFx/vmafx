@@ -1,1 +1,5 @@
-| [ADR-0108](0108-deep-dive-deliverables-rule.md) | Every fork-local PR ships the six deep-dive deliverables (research digest, decision matrix, AGENTS.md invariant, reproducer, changelog entry, rebase note) | Accepted | docs, agents, framework, planning |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0108](0108-deep-dive-deliverables-rule.md) | Every fork-local PR ships the six deep-dive deliverables | Accepted | docs, agents, framework, planning |

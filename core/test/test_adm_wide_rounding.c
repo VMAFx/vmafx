@@ -45,11 +45,6 @@
 #elif defined(HAVE_HIP)
 #include "libvmaf/libvmaf_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #define GPU_BACKEND_NAME "adm_hip"
 #endif
 
@@ -107,7 +102,7 @@ static int fill_picture(VmafPicture *pic, int distorted)
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    assert(pic->data[0] != NULL);
+    assert(pic->data[0] != VMAF_NULLPTR);
     uint8_t *y = (uint8_t *)pic->data[0];
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
@@ -133,7 +128,7 @@ static char *feed_one_frame(VmafContext *vmaf)
     mu_assert("fill_picture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     mu_assert("vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Reading every ADM feature is the same loop in each backend arm; folding it
@@ -149,23 +144,23 @@ static char *read_adm_scores(VmafContext *vmaf, double scores_out[NUM_ADM_FEATUR
             return "vmaf_feature_score_at_index failed";
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_adm(double scores_out[NUM_ADM_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "adm", NULL);
+    err = vmaf_use_feature(vmaf, "adm", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(adm) failed", !err);
 
     char *msg = feed_one_frame(vmaf);
     if (msg)
         return msg;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_adm_scores(vmaf, scores_out, 0u);
@@ -174,7 +169,7 @@ static char *run_cpu_adm(double scores_out[NUM_ADM_FEATURES])
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if defined(HAVE_CUDA)
@@ -183,30 +178,30 @@ static char *run_cpu_adm(double scores_out[NUM_ADM_FEATURES])
  * lint profile's branch budget (ADR-0141 asks for the refactor). */
 static char *run_cuda_adm(double scores_out[NUM_ADM_FEATURES])
 {
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         mu_skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, GPU_BACKEND_NAME, NULL);
+    err = vmaf_use_feature(vmaf, GPU_BACKEND_NAME, VMAF_NULLPTR);
     mu_assert("CUDA: vmaf_use_feature failed", !err);
 
     char *msg = feed_one_frame(vmaf);
     if (msg)
         return msg;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_adm_scores(vmaf, scores_out, 0u);
@@ -217,7 +212,7 @@ static char *run_cuda_adm(double scores_out[NUM_ADM_FEATURES])
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #elif defined(HAVE_HIP)
 /* feed_one_frame for the HIP arm, which skips rather than fails when the HIP
@@ -235,32 +230,32 @@ static char *hip_feed_one_frame(VmafContext *vmaf, int *skipped)
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     if (err == -ENOSYS) {
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("HIP: vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_hip_adm(double scores_out[NUM_ADM_FEATURES])
 {
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     VmafHipConfiguration hip_cfg = {0};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    if (err != 0 || hip_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
         mu_skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("HIP: vmaf_init failed", !err);
 
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, GPU_BACKEND_NAME, NULL);
+    err = vmaf_use_feature(vmaf, GPU_BACKEND_NAME, VMAF_NULLPTR);
     mu_assert("HIP: vmaf_use_feature failed", !err);
 
     int skipped = 0;
@@ -272,9 +267,9 @@ static char *run_hip_adm(double scores_out[NUM_ADM_FEATURES])
         mu_skipped = 1;
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_adm_scores(vmaf, scores_out, 0u);
@@ -284,7 +279,7 @@ static char *run_hip_adm(double scores_out[NUM_ADM_FEATURES])
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -298,7 +293,7 @@ static char *run_gpu_adm(double scores_out[NUM_ADM_FEATURES])
 #elif defined(HAVE_HIP)
     return run_hip_adm(scores_out);
 #else
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -319,7 +314,7 @@ static char *test_wide_rounding_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu[0]))
-        return NULL; /* skipped */
+        return VMAF_NULLPTR; /* skipped */
 
     for (unsigned k = 0; k < NUM_ADM_FEATURES; k++) {
         const double delta = fabs(cpu[k] - gpu[k]);
@@ -334,13 +329,11 @@ static char *test_wide_rounding_parity(void)
         mu_assert("wide rounding ADM CPU vs. GPU delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_wide_rounding_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

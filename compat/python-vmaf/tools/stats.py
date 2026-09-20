@@ -58,7 +58,7 @@ class ListStats(object):
         elif type == "exponential":
             weights = np.exp(np.linspace(decay, 0.0, n))
         else:
-            assert False, "Unknown type: {}.".format(type)
+            raise AssertionError("Unknown type: {}.".format(type))
 
         weights /= weights.sum()
 
@@ -111,7 +111,10 @@ class ListStats(object):
 
     @staticmethod
     def nonemean(my_list):
-        return np.mean(list(filter(lambda x: x is not None, my_list)))
+        values = [value for value in my_list if value is not None]
+        if not values:
+            return np.nan
+        return np.mean(values)
 
 
 if __name__ == "__main__":

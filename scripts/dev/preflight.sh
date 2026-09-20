@@ -23,22 +23,20 @@
 # does that, cheapest check first so it fails fast.
 #
 # Usage:
-#   scripts/dev/preflight.sh              # changed-files mode (vs origin/master)
-#   scripts/dev/preflight.sh --full       # whole tree
+#   scripts/dev/preflight.sh              # whole tree
+#   scripts/dev/preflight.sh --full       # compatibility alias for whole tree
 #   scripts/dev/preflight.sh --stage NAME # one stage only
 #   scripts/dev/preflight.sh --list       # show stages and what each mirrors
 #
-# Exit: 0 all stages passed (or were skipped for missing tooling), 1 a stage
-# failed, 2 usage error. A missing toolchain SKIPS its stage with a notice
-# rather than failing, so the script is useful on a partially-provisioned box.
+# Exit: 0 all stages passed, 1 a stage failed or required tooling was missing,
+# 2 usage error. An unavailable lane is not reported as clean (ADR-1267).
 set -uo pipefail
 export LC_ALL=C
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT" || exit 2
 
-BASE="${PREFLIGHT_BASE:-origin/master}"
-MODE=changed
+MODE=full
 ONLY=""
 
 while [ $# -gt 0 ]; do
@@ -68,7 +66,6 @@ done
 
 pass=0
 fail=0
-skip=0
 FAILED_STAGES=""
 
 say() { printf '\n\033[1m== %s\033[0m  (%s)\n' "$1" "$2"; }
@@ -81,42 +78,18 @@ bad() {
   fail=$((fail + 1))
   FAILED_STAGES="$FAILED_STAGES $1"
 }
-skipped() {
-  printf '   \033[33mSKIP\033[0m %s — %s\n' "$1" "$2"
-  skip=$((skip + 1))
-}
-
 want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
-# Committed work AND the working tree. A preflight that only looked at
-# committed changes would miss the edit you are about to commit, which is the
-# entire point of running it.
-changed_sources() {
-  if [ "$MODE" = full ]; then
-    git ls-files '*.c' '*.cpp' '*.h' '*.hpp'
-    return
-  fi
-  {
-    git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.c' '*.cpp' '*.h' '*.hpp'
-    git diff --name-only --diff-filter=d -- '*.c' '*.cpp' '*.h' '*.hpp'
-    git diff --name-only --diff-filter=d --cached -- '*.c' '*.cpp' '*.h' '*.hpp'
-    git ls-files --others --exclude-standard -- '*.c' '*.cpp' '*.h' '*.hpp'
-  } | sort -u
+# ADR-1267 removed the touched-file boundary. Every static approximation below
+# scans the complete tracked source family on every invocation.
+tracked_sources() {
+  git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp'
 }
 
-# Same selection as changed_sources, for Metal shaders. Kept separate because
+# Same whole-tree selection for Metal shaders. Kept separate because
 # every other stage compiles C/C++ and would choke on a .metal path.
-changed_metal() {
-  if [ "$MODE" = full ]; then
-    git ls-files '*.metal'
-    return
-  fi
-  {
-    git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.metal'
-    git diff --name-only --diff-filter=d -- '*.metal'
-    git diff --name-only --diff-filter=d --cached -- '*.metal'
-    git ls-files --others --exclude-standard -- '*.metal'
-  } | sort -u
+tracked_metal() {
+  git ls-files '*.metal'
 }
 
 if [ "$MODE" = list ]; then
@@ -127,13 +100,13 @@ gcc            Ubuntu gcc(+DNN)              the baseline build
 clang          Ubuntu clang(+DNN)            clang-only syntax, e.g. __attribute__(x)
 msvcism        Windows MSVC+CUDA / +SYCL     constructs MSVC rejects (no MSVC needed)
 sanitizers     Sanitizers (a/t/ub)           UB and races the plain build hides
-tidy           Tidy Changed                  clang-tidy on the files this branch touches
-cppcheck       Cppcheck                      cppcheck's own findings
+tidy           Tidy Changed                  strict-zero clang-tidy on every configured TU
+cppcheck       Cppcheck                      strict whole-database cppcheck
 EOF
   exit 0
 fi
 
-printf 'preflight: mode=%s base=%s\n' "$MODE" "$BASE"
+printf 'preflight: mode=%s\n' "$MODE"
 
 # ---------------------------------------------------------------- gcc build --
 if want gcc; then
@@ -150,7 +123,8 @@ if want gcc; then
       grep -m3 -A4 'FAILED:\|^Fail:' /tmp/preflight-gcc.log | head -12
     fi
   else
-    skipped gcc "meson setup failed"
+    bad gcc
+    printf '     meson setup failed\n'
   fi
 fi
 
@@ -160,7 +134,8 @@ fi
 if want clang; then
   say "clang build + fast tests" "mirrors: Ubuntu clang, and every Sanitizer lane's compile step"
   if ! command -v clang >/dev/null; then
-    skipped clang "clang not installed"
+    bad clang
+    printf '     clang not installed\n'
   elif [ -d build-clang ] || CC=clang CXX=clang++ meson setup build-clang core \
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/dev/null 2>&1; then
     if ninja -C build-clang >/tmp/preflight-clang.log 2>&1 &&
@@ -171,7 +146,8 @@ if want clang; then
       grep -m3 -A4 'error:\|^Fail:' /tmp/preflight-clang.log | head -12
     fi
   else
-    skipped clang "meson setup failed"
+    bad clang
+    printf '     meson setup failed\n'
   fi
 fi
 
@@ -183,7 +159,7 @@ if want msvcism; then
   msvc_fail=0
   check_pattern() {
     local pat="$1" why="$2" hits
-    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | head -5)
+    hits=$(tracked_sources | xargs -r grep -nE "$pat" 2>/dev/null | head -5)
     if [ -n "$hits" ]; then
       printf '     %s\n' "$why"
       printf '%s\n' "$hits" | sed 's/^/       /'
@@ -202,7 +178,7 @@ if want msvcism; then
   # lane compiles core/ with cl.exe. gcc accepts it and clang accepts it under
   # -std=c23, so nothing local objects. Comment lines are skipped because the
   # ADR-1138 NOLINT bracket names the keyword in prose.
-  c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
+  c_nullptr=$(tracked_sources | grep -E '\.c$' | while read -r f; do
     grep -nE '\bnullptr\b' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
   done | head -5)
@@ -220,7 +196,7 @@ if want msvcism; then
   # name travels. The macOS Metal lanes are not in the required set, so this is
   # otherwise only caught after merge.
   msl_reserved='(half|float2|float3|float4|int2|int3|int4|uint2|uint3|uint4|bool2|bool3|bool4|sampler)'
-  msl_hits=$(changed_metal | while read -r f; do
+  msl_hits=$(tracked_metal | while read -r f; do
     grep -nE "\b(ulong|uint|int|float|bool|long|short|auto|char) +$msl_reserved\b" "$f" 2>/dev/null |
       head -2 | sed "s|^|$f:|"
   done | head -5)
@@ -241,7 +217,7 @@ if want msvcism; then
   # A file counts as guarded when it carries the two-step itself OR includes an
   # in-tree header that does -- integer_adm.c, adm_avx2.c and friends get M_PI
   # from integer_adm.h / barten_csf_tools.h and are correct as written.
-  c_math=$(changed_sources | while read -r f; do
+  c_math=$(tracked_sources | while read -r f; do
     grep -qE "$m_macros" "$f" 2>/dev/null || continue
     grep -qE '_USE_MATH_DEFINES|#ifndef M_PI' "$f" 2>/dev/null && continue
     guarded_by_include=0
@@ -273,7 +249,7 @@ EOF_INC
   # wrong members). gcc and clang accept it as an extension and emit no
   # diagnostic at all, not even under -std=c23 -pedantic-errors -Weverything,
   # so this is grepped rather than compiled.
-  c_static_init=$(changed_sources | grep -E '\.c$' |
+  c_static_init=$(tracked_sources | grep -E '\.c$' |
     xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | head -5)
   if [ -n "$c_static_init" ]; then
     printf '     %s\n' 'non-constant initialiser in a static aggregate — MSVC C2099; use #define'
@@ -295,7 +271,8 @@ if want sanitizers; then
   # link. The repo's own fuzz workflow pairs the same two options.
   say "ASan + UBSan build" "mirrors: Sanitizers (address) / (undefined)"
   if ! command -v clang >/dev/null; then
-    skipped sanitizers "clang not installed"
+    bad sanitizers
+    printf '     clang not installed\n'
   elif [ -d build-asan ] || CC=clang CXX=clang++ meson setup build-asan core \
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false \
     -Db_sanitize=address,undefined -Db_lundef=false >/dev/null 2>&1; then
@@ -307,53 +284,50 @@ if want sanitizers; then
       grep -m3 -A4 'error:\|runtime error\|^Fail:' /tmp/preflight-asan.log | head -12
     fi
   else
-    skipped sanitizers "meson setup failed"
+    bad sanitizers
+    printf '     meson setup failed\n'
   fi
 fi
 
 # ------------------------------------------------------------ clang-tidy --
 if want tidy; then
-  say "clang-tidy on changed files" "mirrors: Tidy Changed"
+  say "strict-zero clang-tidy on every configured TU" "mirrors: Tidy Changed"
   if ! command -v clang-tidy >/dev/null; then
-    skipped tidy "clang-tidy not installed"
+    bad tidy
+    printf '     clang-tidy not installed\n'
   elif [ ! -f build/compile_commands.json ]; then
-    skipped tidy "build/compile_commands.json missing — run the gcc stage first"
+    bad tidy
+    printf '     build/compile_commands.json missing — run the gcc stage first\n'
   else
-    tidy_fail=0
-    while IFS= read -r f; do
-      [ -f "$f" ] || continue
-      # Mirror the workflow's exclusion list: backends without a local toolchain.
-      case "$f" in
-        core/src/feature/arm64/* | core/src/cuda/* | core/src/feature/cuda/* | \
-          core/src/sycl/* | core/src/feature/sycl/* | core/src/hip/* | \
-          core/src/feature/hip/* | core/test/test_cuda_* | core/test/test_sycl* | \
-          core/test/test_hip* | core/test/fuzz/* | core/src/mcp/* | \
-          core/src/compat/win32/* | core/src/interop/pelorus_*) continue ;;
-      esac
-      n=$(clang-tidy -p build --quiet "$f" 2>/dev/null |
-        grep -E 'warning:' | grep -vc 'clang-diagnostic')
-      if [ "${n:-0}" -gt 0 ]; then
-        printf '     %-52s %s warning(s)\n' "$f" "$n"
-        tidy_fail=1
-      fi
-    done < <(changed_sources)
-    if [ "$tidy_fail" -eq 0 ]; then
+    if python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
+      --clang-tidy "$(command -v clang-tidy)" --jobs "$(nproc)" \
+      --report /tmp/preflight-tidy.json --require-zero \
+      >/tmp/preflight-tidy.log 2>&1; then
       ok tidy
     else
       bad tidy
+      tail -20 /tmp/preflight-tidy.log | sed 's/^/     /'
     fi
   fi
 fi
 
 # --------------------------------------------------------------- cppcheck --
 if want cppcheck; then
-  say "cppcheck on changed files" "mirrors: Cppcheck"
+  say "cppcheck on every configured TU" "mirrors: Cppcheck"
   if ! command -v cppcheck >/dev/null; then
-    skipped cppcheck "cppcheck not installed"
+    bad cppcheck
+    printf '     cppcheck not installed\n'
+  elif [ ! -f build/compile_commands.json ]; then
+    bad cppcheck
+    printf '     build/compile_commands.json missing — run the gcc stage first\n'
   else
-    if changed_sources | xargs -r cppcheck --quiet --error-exitcode=1 \
-      --suppress=missingInclude --suppress=missingIncludeSystem \
-      -I core/include -I core/src 2>/tmp/preflight-cppcheck.log; then
+    if cppcheck --enable=warning,style,performance,portability,unusedFunction \
+      --check-level=exhaustive --library=posix \
+      --library=scripts/ci/cppcheck-public-entrypoints.cfg \
+      --library=scripts/ci/cppcheck-cjson-entrypoints.cfg \
+      --library=scripts/ci/cppcheck-linked-entrypoints.cfg \
+      --project=build/compile_commands.json --error-exitcode=1 \
+      >/tmp/preflight-cppcheck.log 2>&1; then
       ok cppcheck
     else
       bad cppcheck
@@ -362,7 +336,7 @@ if want cppcheck; then
   fi
 fi
 
-printf '\n\033[1m== preflight summary ==\033[0m  pass=%d fail=%d skip=%d\n' "$pass" "$fail" "$skip"
+printf '\n\033[1m== preflight summary ==\033[0m  pass=%d fail=%d\n' "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then
   printf '   failed stages:%s\n' "$FAILED_STAGES"
   exit 1

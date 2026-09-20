@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+from importlib import import_module
+from pathlib import Path
+
 import matplotlib
 
 matplotlib.use("Agg")
 
-import os
 import sys
 
 import numpy as np
@@ -14,6 +16,8 @@ from vmaf.core.result_store import FileSystemResultStore
 from vmaf.routine import print_matplotlib_warning, train_test_vmaf_on_dataset
 from vmaf.tools.misc import cmd_option_exists, get_cmd_option, import_python_file
 from vmaf.tools.stats import ListStats
+
+_COMPARISON_VALUE_5 = 5
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -39,7 +43,7 @@ SUBJECTIVE_MODELS = [
 def print_usage():
     print(
         "usage: "
-        + os.path.basename(sys.argv[0])
+        + Path(sys.argv[0]).name
         + " train_dataset_filepath feature_param_filepath model_param_filepath output_model_filepath "
         "[--subj-model subjective_model] [--cache-result] [--parallelize] [--save-plot plot_dir] "
         "[--processes processes]\n"
@@ -48,29 +52,65 @@ def print_usage():
     print("processes: must be an integer >=1")
 
 
-def main():
+class _CliError(Exception):
+    def __init__(self, exit_code):
+        super().__init__()
+        self.exit_code = exit_code
 
-    if len(sys.argv) < 5:
-        print_usage()
-        return 2
 
+def _aggregate_method(pool_method):
+    methods = {
+        "harmonic_mean": ListStats.harmonic_mean,
+        "min": np.min,
+        "median": np.median,
+        "perc5": ListStats.perc5,
+        "perc10": ListStats.perc10,
+        "perc20": ListStats.perc20,
+    }
+    return methods.get(pool_method, np.mean)
+
+
+def _subjective_model_class(subj_model):
     try:
-        train_dataset_filepath = sys.argv[1]
-        feature_param_filepath = sys.argv[2]
-        model_param_filepath = sys.argv[3]
-        output_model_filepath = sys.argv[4]
-    except ValueError:
-        print_usage()
-        return 2
+        subjective_model = import_module("sureal.subjective_model").SubjectiveModel
+        return subjective_model.find_subclass(subj_model or "MLE_CO_AP2")
+    except Exception as error:
+        print(f"Error: {error}")
+        raise _CliError(1) from error
 
+
+def _process_count(raw_processes):
+    if raw_processes is None:
+        return None
     try:
-        train_dataset = import_python_file(train_dataset_filepath)
-        feature_param = import_python_file(feature_param_filepath)
-        model_param = import_python_file(model_param_filepath)
-    except Exception as e:
-        print("Error: %s" % e)
-        return 1
+        processes = int(raw_processes)
+    except ValueError as error:
+        print("Input error: processes must be an integer")
+        raise _CliError(2) from error
+    if processes < 1:
+        print("Input error: processes must be at least 1")
+        raise _CliError(2)
+    return processes
 
+
+def _import_training_inputs(dataset_path, feature_path, model_path):
+    try:
+        return (
+            import_python_file(dataset_path),
+            import_python_file(feature_path),
+            import_python_file(model_path),
+        )
+    except Exception as error:
+        print(f"Error: {error}")
+        raise _CliError(1) from error
+
+
+def _parse_arguments():
+    if len(sys.argv) < _COMPARISON_VALUE_5:
+        print_usage()
+        raise _CliError(2)
+    output_model_filepath = sys.argv[4]
+    train_dataset, feature_param, model_param = _import_training_inputs(*sys.argv[1:4])
     cache_result = cmd_option_exists(sys.argv, 3, len(sys.argv), "--cache-result")
     parallelize = cmd_option_exists(sys.argv, 3, len(sys.argv), "--parallelize")
     processes = get_cmd_option(sys.argv, 3, len(sys.argv), "--processes")
@@ -79,124 +119,70 @@ def main():
     pool_method = get_cmd_option(sys.argv, 3, len(sys.argv), "--pool")
     if not (pool_method is None or pool_method in POOL_METHODS):
         print("--pool can only have option among {}".format(", ".join(POOL_METHODS)))
-        return 2
-
+        raise _CliError(2)
     subj_model = get_cmd_option(sys.argv, 3, len(sys.argv), "--subj-model")
-
-    try:
-        from sureal.subjective_model import SubjectiveModel
-
-        if subj_model is not None:
-            subj_model_class = SubjectiveModel.find_subclass(subj_model)
-        else:
-            subj_model_class = SubjectiveModel.find_subclass("MLE_CO_AP2")
-    except Exception as e:
-        print("Error: %s" % e)
-        return 1
-
     save_plot_dir = get_cmd_option(sys.argv, 3, len(sys.argv), "--save-plot")
+    return {
+        "train_dataset": train_dataset,
+        "feature_param": feature_param,
+        "model_param": model_param,
+        "output_model_filepath": output_model_filepath,
+        "result_store": FileSystemResultStore() if cache_result else None,
+        "parallelize": parallelize,
+        "processes": _process_count(processes),
+        "suppress_plot": suppress_plot,
+        "aggregate_method": _aggregate_method(pool_method),
+        "subj_model_class": _subjective_model_class(subj_model),
+        "save_plot_dir": save_plot_dir,
+    }
 
-    if cache_result:
-        result_store = FileSystemResultStore()
-    else:
-        result_store = None
 
-    if processes is not None:
-        try:
-            processes = int(processes)
-        except ValueError:
-            print("Input error: processes must be an integer")
-        assert processes >= 1
+def _run_training(arguments, ax):
+    return train_test_vmaf_on_dataset(
+        train_dataset=arguments["train_dataset"],
+        test_dataset=None,
+        feature_param=arguments["feature_param"],
+        model_param=arguments["model_param"],
+        train_ax=ax,
+        test_ax=None,
+        result_store=arguments["result_store"],
+        parallelize=arguments["parallelize"],
+        logger=None,
+        output_model_filepath=arguments["output_model_filepath"],
+        aggregate_method=arguments["aggregate_method"],
+        subj_model_class=arguments["subj_model_class"],
+        processes=arguments["processes"],
+    )
 
-    # pooling
-    if pool_method == "harmonic_mean":
-        aggregate_method = ListStats.harmonic_mean
-    elif pool_method == "min":
-        aggregate_method = np.min
-    elif pool_method == "median":
-        aggregate_method = np.median
-    elif pool_method == "perc5":
-        aggregate_method = ListStats.perc5
-    elif pool_method == "perc10":
-        aggregate_method = ListStats.perc10
-    elif pool_method == "perc20":
-        aggregate_method = ListStats.perc20
-    else:  # None or 'mean'
-        aggregate_method = np.mean
 
-    logger = None
-
+def _run_with_plot(arguments):
+    if arguments["suppress_plot"]:
+        return _run_training(arguments, None)
     try:
-        if suppress_plot:
-            raise AssertionError
-
-        from vmaf import plt
-
-        fig, ax = plt.subplots(figsize=(5, 5), nrows=1, ncols=1)
-
-        train_test_vmaf_on_dataset(
-            train_dataset=train_dataset,
-            test_dataset=None,
-            feature_param=feature_param,
-            model_param=model_param,
-            train_ax=ax,
-            test_ax=None,
-            result_store=result_store,
-            parallelize=parallelize,
-            logger=logger,
-            output_model_filepath=output_model_filepath,
-            aggregate_method=aggregate_method,
-            subj_model_class=subj_model_class,
-            processes=processes,
-        )
-
+        plt = import_module("vmaf").plt
+        _figure, ax = plt.subplots(figsize=(5, 5), nrows=1, ncols=1)
+        result = _run_training(arguments, ax)
         bbox = {"facecolor": "white", "alpha": 0.5, "pad": 20}
         ax.annotate("Training Set", xy=(0.1, 0.85), xycoords="axes fraction", bbox=bbox)
-
-        # ax.set_xlim([-10, 110])
-        # ax.set_ylim([-10, 110])
-
         plt.tight_layout()
-
-        if save_plot_dir is None:
+        if arguments["save_plot_dir"] is None:
             DisplayConfig.show()
         else:
-            DisplayConfig.show(write_to_dir=save_plot_dir)
-
+            DisplayConfig.show(write_to_dir=arguments["save_plot_dir"])
+        return result
     except ImportError:
         print_matplotlib_warning()
-        train_test_vmaf_on_dataset(
-            train_dataset=train_dataset,
-            test_dataset=None,
-            feature_param=feature_param,
-            model_param=model_param,
-            train_ax=None,
-            test_ax=None,
-            result_store=result_store,
-            parallelize=parallelize,
-            logger=logger,
-            output_model_filepath=output_model_filepath,
-            aggregate_method=aggregate_method,
-            subj_model_class=subj_model_class,
-            processes=processes,
-        )
+        return _run_training(arguments, None)
     except AssertionError:
-        train_test_vmaf_on_dataset(
-            train_dataset=train_dataset,
-            test_dataset=None,
-            feature_param=feature_param,
-            model_param=model_param,
-            train_ax=None,
-            test_ax=None,
-            result_store=result_store,
-            parallelize=parallelize,
-            logger=logger,
-            output_model_filepath=output_model_filepath,
-            aggregate_method=aggregate_method,
-            subj_model_class=subj_model_class,
-            processes=processes,
-        )
+        return _run_training(arguments, None)
 
+
+def main():
+    try:
+        arguments = _parse_arguments()
+    except _CliError as error:
+        return error.exit_code
+    _run_with_plot(arguments)
     return 0
 
 

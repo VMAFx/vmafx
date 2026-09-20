@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0590: Wire `enable_db` / `clip_db` into the CUDA and SYCL MS-SSIM twins
 
 - **Status**: Accepted
@@ -45,7 +44,7 @@ is guaranteed by construction.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Stub returning `-ENOTSUP` for `enable_db=true` | Simple, no logic needed | Silent divergence replaced with an error — still not parity | Caller cannot use GPU path in dB mode |
 | Defer to a follow-up PR | Zero risk in this PR | Gap remains open; ADR-0108 deliverables rule requires closing found bugs | No justification to defer a two-field wiring |
 

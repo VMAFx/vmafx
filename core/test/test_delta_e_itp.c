@@ -10,18 +10,12 @@
 #include <string.h>
 
 #include "test.h"
-// NOLINTNEXTLINE(bugprone-suspicious-include): the test deliberately includes the .c to exercise the static per-pixel ITP helpers (rgb_pq_to_itp / delta_e_itp_pair) against the BT.2124-0 oracle (ADR-0141 / ADR-0278) — the same pattern as test_ciede.c.
+
 #include "feature/delta_e_itp.c"
 
 #include "dict.h"
 #include "feature/feature_collector.h"
 #include "libvmaf/picture.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #define DEITP_W (16u)
 #define DEITP_H (16u)
@@ -76,7 +70,7 @@ static char *test_delta_e_itp_blue_patch_oracle(void)
     mu_assert("ITP T should be 0.134647 (BT.2124-0 Annex 4)", close_4dp(itp[1], 0.134647));
     mu_assert("ITP P should be -0.161395 (BT.2124-0 Annex 4)", close_4dp(itp[2], -0.161395));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Identity: an unchanged pixel must yield exactly 0 ΔE-ITP. */
@@ -89,7 +83,7 @@ static char *test_delta_e_itp_identity(void)
     const double de = delta_e_itp_pair(itp, itp);
     mu_assert("identity ΔE-ITP must be exactly 0", de == 0.0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Full-precision ΔE-ITP for a fully-specified pair of linear-RGB
@@ -117,7 +111,7 @@ static char *test_delta_e_itp_synthetic_pair(void)
     const double de = delta_e_itp_pair(ref_itp, dist_itp);
     mu_assert("ΔE-ITP for the synthetic pair should be 8.037360", close_4dp(de, 8.037360));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Documentation cross-check: the standard's pooled ΔE = 2.363 is
@@ -131,7 +125,7 @@ static char *test_delta_e_itp_doc_rounded_pair(void)
     const double de = delta_e_itp_pair(itp1, itp2);
     mu_assert("ΔE-ITP of the BT.2124-0 rounded triples should be 2.363 (places=3)",
               fabs(de - 2.363) < 1e-3);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* PQ transfer functions round-trip and hit the documented anchors:
@@ -148,7 +142,7 @@ static char *test_pq_transfer_roundtrip(void)
 
     mu_assert("PQ EOTF(0) == 0", vmaf_pq_eotf(0.0) == 0.0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run the registered delta_e_itp extractor (default options) on one
@@ -157,20 +151,20 @@ static char *test_pq_transfer_roundtrip(void)
 static double run_extractor_pair(uint8_t ry, uint8_t ru, uint8_t rv, uint8_t dy, uint8_t du,
                                  uint8_t dv)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("delta_e_itp");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("delta_e_itp");
     if (!fex) {
         return -1.0;
     }
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     VmafPicture ref;
     VmafPicture dist;
     memset(&ref, 0, sizeof(ref));
     memset(&dist, 0, sizeof(dist));
     double score = -1.0;
 
-    if (vmaf_feature_extractor_context_create(&ctx, fex, NULL)) {
+    if (vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR)) {
         goto cleanup;
     }
     if (vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, DEITP_W, DEITP_H)) {
@@ -186,7 +180,8 @@ static double run_extractor_pair(uint8_t ry, uint8_t ru, uint8_t rv, uint8_t dy,
         goto cleanup;
     }
 
-    if (!vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc)) {
+    if (!vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0,
+                                                fc)) {
         if (vmaf_feature_collector_get_score(fc, "delta_e_itp", &score, 0)) {
             score = -1.0;
         }
@@ -200,10 +195,10 @@ cleanup:
     if (fc) {
         vmaf_feature_collector_destroy(fc);
     }
-    if (ref.ref != NULL) {
+    if (ref.ref != VMAF_NULLPTR) {
         vmaf_picture_unref(&ref);
     }
-    if (dist.ref != NULL) {
+    if (dist.ref != VMAF_NULLPTR) {
         vmaf_picture_unref(&dist);
     }
     return score;
@@ -222,21 +217,21 @@ static char *test_delta_e_itp_extractor_end_to_end(void)
     mu_assert("distorted delta_e_itp is finite", isfinite(distorted));
     mu_assert("distorted delta_e_itp is strictly positive", distorted > 0.0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Unsupported transfer (HLG) must be rejected by init with -EINVAL
  * (RC ships PQ only). */
 static char *test_delta_e_itp_rejects_non_pq_transfer(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("delta_e_itp");
-    mu_assert("delta_e_itp extractor missing from registry", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("delta_e_itp");
+    mu_assert("delta_e_itp extractor missing from registry", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "transfer", "hlg", 0);
     mu_assert("set transfer=hlg", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create with opts", err == 0);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, DEITP_W, DEITP_H);
@@ -244,7 +239,7 @@ static char *test_delta_e_itp_rejects_non_pq_transfer(void)
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -256,7 +251,5 @@ char *run_tests(void)
     mu_run_test(test_pq_transfer_roundtrip);
     mu_run_test(test_delta_e_itp_extractor_end_to_end);
     mu_run_test(test_delta_e_itp_rejects_non_pq_transfer);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

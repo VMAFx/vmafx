@@ -40,7 +40,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from aiutils.run_manifest import build_run_provenance, normalise_manifest_value, write_manifest_json
 
@@ -73,10 +73,7 @@ def sha256_file(path: Path) -> str:
     """Stream a chunked SHA-256 over ``path`` and return the hex digest."""
     h = hashlib.sha256()
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(_SHA_CHUNK_BYTES)
-            if not chunk:
-                break
+        for chunk in iter(lambda: fh.read(_SHA_CHUNK_BYTES), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -628,23 +625,8 @@ class CorpusIngestBase(ABC):
     # Run orchestrator
     # ------------------------------------------------------------------
 
-    def run(self) -> RunStats:
-        """Execute the ingest loop and return aggregate :class:`RunStats`.
-
-        Steps for each manifest row:
-
-        1. If the clip is not on disk, attempt to download it via curl
-           (respecting the resumable-download progress state).
-        2. Probe geometry via ffprobe; skip if unusable.
-        3. SHA-256 the clip; skip if already in the output JSONL.
-        4. Append one JSON row to the output.
-        5. Flush the progress state periodically and at the end.
-        """
-        if not self.corpus_dir.is_dir():
-            raise FileNotFoundError(f"Corpus directory not found: {self.corpus_dir}")
-
-        clips_dir = self.clips_dir_path()
-
+    def _resume_indexes(self) -> tuple[dict[str, dict[str, Any]], set[str]]:
+        """Load progress and output indexes, logging resumable state."""
         state = load_progress(self.progress_path)
         if state:
             already_done = sum(1 for v in state.values() if v.get("state") == STATE_DONE)
@@ -660,13 +642,11 @@ class CorpusIngestBase(ABC):
         seen_sha = read_sha_index(self.output)
         if seen_sha:
             self._log.info("resume: %d existing rows already in %s", len(seen_sha), self.output)
+        return state, seen_sha
 
-        ingested_at_utc = self.now_fn()
-        stats = RunStats()
-        saves_since_flush = 0
-        rows_iter = self.iter_source_rows(clips_dir)
-        rows: list[tuple[Path, dict[str, Any]]] = list(rows_iter)
-
+    def _source_rows(self, clips_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
+        """Materialise source rows and apply the optional smoke-test cap."""
+        rows = list(self.iter_source_rows(clips_dir))
         if self.max_rows is not None and len(rows) > self.max_rows:
             self._log.info(
                 "capping manifest at max_rows=%d (full CSV had %d)",
@@ -674,70 +654,125 @@ class CorpusIngestBase(ABC):
                 len(rows),
             )
             rows = rows[: self.max_rows]
+        return rows
 
+    def _ensure_local_clip(
+        self,
+        clip_path: Path,
+        manifest_row: dict[str, Any],
+        state: dict[str, dict[str, Any]],
+        stats: RunStats,
+        saves_since_flush: int,
+    ) -> tuple[bool, int]:
+        """Download one missing clip and update resumable progress state."""
+        filename = clip_path.name
+        if clip_path.is_file():
+            if state.get(filename, {}).get("state") != STATE_DONE:
+                mark_done(state, filename)
+                saves_since_flush += 1
+            return True, saves_since_flush
+        if not should_attempt(state, filename, clip_path):
+            stats.skipped_download += 1
+            return False, saves_since_flush
+
+        ok, reason = download_clip(
+            url=manifest_row.get("url", ""),
+            dest=clip_path,
+            curl_bin=self.curl_bin,
+            runner=self.runner,
+            timeout_s=self.download_timeout_s,
+        )
+        saves_since_flush += 1
+        if ok:
+            mark_done(state, filename)
+            return True, saves_since_flush
+        self._log.warning("download failed for %s: %s", filename, reason)
+        mark_failed(state, filename, reason)
+        stats.skipped_download += 1
+        if saves_since_flush >= 50:
+            save_progress(self.progress_path, state)
+            saves_since_flush = 0
+        return False, saves_since_flush
+
+    def _append_if_new(
+        self,
+        fp: TextIO,
+        clip_path: Path,
+        manifest_row: dict[str, Any],
+        seen_sha: set[str],
+        ingested_at_utc: str,
+        stats: RunStats,
+    ) -> bool:
+        """Probe, deduplicate, and append one usable clip."""
+        geometry = probe_geometry(clip_path, ffprobe_bin=self.ffprobe_bin, runner=self.runner)
+        if geometry is None:
+            stats.skipped_broken += 1
+            return False
+        if geometry["width"] <= 0 or geometry["height"] <= 0:
+            self._log.warning("ffprobe returned zero geometry for %s; skipping", clip_path.name)
+            stats.skipped_broken += 1
+            return False
+
+        sha = sha256_file(clip_path)
+        if sha in seen_sha:
+            stats.dedups += 1
+            return False
+        row = self._build_jsonl_row(clip_path, manifest_row, geometry, ingested_at_utc, sha)
+        fp.write(json.dumps(row, sort_keys=True) + "\n")
+        seen_sha.add(sha)
+        stats.written += 1
+        return True
+
+    def _finish_run(
+        self, stats: RunStats, state: dict[str, dict[str, Any]], total: int
+    ) -> RunStats:
+        """Flush progress, calculate attrition, and report the run summary."""
+        save_progress(self.progress_path, state)
+        if total > 0:
+            stats.attrition_pct = stats.skipped_download / total
+        self._log.info(
+            "wrote %d rows, skipped %d (download-failed), %d (broken-clip), %d dedups",
+            stats.written,
+            stats.skipped_download,
+            stats.skipped_broken,
+            stats.dedups,
+        )
+        if stats.attrition_pct > self.attrition_warn_threshold:
+            self._log.warning(
+                "download attrition %.1f%% exceeds advisory threshold %.1f%% "
+                "(check %s for failure reasons)",
+                stats.attrition_pct * 100.0,
+                self.attrition_warn_threshold * 100.0,
+                self.progress_path,
+            )
+        return stats
+
+    def run(self) -> RunStats:
+        """Download, probe, deduplicate, and append every manifest row."""
+        if not self.corpus_dir.is_dir():
+            raise FileNotFoundError(f"Corpus directory not found: {self.corpus_dir}")
+        clips_dir = self.clips_dir_path()
+        state, seen_sha = self._resume_indexes()
+        rows = self._source_rows(clips_dir)
         total = len(rows)
+        stats = RunStats()
+        saves_since_flush = 0
+        ingested_at_utc = self.now_fn()
 
         with self.output.open("a", encoding="utf-8") as fp:
             for idx, (clip_path, manifest_row) in enumerate(rows, start=1):
-                filename = clip_path.name
-
-                # Step 1: ensure the clip is on disk.
-                if not clip_path.is_file():
-                    if not should_attempt(state, filename, clip_path):
-                        stats.skipped_download += 1
-                        continue
-                    url = manifest_row.get("url", "")
-                    ok, reason = download_clip(
-                        url=url,
-                        dest=clip_path,
-                        curl_bin=self.curl_bin,
-                        runner=self.runner,
-                        timeout_s=self.download_timeout_s,
-                    )
-                    if not ok:
-                        self._log.warning("download failed for %s: %s", filename, reason)
-                        mark_failed(state, filename, reason)
-                        stats.skipped_download += 1
-                        saves_since_flush += 1
-                        if saves_since_flush >= 50:
-                            save_progress(self.progress_path, state)
-                            saves_since_flush = 0
-                        continue
-                    mark_done(state, filename)
-                    saves_since_flush += 1
-                else:
-                    if state.get(filename, {}).get("state") != STATE_DONE:
-                        mark_done(state, filename)
-                        saves_since_flush += 1
-
-                # Step 2: probe geometry.
-                geometry = probe_geometry(
-                    clip_path, ffprobe_bin=self.ffprobe_bin, runner=self.runner
+                ready, saves_since_flush = self._ensure_local_clip(
+                    clip_path, manifest_row, state, stats, saves_since_flush
                 )
-                if geometry is None:
-                    stats.skipped_broken += 1
+                if not ready:
                     continue
-                if geometry["width"] <= 0 or geometry["height"] <= 0:
-                    self._log.warning("ffprobe returned zero geometry for %s; skipping", filename)
-                    stats.skipped_broken += 1
+                if not self._append_if_new(
+                    fp, clip_path, manifest_row, seen_sha, ingested_at_utc, stats
+                ):
                     continue
-
-                # Step 3: SHA-256 and dedup.
-                sha = sha256_file(clip_path)
-                if sha in seen_sha:
-                    stats.dedups += 1
-                    continue
-
-                # Step 4: build and append the row.
-                row = self._build_jsonl_row(clip_path, manifest_row, geometry, ingested_at_utc, sha)
-                fp.write(json.dumps(row, sort_keys=True) + "\n")
-                seen_sha.add(sha)
-                stats.written += 1
-
                 if saves_since_flush >= 50:
                     save_progress(self.progress_path, state)
                     saves_since_flush = 0
-
                 if idx % 1000 == 0:
                     self._log.info(
                         "progress: %d/%d (wrote=%d, dl-failed=%d, broken=%d, dedups=%d)",
@@ -748,28 +783,4 @@ class CorpusIngestBase(ABC):
                         stats.skipped_broken,
                         stats.dedups,
                     )
-
-        # Step 5: final flush.
-        save_progress(self.progress_path, state)
-
-        if total > 0:
-            stats.attrition_pct = stats.skipped_download / total
-
-        self._log.info(
-            "wrote %d rows, skipped %d (download-failed), %d (broken-clip), %d dedups",
-            stats.written,
-            stats.skipped_download,
-            stats.skipped_broken,
-            stats.dedups,
-        )
-
-        if stats.attrition_pct > self.attrition_warn_threshold:
-            self._log.warning(
-                "download attrition %.1f%% exceeds advisory threshold %.1f%% "
-                "(check %s for failure reasons)",
-                stats.attrition_pct * 100.0,
-                self.attrition_warn_threshold * 100.0,
-                self.progress_path,
-            )
-
-        return stats
+        return self._finish_run(stats, state, total)

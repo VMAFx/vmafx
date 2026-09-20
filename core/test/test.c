@@ -50,9 +50,9 @@ static void mu_install_crash_handler(void)
     action.sa_handler = mu_crash_handler;
     (void)sigemptyset(&action.sa_mask);
     action.sa_flags = SA_RESETHAND;
-    (void)sigaction(SIGABRT, &action, NULL);
-    (void)sigaction(SIGBUS, &action, NULL);
-    (void)sigaction(SIGSEGV, &action, NULL);
+    (void)sigaction(SIGABRT, &action, VMAF_NULLPTR);
+    (void)sigaction(SIGBUS, &action, VMAF_NULLPTR);
+    (void)sigaction(SIGSEGV, &action, VMAF_NULLPTR);
 }
 #endif
 

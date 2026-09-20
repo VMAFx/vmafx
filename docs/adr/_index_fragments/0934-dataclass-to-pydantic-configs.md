@@ -1,1 +1,5 @@
-| [ADR-0934](0934-dataclass-to-pydantic-configs.md) | Migrate user-input dataclass configs (`TrainConfig`, `ModelMetadata`, `ManifestEntry`) to pydantic v2 BaseModel — declared validators, line-numbered errors, JSON-Schema export. Internal report / data-carrier dataclasses stay untouched per explicit triage rule. Sidecar JSON layout byte-identical. 667 ai tests pass. | Accepted | ai, validation, configs, modernization |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0934](0934-dataclass-to-pydantic-configs.md) | Migrate user-input dataclass configs to pydantic v2 BaseModel | Accepted | ai, validation, configs, modernization |

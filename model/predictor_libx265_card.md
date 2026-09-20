@@ -7,7 +7,12 @@
 - **File**: `model/predictor_libx265.onnx` (21877 bytes)
 - **SHA-256**: `f08925ec0ad837b6b208a6a3ea422d72f3a54f6156a874c3a042739d9925dcbf`
 
-> **Warning — synthetic-stub model.** Trained on a deterministic synthetic-100 corpus seeded by the codec name. Predictions are a smooth re-encoding of the analytical fallback; PLCC / SROCC / RMSE below are artificially high because the regression target *is* the fallback. **Do not use this model to drive production CRF picks.** Generate a real corpus via `vmaftune.corpus` and re-run `predictor_train.py` against it.
+> **Warning — synthetic-stub model.** Trained on a deterministic synthetic-100
+> corpus seeded by the codec name. Predictions are a smooth re-encoding of the
+> analytical fallback; PLCC / SROCC / RMSE below are artificially high because
+> the regression target _is_ the fallback. **Do not use this model to drive
+> production CRF picks.** Generate a real corpus via `vmaftune.corpus` and
+> re-run `predictor_train.py` against it.
 
 ## 1. Purpose
 
@@ -39,10 +44,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 
 Computed on the 20 % held-out split.
 
-| Metric | Value |
-|--------|-------|
-| PLCC   | 0.9758 |
-| SROCC  | 0.8778 |
+| Metric | Value       |
+| ------ | ----------- |
+| PLCC   | 0.9758      |
+| SROCC  | 0.8778      |
 | RMSE   | 1.7593 VMAF |
 
 ## 5. Signing
@@ -57,7 +62,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```
@@ -68,22 +73,22 @@ PyTorch trainer's behaviour bit-for-bit.
 
 ## Inputs
 
-| Index | Name                          | Range          |
-|-------|-------------------------------|----------------|
-|   0   | `crf`                         | adapter range  |
-|   1   | `probe_bitrate_kbps`          | ≥ 0            |
-|   2   | `probe_i_frame_avg_bytes`     | ≥ 0            |
-|   3   | `probe_p_frame_avg_bytes`     | ≥ 0            |
-|   4   | `probe_b_frame_avg_bytes`     | ≥ 0            |
-|   5   | `saliency_mean`               | 0..1           |
-|   6   | `saliency_var`                | ≥ 0            |
-|   7   | `frame_diff_mean`             | ≥ 0            |
-|   8   | `y_avg`                       | ≥ 0            |
-|   9   | `y_var`                       | ≥ 0            |
-|  10   | `shot_length_frames`          | ≥ 1            |
-|  11   | `fps`                         | > 0            |
-|  12   | `width`                       | > 0            |
-|  13   | `height`                      | > 0            |
+| Index | Name                      | Range         |
+| ----- | ------------------------- | ------------- |
+| 0     | `crf`                     | adapter range |
+| 1     | `probe_bitrate_kbps`      | ≥ 0           |
+| 2     | `probe_i_frame_avg_bytes` | ≥ 0           |
+| 3     | `probe_p_frame_avg_bytes` | ≥ 0           |
+| 4     | `probe_b_frame_avg_bytes` | ≥ 0           |
+| 5     | `saliency_mean`           | 0..1          |
+| 6     | `saliency_var`            | ≥ 0           |
+| 7     | `frame_diff_mean`         | ≥ 0           |
+| 8     | `y_avg`                   | ≥ 0           |
+| 9     | `y_var`                   | ≥ 0           |
+| 10    | `shot_length_frames`      | ≥ 1           |
+| 11    | `fps`                     | > 0           |
+| 12    | `width`                   | > 0           |
+| 13    | `height`                  | > 0           |
 
 ## Output
 

@@ -1,1 +1,5 @@
-- Fixed: nightly-bisect CI tracker link updated from the closed PR #40 to standalone issue #827, so automated failure reports now reference an open, actionable tracking issue. (PR #828)
+# Changelog fragment
+
+- Fixed: nightly-bisect CI tracker link updated from the closed PR #40 to
+  standalone issue #827, so automated failure reports now reference an open,
+  actionable tracking issue. (PR #828)

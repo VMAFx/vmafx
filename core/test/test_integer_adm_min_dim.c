@@ -11,23 +11,17 @@
 
 #include <stdlib.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 #include "test.h"
 
 #include "feature/feature_extractor.h"
 
 static char *test_integer_adm_is_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
-    mu_assert("integer_adm extractor missing", fex != NULL);
-    mu_assert("integer_adm.init must be set", fex->init != NULL);
-    mu_assert("integer_adm.close must be set", fex->close != NULL);
-    return NULL;
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
+    mu_assert("integer_adm extractor missing", fex != VMAF_NULLPTR);
+    mu_assert("integer_adm.init must be set", fex->init != VMAF_NULLPTR);
+    mu_assert("integer_adm.close must be set", fex->close != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* Helper: call init with the given dimensions and return the result,
@@ -42,14 +36,14 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
     /* close() tolerates partial state (init may have returned early). */
     (void)fex->close(fex);
     free(priv);
-    fex->priv = NULL;
+    fex->priv = VMAF_NULLPTR;
     return rc;
 }
 
 static char *test_integer_adm_init_rejects_below_min_dim(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
-    mu_assert("integer_adm extractor missing", fex != NULL);
+    mu_assert("integer_adm extractor missing", fex != VMAF_NULLPTR);
 
     /* Both dimensions below the floor. */
     mu_assert("init must reject 8x8 (< 17x17)", invoke_init(fex, 8u, 8u) < 0);
@@ -63,13 +57,13 @@ static char *test_integer_adm_init_rejects_below_min_dim(void)
     /* Exactly at the excluded boundary (16 is the last rejected value). */
     mu_assert("init must reject 16x16", invoke_init(fex, 16u, 16u) < 0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_adm_init_accepts_min_dim(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
-    mu_assert("integer_adm extractor missing", fex != NULL);
+    mu_assert("integer_adm extractor missing", fex != VMAF_NULLPTR);
 
     /* Exact boundary — must succeed. */
     int rc = invoke_init(fex, 17u, 17u);
@@ -79,7 +73,7 @@ static char *test_integer_adm_init_accepts_min_dim(void)
     rc = invoke_init(fex, 576u, 324u);
     mu_assert("init must accept 576x324 (well above minimum)", rc == 0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -87,7 +81,5 @@ char *run_tests(void)
     mu_run_test(test_integer_adm_is_registered);
     mu_run_test(test_integer_adm_init_rejects_below_min_dim);
     mu_run_test(test_integer_adm_init_accepts_min_dim);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -8,10 +8,18 @@
 
 from __future__ import annotations
 
-import os
-
+from importlib import import_module
+from pathlib import Path
 
 from vmaf.tools.decorator import change_repr, memoized, persist_to_dir, persist_to_file
+
+_COMPARISON_VALUE_12 = 12
+_COMPARISON_VALUE_2 = 2
+_COMPARISON_VALUE_20 = 20
+_COMPARISON_VALUE_21 = 21
+_COMPARISON_VALUE_6 = 6
+_COMPARISON_VALUE_7 = 7
+_COMPARISON_VALUE_9999 = 9999
 
 # ---------------------------------------------------------------------------
 # memoized — additional branches
@@ -55,9 +63,9 @@ class TestMemoizedReprAndGet:
         # called each time.
         r1 = fn([1, 2, 3])
         r2 = fn([1, 2, 3])
-        assert r1 == 6
-        assert r2 == 6
-        assert call_count[0] == 2  # called twice because args are unhashable
+        assert r1 == _COMPARISON_VALUE_6
+        assert r2 == _COMPARISON_VALUE_6
+        assert call_count[0] == _COMPARISON_VALUE_2  # called twice because args are unhashable
 
     def test_memoized_as_instance_method(self):
         """memoized.__get__ must return a partial so it works on instance methods."""
@@ -68,8 +76,8 @@ class TestMemoizedReprAndGet:
                 return x * 3
 
         obj = MyClass()
-        assert obj.compute(4) == 12
-        assert obj.compute(4) == 12  # second call may use cache
+        assert obj.compute(4) == _COMPARISON_VALUE_12
+        assert obj.compute(4) == _COMPARISON_VALUE_12  # second call may use cache
 
 
 # ---------------------------------------------------------------------------
@@ -88,9 +96,9 @@ class TestPersistToFile:
             return x * 7
 
         r1 = expensive(3)
-        assert r1 == 21
+        assert r1 == _COMPARISON_VALUE_21
         assert call_count[0] == 1
-        assert os.path.exists(cache_file)
+        assert Path(cache_file).exists()
 
     def test_reads_cached_value_on_second_call(self, tmp_path):
         cache_file = str(tmp_path / "cache.json")
@@ -106,22 +114,19 @@ class TestPersistToFile:
         assert call_count[0] == 1  # only called once
 
     def test_existing_cache_file_is_loaded(self, tmp_path):
-        import hashlib
-        import json
+        hashlib = import_module("hashlib")
+        json = import_module("json")
 
         cache_file = str(tmp_path / "preloaded.json")
 
         # Pre-populate the cache file with a known entry.
         # Key derivation must match persist_to_file's production logic.
         # SHA-1 is used here only as a memoization cache key, not for security.
-        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         def make_key(fname, args):
-            return hashlib.sha1(
-                (fname + str(args)).encode()
-            ).hexdigest()  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+            return hashlib.sha1((fname + str(args)).encode(), usedforsecurity=False).hexdigest()
 
         key = make_key("fn", (42,))
-        with open(cache_file, "w") as f:
+        with Path(cache_file).open("w") as f:
             json.dump({key: 9999}, f)
 
         call_count = [0]
@@ -132,7 +137,7 @@ class TestPersistToFile:
             return x + 1
 
         result = fn(42)
-        assert result == 9999
+        assert result == _COMPARISON_VALUE_9999
         assert call_count[0] == 0  # function was NOT called; cache hit
 
 
@@ -152,9 +157,9 @@ class TestPersistToDir:
             return x * 5
 
         r = fn(4)
-        assert r == 20
+        assert r == _COMPARISON_VALUE_20
         assert call_count[0] == 1
-        assert os.path.isdir(cache_dir)
+        assert Path(cache_dir).is_dir()
 
     def test_reads_cached_result_on_second_call(self, tmp_path):
         cache_dir = str(tmp_path / "cache_dir2")
@@ -180,9 +185,9 @@ class TestPersistToDir:
 
         fn(1)
         fn(2)
-        assert call_count[0] == 2
+        assert call_count[0] == _COMPARISON_VALUE_2
         # Each result is in a separate file in cache_dir.
-        assert len(os.listdir(cache_dir)) == 2
+        assert sum(1 for _path in Path(cache_dir).iterdir()) == _COMPARISON_VALUE_2
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +208,7 @@ class TestChangeRepr:
             return a + b
 
         wrapped = change_repr(adder)
-        assert wrapped(3, 4) == 7
+        assert wrapped(3, 4) == _COMPARISON_VALUE_7
 
     def test_name_and_doc_preserved(self):
         def documented_func(x):

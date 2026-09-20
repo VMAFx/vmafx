@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 -->
+# ADR-1256: cambi spatial mask simd dispatch
 
-# ADR-1256: Dispatch CAMBI's spatial-mask row SIMD kernels only where they measurably beat scalar
+**Decision:** Dispatch CAMBI's spatial-mask row SIMD kernels only where they
+measurably beat scalar
 
 - **Status**: Accepted
 - **Date**: 2026-09-18
@@ -31,28 +32,28 @@ verified under `qemu-aarch64`), only when its instruction count per column
 clearly drops below the compiled scalar loop. Under that rule we dispatch
 `compute_dp_row` on AVX2, AVX-512 and NEON, and `compute_mask_row` on AVX2 and
 AVX-512. `compute_mask_row_neon` stays in the tree, parity-tested, and
-undispatched. The AVX2 dp row is the fork's decoupled-carry variant, which
-keeps a single add on the loop-carried chain and is 1.81x (Clang, icx) to 2.25x
-(GCC) faster than scalar, instead of upstream's. The AVX2 mask row compares
-with a 2^31 bias so it is exact for every input, not only for box sums under
-2^31. The scalar kernels become the non-static reference functions declared in
-`cambi.h`, as upstream made them, and remain the default binding.
+undispatched. The AVX2 dp row is the fork's decoupled-carry variant, which keeps
+a single add on the loop-carried chain and is 1.81x (Clang, icx) to 2.25x (GCC)
+faster than scalar, instead of upstream's. The AVX2 mask row compares with a
+2^31 bias so it is exact for every input, not only for box sums under 2^31. The
+scalar kernels become the non-static reference functions declared in `cambi.h`,
+as upstream made them, and remain the default binding.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-| --- | --- | --- | --- |
-| Measured dispatch, fork kernels (**chosen**) | Every dispatched path is faster on every compiler measured; all paths bit-exact for any input | Diverges from upstream's AVX2 source; one NEON twin is built but unused | — |
-| Port upstream's AVX2 verbatim, wire everything | Smallest diff against upstream; symmetric dispatch across ISAs | AVX2 dp row regresses under Clang and icx; NEON mask row adds nothing; signed compare only correct for the reachable input range | Ships a slowdown to the published binaries |
-| Port upstream verbatim but dispatch its dp row only for GCC builds | Keeps upstream source | Compiler-dependent dispatch is fragile and untestable in one build | The decoupled carry is faster than upstream under GCC too (2.25x vs 1.23x) |
-| Drop `compute_mask_row_neon` entirely | No unused code | Breaks the package's twin rule; loses a ready kernel if compilers stop vectorizing the scalar loop | Keeping it parity-tested costs little |
+| Option                                                             | Pros                                                                                          | Cons                                                                                                                             | Why not chosen                                                             |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Measured dispatch, fork kernels (**chosen**)                       | Every dispatched path is faster on every compiler measured; all paths bit-exact for any input | Diverges from upstream's AVX2 source; one NEON twin is built but unused                                                          | —                                                                          |
+| Port upstream's AVX2 verbatim, wire everything                     | Smallest diff against upstream; symmetric dispatch across ISAs                                | AVX2 dp row regresses under Clang and icx; NEON mask row adds nothing; signed compare only correct for the reachable input range | Ships a slowdown to the published binaries                                 |
+| Port upstream verbatim but dispatch its dp row only for GCC builds | Keeps upstream source                                                                         | Compiler-dependent dispatch is fragile and untestable in one build                                                               | The decoupled carry is faster than upstream under GCC too (2.25x vs 1.23x) |
+| Drop `compute_mask_row_neon` entirely                              | No unused code                                                                                | Breaks the package's twin rule; loses a ready kernel if compilers stop vectorizing the scalar loop                               | Keeping it parity-tested costs little                                      |
 
 ## Consequences
 
-- **Positive**: CAMBI's spatial mask runs 1.5–3.2x faster per kernel on x86
-  and the dp row is vectorized on aarch64, with byte-identical scores. The
-  parity test checks the full uint32 input domain, including the
-  signed/unsigned boundary upstream's compare would get wrong.
+- **Positive**: CAMBI's spatial mask runs 1.5–3.2x faster per kernel on x86 and
+  the dp row is vectorized on aarch64, with byte-identical scores. The parity
+  test checks the full uint32 input domain, including the signed/unsigned
+  boundary upstream's compare would get wrong.
 - **Negative**: `cambi_avx2.c` no longer matches upstream's text for these two
   functions; a future upstream sync must keep the fork's versions (recorded in
   `docs/rebase-notes.md` and the x86 / arm64 `AGENTS.md`).

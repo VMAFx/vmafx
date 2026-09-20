@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0953: Doxygen public-API build is warning-clean
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ the workflow is informational only.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **New standalone Doxyfile + on-demand CI (chosen)** | Tight feedback loop on the public API only; no churn in the existing meson-driven full-tree generator; on-demand keeps it cheap until we promote it to required | One more Doxyfile to maintain; warning bar can still drift between manual runs until the workflow is required-gated | Best balance of "make the gate exist" against "don't break the existing full-tree generator" |
 | Reuse `core/doc/Doxyfile.in` and flip its `WARN_AS_ERROR` ON | Single source of truth | The full-tree generator pulls in `src/feature/` internal headers; making those warning-clean is a much wider scope; tying CI to it now would either fail or require a Doxyfile that hides 80% of the source | Out of scope - the immediate need is the public API |
 | Use `clang-doc` or `Sphinx-C` instead | Modern tooling, structured output | Two new dependencies, no incremental gain over doxygen for the public C surface, every existing fork-added doc comment uses doxygen tags | Cost of migration is not justified |

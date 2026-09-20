@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0351: CUDA PSNR — chroma extension (psnr_cb / psnr_cr)
 
 - **Status**: Accepted
@@ -59,7 +58,7 @@ Mirrors the same posture chosen for Vulkan in ADR-0216.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Three-element arrays + plane kernel arg (chosen)** | Minimal diff against the v1 luma-only state; one PTX module + one pair of kernel functions covers all planes; aligns with the Vulkan chroma extension's array shape; close to the canonical CPU `integer_psnr.c` layout for the rebase story. | Per-plane arrays read slightly more verbosely than a singleton; three sequential DtoH copies on `lc.str` (still one host wait point). | Smallest, most reviewable shape; matches the CPU and Vulkan twins. |
 | Three independent `PsnrStateCuda` instances dispatched as a meta-extractor | Clean per-plane isolation. | Triples stream + event allocations, accumulator buffers, pinned host slots, and `feature_name_dict` instances; CPU `integer_psnr.c` and Vulkan `psnr_vulkan.c` both use the array shape — staying close to the canonical layout helps the rebase story. | Wrong cost / benefit. |
 | Per-plane CUfunction handles (e.g. `calculate_psnr_kernel_y_8bpc / _cb_8bpc / _cr_8bpc`) via specialised entry-points | Lets the kernel make plane-specific compile-time decisions. | The kernel already takes `(width, height)` as launch args — there is *no* plane-specific decision the .cu code needs to make. Six function handles for zero benefit. | Function-specialisation buys nothing. |

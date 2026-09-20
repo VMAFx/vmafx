@@ -16,8 +16,6 @@
  *
  */
 
-#pragma once
-
 #ifndef PSNR_OPTIONS_H_
 #define PSNR_OPTIONS_H_
 

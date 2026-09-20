@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1246: Model verified public functions as Cppcheck entrypoints
 
 - **Status**: Accepted

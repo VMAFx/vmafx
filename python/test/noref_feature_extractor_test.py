@@ -2,13 +2,13 @@ from __future__ import absolute_import
 
 import unittest
 from functools import partial
+
+import numpy as np
+
 from test.testutil import (
     set_default_576_324_noref_videos_for_testing,
     set_default_576_324_videos_for_testing,
 )
-
-import numpy as np
-
 from vmaf.core.noref_feature_extractor import (
     BrisqueNorefFeatureExtractor,
     MomentNorefFeatureExtractor,
@@ -28,11 +28,10 @@ class NorefFeatureExtractorTest(unittest.TestCase):
     def tearDown(self):
         if hasattr(self, "fextractor"):
             self.fextractor.remove_results()
-            pass
 
     def test_noref_moment_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = MomentNorefFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -51,7 +50,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_noref_moment_fextractor_with_noref_asset(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_noref_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_noref_videos_for_testing()
 
         self.fextractor = MomentNorefFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -70,7 +69,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_run_noref_brisque_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = BrisqueNorefFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -102,7 +101,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_run_noref_niqe_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = NiqeNorefFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
@@ -140,7 +139,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_run_noref_niqe_fextractor_train(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = NiqeNorefFeatureExtractor(
             [asset, asset_original],
@@ -183,7 +182,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_run_noref_niqe_fextractor_with_patch_size(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = NiqeNorefFeatureExtractor(
             [asset, asset_original],
@@ -226,7 +225,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_noref_siti_fextractor_with_noref_asset(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_noref_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_noref_videos_for_testing()
 
         self.fextractor = SiTiNorefFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -261,7 +260,7 @@ class NorefFeatureExtractorTest(unittest.TestCase):
 
     def test_noref_moment_fextractor_proc(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         callback_dict = {
             "dis_proc_callback": "identity",
@@ -298,7 +297,7 @@ class FeatureExtractorSaveWorkfilesTest(MyTestCase):
 
     def test_noref_moment_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = MomentNorefFeatureExtractor(
             [asset, asset_original],
@@ -323,7 +322,7 @@ class FeatureExtractorSaveWorkfilesTest(MyTestCase):
 
     def test_noref_moment_fextractor_save_workfiles_second_time(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = MomentNorefFeatureExtractor(
             [asset, asset_original],

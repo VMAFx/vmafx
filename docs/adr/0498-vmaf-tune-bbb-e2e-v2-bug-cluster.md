@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD029 MD060 -->
 # ADR-0498: vmaf-tune BBB end-to-end v2 bug cluster + explicit-backend semantics
 
 - **Status**: Accepted
@@ -77,12 +76,12 @@ are:
 
 Operational follow-ups, same PR:
 
-6. **Encoder availability vs encode failure** — `bisect._encode_and_score`
+1. **Encoder availability vs encode failure** — `bisect._encode_and_score`
    now distinguishes "Encoder not found" / "Unknown encoder" stderr
    markers and reports `encoder unavailable (libsvtav1): …` instead
    of the cryptic `encode failed at CRF NN (exit=1): Encoder not
    found` the pre-ADR-0498 path emitted.
-7. **Encoder version detection** — `encode.parse_versions` regex
+2. **Encoder version detection** — `encode.parse_versions` regex
    widened to accept the `x264 - core 164` / `x264-core 164`
    variants, and a process-cached `_probe_encoder_version_from_ffmpeg`
    helper falls back to `ffmpeg -version`'s `--enable-libx264` /
@@ -91,7 +90,7 @@ Operational follow-ups, same PR:
    carried `"unknown"` now carry `libx264-enabled` /
    `libsvtav1-enabled` so consumers can at least confirm the
    encoder is compiled in.
-8. **dev-mcp-stdio /tmp** — `dev/scripts/dev-mcp-entrypoint.sh`
+3. **dev-mcp-stdio /tmp** — `dev/scripts/dev-mcp-entrypoint.sh`
    `mkdir -p /tmp && chmod 1777 /tmp` as its first action so the
    sibling MCP log + the bug-cluster repro scripts never fail on
    "No such file or directory: /tmp/vmaf-mcp.log" when the runtime
@@ -106,7 +105,7 @@ CI cost.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Five separate PRs (one per major bug) | Smaller diffs, atomic reverts | 5× CI cost, fragmented test fixture, harder to verify the e2e smoke went green | Bugs share a v2 cluster identity; splitting hides the regression context |
 | Bug #v2-E: extend the libvmaf C API with a `vmaf_get_active_backend()` getter | Cleaner integration, no JSON post-edit | Touches a public header (triggers ffmpeg-patches rebase per rule 14), and the MCP layer already echoes `backend_used` (PR #1251) — the same data is available there | Out-of-process textual amend keeps the API surface stable; downstream consumers already parse JSON, not C |
 | Bug #v2-B: reject multi-resolution YUV ladders with a clear error and require container sources | Smaller diff | Punishes users who legitimately have raw YUV at a higher resolution than their target ladder; closes off a documented workflow | Cross-resolution sampling against a raw source is a normal authoring step; the fix is straightforward (scale filter) and unblocks the workflow |

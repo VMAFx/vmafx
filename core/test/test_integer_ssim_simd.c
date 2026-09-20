@@ -28,11 +28,6 @@
 
 #include <inttypes.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -193,7 +188,7 @@ static char *check_8bpc(uint32_t seed)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf,
                                 TEST_ROW_WIDTH * sizeof(integer_ssim_moments_t),
                                 "integer_ssim_avx2 8bpc divergence");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_ssim_accumulate_row_avx2_8bpc(void)
@@ -205,7 +200,7 @@ static char *test_integer_ssim_accumulate_row_avx2_8bpc(void)
         if (r)
             return r;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Check one seed for the 16bpc path (10-bit: [0, 1023]). */
@@ -230,7 +225,7 @@ static char *check_16bpc(uint32_t seed)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf,
                                 TEST_ROW_WIDTH * sizeof(integer_ssim_moments_t),
                                 "integer_ssim_avx2 16bpc divergence");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_ssim_accumulate_row_avx2_16bpc(void)
@@ -241,7 +236,7 @@ static char *test_integer_ssim_accumulate_row_avx2_16bpc(void)
         if (r)
             return r;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -278,7 +273,7 @@ static char *test_integer_ssim_avx2_16bpc_bright(void)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf,
                                 TEST_ROW_WIDTH * sizeof(integer_ssim_moments_t),
                                 "integer_ssim_avx2 16bpc bright-pixel overflow");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Adversarial: full-white / full-black rows (all-same pixels). */
@@ -300,15 +295,15 @@ static char *test_integer_ssim_avx2_uniform(void)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf,
                                 TEST_ROW_WIDTH * sizeof(integer_ssim_moments_t),
                                 "integer_ssim_avx2 uniform divergence");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Narrow row: width = 1 (all boundary, no interior SIMD). */
 static char *test_integer_ssim_avx2_narrow(void)
 {
     const int w = 1;
-    uint8_t src_row[1] = {128};
-    uint8_t dst_row[1] = {64};
+    const uint8_t src_row[1] = {128};
+    const uint8_t dst_row[1] = {64};
     integer_ssim_moments_t scalar_buf[1];
     integer_ssim_moments_t simd_buf[1];
 
@@ -319,7 +314,7 @@ static char *test_integer_ssim_avx2_narrow(void)
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf, (size_t)w * sizeof(integer_ssim_moments_t),
                                 "integer_ssim_avx2 narrow divergence");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 */
@@ -328,7 +323,7 @@ char *run_tests(void)
 {
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_integer_ssim_accumulate_row_avx2_8bpc);
     mu_run_test(test_integer_ssim_accumulate_row_avx2_16bpc);
@@ -338,7 +333,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping integer_ssim SIMD: non-x86 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

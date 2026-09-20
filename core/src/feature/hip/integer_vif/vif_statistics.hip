@@ -85,9 +85,9 @@
 /* Filter widths per scale — matches libvmaf/src/feature/integer_vif.h
  * `vif_filter1d_width[4] = {17, 9, 5, 3}`. */
 #define VIF_FW_S0 17
-#define VIF_FW_S1  9
-#define VIF_FW_S2  5
-#define VIF_FW_S3  3
+#define VIF_FW_S1 9
+#define VIF_FW_S2 5
+#define VIF_FW_S3 3
 
 /* --------------------------------------------------------------------------
  * Bit-manipulation helpers — identical to the CUDA twin's vif_statistics.cuh.
@@ -128,32 +128,62 @@ __device__ __forceinline__ static int32_t log_generate(int i)
     return (int32_t)__float2int_rn(log2f((float)i) * 2048.0f);
 }
 
+__device__ __forceinline__ static void vif_log_statistic(int32_t sigma1_sq, int32_t sigma2_sq,
+                                                         int32_t sigma12, int32_t sv_sq, double g,
+                                                         vif_accums_hip *acc)
+{
+    const int32_t sigma_nsq = 65536 << 1;
+    const uint32_t log_den_stage1 = (uint32_t)(sigma_nsq + sigma1_sq);
+    int exponent;
+    const uint16_t log_den1 = get_best16_from32(log_den_stage1, &exponent);
+    acc->num_x += 1;
+    acc->x += exponent;
+    const int32_t den_val = log_generate(log_den1);
+    if (sigma12 < 0) {
+        acc->den_log += den_val;
+        return;
+    }
+
+    const uint32_t numer1 = (uint32_t)(sv_sq + sigma_nsq);
+    const int64_t numer1_tmp = (int64_t)(g * g * sigma1_sq) + (int64_t)numer1;
+    int numerator_exp;
+    int denominator_exp;
+    const uint16_t numlog = get_best16_from64((uint64_t)numer1_tmp, &numerator_exp);
+    const uint16_t denlog = get_best16_from64((uint64_t)numer1, &denominator_exp);
+    acc->x2 += denominator_exp - numerator_exp;
+    acc->num_log += (int64_t)log_generate(numlog) - (int64_t)log_generate(denlog);
+    acc->den_log += den_val;
+    (void)sigma2_sq;
+}
+
 /* --------------------------------------------------------------------------
  * Per-pixel VIF statistic accumulation — scalar variant matching the CPU
  * integer_vif.c lines 300–348 (and the CUDA twin's vif_statistic_calculation
  * function called on per-thread scalars).
  * -------------------------------------------------------------------------- */
 
-__device__ __forceinline__ static void vif_statistic_one(
-    uint32_t mu1, uint32_t mu2, uint32_t xx_filt, uint32_t yy_filt, uint32_t xy_filt,
-    double vif_enhn_gain_limit, vif_accums_hip *acc)
+__device__ __forceinline__ static void
+vif_statistic_one(uint32_t mu1, uint32_t mu2, uint32_t xx_filt, uint32_t yy_filt, uint32_t xy_filt,
+                  double vif_enhn_gain_limit, vif_accums_hip *acc)
 {
     const int32_t sigma_nsq = 65536 << 1;
 
-    uint32_t mu1_sq  = (uint32_t)((((uint64_t)mu1 * mu1) + 2147483648ULL) >> 32);
-    uint32_t mu2_sq  = (uint32_t)((((uint64_t)mu2 * mu2) + 2147483648ULL) >> 32);
+    uint32_t mu1_sq = (uint32_t)((((uint64_t)mu1 * mu1) + 2147483648ULL) >> 32);
+    uint32_t mu2_sq = (uint32_t)((((uint64_t)mu2 * mu2) + 2147483648ULL) >> 32);
     uint32_t mu1_mu2 = (uint32_t)((((uint64_t)mu1 * mu2) + 2147483648ULL) >> 32);
 
     int32_t sigma1_sq = (int32_t)(xx_filt - mu1_sq);
     int32_t sigma2_sq = (int32_t)(yy_filt - mu2_sq);
-    int32_t sigma12   = (int32_t)(xy_filt - mu1_mu2);
+    int32_t sigma12 = (int32_t)(xy_filt - mu1_mu2);
 
     /* Clamp both sigmas to 0 — matches the CUDA twin's max(sigma1_sq, 0) /
      * max(sigma2_sq, 0) (vif_statistics.cuh lines 96-97).  Without the
      * sigma1_sq clamp, a negative sigma1_sq could pass the sigma_nsq threshold
      * test below and produce an invalid log_den_stage1 value. */
-    if (sigma1_sq < 0) sigma1_sq = 0;
-    if (sigma2_sq < 0) sigma2_sq = 0;
+    if (sigma1_sq < 0)
+        sigma1_sq = 0;
+    if (sigma2_sq < 0)
+        sigma2_sq = 0;
 
     /* Compute g and sv_sq unconditionally, mirroring the CUDA twin's
      * lines 102-116.  g defaults to 0, sv_sq defaults to sigma2_sq; g is
@@ -167,37 +197,14 @@ __device__ __forceinline__ static void vif_statistic_one(
     if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0)
         g = sigma12 / ((double)sigma1_sq + eps);
     sv_sq = (int32_t)(sigma2_sq - g * sigma12);
-    if (sv_sq < (int32_t)eps) sv_sq = (int32_t)eps;
-    if (g > vif_enhn_gain_limit) g = vif_enhn_gain_limit;
+    if (sv_sq < (int32_t)eps)
+        sv_sq = (int32_t)eps;
+    if (g > vif_enhn_gain_limit)
+        g = vif_enhn_gain_limit;
 
-    if (sigma1_sq >= sigma_nsq) {
-        uint32_t log_den_stage1 = (uint32_t)(sigma_nsq + sigma1_sq);
-        int x;
-        uint16_t log_den1 = get_best16_from32(log_den_stage1, &x);
-
-        acc->num_x += 1;
-        acc->x     += x;
-        int32_t den_val = log_generate(log_den1);
-
-        /* Use sigma12 >= 0 (not > 0 && sigma2_sq > 0) — matches the CUDA twin's
-         * line 136.  sv_sq >= 0 and sigma_nsq > 0, so numer1 > 0 always; the
-         * get_best16_from64 call cannot receive 0. */
-        if (sigma12 >= 0) {
-            uint32_t numer1     = (uint32_t)(sv_sq + sigma_nsq);
-            int64_t  numer1_tmp = (int64_t)(g * g * sigma1_sq) + (int64_t)numer1;
-
-            int x1, x2;
-            uint16_t numlog = get_best16_from64((uint64_t)numer1_tmp, &x1);
-            uint16_t denlog = get_best16_from64((uint64_t)numer1, &x2);
-            acc->x2      += (x2 - x1);
-            int64_t num_val = (int64_t)log_generate(numlog) - (int64_t)log_generate(denlog);
-            acc->num_log += num_val;
-            acc->den_log += den_val;
-        } else {
-            acc->num_log += 0;
-            acc->den_log += den_val;
-        }
-    } else {
+    if (sigma1_sq >= sigma_nsq)
+        vif_log_statistic(sigma1_sq, sigma2_sq, sigma12, sv_sq, g, acc);
+    else {
         acc->num_non_log += sigma2_sq;
         acc->den_non_log += 1;
     }
@@ -270,30 +277,77 @@ __device__ __forceinline__ static int mirror2_i(int v, int dim)
  * entirely so no future caller can accidentally reintroduce the carry bug.
  * -------------------------------------------------------------------------- */
 
-__device__ __forceinline__ static void atomicadd_accums(
-    vif_accums_hip *dst, const vif_accums_hip *src)
+__device__ __forceinline__ static void atomicadd_accums(vif_accums_hip *dst,
+                                                        const vif_accums_hip *src)
 {
-    atomicAdd((unsigned long long *)&dst->x,           (unsigned long long)src->x);
-    atomicAdd((unsigned long long *)&dst->x2,          (unsigned long long)src->x2);
-    atomicAdd((unsigned long long *)&dst->num_x,       (unsigned long long)src->num_x);
-    atomicAdd((unsigned long long *)&dst->num_log,     (unsigned long long)src->num_log);
-    atomicAdd((unsigned long long *)&dst->den_log,     (unsigned long long)src->den_log);
+    atomicAdd((unsigned long long *)&dst->x, (unsigned long long)src->x);
+    atomicAdd((unsigned long long *)&dst->x2, (unsigned long long)src->x2);
+    atomicAdd((unsigned long long *)&dst->num_x, (unsigned long long)src->num_x);
+    atomicAdd((unsigned long long *)&dst->num_log, (unsigned long long)src->num_log);
+    atomicAdd((unsigned long long *)&dst->den_log, (unsigned long long)src->den_log);
     atomicAdd((unsigned long long *)&dst->num_non_log, (unsigned long long)src->num_non_log);
     atomicAdd((unsigned long long *)&dst->den_non_log, (unsigned long long)src->den_non_log);
 }
 
-extern "C" {
+__device__ __forceinline__ static void vif_hori_8_stat(VifBufferHip buf, int w, int h, int x, int y,
+                                                       const uint16_t *filt,
+                                                       double vif_enhn_gain_limit,
+                                                       vif_accums_hip *accum_out)
+{
+    if (x >= w || y >= h)
+        return;
+    const int row = y * (int)(buf.stride_tmp / sizeof(uint32_t));
+    uint32_t accum_mu1 = 0;
+    uint32_t accum_mu2 = 0;
+    uint64_t accum_ref = 0;
+    uint64_t accum_dis = 0;
+    uint64_t accum_ref_dis = 0;
+    for (int fj = 0; fj < VIF_FW_S0; ++fj) {
+        const int kx = mirror2_i(x - VIF_FW_S0 / 2 + fj, w);
+        const uint32_t coeff = (uint32_t)filt[fj];
+        accum_mu1 += coeff * buf.tmp.mu1[row + kx];
+        accum_mu2 += coeff * buf.tmp.mu2[row + kx];
+        accum_ref += (uint64_t)coeff * (uint64_t)buf.tmp.ref[row + kx];
+        accum_dis += (uint64_t)coeff * (uint64_t)buf.tmp.dis[row + kx];
+        accum_ref_dis += (uint64_t)coeff * (uint64_t)buf.tmp.ref_dis[row + kx];
+    }
+    vif_accums_hip thread_accum = {0, 0, 0, 0, 0, 0, 0};
+    vif_statistic_one(accum_mu1, accum_mu2, (uint32_t)((accum_ref + 32768) >> 16),
+                      (uint32_t)((accum_dis + 32768) >> 16),
+                      (uint32_t)((accum_ref_dis + 32768) >> 16), vif_enhn_gain_limit,
+                      &thread_accum);
+    atomicadd_accums(accum_out, &thread_accum);
+}
+
+__device__ __forceinline__ static void vif_hori_8_downsample(VifBufferHip buf, int w, int h, int x,
+                                                             int y, const uint16_t *filt_rd)
+{
+    if (x >= w || y >= h || (y & 1) != 0 || (x & 1) != 0)
+        return;
+    const int row = y * (int)(buf.stride_tmp / sizeof(uint32_t));
+    uint32_t accum_ref = 0;
+    uint32_t accum_dis = 0;
+    for (int fj = 0; fj < VIF_FW_S1; ++fj) {
+        const int kx = mirror2_i(x - VIF_FW_S1 / 2 + fj, w);
+        const uint32_t coeff = (uint32_t)filt_rd[fj];
+        accum_ref += coeff * buf.tmp.ref_convol[row + kx];
+        accum_dis += coeff * buf.tmp.dis_convol[row + kx];
+    }
+    uint16_t *rd_ref = (uint16_t *)buf.ref;
+    uint16_t *rd_dis = (uint16_t *)buf.dis;
+    const ptrdiff_t stride = buf.rd_stride / (ptrdiff_t)sizeof(uint16_t);
+    rd_ref[(y / 2) * stride + (x / 2)] = (uint16_t)((accum_ref + 32768u) >> 16);
+    rd_dis[(y / 2) * stride + (x / 2)] = (uint16_t)((accum_dis + 32768u) >> 16);
+}
 
 /* --------------------------------------------------------------------------
  * Vertical filter pass — 8-bit path (scale 0 only).
  * -------------------------------------------------------------------------- */
 
-__global__ void filter1d_8_vertical_kernel_uint32_t_17_9(
-    VifBufferHip buf,
-    const uint8_t *__restrict__ ref_in,
-    const uint8_t *__restrict__ dis_in,
-    int w, int h,
-    const uint16_t *__restrict__ vif_filt_dev)
+extern "C" __global__ void
+filter1d_8_vertical_kernel_uint32_t_17_9(VifBufferHip buf, const uint8_t *__restrict__ ref_in,
+                                         const uint8_t *__restrict__ dis_in, int w, int h,
+                                         const uint16_t *__restrict__ vif_filt_dev)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
@@ -305,7 +359,7 @@ __global__ void filter1d_8_vertical_kernel_uint32_t_17_9(
     const int FW_RD = VIF_FW_S1;
     const int RD_START = (FW - FW_RD) / 2;
 
-    const uint16_t *filt    = &vif_filt_dev[0 * 18];
+    const uint16_t *filt = &vif_filt_dev[0 * 18];
     const uint16_t *filt_rd = &vif_filt_dev[1 * 18];
 
     uint32_t accum_mu1 = 0, accum_mu2 = 0;
@@ -333,107 +387,44 @@ __global__ void filter1d_8_vertical_kernel_uint32_t_17_9(
     }
 
     const int stmp = (int)(buf.stride_tmp / sizeof(uint32_t));
-    buf.tmp.mu1[y * stmp + x]     = (accum_mu1 + 128u) >> 8;
-    buf.tmp.mu2[y * stmp + x]     = (accum_mu2 + 128u) >> 8;
-    buf.tmp.ref[y * stmp + x]     = accum_ref;
-    buf.tmp.dis[y * stmp + x]     = accum_dis;
+    buf.tmp.mu1[y * stmp + x] = (accum_mu1 + 128u) >> 8;
+    buf.tmp.mu2[y * stmp + x] = (accum_mu2 + 128u) >> 8;
+    buf.tmp.ref[y * stmp + x] = accum_ref;
+    buf.tmp.dis[y * stmp + x] = accum_dis;
     buf.tmp.ref_dis[y * stmp + x] = accum_ref_dis;
     buf.tmp.ref_convol[y * stmp + x] = (accum_ref_rd + 128u) >> 8;
     buf.tmp.dis_convol[y * stmp + x] = (accum_dis_rd + 128u) >> 8;
 }
 
-__global__ void filter1d_8_horizontal_kernel_2_17_9(
-    VifBufferHip buf,
-    int w, int h,
-    const uint16_t *__restrict__ vif_filt_dev,
-    double vif_enhn_gain_limit,
-    vif_accums_hip *accum_out)
+extern "C" __global__ void
+filter1d_8_horizontal_kernel_2_17_9(VifBufferHip buf, int w, int h,
+                                    const uint16_t *__restrict__ vif_filt_dev,
+                                    double vif_enhn_gain_limit, vif_accums_hip *accum_out)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
-
-    const int FW = VIF_FW_S0;
-    const int HALF = FW / 2;
-    const int FW_RD = VIF_FW_S1;
-    const int HALF_RD = FW_RD / 2;
-
-    const uint16_t *filt    = &vif_filt_dev[0 * 18];
+    const uint16_t *filt = &vif_filt_dev[0 * 18];
     const uint16_t *filt_rd = &vif_filt_dev[1 * 18];
-
-    if (x < w && y < h) {
-        const int stmp = (int)(buf.stride_tmp / sizeof(uint32_t));
-        const int row  = y * stmp;
-
-        uint32_t accum_mu1 = 0, accum_mu2 = 0;
-        uint64_t accum_ref = 0, accum_dis = 0, accum_ref_dis = 0;
-
-        for (int fj = 0; fj < FW; ++fj) {
-            int kx = mirror2_i(x - HALF + fj, w);
-            uint32_t coeff = (uint32_t)filt[fj];
-            accum_mu1 += coeff * buf.tmp.mu1[row + kx];
-            accum_mu2 += coeff * buf.tmp.mu2[row + kx];
-            accum_ref += (uint64_t)coeff * (uint64_t)buf.tmp.ref[row + kx];
-            accum_dis += (uint64_t)coeff * (uint64_t)buf.tmp.dis[row + kx];
-            accum_ref_dis += (uint64_t)coeff * (uint64_t)buf.tmp.ref_dis[row + kx];
-        }
-
-        uint32_t mu1_v = accum_mu1;
-        uint32_t mu2_v = accum_mu2;
-        uint32_t xx_v  = (uint32_t)((accum_ref     + 32768) >> 16);
-        uint32_t yy_v  = (uint32_t)((accum_dis     + 32768) >> 16);
-        uint32_t xy_v  = (uint32_t)((accum_ref_dis + 32768) >> 16);
-
-        /* ADR-0563: per-thread atomicAdd — replaces the broken wavefront
-         * XOR-reduce that silently dropped carry bits when accumulating
-         * negative int64_t num_log values (see comment above). */
-        vif_accums_hip thr = {0, 0, 0, 0, 0, 0, 0};
-        vif_statistic_one(mu1_v, mu2_v, xx_v, yy_v, xy_v, vif_enhn_gain_limit, &thr);
-        atomicadd_accums(accum_out, &thr);
-    }
-
-    if (x < w && y < h && (y & 1) == 0 && (x & 1) == 0) {
-        const int stmp = (int)(buf.stride_tmp / sizeof(uint32_t));
-        const int row  = y * stmp;
-        uint32_t accum_ref_rd = 0, accum_dis_rd = 0;
-        for (int fj = 0; fj < FW_RD; ++fj) {
-            int kx = mirror2_i(x - HALF_RD + fj, w);
-            uint32_t coeff = (uint32_t)filt_rd[fj];
-            accum_ref_rd += coeff * buf.tmp.ref_convol[row + kx];
-            accum_dis_rd += coeff * buf.tmp.dis_convol[row + kx];
-        }
-        uint16_t mu_ref = (uint16_t)((accum_ref_rd + 32768u) >> 16);
-        uint16_t mu_dis = (uint16_t)((accum_dis_rd + 32768u) >> 16);
-
-        uint16_t *rd_ref = (uint16_t *)buf.ref;
-        uint16_t *rd_dis = (uint16_t *)buf.dis;
-        const ptrdiff_t rd_stride16 = buf.rd_stride / (ptrdiff_t)sizeof(uint16_t);
-        rd_ref[(y / 2) * rd_stride16 + (x / 2)] = mu_ref;
-        rd_dis[(y / 2) * rd_stride16 + (x / 2)] = mu_dis;
-    }
+    vif_hori_8_stat(buf, w, h, x, y, filt, vif_enhn_gain_limit, accum_out);
+    vif_hori_8_downsample(buf, w, h, x, y, filt_rd);
 }
 
-
-} /* extern "C" — templates need C++ linkage */
-
 template <int FW, int FW_RD>
-__device__ __forceinline__ static void vif_vert_16_body(
-    VifBufferHip &buf, const uint16_t *ref_in, const uint16_t *dis_in,
-    int w, int h, int scale,
-    int32_t add_shift_VP, int32_t shift_VP,
-    int32_t add_shift_VP_sq, int32_t shift_VP_sq,
-    const uint16_t *filt, const uint16_t *filt_rd)
+__device__ __forceinline__ static void
+vif_vert_16_body(VifBufferHip &buf, const uint16_t *ref_in, const uint16_t *dis_in, int w, int h,
+                 int scale, int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq,
+                 int32_t shift_VP_sq, const uint16_t *filt, const uint16_t *filt_rd)
 {
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
     if (x >= w || y >= h)
         return;
 
-    const int HALF    = FW / 2;
+    const int HALF = FW / 2;
     const int RD_START = (FW - FW_RD) / 2;
 
-    const ptrdiff_t in_stride16 = (scale == 0)
-        ? (buf.stride    / (ptrdiff_t)sizeof(uint16_t))
-        : (buf.rd_stride / (ptrdiff_t)sizeof(uint16_t));
+    const ptrdiff_t in_stride16 = (scale == 0) ? (buf.stride / (ptrdiff_t)sizeof(uint16_t)) :
+                                                 (buf.rd_stride / (ptrdiff_t)sizeof(uint16_t));
 
     uint32_t accum_mu1 = 0, accum_mu2 = 0;
     uint64_t accum_ref = 0, accum_dis = 0, accum_ref_dis = 0;
@@ -460,11 +451,12 @@ __device__ __forceinline__ static void vif_vert_16_body(
     }
 
     const int stmp = (int)(buf.stride_tmp / sizeof(uint32_t));
-    buf.tmp.mu1[y * stmp + x]     = (accum_mu1 + (uint32_t)add_shift_VP) >> shift_VP;
-    buf.tmp.mu2[y * stmp + x]     = (accum_mu2 + (uint32_t)add_shift_VP) >> shift_VP;
-    buf.tmp.ref[y * stmp + x]     = (uint32_t)((accum_ref     + (uint64_t)add_shift_VP_sq) >> shift_VP_sq);
-    buf.tmp.dis[y * stmp + x]     = (uint32_t)((accum_dis     + (uint64_t)add_shift_VP_sq) >> shift_VP_sq);
-    buf.tmp.ref_dis[y * stmp + x] = (uint32_t)((accum_ref_dis + (uint64_t)add_shift_VP_sq) >> shift_VP_sq);
+    buf.tmp.mu1[y * stmp + x] = (accum_mu1 + (uint32_t)add_shift_VP) >> shift_VP;
+    buf.tmp.mu2[y * stmp + x] = (accum_mu2 + (uint32_t)add_shift_VP) >> shift_VP;
+    buf.tmp.ref[y * stmp + x] = (uint32_t)((accum_ref + (uint64_t)add_shift_VP_sq) >> shift_VP_sq);
+    buf.tmp.dis[y * stmp + x] = (uint32_t)((accum_dis + (uint64_t)add_shift_VP_sq) >> shift_VP_sq);
+    buf.tmp.ref_dis[y * stmp + x] =
+        (uint32_t)((accum_ref_dis + (uint64_t)add_shift_VP_sq) >> shift_VP_sq);
     if (FW_RD > 0) {
         buf.tmp.ref_convol[y * stmp + x] = (accum_ref_rd + (uint32_t)add_shift_VP) >> shift_VP;
         buf.tmp.dis_convol[y * stmp + x] = (accum_dis_rd + (uint32_t)add_shift_VP) >> shift_VP;
@@ -472,23 +464,21 @@ __device__ __forceinline__ static void vif_vert_16_body(
 }
 
 template <int FW, int FW_RD>
-__device__ __forceinline__ static void vif_hori_16_body(
-    VifBufferHip &buf, int w, int h, int scale,
-    int32_t add_shift_HP, int32_t shift_HP,
-    const uint16_t *filt, const uint16_t *filt_rd,
-    double vif_enhn_gain_limit,
-    vif_accums_hip *accum_out)
+__device__ __forceinline__ static void
+vif_hori_16_body(VifBufferHip &buf, int w, int h, int scale, int32_t add_shift_HP, int32_t shift_HP,
+                 const uint16_t *filt, const uint16_t *filt_rd, double vif_enhn_gain_limit,
+                 vif_accums_hip *accum_out)
 {
     (void)scale;
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
 
-    const int HALF    = FW / 2;
+    const int HALF = FW / 2;
     const int HALF_RD = FW_RD / 2;
 
     if (x < w && y < h) {
         const int stmp = (int)(buf.stride_tmp / sizeof(uint32_t));
-        const int row  = y * stmp;
+        const int row = y * stmp;
 
         uint32_t accum_mu1 = 0, accum_mu2 = 0;
         uint64_t accum_ref = 0, accum_dis = 0, accum_ref_dis = 0;
@@ -505,9 +495,9 @@ __device__ __forceinline__ static void vif_hori_16_body(
 
         uint32_t mu1_v = accum_mu1;
         uint32_t mu2_v = accum_mu2;
-        uint32_t xx_v  = (uint32_t)((accum_ref     + (uint64_t)add_shift_HP) >> shift_HP);
-        uint32_t yy_v  = (uint32_t)((accum_dis     + (uint64_t)add_shift_HP) >> shift_HP);
-        uint32_t xy_v  = (uint32_t)((accum_ref_dis + (uint64_t)add_shift_HP) >> shift_HP);
+        uint32_t xx_v = (uint32_t)((accum_ref + (uint64_t)add_shift_HP) >> shift_HP);
+        uint32_t yy_v = (uint32_t)((accum_dis + (uint64_t)add_shift_HP) >> shift_HP);
+        uint32_t xy_v = (uint32_t)((accum_ref_dis + (uint64_t)add_shift_HP) >> shift_HP);
 
         /* ADR-0563: per-thread atomicAdd — replaces the broken wavefront
          * XOR-reduce that silently dropped carry bits when accumulating
@@ -519,7 +509,7 @@ __device__ __forceinline__ static void vif_hori_16_body(
 
     if (FW_RD > 0 && x < w && y < h && (y & 1) == 0 && (x & 1) == 0) {
         const int stmp_rd = (int)(buf.stride_tmp / sizeof(uint32_t));
-        const int row_rd  = y * stmp_rd;
+        const int row_rd = y * stmp_rd;
         uint32_t accum_ref_rd = 0, accum_dis_rd = 0;
         for (int fj = 0; fj < FW_RD; ++fj) {
             int kx = mirror2_i(x - HALF_RD + fj, w);
@@ -538,103 +528,80 @@ __device__ __forceinline__ static void vif_hori_16_body(
     }
 }
 
-
-extern "C" {
-
-__global__ void filter1d_16_vertical_kernel_uint2_17_9_0(
+extern "C" __global__ void filter1d_16_vertical_kernel_uint2_17_9_0(
     VifBufferHip buf, const uint16_t *__restrict__ ref_in, const uint16_t *__restrict__ dis_in,
-    int w, int h,
-    int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq, int32_t shift_VP_sq,
-    const uint16_t *__restrict__ vif_filt_dev)
+    int w, int h, int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq,
+    int32_t shift_VP_sq, const uint16_t *__restrict__ vif_filt_dev)
 {
-    vif_vert_16_body<VIF_FW_S0, VIF_FW_S1>(buf, ref_in, dis_in, w, h, 0,
-        add_shift_VP, shift_VP, add_shift_VP_sq, shift_VP_sq,
-        &vif_filt_dev[0 * 18], &vif_filt_dev[1 * 18]);
+    vif_vert_16_body<VIF_FW_S0, VIF_FW_S1>(buf, ref_in, dis_in, w, h, 0, add_shift_VP, shift_VP,
+                                           add_shift_VP_sq, shift_VP_sq, &vif_filt_dev[0 * 18],
+                                           &vif_filt_dev[1 * 18]);
 }
 
-__global__ void filter1d_16_vertical_kernel_uint2_9_5_1(
+extern "C" __global__ void filter1d_16_vertical_kernel_uint2_9_5_1(
     VifBufferHip buf, const uint16_t *__restrict__ ref_in, const uint16_t *__restrict__ dis_in,
-    int w, int h,
-    int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq, int32_t shift_VP_sq,
-    const uint16_t *__restrict__ vif_filt_dev)
+    int w, int h, int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq,
+    int32_t shift_VP_sq, const uint16_t *__restrict__ vif_filt_dev)
 {
-    vif_vert_16_body<VIF_FW_S1, VIF_FW_S2>(buf, ref_in, dis_in, w, h, 1,
-        add_shift_VP, shift_VP, add_shift_VP_sq, shift_VP_sq,
-        &vif_filt_dev[1 * 18], &vif_filt_dev[2 * 18]);
+    vif_vert_16_body<VIF_FW_S1, VIF_FW_S2>(buf, ref_in, dis_in, w, h, 1, add_shift_VP, shift_VP,
+                                           add_shift_VP_sq, shift_VP_sq, &vif_filt_dev[1 * 18],
+                                           &vif_filt_dev[2 * 18]);
 }
 
-__global__ void filter1d_16_vertical_kernel_uint2_5_3_2(
+extern "C" __global__ void filter1d_16_vertical_kernel_uint2_5_3_2(
     VifBufferHip buf, const uint16_t *__restrict__ ref_in, const uint16_t *__restrict__ dis_in,
-    int w, int h,
-    int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq, int32_t shift_VP_sq,
-    const uint16_t *__restrict__ vif_filt_dev)
+    int w, int h, int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq,
+    int32_t shift_VP_sq, const uint16_t *__restrict__ vif_filt_dev)
 {
-    vif_vert_16_body<VIF_FW_S2, VIF_FW_S3>(buf, ref_in, dis_in, w, h, 2,
-        add_shift_VP, shift_VP, add_shift_VP_sq, shift_VP_sq,
-        &vif_filt_dev[2 * 18], &vif_filt_dev[3 * 18]);
+    vif_vert_16_body<VIF_FW_S2, VIF_FW_S3>(buf, ref_in, dis_in, w, h, 2, add_shift_VP, shift_VP,
+                                           add_shift_VP_sq, shift_VP_sq, &vif_filt_dev[2 * 18],
+                                           &vif_filt_dev[3 * 18]);
 }
 
-__global__ void filter1d_16_vertical_kernel_uint2_3_0_3(
+extern "C" __global__ void filter1d_16_vertical_kernel_uint2_3_0_3(
     VifBufferHip buf, const uint16_t *__restrict__ ref_in, const uint16_t *__restrict__ dis_in,
-    int w, int h,
-    int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq, int32_t shift_VP_sq,
-    const uint16_t *__restrict__ vif_filt_dev)
+    int w, int h, int32_t add_shift_VP, int32_t shift_VP, int32_t add_shift_VP_sq,
+    int32_t shift_VP_sq, const uint16_t *__restrict__ vif_filt_dev)
 {
-    vif_vert_16_body<VIF_FW_S3, 0>(buf, ref_in, dis_in, w, h, 3,
-        add_shift_VP, shift_VP, add_shift_VP_sq, shift_VP_sq,
-        &vif_filt_dev[3 * 18], nullptr);
+    vif_vert_16_body<VIF_FW_S3, 0>(buf, ref_in, dis_in, w, h, 3, add_shift_VP, shift_VP,
+                                   add_shift_VP_sq, shift_VP_sq, &vif_filt_dev[3 * 18], nullptr);
 }
 
-__global__ void filter1d_16_horizontal_kernel_2_17_9_0(
-    VifBufferHip buf, int w, int h,
-    int32_t add_shift_HP, int32_t shift_HP,
-    const uint16_t *__restrict__ vif_filt_dev,
-    double vif_enhn_gain_limit,
-    vif_accums_hip *accum_out)
+extern "C" __global__ void
+filter1d_16_horizontal_kernel_2_17_9_0(VifBufferHip buf, int w, int h, int32_t add_shift_HP,
+                                       int32_t shift_HP, const uint16_t *__restrict__ vif_filt_dev,
+                                       double vif_enhn_gain_limit, vif_accums_hip *accum_out)
 {
-    vif_hori_16_body<VIF_FW_S0, VIF_FW_S1>(buf, w, h, 0,
-        add_shift_HP, shift_HP,
-        &vif_filt_dev[0 * 18], &vif_filt_dev[1 * 18],
-        vif_enhn_gain_limit, accum_out);
+    vif_hori_16_body<VIF_FW_S0, VIF_FW_S1>(buf, w, h, 0, add_shift_HP, shift_HP,
+                                           &vif_filt_dev[0 * 18], &vif_filt_dev[1 * 18],
+                                           vif_enhn_gain_limit, accum_out);
 }
 
-__global__ void filter1d_16_horizontal_kernel_2_9_5_1(
-    VifBufferHip buf, int w, int h,
-    int32_t add_shift_HP, int32_t shift_HP,
-    const uint16_t *__restrict__ vif_filt_dev,
-    double vif_enhn_gain_limit,
-    vif_accums_hip *accum_out)
+extern "C" __global__ void
+filter1d_16_horizontal_kernel_2_9_5_1(VifBufferHip buf, int w, int h, int32_t add_shift_HP,
+                                      int32_t shift_HP, const uint16_t *__restrict__ vif_filt_dev,
+                                      double vif_enhn_gain_limit, vif_accums_hip *accum_out)
 {
-    vif_hori_16_body<VIF_FW_S1, VIF_FW_S2>(buf, w, h, 1,
-        add_shift_HP, shift_HP,
-        &vif_filt_dev[1 * 18], &vif_filt_dev[2 * 18],
-        vif_enhn_gain_limit, accum_out);
+    vif_hori_16_body<VIF_FW_S1, VIF_FW_S2>(buf, w, h, 1, add_shift_HP, shift_HP,
+                                           &vif_filt_dev[1 * 18], &vif_filt_dev[2 * 18],
+                                           vif_enhn_gain_limit, accum_out);
 }
 
-__global__ void filter1d_16_horizontal_kernel_2_5_3_2(
-    VifBufferHip buf, int w, int h,
-    int32_t add_shift_HP, int32_t shift_HP,
-    const uint16_t *__restrict__ vif_filt_dev,
-    double vif_enhn_gain_limit,
-    vif_accums_hip *accum_out)
+extern "C" __global__ void
+filter1d_16_horizontal_kernel_2_5_3_2(VifBufferHip buf, int w, int h, int32_t add_shift_HP,
+                                      int32_t shift_HP, const uint16_t *__restrict__ vif_filt_dev,
+                                      double vif_enhn_gain_limit, vif_accums_hip *accum_out)
 {
-    vif_hori_16_body<VIF_FW_S2, VIF_FW_S3>(buf, w, h, 2,
-        add_shift_HP, shift_HP,
-        &vif_filt_dev[2 * 18], &vif_filt_dev[3 * 18],
-        vif_enhn_gain_limit, accum_out);
+    vif_hori_16_body<VIF_FW_S2, VIF_FW_S3>(buf, w, h, 2, add_shift_HP, shift_HP,
+                                           &vif_filt_dev[2 * 18], &vif_filt_dev[3 * 18],
+                                           vif_enhn_gain_limit, accum_out);
 }
 
-__global__ void filter1d_16_horizontal_kernel_2_3_0_3(
-    VifBufferHip buf, int w, int h,
-    int32_t add_shift_HP, int32_t shift_HP,
-    const uint16_t *__restrict__ vif_filt_dev,
-    double vif_enhn_gain_limit,
-    vif_accums_hip *accum_out)
+extern "C" __global__ void
+filter1d_16_horizontal_kernel_2_3_0_3(VifBufferHip buf, int w, int h, int32_t add_shift_HP,
+                                      int32_t shift_HP, const uint16_t *__restrict__ vif_filt_dev,
+                                      double vif_enhn_gain_limit, vif_accums_hip *accum_out)
 {
-    vif_hori_16_body<VIF_FW_S3, 0>(buf, w, h, 3,
-        add_shift_HP, shift_HP,
-        &vif_filt_dev[3 * 18], nullptr,
-        vif_enhn_gain_limit, accum_out);
+    vif_hori_16_body<VIF_FW_S3, 0>(buf, w, h, 3, add_shift_HP, shift_HP, &vif_filt_dev[3 * 18],
+                                   nullptr, vif_enhn_gain_limit, accum_out);
 }
-
-} /* extern "C" */

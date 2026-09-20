@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0435: PR-body pre-push validation hook
 
 - **Status**: Accepted
@@ -65,7 +64,7 @@ Additionally:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A — Pre-push hook + pre-commit (chosen)** | Catches failures locally in <5 s before any CI cycle; composable with existing pre-commit infrastructure; no new dependencies | Requires `gh` CLI on PATH; drafts and no-PR pushes skip silently | Best total cost |
 | **B — `make pr-check` only** | Zero-friction manual invocation | Requires contributor to remember to run it; does not block a push | Does not prevent the 44-runner-hour CI waste; contributors forget manual checks |
 | **C — `check-pr-body` skill** | Could draft AND validate body before PR opens | Adds a skill file; relies on Claude Code context, not git hooks; does not catch non-Claude agent pushes | Incomplete coverage; hook covers all push paths including non-Claude agents |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # AGENTS.md — cmd/vmafx-controller
 
 Go controller service, VMAFX distributed platform (ADR-0711, ADR-0709).
@@ -10,7 +9,7 @@ Per-package invariants for automated agents in this subtree.
 ## Governing ADRs
 
 | ADR | Title | Scope |
-|-----|-------|-------|
+| ----- | ------- | ------- |
 | [ADR-0711](../../docs/adr/0711-vmafx-controller-impl.md) | vmafx-controller Phase 4b.1 | Go service: gRPC + HTTP, in-memory queue, persistent node registry, FIFO scheduler |
 | [ADR-0961](../../docs/adr/0961-queue-pullwork-rollback-on-get-failure.md) | PullWork rollback on post-update Get failure | queue package correctness |
 | [ADR-0962](../../docs/adr/0962-controller-streamjobs-and-reaper-stop.md) | StreamJobs snapshot + reaper stop signal | controller / queue / nodes correctness |

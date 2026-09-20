@@ -1,4 +1,7 @@
-**fix(hip): formalise per-feature places=4 gate for HIP VIF, superseding ADR-0537 follow-up (ADR-0566)**
+# Changelog fragment
+
+**fix(hip): formalise per-feature places=4 gate for HIP VIF, superseding
+ADR-0537 follow-up (ADR-0566)**
 
 ADR-0537 documented a per-feature places=3 gap in `integer_vif_hip` as an
 "acceptable follow-up". This was incorrect: per-feature places=3 produces

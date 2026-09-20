@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve Netflix NULL; MSVC C nullptr support is unverified. */
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -39,7 +38,7 @@ static char *test_differencing_stride(void)
         mu_assert("odd-width differencing preserves row padding",
                   float_bits_equal(difference[i], expected[i]));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 typedef struct {
@@ -79,7 +78,7 @@ static char *test_temporal_terminal_paths(void)
     ret = vifdiff(read_terminal_frame, &reader, 0, 49, "yuv420p");
     mu_assert("invalid geometry rejected", ret == 1);
     mu_assert("invalid geometry does not call reader", reader.calls == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_invalid_geometry(void)
@@ -91,9 +90,9 @@ static char *test_invalid_geometry(void)
         double numerator = 8.0;
         double denominator = 9.0;
         double scales[8] = {0};
-        const int ret =
-            compute_vif(NULL, NULL, dimensions[i][0], dimensions[i][1], 0, 0, &score, &numerator,
-                        &denominator, scales, 100.0, 1.0, 0, 2.0, NULL, NULL);
+        const int ret = compute_vif(VMAF_NULLPTR, VMAF_NULLPTR, dimensions[i][0], dimensions[i][1],
+                                    0, 0, &score, &numerator, &denominator, scales, 100.0, 1.0, 0,
+                                    2.0, VMAF_NULLPTR, VMAF_NULLPTR);
         mu_assert("invalid VIF geometry rejected before input access", ret == 1);
         mu_assert("invalid VIF geometry preserves caller scores",
                   score == 7.0 && numerator == 8.0 && denominator == 9.0);
@@ -109,12 +108,13 @@ static char *test_invalid_geometry(void)
     double numerator = 8.0;
     double denominator = 9.0;
     double scales[8] = {0};
-    const int ret = compute_vif(NULL, NULL, (INT_MAX - 31) / 4, INT_MAX, 0, 0, &score, &numerator,
-                                &denominator, scales, 100.0, 1.0, 0, 2.0, NULL, NULL);
+    const int ret = compute_vif(VMAF_NULLPTR, VMAF_NULLPTR, (INT_MAX - 31) / 4, INT_MAX, 0, 0,
+                                &score, &numerator, &denominator, scales, 100.0, 1.0, 0, 2.0,
+                                VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("ten-plane allocation overflow rejected", ret == 1);
     mu_assert("overflow does not update scores", score == 7.0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -122,6 +122,5 @@ char *run_tests(void)
     mu_run_test(test_differencing_stride);
     mu_run_test(test_temporal_terminal_paths);
     mu_run_test(test_invalid_geometry);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-/* NOLINTEND(modernize-use-nullptr) */

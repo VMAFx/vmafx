@@ -59,6 +59,7 @@ import tempfile
 from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -1201,7 +1202,7 @@ def _load_vlm() -> tuple[Any, str] | None:
     _vlm_state["loaded"] = True
 
     try:
-        import torch  # noqa: F401
+        import_module("torch")
         from transformers import pipeline as hf_pipeline
     except ImportError:
         return None
@@ -2427,10 +2428,10 @@ async def _vmaf_bench(arguments: dict[str, Any]) -> dict[str, Any]:
         "stderr": stderr,
         "mode": "validate" if validate else "benchmark",
     }
-    # --validate exits 1 to report "the GPU/CPU comparison found deltas"; that
-    # is a legitimate answer, not a tool error.  Every other non-zero exit is.
-    if validate:
-        payload["validation_failed"] = code != 0
+    # --validate exits 1 only when completed comparisons found deltas. Exit 2
+    # means validation aborted and must remain a tool error.
+    if validate and code in (0, 1):
+        payload["validation_failed"] = code == 1
         return payload
     if code != 0:
         raise _sidecar_failure("vmaf_bench", code, stdout, stderr)
@@ -3668,8 +3669,8 @@ async def _list_tools() -> list[Tool]:
                 "over the built-in synthetic fixtures, or (validate=true) a GPU-vs-CPU "
                 "correctness comparison. Distinct from run_benchmark, which runs the "
                 "end-to-end bench_all.sh harness over real YUV fixtures. In validate "
-                "mode a non-zero exit is reported as validation_failed=true rather "
-                "than as a tool error."
+                "mode exit 1 is reported as validation_failed=true; an aborted "
+                "validation remains a tool error."
             ),
             inputSchema={
                 "type": "object",

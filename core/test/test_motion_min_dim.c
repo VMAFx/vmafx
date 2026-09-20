@@ -41,12 +41,6 @@
 
 #include "feature/feature_extractor.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/src/feature/float_motion.c. ADR-1138. */
-
 /* Helper: allocate priv, call init(), then call close() and free priv.
  * Returns the init() return code.  The extractor's close() contract
  * tolerates partially-initialised state (same pattern as
@@ -61,7 +55,7 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
     if (fex->close)
         (void)fex->close(fex);
     free(priv);
-    fex->priv = NULL;
+    fex->priv = VMAF_NULLPTR;
     return rc;
 }
 
@@ -72,22 +66,22 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
 static char *test_motion_rejects_small_frames(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
-    mu_assert("motion extractor missing", fex != NULL);
+    mu_assert("motion extractor missing", fex != VMAF_NULLPTR);
     mu_assert("motion: init(1x1) must return -EINVAL", invoke_init(fex, 1u, 1u) == -EINVAL);
     mu_assert("motion: init(2x2) must return -EINVAL", invoke_init(fex, 2u, 2u) == -EINVAL);
     /* 1-row frame: width above floor but height below */
     mu_assert("motion: init(64x1) must return -EINVAL", invoke_init(fex, 64u, 1u) == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_accepts_valid_frames(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
-    mu_assert("motion extractor missing", fex != NULL);
+    mu_assert("motion extractor missing", fex != VMAF_NULLPTR);
     mu_assert("motion: init(3x3) must succeed (exact minimum)", invoke_init(fex, 3u, 3u) == 0);
     mu_assert("motion: init(576x324) must succeed (Netflix golden resolution)",
               invoke_init(fex, 576u, 324u) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -97,20 +91,20 @@ static char *test_motion_accepts_valid_frames(void)
 static char *test_motion_v2_rejects_small_frames(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
     mu_assert("motion_v2: init(1x1) must return -EINVAL", invoke_init(fex, 1u, 1u) == -EINVAL);
     mu_assert("motion_v2: init(2x2) must return -EINVAL", invoke_init(fex, 2u, 2u) == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_accepts_valid_frames(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
     mu_assert("motion_v2: init(3x3) must succeed (exact minimum)", invoke_init(fex, 3u, 3u) == 0);
     mu_assert("motion_v2: init(576x324) must succeed (Netflix golden resolution)",
               invoke_init(fex, 576u, 324u) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -120,21 +114,21 @@ static char *test_motion_v2_accepts_valid_frames(void)
 static char *test_float_motion_rejects_small_frames(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor missing", fex != NULL);
+    mu_assert("float_motion extractor missing", fex != VMAF_NULLPTR);
     mu_assert("float_motion: init(1x1) must return -EINVAL", invoke_init(fex, 1u, 1u) == -EINVAL);
     mu_assert("float_motion: init(2x2) must return -EINVAL", invoke_init(fex, 2u, 2u) == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_motion_accepts_valid_frames(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor missing", fex != NULL);
+    mu_assert("float_motion extractor missing", fex != VMAF_NULLPTR);
     mu_assert("float_motion: init(3x3) must succeed (exact minimum)",
               invoke_init(fex, 3u, 3u) == 0);
     mu_assert("float_motion: init(576x324) must succeed (Netflix golden resolution)",
               invoke_init(fex, 576u, 324u) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -150,10 +144,10 @@ static int invoke_init_add_uv(VmafFeatureExtractor *fex, unsigned w, unsigned h)
         return -1;
     fex->priv = priv;
 
-    int rc = -EINVAL;
+    int rc;
     if (fex->options) {
         for (unsigned i = 0; fex->options[i].name; i++) {
-            const char *val = NULL;
+            const char *val = VMAF_NULLPTR;
             if (strcmp(fex->options[i].name, "motion_add_uv") == 0)
                 val = "true";
             rc = vmaf_option_set(&fex->options[i], priv, val);
@@ -167,14 +161,14 @@ done:
     if (fex->close)
         (void)fex->close(fex);
     free(priv);
-    fex->priv = NULL;
+    fex->priv = VMAF_NULLPTR;
     return rc;
 }
 
 static char *test_float_motion_add_uv_chroma_guard(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion");
-    mu_assert("float_motion extractor missing", fex != NULL);
+    mu_assert("float_motion extractor missing", fex != VMAF_NULLPTR);
 
     /* 4x4 YUV420P: luma clears the >= 3 floor but chroma is 2x2, which used
      * to reach convolution_edge_s and read one full row past the plane. */
@@ -189,7 +183,7 @@ static char *test_float_motion_add_uv_chroma_guard(void)
     /* The Netflix golden resolution is unaffected. */
     mu_assert("float_motion+uv: init(576x324) must succeed",
               invoke_init_add_uv(fex, 576u, 324u) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -218,7 +212,7 @@ static char *test_metal_motion_min_dim(void)
         mu_assert("metal motion: init(64x2) must return -EINVAL",
                   invoke_init(fex, 64u, 2u) == -EINVAL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Split in two so neither driver exceeds the readability-function-size branch
@@ -229,7 +223,7 @@ static char *run_integer_motion_tests(void)
     mu_run_test(test_motion_accepts_valid_frames);
     mu_run_test(test_motion_v2_rejects_small_frames);
     mu_run_test(test_motion_v2_accepts_valid_frames);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_float_and_metal_motion_tests(void)
@@ -238,7 +232,7 @@ static char *run_float_and_metal_motion_tests(void)
     mu_run_test(test_float_motion_accepts_valid_frames);
     mu_run_test(test_float_motion_add_uv_chroma_guard);
     mu_run_test(test_metal_motion_min_dim);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -248,5 +242,3 @@ char *run_tests(void)
         return msg;
     return run_float_and_metal_motion_tests();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

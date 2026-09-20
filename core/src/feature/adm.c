@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -24,10 +26,17 @@
 #include <stdbool.h>
 
 #include "mem.h"
+#include "adm.h"
 #include "adm_options.h"
 #include "adm_tools.h"
 #include "offset.h"
 #include "cpu.h"
+#if ARCH_X86
+#include "x86/float_adm_avx2.h"
+#if HAVE_AVX512
+#include "x86/float_adm_avx512.h"
+#endif
+#endif
 #if ARCH_AARCH64
 #include "arm64/float_adm_neon.h"
 #endif
@@ -39,29 +48,32 @@ typedef adm_dwt_band_t_s adm_dwt_band_t;
 #define adm_csf adm_csf_s
 #define adm_cm_thresh adm_cm_thresh_s
 #define adm_cm adm_cm_s
-#define adm_sum_cube adm_sum_cube_s
 #define offset_image offset_image_s
 
 #define adm_csf_den_scale adm_csf_den_scale_s
 
-/* ADR-1057: float_adm_dwt2_neon is now wired here via adm_dwt2_dispatch().
- * The NEON DWT2 kernel lives in its own TU (float_adm_dwt2_neon.c) compiled
- * with `-ffp-contract=off` plus pragma / GCC-attribute guards.  Its explicit
+/* The SIMD DWT2 kernels are compiled with contraction disabled. Their explicit
  * multiply/add sequence mirrors the function-scoped non-contracting scalar
- * DWT2 contract without changing unrelated arithmetic in adm_tools.c. */
+ * contract without changing unrelated arithmetic in adm_tools.c. */
 #define dwt2_src_indices_filt dwt2_src_indices_filt_s
 
 /*
- * adm_dwt2_dispatch — thin wrapper that selects the NEON DWT2 implementation
- * on AArch64 when NEON is available, and falls back to the scalar path
- * otherwise.  The NEON variant has a `void` return (it silently no-ops on
- * OOM, matching the AVX2/AVX-512 siblings); we wrap it to match the `int`
- * return expected at the call site.
+ * Select the strongest available SIMD DWT2 and preserve the scalar fallback.
+ * The x86 implementations propagate allocation failures; the legacy NEON
+ * entry point cannot report one yet and retains its established contract.
  */
 static int adm_dwt2_dispatch(const float *src, const adm_dwt_band_t_s *dst, int **ind_y,
                              int **ind_x, int w, int h, int src_stride, int dst_stride)
 {
-#if ARCH_AARCH64
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512)
+        return float_adm_dwt2_avx512(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
+#endif
+    if (flags & VMAF_X86_CPU_FLAG_AVX2)
+        return float_adm_dwt2_avx2(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
+#elif ARCH_AARCH64
     if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
         float_adm_dwt2_neon(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
         return 0;
@@ -76,39 +88,25 @@ static int adm_dwt2_dispatch(const float *src, const adm_dwt_band_t_s *dst, int 
 
 static char *init_dwt_band(adm_dwt_band_t *band, char *data_top, size_t buf_sz_one)
 {
-    band->band_a = (float *)(void *)data_top;
+    band->band_a = (float *)data_top;
     data_top += buf_sz_one;
-    band->band_h = (float *)(void *)data_top;
+    band->band_h = (float *)data_top;
     data_top += buf_sz_one;
-    band->band_v = (float *)(void *)data_top;
+    band->band_v = (float *)data_top;
     data_top += buf_sz_one;
-    band->band_d = (float *)(void *)data_top;
-    data_top += buf_sz_one;
-    return data_top;
-}
-
-UNUSED_FUNCTION
-static char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)
-{
-    band->band_a = (double *)(void *)data_top;
-    data_top += buf_sz_one;
-    band->band_h = (double *)(void *)data_top;
-    data_top += buf_sz_one;
-    band->band_v = (double *)(void *)data_top;
-    data_top += buf_sz_one;
-    band->band_d = (double *)(void *)data_top;
+    band->band_d = (float *)data_top;
     data_top += buf_sz_one;
     return data_top;
 }
 
 static char *init_dwt_band_hvd(adm_dwt_band_t *band, char *data_top, size_t buf_sz_one)
 {
-    band->band_a = NULL;
-    band->band_h = (float *)(void *)data_top;
+    band->band_a = VMAF_NULLPTR;
+    band->band_h = (float *)data_top;
     data_top += buf_sz_one;
-    band->band_v = (float *)(void *)data_top;
+    band->band_v = (float *)data_top;
     data_top += buf_sz_one;
-    band->band_d = (float *)(void *)data_top;
+    band->band_d = (float *)data_top;
     data_top += buf_sz_one;
     return data_top;
 }
@@ -129,12 +127,15 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     float *data_buf = 0;
     char *data_top;
 
-    char *ind_buf_y = 0, *buf_y_orig = 0;
-    char *ind_buf_x = 0, *buf_x_orig = 0;
-    int *ind_y[4], *ind_x[4];
+    char *ind_buf_y = 0;
+    char *buf_y_orig = 0;
+    char *ind_buf_x = 0;
+    char *buf_x_orig = 0;
+    int *ind_y[4];
+    int *ind_x[4];
 
-    float *ref_scale;
-    float *dis_scale;
+    const float *ref_scale;
+    const float *dis_scale;
 
     adm_dwt_band_t ref_dwt2;
     adm_dwt_band_t dis_dwt2;
@@ -170,14 +171,14 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     // hence the reduction in the number of buffers required from 35 to 17
 #define NUM_BUFS_ADM 20
     if (SIZE_MAX / buf_sz_one < NUM_BUFS_ADM) {
-        printf("error: SIZE_MAX / buf_sz_one < NUM_BUFS_ADM, buf_sz_one = %zu.\n", buf_sz_one);
-        fflush(stdout);
+        fprintf(stderr, "error: SIZE_MAX / buf_sz_one < NUM_BUFS_ADM, buf_sz_one = %zu.\n",
+                buf_sz_one);
         goto fail;
     }
 
-    if (!(data_buf = aligned_malloc(buf_sz_one * NUM_BUFS_ADM, MAX_ALIGN))) {
-        printf("error: aligned_malloc failed for data_buf.\n");
-        fflush(stdout);
+    data_buf = aligned_malloc(buf_sz_one * NUM_BUFS_ADM, MAX_ALIGN);
+    if (!data_buf) {
+        fprintf(stderr, "error: aligned_malloc failed for data_buf.\n");
         goto fail;
     }
 
@@ -188,12 +189,11 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     data_top = init_dwt_band_hvd(&decouple_r, data_top, buf_sz_one);
     data_top = init_dwt_band_hvd(&decouple_a, data_top, buf_sz_one);
     data_top = init_dwt_band_hvd(&csf_a, data_top, buf_sz_one);
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0418 upstream-parity (4dcc2f7c)
-    data_top = init_dwt_band_hvd(&csf_f, data_top, buf_sz_one);
+    init_dwt_band_hvd(&csf_f, data_top, buf_sz_one);
 
-    if (!(buf_y_orig = aligned_malloc(ind_size_y * 4, MAX_ALIGN))) {
-        printf("error: aligned_malloc failed for ind_buf_y.\n");
-        fflush(stdout);
+    buf_y_orig = aligned_malloc((size_t)ind_size_y * 4U, MAX_ALIGN);
+    if (!buf_y_orig) {
+        fprintf(stderr, "error: aligned_malloc failed for ind_buf_y.\n");
         goto fail;
     }
     ind_buf_y = buf_y_orig;
@@ -204,12 +204,10 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     ind_y[2] = (int *)ind_buf_y;
     ind_buf_y += ind_size_y;
     ind_y[3] = (int *)ind_buf_y;
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0418 upstream-parity
-    ind_buf_y += ind_size_y;
 
-    if (!(buf_x_orig = aligned_malloc(ind_size_x * 4, MAX_ALIGN))) {
-        printf("error: aligned_malloc failed for ind_buf_x.\n");
-        fflush(stdout);
+    buf_x_orig = aligned_malloc((size_t)ind_size_x * 4U, MAX_ALIGN);
+    if (!buf_x_orig) {
+        fprintf(stderr, "error: aligned_malloc failed for ind_buf_x.\n");
         goto fail;
     }
     ind_buf_x = buf_x_orig;
@@ -220,8 +218,6 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     ind_x[2] = (int *)ind_buf_x;
     ind_buf_x += ind_size_x;
     ind_x[3] = (int *)ind_buf_x;
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0418 upstream-parity
-    ind_buf_x += ind_size_x;
 
     for (scale = 0; scale < 4; ++scale) {
 #ifdef ADM_OPT_DEBUG_DUMP

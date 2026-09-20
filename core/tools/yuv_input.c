@@ -16,6 +16,7 @@
  *
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,12 +72,7 @@ typedef __int64 off_t;
 #include "vidinput.h"
 
 #include "libvmaf/picture.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+#include "vmaf_nullptr.h"
 
 /** Linkage will break without this if using a C++ compiler, and will issue
  * warnings without this for a C compiler*/
@@ -101,20 +97,20 @@ typedef struct yuv_input {
  * mismatched --bitdepth flag surfaces a clear error instead of heap
  * corruption (malloc fastbin misalignment) at the first fread.
  *
- * Exits with code 2 on any geometry/depth mismatch (following the
- * cli_parse.c convention of calling exit() directly for bad-usage errors).
- * Returns silently when the fd is not a regular file (pipe, socket) — the
- * reader will discover EOF naturally.
+ * Returns -EINVAL on any geometry/depth mismatch so the CLI driver can unwind
+ * owned resources and return its bad-input exit code.
+ * Returns 0 when the fd is not a regular file (pipe, socket) — the reader will
+ * discover EOF naturally.
  *
  * Uses fstat rather than fseek/ftell to avoid disturbing the stream
- * position and to correctly handle sizes >2 GiB via the
- * _LARGEFILE64_SOURCE / _FILE_OFFSET_BITS=64 definitions in vidinput.h.
+ * position and to correctly handle sizes >2 GiB under Meson's
+ * `_FILE_OFFSET_BITS=64` compilation environment.
  */
-static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
+static int yuv_check_file_size(FILE *fin, const yuv_input *yuv)
 {
     struct stat st;
     if (fstat(yuv_fileno(fin), &st) != 0 || !S_ISREG(st.st_mode))
-        return; /* pipe or fstat failure — skip, let reader hit EOF */
+        return 0; /* pipe or fstat failure — skip, let reader hit EOF */
 
     off_t file_sz = st.st_size;
     size_t frame_sz = yuv->dst_buf_sz;
@@ -130,10 +126,7 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
                       "got %lld bytes\n",
                       frame_sz, yuv->width, yuv->height, yuv->bitdepth, fmt_name,
                       (long long)file_sz);
-        /* CLI is single-threaded at open time; mirrors the cli_parse.c exit()
-         * pattern. ADR-0141 / ADR-0278. */
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        exit(2);
+        return -EINVAL;
     }
     if (file_sz % (off_t)frame_sz != 0) {
         (void)fprintf(stderr,
@@ -143,29 +136,13 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
                       "%u-bit frames need %u byte%s per sample)\n",
                       frame_sz, yuv->width, yuv->height, yuv->bitdepth, fmt_name,
                       (long long)file_sz, yuv->bitdepth, bpp, bpp == 1u ? "" : "s");
-        /* CLI is single-threaded at open time; mirrors the cli_parse.c exit()
-         * pattern. ADR-0141 / ADR-0278. */
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        exit(2);
+        return -EINVAL;
     }
+    return 0;
 }
 
-static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
-                                 enum VmafPixelFormat pix_fmt, unsigned bitdepth)
+static int yuv_set_geometry(yuv_input *yuv)
 {
-    yuv_input *yuv = malloc(sizeof(*yuv));
-    if (!yuv) {
-        (void)fprintf(stderr, "Could not allocate yuv reader state.\n");
-        return NULL;
-    }
-
-    yuv->fin = _fin;
-    yuv->width = width;
-    yuv->height = height;
-    yuv->pix_fmt = pix_fmt;
-    yuv->bitdepth = bitdepth;
-    bool hbd = yuv->bitdepth > 8;
-
     /* Cast width/height to size_t before any multiplication so the
      * intermediate arithmetic proceeds in size_t precision (64-bit on every
      * supported 64-bit host).  Without the cast each `width * height` runs
@@ -181,6 +158,7 @@ static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
     const size_t h = (size_t)yuv->height;
     const size_t cw = (w + 1U) / 2U;
     const size_t ch = (h + 1U) / 2U;
+    const bool hbd = yuv->bitdepth > 8;
     switch (yuv->pix_fmt) {
     case VMAF_PIX_FMT_YUV420P:
         yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 2;
@@ -196,22 +174,42 @@ static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
         yuv->dst_buf_sz = (w * h * 3U) << hbd;
         break;
     default:
-        goto fail;
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
+                                 enum VmafPixelFormat pix_fmt, unsigned bitdepth)
+{
+    yuv_input *yuv = malloc(sizeof(*yuv));
+    if (!yuv) {
+        (void)fprintf(stderr, "Could not allocate yuv reader state.\n");
+        return VMAF_NULLPTR;
     }
 
-    yuv_check_file_size(_fin, yuv); /* exits with code 2 on mismatch */
+    *yuv = (yuv_input){
+        .fin = _fin,
+        .width = width,
+        .height = height,
+        .pix_fmt = pix_fmt,
+        .bitdepth = bitdepth,
+    };
+
+    if (yuv_set_geometry(yuv) != 0 || yuv_check_file_size(_fin, yuv) != 0) {
+        free(yuv);
+        errno = EINVAL;
+        return VMAF_NULLPTR;
+    }
 
     yuv->dst_buf = malloc(yuv->dst_buf_sz);
     if (!yuv->dst_buf) {
         (void)fprintf(stderr, "Could not allocate yuv reader buffer.\n");
-        goto fail;
+        free(yuv);
+        return VMAF_NULLPTR;
     }
 
     return yuv;
-
-fail:
-    free(yuv);
-    return NULL;
 }
 
 static int pix_fmt_map(enum VmafPixelFormat pix_fmt)
@@ -228,7 +226,7 @@ static int pix_fmt_map(enum VmafPixelFormat pix_fmt)
     }
 }
 
-static void yuv_input_get_info(yuv_input *_yuv, video_input_info *_info)
+static void yuv_input_get_info(const yuv_input *_yuv, video_input_info *_info)
 {
     memset(_info, 0, sizeof(*_info));
     _info->frame_w = _info->pic_w = _yuv->width;
@@ -351,7 +349,7 @@ static void *yuv_vtbl_open_raw(FILE *fin, unsigned w, unsigned h, int pix_fmt, u
 
 static void yuv_vtbl_get_info(void *ctx, video_input_info *info)
 {
-    yuv_input_get_info((yuv_input *)ctx, info);
+    yuv_input_get_info((const yuv_input *)ctx, info);
 }
 
 static int yuv_vtbl_fetch_frame(void *ctx, FILE *fin, video_input_ycbcr ycbcr, char tag[5])
@@ -369,9 +367,6 @@ static int yuv_vtbl_fetch_into_vmaf_picture(void *ctx, FILE *fin, VmafPicture *p
     return yuv_fetch_into_vmaf_picture((yuv_input *)ctx, fin, pic);
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL` (ADR-0141 / ADR-0278)
 OC_EXTERN const video_input_vtbl YUV_INPUT_VTBL = {
-    yuv_vtbl_open_raw,    NULL,           yuv_vtbl_get_info,
+    yuv_vtbl_open_raw,    VMAF_NULLPTR,   yuv_vtbl_get_info,
     yuv_vtbl_fetch_frame, yuv_vtbl_close, yuv_vtbl_fetch_into_vmaf_picture};
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -16,18 +16,20 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 
+from vmaf_mcp import http_transport as ht
+
+if TYPE_CHECKING:
+    from aiohttp.test_utils import TestClient
+
 # Skip the entire module if aiohttp or prometheus_client are not installed.
 aiohttp = pytest.importorskip("aiohttp")
 pytest.importorskip("prometheus_client")
-
-from aiohttp.test_utils import TestClient  # noqa: E402
-from vmaf_mcp import http_transport as ht  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helper: build a fresh app with an isolated prometheus registry
@@ -455,7 +457,7 @@ async def test_body_at_limit_accepted(monkeypatch: Any) -> None:
     Tests the middleware logic directly via a mock request so we avoid sending
     4 MiB of actual TCP data (which would stall the TestClient connection).
     """
-    import aiohttp.web as web
+    from aiohttp import web
 
     # Build the middleware under NO_AUTH so the auth gate is bypassed.
     monkeypatch.setenv("VMAFX_MCP_HTTP_NO_AUTH", "1")

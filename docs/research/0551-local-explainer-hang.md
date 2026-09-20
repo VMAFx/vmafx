@@ -1,19 +1,18 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Research-0551: VCQ-223 LocalExplainer CI timeout — root cause investigation
 
-**Date**: 2026-05-18
-**Branch**: `docs/vcq-223-local-explainer-hang-diagnosis`
+**Date**: 2026-05-18 **Branch**: `docs/vcq-223-local-explainer-hang-diagnosis`
 **ADR**: [ADR-0551](../adr/0551-local-explainer-hang-diagnosis.md)
 
 ## Summary
 
 The `@unittest.skip("[VCQ-223]")` on
 `QualityRunnerTest::test_run_vmaf_runner_local_explainer_with_bootstrap_model`
-(`python/test/local_explainer_test.py:252`) guards a CPU-bound computation timeout,
-**not a deadlock, pipe stall, or subprocess hang**. The root cause is
-`LocalExplainer(neighbor_samples=5000)` (the default) being used over a 48-frame,
-2-asset fixture, producing ~480 000 native libsvm `svm_predict_values` calls in a
-tight Python-C boundary loop. Wall time is 4–8 minutes, which exceeds CI timeouts.
+(`python/test/local_explainer_test.py:252`) guards a CPU-bound computation
+timeout, **not a deadlock, pipe stall, or subprocess hang**. The root cause is
+`LocalExplainer(neighbor_samples=5000)` (the default) being used over a
+48-frame, 2-asset fixture, producing ~480 000 native libsvm `svm_predict_values`
+calls in a tight Python-C boundary loop. Wall time is 4–8 minutes, which exceeds
+CI timeouts.
 
 ## Investigation Steps
 
@@ -25,12 +24,12 @@ git log --all --oneline -- python/test/local_explainer_test.py
 
 The skip was introduced in commit `e3827e4dd` (2026-05-06), which simultaneously
 changed `fifo_mode=True` → `fifo_mode=False` and migrated the test classes from
-`unittest.TestCase` to `MyTestCase`. The skip comment in the diff shows this was added
-at the same time as the refactor, implying the hang predated the refactor and was known
-but not diagnosed.
+`unittest.TestCase` to `MyTestCase`. The skip comment in the diff shows this was
+added at the same time as the refactor, implying the hang predated the refactor
+and was known but not diagnosed.
 
-The `VCQ-223` tag does not appear in any other commit in the fork's history (confirmed
-via `git log -G 'VCQ-223' --all --oneline`).
+The `VCQ-223` tag does not appear in any other commit in the fork's history
+(confirmed via `git log -G 'VCQ-223' --all --oneline`).
 
 ### Step 2 — Model file inspection
 
@@ -40,13 +39,15 @@ data = json.load(open('python/test/resource/model/vmafplus_v0.5.2_test.json'))
 # model_dict.model_type = LIBSVMNUSVR, total_sv = 210, num_models = 5 (param_dict)
 ```
 
-The JSON loads as a plain `LibsvmNusvrTrainTestModel` (not `BootstrapLibsvmNusvrTrainTestModel`)
-because `VmafQualityRunnerModelMixin._load_model_from_filepath` calls
-`LibsvmNusvrTrainTestModel.from_file(..., combined=True)` and the `from_file` dispatch
-in `TrainTestModel.from_file` looks up the class by `model_type = LIBSVMNUSVR`, which
-resolves to `LibsvmNusvrTrainTestModel`, not the bootstrap subclass. The loaded model
-has a single `svm_model` (not a list), so `local_explainer.py:120`'s
-`isinstance(model, list)` guard evaluates to `False`.
+The JSON loads as a plain `LibsvmNusvrTrainTestModel` (not
+`BootstrapLibsvmNusvrTrainTestModel`) because
+`VmafQualityRunnerModelMixin._load_model_from_filepath` calls
+`LibsvmNusvrTrainTestModel.from_file(..., combined=True)` and the `from_file`
+dispatch in `TrainTestModel.from_file` looks up the class by
+`model_type = LIBSVMNUSVR`, which resolves to `LibsvmNusvrTrainTestModel`, not
+the bootstrap subclass. The loaded model has a single `svm_model` (not a list),
+so `local_explainer.py:120`'s `isinstance(model, list)` guard evaluates to
+`False`.
 
 ### Step 3 — Hang reproduction
 
@@ -99,8 +100,8 @@ semaphore.
 `VmafQualityRunnerWithLocalExplainer._run_on_asset` (line 38) constructs
 `LocalExplainer()` with no arguments — defaults to `neighbor_samples=5000`.
 
-For each asset the runner calls `explainer.explain(model, xs)`. Inside `explain()`,
-for each of the N samples (frames) in `xs`:
+For each asset the runner calls `explainer.explain(model, xs)`. Inside
+`explain()`, for each of the N samples (frames) in `xs`:
 
 1. Generate a `(5001, n_feature)` neighborhood array.
 2. Call `train_test_model._predict(model, xs_2d_neighbor)` — this calls
@@ -110,20 +111,20 @@ for each of the N samples (frames) in `xs`:
 
 Total `svm_predict_values` calls = 2 assets × 48 frames × 5 001 = **480 096**.
 
-The sibling test `test_explain_vmaf_results` passes `neighbor_samples=100`:
-2 × 48 × 101 = **9 696 calls** — 50× less — and completes in seconds.
+The sibling test `test_explain_vmaf_results` passes `neighbor_samples=100`: 2 ×
+48 × 101 = **9 696 calls** — 50× less — and completes in seconds.
 
 ### Step 5 — Candidate root causes ruled out
 
-| Hypothesis | Verdict | Evidence |
-|---|---|---|
-| Deadlock on condition variable | **Ruled out** | Stack shows active CPU spin in C code, not blocking on Python GIL or synchronization |
-| Pipe stall from `fifo_mode=True` | **Ruled out** | Test uses `fifo_mode=False`; subprocess uses `-nostdin` flag; no FIFO in play |
-| `subprocess.run` without `stdin=subprocess.DEVNULL` | **Ruled out** | `vmafexec` call completes before `explain()` is reached; hang is post-subprocess |
-| Bootstrap model assertion (5 models expected, 1 found) | **Ruled out** | Model loads as plain `LibsvmNusvrTrainTestModel`; `_get_num_models()` not called |
-| `NoPrint` stdout redirect race | **Ruled out** | `NoPrint` is a simple fd redirect, not thread-synchronized; no race possible here |
-| asyncio event loop blocking | **Ruled out** | No asyncio in this stack |
-| CI no-TTY stdin read | **Ruled out** | libsvm `svm_predict` does not read stdin |
+| Hypothesis                                             | Verdict       | Evidence                                                                             |
+| ------------------------------------------------------ | ------------- | ------------------------------------------------------------------------------------ |
+| Deadlock on condition variable                         | **Ruled out** | Stack shows active CPU spin in C code, not blocking on Python GIL or synchronization |
+| Pipe stall from `fifo_mode=True`                       | **Ruled out** | Test uses `fifo_mode=False`; subprocess uses `-nostdin` flag; no FIFO in play        |
+| `subprocess.run` without `stdin=subprocess.DEVNULL`    | **Ruled out** | `vmafexec` call completes before `explain()` is reached; hang is post-subprocess     |
+| Bootstrap model assertion (5 models expected, 1 found) | **Ruled out** | Model loads as plain `LibsvmNusvrTrainTestModel`; `_get_num_models()` not called     |
+| `NoPrint` stdout redirect race                         | **Ruled out** | `NoPrint` is a simple fd redirect, not thread-synchronized; no race possible here    |
+| asyncio event loop blocking                            | **Ruled out** | No asyncio in this stack                                                             |
+| CI no-TTY stdin read                                   | **Ruled out** | libsvm `svm_predict` does not read stdin                                             |
 
 ### Step 6 — Fix confirmation (not applied in this PR)
 
@@ -174,18 +175,24 @@ self.runner = VmafQualityRunnerWithLocalExplainer(
 )
 ```
 
-Then remove the `@unittest.skip` decorator and update the score assertions to match the
-`neighbor_samples=100` output (requires a single local run).
+Then remove the `@unittest.skip` decorator and update the score assertions to
+match the `neighbor_samples=100` output (requires a single local run).
 
-Total diff: < 10 lines. Qualifies for same-PR inclusion if confirmed reproducible and
-fixable without a snapshot regen.
+Total diff: < 10 lines. Qualifies for same-PR inclusion if confirmed
+reproducible and fixable without a snapshot regen.
 
 ## Files Examined
 
 - `python/test/local_explainer_test.py` — skipped test at line 252
-- `python/vmaf/core/local_explainer.py` — `LocalExplainer.__init__` default `neighbor_samples=5000`
-- `python/vmaf/core/quality_runner_extra.py` — `_run_on_asset` constructs `LocalExplainer()` with no args
-- `python/vmaf/core/train_test_model.py` — `LibsvmNusvrTrainTestModel._predict` (the bottleneck)
-- `python/vmaf/core/quality_runner.py` — `VmafQualityRunnerModelMixin._load_model_from_filepath`
-- `/home/kilian/dev/vmaf/.venv/lib/python3.14/site-packages/libsvm/svmutil.py` — `svm_predict` inner loop
-- `python/test/resource/model/vmafplus_v0.5.2_test.json` — LIBSVMNUSVR model, 210 SVs, `num_models=5`
+- `python/vmaf/core/local_explainer.py` — `LocalExplainer.__init__` default
+  `neighbor_samples=5000`
+- `python/vmaf/core/quality_runner_extra.py` — `_run_on_asset` constructs
+  `LocalExplainer()` with no args
+- `python/vmaf/core/train_test_model.py` — `LibsvmNusvrTrainTestModel._predict`
+  (the bottleneck)
+- `python/vmaf/core/quality_runner.py` —
+  `VmafQualityRunnerModelMixin._load_model_from_filepath`
+- `/home/kilian/dev/vmaf/.venv/lib/python3.14/site-packages/libsvm/svmutil.py` —
+  `svm_predict` inner loop
+- `python/test/resource/model/vmafplus_v0.5.2_test.json` — LIBSVMNUSVR model,
+  210 SVs, `num_models=5`

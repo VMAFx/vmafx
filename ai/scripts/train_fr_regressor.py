@@ -268,31 +268,8 @@ def _train_final(
     return model, {"feature_mean": mean.tolist(), "feature_std": std.tolist()}, in_sample
 
 
-def _export_and_register(
-    model,  # type: ignore[no-untyped-def]
-    *,
-    feature_cols: tuple[str, ...],
-    standardisation: dict,
-    loso_summary: dict,
-    in_sample: dict,
-    onnx_path: Path,
-    sidecar_path: Path,
-    registry_path: Path,
-    run_provenance: dict[str, Any],
-) -> None:
-    from vmaf_train.models import export_to_onnx
-
-    in_features = len(feature_cols)
-    export_to_onnx(
-        model,
-        onnx_path,
-        in_shape=(1, in_features),
-        input_name="features",
-        output_name="score",
-    )
-    digest = sha256(onnx_path)
-
-    notes = (
+def _model_notes(loso_summary: dict) -> str:
+    return (
         "Tiny FR regressor (C1) — 6-feature canonical-6 vector "
         "(adm2, vif_scale0..3, motion2) → VMAF teacher score scalar. "
         "Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) "
@@ -304,7 +281,19 @@ def _export_and_register(
         "docs/ai/models/fr_regressor_v1.md + ADR-0249."
     )
 
-    sidecar = {
+
+def _sidecar_document(
+    *,
+    feature_cols: tuple[str, ...],
+    standardisation: dict,
+    loso_summary: dict,
+    in_sample: dict,
+    digest: str,
+    notes: str,
+    onnx_path: Path,
+    run_provenance: dict[str, Any],
+) -> dict[str, Any]:
+    return {
         "id": "fr_regressor_v1",
         "kind": "fr",
         "onnx": onnx_path.name,
@@ -328,10 +317,9 @@ def _export_and_register(
         },
         "run_provenance": run_provenance,
     }
-    write_manifest_json(sidecar_path, sidecar)
 
-    # Update registry.json. Idempotent: replace any existing
-    # 'fr_regressor_v1' row.
+
+def _update_registry(registry_path: Path, onnx_path: Path, digest: str, notes: str) -> None:
     registry = json.loads(registry_path.read_text())
     models = registry.get("models", [])
     new_entry = {
@@ -349,31 +337,44 @@ def _export_and_register(
     registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(prog="train_fr_regressor.py")
-    ap.add_argument(
-        "--parquet",
-        type=Path,
-        default=REPO_ROOT / "runs" / "full_features_netflix.parquet",
+def _export_and_register(
+    model,  # type: ignore[no-untyped-def]
+    *,
+    feature_cols: tuple[str, ...],
+    standardisation: dict,
+    loso_summary: dict,
+    in_sample: dict,
+    onnx_path: Path,
+    sidecar_path: Path,
+    registry_path: Path,
+    run_provenance: dict[str, Any],
+) -> None:
+    from vmaf_train.models import export_to_onnx
+
+    export_to_onnx(
+        model,
+        onnx_path,
+        in_shape=(1, len(feature_cols)),
+        input_name="features",
+        output_name="score",
     )
-    ap.add_argument(
-        "--features",
-        type=str,
-        default="canonical6",
-        choices=sorted(SUBSETS),
-        help="Feature subset name from SUBSETS (canonical6 | A | B).",
+    digest = sha256(onnx_path)
+    notes = _model_notes(loso_summary)
+    sidecar = _sidecar_document(
+        feature_cols=feature_cols,
+        standardisation=standardisation,
+        loso_summary=loso_summary,
+        in_sample=in_sample,
+        digest=digest,
+        notes=notes,
+        onnx_path=onnx_path,
+        run_provenance=run_provenance,
     )
-    ap.add_argument("--epochs", type=int, default=30)
-    ap.add_argument("--batch-size", type=int, default=256)
-    ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--weight-decay", type=float, default=1e-5)
-    ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument(
-        "--ship-threshold",
-        type=float,
-        default=PLCC_SHIP_THRESHOLD,
-        help="Mean LOSO PLCC must exceed this; otherwise refuse to ship.",
-    )
+    write_manifest_json(sidecar_path, sidecar)
+    _update_registry(registry_path, onnx_path, digest, notes)
+
+
+def _add_output_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--out-onnx",
         type=Path,
@@ -399,13 +400,88 @@ def main() -> int:
         action="store_true",
         help="Skip ONNX export + registry update (smoke / dev mode).",
     )
-    args = ap.parse_args()
 
-    if not args.parquet.is_file():
-        print(f"error: parquet not found at {args.parquet}", file=sys.stderr)
-        return 2
 
-    run_provenance = build_run_provenance(
+def _parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(prog="train_fr_regressor.py")
+    ap.add_argument(
+        "--parquet",
+        type=Path,
+        default=REPO_ROOT / "runs" / "full_features_netflix.parquet",
+    )
+    ap.add_argument(
+        "--features",
+        type=str,
+        default="canonical6",
+        choices=sorted(SUBSETS),
+        help="Feature subset name from SUBSETS (canonical6 | A | B).",
+    )
+    ap.add_argument("--epochs", type=int, default=30)
+    ap.add_argument("--batch-size", type=int, default=256)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--weight-decay", type=float, default=1e-5)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument(
+        "--ship-threshold",
+        type=float,
+        default=PLCC_SHIP_THRESHOLD,
+        help="Mean LOSO PLCC must exceed this; otherwise refuse to ship.",
+    )
+    _add_output_arguments(ap)
+    return ap.parse_args()
+
+
+def _run_loso_with_log(df, feature_cols: tuple[str, ...], args: argparse.Namespace) -> dict:
+    started = time.time()
+    print("[fr-v1] running 9-fold LOSO sweep ...", flush=True)
+    loso = _loso_sweep(
+        df,
+        feature_cols,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+    )
+    summary = loso["summary"]
+    print(
+        f"[fr-v1] LOSO summary: PLCC={summary['mean_plcc']:.4f}±{summary['std_plcc']:.4f} "
+        f"SROCC={summary['mean_srocc']:.4f}±{summary['std_srocc']:.4f} "
+        f"RMSE={summary['mean_rmse']:.3f}±{summary['std_rmse']:.3f} "
+        f"({summary['n_folds']} folds, {time.time() - started:.0f}s)",
+        flush=True,
+    )
+    return loso
+
+
+def _write_metrics(
+    args: argparse.Namespace,
+    feature_cols: tuple[str, ...],
+    loso: dict,
+    in_sample: dict,
+    run_provenance: dict[str, Any],
+) -> None:
+    metrics = {
+        "feature_subset": args.features,
+        "feature_cols": list(feature_cols),
+        "loso": loso,
+        "in_sample": in_sample,
+        "ship_threshold": args.ship_threshold,
+        "shipped": not args.no_export,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "lr": args.lr,
+        "weight_decay": args.weight_decay,
+        "seed": args.seed,
+        "run_provenance": run_provenance,
+    }
+    args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
+    write_manifest_json(args.metrics_out, metrics)
+    print(f"[fr-v1] wrote metrics to {args.metrics_out}")
+
+
+def _run_provenance(args: argparse.Namespace) -> dict[str, Any]:
+    return build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,
         argv=sys.argv[1:],
@@ -419,25 +495,28 @@ def main() -> int:
         },
     )
 
+
+def _load_training_frame(args: argparse.Namespace):  # type: ignore[no-untyped-def]
     import pandas as pd
 
     df = pd.read_parquet(args.parquet)
     feature_cols = SUBSETS[args.features]
-    missing = [c for c in feature_cols if c not in df.columns]
+    missing = [column for column in feature_cols if column not in df.columns]
     if missing:
         print(f"error: missing feature columns in parquet: {missing}", file=sys.stderr)
-        return 2
-
+        return None
     print(
         f"[fr-v1] parquet={args.parquet.name} "
         f"rows={len(df)} sources={df['source'].nunique()} "
         f"features={args.features} ({len(feature_cols)} cols)",
         flush=True,
     )
+    return df, feature_cols
 
-    t0 = time.time()
-    print("[fr-v1] running 9-fold LOSO sweep ...", flush=True)
-    loso = _loso_sweep(
+
+def _train_final_with_log(df, feature_cols, args):  # type: ignore[no-untyped-def]
+    print("[fr-v1] training final all-source checkpoint ...", flush=True)
+    model, standardisation, in_sample = _train_final(
         df,
         feature_cols,
         epochs=args.epochs,
@@ -446,14 +525,29 @@ def main() -> int:
         weight_decay=args.weight_decay,
         seed=args.seed,
     )
-    s = loso["summary"]
     print(
-        f"[fr-v1] LOSO summary: PLCC={s['mean_plcc']:.4f}±{s['std_plcc']:.4f} "
-        f"SROCC={s['mean_srocc']:.4f}±{s['std_srocc']:.4f} "
-        f"RMSE={s['mean_rmse']:.3f}±{s['std_rmse']:.3f} "
-        f"({s['n_folds']} folds, {time.time() - t0:.0f}s)",
+        f"[fr-v1] final-on-all in-sample PLCC={in_sample['plcc']:.4f} "
+        f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
         flush=True,
     )
+    return model, standardisation, in_sample
+
+
+def main() -> int:
+    args = _parse_args()
+
+    if not args.parquet.is_file():
+        print(f"error: parquet not found at {args.parquet}", file=sys.stderr)
+        return 2
+
+    run_provenance = _run_provenance(args)
+    loaded = _load_training_frame(args)
+    if loaded is None:
+        return 2
+    df, feature_cols = loaded
+
+    loso = _run_loso_with_log(df, feature_cols, args)
+    s = loso["summary"]
 
     if s["mean_plcc"] < args.ship_threshold:
         print(
@@ -470,39 +564,9 @@ def main() -> int:
         )
         return 3
 
-    print("[fr-v1] training final all-source checkpoint ...", flush=True)
-    model, standardisation, in_sample = _train_final(
-        df,
-        feature_cols,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        seed=args.seed,
-    )
-    print(
-        f"[fr-v1] final-on-all in-sample PLCC={in_sample['plcc']:.4f} "
-        f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
-        flush=True,
-    )
+    model, standardisation, in_sample = _train_final_with_log(df, feature_cols, args)
 
-    metrics_out = {
-        "feature_subset": args.features,
-        "feature_cols": list(feature_cols),
-        "loso": loso,
-        "in_sample": in_sample,
-        "ship_threshold": args.ship_threshold,
-        "shipped": not args.no_export,
-        "epochs": args.epochs,
-        "batch_size": args.batch_size,
-        "lr": args.lr,
-        "weight_decay": args.weight_decay,
-        "seed": args.seed,
-        "run_provenance": run_provenance,
-    }
-    args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-    write_manifest_json(args.metrics_out, metrics_out)
-    print(f"[fr-v1] wrote metrics to {args.metrics_out}")
+    _write_metrics(args, feature_cols, loso, in_sample, run_provenance)
 
     if args.no_export:
         print("[fr-v1] --no-export set; skipping ONNX export.")

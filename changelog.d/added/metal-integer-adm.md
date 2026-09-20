@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Metal `integer_adm` kernel.** The Metal backend now implements the
   `integer_adm` extractor (feature `adm` + `adm_scale0..3` — a VMAF default) via
   `integer_adm_metal.mm` + `integer_adm.metal` — a fixed-point 4-scale DWT2 →

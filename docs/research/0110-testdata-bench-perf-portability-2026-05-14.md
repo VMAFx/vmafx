@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0110: testdata bench_perf portability
 
 - **Date**: 2026-05-14
@@ -27,7 +26,7 @@ the committed performance snapshots?
 ## Decision Matrix
 
 | Option | Pros | Cons | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep hardcoded paths | No code churn. | Only works on one workstation; blocks raw tests when optional MP4 is absent. | Rejected. |
 | Move all benchmark logic to `bench_all.sh` | One benchmark entry point. | Loses the FFmpeg lavfi/decode path this script measures. | Rejected. |
 | Add CLI/env configuration plus dry-run/list modes | Keeps the existing workload, makes local paths explicit, and gives CI a hardware-free test seam. | Slightly larger script surface. | Chosen. |

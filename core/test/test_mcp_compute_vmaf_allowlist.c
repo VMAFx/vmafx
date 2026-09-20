@@ -41,7 +41,7 @@
 #define vmaf_mcp_compute_vmaf vmaf_mcp_compute_vmaf__allowlist_test_dup
 /* White-box include of the CU under test to reach the static validate_path();
  * established pattern, see test_feature_collector.c. */
-/* NOLINTNEXTLINE(bugprone-suspicious-include) — white-box test, see above (ADR-0141 / ADR-0278). */
+
 #include "mcp/compute_vmaf.c"
 #undef vmaf_mcp_compute_vmaf
 
@@ -58,13 +58,13 @@ static int test_repo_root(char *out, size_t out_sz)
 static char *test_rejects_outside_allowlist(void)
 {
     char real[PATH_MAX];
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     int rc = validate_path("/etc/passwd", real, sizeof(real), &err);
-    int had_err = err != NULL;
+    int had_err = err != VMAF_NULLPTR;
     free(err); /* Free before any (short-circuiting) assert — no leak path. */
     mu_assert("out-of-root path must be rejected with -EACCES", rc == -EACCES);
     mu_assert("rejection must set an owned error message", had_err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* A `../`-traversal that escapes an allowlisted root after canonicalisation
@@ -77,18 +77,18 @@ static char *test_rejects_traversal_escape(void)
         /* Cannot locate repo root in this environment — skip rather than
          * false-fail. The /etc/passwd case already proves rejection. */
         (void)fprintf(stderr, "(skip: repo root not found) ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     /* testdata/../README.md resolves to <repo>/README.md, outside testdata. */
     char traversal[PATH_MAX];
     int n = snprintf(traversal, sizeof(traversal), "%s/testdata/../README.md", root);
     mu_assert("snprintf overflow building traversal path", n > 0 && (size_t)n < sizeof(traversal));
     char real[PATH_MAX];
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     int rc = validate_path(traversal, real, sizeof(real), &err);
     mu_assert("`..`-escape path must be rejected with -EACCES", rc == -EACCES);
     free(err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* A genuine in-allowlist file must be accepted (rc==0) and the resolved
@@ -98,7 +98,7 @@ static char *test_accepts_in_allowlist(void)
     char root[PATH_MAX];
     if (test_repo_root(root, sizeof(root)) != 0) {
         (void)fprintf(stderr, "(skip: repo root not found) ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     /* Pick a file that exists under an allowlisted root. testdata/ is a
      * default root and ships committed .yuv fixtures; dis_576x324_48f.yuv is
@@ -112,17 +112,17 @@ static char *test_accepts_in_allowlist(void)
     /* Confirm the fixture exists; if not (sparse checkout), skip cleanly. */
     if (access(in_root, R_OK) != 0) {
         (void)fprintf(stderr, "(skip: testdata YUV fixture absent) ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     char real[PATH_MAX];
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     int rc = validate_path(in_root, real, sizeof(real), &err);
-    if (err != NULL)
+    if (err != VMAF_NULLPTR)
         free(err);
     mu_assert("in-allowlist existing file must be accepted (rc==0)", rc == 0);
     mu_assert("accepted path must be non-empty", real[0] != '\0');
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* VMAF_MCP_ALLOW must extend the root set: a path under a directory named
@@ -133,39 +133,38 @@ static char *test_vmaf_mcp_allow_extends_roots(void)
      * file created under it validates. */
     char tmpl[] = "/tmp/vmaf_allowlist_test_XXXXXX";
     char *dir = mkdtemp(tmpl);
-    mu_assert("mkdtemp failed", dir != NULL);
+    mu_assert("mkdtemp failed", dir != VMAF_NULLPTR);
 
     char file_path[PATH_MAX];
     int n = snprintf(file_path, sizeof(file_path), "%s/probe.yuv", dir);
     mu_assert("snprintf overflow building tmp file path", n > 0 && (size_t)n < sizeof(file_path));
     FILE *f = fopen(file_path, "wb");
-    mu_assert("fopen probe file failed", f != NULL);
+    mu_assert("fopen probe file failed", f != VMAF_NULLPTR);
     (void)fputc('x', f);
     (void)fclose(f);
 
     /* Without the env var the path is rejected. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
+
     (void)unsetenv("VMAF_MCP_ALLOW");
     char real[PATH_MAX];
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     int rc_before = validate_path(file_path, real, sizeof(real), &err);
     free(err);
     mu_assert("tmp path must be rejected without VMAF_MCP_ALLOW", rc_before == -EACCES);
 
     /* With the env var pointing at the temp dir the path is accepted. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
+
     int se = setenv("VMAF_MCP_ALLOW", dir, 1);
     mu_assert("setenv VMAF_MCP_ALLOW failed", se == 0);
-    err = NULL;
+    err = VMAF_NULLPTR;
     int rc_after = validate_path(file_path, real, sizeof(real), &err);
     free(err);
     mu_assert("tmp path must be accepted with VMAF_MCP_ALLOW", rc_after == 0);
 
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     (void)unsetenv("VMAF_MCP_ALLOW");
     (void)unlink(file_path);
     (void)rmdir(dir);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -174,5 +173,5 @@ char *run_tests(void)
     mu_run_test(test_rejects_traversal_escape);
     mu_run_test(test_accepts_in_allowlist);
     mu_run_test(test_vmaf_mcp_allow_extends_roots);
-    return NULL;
+    return VMAF_NULLPTR;
 }

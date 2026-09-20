@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # MCP server: subprocess → direct cgo migration plan
 
 Status: Phase 1 (Proposed)
@@ -19,7 +18,7 @@ path remains the default and is **not removed in this PR**.
 The migration is intentionally staged:
 
 | Phase | Scope | Default | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **1** | `vmaf_score` + `describe_model`, CPU + SVM only | subprocess | This PR |
 | 2 | `vmaf_score_encoded`, `probe_backend`, `run_benchmark`; GPU backend support; per-feature pooled scores | subprocess | Planned |
 | 3 | Default-flip `VMAFX_MCP_DIRECT=1` after parity sweep; ONNX/DNN cgo bridge | direct | Planned |
@@ -53,7 +52,7 @@ The direct path falls back transparently to the subprocess path in any of
 these cases:
 
 | Trigger | Reason |
-|---|---|
+| --- | --- |
 | `backend` arg is not `auto` or `cpu` | Phase 1 is CPU only |
 | Model file extension is `.onnx` | DNN cgo bridge lands in Phase 3 |
 | `resolveModelArgToPath` cannot find the model on disk | `vmaf.c` has its own version-table resolver; defer to it |
@@ -88,7 +87,7 @@ The direct path returns typed errors so MCP clients can branch
 programmatically:
 
 | libvmaf return | Go sentinel | Wraps |
-|---|---|---|
+| --- | --- | --- |
 | `-EINVAL` | `libvmaf.ErrInvalidArgument` | `os.ErrInvalid` |
 | `-ENOMEM` | `libvmaf.ErrOutOfMemory` | — |
 | `-ENOENT` | `libvmaf.ErrModelNotFound` | `os.ErrNotExist` |

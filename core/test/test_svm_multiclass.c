@@ -32,11 +32,6 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,20 +119,20 @@ static char *test_train_17class_csvc_exercises_realloc(void)
 
     svm_set_print_string_function(&silence_svm_log);
     const char *chk = svm_check_parameter(&fx.prob, &p);
-    mu_assert("17-class C_SVC param accepted", chk == NULL);
+    mu_assert("17-class C_SVC param accepted", chk == VMAF_NULLPTR);
 
     struct svm_model *m = svm_train(&fx.prob, &p);
-    mu_assert("17-class model trained (realloc path exercised)", m != NULL);
+    mu_assert("17-class model trained (realloc path exercised)", m != VMAF_NULLPTR);
     mu_assert("nr_class == 17", svm_get_nr_class(m) == 17);
     mu_assert("nr_sv > 0", svm_get_nr_sv(m) > 0);
 
     /* Predict a point for class 8 — should be closest centroid. */
-    struct svm_node q[2] = {{1, 8.0}, {-1, 0.0}};
+    const struct svm_node q[2] = {{1, 8.0}, {-1, 0.0}};
     (void)svm_predict(m, q);
 
     svm_free_and_destroy_model(&m);
     free_nclass_fixture(&fx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* 32 classes: exercises a second realloc doubling (32 → 64) inside
@@ -160,15 +155,15 @@ static char *test_train_32class_csvc_exercises_second_realloc(void)
 
     svm_set_print_string_function(&silence_svm_log);
     const char *chk = svm_check_parameter(&fx.prob, &p);
-    mu_assert("32-class C_SVC param accepted", chk == NULL);
+    mu_assert("32-class C_SVC param accepted", chk == VMAF_NULLPTR);
 
     struct svm_model *m = svm_train(&fx.prob, &p);
-    mu_assert("32-class model trained (second realloc path exercised)", m != NULL);
+    mu_assert("32-class model trained (second realloc path exercised)", m != VMAF_NULLPTR);
     mu_assert("nr_class == 32", svm_get_nr_class(m) == 32);
 
     svm_free_and_destroy_model(&m);
     free_nclass_fixture(&fx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -203,8 +198,9 @@ static char *test_check_param_nusvc_17class_exercises_realloc(void)
     const char *err = svm_check_parameter(&fx.prob, &p);
 
     free_nclass_fixture(&fx);
-    mu_assert("nu-svc 17-class realloc path: check_parameter returns NULL (feasible)", err == NULL);
-    return NULL;
+    mu_assert("nu-svc 17-class realloc path: check_parameter returns NULL (feasible)",
+              err == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -216,7 +212,5 @@ char *run_tests(void)
     mu_run_test(test_train_17class_csvc_exercises_realloc);
     mu_run_test(test_train_32class_csvc_exercises_second_realloc);
     mu_run_test(test_check_param_nusvc_17class_exercises_realloc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

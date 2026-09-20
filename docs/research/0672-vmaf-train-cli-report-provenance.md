@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0672: vmaf-train CLI Report Provenance
 
 ## Summary
@@ -34,7 +33,7 @@ output targets that made the metrics reproducible.
 ## Decision Matrix
 
 | Option | Pros | Cons | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep CLI reports as plain JSON | Smallest diff | User-facing evidence remains disconnected from inputs and thresholds | Rejected |
 | Add bespoke `command` fields per subcommand | Localized and explicit | Duplicates ADR-0661 normalisation and path hashing | Rejected |
 | Add a shared CLI report writer using ADR-0661 | One helper covers all JSON report commands; matches other AI artifacts | Slightly larger report JSON | Chosen |

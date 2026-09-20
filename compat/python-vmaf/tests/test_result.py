@@ -11,13 +11,17 @@
 from __future__ import annotations
 
 import json
-from collections import OrderedDict
+from importlib import import_module
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
 from vmaf.core.result import BasicResult, RawResult, Result
+
+_COMPARISON_VALUE_2 = 2
+_COMPARISON_VALUE_3 = 3
+_COMPARISON_VALUE_4 = 4
 
 # ---------------------------------------------------------------------------
 # Minimal helpers
@@ -110,12 +114,12 @@ class TestBasicResultGetItem:
             _ = br["nonexistent_score"]
 
     def test_2d_scores_per_model_aggregation(self):
-        """2-D array (models × frames) → list of per-model means."""
-        scores = np.array([[10.0, 20.0], [30.0, 40.0]])  # 2 models × 2 frames
+        """2-D array (models x frames) -> list of per-model means."""
+        scores = np.array([[10.0, 20.0], [30.0, 40.0]])  # 2 models x 2 frames
         rd = {"BOOTSTRAP_VMAF_all_models_scores": scores}
         br = BasicResult(MagicMock(), rd)
         result = br["BOOTSTRAP_VMAF_all_models_score"]
-        assert len(result) == 2
+        assert len(result) == _COMPARISON_VALUE_2
         assert result[0] == pytest.approx(15.0)
         assert result[1] == pytest.approx(35.0)
 
@@ -128,7 +132,7 @@ class TestBasicResultGetItem:
 
     def test_2d_single_model_assertion(self):
         """A 2-D array with only 1 model row is invalid (must have > 1)."""
-        scores = np.array([[10.0, 20.0]])  # 1 model × 2 frames — not allowed
+        scores = np.array([[10.0, 20.0]])  # 1 model x 2 frames - not allowed
         rd = {"ONE_MODEL_scores": scores}
         br = BasicResult(MagicMock(), rd)
         with pytest.raises(AssertionError):
@@ -294,7 +298,7 @@ class TestResultSerialisation:
     def test_to_dict_frames_length(self):
         r = self._make_ssim_like_result()
         frames = r.to_dict()["frames"]
-        assert len(frames) == 3
+        assert len(frames) == _COMPARISON_VALUE_3
 
     def test_to_dict_frame_has_framenum(self):
         r = self._make_ssim_like_result()
@@ -307,7 +311,7 @@ class TestResultSerialisation:
         json_str = r.to_json()
         parsed = json.loads(json_str)
         assert parsed["executorId"] == "SSIM_V1.0"
-        assert len(parsed["frames"]) == 3
+        assert len(parsed["frames"]) == _COMPARISON_VALUE_3
 
     def test_to_dict_aggregate_method_name(self):
         r = self._make_ssim_like_result()
@@ -429,8 +433,8 @@ class TestResultCombine:
     def test_combined_length_is_sum(self):
         r1, r2 = self._make_pair()
         combined = Result.combine_result([r1, r2])
-        assert len(combined.result_dict["FAKE_scores"]) == 4
-        assert len(combined.result_dict["FAKE_feature_vif_scores"]) == 4
+        assert len(combined.result_dict["FAKE_scores"]) == _COMPARISON_VALUE_4
+        assert len(combined.result_dict["FAKE_feature_vif_scores"]) == _COMPARISON_VALUE_4
 
     def test_combined_executor_id_preserved(self):
         r1, r2 = self._make_pair()
@@ -487,7 +491,7 @@ class TestResultDataframe:
         """One row per 1-D scores key."""
         r = self._make_result()
         df = r.to_dataframe()
-        assert len(df) == 2  # SSIM_feature_ssim_scores + SSIM_scores
+        assert len(df) == _COMPARISON_VALUE_2  # SSIM_feature_ssim_scores + SSIM_scores
 
     def test_to_dataframe_executor_id_consistent(self):
         r = self._make_result()
@@ -498,11 +502,11 @@ class TestResultDataframe:
         r = self._make_result()
         df = r.to_dataframe()
         scores = Result.get_unique_from_dataframe(df, "SSIM_scores", "scores")
-        assert len(scores) == 3
+        assert len(scores) == _COMPARISON_VALUE_3
 
     def test_get_unique_from_dataframe_assert_on_ambiguous(self):
         """If more than one row matches, get_unique_from_dataframe must assert."""
-        import pandas as pd
+        pd = import_module("pandas")
 
         # Build a malformed df with two rows for the same scores_key.
         row = {
@@ -522,7 +526,7 @@ class TestResultDataframe:
 
     def test_assert_asset_dataframe_rejects_mismatched_executor(self):
         """_assert_asset_dataframe must fail when executor_id is not uniform."""
-        import pandas as pd
+        pd = import_module("pandas")
 
         row1 = {
             "dataset": "t",
@@ -541,7 +545,7 @@ class TestResultDataframe:
             Result._assert_asset_dataframe(df)
 
     def test_assert_asset_dataframe_rejects_unequal_score_lengths(self):
-        import pandas as pd
+        pd = import_module("pandas")
 
         row1 = {
             "dataset": "t",

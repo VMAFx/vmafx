@@ -38,6 +38,7 @@ See ADR-0321 + docs/ai/models/fr_regressor_v2_probabilistic.md.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -51,13 +52,7 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-# Reuse the LOSO trainer's corpus loader + canonical constants so the
-# codec block layout is identical to what was gate-validated.
-from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[import-not-found]
+from train_fr_regressor_v2_ensemble_loso import (  # type: ignore[import-not-found]
     CANONICAL_6,
     CODEC_BLOCK_DIM,
     ENCODER_VOCAB,
@@ -66,9 +61,16 @@ from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[
     _set_seed_all,
 )
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+# Reuse the LOSO trainer's corpus loader + canonical constants so the
+# codec block layout is identical to what was gate-validated.
 
 CODEC_BLOCK_LAYOUT: list[str] = [f"encoder_onehot[{e}]" for e in ENCODER_VOCAB] + [
     "preset_norm",
@@ -258,7 +260,7 @@ def _build_sidecar(
     return sidecar
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="export_ensemble_v2_seeds")
     ap.add_argument(
         "--corpus",
@@ -291,20 +293,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Patch sha256 + smoke=false on the 5 seed rows in registry.json.",
     )
-    raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(argv)
 
-    seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+
+def _validated_inputs(
+    args: argparse.Namespace,
+) -> tuple[list[int] | None, dict[str, Any] | None, int]:
+    seeds = [int(seed) for seed in args.seeds.split(",") if seed.strip()]
     if not seeds:
         print("error: --seeds must be non-empty", file=sys.stderr)
-        return 2
+        return None, None, 2
     if not args.corpus.is_file():
         print(f"error: corpus not found at {args.corpus}", file=sys.stderr)
-        return 2
+        return None, None, 2
     if not args.promote_json.is_file():
         print(f"error: PROMOTE.json not found at {args.promote_json}", file=sys.stderr)
-        return 2
-
+        return None, None, 2
     promote = json.loads(args.promote_json.read_text())
     if promote.get("verdict") != "PROMOTE":
         print(
@@ -312,7 +316,92 @@ def main(argv: list[str] | None = None) -> int:
             "to flip non-PROMOTE seeds to production.",
             file=sys.stderr,
         )
-        return 3
+        return None, None, 3
+    return seeds, promote, 0
+
+
+def _output_targets(args: argparse.Namespace, seeds: list[int]) -> dict[str, str | None]:
+    targets: dict[str, str | None] = {}
+    for seed in seeds:
+        prefix = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}"
+        targets[f"seed{seed}_onnx"] = str(prefix.with_suffix(".onnx"))
+        targets[f"seed{seed}_sidecar"] = str(prefix.with_suffix(".json"))
+    targets["registry"] = str(args.out_dir / "registry.json") if args.update_registry else None
+    return targets
+
+
+def _export_seed(
+    seed: int,
+    args: argparse.Namespace,
+    corpus: dict[str, Any],
+    corpus_sha: str,
+    promote: dict[str, Any],
+    run_provenance: dict[str, Any],
+    feat_norm: np.ndarray,
+    target: np.ndarray,
+) -> str:
+    started = time.time()
+    print(f"[export-ens] seed={seed} training full-corpus model...", flush=True)
+    model = _train_full_corpus(
+        seed,
+        feat_norm,
+        corpus["codec_block"],
+        target,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
+    onnx_name = f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
+    digest = _export_onnx(model, args.out_dir / onnx_name)
+    sidecar = _build_sidecar(
+        seed,
+        onnx_name=onnx_name,
+        onnx_sha256=digest,
+        feature_mean=corpus["feature_mean"].astype(float).tolist(),
+        feature_std=corpus["feature_std"].astype(float).tolist(),
+        cq_min=corpus["cq_min"],
+        cq_max=corpus["cq_max"],
+        n_rows=corpus["n_rows"],
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        corpus_path=str(args.corpus.relative_to(REPO_ROOT)),
+        corpus_sha256=corpus_sha,
+        promote=promote,
+        run_provenance=run_provenance,
+    )
+    sidecar_path = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
+    write_manifest_json(sidecar_path, sidecar)
+    print(
+        f"[export-ens] seed={seed} wrote {onnx_name} sha={digest[:16]}... "
+        f"+ sidecar ({time.time() - started:.1f}s)",
+        flush=True,
+    )
+    return digest
+
+
+def _update_seed_registry(args: argparse.Namespace, new_shas: dict[int, str]) -> None:
+    reg_path = args.out_dir / "registry.json"
+    registry = json.loads(reg_path.read_text())
+    for entry in registry.get("models", []):
+        model_id = entry.get("id", "")
+        if model_id.startswith("fr_regressor_v2_ensemble_v1_seed"):
+            seed = int(model_id.rsplit("seed", 1)[-1])
+            if seed in new_shas:
+                entry["sha256"] = new_shas[seed]
+                entry["smoke"] = False
+    write_manifest_json(reg_path, registry)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    seeds, promote, error_code = _validated_inputs(args)
+    if error_code:
+        return error_code
+    assert seeds is not None and promote is not None
 
     print(f"[export-ens] loading corpus from {args.corpus}", flush=True)
     corpus_sha = sha256(args.corpus)
@@ -323,8 +412,6 @@ def main(argv: list[str] | None = None) -> int:
     feature_mean = corpus["feature_mean"]
     feature_std = corpus["feature_std"]
     feat_norm = ((feat_full - feature_mean) / feature_std).astype(np.float32)
-    codec_block = corpus["codec_block"]
-
     print(
         f"[export-ens] n_rows={corpus['n_rows']} corpus_sha256={corpus_sha[:16]}... "
         f"cq=[{corpus['cq_min']}, {corpus['cq_max']}]",
@@ -332,82 +419,23 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    new_shas: dict[int, str] = {}
-    output_targets: dict[str, str | None] = {}
-    for seed in seeds:
-        output_targets[f"seed{seed}_onnx"] = str(
-            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
-        )
-        output_targets[f"seed{seed}_sidecar"] = str(
-            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
-        )
-    output_targets["registry"] = (
-        str(args.out_dir / "registry.json") if args.update_registry else None
-    )
     run_provenance = build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,
         argv=raw_argv,
         args=args,
         inputs={"corpus": args.corpus, "promote_json": args.promote_json},
-        outputs=output_targets,
+        outputs=_output_targets(args, seeds),
     )
-    for seed in seeds:
-        t0 = time.time()
-        print(f"[export-ens] seed={seed} training full-corpus model...", flush=True)
-        model = _train_full_corpus(
-            seed,
-            feat_norm,
-            codec_block,
-            target,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
+    new_shas = {
+        seed: _export_seed(
+            seed, args, corpus, corpus_sha, promote, run_provenance, feat_norm, target
         )
-
-        onnx_name = f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
-        onnx_path = args.out_dir / onnx_name
-        sha = _export_onnx(model, onnx_path)
-        new_shas[seed] = sha
-        sidecar = _build_sidecar(
-            seed,
-            onnx_name=onnx_name,
-            onnx_sha256=sha,
-            feature_mean=feature_mean.astype(float).tolist(),
-            feature_std=feature_std.astype(float).tolist(),
-            cq_min=corpus["cq_min"],
-            cq_max=corpus["cq_max"],
-            n_rows=corpus["n_rows"],
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            corpus_path=str(args.corpus.relative_to(REPO_ROOT)),
-            corpus_sha256=corpus_sha,
-            promote=promote,
-            run_provenance=run_provenance,
-        )
-        sidecar_path = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
-        write_manifest_json(sidecar_path, sidecar)
-        elapsed = time.time() - t0
-        print(
-            f"[export-ens] seed={seed} wrote {onnx_name} sha={sha[:16]}... "
-            f"+ sidecar ({elapsed:.1f}s)",
-            flush=True,
-        )
+        for seed in seeds
+    }
 
     if args.update_registry:
-        reg_path = args.out_dir / "registry.json"
-        reg = json.loads(reg_path.read_text())
-        for entry in reg.get("models", []):
-            mid = entry.get("id", "")
-            if mid.startswith("fr_regressor_v2_ensemble_v1_seed"):
-                seed = int(mid.rsplit("seed", 1)[-1])
-                if seed in new_shas:
-                    entry["sha256"] = new_shas[seed]
-                    entry["smoke"] = False
-        write_manifest_json(reg_path, reg)
+        _update_seed_registry(args, new_shas)
         print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
 
     print("[export-ens] done. New sha256 per seed:")

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Second dependency batch: the remaining Renovate PRs after the 36-PR sweep —
   `pandas-stubs`, `anthropic`, `ray[tune]` (SECURITY), the grouped Docker digest
   refresh, GitHub Actions minor/patch, and `onsi/gomega`. Merged as one branch

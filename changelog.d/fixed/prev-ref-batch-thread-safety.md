@@ -1,3 +1,5 @@
+# Changelog fragment
+
 **fix(threading)**: Harden `VmafFeatureExtractor.prev_ref` thread-safety in
 batch-threading and pool dispatch paths. Rename the shared-extractor pointer in
 `threaded_extract_batch_func` to `const shared_fex`, add an `assert` that the

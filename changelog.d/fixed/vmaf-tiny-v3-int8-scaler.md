@@ -1,3 +1,5 @@
+# Changelog fragment
+
 **Declare `onnx_has_scaler` in `vmaf_tiny_v3.int8.json`** (ADR-0174, ADR-0275)
 
 - `model/tiny/vmaf_tiny_v3.int8.json` now declares `"onnx_has_scaler": true`.

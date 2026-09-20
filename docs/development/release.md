@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD051 -->
 # Release process
 
 VMAFx releases through release-please and an explicit publication gate.
@@ -474,7 +473,7 @@ Run `scripts/release/concat-changelog-fragments.sh --write` whenever:
 - A merge has just landed several fragments that are not yet spliced into the
   rendered block.
 - A drift-sweep PR is reconciling pre-existing skew (see
-  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)).
+  [the 2026-05-08 sweep](#changelog-drift-sweep--historical-context)).
 
 Never edit the rendered "Unreleased" block by hand to add new entries — those
 inline edits will be silently overwritten by the next regen.

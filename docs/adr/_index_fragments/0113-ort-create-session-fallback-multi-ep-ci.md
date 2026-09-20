@@ -1,1 +1,5 @@
-| [ADR-0113](0113-ort-create-session-fallback-multi-ep-ci.md) | `vmaf_ort_open` falls back to CPU when `CreateSession` fails after a non-CPU EP attached; coverage CI installs `onnxruntime-gpu` + `libcudart12` to exercise EP-attach success arms | Accepted | dnn, ci, coverage, ort |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0113](0113-ort-create-session-fallback-multi-ep-ci.md) | ORT CreateSession fallback to CPU + multi-EP CI install | Accepted | dnn, ci, coverage, ort |

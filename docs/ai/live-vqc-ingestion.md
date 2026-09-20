@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # LIVE-VQC corpus ingestion
 
 LIVE Video Quality Challenge (LIVE-VQC; Sinno & Bovik, IEEE TIP 2019) is a
@@ -14,7 +13,7 @@ index see [mos-corpora.md](mos-corpora.md).
 ## Corpus identity
 
 | Property | Value |
-|----------|-------|
+| ---------- | ------- |
 | Clips | 585 |
 | MOS scale | 0–100 continuous (LIVE Lab crowdsourcing framework) |
 | Size (approximate) | A few GB |
@@ -97,7 +96,7 @@ name,url,mos,sd,n
 Column aliases accepted for each field:
 
 | Field | Aliases |
-|-------|---------|
+| ------- | --------- |
 | filename | `name`, `video_name`, `filename`, `file_name` |
 | URL | `url`, `download_url`, `video_url` |
 | MOS | `mos`, `MOS`, `mos_score` |
@@ -110,7 +109,7 @@ via curl (resumable, with a 120-second per-clip timeout).
 ## CLI flags
 
 | Flag | Default | Description |
-|------|---------|-------------|
+| ------ | --------- | ------------- |
 | `--live-vqc-dir` | `.workingdir2/live-vqc/` | Local working directory |
 | `--manifest-csv` | `<dir>/manifest.csv` | MOS manifest path |
 | `--clips-subdir` | `clips` | Sub-directory for video files |

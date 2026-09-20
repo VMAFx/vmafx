@@ -49,8 +49,8 @@
  * Shared memory is sized for the worst case (wave32 = most warps per block).
  * The runtime `warpSize` device variable is used in reduction loops and lane
  * detection so the same binary runs correctly on both wave32 and wave64. */
-#define MIN_WARP_SIZE    32
-#define WARPS_PER_BLOCK  (BLOCK_SIZE / MIN_WARP_SIZE)
+#define MIN_WARP_SIZE 32
+#define WARPS_PER_BLOCK (BLOCK_SIZE / MIN_WARP_SIZE)
 
 __device__ static const float G[K] = {
     0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
@@ -87,16 +87,19 @@ __device__ __forceinline__ float ms_ssim_warp_reduce(float v)
     return v;
 }
 
-extern "C" {
+typedef struct MsSsimLcs {
+    double l;
+    double c;
+    double s;
+} MsSsimLcs;
 
 /**
  * Decimate: 9-tap 9/7 biorthogonal separable LPF + 2× downsample.
  * One thread per output pixel. Period-2n mirror boundary.
  * src: float input (w × h), dst: float output (w_out × h_out).
  */
-__global__ void ms_ssim_decimate(const float *__restrict__ src, float *__restrict__ dst,
-                                 unsigned w, unsigned h,
-                                 unsigned w_out, unsigned h_out)
+extern "C" __global__ void ms_ssim_decimate(const float *__restrict__ src, float *__restrict__ dst,
+                                            unsigned w, unsigned h, unsigned w_out, unsigned h_out)
 {
     const unsigned x_out = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y_out = blockIdx.y * blockDim.y + threadIdx.y;
@@ -123,16 +126,12 @@ __global__ void ms_ssim_decimate(const float *__restrict__ src, float *__restric
  * 5 horizontal-pass values at ((W-10) × H). Operates on already-
  * normalised float input (pyramid levels produced by ms_ssim_decimate).
  */
-__global__ void ms_ssim_horiz(const float *__restrict__ ref_in,
-                               const float *__restrict__ cmp_in,
-                               float *__restrict__ h_ref_mu,
-                               float *__restrict__ h_cmp_mu,
-                               float *__restrict__ h_ref_sq,
-                               float *__restrict__ h_cmp_sq,
-                               float *__restrict__ h_refcmp,
-                               unsigned width,
-                               unsigned w_horiz,
-                               unsigned h_horiz)
+extern "C" __global__ void ms_ssim_horiz(const float *__restrict__ ref_in,
+                                         const float *__restrict__ cmp_in,
+                                         float *__restrict__ h_ref_mu, float *__restrict__ h_cmp_mu,
+                                         float *__restrict__ h_ref_sq, float *__restrict__ h_cmp_sq,
+                                         float *__restrict__ h_refcmp, unsigned width,
+                                         unsigned w_horiz, unsigned h_horiz)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -160,6 +159,72 @@ __global__ void ms_ssim_horiz(const float *__restrict__ ref_in,
     h_refcmp[dst_idx] = refcmp_h;
 }
 
+__device__ __forceinline__ MsSsimLcs ms_ssim_pixel_lcs(
+    const float *h_ref_mu_buf, const float *h_cmp_mu_buf, const float *h_ref_sq_buf,
+    const float *h_cmp_sq_buf, const float *h_refcmp_buf, unsigned x, unsigned y, unsigned w_horiz,
+    unsigned w_final, unsigned h_final, double c1, double c2, double c3)
+{
+    MsSsimLcs out = {0.0, 0.0, 0.0};
+    if (x >= w_final || y >= h_final)
+        return out;
+
+    float ref_mu = 0.0f, cmp_mu = 0.0f;
+    float ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
+    for (int v = 0; v < K; v++) {
+        const unsigned src_idx = (y + (unsigned)v) * w_horiz + x;
+        const float w = G[v];
+        ref_mu += w * h_ref_mu_buf[src_idx];
+        cmp_mu += w * h_cmp_mu_buf[src_idx];
+        ref_sq += w * h_ref_sq_buf[src_idx];
+        cmp_sq += w * h_cmp_sq_buf[src_idx];
+        refcmp += w * h_refcmp_buf[src_idx];
+    }
+    const float ref_var = ref_sq - ref_mu * ref_mu < 0.0f ? 0.0f : ref_sq - ref_mu * ref_mu;
+    const float cmp_var = cmp_sq - cmp_mu * cmp_mu < 0.0f ? 0.0f : cmp_sq - cmp_mu * cmp_mu;
+    const float covar = refcmp - ref_mu * cmp_mu;
+    const float sigma_xy_geom = sqrtf(ref_var * cmp_var);
+    const float clamped_covar = (covar < 0.0f && sigma_xy_geom <= 0.0f) ? 0.0f : covar;
+    out.l = (2.0 * (double)ref_mu * (double)cmp_mu + c1) /
+            ((double)ref_mu * (double)ref_mu + (double)cmp_mu * (double)cmp_mu + c1);
+    out.c = (2.0 * (double)sigma_xy_geom + c2) / ((double)ref_var + (double)cmp_var + c2);
+    out.s = ((double)clamped_covar + c3) / ((double)sigma_xy_geom + c3);
+    return out;
+}
+
+__device__ __forceinline__ void ms_ssim_reduce_lcs(MsSsimLcs value, unsigned lid, double *s_l_warp,
+                                                   double *s_c_warp, double *s_s_warp,
+                                                   double *l_partials, double *c_partials,
+                                                   double *s_partials)
+{
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
+        value.l += __shfl_down(value.l, off);
+        value.c += __shfl_down(value.c, off);
+        value.s += __shfl_down(value.s, off);
+    }
+    const unsigned lane = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
+    if (lane == 0u) {
+        s_l_warp[warp_id] = value.l;
+        s_c_warp[warp_id] = value.c;
+        s_s_warp[warp_id] = value.s;
+    }
+    __syncthreads();
+    if (lid != 0u)
+        return;
+
+    MsSsimLcs total = {0.0, 0.0, 0.0};
+    const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+    for (int i = 0; i < nwarps; i++) {
+        total.l += s_l_warp[i];
+        total.c += s_c_warp[i];
+        total.s += s_s_warp[i];
+    }
+    const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
+    l_partials[block_idx] = total.l;
+    c_partials[block_idx] = total.c;
+    s_partials[block_idx] = total.s;
+}
+
 /**
  * Vertical pass + per-pixel l/c/s + per-block 3-output partial sums.
  * Mirrors ms_ssim_vert_lcs in the CUDA twin including σ² ≥ 0 clamp.
@@ -175,95 +240,23 @@ __global__ void ms_ssim_horiz(const float *__restrict__ ref_in,
  * GCN/RDNA supports native fp64 __shfl_down; WARPS_PER_BLOCK=4 (wave32
  * worst case — over-allocated on wave64 where only 2 slots are used).
  */
-__global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
-                                  const float *__restrict__ h_cmp_mu_buf,
-                                  const float *__restrict__ h_ref_sq_buf,
-                                  const float *__restrict__ h_cmp_sq_buf,
-                                  const float *__restrict__ h_refcmp_buf,
-                                  double *__restrict__ l_partials,
-                                  double *__restrict__ c_partials,
-                                  double *__restrict__ s_partials,
-                                  unsigned w_horiz,
-                                  unsigned w_final,
-                                  unsigned h_final,
-                                  double c1,
-                                  double c2,
-                                  double c3)
+extern "C" __global__ void
+ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf, const float *__restrict__ h_cmp_mu_buf,
+                 const float *__restrict__ h_ref_sq_buf, const float *__restrict__ h_cmp_sq_buf,
+                 const float *__restrict__ h_refcmp_buf, double *__restrict__ l_partials,
+                 double *__restrict__ c_partials, double *__restrict__ s_partials, unsigned w_horiz,
+                 unsigned w_final, unsigned h_final, double c1, double c2, double c3)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
-    /* L/C/S in double — matches ssim_tools.c scalar reference which
-     * uses `2.0 *` (double literal) for the numerators. */
-    double my_l = 0.0, my_c = 0.0, my_s = 0.0;
-    if (x < w_final && y < h_final) {
-        float ref_mu = 0.0f, cmp_mu = 0.0f;
-        float ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
-        for (int v = 0; v < K; v++) {
-            const unsigned src_idx = (y + (unsigned)v) * w_horiz + x;
-            const float w = G[v];
-            ref_mu += w * h_ref_mu_buf[src_idx];
-            cmp_mu += w * h_cmp_mu_buf[src_idx];
-            ref_sq += w * h_ref_sq_buf[src_idx];
-            cmp_sq += w * h_cmp_sq_buf[src_idx];
-            refcmp += w * h_refcmp_buf[src_idx];
-        }
-        /* Clamp σ² ≥ 0 before sqrt — matches MAX(0, ...) in
-         * iqa/ssim_tools.c::ssim_variance_scalar. */
-        const float ref_var = ref_sq - ref_mu * ref_mu < 0.0f
-                                  ? 0.0f : ref_sq - ref_mu * ref_mu;
-        const float cmp_var = cmp_sq - cmp_mu * cmp_mu < 0.0f
-                                  ? 0.0f : cmp_sq - cmp_mu * cmp_mu;
-        const float covar = refcmp - ref_mu * cmp_mu;
-        const float sigma_xy_geom = sqrtf(ref_var * cmp_var);
-        const float clamped_covar =
-            (covar < 0.0f && sigma_xy_geom <= 0.0f) ? 0.0f : covar;
-
-        /* Double literals match the CPU scalar: `2.0 *` promotes the
-         * float operands to double before the multiply (ADR-0139). */
-        my_l = (2.0 * (double)ref_mu * (double)cmp_mu + c1) /
-               ((double)ref_mu * (double)ref_mu + (double)cmp_mu * (double)cmp_mu + c1);
-        my_c = (2.0 * (double)sigma_xy_geom + c2) / ((double)ref_var + (double)cmp_var + c2);
-        my_s = ((double)clamped_covar + c3) / ((double)sigma_xy_geom + c3);
-    }
-
-    /* 3-output per-block tree reduction using shared warp partials.
-     * Warp size = 64 on GCN/RDNA; BLOCK_SIZE=128 → WARPS_PER_BLOCK=2.
-     * Shared arrays hold double so warp-reduction precision is preserved. */
     __shared__ double s_l_warp[WARPS_PER_BLOCK];
     __shared__ double s_c_warp[WARPS_PER_BLOCK];
     __shared__ double s_s_warp[WARPS_PER_BLOCK];
-
-    double wl = my_l, wc = my_c, ws = my_s;
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
-        wl += __shfl_down(wl, off);
-        wc += __shfl_down(wc, off);
-        ws += __shfl_down(ws, off);
-    }
-
-    const unsigned lane    = lid % (unsigned)warpSize;
-    const unsigned warp_id = lid / (unsigned)warpSize;
-    if (lane == 0) {
-        s_l_warp[warp_id] = wl;
-        s_c_warp[warp_id] = wc;
-        s_s_warp[warp_id] = ws;
-    }
-    __syncthreads();
-
-    if (lid == 0) {
-        double bl = 0.0, bc = 0.0, bs = 0.0;
-        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
-        for (int i = 0; i < nwarps; i++) {
-            bl += s_l_warp[i];
-            bc += s_c_warp[i];
-            bs += s_s_warp[i];
-        }
-        const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        l_partials[block_idx] = bl;
-        c_partials[block_idx] = bc;
-        s_partials[block_idx] = bs;
-    }
+    const MsSsimLcs value =
+        ms_ssim_pixel_lcs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf, x,
+                          y, w_horiz, w_final, h_final, c1, c2, c3);
+    ms_ssim_reduce_lcs(value, lid, s_l_warp, s_c_warp, s_s_warp, l_partials, c_partials,
+                       s_partials);
 }
-
-} /* extern "C" */

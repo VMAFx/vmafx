@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0368: External-competitor benchmark harness — wrapper-only architecture
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ its (factual) numerical output — same posture as running
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Vendor `x264-pVMAF` source** | Reproducible build; no operator install step | Relicenses the entire fork to GPL-2.0; breaks every downstream consumer (FFmpeg filter integration, MCP server, BSD-licensed tiny-AI surfaces); upstream Netflix/vmaf licence terms forbid it | Existential licence break — fork loses its permissive posture and every downstream relicenses by association |
 | **Skip `x264-pVMAF`, compare only against DOVER-Mobile** | No GPL question | User explicitly asked for the Synamedia comparison; benchmarking against DOVER-Mobile alone leaves the most directly competitive predictor unmeasured | Drops the most informative comparison; the GPL boundary is solvable without dropping the comparison |
 | **Wrapper-only architecture (this ADR)** | Zero GPL'd code in the fork; operator installs external binary themselves; same wrapper shape works for any future competitor (copyleft or not); tests stub the subprocess so CI never depends on external installs | Operator must install binaries themselves; CLI shapes drift across upstream versions and the wrapper's schema-shim has to track them | **Chosen.** The boundary cost (a documented env-var per competitor) is small; the licence safety is total |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0135: CHUG extraction I/O cost breakdown and Win 1 + Win 2 optimisations
 
 - **Status**: Active
@@ -103,7 +102,7 @@ effective savings are 5992 × ~200 ms / 8 = ~150 s (2.5 min) of wall time.
 ### Win 1 alternatives
 
 | Alternative | Assessment | Decision |
-|---|---|---|
+| --- | --- | --- |
 | **Separate per-batch parquet shards + merge at end** | Avoids growing reads; correct. Adds post-processing step and a second parquet layout. | Rejected — single in-memory accumulation + one write is simpler; 5992 rows × ~48 columns ≈ ~10 MB RAM, negligible on any modern host. |
 | **DuckDB / Delta Lake for append-only writes** | Truly O(1) per append. Zero-dependency overhead (DuckDB is not in the training venv). | Rejected for this PR — dependency cost not justified for a one-time extraction job. Could revisit for 150k-clip runs. |
 | **Keep per-flush but use pyarrow streaming writer** | Avoids the read-back; correct I/O complexity. More code than the in-memory approach. | Rejected — in-memory accumulation is simpler and sufficient at this corpus size. |
@@ -112,7 +111,7 @@ effective savings are 5992 × ~200 ms / 8 = ~150 s (2.5 min) of wall time.
 ### Win 2 alternatives
 
 | Alternative | Assessment | Decision |
-|---|---|---|
+| --- | --- | --- |
 | **Pre-build a geometry CSV from chug.jsonl once** | Decouples the sidecar from the extraction script. Adds a prep step operators can forget. | Rejected — the JSONL sidecar is already loaded for metadata enrichment; reading geometry from it costs zero extra I/O. |
 | **Cache ffprobe results on disk** | Avoids repeated probes on resume. Adds a cache invalidation problem. | Rejected — the sidecar approach is simpler and has no invalidation surface. |
 

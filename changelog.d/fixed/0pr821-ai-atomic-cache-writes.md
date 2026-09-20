@@ -1,1 +1,5 @@
-- Fixed: AI pipeline cache writers (JSON and Parquet) now use atomic rename-on-close semantics, eliminating partially-written cache files left behind by interrupted extraction runs. (PR #821)
+# Changelog fragment
+
+- Fixed: AI pipeline cache writers (JSON and Parquet) now use atomic
+  rename-on-close semantics, eliminating partially-written cache files left
+  behind by interrupted extraction runs. (PR #821)

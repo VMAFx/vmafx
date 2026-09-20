@@ -1,1 +1,5 @@
-| [ADR-0680](0680-ai-cli-helper-pattern.md) | AI batch scripts now share parser/raw-argv boilerplate through `aiutils.cli_helpers` while keeping table-specific manifest schemas local to each runner. | Accepted | ai, cli, provenance, agents |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0680](0680-ai-cli-helper-pattern.md) | Shared AI CLI Helper Pattern | Accepted | ai, cli, provenance, agents |

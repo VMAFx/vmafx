@@ -16,14 +16,16 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #include <stdbool.h>
@@ -131,7 +133,7 @@ typedef struct SpeedState {
 #define EIGENVALUE_EPS (1e-6)
 #define EIGENVALUE_MAX_ITERS (500)
 #define ALMOST_EQUAL(x, c) (fabs((x) - (c)) < 1.0e-3)
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define SPEED_MAX(x, y) ((x) > (y) ? (x) : (y))
 
 typedef struct Matrix {
     int rows;
@@ -199,9 +201,9 @@ static void matrix_copy(Matrix *dst, const Matrix *src)
 void speed_matmul_scalar(float *dst, int dst_stride, const float *x, int x_stride, const float *y,
                          int y_stride, int rows, int inner, int cols)
 {
-    assert(dst != NULL);
-    assert(x != NULL);
-    assert(y != NULL);
+    assert(dst != VMAF_NULLPTR);
+    assert(x != VMAF_NULLPTR);
+    assert(y != VMAF_NULLPTR);
     assert(rows >= 0);
     assert(inner >= 0);
     assert(cols >= 0);
@@ -227,7 +229,7 @@ static void matrix_mul(Matrix *dst, const Matrix *x, const Matrix *y, speed_matm
     assert(x->cols == y->rows);
     assert(dst->rows >= x->rows);
     assert(dst->cols >= y->cols);
-    assert(matmul != NULL);
+    assert(matmul != VMAF_NULLPTR);
     /* The kernel writes every element of the leading x->rows by y->cols
      * block; only a strictly larger destination still needs the zero fill
      * the original implementation applied unconditionally. */
@@ -425,7 +427,7 @@ static void convert_to_tridiagonal(float *A, int size, float *d, float *sd, floa
         sd[i] = A[(i + 1) * size + i];
 }
 
-static void chop_small_elements(float *d, float *sd, int size)
+static void chop_small_elements(const float *d, float *sd, int size)
 {
     for (int i = 0; i < size - 1; i++) {
         if (fabsf(sd[i]) < EIGENVALUE_EPS * (fabsf(d[i]) + fabsf(d[i + 1])))
@@ -488,7 +490,6 @@ static void qr_step_size2(float *d, float *sd, float x, float z)
 
 static void qr_step_general(float *d, float *sd, int n, float x, float z)
 {
-    float ak = 0.0f;
     float bk = 0.0f;
     float zk = 0.0f;
     float ap = d[0];
@@ -509,7 +510,7 @@ static void qr_step_general(float *d, float *sd, int n, float x, float z)
         float aq1 = s * (s * ap + c * bp) + c * (s * bp + c * aq);
         float bq1 = c * bq;
 
-        ak = ap1;
+        const float ak = ap1;
         bk = bp1;
         zk = zp1;
         ap = aq1;
@@ -592,7 +593,8 @@ static void compute_eigenvalues_tridiagonal(float *d, float *sd, float *eigenval
         eigenvalues[i] = d[i];
 }
 
-static void compute_eigenvalues(float *A_immutable, float *eigenvalues, int size, float *buffer)
+static void compute_eigenvalues(const float *A_immutable, float *eigenvalues, int size,
+                                float *buffer)
 {
     float *A = buffer;
     buffer += (size_t)size * (size_t)size;
@@ -616,8 +618,8 @@ static void compute_eigenvalues(float *A_immutable, float *eigenvalues, int size
 // Implementation of the QR decomposition algorithm with Householder
 // reflections for an arbitrary square matrix
 // https://www.cs.utexas.edu/users/flame/Notes/NotesOnHouseholderQR.pdf
-static void matrix_qr_decomposition(Matrix *A, Matrix *Q, Matrix *R, Matrix *tmp_q, Matrix *tmp_z,
-                                    speed_matmul_fn matmul)
+static void matrix_qr_decomposition(const Matrix *A, Matrix *Q, Matrix *R, Matrix *tmp_q,
+                                    Matrix *tmp_z, speed_matmul_fn matmul)
 {
     assert(A->rows == A->cols);
     int size = A->rows;
@@ -1084,8 +1086,8 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     dim->original_width = w;
     dim->scaled_height = (int)lround((double)dim->original_height * speed_prescale);
     dim->scaled_width = (int)lround((double)dim->original_width * speed_prescale);
-    dim->alloc_height = MAX(dim->original_height, dim->scaled_height);
-    dim->alloc_width = MAX(dim->original_width, dim->scaled_width);
+    dim->alloc_height = SPEED_MAX(dim->original_height, dim->scaled_height);
+    dim->alloc_width = SPEED_MAX(dim->original_width, dim->scaled_width);
     dim->operating_height = dim->scaled_height >> NUM_SCALES;
     dim->operating_width = dim->scaled_width >> NUM_SCALES;
     dim->block_size = DEFAULT_BLOCK_SIZE;
@@ -1386,8 +1388,8 @@ static int init_chroma(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     return 0;
 }
 
-static int extract_channel(SpeedChromaState *s, VmafPicture *ref_pic, VmafPicture *dist_pic,
-                           int channel, float *score)
+static int extract_channel(SpeedChromaState *s, const VmafPicture *ref_pic,
+                           const VmafPicture *dist_pic, int channel, float *score)
 {
     picture_copy(s->frame_buffer_ref, s->speed_state.float_stride, ref_pic, -128, ref_pic->bpc,
                  channel);
@@ -1397,8 +1399,9 @@ static int extract_channel(SpeedChromaState *s, VmafPicture *ref_pic, VmafPictur
                                s->frame_buffer_dis, score);
 }
 
-static int extract_chroma(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract_chroma(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index,
                           VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
@@ -1459,9 +1462,8 @@ static int close_chroma(VmafFeatureExtractor *fex)
 
 static const char *provided_features_chroma[] = {
     "Speed_chroma_feature_speed_chroma_u_score", "Speed_chroma_feature_speed_chroma_v_score",
-    "Speed_chroma_feature_speed_chroma_uv_score", NULL};
+    "Speed_chroma_feature_speed_chroma_uv_score", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_speed_chroma = {
     .name = "speed_chroma",
     .init = init_chroma,
@@ -1616,8 +1618,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     SpeedTemporalState *s = fex->priv;
@@ -1686,9 +1689,9 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"Speed_temporal_feature_speed_temporal_score", NULL};
+static const char *provided_features[] = {"Speed_temporal_feature_speed_temporal_score",
+                                          VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_speed_temporal = {
     .name = "speed_temporal",
     .init = init,
@@ -1699,5 +1702,3 @@ VmafFeatureExtractor vmaf_fex_speed_temporal = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

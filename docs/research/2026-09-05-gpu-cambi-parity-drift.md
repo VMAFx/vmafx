@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research digest — the shared CUDA/SYCL CAMBI parity drift (2026-09-05)
 
 Branch: `fix/gpu-cambi-parity-drift`. Closes `docs/state.md` rows

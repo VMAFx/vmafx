@@ -1,7 +1,9 @@
-- **`vmaf` now exits 102 instead of 0 when an input stream fails to read.**
-  The CLI's frame loop reported only a frame count, so a truncated or corrupt
-  input was indistinguishable from a clean end of stream: the binary exited 0
-  and wrote a full report over whatever prefix had arrived. When *both* inputs
+# Changelog fragment
+
+- **`vmaf` now exits 102 instead of 0 when an input stream fails to read.** The
+  CLI's frame loop reported only a frame count, so a truncated or corrupt input
+  was indistinguishable from a clean end of stream: the binary exited 0 and
+  wrote a full report over whatever prefix had arrived. When _both_ inputs
   failed it did not even print a diagnostic, because the "both streams ended"
   test ran before the error test and a pair of `-1` return values satisfies it.
   Read failures now exit with the dedicated code `102`, print

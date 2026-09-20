@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 MD060 -->
 # ADR-0303: `fr_regressor_v2` ensemble — production flip trainer + CI gate
 
 - **Status**: Accepted
@@ -68,13 +67,13 @@ than ADR-0291's per-seed gate:
 
 A seed flips `smoke: true → false` **only after** it individually
 clears `PLCC_i ≥ 0.95`. The ensemble-mean entry (if/when one is added
-to the registry) flips **only after** all five seeds clear *and*
+to the registry) flips **only after** all five seeds clear _and_
 the variance bound holds.
 
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **5-seed deep ensemble (chosen)** | Lakshminarayanan 2017 — strongest empirical calibration on regression benchmarks. ONNX op-allowlist clean (5 forward passes, no dropout-at-inference, no heteroscedastic NLL). Trivially parallel across seeds. Members are ~5 KB each — 25 KB total runtime cost. | 5× training wall time vs deterministic v2. Predictive variance scales with seed count; 5 is the smallest credible ensemble (Lakshminarayanan's paper shows diminishing returns past 5). | Selected — calibration quality + zero-friction ONNX export trumps the wall-time cost on a corpus that trains in <30 s per seed. |
 | MC-dropout | Single trained model; T forward passes at inference for free. | Keeping dropout active at inference adds a `Dropout` op the libvmaf op allowlist currently rejects. Calibration on regression tasks is empirically worse than ensembles (Lakshminarayanan 2017 §5; Foong 2019 in-depth analysis). | Rejected — op-allowlist friction is unjustifiable when ensembles match the inference-time cost (5 forward passes ≈ T forward passes for T=5). |
 | SWAG (Stochastic Weight Averaging — Gaussian) | Posterior over weights from SGD trajectory; one trained model + sampling at inference. | Sampling at inference adds either a runtime-side weight perturbation loop (new C code) or N pre-sampled checkpoints (same N× artefact cost as the ensemble, with lower calibration quality per Maddox 2019). The variance estimate depends on the SGD trajectory's last-K iterates — fragile to hyperparameter choices. | Rejected — same artefact cost as the ensemble for worse calibration on regression. |

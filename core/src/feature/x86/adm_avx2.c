@@ -200,6 +200,9 @@
         }                                                                                          \
     } while (0)
 
+/* The scalar centre term narrows to int16_t before accumulation. Full-range
+ * texture can exceed INT16_MAX here, so the SIMD lane must wrap and sign-extend
+ * at the same point rather than retaining a wider positive threshold. */
 #define ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, src_stride, accum, w, h, i, j, sum)         \
     do {                                                                                           \
         __m256i perm1 = _mm256_set_epi32(0, 7, 6, 5, 4, 3, 2, 1);                                  \
@@ -254,6 +257,9 @@
             _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src21), one_by_15),               \
                              const_2048_32b),                                                      \
             12);                                                                                   \
+        src01 = _mm256_srai_epi32(_mm256_slli_epi32(src01, 16), 16);                               \
+        src11 = _mm256_srai_epi32(_mm256_slli_epi32(src11, 16), 16);                               \
+        src21 = _mm256_srai_epi32(_mm256_slli_epi32(src21, 16), 16);                               \
         src01 = _mm256_sub_epi32(src01, flt01);                                                    \
         src11 = _mm256_sub_epi32(src11, flt11);                                                    \
         src21 = _mm256_sub_epi32(src21, flt21);                                                    \
@@ -771,9 +777,8 @@
               cos_1deg_sq * ((float)(o_mag_sq) / 4096.0) * ((float)(t_mag_sq) / 4096.0)));         \
     } while (0)
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                       int32_t *adm_div_lookup)
+                       const int32_t *adm_div_lookup)
 {
     const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
 
@@ -1142,7 +1147,6 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                      int src_stride, int dst_stride)
 {
@@ -1534,9 +1538,8 @@ static inline int64_t extract_epi64_128(__m128i a, const int index)
 #endif
 
 // No lzcnt in avx2
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                            int32_t *adm_div_lookup)
+                            const int32_t *adm_div_lookup)
 {
     const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
 
@@ -2304,7 +2307,6 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
     return Q;
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
                   double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                   double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
@@ -2793,7 +2795,6 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
     return (num_scale_h + num_scale_v + num_scale_d);
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride, int scale,
                      double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                      double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
@@ -3350,7 +3351,6 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
     return (num_scale_h + num_scale_v + num_scale_d);
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                       int src_stride, int dst_stride, int inp_size_bits)
 {
@@ -3596,7 +3596,6 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_curr_dis,
                                  AdmBuffer *buf, int w, int h, int ref_stride, int dis_stride,
                                  int dst_stride, int scale)
@@ -4133,7 +4132,6 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_stride,
                              double adm_norm_view_dist, int adm_ref_display_height,
                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
@@ -4294,7 +4292,6 @@ float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_st
     return (den_scale_h + den_scale_v + den_scale_d);
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view_dist,
                   int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
                   double adm_csf_diag_scale, bool measure_aim)
@@ -4478,7 +4475,6 @@ void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double adm_norm_view_dist,
                      int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
                      double adm_csf_diag_scale, bool measure_aim)
@@ -4706,7 +4702,6 @@ void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int h, int src_stride,
                             double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                             double adm_csf_scale, double adm_csf_diag_scale,

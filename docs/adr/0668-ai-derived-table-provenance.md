@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0668: AI Derived Table Provenance
 
 - **Status**: Proposed
@@ -44,7 +43,7 @@ schemas remain unchanged.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Sidecar manifests on each derived table | Replayable local artifacts; reuses ADR-0661 helper; no parquet schema churn | Adds one small JSON file per run | Chosen; it closes the evidence gap without touching model inputs. |
 | Store provenance inside parquet metadata | Keeps one file per artifact | Harder to inspect with standard tools; many local scripts rewrite parquet through pandas and may drop custom metadata | Rejected; human-readable JSON is easier to audit and preserve. |
 | Only document the commands in `.workingdir2` notes | No code change | Notes drift from actual invocations and are not consumed by trainer/model-card tooling | Rejected; the scripts must stamp the artifact they create. |

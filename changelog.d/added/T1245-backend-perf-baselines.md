@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Per-backend performance baseline harness.** New `testdata/bench_backends.py`
   measures `vmaf` CLI throughput one backend at a time and reports the median of
   N timed runs (default 3, after a discarded warmup) with the min/max spread and

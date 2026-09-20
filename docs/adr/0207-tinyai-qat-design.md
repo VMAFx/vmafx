@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0207: Tiny-AI Quantization-Aware Training (QAT) — design
 
 - **Status**: Accepted
@@ -94,7 +93,7 @@ phase 4 runs as a post-train step.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A. Modern `torch.ao.quantization` (`prepare_qat_fx`/`convert_fx`)** *(chosen)* | Stable since PyTorch 1.13; FX-graph traceable models cover all current tiny models; round-trips through ONNX opset 17 cleanly | Requires the model be FX-traceable (no Python control flow in `forward`); PR-time cost to validate FX-traceability for each shipped model | Picked. Tiny-AI models in this fork are MLPs / small CNNs — all FX-traceable today. |
 | B. Legacy `torch.quantization.prepare_qat` (eager mode) | No FX requirement; simpler API surface | Deprecated in PyTorch since 2.0; manual `QuantStub` / `DeQuantStub` insertion; harder to maintain qconfig parity with PTQ static path | Modern API is mandatory by the time the next PyTorch upgrade lands; investing in the deprecated API now buys nothing. |
 | C. ONNX Runtime QAT-equivalent path (Microsoft `Olive` toolkit) | Single-tool ONNX-only flow; no PyTorch dependency at quant time | Olive is ORT-internal tooling, not stable for fork-local use; produces QAT models by exporting fp32 to ONNX *first*, then training in ORT, which inverts our PyTorch-first training flow | Olive's "QAT in ORT" path needs ONNX-as-source; the fork trains in PyTorch. Round-tripping back to PyTorch for finetune defeats the point. |

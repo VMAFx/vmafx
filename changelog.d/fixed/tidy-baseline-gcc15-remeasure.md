@@ -1,3 +1,4 @@
+# Changelog fragment
 
 - **The whole-tree clang-tidy baseline is re-measured against the lane's own
   toolchain.** Moving the lint lane from gcc-14 to gcc-15 changed the system

@@ -19,16 +19,19 @@ import time
 
 import pytest
 
-torch = pytest.importorskip("torch", reason="PyTorch not installed — skipping OnlineTrainer tests")
+try:
+    import torch
+except ImportError:
+    pytest.skip("PyTorch not installed — skipping OnlineTrainer tests", allow_module_level=True)
 
-from ai.sidecar import online_trainer as ot_mod  # noqa: E402
-from ai.sidecar.online_trainer import (  # noqa: E402
+from ai.sidecar import online_trainer as ot_mod
+from ai.sidecar.online_trainer import (
     OnlineTrainer,
     _build_fallback_model,
     _load_base_model,
     _write_sha256_sidecar,
 )
-from ai.sidecar.sgd_ema import SGDEMAConfig  # noqa: E402
+from ai.sidecar.sgd_ema import SGDEMAConfig
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,7 +47,7 @@ N_FEATURES = 8  # small for fast CPU runs
 
 class TestBuildFallbackModel:
     def test_returns_nn_module(self) -> None:
-        import torch.nn as nn
+        from torch import nn
 
         model = _build_fallback_model(N_FEATURES)
         assert isinstance(model, nn.Module)
@@ -69,20 +72,20 @@ class TestBuildFallbackModel:
 
 class TestLoadBaseModel:
     def test_empty_path_returns_fallback(self) -> None:
-        import torch.nn as nn
+        from torch import nn
 
         model = _load_base_model("", N_FEATURES)
         assert isinstance(model, nn.Module)
 
     def test_absent_path_returns_fallback(self, tmp_path: pathlib.Path) -> None:
-        import torch.nn as nn
+        from torch import nn
 
         model = _load_base_model(str(tmp_path / "no_such_model.pt"), N_FEATURES)
         assert isinstance(model, nn.Module)
 
     def test_loads_pytorch_state_dict(self, tmp_path: pathlib.Path) -> None:
         import torch
-        import torch.nn as nn
+        from torch import nn
 
         # Build a known-weight model and save its state-dict.
         original = _build_fallback_model(N_FEATURES)
@@ -96,7 +99,7 @@ class TestLoadBaseModel:
             assert torch.allclose(p_orig.data, p_loaded.data)
 
     def test_corrupt_pt_file_returns_fallback(self, tmp_path: pathlib.Path) -> None:
-        import torch.nn as nn
+        from torch import nn
 
         corrupt = tmp_path / "corrupt.pt"
         corrupt.write_bytes(b"not a valid pytorch file")
@@ -555,7 +558,7 @@ class TestCheckpointVersionRace:
         deterministic, then drive _maybe_export_checkpoint() concurrently with a
         trainer whose should_checkpoint() always returns True.
         """
-        import unittest.mock as mock
+        from unittest import mock
 
         trainer = OnlineTrainer(
             n_features=N_FEATURES,
@@ -636,7 +639,7 @@ class TestRunServer:
                     self._t0 = time.monotonic()
                 return self._t0
 
-        import unittest.mock as mock
+        from unittest import mock
 
         with mock.patch.object(threading, "Event", ControlledEvent):
             try:

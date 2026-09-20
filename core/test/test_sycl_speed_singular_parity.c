@@ -51,12 +51,6 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 /* Geometry matters here, unlike in the existing SpEED parity tests.
  *
  * SpEED estimates a 25x25 covariance from one 25-vector per 5x5 block, so the
@@ -168,32 +162,32 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
     mu_assert("fill_fixture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, index);
     mu_assert("vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
  * `read_index`. On a machine without a SYCL device (or under no oneAPI runtime)
  * `*skipped` is set and the score is left NaN. */
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
                    unsigned read_index, double *out_score, int *skipped)
 {
     *out_score = NAN;
     *skipped = 0;
 
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     if (use_gpu) {
         VmafSyclConfiguration sycl_cfg = {.device_index = -1};
         const int rc = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-        if (rc != 0 || sycl_state == NULL) {
+        if (rc != 0 || sycl_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no SYCL device] ");
             *skipped = 1;
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -202,7 +196,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         mu_assert("vmaf_sycl_import_state failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
+    err = vmaf_use_feature(vmaf, fex_name, VMAF_NULLPTR);
     mu_assert("vmaf_use_feature failed", !err);
 
     const unsigned frames = (mode == MODE_CHROMA_BOTH_SINGULAR) ? CHROMA_FRAMES : TEMPORAL_FRAMES;
@@ -222,7 +216,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         if (msg)
             return msg;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, read_index);
@@ -232,7 +226,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
     mu_assert("vmaf_close failed", !err);
     if (use_gpu)
         vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Compare one CPU/GPU pair. */
@@ -250,7 +244,7 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
     if (msg)
         return msg;
     if (skipped || isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU SpEED score is non-finite", isfinite(cpu));
     mu_assert("GPU SpEED score is non-finite", isfinite(gpu));
@@ -262,7 +256,7 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
                       label, cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("SpEED singular-covariance score drifts from the CPU reference", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Exactly one side singular: the CPU returns 0 rather than an inflated score.
@@ -299,7 +293,5 @@ char *run_tests(void)
     mu_run_test(test_speed_temporal_one_sided_singular_parity);
     mu_run_test(test_speed_temporal_both_singular_parity);
     mu_run_test(test_speed_chroma_both_singular_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

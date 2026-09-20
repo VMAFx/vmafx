@@ -1,1 +1,5 @@
-| [ADR-0925](0925-go-generic-registry.md) | Introduce `pkg/registry.Store[K, V]` generic in-memory keyed store + `registry.Counter` constraint; refactor `cmd/vmafx-controller/nodes/Registry` to compose it and fold one of `pkg/observability.SetControllerSources`'s narrow interfaces into the generic constraint. Queue stays SQLite-backed. | Accepted | 2026-05-31 | go, controller, refactoring, observability, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0925](0925-go-generic-registry.md) | Generic in-memory registry for vmafx-controller subsystems | Accepted | `go`, `controller`, `refactoring`, `observability` |

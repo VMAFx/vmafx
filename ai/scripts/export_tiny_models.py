@@ -27,12 +27,13 @@ import json
 import sys
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 # Guard the pytorch_lightning → torchmetrics → torchvision import chain.
 # A stale venv with torchvision 0.26.0 against torch 2.12.0 raises
@@ -47,6 +48,10 @@ except Exception as _torchvision_err:  # pragma: no cover
         "This is usually a torch/torchvision ABI mismatch.  "
         "Run: pip install -U 'torchvision>=0.27.0,<0.28.0'"
     )
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"
@@ -128,6 +133,99 @@ def _update_registry(*entries: dict[str, object]) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
+def _export_c2(args: argparse.Namespace, raw_argv: list[str]) -> dict[str, object]:
+    model = _load_lightning_ckpt(NRMetric, args.c2_ckpt)
+    onnx_path = TINY_DIR / f"{args.c2_id}.onnx"
+    _export_one(
+        model=model,
+        onnx_path=onnx_path,
+        in_shape=(1, 1, C2_INPUT_HW, C2_INPUT_HW),
+        input_name="frame",
+        output_name="mos",
+    )
+    _write_sidecar(
+        args.c2_id,
+        onnx_path,
+        kind="nr",
+        notes=(
+            "Tiny NR MobileNet (C2) — single luma frame → MOS scalar. "
+            "Trained on KoNViD-1k middle-frames (1200 clips, ~973 train / "
+            "~106 val) at 224×224 grayscale. Exported via ai/scripts/export_tiny_models.py."
+        ),
+        run_provenance=build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"c2_checkpoint": args.c2_ckpt},
+            outputs={
+                "onnx": onnx_path,
+                "sidecar": TINY_DIR / f"{args.c2_id}.json",
+                "registry": REGISTRY,
+            },
+        ),
+    )
+    return {
+        "id": args.c2_id,
+        "kind": "nr",
+        "notes": (
+            "Tiny NR MobileNet baseline trained on KoNViD-1k (CC BY 4.0; not "
+            "redistributed). 224×224 grayscale input; ~19K params; opset 17. "
+            "See docs/adr/0168-tinyai-konvid-baselines.md."
+        ),
+        "onnx": onnx_path.name,
+        "opset": 17,
+        "sha256": sha256(onnx_path),
+    }
+
+
+def _export_c3(args: argparse.Namespace, raw_argv: list[str]) -> dict[str, object]:
+    model = _load_lightning_ckpt(LearnedFilter, args.c3_ckpt)
+    onnx_path = TINY_DIR / f"{args.c3_id}.onnx"
+    _export_one(
+        model=model,
+        onnx_path=onnx_path,
+        in_shape=(1, 1, C3_INPUT_HW, C3_INPUT_HW),
+        input_name="degraded",
+        output_name="filtered",
+    )
+    _write_sidecar(
+        args.c3_id,
+        onnx_path,
+        kind="filter",
+        notes=(
+            "Tiny residual filter (C3) — degraded → clean luma. Trained "
+            "self-supervised on KoNViD-1k middle-frames + synthetic "
+            "gaussian-blur σ=1.2 + JPEG-Q35 degradation. Exported via "
+            "ai/scripts/export_tiny_models.py."
+        ),
+        run_provenance=build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"c3_checkpoint": args.c3_ckpt},
+            outputs={
+                "onnx": onnx_path,
+                "sidecar": TINY_DIR / f"{args.c3_id}.json",
+                "registry": REGISTRY,
+            },
+        ),
+    )
+    return {
+        "id": args.c3_id,
+        "kind": "filter",
+        "notes": (
+            "Tiny residual filter baseline for vmaf_pre — self-supervised on "
+            "KoNViD-1k frames with synthetic blur+JPEG degradation. ~19K params; "
+            "opset 17. See docs/adr/0168-tinyai-konvid-baselines.md."
+        ),
+        "onnx": onnx_path.name,
+        "opset": 17,
+        "sha256": sha256(onnx_path),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--c2-ckpt", type=Path, default=C2_CKPT_DEFAULT)
@@ -141,102 +239,10 @@ def main(argv: list[str] | None = None) -> int:
     new_entries = []
 
     if args.c2_ckpt.exists():
-        c2 = _load_lightning_ckpt(NRMetric, args.c2_ckpt)
-        c2_onnx = TINY_DIR / f"{args.c2_id}.onnx"
-        _export_one(
-            model=c2,
-            onnx_path=c2_onnx,
-            in_shape=(1, 1, C2_INPUT_HW, C2_INPUT_HW),
-            input_name="frame",
-            output_name="mos",
-        )
-        _write_sidecar(
-            args.c2_id,
-            c2_onnx,
-            kind="nr",
-            notes=(
-                "Tiny NR MobileNet (C2) — single luma frame → MOS scalar. "
-                "Trained on KoNViD-1k middle-frames (1200 clips, "
-                "~973 train / ~106 val) at 224×224 grayscale. "
-                "Exported via ai/scripts/export_tiny_models.py."
-            ),
-            run_provenance=build_run_provenance(
-                entrypoint=SCRIPT_PATH,
-                repo_root=REPO_ROOT,
-                argv=raw_argv,
-                args=args,
-                inputs={"c2_checkpoint": args.c2_ckpt},
-                outputs={
-                    "onnx": c2_onnx,
-                    "sidecar": TINY_DIR / f"{args.c2_id}.json",
-                    "registry": REGISTRY,
-                },
-            ),
-        )
-        new_entries.append(
-            {
-                "id": args.c2_id,
-                "kind": "nr",
-                "notes": (
-                    "Tiny NR MobileNet baseline trained on KoNViD-1k "
-                    "(CC BY 4.0; not redistributed). 224×224 grayscale "
-                    "input; ~19K params; opset 17. See "
-                    "docs/adr/0168-tinyai-konvid-baselines.md."
-                ),
-                "onnx": c2_onnx.name,
-                "opset": 17,
-                "sha256": sha256(c2_onnx),
-            }
-        )
+        new_entries.append(_export_c2(args, raw_argv))
 
     if args.c3_ckpt.exists():
-        c3 = _load_lightning_ckpt(LearnedFilter, args.c3_ckpt)
-        c3_onnx = TINY_DIR / f"{args.c3_id}.onnx"
-        _export_one(
-            model=c3,
-            onnx_path=c3_onnx,
-            in_shape=(1, 1, C3_INPUT_HW, C3_INPUT_HW),
-            input_name="degraded",
-            output_name="filtered",
-        )
-        _write_sidecar(
-            args.c3_id,
-            c3_onnx,
-            kind="filter",
-            notes=(
-                "Tiny residual filter (C3) — degraded → clean luma. "
-                "Trained self-supervised on KoNViD-1k middle-frames + "
-                "synthetic gaussian-blur σ=1.2 + JPEG-Q35 degradation. "
-                "Exported via ai/scripts/export_tiny_models.py."
-            ),
-            run_provenance=build_run_provenance(
-                entrypoint=SCRIPT_PATH,
-                repo_root=REPO_ROOT,
-                argv=raw_argv,
-                args=args,
-                inputs={"c3_checkpoint": args.c3_ckpt},
-                outputs={
-                    "onnx": c3_onnx,
-                    "sidecar": TINY_DIR / f"{args.c3_id}.json",
-                    "registry": REGISTRY,
-                },
-            ),
-        )
-        new_entries.append(
-            {
-                "id": args.c3_id,
-                "kind": "filter",
-                "notes": (
-                    "Tiny residual filter baseline for vmaf_pre — "
-                    "self-supervised on KoNViD-1k frames with synthetic "
-                    "blur+JPEG degradation. ~19K params; opset 17. See "
-                    "docs/adr/0168-tinyai-konvid-baselines.md."
-                ),
-                "onnx": c3_onnx.name,
-                "opset": 17,
-                "sha256": sha256(c3_onnx),
-            }
-        )
+        new_entries.append(_export_c3(args, raw_argv))
 
     if not new_entries:
         sys.exit("no checkpoints found — nothing to export")

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0444: Promote `saliency_student_v2` to production default
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ Superseded in its model card; the ONNX file and sidecar are retained.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep v1 as default + ship v2 as opt-in | Zero risk to existing pipelines | Users must manually select the better model; the IoU win is never exercised at scale | Rejected — the IoU improvement is robust (+8.3 % relative on a held-out fold); the decoder change is a drop-in (same I/O contract); "opt-in" defeats the purpose of shipping a better model |
 | Replace v1 entry in registry with v2 (delete v1) | Simpler registry | Breaks any consumer that pins `saliency_student_v1` by id; loses the regression baseline | Rejected — retention cost is zero (ONNX is LFS-tracked); preserving the baseline is standard practice for model deprecation |
 | Require additional live-encode A/B gate | Stronger empirical justification | Blocks promotion by ≥1 sprint; `eval_saliency_per_mb.py` already covers the relevant metric (block-IoU) | Rejected — the held-out IoU gate is exactly the metric the ROI path depends on; additional A/B adds process overhead without changing the signal |

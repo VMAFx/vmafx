@@ -49,6 +49,8 @@
  *  `is_sve2_supported` which is forced false on Darwin (ADR-0419).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <arm_sve.h>
 #include <assert.h>
 #include <stddef.h>
@@ -66,8 +68,8 @@
 
 int compute_1st_moment_sve2(const float *pic, int w, int h, int stride, double *score)
 {
-    assert(pic != NULL);
-    assert(score != NULL);
+    assert(pic != VMAF_NULLPTR);
+    assert(score != VMAF_NULLPTR);
     assert(w > 0);
     assert(h > 0);
 
@@ -111,8 +113,8 @@ int compute_1st_moment_sve2(const float *pic, int w, int h, int stride, double *
 
 int compute_2nd_moment_sve2(const float *pic, int w, int h, int stride, double *score)
 {
-    assert(pic != NULL);
-    assert(score != NULL);
+    assert(pic != VMAF_NULLPTR);
+    assert(score != VMAF_NULLPTR);
     assert(w > 0);
     assert(h > 0);
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0648: CHUG HDR MOS Trainer Entry Point
 
 - **Status**: Proposed
@@ -24,8 +23,7 @@ Using a KonViD-named command for CHUG is misleading for two reasons:
 
 ## Decision
 
-Add a CHUG-named trainer entry point:
-`ai/scripts/train_chug_hdr_mos_head.py`.
+Add a CHUG-named trainer entry point: `ai/scripts/train_chug_hdr_mos_head.py`.
 
 The wrapper defaults to the canonical local CHUG shard directory
 `.corpus/chug/training/fr_canonical_shards/output/`, records
@@ -40,15 +38,16 @@ surface and used by the CHUG wrapper.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Keep documenting CHUG through `train_konvid_mos_head.py` | Smallest patch | Misnames the corpus and makes HDR MOS look like KonViD/SDR work | Rejected by user feedback and because it confuses the HDR model boundary |
-| Rename the existing KonViD trainer wholesale | Cleans up the shared-code name | Breaks existing docs, tests, and committed `konvid_mos_head_v1` provenance in one PR | Too much migration risk for the immediate CHUG unlock |
-| Add a thin CHUG wrapper over the shared trainer | Correct operator surface; minimal disruption; keeps committed KonViD model history intact | Leaves shared implementation in a KonViD-named module for now | Chosen as the low-risk step; a future refactor can move shared code into a generic module |
+| Option                                                   | Pros                                                                                      | Cons                                                                                 | Why not chosen                                                                            |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Keep documenting CHUG through `train_konvid_mos_head.py` | Smallest patch                                                                            | Misnames the corpus and makes HDR MOS look like KonViD/SDR work                      | Rejected by user feedback and because it confuses the HDR model boundary                  |
+| Rename the existing KonViD trainer wholesale             | Cleans up the shared-code name                                                            | Breaks existing docs, tests, and committed `konvid_mos_head_v1` provenance in one PR | Too much migration risk for the immediate CHUG unlock                                     |
+| Add a thin CHUG wrapper over the shared trainer          | Correct operator surface; minimal disruption; keeps committed KonViD model history intact | Leaves shared implementation in a KonViD-named module for now                        | Chosen as the low-risk step; a future refactor can move shared code into a generic module |
 
 ## Consequences
 
-- **Positive**: CHUG HDR MOS training now has a truthful command and manifest id.
+- **Positive**: CHUG HDR MOS training now has a truthful command and manifest
+  id.
 - **Positive**: The local HDR workflow no longer tells operators to pass CHUG
   shards through KonViD-named CLI flags.
 - **Negative**: The shared implementation module still carries the historical
@@ -62,5 +61,7 @@ surface and used by the CHUG wrapper.
 - [ADR-0426](0426-chug-hdr-corpus-ingestion.md)
 - [ADR-0427](0427-chug-hdr-feature-materialisation.md)
 - [ADR-0336](0336-konvid-mos-head-v1.md)
-- Source: `req` — "well yeah and chug is hdr mos... so thats different because netflix (current) model is 8bit only etc... so its our model or the chug model we use for hdr until netflix finally releases their model"
+- Source: `req` — "well yeah and chug is hdr mos... so thats different because
+  netflix (current) model is 8bit only etc... so its our model or the chug model
+  we use for hdr until netflix finally releases their model"
 - Source: `req` — "you talk about chug and the script is named konvid? ffs..."

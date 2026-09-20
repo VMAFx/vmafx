@@ -21,6 +21,8 @@
 
 #include <stdio.h>
 
+#include "../src/vmaf_nullptr.h"
+
 // http://www.jera.com/techinfo/jtns/jtn002.html
 
 #define mu_assert(message, test)                                                                   \
@@ -30,10 +32,12 @@
     } while (0)
 
 #ifdef __cplusplus
-typedef const char *mu_message_t;
+using mu_message_t = const char *;
 extern "C" {
+using mu_test_fn = mu_message_t (*)();
 #else
 typedef char *mu_message_t;
+typedef mu_message_t (*mu_test_fn)(void);
 #endif
 
 extern int mu_tests_run;
@@ -49,7 +53,11 @@ extern int mu_tests_run;
  * "could not run" and "ran and passed" distinct. */
 extern int mu_skipped;
 
+#ifdef __cplusplus
+mu_message_t run_tests();
+#else
 mu_message_t run_tests(void);
+#endif
 
 #ifdef __cplusplus
 }
@@ -60,7 +68,7 @@ mu_message_t run_tests(void);
  * includes test.h gets one copy and so the `mu_run_test` macro
  * expansion stays short enough to avoid tripping
  * `readability-function-size` on test bodies that run many cases. */
-static inline mu_message_t mu_report(const char *name, mu_message_t (*test)(void))
+static inline mu_message_t mu_report(const char *name, mu_test_fn test)
 {
     (void)fprintf(stderr, "%s: ", name);
     mu_message_t message = test();

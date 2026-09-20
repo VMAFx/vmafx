@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0574: CUDA Twins for HDR-Model Features — Phase 1 (aim, adm3)
 
 - **Status**: Accepted
@@ -64,7 +63,7 @@ The `--fmad=false` nvcc flag already applied to `float_adm_score.cu`
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Separate `.cu` file for AIM kernels | Clean file boundaries | Requires second PTX load, extra meson entry, duplicated DWT band reads | Cost exceeds benefit; kernels share helper functions |
 | Store `decouple_r` in a scratch buffer between stages 2 and 3 | Avoids recomputation in stage 3b | Extra buffer allocation (same size as csf_a), extra write+read per pixel | Recomputation is cheap (few flops); bandwidth trade is unfavourable |
 | Emit AIM only when explicitly requested via option flag | Saves 2 kernel launches when unused | Complicates dispatch logic; HDR model needs AIM unconditionally | Unconditional is simpler; 2 extra launches per scale are inexpensive |

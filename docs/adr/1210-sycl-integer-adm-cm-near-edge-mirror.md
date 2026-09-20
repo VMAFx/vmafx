@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1210: The SYCL integer-ADM contrast-masking kernel mirrors its near edge
 
@@ -53,7 +52,7 @@ matching the CPU closed form and the three twins that already do.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Mirror the near edge to index 1 (chosen) | Two-character change; matches the CPU reference and all three other twins exactly | — | — |
 | Adopt CUDA's `offset_i` / `offset_j` table form | Structurally identical to the twin that has the ADR-1167 fix | A larger rewrite of a kernel whose only defect is two indices; the SYCL loop shape is different by design | Rejected — bigger diff, same result |
 | Relax `test_sycl_adm_parity`'s 1e-4 tolerance | No kernel change | The divergence is a discrete indexing error, not accumulation noise; loosening the gate would hide it | Rejected |

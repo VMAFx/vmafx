@@ -11,10 +11,17 @@ import http.client
 import json
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.lib.safe_subprocess import CommandFailed, CommandTimedOut
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandFailed, CommandTimedOut
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / ".github/repository-security-policy.json"
@@ -95,12 +102,13 @@ def bypass_count(rule_id: int) -> int:
     gh = shutil.which("gh")
     if gh is None:
         raise FileNotFoundError("GitHub CLI is required for the bypass count read query")
-    result = subprocess.run(  # noqa: S603 -- fixed GitHub-only read query, no shell
+    result = run_command(
         [gh, "api", "--hostname", "github.com", "graphql", "-f", f"query={BYPASS_QUERY}"],
+        allowed_executables=(gh,),
         check=True,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout_seconds=30,
     )
     payload = json.loads(result.stdout)
     if payload.get("errors"):
@@ -199,8 +207,8 @@ def main() -> int:
         KeyError,
         TypeError,
         http.client.HTTPException,
-        subprocess.CalledProcessError,
-        subprocess.TimeoutExpired,
+        CommandFailed,
+        CommandTimedOut,
     ) as exc:
         print(f"Repository security check failed: {exc}", file=sys.stderr)
         return 1

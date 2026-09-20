@@ -41,13 +41,9 @@ from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from corpus import base as _corpus_base  # noqa: E402
-from corpus.base import (  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from corpus import base as _corpus_base
+from corpus.base import (
     CorpusIngestBase,
     RunStats,
     normalise_clip_name,
@@ -55,6 +51,11 @@ from corpus.base import (  # noqa: E402
     utc_now_iso,
     write_ingest_manifest,
 )
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
 
 save_progress = _corpus_base.save_progress
 
@@ -100,6 +101,51 @@ def _synth_bucket_url(filename: str, *, prefix: str = _DEFAULT_BUCKET_PREFIX) ->
     return f"{prefix}{filename}"
 
 
+def _parse_manifest_row(
+    csv_path: Path,
+    line_no: int,
+    row: dict[str, str],
+    *,
+    clip_suffix: str,
+    bucket_prefix: str,
+) -> dict[str, Any] | None:
+    stem = pick(row, _CSV_FILENAME_KEYS)
+    if not stem:
+        _LOG.warning("%s:%d: no filename column; skipping", csv_path, line_no)
+        return None
+    filename = normalise_clip_name(stem, suffix=clip_suffix)
+    url = pick(row, _CSV_URL_KEYS) or ""
+    if not url:
+        url = _synth_bucket_url(filename, prefix=bucket_prefix)
+        _LOG.debug("%s:%d: synthesised bucket URL for %s", csv_path, line_no, filename)
+    mos_str = pick(row, _CSV_MOS_KEYS)
+    if mos_str is None:
+        _LOG.warning("%s:%d: no MOS column for %s; skipping", csv_path, line_no, filename)
+        return None
+    try:
+        mos = float(mos_str)
+    except ValueError:
+        _LOG.warning("%s:%d: bad MOS value %r; skipping", csv_path, line_no, mos_str)
+        return None
+    std_str = pick(row, _CSV_MOS_STD_KEYS)
+    try:
+        mos_std_dev = float(std_str) if std_str is not None else 0.0
+    except ValueError:
+        mos_std_dev = 0.0
+    n_str = pick(row, _CSV_NRATINGS_KEYS)
+    try:
+        n_ratings = int(float(n_str)) if n_str is not None else 0
+    except ValueError:
+        n_ratings = 0
+    return {
+        "filename": filename,
+        "url": url,
+        "mos": mos,
+        "mos_std_dev": mos_std_dev,
+        "n_ratings": n_ratings,
+    }
+
+
 def parse_manifest_csv(
     csv_path: Path,
     *,
@@ -124,43 +170,15 @@ def parse_manifest_csv(
 
     parsed: list[dict[str, Any]] = []
     for line_no, row in enumerate(all_rows, start=2):
-        stem = pick(row, _CSV_FILENAME_KEYS)
-        if not stem:
-            _LOG.warning("%s:%d: no filename column; skipping", csv_path, line_no)
-            continue
-        filename = normalise_clip_name(stem, suffix=clip_suffix)
-        url = pick(row, _CSV_URL_KEYS) or ""
-        if not url:
-            url = _synth_bucket_url(filename, prefix=bucket_prefix)
-            _LOG.debug("%s:%d: synthesised bucket URL for %s", csv_path, line_no, filename)
-        mos_str = pick(row, _CSV_MOS_KEYS)
-        if mos_str is None:
-            _LOG.warning("%s:%d: no MOS column for %s; skipping", csv_path, line_no, filename)
-            continue
-        try:
-            mos = float(mos_str)
-        except ValueError:
-            _LOG.warning("%s:%d: bad MOS value %r; skipping", csv_path, line_no, mos_str)
-            continue
-        std_str = pick(row, _CSV_MOS_STD_KEYS)
-        try:
-            mos_std_dev = float(std_str) if std_str is not None else 0.0
-        except ValueError:
-            mos_std_dev = 0.0
-        n_str = pick(row, _CSV_NRATINGS_KEYS)
-        try:
-            n_ratings = int(float(n_str)) if n_str is not None else 0
-        except ValueError:
-            n_ratings = 0
-        parsed.append(
-            {
-                "filename": filename,
-                "url": url,
-                "mos": mos,
-                "mos_std_dev": mos_std_dev,
-                "n_ratings": n_ratings,
-            }
+        parsed_row = _parse_manifest_row(
+            csv_path,
+            line_no,
+            row,
+            clip_suffix=clip_suffix,
+            bucket_prefix=bucket_prefix,
         )
+        if parsed_row is not None:
+            parsed.append(parsed_row)
     return parsed
 
 
@@ -312,6 +330,35 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _write_manifest(args, raw_argv: list[str], stats, max_rows: int | None) -> None:  # type: ignore[no-untyped-def]
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="youtube-ugc-corpus-jsonl-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "ugc_dir": args.ugc_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "clip_suffix": args.clip_suffix,
+            "bucket_prefix": args.bucket_prefix,
+            "min_csv_rows": _UGC_MIN_ROWS,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
@@ -351,32 +398,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    write_ingest_manifest(
-        args.manifest_out,
-        schema="youtube-ugc-corpus-jsonl-manifest-v1",
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        corpus_label=_CORPUS_LABEL,
-        stats=stats,
-        inputs={
-            "ugc_dir": args.ugc_dir,
-            "manifest_csv": args.manifest_csv,
-            "progress_path": args.progress_path,
-        },
-        outputs={"jsonl": args.output, "manifest": args.manifest_out},
-        config={
-            "clips_subdir": args.clips_subdir,
-            "clip_suffix": args.clip_suffix,
-            "bucket_prefix": args.bucket_prefix,
-            "min_csv_rows": _UGC_MIN_ROWS,
-            "max_rows": max_rows,
-            "full": args.full,
-            "corpus_version": args.corpus_version,
-            "attrition_warn_threshold": args.attrition_warn_threshold,
-        },
-    )
+    _write_manifest(args, raw_argv, stats, max_rows)
     return 0
 
 

@@ -669,7 +669,7 @@ def iter_rows(
                 # Provenance metadata (run_id, timestamp) gets a fresh stamp
                 # so downstream tools can tell the row came from cache.
                 nan = float("nan")
-                hit_row: dict[str, Any] = {k: nan for k in CORPUS_ROW_KEYS}
+                hit_row: dict[str, Any] = dict.fromkeys(CORPUS_ROW_KEYS, nan)
                 hit_row.update(
                     {
                         "schema_version": SCHEMA_VERSION,

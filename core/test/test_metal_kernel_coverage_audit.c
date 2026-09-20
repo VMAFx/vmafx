@@ -68,12 +68,6 @@
 #include "metal/common.h"
 #include "metal/dispatch_strategy.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* The authoritative list of Metal kernel basenames living under
  * core/src/feature/metal/. Must stay in lock-step with the .mm files
  * referenced from core/src/metal/meson.build's `metal_objcpp_lib`
@@ -92,19 +86,17 @@
  * not "integer_motion_v2". All other .mm files register as their stem +
  * "_metal" (e.g. ssimulacra2_metal.mm → "ssimulacra2_metal"). */
 static const char *const g_metal_kernel_basenames[] = {
-    "float_moment",  "float_motion",  "float_ms_ssim",
-    "float_psnr",    "float_ssim",    "integer_motion",
-    "integer_psnr",  "motion_v2",     "integer_ssim",
-    "float_vif",     "integer_vif",   "float_adm",
-    "integer_adm",   "integer_ciede", "integer_psnr_hvs",
-    "integer_cambi", "ssimulacra2",   NULL,
+    "float_moment",   "float_motion", "float_ms_ssim", "float_psnr",    "float_ssim",
+    "integer_motion", "integer_psnr", "motion_v2",     "integer_ssim",  "float_vif",
+    "integer_vif",    "float_adm",    "integer_adm",   "integer_ciede", "integer_psnr_hvs",
+    "integer_cambi",  "ssimulacra2",  VMAF_NULLPTR,
 };
 
 #define EXPECTED_KERNEL_COUNT 17u
 
 static int try_get_ctx(VmafMetalContext **ctx_out)
 {
-    *ctx_out = NULL;
+    *ctx_out = VMAF_NULLPTR;
     return vmaf_metal_context_new(ctx_out, -1);
 }
 
@@ -130,7 +122,7 @@ static char *test_every_kernel_basename_is_registered(void)
                           base, base);
             mu_assert("every Metal kernel basename must have a registered "
                       "<basename>_metal extractor",
-                      fex != NULL);
+                      fex != VMAF_NULLPTR);
         }
         mu_assert("extractor name field matches lookup key",
                   strcmp(fex->name, extractor_name) == 0);
@@ -138,7 +130,7 @@ static char *test_every_kernel_basename_is_registered(void)
     }
 
     mu_assert("expected kernel count matches list size", counted == EXPECTED_KERNEL_COUNT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Audit 2: each registered kernel's "<basename>_metal" name is also
@@ -146,12 +138,12 @@ static char *test_every_kernel_basename_is_registered(void)
  * gated on -ENODEV from `vmaf_metal_context_new`. */
 static char *test_every_kernel_is_dispatch_supported_or_skip(void)
 {
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int ctx_rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", ctx_rc == 0 || ctx_rc == -ENODEV);
     if (ctx_rc != 0) {
         (void)fprintf(stderr, "[skip: no Metal device]\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     char extractor_name[64];
@@ -171,7 +163,7 @@ static char *test_every_kernel_is_dispatch_supported_or_skip(void)
         }
     }
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Audit 3: the dispatch strategy must NOT accept synthetic non-existent
@@ -179,12 +171,12 @@ static char *test_every_kernel_is_dispatch_supported_or_skip(void)
  * regressions in `vmaf_metal_dispatch_supports`. */
 static char *test_dispatch_rejects_phantom_metal_names_or_skip(void)
 {
-    VmafMetalContext *ctx = NULL;
+    VmafMetalContext *ctx = VMAF_NULLPTR;
     const int ctx_rc = try_get_ctx(&ctx);
     mu_assert("context_new returns 0 or -ENODEV", ctx_rc == 0 || ctx_rc == -ENODEV);
     if (ctx_rc != 0) {
         (void)fprintf(stderr, "[skip: no Metal device]\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* Names that LOOK plausibly Metal but are NOT registered as Metal
@@ -199,7 +191,7 @@ static char *test_dispatch_rejects_phantom_metal_names_or_skip(void)
         "vmaf_metal",                          /* the VMAF aggregate is not an extractor */
         "motion3_metal",                       /* standalone motion3 is unimplemented on Metal */
         "definitely_not_a_metal_kernel_metal", /* obvious non-name */
-        NULL,
+        VMAF_NULLPTR,
     };
 
     for (unsigned i = 0; phantoms[i]; ++i) {
@@ -214,7 +206,7 @@ static char *test_dispatch_rejects_phantom_metal_names_or_skip(void)
         }
     }
     vmaf_metal_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Audit 4: counting sanity — the basename list has exactly
@@ -227,7 +219,7 @@ static char *test_basename_list_count_matches_expected(void)
     while (g_metal_kernel_basenames[n])
         n++;
     mu_assert("basename list count must equal EXPECTED_KERNEL_COUNT", n == EXPECTED_KERNEL_COUNT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 typedef char *(*test_fn)(void);
@@ -246,7 +238,5 @@ char *run_tests(void)
     for (size_t i = 0; i < test_table_len; ++i) {
         mu_run_test(test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-1127: Single SemVer release stream
 
 ## Question

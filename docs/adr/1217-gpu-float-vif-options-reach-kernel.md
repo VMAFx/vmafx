@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1217: gpu float vif options reach kernel
 
-# ADR-1217: The GPU float-VIF kernels read `vif_sigma_nsq` and `vif_enhn_gain_limit` from their options
+**Decision:** The GPU float-VIF kernels read `vif_sigma_nsq` and
+`vif_enhn_gain_limit` from their options
 
 - **Status**: Proposed
 - **Date**: 2026-09-07
@@ -27,20 +28,21 @@ const float sigma_max_inv = (2.0f * 2.0f) / (255.0f * 255.0f);
 ```
 
 The host never forwarded the option values, and `init()` on all three validates
-only `vif_kernelscale`. A non-default value is therefore accepted, range-checked,
-and folded into the derived feature name (ADR-1183) — and then discarded.
+only `vif_kernelscale`. A non-default value is therefore accepted,
+range-checked, and folded into the derived feature name (ADR-1183) — and then
+discarded.
 
 This is reachable from a **shipped model**.
 [`model/vmaf_float_v0.6.1neg.json`](../../model/vmaf_float_v0.6.1neg.json) sets
 `"vif_enhn_gain_limit": 1.0` on all four VIF-scale features, which is precisely
-what makes it the "NEG" (no-enhancement-gain) model. On the CPU that clamps
-`g` to `1.0`; on any GPU backend the kernel clamped to `100.0` instead. The
+what makes it the "NEG" (no-enhancement-gain) model. On the CPU that clamps `g`
+to `1.0`; on any GPU backend the kernel clamped to `100.0` instead. The
 resulting non-NEG scores were published under the NEG feature keys, so the
 divergence was invisible in the output schema.
 
 `float_vif_hip` had no parity test at all — `test_hip_vif_parity.c` covers the
-*integer* `vif_hip` twin — and the CUDA and SYCL float-VIF parity tests both ran
-with `NULL` options, where the hardcoded constants *are* the correct values.
+_integer_ `vif_hip` twin — and the CUDA and SYCL float-VIF parity tests both ran
+with `NULL` options, where the hardcoded constants _are_ the correct values.
 
 ## Decision
 
@@ -56,12 +58,12 @@ float-VIF parity test.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Pass the values into the kernels (chosen) | The advertised surface starts working on GPU; the NEG model produces NEG scores on every backend; default path unchanged | Three more kernel arguments per launch | — |
-| Reject non-default values in `init()` with `-EINVAL` | Small, honest, no numerical risk | Turns a silent wrong answer into a hard failure for the shipped NEG model on every GPU backend — the model would stop loading rather than start being right | Removes a working user surface to avoid implementing it |
-| Drop the two options from the GPU option tables | Makes the twins' declared surface match their behaviour | The derived feature name would then differ from the CPU's for the same model, so model lookup would miss; and it deletes a documented option | Breaks ADR-1183 name derivation and removes a surface |
-| Recompute `sigma_max_inv` in the kernel from `vif_sigma_nsq` | One fewer argument | `powf` in device code is not guaranteed to round identically to the host `powf`, risking a default-path drift for no benefit | Needless bit-exactness risk |
+| Option                                                       | Pros                                                                                                                     | Cons                                                                                                                                                        | Why not chosen                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Pass the values into the kernels (chosen)                    | The advertised surface starts working on GPU; the NEG model produces NEG scores on every backend; default path unchanged | Three more kernel arguments per launch                                                                                                                      | —                                                       |
+| Reject non-default values in `init()` with `-EINVAL`         | Small, honest, no numerical risk                                                                                         | Turns a silent wrong answer into a hard failure for the shipped NEG model on every GPU backend — the model would stop loading rather than start being right | Removes a working user surface to avoid implementing it |
+| Drop the two options from the GPU option tables              | Makes the twins' declared surface match their behaviour                                                                  | The derived feature name would then differ from the CPU's for the same model, so model lookup would miss; and it deletes a documented option                | Breaks ADR-1183 name derivation and removes a surface   |
+| Recompute `sigma_max_inv` in the kernel from `vif_sigma_nsq` | One fewer argument                                                                                                       | `powf` in device code is not guaranteed to round identically to the host `powf`, risking a default-path drift for no benefit                                | Needless bit-exactness risk                             |
 
 ## Consequences
 
@@ -89,8 +91,8 @@ float-VIF parity test.
   places=4 cross-backend tolerance.
 - [ADR-1183](1183-model-options-gate-gpu-twin-selection.md) — the derived
   feature-name key (`vif_scale0_egl_1_snsq_1.5`) the parity variants read.
-- ADR-1216 and research digest 2033 (both land in PR #1375, one feature
-  earlier) — the same default-options blind spot: an option whose default makes
-  the CPU and GPU paths coincide is not covered by a default-options parity
-  test. Referenced by number rather than by link because this branch does not
-  carry those files.
+- ADR-1216 and research digest 2033 (both land in PR #1375, one feature earlier)
+  — the same default-options blind spot: an option whose default makes the CPU
+  and GPU paths coincide is not covered by a default-options parity test.
+  Referenced by number rather than by link because this branch does not carry
+  those files.

@@ -134,10 +134,10 @@ static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const 
                                double scores[NUM_ADM_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("CPU: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm", opts);
@@ -146,7 +146,7 @@ static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const 
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
@@ -156,7 +156,7 @@ static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const 
     }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
@@ -166,21 +166,21 @@ static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const 
         scores[f] = NAN;
     *skipped = 0;
 
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     VmafHipConfiguration hip_cfg = {.device_index = -1};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    if (err != 0 || hip_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("HIP: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm_hip", opts);
@@ -189,7 +189,7 @@ static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const 
         *skipped = 1;
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("HIP: vmaf_use_feature(float_adm_hip) failed", !err);
     err = feed_frame(vmaf);
@@ -198,7 +198,7 @@ static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const 
         *skipped = 1;
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     if (err == -ENOSYS) {
         /* Documented scaffold contract: an unimplemented HIP extractor returns
@@ -209,16 +209,16 @@ static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const 
         (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     if (err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on EOS] ");
         *skipped = 1;
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
@@ -230,15 +230,15 @@ static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const 
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_adm_hip_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm_hip");
-    mu_assert("float_adm_hip extractor must be registered", fex != NULL);
+    mu_assert("float_adm_hip extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_adm_hip name matches", !strcmp(fex->name, "float_adm_hip"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_adm_cpu_hip_parity(void)
@@ -247,17 +247,17 @@ static char *test_float_adm_cpu_hip_parity(void)
     double hip_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu_float_adm(NULL, NULL, kAdmFeatures, cpu_scores);
+    char *msg = run_cpu_float_adm(VMAF_NULLPTR, VMAF_NULLPTR, kAdmFeatures, cpu_scores);
     if (msg)
         return msg;
-    msg = run_hip_float_adm(NULL, NULL, kAdmFeatures, hip_scores, &skipped);
+    msg = run_hip_float_adm(VMAF_NULLPTR, VMAF_NULLPTR, kAdmFeatures, hip_scores, &skipped);
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         if (isnan(hip_scores[f]))
-            return NULL;
+            return VMAF_NULLPTR;
         double d = fabs(cpu_scores[f] - hip_scores[f]);
         if (d > PARITY_TOL) {
             (void)fprintf(stderr,
@@ -266,7 +266,7 @@ static char *test_float_adm_cpu_hip_parity(void)
         }
         mu_assert("float_adm CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", d <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1220 — adm_p_norm must reach the kernels. The twin declares it with the
@@ -287,10 +287,10 @@ static char *test_float_adm_p_norm_reaches_kernel(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         if (isnan(hip_scores[f]))
-            return NULL;
+            return VMAF_NULLPTR;
         const double d = fabs(cpu_scores[f] - hip_scores[f]);
         if (d > PARITY_TOL) {
             (void)fprintf(stderr,
@@ -301,7 +301,7 @@ static char *test_float_adm_p_norm_reaches_kernel(void)
         mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
                   d <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
@@ -326,10 +326,10 @@ static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         if (isnan(hip_scores[f]))
-            return NULL;
+            return VMAF_NULLPTR;
         const double d = fabs(cpu_scores[f] - hip_scores[f]);
         if (d > PARITY_TOL) {
             (void)fprintf(stderr,
@@ -340,7 +340,7 @@ static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
         mu_assert("float_adm applies adm_csf_scale in Watson mode where the CPU ignores it",
                   d <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -349,5 +349,5 @@ char *run_tests(void)
     mu_run_test(test_float_adm_cpu_hip_parity);
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
-    return NULL;
+    return VMAF_NULLPTR;
 }
