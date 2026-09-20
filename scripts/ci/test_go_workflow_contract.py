@@ -13,11 +13,9 @@ import textwrap
 import unittest
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the

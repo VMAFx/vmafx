@@ -48,22 +48,18 @@ import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, cast
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-# Calibration loader sits next to this script. Same sys.path tweak
-# as cross_backend_vif_diff.py so direct ``python3 scripts/ci/<this>.py``
-# invocations resolve the sibling module.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cross_backend_calibration import (
+# The repository root above makes the sibling import canonical for both direct
+# script execution and package-aware type checking.
+from scripts.ci.cross_backend_calibration import (
     DEFAULT_CALIBRATION_PATH,
     CalibrationTable,
     load_calibration_table,
 )
+from scripts.lib.safe_subprocess import run as run_command
 
 # ---------------------------------------------------------------------------
 # Feature → metric-name list. Mirror of ``FEATURE_METRICS`` in
@@ -390,14 +386,20 @@ def run_one(
     return 0, ""
 
 
-def load_frames(path: Path) -> list[dict]:
+def load_frames(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
-        return json.load(f)["frames"]
+        payload: Any = json.load(f)
+    if not isinstance(payload, dict) or not isinstance(payload.get("frames"), list):
+        raise ValueError(f"{path}: expected an object containing a frames array")
+    frames = payload["frames"]
+    if not all(isinstance(frame, dict) for frame in frames):
+        raise ValueError(f"{path}: every frame must be an object")
+    return [cast(dict[str, Any], frame) for frame in frames]
 
 
 def diff_frames(
-    a_frames: list[dict],
-    b_frames: list[dict],
+    a_frames: list[dict[str, Any]],
+    b_frames: list[dict[str, Any]],
     metrics: tuple[str, ...],
     tolerance: float,
 ) -> tuple[dict[str, float], dict[str, int]]:

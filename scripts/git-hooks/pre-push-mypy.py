@@ -37,13 +37,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import CommandFailed
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandFailed
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import CommandFailed
+from scripts.lib.safe_subprocess import run as run_command
 
 # mypy writes `path:line: error: message  [code]`; `note:` lines are context.
 FINDING_RE = re.compile(
@@ -66,6 +63,7 @@ def git(*args: str) -> str:
         check=True,
         timeout_seconds=120,
     )
+    assert isinstance(result.stdout, str)
     return result.stdout
 
 
@@ -99,6 +97,8 @@ def run_mypy(executable: str, paths: list[str], cwd: Path) -> tuple[int, str]:
             timeout_seconds=1800,
             max_output_bytes=64 * 1_048_576,
         )
+        assert isinstance(completed.stdout, str)
+        assert isinstance(completed.stderr, str)
         status = status or completed.returncode
         output += completed.stdout + completed.stderr
     return status, output

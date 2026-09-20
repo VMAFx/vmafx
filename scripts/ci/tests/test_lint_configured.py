@@ -17,13 +17,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
 ROOT = SCRIPT.parents[2]
@@ -226,7 +223,7 @@ class ConfiguredLintTests(unittest.TestCase):
             )
             stub.chmod(0o755)
 
-    def command(self, argv: list[str], **kwargs: Any) -> CommandResult:
+    def command(self, argv: list[str]) -> TextCommandResult:
         result = run_command(
             argv,
             allowed_executables=("git", "make", sys.executable),
@@ -234,7 +231,6 @@ class ConfiguredLintTests(unittest.TestCase):
             env=self.env,
             capture_output=True,
             text=True,
-            **kwargs,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
@@ -249,7 +245,7 @@ class ConfiguredLintTests(unittest.TestCase):
     def write_database(self) -> None:
         self.database.write_text(json.dumps(self.entries), encoding="utf-8")
 
-    def run_driver(self, **env: str) -> CommandResult:
+    def run_driver(self, **env: str) -> TextCommandResult:
         return run_command(
             [
                 sys.executable,

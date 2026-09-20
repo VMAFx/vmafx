@@ -35,19 +35,14 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-# The calibration loader lives next to this script; ensure the
-# script directory is on sys.path so ``python3 scripts/ci/<this>.py``
-# (which doesn't add the script's parent to sys.path the way
-# ``-m`` invocation would) finds the sibling module reliably.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cross_backend_calibration import DEFAULT_CALIBRATION_PATH, load_calibration_table
+# The repository root above makes the sibling import canonical for both direct
+# script execution and package-aware type checking.
+from scripts.ci.cross_backend_calibration import DEFAULT_CALIBRATION_PATH, load_calibration_table
+from scripts.lib.safe_subprocess import run as run_command
 
 FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     "vif": (
@@ -310,14 +305,20 @@ def run_vmaf(
         raise SystemExit(2)
 
 
-def load_frames(path: Path) -> list[dict]:
+def load_frames(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
-        return json.load(f)["frames"]
+        payload: Any = json.load(f)
+    if not isinstance(payload, dict) or not isinstance(payload.get("frames"), list):
+        raise ValueError(f"{path}: expected an object containing a frames array")
+    frames = payload["frames"]
+    if not all(isinstance(frame, dict) for frame in frames):
+        raise ValueError(f"{path}: every frame must be an object")
+    return [cast(dict[str, Any], frame) for frame in frames]
 
 
 def diff(
-    cpu: list[dict],
-    gpu: list[dict],
+    cpu: list[dict[str, Any]],
+    gpu: list[dict[str, Any]],
     metrics: tuple[str, ...],
     places: int,
     tolerance_override: float | None = None,

@@ -25,14 +25,12 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
-try:
-    from scripts.lib.safe_subprocess import CommandFailed
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandFailed
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import CommandFailed
+from scripts.lib.safe_subprocess import run as run_command
 
 STICKY_HEADER = "<!-- bisect-tracker -->"
 
@@ -105,7 +103,7 @@ def _format_wiring_broke_body(error_log: str, run_url: str) -> str:
     )
 
 
-def _format_body(report: dict, run_url: str) -> str:
+def _format_body(report: dict[str, Any], run_url: str) -> str:
     threshold = f"{report['threshold_kind']} = {report['threshold_value']:g}"
     n_models = report["n_models"]
     n_visited = len(report["steps"])

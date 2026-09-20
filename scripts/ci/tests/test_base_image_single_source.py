@@ -12,13 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -53,7 +50,7 @@ class BaseImageGate(unittest.TestCase):
         )
         self.run_command([GIT, "init", "--quiet"], check=True)
 
-    def run_command(self, command: list[str], *, check: bool = False) -> CommandResult:
+    def run_command(self, command: list[str], *, check: bool = False) -> TextCommandResult:
         return run_command(
             command,
             allowed_executables=(GIT, BASH),

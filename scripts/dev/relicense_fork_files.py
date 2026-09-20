@@ -55,6 +55,7 @@ error.
 from __future__ import annotations
 
 import argparse
+import importlib
 import re
 import shutil
 import sys
@@ -64,14 +65,20 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path, PurePosixPath
+from typing import Any, Protocol, cast
 
-import tomllib
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+from scripts.lib.safe_subprocess import run as run_command
+
+
+class _TomlDecoder(Protocol):
+    TOMLDecodeError: type[Exception]
+
+    def loads(self, value: str, /) -> dict[str, Any]: ...
+
+
+tomllib = cast(_TomlDecoder, importlib.import_module("tomllib"))
 
 _GIT_PATH = shutil.which("git")
 GIT = str(Path(_GIT_PATH).resolve(strict=True)) if _GIT_PATH is not None else None

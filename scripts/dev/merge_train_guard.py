@@ -26,11 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 REPO = "VMAFx/vmafx"
 RELEASE_PR = 1213
@@ -71,6 +69,7 @@ def execute(argv: list[str], cwd: Path) -> str:
     if not argv:
         raise Refused("execution boundary requires an executable")
     requested = Path(argv[0]).expanduser()
+    binary: str | None
     if requested.is_absolute():
         binary = str(requested.resolve(strict=False))
     elif len(requested.parts) == 1:

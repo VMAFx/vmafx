@@ -34,6 +34,14 @@ The migration keeps each caller's prior success/failure contract, replaces
 direct launch annotations with runtime checks, and preserves test injection
 seams. The CI-impact map now classifies every tracked top-level entry.
 
+The initial pre-push run found a package-identity defect: mypy saw the helper
+as both `lib.safe_subprocess` and `scripts.lib.safe_subprocess` when it checked
+the helper beside a consumer. `scripts/__init__.py`, canonical imports, and a
+two-root regression test now make that identity unique. Text and binary result
+subclasses preserve stream types, while uncaptured streams return typed empty
+values. Clearing the stricter type surface also removed 23 pre-existing mypy
+findings in the migrated files; the final 44-file invocation reports none.
+
 ## Failure controls
 
 The helper tests exercise binary and text output, replacement environments,
@@ -45,8 +53,14 @@ Git, Node, Python, hook, analyzer, and patch-stack fixtures.
 ## Evidence
 
 ```text
-python3 -m unittest <all 18 migrated test modules>
-Ran 173 tests ... OK
+python3 -m pytest -q <all migrated test modules>
+263 passed, 1 skipped, 246 subtests passed
+
+.venv/bin/python scripts/git-hooks/test-pre-push-mypy.py
+Ran 19 tests ... OK
+
+.venv/bin/mypy <44 changed Python files>
+Success: no issues found in 44 source files
 
 python3 -m unittest scripts/ci/tests/test_scorecard_gate.py \
   scripts/ci/tests/test_scorecard_workflow.py

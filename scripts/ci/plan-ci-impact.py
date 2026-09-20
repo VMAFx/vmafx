@@ -31,13 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import BinaryCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 DEFAULT_CONFIG = Path(".github/ci-impact.json")
 ZERO_SHA = "0" * 40
@@ -190,7 +187,7 @@ def clean_git_environment() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key not in _GIT_ENV_BLOCKLIST}
 
 
-def _git(repo_root: Path, *args: str) -> CommandResult:
+def _git(repo_root: Path, *args: str) -> BinaryCommandResult:
     if GIT is None:
         raise PlanError("required executable not found: git")
     return run_command(
