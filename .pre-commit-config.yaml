@@ -244,7 +244,14 @@ repos:
         name: Configured native lint scope and failure propagation
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
         language: system
-        files: '^(Makefile|scripts/ci/(lint-configured\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(Makefile|scripts/ci/(lint-configured\.py|write-compile-commands\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|write_compile_commands|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-compile-commands-export
+        name: Explicit Ninja compilation database export
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_write_compile_commands.py
+        language: system
+        files: '^(Makefile|scripts/ci/(write-compile-commands\.py|tests/test_write_compile_commands\.py)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
       - id: test-renovate-file-patterns

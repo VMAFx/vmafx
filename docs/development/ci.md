@@ -486,10 +486,17 @@ meson setup core/build-cpu core --buildtype=release \
 make lint BUILD_DIR=core/build-cpu LINT_JOBS=4
 ```
 
-`make lint-c` reads Meson's regenerated `compile_commands.json`. Regeneration
-repairs databases previously overwritten by unfiltered Ninja export, including
-phony entries with empty commands, while retaining the configured build
-options. It selects every tracked native source with a configured command,
+`make lint-c` explicitly exports `compile_commands.json` after Meson regenerates
+the Ninja manifest and builds generated prerequisites. This is required because
+Meson 1.12 no longer materialises the database itself. The exporter requests
+only Ninja's `c_COMPILER` and `cpp_COMPILER` rules, validates every entry, and
+atomically replaces the last valid database; missing rules, invalid JSON, an
+empty result, or a failed Ninja command stops the gate without destroying the
+previous file. Never substitute unfiltered `ninja -t compdb`: that includes
+link, custom and phony entries which are not native compile commands.
+
+The configured lint driver then selects every tracked native source with a
+configured command,
 including top-level engine files, C++ CLI tools, tests and tracked vendored
 sources. It keeps all command variants for a source, including different test
 defines and include paths. Unconfigured backends are listed as outside the

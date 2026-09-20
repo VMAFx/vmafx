@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
+EXPORT_SCRIPT = SCRIPT.with_name("write-compile-commands.py")
 ROOT = SCRIPT.parents[2]
 PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
 
@@ -494,11 +495,12 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("invalid output", result.stderr)
 
-    def run_make_target(self, *, polluted: bool = False) -> None:
+    def prepare_make_fixture(self, polluted: bool) -> bytes:
         shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
         target = self.root / "scripts/ci/lint-configured.py"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SCRIPT, target)
+        shutil.copy2(EXPORT_SCRIPT, target.with_name("write-compile-commands.py"))
         original = self.database.read_bytes()
         (self.root / "native-database.json").write_bytes(original)
         if polluted:
@@ -511,6 +513,9 @@ class ConfiguredLintTests(unittest.TestCase):
                 }
             ]
             self.write_database()
+        return original
+
+    def install_make_prerequisite_sentinel(self) -> tuple[Path, str]:
         # Recursive Make does not inherit -o: satisfy the actual tool prerequisites.
         pip = self.root / "fixture-venv/bin/pip"
         pip.parent.mkdir(parents=True)
@@ -522,6 +527,9 @@ class ConfiguredLintTests(unittest.TestCase):
         )
         pip.write_text(pip_source, encoding="utf-8")
         pip.chmod(0o755)
+        return pip, pip_source
+
+    def install_make_build_tools(self) -> None:
         meson = self.bin / "meson"
         meson.write_text(
             f"#!{sys.executable}\n"
@@ -529,6 +537,7 @@ class ConfiguredLintTests(unittest.TestCase):
             "assert sys.argv[1:] == ['setup', '--reconfigure', 'configured-build', 'core']\n"
             "assert os.environ['PATH'].split(os.pathsep)[0] == 'fixture-venv/bin'\n"
             "Path('configured-build/compile_commands.json').write_bytes(Path('native-database.json').read_bytes())\n"
+            "Path('configured-build/build.ninja').write_text('# fixture manifest\\n')\n"
             "Path('configured-build/configure-called.txt').write_text('same build options')\n",
             encoding="utf-8",
         )
@@ -538,16 +547,20 @@ class ConfiguredLintTests(unittest.TestCase):
             f"#!{sys.executable}\n"
             "import json, sys\n"
             "from pathlib import Path\n"
-            "if '-t' in sys.argv:\n"
-            "    print(json.dumps([{'directory': str(Path.cwd()), 'file': 'generator.txt', 'arguments': ['generator']}]))\n"
+            "if sys.argv[-2:] == ['-t', 'rules']:\n"
+            "    print('c_COMPILER\\ncpp_COMPILER')\n"
+            "elif '-t' in sys.argv and 'compdb' in sys.argv:\n"
+            "    print(Path('native-database.json').read_text())\n"
             "else:\n"
             "    assert Path('configured-build/configure-called.txt').is_file()\n"
             "    Path('configured-build/build-called.txt').write_text('generated prerequisites ready')\n",
             encoding="utf-8",
         )
         ninja.chmod(0o755)
+
+    def invoke_make_lint(self) -> subprocess.CompletedProcess[str]:
         # Keep the initial configured-build target; recursive build checks real prerequisites.
-        result = self.command(
+        return self.command(
             [
                 "make",
                 "--no-print-directory",
@@ -564,10 +577,16 @@ class ConfiguredLintTests(unittest.TestCase):
                 "LINT_JOBS=2",
             ]
         )
+
+    def run_make_target(self, *, polluted: bool = False) -> None:
+        original = self.prepare_make_fixture(polluted)
+        pip, pip_source = self.install_make_prerequisite_sentinel()
+        self.install_make_build_tools()
+        result = self.invoke_make_lint()
         self.assertFalse((self.calls / "pip-bootstrap.txt").exists())
         self.assertFalse((self.root / "fixture-venv/pyvenv.cfg").exists())
         self.assertEqual(pip.read_text(encoding="utf-8"), pip_source)
-        self.assertEqual(self.database.read_bytes(), original)
+        self.assertEqual(json.loads(self.database.read_bytes()), json.loads(original))
         self.assertTrue((self.build / "build-called.txt").is_file())
         self.assertIn("Configured lint:", result.stdout)
         self.assertEqual(len(list(self.calls.glob("clang-tidy-*.json"))), len(self.native))

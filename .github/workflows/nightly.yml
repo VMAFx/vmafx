@@ -58,7 +58,9 @@ jobs:
           cd core
           meson setup ../build -Denable_cuda=false -Denable_sycl=false
       - name: Build (generated headers for clang-tidy)
-        run: meson compile -C build
+        run: |
+          meson compile -C build
+          python3 scripts/ci/write-compile-commands.py --build-dir build
       - name: Whole-tree clang-tidy ratchet (ADR-1142, cpu lane, fails on drift)
         run: |
           python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \

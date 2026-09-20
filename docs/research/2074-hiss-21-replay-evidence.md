@@ -54,11 +54,21 @@ non-draft attempts while retaining `if-no-files-found: error` for real scans.
 The Scorecard PR workflow is also a full-impact authority path, so its contract
 tests cannot be skipped by the impact planner when that workflow changes.
 
+Guarded merge-train validation then exposed a separate fail-closed lint defect:
+the installed Meson 1.12 completed setup and a 1,780-target build without
+creating `core/build/compile_commands.json`. The configured-lint driver rejected
+the missing input, correctly preventing a pass receipt, but every CI consumer
+had made the same stale assumption that Meson would write the file. The fix is
+an explicit, shared Ninja export of only `c_COMPILER` and `cpp_COMPILER`; its
+contract tests reject missing rules, empty or malformed output, non-compilation
+entries and failed Ninja calls while preserving the last valid database.
+
 ## Reproducer
 
 ```bash
 praetorctl hiss coverage --verify
 make hiss-coverage
+python3 -m unittest discover -s scripts/ci/tests -p test_write_compile_commands.py
 ```
 
 Deleting the catalog, replacing a positive fixture with clean code, or turning

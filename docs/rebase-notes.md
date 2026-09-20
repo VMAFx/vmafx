@@ -51607,3 +51607,11 @@ before its artifacts exist. Preserve the non-draft predicate on the artifact
 upload in `.github/workflows/scorecard-policy.yml`; `if-no-files-found: error`
 remains mandatory once a real scan starts. Keep that workflow in
 `.github/ci-impact.json`'s `full_patterns` so changes exercise its contracts.
+
+Meson 1.12 does not materialise `compile_commands.json` for the configured
+Ninja builds used by the native lint gates. Preserve the explicit
+`scripts/ci/write-compile-commands.py` call between each build and its analyzer,
+including before the SYCL custom-command augmentation. The exporter must request
+exactly `c_COMPILER` and `cpp_COMPILER`; an unfiltered `ninja -t compdb` brings
+link, generator, and phony commands back into analyzer scope. Failed or partial
+exports must leave the last valid database intact and fail the lane.
