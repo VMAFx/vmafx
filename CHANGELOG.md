@@ -13969,6 +13969,11 @@ SYCL, and Metal. All vendors retain native GPU coverage after the drop.
 - Refactor integer VIF AVX-512 kernels into small private stages while preserving exact arithmetic and the existing subsample register-pressure boundaries; add direct scalar-stage parity coverage across 8–16-bit inputs.
 
 
+- Update the development container's Intel NEO compute runtime to
+  `26.35.39758.10`; matching gmmlib and IGC packages remain derived from Intel's
+  release metadata and verified against their published SHA-256 checksums.
+
+
 - **Bump Intel NEO compute stack in `dev/Containerfile` as a matched set.**
   Intel compute-runtime (`NEO_VER`) moves to `26.31.39395.13`, Intel Graphics
   Compiler (`IGC_VER`) to `2.40.13+22418`, Level Zero loader (`LEVEL_ZERO_VER`)
