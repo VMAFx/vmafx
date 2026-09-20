@@ -1599,13 +1599,21 @@ test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
 # against scalar on full-range noise.
 test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',
     ['test.c', 'test_integer_adm_simd_noise.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_simd_noise', test_integer_adm_simd_noise,
+    suite : ['fast'])
+
+# T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18: the 16-bit vertical DWT sum
+# must stay in int64 on every dispatch level.
 test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
     ['test.c', 'test_integer_adm_dwt16_range.c'],
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
 )
-test('test_integer_adm_simd_noise', test_integer_adm_simd_noise,
 test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
     suite : ['fast'])
 
