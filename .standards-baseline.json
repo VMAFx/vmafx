@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-20T08:29:42Z",
+  "generated_at": "2026-09-20T09:43:13Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 1411,
@@ -7979,10 +7979,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_hip_float_adm_parity.c",
-      "line_number": 161,
+      "line_number": 164,
       "symbol": "{",
       "message": "Function '{' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_hip_float_adm_parity.c:161:HISS-04"
+      "fingerprint": "core/test/test_hip_float_adm_parity.c:164:HISS-04"
     },
     {
       "rule_id": "HISS-04",
