@@ -23671,6 +23671,13 @@ is addressed.
   uses `-f docker/Dockerfile.node --target <stage>` directly.
 
 
+- **Editing a header now rebuilds the CUDA and HIP kernels that include it.**
+  The nvcc and hipcc build steps did not record header dependencies, so an
+  incremental build after a header change could link host code against
+  kernels compiled for an older struct layout, which crashed or, worse,
+  computed wrong results. Clean builds were never affected.
+
+
 - **The GPU build lanes are warning-free again, and four CI test helpers no longer
   flake on a loaded runner.** A glob written inside a block comment
   (`core/src/feature/hip/*.c`) opens a nested comment, so 15 files warned under
@@ -23683,11 +23690,6 @@ is addressed.
   than timing assertions, are raised to 120 s after a CI run blew them under contention
   and the `TimeoutExpired` read as a real failure. `.gitignore` now also matches
   `.workingdir` / `.workingdir2` as symlinks, not only as directories.
-- **Editing a header now rebuilds the CUDA and HIP kernels that include it.**
-  The nvcc and hipcc build steps did not record header dependencies, so an
-  incremental build after a header change could link host code against
-  kernels compiled for an older struct layout, which crashed or, worse,
-  computed wrong results. Clean builds were never affected.
 
 
 - **GPU `motion_v2` twins emit `motion3_v2_score` (SYCL / HIP / Metal).** The
