@@ -67,20 +67,22 @@ are required compile-only gates. GitHub-hosted Windows
 runners do not expose GPUs, so these jobs verify that the MSVC toolchain,
 headers, libraries, and backend compile/link paths stay healthy.
 
-The CUDA leg installs CUDA 13.3.1 directly from NVIDIA's Windows network
-installer. It requests only the packages needed by the build:
+The CUDA legs install the patch-pinned `CUDA_VERSION` from
+`build-config.env` directly from NVIDIA's architecture-qualified Windows
+network installer. The shared installer verifies NVIDIA's checksum manifest
+and requests only the packages needed by the build:
 
-- `nvcc_13.3`
-- `cudart_13.3`
-- `crt_13.3`
-- `nvvm_13.3`
-- `visual_studio_integration_13.3`
+- `nvcc_13.4`
+- `cudart_13.4`
+- `crt_13.4`
+- `nvvm_13.4`
+- `visual_studio_integration_13.4`
 
-The workflow exports `CUDA_PATH`, `CUDA_PATH_V13_3`, and the CUDA `bin`
-directory before running `nvcc.exe --version`. If a future CUDA bump changes
-Windows package names or install paths, update
-[ADR-0664](../adr/0664-windows-cuda-toolkit-installer.md) and the workflow
-together.
+The helper exports `CUDA_PATH`, the versioned `CUDA_PATH_V13_4`, and the CUDA
+`bin` directory before running `nvcc.exe --version`. If a future CUDA bump
+changes Windows package names or install paths, update
+[ADR-1272](../adr/1272-cuda-13-4-toolchain-alignment.md), the helper, and its
+single-source tests together.
 
 ## Windows ARM64 lane
 
@@ -105,14 +107,13 @@ What the job pins, and why:
 - `actions/setup-python` 3.14.7 (published for `win32`/`arm64`) and
   `pip install meson ninja` (`ninja` has a `win_arm64` wheel). No nasm; the
   build only probes it on x86.
-- The same MSVC configure as the x64 legs: `/experimental:c11atomics`,
-  `--default-library=static`, `-Denable_float=true`, no CUDA or SYCL.
-- A PowerShell check that `install\bin\vmaf.exe` has PE machine `0xAA64`,
-  so an accidental x64 build cannot pass under emulation.
-
-CUDA is off: CUDA 13.3.1, the repository pin, ships no `windows-arm64`
-packages; 13.4.1 is the first release that does. A CUDA-on-WoA leg follows
-the coordinated CUDA 13.4 bump.
+- The CPU configure uses `/experimental:c11atomics`,
+  `--default-library=static`, `-Denable_float=true`, and runs the fast suite.
+- CUDA 13.4.1's native ARM64 installer then feeds a separate build-only
+  `-Denable_cuda=true -Denable_nvcc=true` tree. The hosted runner has no GPU,
+  so CUDA runtime tests remain out of scope.
+- PowerShell checks both CPU and CUDA `vmaf.exe` outputs for PE machine
+  `0xAA64`, so an accidental x64 build cannot pass under emulation.
 
 ## What lives in the cluster
 

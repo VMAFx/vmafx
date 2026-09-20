@@ -32,7 +32,7 @@
   [![Rust](https://img.shields.io/badge/Rust-2024-000000?style=for-the-badge&logo=rust&logoColor=white)](bindings/rust/vmafx-sys/Cargo.toml)
   [![Python](https://img.shields.io/badge/Python-3.14%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 
-  [![CUDA](https://img.shields.io/badge/CUDA-13.3-76B900?style=for-the-badge&logo=nvidia&logoColor=white)](docs/backends/cuda/overview.md)
+  [![CUDA](https://img.shields.io/badge/CUDA-13.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white)](docs/backends/cuda/overview.md)
   [![ROCm](https://img.shields.io/badge/ROCm-10.0-ED1C24?style=for-the-badge&logo=amd&logoColor=white)](docs/backends/hip/overview.md)
   [![oneAPI](https://img.shields.io/badge/SYCL-oneAPI-0071C5?style=for-the-badge&logo=intel&logoColor=white)](docs/backends/sycl/overview.md)
   [![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](docs/backends/metal/index.md)
@@ -96,7 +96,7 @@ matrix below distinguishes those extractors from CPU-only metrics.
 | Backend | Selected with | Notes |
 | --- | --- | --- |
 | CPU | `--backend cpu` | scalar reference; SIMD paths dispatch automatically |
-| CUDA | `--backend cuda` | NVIDIA, CUDA 13.3 |
+| CUDA | `--backend cuda` | NVIDIA, CUDA 13.4 |
 | SYCL | `--backend sycl` | Intel oneAPI; fp64-free device contract |
 | HIP | `--backend hip` | AMD ROCm 10.0 |
 | Metal | `--backend metal` | Apple Silicon, Apple Family 7 and later |

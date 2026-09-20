@@ -323,17 +323,15 @@ must keep enumerating from `meson test --list`.
 
 ## Windows CUDA setup path (ADR-0664)
 
-`libvmaf-build-matrix.yml` installs CUDA 13.3.1 directly in the
-`Windows MSVC+CUDA` leg. Do not restore
-`Jimver/cuda-toolkit` for that Windows leg without a superseding ADR
-and a green required Windows CUDA run: v0.2.35 failed before setup on
-PR #1463, blocked merge train without Meson or compiler output.
-
-Linux CUDA legs still use `Jimver/cuda-toolkit`; ADR-0664 only
-special-cases Windows network-installer path. Keep explicit
-Windows package set (`nvcc`, `cudart`, `crt`, `nvvm`, and
-`visual_studio_integration`) aligned with CUDA major/minor suffix
-in workflow when bumping CUDA.
+Both Windows CUDA architectures invoke
+`scripts/ci/install-cuda-windows.ps1`, which reads `CUDA_VERSION` from
+`build-config.env`, selects NVIDIA's architecture-qualified network installer,
+verifies it against NVIDIA's checksum manifest, and installs the explicit
+`nvcc`, `cudart`, `crt`, `nvvm`, and `visual_studio_integration` package set.
+Do not restore `Jimver/cuda-toolkit`: it failed before setup on PR #1463 and
+its v0.2.36 static version table stops at CUDA 13.3.1. Linux CUDA jobs use
+`scripts/ci/install-cuda-linux.sh` and NVIDIA's native apt repository for the
+same configured minor series. The single-source gate enforces every consumer.
 
 ## Windows ARM64 lane (ADR-1260)
 
@@ -347,16 +345,22 @@ Invariants:
 - `runs-on: windows-11-vs2026-arm`. `windows-11-arm` migrates to same VS 2026
   image 2026-09-21..30 (runner-images #14602); switch only after that, and
   only with a green run.
+- `.github/actionlint.yaml` registers that exact hosted label because actionlint
+  v1.7.12 predates it. Keep the allowance exact; do not add a broad label or
+  ignore regex that could hide a misspelled runner.
 - `setup-msvc-dev` `arch: arm64` = `vcvarsall.bat arm64`, ARM64-hosted native
   toolset. Never `amd64_arm64` (x64 cross compiler under emulation). `Show
   compiler` step greps `cl.exe` banner for `for ARM64`; keep it, fails fast on
   wrong host toolset.
-- PE machine check (`0xAA64`) on `install\bin\vmaf.exe` stays: x64 binary
-  runs under emulation and would pass tests.
+- PE machine checks (`0xAA64`) on both `install\bin\vmaf.exe` and
+  `install-cuda-arm64\bin\vmaf.exe` stay: x64 binaries run under emulation and
+  would otherwise pass the lane.
 - Python pin = `PYTHON_CI_VERSION` like x64 legs; `actions/python-versions`
   has `win32/arm64` for it. `pip install meson ninja`: ninja ships
   `win_arm64` wheel. No nasm step; x86-only probe in `core/src/meson.build`.
-- CPU only until CUDA 13.4 bump: 13.3.1 has no `windows-arm64` packages.
+- CUDA 13.4.1 ARM64 is a build-only follow-on after the CPU tests. Keep the
+  architecture-qualified installer and `-Denable_nvcc=true`; the hosted runner
+  has no NVIDIA GPU, so do not add CUDA runtime tests to this lane.
 - Test step = `meson test --suite fast --print-errorlogs`. Full suite =
   follow-up, own decision.
 

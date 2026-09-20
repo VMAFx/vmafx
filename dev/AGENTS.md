@@ -35,12 +35,16 @@ creation step, exit code 13.
 
 ### CUDA package names
 
-- Use `cuda-toolkit` (current unversioned meta-package).
+- Source `/opt/vmafx/build-config.env` and install its versioned
+  `CUDA_APT_PACKAGE` (currently the `cuda-toolkit-13-4` minor stream). Do not
+  duplicate the package literal in `dev/Containerfile`; the single-source gate
+  binds it to `CUDA_VERSION`.
 - Do NOT install `libcuda1` (runtime driver) — must come from
   `nvidia-container-runtime` at run-time; baking it in shadows host
   driver.
 - Do NOT install `cuda-compiler` — legacy alias no longer existing in
-  NVIDIA CUDA channels; `cuda-toolkit` already provides `nvcc`.
+  NVIDIA CUDA channels; the configured toolkit package already provides
+  `nvcc`.
 
 ### Intel oneAPI package name
 
@@ -303,7 +307,7 @@ would fail to compile:
    stage 3.5 catches drops with `WARN <encoder>
    missing` lines. Do NOT add `--enable-libnpp`. FFmpeg n9.0.1's NPP
    support tops out
-   at CUDA 12.x; image's `cuda-toolkit` meta-package tracks 13.x.
+   at CUDA 12.x; the image's configured toolkit package tracks 13.x.
    Passing flag hard-errors at configure time. `scale_cuda` (built
    via `--enable-cuda-nvcc`) = replacement for `scale_npp` pipeline.
 6. **FFmpeg SYCL patch must use current libvmaf state-free ownership

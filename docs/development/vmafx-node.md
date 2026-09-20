@@ -34,7 +34,7 @@ docker run --rm --entrypoint /usr/local/bin/ffmpeg \
 | Target | GPU scoring runtime | FFmpeg encoders | Use case |
 |---|---|---|---|
 | `node-cpu` | none | software only | Development, CI, low-volume workloads |
-| `node-cuda` | NVIDIA (CUDA 13.3.1) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
+| `node-cuda` | NVIDIA (CUDA 13.4.1) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
 | `node-rocm` | AMD (ROCm 7.2.4) | software only | GPU-accelerated VMAF scoring on AMD pools |
 | `node-sycl` | Intel (oneAPI 2025.3.1) | software only | GPU-accelerated VMAF scoring on Intel Arc / Xe pools |
 
@@ -139,7 +139,7 @@ docker buildx build --target node-cpu \
   -f docker/Dockerfile.node \
   -t vmafx-node:local .
 
-# CUDA variant (references the pinned CUDA 13.3.1 runtime image)
+# CUDA variant (references the pinned CUDA 13.4.1 runtime image)
 docker buildx build --target node-cuda \
   -f docker/Dockerfile.node \
   -t vmafx-node:local-cuda .

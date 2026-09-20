@@ -105,7 +105,7 @@ helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 | Docker target | Published tag | Runtime |
 |---|---|---|
 | `node-cpu` | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13 |
-| `node-cuda` | not yet published | Debian 13 + CUDA 13.3.1 libraries |
+| `node-cuda` | not yet published | Debian 13 + CUDA 13.4.1 libraries |
 | `node-rocm` | not yet published | Debian 13 + ROCm 7.2.4 libraries |
 | `node-sycl` | not yet published | Debian 13 + oneAPI 2025.3.1 libraries |
 

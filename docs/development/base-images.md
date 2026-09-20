@@ -58,7 +58,7 @@ drifts from the config. It runs in `make lint-sh` and as a pre-commit hook.
 Pulling a library straight out of a vendor image looks harmless:
 
 ```dockerfile
-COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:… /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:13.4.1-runtime-ubuntu26.04@sha256:… /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 ```
 
 but that is a base-image pin — it decides which CUDA runtime the shipped image
@@ -103,6 +103,12 @@ The top of the config carries the human-meaningful version of each pin
 pinned tag actually carries the version its knob claims, so `RELEASE_DEBIAN=13`
 cannot sit above a `debian:12` pin. That check is what would have caught the
 drift this file exists to prevent.
+
+CUDA has two related owners: `CUDA_VERSION` patch-pins official container and
+Windows installer artifacts, while `CUDA_APT_PACKAGE` pins the matching Linux
+minor stream because NVIDIA's apt metapackage follows update releases within
+that stream. `scripts/ci/check-workflow-versions.py` rejects a major/minor
+mismatch and rejects workflow-local CUDA version literals.
 
 ### Formatter versions
 

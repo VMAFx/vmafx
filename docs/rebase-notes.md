@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/deps-cuda-13.4.1 — one CUDA authority and native Windows ARM64 compile (2026-09-20)
+
+- `build-config.env` owns `CUDA_VERSION` and `CUDA_APT_PACKAGE`. Keep
+  `scripts/ci/install-cuda-{linux.sh,windows.ps1}`, both CUDA workflows, and
+  `dev/Containerfile` consuming those settings; do not restore literal workflow
+  versions or `Jimver/cuda-toolkit`.
+- Windows CUDA 13.4 installers have architecture-qualified filenames. Keep
+  `x86_64` on the x64 jobs and `arm64` on the native ARM64 job, plus checksum
+  and Authenticode validation before execution.
+- `core/src/meson.build` prefers the `cl.exe` selected by `vcvarsall` on PATH
+  and makes its vswhere fallback architecture-aware. Taking upstream's old
+  x64-only CUDA discovery would make the ARM64 lane silently cross-host.
+- The Windows ARM64 job runs CPU tests, then performs a CUDA build-only compile;
+  both outputs must retain PE machine `0xAA64`. Keep `nv-codec-headers` in the
+  job because CUDA configuration treats those headers as mandatory.
+
+See [ADR-1272](adr/1272-cuda-13-4-toolchain-alignment.md) and the
+[evidence digest](research/1272-cuda-13-4-toolchain-alignment-2026-09-20.md).
+
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
 Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels

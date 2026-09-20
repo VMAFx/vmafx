@@ -56,6 +56,9 @@ RUN_RE = re.compile(r"(?m)^RUN(?:[^\n]*\\\n)*[^\n]*")
 LEVEL_ZERO_CONFIG = "/opt/vmafx/build-config.env"
 LEVEL_ZERO_URL = "https://github.com/oneapi-src/level-zero/releases/download/"
 LEVEL_ZERO_VERSION_FIELDS = 2  # release tag and package filename in each URL
+CUDA_CONFIG = "/opt/vmafx/build-config.env"
+CUDA_LINUX_INSTALLER = "scripts/ci/install-cuda-linux.sh"
+CUDA_WINDOWS_INSTALLER = "scripts/ci/install-cuda-windows.ps1"
 
 
 PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
@@ -150,6 +153,73 @@ def check_workflows(root: Path, lz_want: str | None, py_want: str | None) -> lis
     return problems
 
 
+def _check_cuda_container(root: Path) -> list[str]:
+    problems: list[str] = []
+    container = root / "dev" / "Containerfile"
+    if container.is_file():
+        text = container.read_text(encoding="utf-8")
+        copy = re.search(rf"(?m)^COPY\s+build-config\.env\s+{re.escape(CUDA_CONFIG)}\s*$", text)
+        install = re.search(r"RUN(?:[^\n]*\\\n)*[^\n]*CUDA_APT_PACKAGE[^\n]*(?:\\\n[^\n]*)*", text)
+        if not copy or not install or copy.end() > install.start():
+            problems.append("dev/Containerfile must copy config before its CUDA apt install")
+        elif f". {CUDA_CONFIG}" not in install.group(0):
+            problems.append("dev/Containerfile must source config before installing CUDA")
+        if re.search(r"(?m)^\s*cuda-toolkit-[0-9]+-[0-9]+\s*$", text):
+            problems.append("dev/Containerfile must not hardcode a CUDA toolkit package")
+    return problems
+
+
+def _check_cuda_workflows(root: Path) -> list[str]:
+    problems: list[str] = []
+    workflow_paths = sorted((root / ".github" / "workflows").glob("*.yml"))
+    if workflow_paths:
+        linux = root / CUDA_LINUX_INSTALLER
+        windows = root / CUDA_WINDOWS_INSTALLER
+        if not linux.is_file() or "CUDA_APT_PACKAGE" not in linux.read_text(encoding="utf-8"):
+            problems.append(f"{CUDA_LINUX_INSTALLER} must consume CUDA_APT_PACKAGE")
+        if not windows.is_file() or "CUDA_VERSION" not in windows.read_text(encoding="utf-8"):
+            problems.append(f"{CUDA_WINDOWS_INSTALLER} must consume CUDA_VERSION")
+
+        workflow_text = "\n".join(path.read_text(encoding="utf-8") for path in workflow_paths)
+        expected_calls = {
+            CUDA_LINUX_INSTALLER: 2,
+            f"{CUDA_WINDOWS_INSTALLER} -Architecture x86_64": 2,
+            f"{CUDA_WINDOWS_INSTALLER} -Architecture arm64": 1,
+        }
+        for call, expected in expected_calls.items():
+            actual = workflow_text.count(call)
+            if actual != expected:
+                problems.append(
+                    f"workflows contain {actual} calls to '{call}'; expected {expected}"
+                )
+        if "Jimver/cuda-toolkit" in workflow_text:
+            problems.append(
+                "workflows must not use Jimver/cuda-toolkit's lagging static version table"
+            )
+        if re.search(r"(?m)^\s*(?:cuda:\s*['\"]?[0-9]|\$cudaVersion\s*=)", workflow_text):
+            problems.append("workflows must not duplicate CUDA_VERSION as a literal")
+    return problems
+
+
+def check_cuda(root: Path, config: dict[str, str]) -> list[str]:
+    """Keep CUDA image, apt, container, and CI consumers on one series."""
+    problems: list[str] = []
+    version = config.get("CUDA_VERSION", "")
+    match = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version)
+    if not match:
+        return ["build-config.env CUDA_VERSION must be an exact three-part version"]
+    series = f"{match.group(1)}-{match.group(2)}"
+    apt_package = config.get("CUDA_APT_PACKAGE")
+    if apt_package != f"cuda-toolkit-{series}":
+        problems.append(
+            f"build-config.env CUDA_APT_PACKAGE is '{apt_package}'; "
+            f"CUDA_VERSION {version} requires 'cuda-toolkit-{series}'"
+        )
+    problems.extend(_check_cuda_container(root))
+    problems.extend(_check_cuda_workflows(root))
+    return problems
+
+
 def check_vmafx_version(root: Path, ver_want: str | None) -> list[str]:
     if not ver_want:
         return []
@@ -233,6 +303,7 @@ def main() -> int:
     problems: list[str] = []
     problems.extend(check_level_zero_container(root))
     problems.extend(check_workflows(root, lz_want, py_want))
+    problems.extend(check_cuda(root, cfg))
     problems.extend(check_vmafx_version(root, ver_want))
     problems.extend(check_formatter_pins(root))
 

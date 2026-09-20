@@ -247,25 +247,24 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Use pipefail so piped curl/gpg commands fail fast on any segment failure
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ---------- CUDA 13.3 -------------------------------------------------------
+# Shared toolchain settings are copied once for every SDK consumer below.
+COPY build-config.env /opt/vmafx/build-config.env
+
+# ---------- CUDA 13.4 -------------------------------------------------------
 # Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603):
 #
-#   - The NVIDIA ubuntu2604 apt repo exists and carries the cuda-keyring
-#     and driver packages, but does NOT yet contain the full
-#     `cuda-toolkit` meta-package (only `cuda-compat-13-3` and driver
-#     debs are confirmed present).  We therefore use the
-#     ubuntu2404 repo for the toolkit packages — NVIDIA publishes the
-#     same .deb files cross-distro and they install correctly on Ubuntu
-#     26.04 (glibc 2.43 is backward-compatible with packages built for
-#     glibc 2.35/2.39).
+#   - NVIDIA's ubuntu2604 repository now carries the full CUDA 13.4 toolkit,
+#     so the container no longer needs the cross-distro ubuntu2404 channel.
 #
-#   - We pin to `cuda-toolkit-13-3` (13.3.0) instead of the
+#   - We pin to the `cuda-toolkit-13-4` minor stream instead of the
 #     unversioned `cuda-toolkit` meta-package.  Reason: Ubuntu 26.04
 #     ships glibc 2.43, whose `bits/mathcalls.h` declares
 #     `rsqrt(double)` with `noexcept(true)`.  CUDA 13.0 and 13.1's
 #     `crt/math_functions.h` redeclared the same symbol WITHOUT the
 #     noexcept spec, producing a C2059/C2143/C2085 cascade under NVCC.
-#     CUDA 13.2 fixed that; 13.3 retains the fix.
+#     CUDA 13.2 fixed that; 13.4 retains the fix. NVIDIA's apt package
+#     deliberately follows update releases within 13.4, while release images
+#     remain patch- and digest-pinned by build-config.env.
 #
 #   - Fix B (belt-and-suspenders): `-D__MATH_NO_INLINES` is also added
 #     to the nvcc flags in `core/src/meson.build`.  That flag tells
@@ -275,20 +274,21 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #
 # Note: The NVIDIA Container Toolkit must be installed on the *host*
 # for GPU passthrough. See docs/development/dev-mcp.md §Prerequisites.
-RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb \
         -o /tmp/cuda-keyring.deb \
     && dpkg -i /tmp/cuda-keyring.deb \
     && rm /tmp/cuda-keyring.deb
 
-# `cuda-toolkit-13-3` pulls in nvcc 13.3 + headers + the user-mode
+# The configured CUDA 13.4 metapackage pulls in nvcc, headers, and user-mode
 # library stubs. Do NOT install `libcuda1` (the runtime driver) — that
 # comes from the host via nvidia-container-runtime at run-time;
 # installing it here would shadow the host driver.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    cuda-toolkit-13-3
+    . /opt/vmafx/build-config.env \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends "${CUDA_APT_PACKAGE}"
 
 # CUDA_HOME is the symlink the meta-package maintains pointing at the
 # latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
@@ -366,7 +366,6 @@ RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
     done
 
 # Level Zero loader (libze_loader) for SYCL
-COPY build-config.env /opt/vmafx/build-config.env
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \

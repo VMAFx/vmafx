@@ -1,0 +1,1 @@
+| [ADR-1272](1272-cuda-13-4-toolchain-alignment.md) | Align every CUDA consumer on the 13.4 toolchain through build-config.env, NVIDIA-native Linux and Windows installers, and an advisory native Windows ARM64 CUDA compile. | Proposed | cuda, ci, build, windows, arm64, deps, fork-local |

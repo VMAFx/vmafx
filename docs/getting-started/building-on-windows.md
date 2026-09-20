@@ -107,4 +107,9 @@ What is different from the other AArch64 builds:
   `core/src/meson.build`).
 - SVE2 is not built (MSVC has no `<arm_sve.h>`) and not probed at runtime
   outside Linux, so the binary dispatches NEON.
-- CUDA is not available: CUDA 13.3.1 has no Windows ARM64 packages.
+- CUDA 13.4.1 and later provide native Windows ARM64 compiler/runtime
+  packages. Install NVIDIA's ARM64 toolkit, then configure a separate
+  build-only CUDA tree with `-Denable_cuda=true -Denable_nvcc=true`; a real
+  CUDA score still requires supported NVIDIA Windows-on-Arm hardware and its
+  driver. CI verifies the native ARM64 compile and PE machine type but has no
+  GPU for runtime tests.

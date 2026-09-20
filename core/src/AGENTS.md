@@ -9,6 +9,10 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 
 `meson.build` must assign `cl_path` on both `vswhere` and `PATH` discovery
 routes. NVCC's `-ccbin` and MSVC include discovery consume that same path.
+Prefer the `cl.exe` selected by the active `vcvarsall` environment; only use
+vswhere as fallback, with `HostARM64/arm64` for an aarch64 host and
+`HostX64/x64` otherwise. An x64-first search silently cross-hosts native ARM64
+CUDA builds.
 Keep configure regression in `../test/test_windows_cuda_compiler_discovery.py`
 when rebasing Windows discovery block from Netflix PR #1472.
 

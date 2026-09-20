@@ -26,14 +26,16 @@ MESON = os.environ.get("VMAFX_TEST_MESON") or shutil.which("meson")
 
 def discovery_block() -> str:
     source = SOURCE.read_text(encoding="utf-8")
-    marker = "# default C compiler. Use vswhere + powershell"
+    marker = "# Prefer the compiler selected by vcvarsall"
     start = source.index("        if host_machine.system() == 'windows'", source.index(marker))
     end = source.index("        # Detect CUDA version from nvcc directly", start)
     return textwrap.dedent(source[start:end])
 
 
 class WindowsCudaCompilerDiscovery(unittest.TestCase):
-    def configure(self, *, vswhere: str, path_compiler: bool) -> subprocess.CompletedProcess[str]:
+    def configure(
+        self, *, vswhere: str, path_compiler: bool, cpu_family: str = "x86_64"
+    ) -> subprocess.CompletedProcess[str]:
         self.assertIsNotNone(MESON, "Meson is required for this configure regression")
         with tempfile.TemporaryDirectory(prefix="vmafx-windows-discovery-") as temporary:
             root = Path(temporary)
@@ -43,12 +45,15 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
             if path_compiler:
                 compiler.write_text(f"#!{sys.executable}\n", encoding="utf-8")
                 compiler.chmod(0o700)
-            discovered = "C:/Visual Studio/VC/Tools/MSVC/14.99/bin/HostX64/x64/cl.exe"
-            selected = discovered if vswhere == "found" else str(compiler)
+            host_path = "HostARM64/arm64" if cpu_family == "aarch64" else "HostX64/x64"
+            host_pattern = "*HostARM64*arm64*" if cpu_family == "aarch64" else "*HostX64*x64*"
+            discovered = f"C:/Visual Studio/VC/Tools/MSVC/14.99/bin/{host_path}/cl.exe"
+            selected = str(compiler) if path_compiler else discovered
             responses = {
                 "vswhere": vswhere,
                 "discovered": discovered,
                 "selected": selected,
+                "host_pattern": host_pattern,
                 "msvc_root": "C:/Visual Studio/VC/Tools/MSVC/14.99",
                 "sdk_root": "C:/Windows Kits/10/Include/10.0.26100.0",
             }
@@ -66,6 +71,8 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
                     cfg = json.loads((Path(__file__).parents[1] / 'responses.json').read_text())
                     command = sys.argv[-1]
                     if 'vswhere.exe' in command:
+                        if cfg['host_pattern'] not in command:
+                            sys.exit('wrong host compiler pattern')
                         if cfg['vswhere'] == 'error':
                             sys.exit(1)
                         if cfg['vswhere'] == 'found':
@@ -86,14 +93,14 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
             powershell.chmod(0o700)
             cross = root / "windows.ini"
             cross.write_text(
-                "[host_machine]\nsystem = 'windows'\ncpu_family = 'x86_64'\n"
-                "cpu = 'x86_64'\nendian = 'little'\n",
+                f"[host_machine]\nsystem = 'windows'\ncpu_family = '{cpu_family}'\n"
+                f"cpu = '{cpu_family}'\nendian = 'little'\n",
                 encoding="utf-8",
             )
             # The compiler selected by the branch is checked against the exact
             # executable found by Meson, including the PATH fallback.
             expected_compiler = (
-                f"'{discovered}'" if vswhere == "found" else "find_program('cl').full_path()"
+                "find_program('cl').full_path()" if path_compiler else f"'{discovered}'"
             )
             checks = (
                 f"assert(cl_path == {expected_compiler}, 'wrong compiler selected')\n"
@@ -139,6 +146,14 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
 
     def test_empty_vswhere_uses_path_compiler(self) -> None:
         result = self.configure(vswhere="empty", path_compiler=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_arm64_path_compiler_wins_over_x64_discovery(self) -> None:
+        result = self.configure(vswhere="found", path_compiler=True, cpu_family="aarch64")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_arm64_vswhere_fallback_selects_native_host(self) -> None:
+        result = self.configure(vswhere="found", path_compiler=False, cpu_family="aarch64")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_failed_vswhere_uses_path_compiler(self) -> None:

@@ -6,7 +6,7 @@
 #
 # Targets use matching, digest-pinned build/runtime families:
 #   final-cpu        — Debian 13 builder + distroless Debian 13 runtime
-#   final-cuda13     — NVIDIA CUDA 13.3.1 devel + runtime images
+#   final-cuda13     — NVIDIA CUDA 13.4.1 devel + runtime images
 #   final-rocm10      — AMD ROCm 10.0.0 dev/application image
 #   final-oneapi2025 — Intel oneAPI 2025.3.2 basekit + 2025.3.1 runtime image
 #
@@ -91,7 +91,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cpu \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/
 
-# --- CUDA 13.3.1 build ---
+# --- CUDA 13.4.1 build ---
 FROM ${CUDA_BUILDER} AS builder-cuda13
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -293,7 +293,7 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM ${CUDA_RUNTIME} AS final-cuda13
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX production CUDA 13.3.1 runtime"
+LABEL org.opencontainers.image.description="VMAFX production CUDA 13.4.1 runtime"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"

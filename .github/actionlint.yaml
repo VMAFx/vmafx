@@ -9,3 +9,4 @@ self-hosted-runner:
     # Windows11-VS2026-Arm64-Readme.md. Drop an entry once actionlint ships it.
     - ubuntu-26.04
     - ubuntu-26.04-arm
+    - windows-11-vs2026-arm

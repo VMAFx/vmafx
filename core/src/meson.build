@@ -1201,20 +1201,22 @@ if is_cuda_enabled
         nvcc_exe = find_program('nvcc')
 
         # On Windows, nvcc requires MSVC's cl.exe as host compiler for preprocessing.
-        # We avoid adding cl.exe to PATH as that causes meson to pick MSVC as the
-        # default C compiler. Use vswhere + powershell to find cl.exe automatically.
+        # Prefer the compiler selected by vcvarsall on PATH so native ARM64 jobs do
+        # not accidentally pair nvcc with an x64 host compiler. If no environment
+        # has been configured, use vswhere + powershell as a fallback.
         if host_machine.system() == 'windows'
-            cl_find_result = run_command('powershell', '-NoProfile', '-Command',
-                '(Get-ChildItem -Path (& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath) -Recurse -Filter cl.exe -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*HostX64*x64*" } | Select-Object -First 1).FullName',
-                check: false)
-            if cl_find_result.returncode() == 0 and cl_find_result.stdout().strip() != ''
-                cl_path = cl_find_result.stdout().strip()
-                message('Found MSVC cl.exe at: ' + cl_path)
+            cl_exe = find_program('cl', required: false)
+            if cl_exe.found()
+                cl_path = cl_exe.full_path()
                 nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
             else
-                cl_exe = find_program('cl', required: false)
-                if cl_exe.found()
-                    cl_path = cl_exe.full_path()
+                cl_host_pattern = host_machine.cpu_family() == 'aarch64' ? '*HostARM64*arm64*' : '*HostX64*x64*'
+                cl_find_result = run_command('powershell', '-NoProfile', '-Command',
+                    '(Get-ChildItem -Path (& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath) -Recurse -Filter cl.exe -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "' + cl_host_pattern + '" } | Select-Object -First 1).FullName',
+                    check: false)
+                if cl_find_result.returncode() == 0 and cl_find_result.stdout().strip() != ''
+                    cl_path = cl_find_result.stdout().strip()
+                    message('Found MSVC cl.exe at: ' + cl_path)
                     nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
                 else
                     error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')

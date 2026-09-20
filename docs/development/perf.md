@@ -19,7 +19,7 @@ bash scripts/perf/bench-multi-resolution.sh \
 docker run --rm --gpus all \
   -v $(git rev-parse --show-toplevel):/workspace \
   -w /workspace \
-  vmaf-dev-mcp:cuda13.3 bash -c '
+  vmaf-dev-mcp:local bash -c '
     export VMAF_BIN=/workspace/core/build/tools/vmaf
     bash scripts/perf/bench-multi-resolution.sh \
       --backends cpu,cuda \

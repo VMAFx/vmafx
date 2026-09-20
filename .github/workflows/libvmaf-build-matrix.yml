@@ -399,26 +399,18 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Pinned to CUDA 13.3.1, matching build.yml's Linux and Windows legs and
-      # the dev container. ADR-0603: Ubuntu 26.04 (glibc 2.43) needs CUDA >=
+      # The installer reads CUDA_VERSION / CUDA_APT_PACKAGE from
+      # build-config.env. ADR-0603: Ubuntu 26.04 (glibc 2.43) needs CUDA >=
       # 13.2 to avoid the rsqrt(double) noexcept C2059/C2085 NVCC cascade.
-      #
-      # The former 13.2.0 pin cited T-CI-JIMVER-CUDA-133-NOT-AVAILABLE — the
-      # Jimver/cuda-toolkit action having no 13.3.0 build. That was true of
-      # v0.2.35 and is stale: v0.2.36 (pinned below) serves 13.3.1, which
-      # build.yml's Linux leg already installs. The Docker-13.3-vs-CI-13.2
-      # split is closed.
+      # ADR-1272 removes the Jimver action: its static release table stops at
+      # 13.3.1, while NVIDIA's native apt repositories carry the 13.4 series.
       #
       # 13.x drops sm_50/60/70 (Maxwell/Pascal/Volta). ADR-1223 additionally
       # drops sm_75 (Turing): the gencode floor is compute_80 (Ampere).
       # Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
-        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
-        with:
-          cuda: '13.3.1'
-          method: network
-          sub-packages: '["nvcc", "cudart-dev"]'
+        run: scripts/ci/install-cuda-linux.sh
 
       - name: Install nv-codec-headers
         if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
@@ -820,10 +812,9 @@ jobs:
   # on Node.js 20 — see ADR-0635). Functionally identical: runs
   # vcvarsall.bat and exports PATH/INCLUDE/LIB for cl.exe.
   # CUDA toolkit is installed directly from NVIDIA's Windows network
-  # installer, pinned to the same 13.3.1 release as the Linux CUDA
-  # legs. The Linux legs still use Jimver/cuda-toolkit; the Windows
-  # leg avoids that action because v0.2.35 can exit before setup on
-  # current windows-2025 images (ADR-0664).
+  # installer at the CUDA_VERSION in build-config.env. Both Windows
+  # architectures use the repository helper because 13.4's installer
+  # filenames carry an explicit x86_64 / arm64 architecture suffix.
   # oneAPI is installed via the official `oneapi-src/oneapi-ci`
   # offline-installer pattern (`curl` the Base Toolkit installer +
   # extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
@@ -890,52 +881,15 @@ jobs:
           arch: x64
 
       # ---------- CUDA toolkit (CUDA leg only) ----------
-      # Same pin as the Linux CUDA legs: CUDA 13.3.1. 13.x itself drops
+      # Same 13.4 series as the Linux CUDA legs. 13.x itself drops
       # Maxwell/Pascal/Volta; ADR-1223 additionally drops Turing (sm_75), so
       # meson.build's gencode floor is compute_80 and the `< 13` sm_50 guard
       # is gone. Bumped 13.0.0 -> 13.2.0 per ADR-0603, 13.2.0 -> 13.3.1 per
-      # ADR-1223.
+      # ADR-1223, and 13.3.1 -> 13.4.1 per ADR-1272.
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-
-          $cudaVersion = '13.3.1'
-          $cudaMajorMinor = '13.3'
-          $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
-          $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
-
-          curl.exe --fail --location --retry 5 --retry-delay 10 --output $installer $url
-
-          # Windows sub-package names per
-          # https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#install-cuda-software
-          # The network installer expects the `_<major>.<minor>` suffix.
-          # `cudart` carries runtime headers on Windows. `crt` provides
-          # `crt/host_config.h`; `nvvm` provides `cicc.exe` and libdevice.
-          $packages = @(
-            "nvcc_$cudaMajorMinor",
-            "cudart_$cudaMajorMinor",
-            "crt_$cudaMajorMinor",
-            "nvvm_$cudaMajorMinor",
-            "visual_studio_integration_$cudaMajorMinor"
-          )
-
-          $process = Start-Process -FilePath $installer -ArgumentList (@('-s') + $packages) -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            Write-Error "CUDA installer failed with exit code $($process.ExitCode)"
-          }
-
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$cudaMajorMinor"
-          if (-not (Test-Path (Join-Path $cudaPath 'bin\nvcc.exe'))) {
-            Write-Error "nvcc.exe was not installed under $cudaPath"
-          }
-
-          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CUDA_PATH_V13_3=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          (Join-Path $cudaPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          & (Join-Path $cudaPath 'bin\nvcc.exe') --version
+        run: ./scripts/ci/install-cuda-windows.ps1 -Architecture x86_64
 
       # ---------- Intel oneAPI (SYCL leg only) ----------
       # Mirrors the official `oneapi-src/oneapi-ci` install pattern
@@ -1080,9 +1034,9 @@ jobs:
   # `#if ARCH_AARCH64` branch are compiled by cl.exe and executed on
   # ARM64 silicon. Before this lane the arm64 tree was only ever
   # compiled by gcc/clang (Ubuntu ARM clang, macOS) and MSVC only ever
-  # saw the x86 tree. CPU only: CUDA 13.3.1, the repository pin, ships
-  # no windows-arm64 packages (13.4.1 is the first that does); a
-  # CUDA-on-WoA leg waits for the coordinated 13.4 bump. Advisory --
+  # saw the x86 tree. CUDA 13.4.1 adds a native Windows ARM64 toolkit;
+  # this job also performs a build-only CUDA compile after the CPU tests.
+  # Advisory --
   # not in required-aggregator.yml -- until the maintainer promotes
   # it. See ADR-1260.
   #
@@ -1146,6 +1100,18 @@ jobs:
           where cl.exe
           cl.exe 2>&1 | findstr /i /C:"for ARM64"
 
+      - name: Install CUDA toolkit (ARM64)
+        shell: pwsh
+        run: ./scripts/ci/install-cuda-windows.ps1 -Architecture arm64
+
+      - name: Install nv-codec-headers (ARM64)
+        shell: cmd
+        run: |
+          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
+          mkdir nvcodec-prefix\include\ffnvcodec
+          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
+          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+
       # `/experimental:c11atomics` as on every MSVC leg (see the
       # windows-gpu-build comment). `enable_asm` stays at its default,
       # which on aarch64 means the NEON translation units.
@@ -1165,20 +1131,6 @@ jobs:
         shell: cmd
         run: ninja -v -C core\build install
 
-      # The PE header's Machine field must read 0xAA64 (ARM64). An x64
-      # binary would still run here under emulation and pass the tests,
-      # so this pins that the lane exercised native ARM64 code.
-      - name: Check vmaf.exe is an ARM64 image
-        shell: pwsh
-        run: |
-          $bytes = [IO.File]::ReadAllBytes('install\bin\vmaf.exe')
-          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
-          $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
-          if ($machine -ne 0xAA64) {
-            throw ("vmaf.exe machine field is 0x{0:X4}, expected 0xAA64 (ARM64)" -f $machine)
-          }
-          "vmaf.exe machine field 0x{0:X4} (ARM64)" -f $machine
-
       # The MinGW64 lane runs the whole suite; this lane starts with
       # `fast`. --print-errorlogs mirrors that lane so a failing test's
       # output lands in the CI log instead of only in testlog.txt.
@@ -1186,9 +1138,44 @@ jobs:
         shell: cmd
         run: meson test -C core\build --suite fast --print-errorlogs
 
+      # CUDA compilation is build-only because the hosted runner has no NVIDIA
+      # GPU. The CPU build above remains the executable ARM64/NEON test lane.
+      - name: Configure libvmaf (CUDA ARM64)
+        shell: cmd
+        env:
+          CFLAGS: /experimental:c11atomics
+          CXXFLAGS: /experimental:c11atomics
+        run: |
+          meson setup core core\build-cuda-arm64 --buildtype release ^
+            --prefix %CD%\install-cuda-arm64 ^
+            --default-library=static ^
+            -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false ^
+            -Denable_float=true
+
+      - name: Build libvmaf (CUDA ARM64)
+        shell: cmd
+        run: ninja -v -C core\build-cuda-arm64 install
+
+      # The PE header's Machine field must read 0xAA64 (ARM64). An x64
+      # binary would still run here under emulation, so check both outputs.
+      - name: Check vmaf.exe images are ARM64
+        shell: pwsh
+        run: |
+          foreach ($path in @('install\bin\vmaf.exe', 'install-cuda-arm64\bin\vmaf.exe')) {
+            $bytes = [IO.File]::ReadAllBytes($path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+            if ($machine -ne 0xAA64) {
+              throw ("$path machine field is 0x{0:X4}, expected 0xAA64 (ARM64)" -f $machine)
+            }
+            "$path machine field 0x{0:X4} (ARM64)" -f $machine
+          }
+
       - name: Upload vmaf.exe artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: windows-arm64-msvc-vmaf
-          path: install\bin\vmaf.exe
+          path: |
+            install\bin\vmaf.exe
+            install-cuda-arm64\bin\vmaf.exe
           if-no-files-found: error

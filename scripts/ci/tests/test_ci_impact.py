@@ -106,12 +106,31 @@ class ConfigContract(unittest.TestCase):
     def test_ci_authority_files_are_full_patterns(self) -> None:
         config = planner.load_config(CONFIG)
         for path in (
+            ".agents/agents/reviewer.md",
+            ".codex/config.toml",
+            ".config/archetypes/policy.yaml",
+            ".cursor/rules/hiss.mdc",
+            ".dir-locals.el",
+            ".fleet/settings.json",
+            ".gemini/settings.json",
             ".github/ci-impact.json",
             ".github/workflows/required-aggregator.yml",
             ".pre-commit-config.yaml",
+            ".gosec.json",
+            ".helix/languages.toml",
+            ".nvim.lua",
+            ".paperclip/config.yaml",
+            ".standards-baseline.json",
+            ".standards.lock",
+            ".standards.yaml",
+            ".windsurfrules",
+            "PRE_MIGRATION_EPIC.md",
             "Makefile",
+            "lefthook.yml",
+            "lua/vmafx/init.lua",
             "osv-scanner.toml",
             "scripts/ci/plan-ci-impact.py",
+            "standards.sublime-project",
         ):
             self.assertTrue(planner._matches(path, tuple(config["full_patterns"])), path)
 
