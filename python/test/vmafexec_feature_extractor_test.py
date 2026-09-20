@@ -1175,6 +1175,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_vif_debug_part_1(results)
+        self._assert_float_vif_debug_part_2(results)
+
+    def _assert_float_vif_debug_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_VIF_feature_vif_scale0_score"], 0.3636628333333333, places=6
         )
@@ -1216,6 +1221,8 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["float_VIF_feature_vif_num_scale2_score"], 47605.012532562505, places=0
         )
+
+    def _assert_float_vif_debug_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["float_VIF_feature_vif_den_scale2_score"], 55154.17488602083, places=0
         )
@@ -1483,6 +1490,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_vif_debug_part_1(results)
+        self._assert_integer_vif_debug_part_2(results)
+
+    def _assert_integer_vif_debug_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_VIF_feature_vif_scale0_score"], 0.3636620625, places=6
         )
@@ -1524,6 +1536,8 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["integer_VIF_feature_vif_num_scale2_score"], 47606.0171713125, places=4
         )
+
+    def _assert_integer_vif_debug_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["integer_VIF_feature_vif_den_scale2_score"], 55153.50821933334, places=4
         )
@@ -1827,6 +1841,10 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=False)
         results = self.fextractor.results
+
+        self._assert_float_adm_adm_fs_1080_3h_part_1(results)
+
+    def _assert_float_adm_adm_fs_1080_3h_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_f1s0_0.01183_f1s1_0.025026_f1s2_0.04295_f1s3_0.058621_f2s0_0.004302_f2s1_0.011778_f2s2_0.023918_f2s3_0.035901_score"
@@ -1890,6 +1908,10 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=False)
         results = self.fextractor.results
+
+        self._assert_float_adm_adm_fs_1080_5h_part_1(results)
+
+    def _assert_float_adm_adm_fs_1080_5h_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_f1s0_0.004212_f1s1_0.014809_f1s2_0.029642_f1s3_0.047464_f2s0_0.000984_f2s1_0.005852_f2s2_0.0146_f2s3_0.027574_score"
@@ -1953,6 +1975,10 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=False)
         results = self.fextractor.results
+
+        self._assert_float_adm_adm_fs_2160_3h_part_1(results)
+
+    def _assert_float_adm_adm_fs_2160_3h_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_f1s0_0.00226_f1s1_0.01183_f1s2_0.025026_f1s3_0.04295_f2s0_0.000479_f2s1_0.004302_f2s2_0.011778_f2s3_0.023918_score"
@@ -2016,6 +2042,10 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=False)
         results = self.fextractor.results
+
+        self._assert_float_adm_adm_fs_2160_5h_part_1(results)
+
+    def _assert_float_adm_adm_fs_2160_5h_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_f1s0_9.2e-05_f1s1_0.004212_f1s2_0.014809_f1s3_0.029642_f2s0_5e-05_f2s1_0.000984_f2s2_0.005852_f2s3_0.0146_score"
@@ -2116,6 +2146,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_coeffs_part_1(results)
+        self._assert_float_adm_barten_csf_scale_coeffs_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_coeffs_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_scores"][0],
             0.972729,
@@ -2156,6 +2191,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_coeffs_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm_scale0_scfd_0.001586_csf_1_scf_0.002893_score"],
             0.9704822916666666,
@@ -2193,6 +2230,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_vhd_anw_part_1(results)
+        self._assert_float_adm_barten_csf_scale_vhd_anw_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_vhd_anw_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nw_0.000625_scores"
@@ -2232,6 +2274,8 @@ class FeatureExtractorTest(MyTestCase):
             0.9643117916666667,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_vhd_anw_part_2(self, results):
         self.assertAlmostEqual(
             results[1]["float_ADM_feature_adm3_scfd_0.001586_csf_1_scf_0.002893_nw_0.000625_score"],
             1.0,
@@ -2282,6 +2326,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_vhd_anw_0d5_part_1(results)
+        self._assert_float_adm_barten_csf_scale_vhd_anw_0d5_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_vhd_anw_0d5_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nw_0.5_scores"][0],
             0.977851,
@@ -2322,6 +2371,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_vhd_anw_0d5_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm_scale0_scfd_0.001586_csf_1_scf_0.002893_nw_0.5_score"
@@ -2367,6 +2418,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_coeffs_1d5h_part_1(results)
+        self._assert_float_adm_barten_csf_scale_coeffs_1d5h_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_coeffs_1d5h_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_scores"][0],
             0.962869,
@@ -2406,6 +2462,8 @@ class FeatureExtractorTest(MyTestCase):
             0.8846063333333333,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_coeffs_1d5h_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm_scale2_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_score"
@@ -2438,6 +2496,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_1(results)
+        self._assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_rdf_2160_scores"
@@ -2480,6 +2543,8 @@ class FeatureExtractorTest(MyTestCase):
             0.0,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm3_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_rdf_2160_score"
@@ -2539,6 +2604,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_coeffs_4d5h_part_1(results)
+        self._assert_float_adm_barten_csf_scale_coeffs_4d5h_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_coeffs_4d5h_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_4.5_scores"][0],
             0.977101,
@@ -2579,6 +2649,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_coeffs_4d5h_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm_scale0_scfd_0.001586_csf_1_scf_0.002893_nvd_4.5_score"
@@ -2625,6 +2697,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_coeffs_4d5h_rdh_2160_part_1(results)
+        self._assert_float_adm_barten_csf_scale_coeffs_4d5h_rdh_2160_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_coeffs_4d5h_rdh_2160_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_4.5_rdf_2160_scores"
@@ -2667,6 +2744,8 @@ class FeatureExtractorTest(MyTestCase):
             0.9986556041666668,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_coeffs_4d5h_rdh_2160_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm_scale1_scfd_0.001586_csf_1_scf_0.002893_nvd_4.5_rdf_2160_score"
@@ -2706,6 +2785,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_1080_part_1(results)
+        self._assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_1080_part_2(results)
+
+    def _assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_1080_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_scores"][0],
             0.962869,
@@ -2745,6 +2829,8 @@ class FeatureExtractorTest(MyTestCase):
             0.8846063333333333,
             places=6,
         )
+
+    def _assert_float_adm_barten_csf_scale_coeffs_1d5h_rdh_1080_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm_scale2_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_score"
@@ -3172,6 +3258,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_debug_part_1(results)
+        self._assert_float_adm_debug_part_2(results)
+
+    def _assert_float_adm_debug_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_score"], 0.9345148541666667, places=4
         )
@@ -3212,6 +3303,8 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm_den_scale1_score"], 74.47438383333333, places=4
         )
+
+    def _assert_float_adm_debug_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm_num_scale2_score"], 105.55483329166668, places=3
         )
@@ -3816,6 +3909,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_barten_csf_scale_coeffs_part_1(results)
+        self._assert_integer_adm_barten_csf_scale_coeffs_part_2(results)
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_scores"][0],
             0.972724,
@@ -3856,6 +3954,8 @@ class FeatureExtractorTest(MyTestCase):
             0.9704815416666666,
             places=6,
         )  # float 0.9704822916666666
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm_scale1_scfd_0.001586_csf_1_scf_0.002893_score"],
             0.9163508125000001,
@@ -3888,6 +3988,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_barten_csf_scale_coeffs_change_adm_nw_part_1(results)
+        self._assert_integer_adm_barten_csf_scale_coeffs_change_adm_nw_part_2(results)
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_change_adm_nw_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nw_0.5_scores"][
                 0
@@ -3925,6 +4030,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=6,
         )  # float 1.0
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_change_adm_nw_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "integer_ADM_feature_adm_scale0_scfd_0.001586_csf_1_scf_0.002893_nw_0.5_score"
@@ -3970,6 +4077,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_barten_csf_scale_coeffs_4d5h_part_1(results)
+        self._assert_integer_adm_barten_csf_scale_coeffs_4d5h_part_2(results)
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_4d5h_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_4.5_scores"][
                 0
@@ -4009,6 +4121,8 @@ class FeatureExtractorTest(MyTestCase):
             0.999999125,
             places=6,
         )  # float 1.0
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_4d5h_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "integer_ADM_feature_adm_scale0_scfd_0.001586_csf_1_scf_0.002893_nvd_4.5_score"
@@ -4055,6 +4169,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_1(results)
+        self._assert_integer_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_2(results)
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_1(self, results):
         self.assertAlmostEqual(
             results[0][
                 "integer_ADM_feature_adm2_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_rdh_2160_scores"
@@ -4097,6 +4216,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=6,
         )  # float 1.0
+
+    def _assert_integer_adm_barten_csf_scale_coeffs_1d5h_rdh_2160_part_2(self, results):
         self.assertAlmostEqual(
             results[1][
                 "integer_ADM_feature_adm3_scfd_0.001586_csf_1_scf_0.002893_nvd_1.5_rdh_2160_score"
@@ -4192,6 +4313,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_debug_part_1(results)
+        self._assert_integer_adm_debug_part_2(results)
+
+    def _assert_integer_adm_debug_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm2_score"], 0.9345057916666667, places=4
         )
@@ -4233,6 +4359,8 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm_den_scale1_score"], 74.47584229166667, places=4
         )
+
+    def _assert_integer_adm_debug_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm_num_scale2_score"], 105.5588711875, places=4
         )
@@ -4447,6 +4575,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_v1017_csf_3d0h_1080_part_1(results)
+        self._assert_float_adm_v1017_csf_3d0h_1080_part_2(results)
+
+    def _assert_float_adm_v1017_csf_3d0h_1080_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_csf_3_dlmw_0.7_min_0.5_nw_0.02_scores"][0],
             0.961162,
@@ -4486,6 +4619,8 @@ class FeatureExtractorTest(MyTestCase):
             0.8997115,
             places=4,
         )
+
+    def _assert_float_adm_v1017_csf_3d0h_1080_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm_scale1_csf_3_dlmw_0.7_min_0.5_nw_0.02_score"],
             0.8900255833333334,
@@ -4520,6 +4655,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_float_adm_v1017_csf_3d0h_2160_part_1(results)
+        self._assert_float_adm_v1017_csf_3d0h_2160_part_2(results)
+
+    def _assert_float_adm_v1017_csf_3d0h_2160_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["float_ADM_feature_adm2_csf_3_dlmw_0.7_min_0.5_nw_0.02_rdf_2160_scores"][0],
             0.971938,
@@ -4560,6 +4700,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=6,
         )
+
+    def _assert_float_adm_v1017_csf_3d0h_2160_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "float_ADM_feature_adm_scale0_csf_3_dlmw_0.7_min_0.5_nw_0.02_rdf_2160_score"
@@ -4649,6 +4791,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_v1017_csf_3d0h_1080_part_1(results)
+        self._assert_integer_adm_v1017_csf_3d0h_1080_part_2(results)
+
+    def _assert_integer_adm_v1017_csf_3d0h_1080_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm2_csf_3_dlmw_0.7_min_0.5_nw_0.02_scores"][0],
             0.965334,
@@ -4689,6 +4836,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=5,
         )
+
+    def _assert_integer_adm_v1017_csf_3d0h_1080_part_2(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm_scale0_csf_3_dlmw_0.7_min_0.5_nw_0.02_score"],
             0.922381,
@@ -4728,6 +4877,11 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.fextractor.run(parallelize=True)
         results = self.fextractor.results
+
+        self._assert_integer_adm_v1017_csf_3d0h_2160_part_1(results)
+        self._assert_integer_adm_v1017_csf_3d0h_2160_part_2(results)
+
+    def _assert_integer_adm_v1017_csf_3d0h_2160_part_1(self, results):
         self.assertAlmostEqual(
             results[0]["integer_ADM_feature_adm2_csf_3_dlmw_0.7_min_0.5_nw_0.02_rdh_2160_scores"][
                 0
@@ -4770,6 +4924,8 @@ class FeatureExtractorTest(MyTestCase):
             1.0,
             places=5,
         )
+
+    def _assert_integer_adm_v1017_csf_3d0h_2160_part_2(self, results):
         self.assertAlmostEqual(
             results[0][
                 "integer_ADM_feature_adm_scale0_csf_3_dlmw_0.7_min_0.5_nw_0.02_rdh_2160_score"
