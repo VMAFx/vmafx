@@ -1,4 +1,5 @@
-<!-- markdownlint-disable MD041 -->
+# Documentation prompt
+
 You are drafting a Doxygen documentation block for the symbol `{{SYMBOL}}`
 in the file `{{FILE_PATH}}`.
 
