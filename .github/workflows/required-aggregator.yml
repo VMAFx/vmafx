@@ -100,9 +100,12 @@ jobs:
               // to docs/ trees a bot never touches, so without that they would
               // be red on every release PR. `Release Script Contract` and
               // `ADR Number Collision Guard` stay armed there on purpose.
-              // ADR-1249 — praetor / HISS-16 governance gate: context
-              // integrity plus the debt ratchet. Cheap, always reports.
+              // ADR-1249 / ADR-1274 — HISS-21 context, debt ratchet and
+              // replayed evidence. All four contexts always report.
               'Standards & Invariant Verification Gate',
+              'HISS Replay Evidence (Linux)',
+              'HISS Replay Evidence (macOS)',
+              'HISS Replay Evidence (Windows)',
               'Deliverables Checklist',
               'Doc-Substance Gate',
               'docs/state.md Gate',
@@ -110,6 +113,18 @@ jobs:
               'FFmpeg Patch Stack',
               'ADR Collision Guard',
               'Release Script Contract',
+            ];
+
+            // ADR-1274 — these governance jobs have no path or event filter,
+            // so absence or `skipped` is never a legitimate outcome. Keeping
+            // this list separate from `required` makes that fail-closed
+            // contract explicit instead of relying on the generic
+            // absent-means-path-skip behavior below.
+            const strictMustReport = [
+              'Standards & Invariant Verification Gate',
+              'HISS Replay Evidence (Linux)',
+              'HISS Replay Evidence (macOS)',
+              'HISS Replay Evidence (Windows)',
             ];
 
             // ADR-1151 — absent-means-pass (below) is correct ADR-0313
@@ -123,7 +138,7 @@ jobs:
             // `release-please-config.json` are in the `c_core` selector of
             // .github/ci-impact.json so the two build/test entries do real
             // work rather than reporting a no-op success.
-            const mustReport = [
+            const releaseMustReport = [
               'Release Script Contract',
               'Netflix CPU Golden',
               'Ubuntu gcc+DNN',
@@ -139,7 +154,7 @@ jobs:
             const enforceMustReport = headRef.startsWith('release-please--');
             if (enforceMustReport) {
               core.info(`Release branch ${headRef}: absence is not acceptable for ` +
-                        `${mustReport.join(', ')}`);
+                        `${releaseMustReport.join(', ')}`);
             }
             const sha = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.sha
@@ -243,6 +258,16 @@ jobs:
             const accepted = ['success', 'skipped', 'neutral'];
             for (const name of required) {
               const run = byName[name];
+              if (strictMustReport.includes(name)) {
+                if (!run) {
+                  failed.push(`${name}: never reported (strict required context)`);
+                } else if (run.conclusion !== 'success') {
+                  failed.push(`${name}: ${run.conclusion ?? run.status} (strict required context)`);
+                } else {
+                  core.info(`OK (strict success): ${name}`);
+                }
+                continue;
+              }
               if (name === scorecardGate) {
                 if (!run || run.conclusion !== 'success') {
                   failed.push(`${name}: ${run ? (run.conclusion ?? run.status) : 'never reported'}`);
@@ -274,7 +299,7 @@ jobs:
                 }
               }
               if (!run) {
-                if (enforceMustReport && mustReport.includes(name)) {
+                if (enforceMustReport && releaseMustReport.includes(name)) {
                   failed.push(`${name}: never reported on a release branch`);
                   continue;
                 }

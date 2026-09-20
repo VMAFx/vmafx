@@ -699,6 +699,9 @@ jobs:
           bash scripts/ci/check-aggregator-names.sh
           bash scripts/ci/tests/test-check-aggregator-names.sh
 
+      - name: HISS replay evidence remains fail-closed (ADR-1274)
+        run: python3 -B scripts/ci/tests/test_hiss_replay_contract.py
+
       - name: Test the self-hosted SYCL runner probe
         # ADR-1177. Hermetic unit suite for check-runner-available.sh.
         run: bash scripts/ci/tests/test-runner-available.sh

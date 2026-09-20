@@ -51589,3 +51589,15 @@ restores the `^`-only anchor, `Tidy Ratchet` will start reporting every header f
    an alias differently from the CPU emits a different feature key for the same
    request. `float_adm`'s aliases are `scf` / `scfd`; a sync that brings back
    `cs` / `cds` reintroduces the split key.
+
+## HISS-21 claims require replay evidence (ADR-1274)
+
+The HISS catalog under `.config/hiss/` is executable evidence, not generated
+decoration. Preserve the catalog and its positive, negative, and gap fixtures
+when syncing governance files. `make hiss-coverage` must pass with Praetor's
+pinned engine on Linux, macOS, and Windows. A new scanner rule or newly closed
+gap requires a catalog update and a fixture in the same change; never make the
+matrix green by dropping the contradictory fixture or removing a required
+context from `.github/workflows/required-aggregator.yml`. The four governance
+contexts live in `strictMustReport`: absence, skip, or neutral is a failure, not
+an ADR-0313 path-filter exemption.

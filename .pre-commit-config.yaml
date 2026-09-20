@@ -288,6 +288,13 @@ repos:
         language: script
         files: '^\.github/workflows/.*\.ya?ml$|^scripts/ci/(tests/test-)?check-aggregator-names\.sh$'
         pass_filenames: false
+
+      - id: hiss-replay-contract
+        name: HISS replay evidence remains fail-closed
+        entry: python3 -B scripts/ci/tests/test_hiss_replay_contract.py
+        language: system
+        files: '^(\.config/hiss/|\.github/workflows/(required-aggregator|standards-gate)\.yml|\.pre-commit-config\.yaml|AGENTS\.md|Makefile|README\.md|lefthook\.yml|scripts/ci/tests/test_hiss_replay_contract\.py)$'
+        pass_filenames: false
       - id: check-copyright
         name: ADR-0105 copyright header present (C/C++/CUDA)
         entry: scripts/ci/check-copyright.sh

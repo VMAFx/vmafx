@@ -24126,6 +24126,9 @@ to pass cleanly on CPU-only CI runners.
   and [Research-0688](../../docs/research/0688-hip-raphael-igpu-divergence.md).
 
 
+The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so

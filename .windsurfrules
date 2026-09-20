@@ -10,7 +10,7 @@ Before concluding any turn:
 make verify-all
 ```
 
-`make verify-all` = `praetorctl audit` + `praetorctl compile-context --verify` + repository tests. All pass -> Ed25519 Exit-0 receipt. Fail -> SARIF diagnostic distillation (<= 1500 tokens).
+`make verify-all` = `praetorctl audit` + context verification + HISS evidence replay. All pass -> Ed25519 Exit-0 receipt. Fail -> SARIF diagnostic distillation (<= 1500 tokens).
 
 ## Core Directives & Invariants (Modernized NASA JPL Power-of-10)
 
@@ -24,16 +24,25 @@ make verify-all
 | **HISS-08** | Determinism | Rule 8 | Zero dynamic execution (`eval` / `exec`); zero banned unsafe libc (`gets` / `strcpy` / `sprintf`). | AST / Linter error |
 | **HISS-09** | Reference Safety | Rule 9 | Mandatory `// SAFETY:` proofs for all pointer arithmetic and `unsafe` blocks. | AST check blocker |
 | **HISS-10** | Warning Hygiene | Rule 10 | Zero-warning tolerance across compiler, linter, and format sweeps. | Exit code 1 |
+| **HISS-11** | Hermetic Supply Chain | Fleet | Dependency inputs and images are pinned; release artifacts carry provenance and signatures. | Supply-chain gate |
+| **HISS-14** | Append-Only ABI | Fleet | Public APIs evolve additively; breaking changes require `!` and a `Migration:` footer. | API / release gate |
 | **HISS-15** | 3D Testing | Rule 5 | Positive, negative, and boundary tests mandatory for all public interfaces. | CI coverage gate |
 | **HISS-16** | Context Integrity | Fleet | Single canonical `AGENTS.md`; vendor files compiled via `praetorctl compile-context`. | Pre-commit blocker |
+| **HISS-17** | State Ledger | Fleet | Turn start reads bounded state/open tasks; turn end syncs private `.workingdir` state. | Pre-commit / CI gate |
+| **HISS-18** | CI Efficiency | Fleet | Diff-aware classification skips heavy gates only with an explicit recorded reason. | CI routing gate |
+| **HISS-19** | Reuse Before Writing | Fleet | One behavior, one implementation; extend or call existing capabilities. | Dedupe gate |
+| **HISS-20** | Replayable Evidence | Fleet | Every scanner claim is replayed against positive, negative, and known-gap fixtures. | HISS evidence gate |
+| **HISS-21** | Platform Neutrality | Fleet | Gates run on Linux, macOS, and Windows, or skip with a stated reason and alternate evidence. | Platform matrix gate |
 
 ## Operational Rules
 
 1. **Act on verified state.** Read source files, run real commands before hypothesis or edit. Never guess flag names, library signatures, repo configuration from memory.
 
-2. **Lead with output.** Direct answers, diffs, commands. No filler preamble, no "Based on", no restatement, no chatter.
+2. **Reuse before writing (HISS-19).** Search for the capability first. Extend or call the existing implementation; a second implementation or configuration format is a defect, not redundancy.
 
-3. **Context transpiler first.** Never edit `CLAUDE.md`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md` manually. All agent instruction updates -> `AGENTS.md`, then:
+3. **Lead with output.** Direct answers, diffs, commands. No filler preamble, no "Based on", no restatement, no chatter.
+
+4. **Context transpiler first.** Never edit `CLAUDE.md`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md` manually. All agent instruction updates -> `AGENTS.md`, then:
 
    ```bash
    praetorctl compile-context
@@ -41,11 +50,15 @@ make verify-all
 
    - `AGENTS.md` = agent-only text -> caveman (internal register). `praetorctl compile-context --verify` + `praetorctl audit` run caveman lint; findings fail gate; no opt-out. Check first:`praetorctl caveman check AGENTS.md`.
 
-4. **SARIF diagnostic distillation.** Compiler/linter errors -> distill to $\le 1,500$ tokens ($< 60$ lines): top 3 root-cause failures with file/line pointers; full SARIF logs -> ephemeral storage.
+5. **SARIF diagnostic distillation.** Compiler/linter errors -> distill to $\le 1,500$ tokens ($< 60$ lines): top 3 root-cause failures with file/line pointers; full SARIF logs -> ephemeral storage.
 
-5. **No evasion.** Never attempt `--no-verify`, `LEFTHOOK=0`, or modifying `.git/hooks`. `cordana-standards[bot]` re-checks every pull request in ephemeral isolated sandbox.
+6. **No evasion.** Never attempt `--no-verify`, `LEFTHOOK=0`, or modifying `.git/hooks`. `cordana-standards[bot]` re-checks every pull request in ephemeral isolated sandbox.
 
-6. **Anti-loop interception.** Same AST diff + error category repeats $\ge 3$ times -> halt immediately. Re-evaluate design; no micro-textual retries.
+7. **Anti-loop interception.** Same AST diff + error category repeats $\ge 3$ times -> halt immediately. Re-evaluate design; no micro-textual retries.
+
+8. **State ledger discipline (HISS-17).** Turn start: `praetorctl state status` plus `.workingdir/OPEN.md`, never the whole state ledger. Turn end: `praetorctl state sync .`. `.workingdir` stays private and Git-ignored.
+
+9. **Diff-aware CI (HISS-18).** Use `praetorctl ci filter` for routing. A skipped gate must print the reason and alternate coverage; a gate that did not run is never reported as passing.
 
 ## Text Register
 
@@ -73,8 +86,11 @@ Register follows the audience, then the task label of your brief (`register:` in
 # Recompile and verify cross-agent context outputs
 praetorctl compile-context --verify
 
-# Audit repository against declared HISS-16 standards
+# Audit repository against declared HISS-21 standards
 praetorctl audit
+
+# Replay every declared scanner claim against its fixture corpus
+praetorctl hiss coverage --verify
 
 # Run all formatting, linting, and security gates
 make verify-all

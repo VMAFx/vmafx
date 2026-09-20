@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: EUPL-1.2
+// Copyright 2026 Lusoris
+
+int exactly_sixty(int count)
+{
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    count++;
+    return count;
+}
