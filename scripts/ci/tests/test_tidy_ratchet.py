@@ -225,6 +225,9 @@ class RunClangTidy(unittest.TestCase):
             self.assertIn("--extra-arg=-nocudalib", argv)
             self.assertNotIn("--cuda-host-only", argv)
             self.assertTrue(Path(argv[argv.index("-p") + 1]).is_absolute())
+            # A value that already carries the wrapper passes through once, not
+            # twice: the lanes mix both spellings in TIDY_RATCHET_EXTRA_*.
+            self.assertNotIn("--extra-arg=--extra-arg=-nocudalib", argv)
 
     def test_relative_wrapper_path_survives_the_tu_directory(self) -> None:
         # clang-tidy runs in each TU's directory; the SYCL lane names its wrapper

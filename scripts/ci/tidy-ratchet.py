@@ -280,6 +280,11 @@ def run_one(
     binary: str, build_dir: Path, extra_args: list[str], unit: tuple[Path, Path]
 ) -> tuple[str, str, int]:
     source, directory = unit
+    # Same reason as the binary below: this runs with cwd set to the translation
+    # unit's directory, which for a meson build IS the build directory, so a
+    # relative -p would resolve to <build>/<build> and clang-tidy would find no
+    # compilation database. Make it absolute before the switch.
+    build_dir = build_dir.resolve()
     # A repository-relative --clang-tidy (the sycl wrapper) must survive the cwd
     # switch into the build directory below; resolve it once, leave bare names
     # to PATH lookup.
