@@ -59,6 +59,17 @@ no upstream-Netflix equivalent.
 
 ## Rebase-sensitive invariants
 
+### `sync-pelorus-interop.sh` reads one exact source object (ADR-1113)
+
+The Pelorus mirror guard pins a full 40-character released commit and reads
+every source with `git show`. A non-Git source directory or a checkout missing
+that object fails closed; never restore fallback to working-tree bytes. Re-pin
+for reviewed ABI additions and released parser correctness/security fixes,
+even when ABI 1.3 is unchanged. The conformance fixture body is byte-sensitive
+apart from the documented include rewrite; lint/format exclusions belong in
+VMAFx tooling, not inside that shared body. Keep the guard, its hermetic test,
+and the required Pre-Commit workflow checkout in one change.
+
 ### `dev/cleanup-agent-state.sh` preserves unclassified work
 
 Per [ADR-1239](../docs/adr/1239-agent-cleanup-preserve-work.md), no arguments

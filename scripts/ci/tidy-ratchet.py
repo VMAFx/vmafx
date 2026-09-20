@@ -52,6 +52,15 @@ ADR_CITE_RE = re.compile(r"ADR-\d{4}")
 GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+def is_exact_pelorus_mirror(path: str) -> bool:
+    """Return whether *path* is an exact-source Pelorus mirror (ADR-1113)."""
+    return (
+        path == "core/test/test_pelorus_interop.c"
+        or path.startswith("core/include/libvmaf/pelorus/")
+        or (path.startswith("core/src/interop/pelorus_") and path.endswith(".c"))
+    )
+
+
 @dataclass
 class Measurement:
     """Per-file counts for one lane."""
@@ -111,13 +120,23 @@ class Measurement:
     def from_json(cls, data: dict[str, Any]) -> Measurement:
         if data.get("schema") != BASELINE_SCHEMA:
             raise ValueError(f"unsupported baseline schema {data.get('schema')!r}")
+        sources = [str(path) for path in data.get("measured_sources", [])]
+        excluded_tus = sum(is_exact_pelorus_mirror(path) for path in sources)
+
+        def retained_counts(key: str) -> dict[str, int]:
+            return {
+                str(path): int(count)
+                for path, count in data.get(key, {}).items()
+                if not is_exact_pelorus_mirror(str(path))
+            }
+
         return cls(
             lane=str(data.get("lane", "")),
-            tus=int(data.get("tus", 0)),
-            sources=list(data.get("measured_sources", [])),
+            tus=max(0, int(data.get("tus", 0)) - excluded_tus),
+            sources=[path for path in sources if not is_exact_pelorus_mirror(path)],
             compile_failures=list(data.get("compile_failures", [])),
-            warnings={str(k): int(v) for k, v in data.get("warnings", {}).items()},
-            nolint_uncited={str(k): int(v) for k, v in data.get("nolint_uncited", {}).items()},
+            warnings=retained_counts("warnings"),
+            nolint_uncited=retained_counts("nolint_uncited"),
             clang_tidy_version=str(data.get("clang_tidy_version", "")),
             cc_version=str(data.get("cc_version", "")),
         )
@@ -164,7 +183,7 @@ def parse_diagnostics(
             compile_failed = True
             continue
         rel = relpath(match["path"], repo_root, cwd)
-        if rel is None:
+        if rel is None or is_exact_pelorus_mirror(rel):
             continue
         diags.add((rel, int(match["line"]), int(match["col"]), match["check"]))
     return diags, compile_failed
@@ -241,7 +260,12 @@ def load_compile_commands(build_dir: Path, repo_root: Path) -> list[tuple[Path, 
     for entry in entries:
         directory = Path(entry.get("directory", build_dir))
         rel = relpath(entry.get("file", ""), repo_root, directory)
-        if rel is None or rel in seen or rel.startswith("subprojects/"):
+        if (
+            rel is None
+            or rel in seen
+            or rel.startswith("subprojects/")
+            or is_exact_pelorus_mirror(rel)
+        ):
             continue
         if Path(rel).suffix not in SOURCE_SUFFIXES:
             continue
@@ -501,7 +525,11 @@ def merge_scoped_baseline(
         for path, count in after.items():
             if count > before.get(path, 0):
                 raise ScopedRegressionError(f"{path}: {metric} would increase to {count}")
-        merged = dict(before)
+        # Preserve historical exact-vendor entries byte-for-byte during a
+        # scoped write. They are normalized out of comparisons above, but a
+        # scoped update must never rewrite unselected baseline scope (ADR-1243).
+        # The next full generated write drops them naturally.
+        merged = dict(raw_before)
         for path in sorted(wanted):
             count = after.get(path, 0)
             if count != before.get(path, 0):

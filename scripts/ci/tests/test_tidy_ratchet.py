@@ -80,6 +80,15 @@ class ParseDiagnostics(unittest.TestCase):
         diags, _ = ratchet.parse_diagnostics(out, self.root, build)
         self.assertEqual(diags, {("core/src/a.h", 2, 2, "x-y")})
 
+    def test_omits_diagnostics_from_exact_pelorus_headers(self) -> None:
+        header = self.root / "core/include/libvmaf/pelorus/interop.h"
+        header.parent.mkdir(parents=True)
+        header.write_text("int x;\n", encoding="utf-8")
+        out = f"{header}:1:1: warning: upstream spelling [modernize-use-nullptr]"
+        diags, failed = ratchet.parse_diagnostics(out, self.root, self.root)
+        self.assertFalse(failed)
+        self.assertEqual(diags, set())
+
 
 class UncitedNolints(unittest.TestCase):
     def test_counts_only_uncited(self) -> None:
@@ -177,6 +186,33 @@ class Compare(unittest.TestCase):
         with self.assertRaises(ValueError):
             ratchet.Measurement.from_json({"schema": 99})
 
+    def test_legacy_baseline_omits_exact_pelorus_mirror(self) -> None:
+        data = {
+            "schema": 1,
+            "lane": "cpu",
+            "tus": 3,
+            "measured_sources": [
+                "core/src/a.c",
+                "core/src/interop/pelorus_interop.c",
+                "core/test/test_pelorus_interop.c",
+            ],
+            "warnings": {
+                "core/include/libvmaf/pelorus/interop.h": 4,
+                "core/src/a.c": 2,
+                "core/src/interop/pelorus_interop.c": 10,
+                "core/test/test_pelorus_interop.c": 9,
+            },
+            "nolint_uncited": {
+                "core/src/a.c": 1,
+                "core/test/test_pelorus_interop.c": 2,
+            },
+        }
+        baseline = ratchet.Measurement.from_json(data)
+        self.assertEqual(baseline.tus, 1)
+        self.assertEqual(baseline.sources, ["core/src/a.c"])
+        self.assertEqual(baseline.warnings, {"core/src/a.c": 2})
+        self.assertEqual(baseline.nolint_uncited, {"core/src/a.c": 1})
+
 
 class CompileCommands(unittest.TestCase):
     def test_filters_to_in_repo_sources(self) -> None:
@@ -194,6 +230,26 @@ class CompileCommands(unittest.TestCase):
                 {"directory": str(build), "file": "../core/src/a.h", "command": "cc"},
             ]
             (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+            units = ratchet.load_compile_commands(build, root)
+            self.assertEqual([u[0].relative_to(root).as_posix() for u in units], ["core/src/a.c"])
+
+    def test_omits_exact_pelorus_mirror_translation_units(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build = root / "build"
+            build.mkdir()
+            entries = []
+            for rel in (
+                "core/src/a.c",
+                "core/src/interop/pelorus_interop.c",
+                "core/test/test_pelorus_interop.c",
+            ):
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("int x;\n", encoding="utf-8")
+                entries.append({"directory": str(build), "file": str(path), "command": "cc"})
+            (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+
             units = ratchet.load_compile_commands(build, root)
             self.assertEqual([u[0].relative_to(root).as_posix() for u in units], ["core/src/a.c"])
 

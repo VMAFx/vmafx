@@ -137,6 +137,16 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on same commit can
 mask real queued or failed ready-for-review checks.
 
+### Pelorus mirror verification stays in required Pre-Commit
+
+The `Pre-Commit` job in `lint-and-format.yml` resolves the full commit declared
+by `scripts/sync-pelorus-interop.sh`, checks out `VMAFx/pelorus` at that exact
+object with credentials disabled, and runs the default mirror/fixture drift
+check. Keep this before `pre-commit --all-files`. Never change `ref` to a
+moving branch or tag, duplicate the pin in workflow YAML, or tolerate a missing
+object: ABI-stable parser safety releases must be able to trigger a reviewed
+re-pin, and CI must prove source provenance rather than local-tree similarity.
+
 ### Go validation (ADR-1238)
 
 `go-ci.yml` reports `go vet + go test` as required. It starts on non-draft

@@ -402,6 +402,30 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   parse/compile failures still invalidate that measurement. Reports retain
   actual `measured_sources` and `compile_failures` so partial/error output
   never presented as successful whole-tree scan.
+- ADR-1113's exact Pelorus mirror is outside native-lint ownership:
+  `core/src/interop/pelorus_*.c`, `core/include/libvmaf/pelorus/`, and
+  `core/test/test_pelorus_interop.c`. Keep one shared
+  `is_exact_pelorus_mirror()` predicate for TU selection, header diagnostics,
+  and legacy-baseline normalization. A scoped baseline write must preserve
+  historical entries for this excluded scope; only a full generated write may
+  remove them. Fix mirror diagnostics in Pelorus and re-pin; never edit the
+  fixture or raise a baseline locally. Tests live in `test_tidy_ratchet.py` and
+  `test_tidy_scoped_write.py`.
+
+## Pelorus mirror provenance gate (ADR-1113)
+
+`tests/test-sync-pelorus-interop.sh` proves the top-level mirror guard fails
+closed for a plain directory and for a Git checkout lacking the exact pin. It
+reconstructs source fixtures in disposable repositories, clears inherited
+`GIT_*`, and disables caller Git configuration. Keep it wired into required
+Pre-Commit through `.pre-commit-config.yaml`.
+
+The real CI check belongs in the existing `Pre-Commit` job in
+`lint-and-format.yml`: derive the 40-character pin from
+`scripts/sync-pelorus-interop.sh`, check out `VMAFx/pelorus` at that object,
+then run the script's default mode. Never replace the object with a branch/tag
+or restore its working-tree fallback; a green check must bind every mirrored
+body and the shared fixture to reviewed source bytes.
 
 ## release-pr-exempt.sh invariants (ADR-1151)
 
