@@ -51628,3 +51628,9 @@ The test-only C build of `core/src/log.c` preserves a Clang+C23 branch using
 false uninitialized `va_list`; GCC and MSVC still use `va_start`. Preserve the
 non-reserved `VMAF_SRC_LOG_H_` include guard in `log.h` when porting upstream
 logging changes.
+## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
+
+No rebase impact on product behavior: the two Netflix-derived Python test files only split
+existing assertion blocks into private helpers. Test names, setup order, fixtures, assertion
+expressions, expected values, and tolerances stay unchanged. An upstream textual conflict may
+take the upstream test body, then reapply the helper boundaries needed by HISS-04.
