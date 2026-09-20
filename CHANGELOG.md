@@ -24260,6 +24260,11 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
   `integer_vif_num_scale0`/`integer_vif_den_scale0` emit `0.0` when set.
 
 
+- Reuse integer VIF AVX2 and AVX-512 stage-test fixtures per geometry and build
+  their shared logarithm table once, keeping all 3,456 scalar/SIMD comparisons
+  within the Coverage Gate's per-test timeout.
+
+
 - Fixed `integer_vif_sycl`: register `vif_skip_scale0` option and enforce
   scale-0 suppression in `collect_fex_sycl`, matching `integer_vif.c` and
   `integer_vif_cuda` behavior. Previously the option was unregistered;
