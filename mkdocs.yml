@@ -1391,6 +1391,7 @@ nav:
         - "ADR-1263: hip-platform-macro-single-source": adr/1263-hip-platform-macro-single-source.md
         - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
         - "ADR-1265: clang-tidy-header-filter-absolute-paths": adr/1265-clang-tidy-header-filter-absolute-paths.md
+        - "ADR-1271: neo-buildkit-github-token-secret": adr/1271-neo-buildkit-github-token-secret.md
         - "ADR-1272: cuda-13-4-toolchain-alignment": adr/1272-cuda-13-4-toolchain-alignment.md
       - "By tag":
         - Overview: adr/by-tag/index.md

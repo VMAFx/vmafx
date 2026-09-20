@@ -61,6 +61,16 @@ x-common-env: &common-env
   ROCR_VISIBLE_DEVICES: "0"
 
 # ---------------------------------------------------------------------------
+# Build secrets
+# ---------------------------------------------------------------------------
+secrets:
+  # Optional. Compose supplies an empty secret when GITHUB_TOKEN is unset;
+  # the Containerfile treats that exactly like an omitted raw-build secret.
+  # The value is available only to the NEO metadata-fetch RUN (ADR-1271).
+  github_token:
+    environment: GITHUB_TOKEN
+
+# ---------------------------------------------------------------------------
 # Volumes
 # ---------------------------------------------------------------------------
 volumes:
@@ -98,6 +108,9 @@ services:
       args:
         VMAFX_SOURCE_REV: "${VMAFX_SOURCE_REV:-unknown}"
         VMAFX_SOURCE_REF: "${VMAFX_SOURCE_REF:-unknown}"
+      secrets:
+        - source: github_token
+          target: github_token
     image: vmaf-dev-mcp:local
     container_name: vmaf-dev-mcp
     restart: unless-stopped
