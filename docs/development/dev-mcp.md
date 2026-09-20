@@ -429,6 +429,12 @@ A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 | `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib` and `IGC` deb packages and checksums are dynamically derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). |
 | `rocm-src` stage image | `rocm/dev-ubuntu-24.04:10.0.0-full` (digest-pinned) | Replaces the old `ARG ROCM_VER` apt install: ROCm >= 7.14 ships only as a container image (ADR-1225). ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls; 10.0.0 was verified against Linux 7.2.3 on `gfx1036`. The stage prunes ~13 GB of math libraries libvmaf never links — but never `librocprofiler-register`, which `libamdhip64.so` needs at load. |
 
+The NEO resolver accepts only GitHub-hosted HTTPS URLs. API credentials are
+sent only to `api.github.com` and are removed before cross-host redirects.
+Metadata reads are bounded, package downloads use atomic temporary files with
+transient-error retries, and checksum or Debian-package validation failures
+remove the invalid output before the build stops.
+
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
 start (ADR-0543): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
 HSA agent NOT detected` means the host kernel has revved past the pinned
