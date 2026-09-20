@@ -167,7 +167,6 @@ _Updated: 2026-05-29 (T-ORT-SILENT-DISCARD-ELEM-TYPE-20260529 closed — `GetTen
 <!-- markdownlint-disable MD001 MD013 MD024 MD025 MD026 MD028 MD033 MD036 MD038 MD040 MD041 MD046 MD049 MD050 MD053 MD055 MD056 -->
 _Updated: 2026-06-03 (T-CUDA-MS-SSIM-FLOAT-PRECISION-2026-06-03 closed — `ms_ssim_vert_lcs` kernel used `2.0f` float literals for the L/C/S numerators and `float` warp/block reduction arrays. The CPU scalar reference (`ssim_tools.c` `ssim_accumulate_default_scalar`) uses `2.0 *` (double literal) causing float-to-double promotion. The float accumulation caused approximately 0.004 drift over 33k pixels at scale 0, approximately 40x the places=4 tolerance. Fix: per-pixel L/C/S changed to `double`; warp partial shared arrays changed to `double[…]`; `__shfl_down_sync` operands changed to double; partials device/host buffers resized from `sizeof(float)` to `sizeof(double)`; `c1/c2/c3` in MsSsimStateCuda promoted to `double`. Applies the ADR-0139 pattern (previously fixed for AVX2/AVX-512) to the CUDA backend. ADR-0990. Blamed commit: `8db2715ac2`.)_
 
-
 # Fork bug-status — `docs/state.md`
 
 <!-- markdownlint-disable MD013 -->
@@ -329,7 +328,6 @@ _Updated: 2026-05-09 (comprehensive verify-every-row audit;
 _Updated: 2026-05-09._
 
 _Updated: 2026-05-06._
-
 
 The tracked, in-tree register of **bug status** for this fork. Per
 [ADR-0165](adr/0165-state-md-bug-tracking.md) and
