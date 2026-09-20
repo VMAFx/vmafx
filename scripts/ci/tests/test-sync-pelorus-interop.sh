@@ -20,6 +20,7 @@ trap 'rm -rf "${work}"' EXIT
 mirror="${work}/vmafx"
 plain="${work}/pelorus-plain"
 missing="${work}/pelorus-missing"
+source_repo="${work}/pelorus-source"
 mkdir -p "${mirror}/scripts" "${mirror}/core/include/libvmaf" \
   "${mirror}/core/src" "${mirror}/core/test" "${plain}/libpelorus/include/pelorus" \
   "${plain}/libpelorus/src" "${plain}/libpelorus/test"
@@ -77,7 +78,21 @@ MANIFEST
 cp -R "${plain}" "${missing}"
 git -C "${missing}" init -q
 git -C "${missing}" add libpelorus
-git -C "${missing}" -c user.name=fixture -c user.email=fixture.invalid commit -q -m fixture
+git -C "${missing}" -c user.name=fixture -c user.email=fixture.invalid commit -q -m missing-fixture
+
+cp -R "${plain}" "${source_repo}"
+git -C "${source_repo}" init -q
+git -C "${source_repo}" add libpelorus
+git -C "${source_repo}" -c user.name=fixture -c user.email=fixture.invalid commit -q -m fixture
+fixture_pin="$(git -C "${source_repo}" rev-parse HEAD)"
+sed -i \
+  's/^PELORUS_VENDOR_SHA="[0-9a-f]\{40\}"$/PELORUS_VENDOR_SHA="'"${fixture_pin}"'"/' \
+  "${mirror}/scripts/sync-pelorus-interop.sh"
+while IFS= read -r vendored_path; do
+  sed -i \
+    's/VMAFx\/pelorus@[0-9a-f]\{40\}/VMAFx\/pelorus@'"${fixture_pin}"'/' \
+    "${vendored_path}"
+done < <(grep -rl 'VMAFx/pelorus@[0-9a-f]\{40\}' "${mirror}/core")
 
 fail=0
 expect_fail_closed() {
@@ -96,6 +111,60 @@ expect_fail_closed() {
 
 expect_fail_closed "plain directory" "${plain}" "must be a Git checkout"
 expect_fail_closed "checkout missing pin" "${missing}" "pinned Pelorus commit is unavailable"
+
+expect_clean() {
+  local name="$1" output rc=0
+  output="$(cd "${mirror}" && scripts/sync-pelorus-interop.sh "${source_repo}" 2>&1)" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    printf 'FAIL: %s rejected an exact fixture\n%s\n' "${name}" "${output}" >&2
+    fail=$((fail + 1))
+  else
+    printf 'PASS: %s accepts exact bytes\n' "${name}"
+  fi
+}
+
+expect_drift() {
+  local name="$1" expected="$2" output rc=0
+  output="$(cd "${mirror}" && scripts/sync-pelorus-interop.sh "${source_repo}" 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then
+    printf 'FAIL: %s ignored EOF-byte drift\n%s\n' "${name}" "${output}" >&2
+    fail=$((fail + 1))
+  elif ! grep -Fq "${expected}" <<<"${output}"; then
+    printf 'FAIL: %s did not report %q\n%s\n' "${name}" "${expected}" "${output}" >&2
+    fail=$((fail + 1))
+  else
+    printf 'PASS: %s detects EOF-byte drift\n' "${name}"
+  fi
+}
+
+expect_clean "byte-exact baseline"
+
+manifest_eof="${mirror}/core/include/libvmaf/pelorus/pelorus.h"
+python3 - "${manifest_eof}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+assert data.endswith(b"\n")
+path.write_bytes(data[:-1])
+PY
+expect_drift "manifest missing final newline" "core/include/libvmaf/pelorus/pelorus.h differs"
+printf '\n' >>"${manifest_eof}"
+
+fixture_eof="${mirror}/core/test/test_pelorus_interop.c"
+python3 - "${fixture_eof}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+assert data.endswith(b"\n")
+path.write_bytes(data[:-1])
+PY
+expect_drift "fixture missing final newline" "conformance fixture body differs"
+printf '\n' >>"${fixture_eof}"
+expect_clean "restored EOF bytes"
 
 workflow="${repo_root}/.github/workflows/lint-and-format.yml"
 for required in \

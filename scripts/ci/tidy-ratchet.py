@@ -401,13 +401,13 @@ def scan_nolints(repo_root: Path, units: list[tuple[Path, Path]], lane: str) -> 
         if root.is_dir():
             paths.update(p for p in root.rglob("*") if p.suffix in HEADER_SUFFIXES)
     for path in sorted(paths):
+        rel = relpath(str(path), repo_root, repo_root)
+        if rel is None or is_exact_pelorus_mirror(rel):
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             raise ValueError(f"cannot measure NOLINTs in {path}: {exc}") from exc
-        rel = relpath(str(path), repo_root, repo_root)
-        if rel is None:
-            continue
         uncited = count_uncited_nolints(text)
         if uncited:
             counts[rel] = uncited

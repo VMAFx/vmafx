@@ -211,8 +211,9 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 body (the Lusoris-authored header before the first vendored `#include` is
 preserved; only the body from that include onward is replaced and the
 `pelorus/` → `libvmaf/pelorus/` include rewrite re-applied). The drift check
-compares that transformed fixture body byte-for-byte. Local formatting or tidy
-edits therefore fail the guard instead of becoming a second implementation.
+compares transformed files and the fixture body byte-for-byte through EOF, so
+even a missing or extra final newline is drift. Local formatting or tidy edits
+therefore fail the guard instead of becoming a second implementation.
 
 A re-sync that changes the ABI is an ADR-worthy event (a new section bit or an
 appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-pin

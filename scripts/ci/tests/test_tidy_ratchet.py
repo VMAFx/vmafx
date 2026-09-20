@@ -147,6 +147,21 @@ class UncitedNolints(unittest.TestCase):
     def test_no_markers(self) -> None:
         self.assertEqual(ratchet.count_uncited_nolints("int x;\n"), 0)
 
+    def test_scan_omits_exact_pelorus_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            owned = root / "core/include/libvmaf/owned.h"
+            mirror = root / "core/include/libvmaf/pelorus/interop.h"
+            owned.parent.mkdir(parents=True)
+            mirror.parent.mkdir(parents=True)
+            owned.write_text("int owned; // NOLINT\n", encoding="utf-8")
+            mirror.write_text("int mirrored; // NOLINT\n", encoding="utf-8")
+
+            self.assertEqual(
+                ratchet.scan_nolints(root, [], "cpu"),
+                {"core/include/libvmaf/owned.h": 1},
+            )
+
 
 class Compare(unittest.TestCase):
     def _m(self, warnings: dict, nolint: dict | None = None) -> ratchet.Measurement:
