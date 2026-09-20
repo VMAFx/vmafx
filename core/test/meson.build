@@ -109,6 +109,22 @@ test_hip_wavefront_reduce = executable('test_hip_wavefront_reduce',
 )
 test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
+# ADR-1269: exercise both the compiler-selected null token and the explicit
+# portability fallback used by C translation units on compilers without C23
+# nullptr support.
+test_vmaf_nullptr = executable('test_vmaf_nullptr',
+    ['test.c', 'test_vmaf_nullptr.c'],
+    include_directories : [test_inc],
+)
+test('test_vmaf_nullptr', test_vmaf_nullptr, suite : ['fast'])
+
+test_vmaf_nullptr_fallback = executable('test_vmaf_nullptr_fallback',
+    ['test.c', 'test_vmaf_nullptr.c'],
+    include_directories : [test_inc],
+    c_args : ['-DVMAF_FORCE_NULLPTR_FALLBACK=1'],
+)
+test('test_vmaf_nullptr_fallback', test_vmaf_nullptr_fallback, suite : ['fast'])
+
 # ADR-1188 — percentile temporal pooling (MEDIAN / PERC5 / PERC10 / PERC20).
 # Pools imported per-frame scores, so it needs no YUV fixture and no model.
 test_pool_percentile = executable('test_pool_percentile',

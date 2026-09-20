@@ -1391,6 +1391,8 @@ nav:
         - "ADR-1263: hip-platform-macro-single-source": adr/1263-hip-platform-macro-single-source.md
         - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
         - "ADR-1265: clang-tidy-header-filter-absolute-paths": adr/1265-clang-tidy-header-filter-absolute-paths.md
+        - "ADR-1267: whole-tree-zero-debt-completion": adr/1267-whole-tree-zero-debt-completion.md
+        - "ADR-1269: c23-nullptr-portability-shim": adr/1269-c23-nullptr-portability-shim.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

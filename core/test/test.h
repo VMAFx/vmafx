@@ -21,6 +21,8 @@
 
 #include <stdio.h>
 
+#include "../src/vmaf_nullptr.h"
+
 // http://www.jera.com/techinfo/jtns/jtn002.html
 
 #define mu_assert(message, test)                                                                   \

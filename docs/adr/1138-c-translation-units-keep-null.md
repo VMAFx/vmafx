@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1138: C translation units keep `NULL`; `modernize-use-nullptr` is scoped to C++
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1269](1269-c23-nullptr-portability-shim.md)
 - **Date**: 2026-09-02
 - **Deciders**: lusoris
 - **Tags**: `lint`, `ci`, `c23`, `quality-gate`, `rebase`

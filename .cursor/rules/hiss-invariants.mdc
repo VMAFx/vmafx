@@ -33,6 +33,12 @@ make verify-all
 | **HISS-15** | 3D Testing | Rule 5 | Positive, negative, and boundary tests mandatory for all public interfaces. | CI coverage gate |
 | **HISS-16** | Context Integrity | Fleet | Single canonical `AGENTS.md`; vendor files compiled via `praetorctl compile-context`. | Pre-commit blocker |
 
+HISS-10 means whole-tree zero, not equality with a nonzero baseline or a clean
+changed-file subset. Code origin never exempts Netflix-mirror, vendored,
+generated, GPU, SIMD, test, tool, or compatibility code. Baselines are
+migration inventories that must reach empty; unavailable lanes are reported as
+not run, never as clean. See [ADR-1267](docs/adr/1267-whole-tree-zero-debt-completion.md).
+
 ## Operational Rules
 
 1. **Act on verified state.** Read source files, run real commands before hypothesis or edit. Never guess flag names, library signatures, repo configuration from memory.

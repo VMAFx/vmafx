@@ -12163,6 +12163,11 @@ master tip `40d192ef1`:
   units keep `NULL` per ADR-1138.
 
 
+- Add a compiler-selected `VMAF_NULLPTR` token plus native and forced-fallback
+  compile tests, so C translation units can satisfy `modernize-use-nullptr`
+  without risking the required MSVC C lane or suppressing diagnostics.
+
+
 - Remove CAMBI AVX2 parameter shadowing with local names that preserve the
   configured machine code, constants and existing scalar/SIMD tests.
 
@@ -24258,6 +24263,11 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
   as the CUDA/SYCL/Vulkan backends: scale-0 emits `0.0`, is excluded from the
   combined `score_num`/`score_den` accumulation, and debug fields
   `integer_vif_num_scale0`/`integer_vif_den_scale0` emit `0.0` when set.
+
+
+- Reuse integer VIF AVX2 and AVX-512 stage-test fixtures per geometry and build
+  their shared logarithm table once, keeping all 3,456 scalar/SIMD comparisons
+  within the Coverage Gate's per-test timeout.
 
 
 - Fixed `integer_vif_sycl`: register `vif_skip_scale0` option and enforce

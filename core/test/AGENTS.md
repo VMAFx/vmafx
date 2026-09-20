@@ -19,13 +19,13 @@ All tests follow trivial µnit-style pattern declared in
 static char *test_some_invariant(void)
 {
     mu_assert("description", predicate);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_some_invariant);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 ```
 
@@ -48,6 +48,10 @@ and teardown.
 
 ## Ground rules
 
+- **C tests spell null pointers `VMAF_NULLPTR`** (ADR-1269). `test.h`
+  includes the portability token for every test translation unit; do not add
+  raw `NULL` or a `modernize-use-nullptr` suppression. The native and forced
+  fallback targets in `meson.build` protect C23 and MSVC-compatible expansion.
 - **No dead `/* ... */` blocks in test files.** Commented-out code
   that cannot compile (duplicate declarations, type-mismatched calls,
   stale APIs) must be deleted rather than left in place. If test

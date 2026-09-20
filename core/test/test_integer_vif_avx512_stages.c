@@ -5,7 +5,9 @@
  * Research-2046: compare the configured integer AVX512 statistic with the
  * independent scalar implementation, including its final vertical planes.
  * Heights sweep from 7 up through the 17-row extractor minimum and a few just
- * above it.
+ * above it. The 32K-entry logarithm table is generated once and each geometry
+ * reuses its fixtures across the depth/scale/pattern sweep, so gcov
+ * instrumentation does not turn setup into the dominant cost.
  */
 #include <math.h>
 #include <stdint.h>
@@ -19,9 +21,6 @@
 #include "test.h"
 #include "simd_bitexact_test.h"
 
-/* ADR-1138: retain NULL for Windows C and upstream C compatibility. */
-// NOLINTBEGIN(modernize-use-nullptr)
-
 typedef struct VifStageFixture {
     VifPublicState state;
     unsigned char *storage;
@@ -32,25 +31,25 @@ typedef struct VifStageFixture {
 
 static void free_fixture(VifStageFixture *fixture)
 {
-    if (fixture != NULL) {
+    if (fixture != VMAF_NULLPTR) {
         free(fixture->storage);
         free(fixture);
     }
 }
 
-static VifStageFixture *alloc_fixture(unsigned width, unsigned height)
+static VifStageFixture *alloc_fixture(unsigned width, unsigned height, const uint16_t *log2_table)
 {
     VifStageFixture *fixture = calloc(1, sizeof(*fixture));
-    if (fixture == NULL)
-        return NULL;
+    if (fixture == VMAF_NULLPTR)
+        return VMAF_NULLPTR;
     const size_t stride = (width * sizeof(uint16_t) + 31u) & ~(size_t)31u;
     const size_t plane = stride * (height + 16u);
     const size_t temporary = (width + 128u) * sizeof(uint32_t);
     fixture->bytes = plane * 4u + temporary * 7u;
     fixture->storage = calloc(1, fixture->bytes);
-    if (fixture->storage == NULL) {
+    if (fixture->storage == VMAF_NULLPTR) {
         free_fixture(fixture);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     fixture->width = width;
     fixture->height = height;
@@ -71,10 +70,7 @@ static VifStageFixture *alloc_fixture(unsigned width, unsigned height)
     buf->tmp.ref_dis = tmp + span * 4u;
     buf->tmp.ref_convol = tmp + span * 5u;
     buf->tmp.dis_convol = tmp + span * 6u;
-    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
-        fixture->state.log2_table[i] =
-            (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
-    }
+    memcpy(fixture->state.log2_table, log2_table, sizeof(fixture->state.log2_table));
     fixture->state.vif_enhn_gain_limit = DEFAULT_VIF_ENHN_GAIN_LIMIT;
     return fixture;
 }
@@ -123,16 +119,13 @@ static int compare_planes(const VifStageFixture *scalar, const VifStageFixture *
     return memcmp(scalar->storage, simd->storage, frames) != 0;
 }
 
-static int compare_statistic(unsigned width, unsigned height, unsigned bpc, unsigned scale,
-                             unsigned pattern)
+static int compare_statistic(VifStageFixture *scalar, VifStageFixture *simd, unsigned bpc,
+                             unsigned scale, unsigned pattern)
 {
-    VifStageFixture *scalar = alloc_fixture(width, height);
-    VifStageFixture *simd = alloc_fixture(width, height);
-    if (scalar == NULL || simd == NULL) {
-        free_fixture(scalar);
-        free_fixture(simd);
-        return -1;
-    }
+    const unsigned width = scalar->width;
+    const unsigned height = scalar->height;
+    memset(scalar->storage, 0, scalar->bytes);
+    memset(simd->storage, 0, simd->bytes);
     fill_fixture(scalar, bpc, scale, pattern);
     fill_fixture(simd, bpc, scale, pattern);
     float scalar_result[2] = {0};
@@ -154,16 +147,14 @@ static int compare_statistic(unsigned width, unsigned height, unsigned bpc, unsi
     const int different = !isfinite(simd_result[0]) || !isfinite(simd_result[1]) ||
                           scalar_bits[0] != simd_bits[0] || scalar_bits[1] != simd_bits[1] ||
                           compare_planes(scalar, simd, scale) != 0;
-    free_fixture(scalar);
-    free_fixture(simd);
     return different;
 }
 
-static int compare_depth(unsigned width, unsigned height, unsigned bpc)
+static int compare_depth(VifStageFixture *scalar, VifStageFixture *simd, unsigned bpc)
 {
     for (unsigned scale = 0; scale < 4; ++scale) {
         for (unsigned pattern = 0; pattern < 2; ++pattern) {
-            const int result = compare_statistic(width, height, bpc, scale, pattern);
+            const int result = compare_statistic(scalar, simd, bpc, scale, pattern);
             if (result != 0)
                 return result;
         }
@@ -171,38 +162,50 @@ static int compare_depth(unsigned width, unsigned height, unsigned bpc)
     return 0;
 }
 
-static int compare_geometry(unsigned width, unsigned height)
+static int compare_geometry(unsigned width, unsigned height, const uint16_t *log2_table)
 {
     static const unsigned depths[] = {8, 9, 10, 11, 12, 13, 14, 15, 16};
+    VifStageFixture *scalar = alloc_fixture(width, height, log2_table);
+    VifStageFixture *simd = alloc_fixture(width, height, log2_table);
+    if (scalar == VMAF_NULLPTR || simd == VMAF_NULLPTR) {
+        free_fixture(scalar);
+        free_fixture(simd);
+        return -1;
+    }
+    int result = 0;
     for (size_t b = 0; b < sizeof(depths) / sizeof(depths[0]); ++b) {
-        const int result = compare_depth(width, height, depths[b]);
+        result = compare_depth(scalar, simd, depths[b]);
         if (result != 0) {
             (void)fprintf(stderr, "  %ux%u bpc %u differs from scalar\n", width, height, depths[b]);
-            return result;
+            break;
         }
     }
-    return 0;
+    free_fixture(scalar);
+    free_fixture(simd);
+    return result;
 }
 
 static char *test_integer_vif_avx512_stages(void)
 {
     if (!simd_test_have_avx512())
-        return NULL;
+        return VMAF_NULLPTR;
+    static uint16_t log2_table[VIF_LOG2_TABLE_SIZE];
+    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
+        log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
+    }
     const unsigned widths[] = {9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 257};
     const unsigned heights[] = {7, 17, 18, 24};
     for (size_t w = 0; w < sizeof(widths) / sizeof(widths[0]); ++w) {
         for (size_t h = 0; h < sizeof(heights) / sizeof(heights[0]); ++h) {
             mu_assert("integer VIF AVX512 statistic/vertical buffers differ from scalar",
-                      compare_geometry(widths[w], heights[h]) == 0);
+                      compare_geometry(widths[w], heights[h], log2_table) == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_integer_vif_avx512_stages);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr)

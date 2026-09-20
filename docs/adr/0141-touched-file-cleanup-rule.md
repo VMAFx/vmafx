@@ -1,6 +1,6 @@
 # ADR-0141: Every PR leaves its touched files lint-clean
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1267](1267-whole-tree-zero-debt-completion.md)
 - **Date**: 2026-04-21
 - **Deciders**: Lusoris
 - **Tags**: ci, process, code-quality, agents

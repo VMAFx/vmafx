@@ -51686,3 +51686,20 @@ restores the `^`-only anchor, `Tidy Ratchet` will start reporting every header f
    an alias differently from the CPU emits a different feature key for the same
    request. `float_adm`'s aliases are `scf` / `scfd`; a sync that brings back
    `cs` / `cds` reintroduces the split key.
+
+## Whole-tree zero debt and the C null-pointer portability token (ADR-1267, ADR-1269)
+
+Code origin is not an exception to the repository's standards. Baselines are
+migration inventories only; a changed-file check or an unavailable toolchain
+lane cannot support a whole-tree-clean claim. Preserve numerical behavior and
+the Netflix golden assertions while fixing warnings at their source.
+
+`core/src/vmaf_nullptr.h` selects native C23 `nullptr` on frontends whose
+support is established and the integer null-pointer constant `0` elsewhere,
+including the required MSVC C lane. C tests receive `VMAF_NULLPTR` through
+`core/test/test.h`; do not restore raw `NULL` tokens or block-level
+`modernize-use-nullptr` suppressions when syncing upstream test code.
+`core/test/test_vmaf_nullptr.c` compiles in both native-selection and
+forced-fallback configurations, and the integer VIF AVX2/AVX-512 stage tests
+must retain that portable token while preserving their scalar/SIMD parity
+sweep.

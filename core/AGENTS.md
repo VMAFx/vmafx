@@ -773,11 +773,11 @@ not as fixed constants.
 - **`vmaf_ctx_subsystems_init` owns init/teardown chain** for framesync →
   feature collector → extractor vector → thread pools; new subsystem gets
   new label in that function, not in `vmaf_init`.
-- **C translation units keep `NULL`** (ADR-1138): `libvmaf.c`, `predict.c`
-  and `feature/feature_collector.c` carry file-scoped
-  `NOLINTBEGIN/END(modernize-use-nullptr)` bracket. Never rewrite `NULL` to
-  `nullptr` in C sources (MSVC `/std:clatest` does not document it; upstream
-  parity), keep `NOLINTEND` line at end of file when appending code.
+- **C translation units use `VMAF_NULLPTR`** (ADR-1269): never restore raw
+  `NULL`, file-scoped `modernize-use-nullptr` suppressions, or an origin-based
+  exception during upstream sync. The portability token selects native C23
+  `nullptr` where verified and a standards-valid integer null-pointer constant
+  on the required MSVC C lane.
 - **Authoritative twin sides for model and unit tests (ADR-1153)**:
   `core/src/model.c` is sole authoritative implementation of model-loading
   and collection APIs; `model.cpp` was deleted as dead and stale. In `core/test/`,
