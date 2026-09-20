@@ -77,6 +77,9 @@ static const char *const ADM_FEATURES_APN[NUM_ADM_FEATURES] = {
 static const char *const ADM_FEATURES_BCM[NUM_ADM_FEATURES] = {
     "adm2_bcm_1", "adm_scale0_bcm_1", "adm_scale1_bcm_1", "adm_scale2_bcm_1", "adm_scale3_bcm_1",
 };
+static const char *const ADM_FEATURES_SCF[NUM_ADM_FEATURES] = {
+    "adm2_scf_2", "adm_scale0_scf_2", "adm_scale1_scf_2", "adm_scale2_scf_2", "adm_scale3_scf_2",
+};
 
 /* Build the option dictionary for a variant, or leave it NULL for defaults. */
 static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
@@ -310,10 +313,25 @@ static char *test_float_adm_bypass_cm_reaches_kernel(void)
     return assert_opt_parity("adm_bypass_cm", "1", ADM_FEATURES_BCM, "bcm=1");
 }
 
+/* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
+ * implements, exactly as it is on the CPU (`adm_tools.c::adm_csf_rfactor_s`
+ * consults it only in Barten mode). The twins used to multiply it into every
+ * CSF rfactor, and declared it under the alias `cs` where the CPU says `scf`,
+ * so the same request produced a different feature key as well as a different
+ * score. The fix landed as 64ea351be without this regression test.
+ *
+ * The key suffix follows ADR-1183: the alias base plus `_<alias>_<%g value>`,
+ * so `adm_csf_scale=2.0` files the scores under `_scf_2`. */
+static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
+{
+    return assert_opt_parity("adm_csf_scale", "2.0", ADM_FEATURES_SCF, "scf=2.0");
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_cpu_cuda_parity);
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
+    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
     return NULL;
 }

@@ -60,6 +60,17 @@ so both the arithmetic and the naming are gated.
 | Drop the two options from the twins' tables | Cannot be mis-applied | ADR-1183 would then route any model that sets them to the CPU, silently disabling the GPU path for an option the CPU itself ignores | Rejected |
 | Implement the Barten branch on the twins so the options mean something | Feature-complete | A separate feature (Barten CSF port), not a parity fix; tracked under the CSF-mode work | Out of scope |
 
+## Note added 2026-09-20 — the code landed before this ADR
+
+The implementation merged as `64ea351be` while this ADR was still on its branch,
+so `master` carried the fix without the decision record, the
+`core/src/feature/AGENTS.md` invariant, the `docs/state.md` row, or a regression
+test. That is the gap the same-PR rules exist to prevent. This PR closes it and
+adds the missing test: `test_float_adm_csf_scale_is_a_watson_mode_noop` in the
+CUDA, HIP and SYCL float-ADM parity tests asserts that setting
+`adm_csf_scale=2.0` leaves the twin's scores equal to the CPU's, which is only
+true once the twin stops consulting a Barten-mode argument in Watson mode.
+
 ## Consequences
 
 - **Positive**: with `adm_csf_scale=2.0` the CUDA, SYCL and HIP twins now

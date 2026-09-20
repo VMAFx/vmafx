@@ -1340,6 +1340,7 @@ nav:
         - "ADR-1211: hip-integer-adm-picture-staging": adr/1211-hip-integer-adm-picture-staging.md
         - "ADR-1212: gpu-moment-bit-depth-normalisation": adr/1212-gpu-moment-bit-depth-normalisation.md
         - "ADR-1213: hip-ciede-chroma-ceil-dimensions": adr/1213-hip-ciede-chroma-ceil-dimensions.md
+        - "ADR-1214: float-adm-csf-scale-watson-mode-and-aliases": adr/1214-float-adm-csf-scale-watson-mode-and-aliases.md
         - "ADR-1215: cuda-psnr-16bpc-plane-argument": adr/1215-cuda-psnr-16bpc-plane-argument.md
         - "ADR-1216: gpu-motion3-fps-weight-applied-once": adr/1216-gpu-motion3-fps-weight-applied-once.md
         - "ADR-1217: gpu-float-vif-options-reach-kernel": adr/1217-gpu-float-vif-options-reach-kernel.md
