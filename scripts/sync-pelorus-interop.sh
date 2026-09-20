@@ -19,9 +19,10 @@
 #   2. intra-pelorus includes rewritten from "pelorus/<x>.h" to
 #      "libvmaf/pelorus/<x>.h" so they resolve under core/include/.
 #
-# This script strips those two known deltas and diffs the remainder against a
-# pelorus checkout pinned at PELORUS_VENDOR_SHA. Any other difference is DRIFT
-# and fails the run (exit 1) — the vendored mirror must never diverge silently.
+# This script re-renders those two known deltas from a pelorus checkout pinned
+# at PELORUS_VENDOR_SHA and compares the resulting file bytes through EOF. Any
+# other difference is DRIFT and fails the run (exit 1) — the vendored mirror
+# must never diverge silently.
 #
 # Modes:
 #   (default)   check for drift; exit 1 if the mirror differs from pelorus.
@@ -98,6 +99,17 @@ case "$(git -C "$pelorus_dir" rev-parse HEAD)" in
     ;;
 esac
 
+_SYNC_TMPDIRS=()
+sync_tmp="$(mktemp -d "${TMPDIR:-/tmp}/vmafx-pelorus-sync.XXXXXX")"
+_SYNC_TMPDIRS+=("$sync_tmp")
+_cleanup() {
+  local tmp_dir
+  for tmp_dir in "${_SYNC_TMPDIRS[@]+"${_SYNC_TMPDIRS[@]}"}"; do
+    rm -rf -- "$tmp_dir"
+  done
+}
+trap '_cleanup' EXIT INT TERM
+
 # Emit the pinned content of a pelorus-relative path.
 read_src() {
   local rel="$1"
@@ -125,55 +137,45 @@ test_dst="$repo_root/core/test/test_pelorus_interop.c"
 
 # --- Helpers ---------------------------------------------------------------
 
-# Print a vendored file with the "VENDORED FROM" banner block + its trailing
-# blank line removed, so the remainder can be compared to the pelorus origin.
-strip_banner() {
-  awk '
-    BEGIN { inblk = 0; isban = 0; skipblank = 0 }
-    skipblank == 1 { if ($0 == "") { skipblank = 0; next } skipblank = 0 }
-    /^\/\*$/ && inblk == 0 { buf = $0 "\n"; inblk = 1; isban = 0; next }
-    inblk == 1 {
-      buf = buf $0 "\n"
-      if (index($0, "VENDORED FROM") > 0) { isban = 1 }
-      if ($0 ~ /^ \*\/$/) {
-        if (isban == 1) { inblk = 0; buf = ""; skipblank = 1; next }
-        else { printf "%s", buf; inblk = 0; buf = ""; next }
-      }
-      next
-    }
-    { print }
-  ' "$1"
-}
-
-# Re-create one vendored file from the pinned pelorus source (read on stdin):
+# Render one canonical vendored file from the pinned Pelorus source:
 # license header (lines 1-17) + DO-NOT-EDIT banner + body, with the intra-
-# pelorus include rewritten.
-emit() {
-  local rel_src="$1" dst="$2" inc_from="$3" inc_to="$4"
-  local pinned
-  pinned="$(read_src "$rel_src")"
-  {
-    printf '%s\n' "$pinned" | head -n 17
-    echo
-    echo '/*'
-    echo ' * VENDORED FROM VMAFx/pelorus@'"$PELORUS_VENDOR_SHA"' — DO NOT EDIT.'
-    echo ' * Append-only ABI; single'
-    echo ' * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.'
-    echo ' * See docs/adr/1113-vendor-pelorus-interop-abi.md.'
-    if [ -n "$inc_from" ]; then
-      echo ' *'
-      echo ' * Local edit vs the pelorus original: the intra-pelorus #include below is'
-      echo ' * rewritten from "'"$inc_from"'" to "'"$inc_to"'" so it resolves'
-      echo ' * under core/include/. Nothing else is changed.'
-    fi
-    echo ' */'
-    echo
-    printf '%s\n' "$pinned" | tail -n +19
-  } >"$dst.tmp"
-  if [ -n "$inc_from" ]; then
-    sed -i 's|#include "'"$inc_from"'"|#include "'"$inc_to"'"|' "$dst.tmp"
-  fi
-  mv "$dst.tmp" "$dst"
+# pelorus include rewritten. Python operates on bytes so a missing or extra EOF
+# newline cannot be erased by shell command substitution or a line printer.
+render_vendor() {
+  local rel_src="$1" inc_from="$2" inc_to="$3"
+  read_src "$rel_src" | python3 -c '
+import sys
+
+sha, include_from, include_to = sys.argv[1:]
+source = sys.stdin.buffer.read()
+lines = source.splitlines(keepends=True)
+if len(lines) < 19 or lines[17] != b"\n":
+    raise SystemExit("unexpected Pelorus license-header layout")
+body = b"".join(lines[18:])
+local_edit = ""
+if include_from:
+    old = f"#include \"{include_from}\"".encode()
+    new = f"#include \"{include_to}\"".encode()
+    if body.count(old) != 1:
+        raise SystemExit(f"expected one include to rewrite: {include_from}")
+    body = body.replace(old, new)
+    local_edit = (
+        " *\n"
+        " * Local edit vs the pelorus original: the intra-pelorus #include below is\n"
+        f" * rewritten from \"{include_from}\" to \"{include_to}\" so it resolves\n"
+        " * under core/include/. Nothing else is changed.\n"
+    )
+banner = (
+    "\n/*\n"
+    f" * VENDORED FROM VMAFx/pelorus@{sha} — DO NOT EDIT.\n"
+    " * Append-only ABI; single\n"
+    " * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.\n"
+    " * See docs/adr/1113-vendor-pelorus-interop-abi.md.\n"
+    f"{local_edit}"
+    " */\n\n"
+).encode()
+sys.stdout.buffer.write(b"".join(lines[:17]) + banner + body)
+' "$PELORUS_VENDOR_SHA" "$inc_from" "$inc_to"
 }
 
 drift=0
@@ -183,7 +185,8 @@ for row in "${manifest[@]}"; do
   dst="$repo_root/$rel_dst"
 
   if [ "$mode" = "update" ]; then
-    emit "$rel_src" "$dst" "$inc_from" "$inc_to"
+    render_vendor "$rel_src" "$inc_from" "$inc_to" >"$dst.tmp"
+    mv "$dst.tmp" "$dst"
     printf 're-vendored: %s\n' "$rel_dst"
     continue
   fi
@@ -194,18 +197,14 @@ for row in "${manifest[@]}"; do
     continue
   fi
 
-  # Compare the de-bannered vendored body against the pinned pelorus origin with
-  # the documented include rewrite applied.
-  if [ -n "$inc_from" ]; then
-    expected="$(read_src "$rel_src" | sed 's|#include "'"$inc_from"'"|#include "'"$inc_to"'"|')"
-  else
-    expected="$(read_src "$rel_src")"
-  fi
-  actual="$(strip_banner "$dst")"
-
-  if [ "$expected" != "$actual" ]; then
+  # Compare real file bytes against the canonical banner/include transform.
+  # Temporary files keep EOF state observable to cmp(1).
+  expected="$sync_tmp/$(printf '%s' "$rel_dst" | tr '/' '_').expected"
+  render_vendor "$rel_src" "$inc_from" "$inc_to" >"$expected"
+  if ! cmp -s "$expected" "$dst"; then
     printf 'DRIFT: %s differs from pinned pelorus %s\n' "$rel_dst" "$rel_src" >&2
-    diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
+    diff -u --label "pelorus:$rel_src (transformed)" --label "$rel_dst" \
+      "$expected" "$dst" >&2 || true
     drift=1
   fi
 done
@@ -220,18 +219,47 @@ done
 # The pelorus repo formats its C with the same .clang-format as vmafx (its
 # config notes it "matches the vmafx sibling"), so the re-vendored body is
 # already clang-format clean — we vendor it raw and do NOT reformat it. The
-# drift check below is byte-sensitive (apart from shell command substitution's
-# trailing newline), so even a local reformat fails rather than weakening the
-# shared fixture's provenance.
+# drift check below is byte-sensitive through EOF, so even a local reformat or
+# trailing-newline change fails rather than weakening shared provenance.
 
-# Emit the rewritten pelorus body (first vendored include onward) on stdout.
-# The `f` latch is SET BEFORE the print test so the triggering include line is
-# emitted exactly once (a `f{print}` rule ahead of the trigger rule would print
-# every include after the first one twice).
+# Emit the rewritten Pelorus body (first vendored include onward) on stdout.
 fixture_body_pel() {
-  read_src "test/interop_test.c" |
-    awk '/^#include "pelorus\// { f = 1 } f { print }' |
-    sed 's|#include "pelorus/|#include "libvmaf/pelorus/|'
+  read_src "test/interop_test.c" | python3 -c '
+import re
+import sys
+
+source = sys.stdin.buffer.read()
+match = re.search(rb"(?m)^#include \"pelorus/", source)
+if match is None:
+    raise SystemExit("Pelorus fixture has no vendored include")
+body = source[match.start():].replace(
+    b"#include \"pelorus/", b"#include \"libvmaf/pelorus/"
+)
+sys.stdout.buffer.write(body)
+'
+}
+
+# Emit either the VMAFx-authored header before the first vendored include or
+# the exact vendored body beginning at that include.
+fixture_part_vmafx() {
+  local part="$1"
+  python3 -c '
+import re
+import sys
+
+part, path = sys.argv[1:]
+source = open(path, "rb").read()
+match = re.search(rb"(?m)^#include \"libvmaf/pelorus/", source)
+if match is None:
+    raise SystemExit("VMAFx fixture has no vendored include")
+if part == "header":
+    output = source[:match.start()]
+elif part == "body":
+    output = source[match.start():]
+else:
+    raise SystemExit(f"unknown fixture part: {part}")
+sys.stdout.buffer.write(output)
+' "$part" "$test_dst"
 }
 
 if [ "$mode" = "update" ]; then
@@ -246,10 +274,7 @@ if [ "$mode" = "update" ]; then
     exit 1
   fi
   {
-    # Lusoris-authored header: up to (but not including) the first vendored
-    # include. sed '/.../q' prints through the matched line; drop that line
-    # with `head -n -1` so the body's own include leads the body section.
-    sed '/^#include "libvmaf\/pelorus\//q' "$test_dst" | head -n -1
+    fixture_part_vmafx header
     fixture_body_pel
   } >"$test_dst.tmp"
   mv "$test_dst.tmp" "$test_dst"
@@ -261,11 +286,15 @@ if [ "$mode" = "check" ]; then
     printf 'DRIFT: conformance fixture missing: core/test/test_pelorus_interop.c\n' >&2
     drift=1
   else
-    body_pel="$(fixture_body_pel)"
-    body_vmafx="$(awk '/^#include "libvmaf\/pelorus\// { f = 1 } f { print }' "$test_dst")"
-    if [ "$body_pel" != "$body_vmafx" ]; then
+    body_pel="$sync_tmp/fixture.expected"
+    body_vmafx="$sync_tmp/fixture.actual"
+    fixture_body_pel >"$body_pel"
+    fixture_part_vmafx body >"$body_vmafx"
+    if ! cmp -s "$body_pel" "$body_vmafx"; then
       printf 'DRIFT: conformance fixture body differs from pelorus test/interop_test.c\n' >&2
-      diff <(printf '%s\n' "$body_pel") <(printf '%s\n' "$body_vmafx") >&2 || true
+      diff -u --label 'pelorus:test/interop_test.c (transformed body)' \
+        --label 'core/test/test_pelorus_interop.c (body)' \
+        "$body_pel" "$body_vmafx" >&2 || true
       drift=1
     fi
   fi
@@ -296,4 +325,3 @@ fi
 
 printf 'OK: vendored Pelorus interop ABI matches pelorus@%s (ABI %s.%s, minor=%s).\n' \
   "$PELORUS_VENDOR_SHA" "${abi_major:-?}" "${abi_minor:-?}" "${abi_minor:-?}"
-exit 0

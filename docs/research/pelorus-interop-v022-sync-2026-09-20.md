@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # Pelorus v0.2.2 interop parser safety sync — 2026-09-20
 
-- **Status**: Complete locally; hosted CI not run
+- **Status**: Implementation and local verification complete; hosted CI not run
 - **VMAFx baseline**: `371ff5891ad43b6d8072d9fac132349ee3ddaaa9`
 - **Previous Pelorus pin**: `818d844066e73326c6300c9827ce7324d04cd884`
 - **Authoritative release source**:
@@ -84,8 +84,45 @@ manual guard allowed that divergence to persist.
 The fix moves policy to the correct layer. VMAFx's format selectors and
 clang-tidy ratchet now identify all exact mirror paths, including the fixture;
 the fixture itself stays unchanged. The drift guard compares the transformed
-fixture byte-for-byte, reads only the pinned Git object, fails closed if that
-object is unavailable, and runs in the existing required Pre-Commit workflow.
+files and fixture byte-for-byte through EOF, reads only the pinned Git object,
+fails closed if that object is unavailable, and runs in the existing required
+Pre-Commit workflow. Regression fixtures remove the final newline from a
+manifest header and from the conformance body; both mutations fail the guard.
+
+## Whole-tree tidy verification
+
+The first local CPU-ratchet measurement used the workstation's GCC 16.2.1
+headers with clang-tidy 22.1.8. It measured 755 warnings against the normalized
+750-warning GCC 15 baseline. All five additions were in files untouched by this
+branch:
+
+- `core/src/dict.cpp:125:5`: one
+  `cert-dcl03-c,misc-static-assert` diagnostic;
+- `core/src/feature/feature_collector.cpp:89:9`, `:239:9`, and `:416:5`:
+  three `cert-dcl03-c,misc-static-assert` diagnostics; and
+- `core/src/log.c:70:11`: one
+  `clang-analyzer-security.VAList,-warnings-as-errors` diagnostic.
+
+That non-canonical result was not treated as completion and did not change the
+baseline. The required lane was then reproduced in a disposable Ubuntu 26.04
+container using the workflow recipe and exact pinned identities:
+
+```text
+gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0
+Ubuntu LLVM version 22.1.8
+tidy-ratchet[cpu]: 307 TUs, 750 warnings (baseline 750),
+                   0 uncited NOLINTs (baseline 0)
+tidy-ratchet: baseline matches measurement
+```
+
+The measurement had zero compile failures. The committed 312-unit baseline
+normalizes to 306 after removing the six exact-mirror translation units: five
+`core/src/interop/pelorus_*.c` files and the shared fixture. The current build
+also contains `core/test/test_integer_adm_tiny_frames.c`, which is absent from
+that baseline and contributes zero warnings, for 307 selected units and the
+same 750-warning total. All Pelorus headers are also outside NOLINT ownership.
+Hosted CI remains unrun because this branch is intentionally neither pushed nor
+opened as a pull request.
 
 ## Maintenance decision
 

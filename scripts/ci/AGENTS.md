@@ -417,8 +417,10 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
 `tests/test-sync-pelorus-interop.sh` proves the top-level mirror guard fails
 closed for a plain directory and for a Git checkout lacking the exact pin. It
 reconstructs source fixtures in disposable repositories, clears inherited
-`GIT_*`, and disables caller Git configuration. Keep it wired into required
-Pre-Commit through `.pre-commit-config.yaml`.
+`GIT_*`, disables caller Git configuration, and removes the final newline from
+both a manifest file and the shared fixture to prove comparisons remain exact
+through EOF. Keep it wired into required Pre-Commit through
+`.pre-commit-config.yaml`.
 
 The real CI check belongs in the existing `Pre-Commit` job in
 `lint-and-format.yml`: derive the 40-character pin from
