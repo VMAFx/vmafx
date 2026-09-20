@@ -21,10 +21,12 @@ mirror="${work}/vmafx"
 plain="${work}/pelorus-plain"
 missing="${work}/pelorus-missing"
 source_repo="${work}/pelorus-source"
-mkdir -p "${mirror}/scripts" "${mirror}/core/include/libvmaf" \
+mkdir -p "${mirror}/scripts/ci" "${mirror}/core/include/libvmaf" \
   "${mirror}/core/src" "${mirror}/core/test" "${plain}/libpelorus/include/pelorus" \
   "${plain}/libpelorus/src" "${plain}/libpelorus/test"
 cp "${repo_root}/scripts/sync-pelorus-interop.sh" "${mirror}/scripts/"
+cp "${repo_root}/scripts/ci/pelorus_mirror.py" \
+  "${repo_root}/scripts/ci/pelorus-mirror-paths.txt" "${mirror}/scripts/ci/"
 cp -R "${repo_root}/core/include/libvmaf/pelorus" "${mirror}/core/include/libvmaf/"
 cp -R "${repo_root}/core/src/interop" "${mirror}/core/src/"
 cp "${repo_root}/core/test/test_pelorus_interop.c" "${mirror}/core/test/"
@@ -87,6 +89,13 @@ git -C "${source_repo}" add libpelorus
 git -C "${source_repo}" -c user.name=fixture -c user.email=fixture.invalid commit -q -m fixture
 fixture_pin="$(git -C "${source_repo}" rev-parse HEAD)"
 fail=0
+
+if (cd "${repo_root}" && python3 -m unittest scripts.ci.tests.test_pelorus_mirror); then
+  printf 'PASS: shared mirror manifest filters only exact paths\n'
+else
+  printf 'FAIL: shared mirror manifest policy tests failed\n' >&2
+  fail=$((fail + 1))
+fi
 
 # Rewrite bytes portably: BSD sed requires an argument after -i, while GNU sed
 # does not. The fixture exercises the same path on Linux and macOS runners.
@@ -168,6 +177,15 @@ expect_drift() {
 
 expect_clean "byte-exact baseline"
 
+printf 'core/src/interop/pelorus_manifest_only.cpp\n' \
+  >>"${mirror}/scripts/ci/pelorus-mirror-paths.txt"
+LC_ALL=C sort -o "${mirror}/scripts/ci/pelorus-mirror-paths.txt" \
+  "${mirror}/scripts/ci/pelorus-mirror-paths.txt"
+expect_drift "lint manifest without render owner" \
+  "sync render destinations differ from the shared mirror manifest"
+cp "${repo_root}/scripts/ci/pelorus-mirror-paths.txt" "${mirror}/scripts/ci/"
+expect_clean "render and lint manifests restored"
+
 manifest_eof="${mirror}/core/include/libvmaf/pelorus/pelorus.h"
 python3 - "${manifest_eof}" <<'PY'
 from pathlib import Path
@@ -225,14 +243,45 @@ expect_drift "unmanifested tracked mirror" "tracked exact-mirror path set differ
 git -C "${mirror}" rm -q -f -- "${extra_mirror}"
 expect_clean "unmanifested mirror removed"
 
+while IFS= read -r suffix; do
+  extra_source="core/src/interop/pelorus_unmanifested${suffix}"
+  printf '/* must not inherit exact-mirror lint exemptions */\n' >"${mirror}/${extra_source}"
+  git -C "${mirror}" add "${extra_source}"
+  expect_drift "unmanifested tracked ${suffix} mirror" \
+    "tracked exact-mirror path set differs"
+  git -C "${mirror}" rm -q -f -- "${extra_source}"
+done < <(python3 "${repo_root}/scripts/ci/pelorus_mirror.py" suffixes)
+expect_clean "unmanifested native mirrors removed"
+
 workflow="${repo_root}/.github/workflows/lint-and-format.yml"
 for required in \
   'name: Resolve exact Pelorus vendor pin' \
   'repository: VMAFx/pelorus' \
   "ref: \${{ steps.pelorus-vendor.outputs.sha }}" \
-  "run: scripts/sync-pelorus-interop.sh \"\${GITHUB_WORKSPACE}/.ci/pelorus\""; do
+  "run: scripts/sync-pelorus-interop.sh \"\${GITHUB_WORKSPACE}/.ci/pelorus\"" \
+  'python3 scripts/ci/pelorus_mirror.py filter'; do
   if ! grep -Fq "${required}" "${workflow}"; then
     printf 'FAIL: required Pre-Commit workflow lost Pelorus contract: %s\n' "${required}" >&2
+    fail=$((fail + 1))
+  fi
+done
+
+for selector in "${repo_root}/Makefile" "${repo_root}/.pre-commit-config.yaml"; do
+  if ! grep -Fq 'scripts/ci/pelorus_mirror.py' "${selector}"; then
+    printf 'FAIL: lint selector does not consume the shared mirror manifest: %s\n' \
+      "${selector}" >&2
+    fail=$((fail + 1))
+  fi
+done
+
+for selector in \
+  "${repo_root}/Makefile" \
+  "${repo_root}/.pre-commit-config.yaml" \
+  "${repo_root}/.github/workflows/lint-and-format.yml"; do
+  if grep -Eq "(grep -v|-e|exclude:).*(core/src/interop/pelorus_|core/include/libvmaf/pelorus/)" \
+    "${selector}"; then
+    printf 'FAIL: lint selector restored a broad Pelorus prefix exemption: %s\n' \
+      "${selector}" >&2
     fail=$((fail + 1))
   fi
 done
