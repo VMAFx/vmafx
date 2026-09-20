@@ -114,7 +114,8 @@ def make_request(url: str, token: str | None = None) -> bytes:
             print(
                 f"\nFATAL: GitHub API rate limit exceeded while accessing {url}.\n"
                 f"Response: {body}\n"
-                f"Remedy: provide GITHUB_TOKEN via --build-arg GITHUB_TOKEN=... or wait for rate limit reset.",
+                "Remedy: export GITHUB_TOKEN and pass it with "
+                "--secret id=github_token,env=GITHUB_TOKEN, or wait for rate limit reset.",
                 file=sys.stderr,
             )
             sys.exit(1)

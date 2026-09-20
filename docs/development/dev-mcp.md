@@ -60,6 +60,40 @@ docker compose --project-directory "$(pwd)" -f dev/docker-compose.yml build
 but it performs no such check and leaves the image recording
 `source_rev=unknown`.
 
+### Optional GitHub API authentication
+
+The Intel NEO resolver works without credentials. On a shared network, an
+authenticated GitHub API request can avoid the lower anonymous rate limit.
+For Compose and the wrapper scripts, export `GITHUB_TOKEN` before the build;
+`dev/docker-compose.yml` maps it to the optional `github_token` build secret.
+An unset or empty value keeps the build anonymous.
+
+For a raw anonymous build, omit the secret entirely:
+
+```bash
+env -u GITHUB_TOKEN docker build \
+  --file dev/Containerfile \
+  --target libvmaf-build \
+  --tag vmaf-dev-mcp:local \
+  .
+```
+
+For an authenticated raw build, pass the exported variable as a BuildKit
+secret:
+
+```bash
+docker build \
+  --file dev/Containerfile \
+  --target libvmaf-build \
+  --tag vmaf-dev-mcp:local \
+  --secret id=github_token,env=GITHUB_TOKEN \
+  .
+```
+
+Never pass this credential with `--build-arg`. The secret is mounted only for
+the NEO metadata-fetch instruction and is not recorded in image layers,
+metadata, or provenance. See [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md).
+
 > **Important — always pass `--project-directory`.**  Without it, Docker
 > Compose v2 sets the project directory to the compose-file's parent (`dev/`),
 > causing `context: .` to resolve to `dev/` instead of the repo root.  This

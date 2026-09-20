@@ -2325,6 +2325,10 @@ no rebase impact: fork-only container and Renovate configuration.
   verifies their sha256 checksums at container build time.
 - Preserve its GitHub-only HTTPS boundary, exact-host authorization, bounded
   metadata reads, atomic downloads, and fail-closed asset/package validation.
+- Preserve the optional BuildKit `github_token` secret transport from
+  ADR-1271. Never restore `ARG GITHUB_TOKEN`, `ENV GITHUB_TOKEN`, or token-valued
+  `--build-arg`; raw builds without a secret and Compose builds with an
+  unset/empty host variable must stay anonymous.
 - `dev/Containerfile` removes `GMMLIB_VER` and `IGC_VER` ARGs; Renovate regex
   managers for gmmlib and IGC removed from `renovate.json`.
 
