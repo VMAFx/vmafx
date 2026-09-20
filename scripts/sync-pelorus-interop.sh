@@ -26,8 +26,8 @@
 # Modes:
 #   (default)   check for drift; exit 1 if the mirror differs from pelorus.
 #   --update    rewrite the vendored copies from the pelorus checkout (re-vendor
-#               after a deliberate pelorus ABI-minor bump). Re-run without
-#               --update afterwards to confirm clean.
+#               after a reviewed ABI addition or parser correctness/security
+#               release). Re-run without --update afterwards to confirm clean.
 #
 # Usage:
 #   scripts/sync-pelorus-interop.sh [--update] [PELORUS_CHECKOUT]
@@ -38,10 +38,11 @@
 set -euo pipefail
 
 # --- Pinned source of truth ------------------------------------------------
-# The pelorus commit this mirror was vendored from. Bump this (and re-vendor
-# via --update) only on a deliberate pelorus interop ABI change. Keep in lock
-# step with the banner SHA in every vendored file and docs/api/pelorus-interop.md.
-PELORUS_VENDOR_SHA="818d844"
+# The exact released Pelorus commit this mirror was vendored from. Re-pin for a
+# reviewed interop ABI addition or a parser correctness/security fix, even when
+# ABI major/minor stay unchanged. Keep this in lock step with every vendored
+# banner and docs/api/pelorus-interop.md.
+PELORUS_VENDOR_SHA="93bef1206d68d9e09024c08a12732fb8e77b9b16"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
@@ -72,46 +73,35 @@ if [ ! -d "$pelorus_dir/libpelorus" ]; then
   exit 1
 fi
 
-src_root="$pelorus_dir/libpelorus"
-
 # --- Pin resolution --------------------------------------------------------
 # The mirror is pinned to PELORUS_VENDOR_SHA, NOT to whatever the local
 # checkout's HEAD currently is. If the checkout is a git repo that knows the
 # pinned commit, read the vendored sources from that exact tree object
-# (`git show <SHA>:<path>`) so the guard stays pin-accurate even when the
-# working tree has advanced past the pin. Only when git extraction is
-# impossible (not a repo, or the SHA is unknown) do we fall back to the
-# working-tree files, with a loud warning.
-use_git_pin=0
-if git -C "$pelorus_dir" rev-parse --short HEAD >/dev/null 2>&1; then
-  if git -C "$pelorus_dir" cat-file -e "${PELORUS_VENDOR_SHA}^{commit}" 2>/dev/null; then
-    use_git_pin=1
-    have_sha="$(git -C "$pelorus_dir" rev-parse --short HEAD)"
-    case "$have_sha" in
-      "$PELORUS_VENDOR_SHA"*) : ;;
-      *)
-        printf 'note: pelorus checkout HEAD is %s; reading vendored sources from pinned %s.\n' \
-          "$have_sha" "$PELORUS_VENDOR_SHA" >&2
-        ;;
-    esac
-  else
-    printf 'WARNING: pinned commit %s not found in %s; diffing against the\n' \
-      "$PELORUS_VENDOR_SHA" "$pelorus_dir" >&2
-    printf '         working tree instead (fetch the pin for a faithful check).\n' >&2
-  fi
-else
-  printf 'WARNING: %s is not a git checkout; diffing against its files as-is.\n' \
-    "$pelorus_dir" >&2
+# (`git show <SHA>:<path>`) so the guard stays pin-accurate even when HEAD has
+# advanced. A working-tree fallback could bless unreviewed or locally modified
+# bytes, so absence of Git provenance or the pinned object fails closed.
+if ! git -C "$pelorus_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  printf 'error: pelorus source must be a Git checkout: %s\n' "$pelorus_dir" >&2
+  exit 1
 fi
+if ! git -C "$pelorus_dir" cat-file -e "${PELORUS_VENDOR_SHA}^{commit}" 2>/dev/null; then
+  printf 'error: pinned Pelorus commit is unavailable: %s\n' "$PELORUS_VENDOR_SHA" >&2
+  printf '       fetch that object into %s before checking the mirror.\n' "$pelorus_dir" >&2
+  exit 1
+fi
+have_sha="$(git -C "$pelorus_dir" rev-parse --short HEAD)"
+case "$(git -C "$pelorus_dir" rev-parse HEAD)" in
+  "$PELORUS_VENDOR_SHA") : ;;
+  *)
+    printf 'note: pelorus checkout HEAD is %s; reading vendored sources from pinned %s.\n' \
+      "$have_sha" "$PELORUS_VENDOR_SHA" >&2
+    ;;
+esac
 
-# Emit the pinned (or working-tree fallback) content of a pelorus-relative path.
+# Emit the pinned content of a pelorus-relative path.
 read_src() {
   local rel="$1"
-  if [ "$use_git_pin" -eq 1 ]; then
-    git -C "$pelorus_dir" show "${PELORUS_VENDOR_SHA}:libpelorus/$rel"
-  else
-    cat "$src_root/$rel"
-  fi
+  git -C "$pelorus_dir" show "${PELORUS_VENDOR_SHA}:libpelorus/$rel"
 }
 
 # --- Vendored file manifest ------------------------------------------------
@@ -166,7 +156,8 @@ emit() {
     printf '%s\n' "$pinned" | head -n 17
     echo
     echo '/*'
-    echo ' * VENDORED FROM VMAFx/pelorus@'"$PELORUS_VENDOR_SHA"' — DO NOT EDIT. Append-only ABI; single'
+    echo ' * VENDORED FROM VMAFx/pelorus@'"$PELORUS_VENDOR_SHA"' — DO NOT EDIT.'
+    echo ' * Append-only ABI; single'
     echo ' * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.'
     echo ' * See docs/adr/1113-vendor-pelorus-interop-abi.md.'
     if [ -n "$inc_from" ]; then
@@ -228,10 +219,10 @@ done
 #            test/interop_test.c body with "pelorus/" -> "libvmaf/pelorus/".
 # The pelorus repo formats its C with the same .clang-format as vmafx (its
 # config notes it "matches the vmafx sibling"), so the re-vendored body is
-# already clang-format clean — we vendor it raw and do NOT reformat it (the
-# drift check below is whitespace-insensitive / token equality, so a stray
-# reformat would also pass it, but keeping it raw keeps the body a faithful
-# mirror of the pelorus source token-for-token).
+# already clang-format clean — we vendor it raw and do NOT reformat it. The
+# drift check below is byte-sensitive (apart from shell command substitution's
+# trailing newline), so even a local reformat fails rather than weakening the
+# shared fixture's provenance.
 
 # Emit the rewritten pelorus body (first vendored include onward) on stdout.
 # The `f` latch is SET BEFORE the print test so the triggering include line is
@@ -272,9 +263,9 @@ if [ "$mode" = "check" ]; then
   else
     body_pel="$(fixture_body_pel)"
     body_vmafx="$(awk '/^#include "libvmaf\/pelorus\// { f = 1 } f { print }' "$test_dst")"
-    if [ "$(printf '%s' "$body_pel" | tr -d '[:space:]')" \
-      != "$(printf '%s' "$body_vmafx" | tr -d '[:space:]')" ]; then
+    if [ "$body_pel" != "$body_vmafx" ]; then
       printf 'DRIFT: conformance fixture body differs from pelorus test/interop_test.c\n' >&2
+      diff <(printf '%s\n' "$body_pel") <(printf '%s\n' "$body_vmafx") >&2 || true
       drift=1
     fi
   fi

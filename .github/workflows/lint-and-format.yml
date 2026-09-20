@@ -35,6 +35,26 @@ jobs:
           # against files no hook actually touched.
           lfs: true
           persist-credentials: false
+      - name: Resolve exact Pelorus vendor pin
+        id: pelorus-vendor
+        shell: bash
+        run: |
+          pin="$(sed -nE 's/^PELORUS_VENDOR_SHA="([0-9a-f]{40})"$/\1/p' \
+            scripts/sync-pelorus-interop.sh)"
+          if [[ ! "${pin}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::scripts/sync-pelorus-interop.sh must declare one full Git SHA" >&2
+            exit 1
+          fi
+          echo "sha=${pin}" >> "${GITHUB_OUTPUT}"
+      - name: Check out exact Pelorus source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: VMAFx/pelorus
+          ref: ${{ steps.pelorus-vendor.outputs.sha }}
+          path: .ci/pelorus
+          persist-credentials: false
+      - name: Verify Pelorus mirror and shared conformance fixture
+        run: scripts/sync-pelorus-interop.sh "${GITHUB_WORKSPACE}/.ci/pelorus"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.7"

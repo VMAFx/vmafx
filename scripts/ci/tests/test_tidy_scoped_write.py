@@ -116,6 +116,20 @@ class ScopedWriter(unittest.TestCase):
         )
         self.assertEqual(self.baseline.read_bytes(), once)
 
+    def test_scoped_write_preserves_legacy_exact_vendor_entries(self) -> None:
+        vendor = "core/src/interop/pelorus_interop.c"
+        original = copy.deepcopy(self.original)
+        original["warnings"][vendor] = 10
+        original["total_warnings"] += 10
+        original["measured_sources"] = [self.key, vendor]
+        self.baseline.write_text(json.dumps(original) + "\n")
+
+        result = ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key])
+        self.assertEqual(result, 0)
+        updated = json.loads(self.baseline.read_text())
+        self.assertEqual(updated["warnings"][vendor], 10)
+        self.assertEqual(updated["measured_sources"], [self.key, vendor])
+
     def test_observed_increases_never_write_even_for_unselected_headers(self) -> None:
         for changes in (
             {"warnings": {self.key: 6}},
