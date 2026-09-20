@@ -46,10 +46,9 @@ jobs:
       # gate red on unrelated work.
       - name: Install praetorctl
         env:
-          PRAETOR_REF: fae37a35d44e139e0161e0512f58c5eac1c1d67a  # praetor main, 2026-09-20; the baseline is recorded against this engine.
-          # Every bump is preceded by recording the baseline on master with the old
-          # and the new engine and diffing the infraction sets; a bump only lands when
-          # they are byte-identical. e4b35cb -> 846da59 -> fae37a3 all were.
+          PRAETOR_REF: 846da5908d15b3cf5581ca6b0205cc644b249599  # praetor main, 2026-09-19; the baseline is recorded against this engine.
+          # Bumped from e4b35cb3c7fe after proving both engines record byte-identical
+          # infraction sets on master (1414 entries, same fingerprints) -- see PR body.
         run: |
           go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"

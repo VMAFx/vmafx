@@ -58,7 +58,7 @@ measured against scores that never move.
 | | Upstream `libvmaf` | VMAFx |
 | --- | --- | --- |
 | **GPU backends** | CUDA | CUDA · SYCL · HIP · Metal, selected at runtime |
-| **SIMD** | AVX2, AVX-512 | AVX2 · AVX-512 · NEON · SVE2, each bit-exact against scalar |
+| **SIMD** | AVX2, AVX-512 | AVX2 · AVX-512 · NEON · SVE2, held to feature-specific parity tolerances |
 | **Output precision** | `%.6f` | `%.6f` by default, `--precision=max` for IEEE-754 round-trip |
 | **Model surface** | `.json` / `.pkl` | plus ONNX tiny models with a signed registry |
 | **Integrations** | FFmpeg filter | FFmpeg, an MCP server, a Kubernetes operator, Go and Rust bindings |
@@ -89,8 +89,9 @@ and output options. For compressed inputs such as MP4, use
 
 ## 🧩 Backends at a glance
 
-Every registered feature extractor has at least one GPU twin, and each twin is
-held to the CPU reference by the cross-backend parity gate.
+Every GPU-backed feature extractor has at least one device twin, and each twin
+is held to the CPU reference by the cross-backend parity gate. The coverage
+matrix below distinguishes those extractors from CPU-only metrics.
 
 | Backend | Selected with | Notes |
 | --- | --- | --- |
