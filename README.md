@@ -1,3 +1,8 @@
+<!-- markdownlint-disable MD013 MD023 MD033 MD036 MD041 -->
+<!-- A centred header needs inline HTML, a banner image, indented headings and
+     badge lines past 80 columns, so those five rules are off for this file.
+     Same directive style as docs/adr/0000-template.md. The prose below still
+     wraps at 80. -->
 <div align="center">
 
   <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" width="100%" />
