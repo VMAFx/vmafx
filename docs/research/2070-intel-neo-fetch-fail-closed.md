@@ -60,10 +60,9 @@ env -u GITHUB_TOKEN docker build --check --file dev/Containerfile \
   --target libvmaf-build .
 passed with zero warnings
 
-env -u GITHUB_TOKEN docker build --progress=plain \
-  --file dev/Containerfile --target libvmaf-build \
-  --tag vmaf-dev-mcp-neo-secret-739e98f19 .
-63/63 steps passed; Buildx csg2vy384nl7n6zudrsjl9238; no SecretsUsedInArgOrEnv finding
+docker buildx build --progress=plain --file dev/Containerfile \
+  --target gpu-sdks --secret id=github_token,env=GITHUB_TOKEN .
+passed; all five NEO 26.35 packages downloaded, checksum-verified, package-validated, and installed
 ```
 
 The hermetic tests cover redirect credential handling, transient retry,
@@ -75,11 +74,12 @@ required secret, missing Compose and raw-build wiring, and missing anonymous
 build documentation. [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md)
 records the transport decision.
 
-The full anonymous build executed the changed NEO fetch layer rather than
-reusing it from cache. It resolved, downloaded, checksum-verified, and installed
-the five pinned packages without a token. The resulting image passed
-`vmaf --version`, the container-build recognition and stamp/verify gates, and
-the CPU fixture probe.
+An uncached anonymous build reached the changed NEO fetch layer and failed
+closed when GitHub returned its anonymous shared-IP rate limit; it did not leave
+or install a partial package. Repeating the same target with the optional
+BuildKit secret completed the full NEO 26.35 fetch and install. This proves both
+credential paths without pretending that an externally rate-limited anonymous
+request succeeded.
 
 This is not a claim that the whole image build is warning-free. Its compiler
 and third-party build output exposed 509 pre-existing warning lines: 407 in the
@@ -87,4 +87,6 @@ multi-backend libvmaf build, 31 while building Intel VPL GPU runtime, 69 while
 building FFmpeg, and two from cloning annotated tags. The CPU fixture also
 reported the existing singular-covariance warning on 6 of 192 solves. Those
 warnings are separate cleanup work; recording them here prevents a successful
-credential-transport check from hiding them.
+credential-transport check from hiding them. They are active inputs to PR #1487's
+warning-clean CUDA/dev-container sweep and PR #902's FFmpeg refresh; this PR
+does not grant an upstream, vendor, or legacy-code exemption.
