@@ -66,7 +66,7 @@ kernel's i915 / xe / KFD ioctl ABI, or `vmaf --backend sycl|hip`
 silently falls back to CPU. Two hard pins live in
 `dev/Containerfile`:
 
-- **`ARG NEO_VER=26.31.39395.13`** and shared `LEVEL_ZERO_VERSION`.
+- **`ARG NEO_VER`** and shared `LEVEL_ZERO_VERSION`.
   Pinned via GitHub releases: Intel's `noble/unified` APT repo's
   newest as of 2026-05-18 = `25.18.x`, too old for kernel ≥ 7.0.
   Level Zero loader comes from `oneapi-src/level-zero`. Its

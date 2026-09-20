@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/ci/check-dev-container-build-secret.py"
@@ -43,7 +44,7 @@ class BuildSecretContract(unittest.TestCase):
                 fetcher or self.fetcher,
             )
         )
-        return errors
+        return cast(list[str], errors)
 
     def test_current_tree_passes(self) -> None:
         self.assertEqual(self.errors(), [])
