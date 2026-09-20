@@ -112,6 +112,9 @@ static const char *const kAdmFeatures[NUM_ADM_FEATURES] = {
 static const char *const kAdmFeaturesApn[NUM_ADM_FEATURES] = {
     "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
 };
+static const char *const kAdmFeaturesScf[NUM_ADM_FEATURES] = {
+    "adm2_scf_2", "adm_scale0_scf_2", "adm_scale1_scf_2", "adm_scale2_scf_2", "adm_scale3_scf_2",
+};
 
 /* Build the option dictionary for a variant, or leave it NULL for defaults. */
 static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
@@ -254,11 +257,47 @@ static char *test_float_adm_p_norm_reaches_kernel(void)
     return NULL;
 }
 
+/* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
+ * implements, exactly as it is on the CPU (`adm_tools.c::adm_csf_rfactor_s`
+ * consults it only in Barten mode). The twins used to multiply it into every
+ * CSF rfactor, and declared it under the alias `cs` where the CPU says `scf`,
+ * so the same request produced a different feature key as well as a different
+ * score. The fix landed as 64ea351be without this regression test.
+ *
+ * The key suffix follows ADR-1183: the alias base plus `_<alias>_<%g value>`,
+ * so `adm_csf_scale=2.0` files the scores under `_scf_2`. */
+static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double sycl_scores[NUM_ADM_FEATURES] = {0};
+    char *msg = run_cpu("adm_csf_scale", "2.0", kAdmFeaturesScf, cpu_scores);
+    if (msg)
+        return msg;
+    msg = run_sycl("adm_csf_scale", "2.0", kAdmFeaturesScf, sycl_scores);
+    if (msg)
+        return msg;
+    if (isnan(sycl_scores[0]))
+        return NULL;
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_adm scf=2.0 parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          kAdmFeaturesScf[m], cpu_scores[m], sycl_scores[m], delta, PARITY_TOL);
+        }
+        mu_assert("float_adm applies adm_csf_scale in Watson mode where the CPU ignores it",
+                  delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_sycl_registered);
     mu_run_test(test_float_adm_cpu_sycl_parity);
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
+    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
     return NULL;
 }
 
