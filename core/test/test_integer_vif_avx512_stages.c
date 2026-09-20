@@ -4,9 +4,12 @@
  *
  * Research-2046: compare the configured integer AVX512 statistic with the
  * independent scalar implementation, including its final vertical planes.
+ * Heights sweep from 7 up through the 17-row extractor minimum and a few just
+ * above it.
  */
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -120,10 +123,11 @@ static int compare_planes(const VifStageFixture *scalar, const VifStageFixture *
     return memcmp(scalar->storage, simd->storage, frames) != 0;
 }
 
-static int compare_statistic(unsigned width, unsigned bpc, unsigned scale, unsigned pattern)
+static int compare_statistic(unsigned width, unsigned height, unsigned bpc, unsigned scale,
+                             unsigned pattern)
 {
-    VifStageFixture *scalar = alloc_fixture(width, 7);
-    VifStageFixture *simd = alloc_fixture(width, 7);
+    VifStageFixture *scalar = alloc_fixture(width, height);
+    VifStageFixture *simd = alloc_fixture(width, height);
     if (scalar == NULL || simd == NULL) {
         free_fixture(scalar);
         free_fixture(simd);
@@ -134,12 +138,12 @@ static int compare_statistic(unsigned width, unsigned bpc, unsigned scale, unsig
     float scalar_result[2] = {0};
     float simd_result[2] = {0};
     if (bpc == 8u && scale == 0u) {
-        vif_statistic_8(&scalar->state, scalar_result, scalar_result + 1, width, 7);
-        vif_statistic_8_avx512(&simd->state, simd_result, simd_result + 1, width, 7);
+        vif_statistic_8(&scalar->state, scalar_result, scalar_result + 1, width, height);
+        vif_statistic_8_avx512(&simd->state, simd_result, simd_result + 1, width, height);
     } else {
-        vif_statistic_16(&scalar->state, scalar_result, scalar_result + 1, width, 7, (int)bpc,
+        vif_statistic_16(&scalar->state, scalar_result, scalar_result + 1, width, height, (int)bpc,
                          (int)scale);
-        vif_statistic_16_avx512(&simd->state, simd_result, simd_result + 1, width, 7, (int)bpc,
+        vif_statistic_16_avx512(&simd->state, simd_result, simd_result + 1, width, height, (int)bpc,
                                 (int)scale);
     }
     uint32_t scalar_bits[2];
@@ -155,13 +159,26 @@ static int compare_statistic(unsigned width, unsigned bpc, unsigned scale, unsig
     return different;
 }
 
-static int compare_depth(unsigned width, unsigned bpc)
+static int compare_depth(unsigned width, unsigned height, unsigned bpc)
 {
     for (unsigned scale = 0; scale < 4; ++scale) {
         for (unsigned pattern = 0; pattern < 2; ++pattern) {
-            const int result = compare_statistic(width, bpc, scale, pattern);
+            const int result = compare_statistic(width, height, bpc, scale, pattern);
             if (result != 0)
                 return result;
+        }
+    }
+    return 0;
+}
+
+static int compare_geometry(unsigned width, unsigned height)
+{
+    static const unsigned depths[] = {8, 9, 10, 11, 12, 13, 14, 15, 16};
+    for (size_t b = 0; b < sizeof(depths) / sizeof(depths[0]); ++b) {
+        const int result = compare_depth(width, height, depths[b]);
+        if (result != 0) {
+            (void)fprintf(stderr, "  %ux%u bpc %u differs from scalar\n", width, height, depths[b]);
+            return result;
         }
     }
     return 0;
@@ -172,11 +189,11 @@ static char *test_integer_vif_avx512_stages(void)
     if (!simd_test_have_avx512())
         return NULL;
     const unsigned widths[] = {9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 257};
-    const unsigned depths[] = {8, 9, 10, 11, 12, 13, 14, 15, 16};
+    const unsigned heights[] = {7, 17, 18, 24};
     for (size_t w = 0; w < sizeof(widths) / sizeof(widths[0]); ++w) {
-        for (size_t b = 0; b < sizeof(depths) / sizeof(depths[0]); ++b) {
+        for (size_t h = 0; h < sizeof(heights) / sizeof(heights[0]); ++h) {
             mu_assert("integer VIF AVX512 statistic/vertical buffers differ from scalar",
-                      compare_depth(widths[w], depths[b]) == 0);
+                      compare_geometry(widths[w], heights[h]) == 0);
         }
     }
     return NULL;

@@ -72,6 +72,18 @@ and teardown.
   Unchecked dereference is latent SIGSEGV under ASan
   `MALLOC_PERTURB_=198` (ADR-0971). **Rebase-sensitive**: this rule
   applies to every new test file.
+- **SIMD parity tests check what kernel leaves outside its output, not only
+  what it writes inside.** Kernel storing past its region passes region-only
+  comparison. Netflix/vmaf `03b5562c5` + `ea012e387` both that shape, unnoticed
+  here ([Research-2063](../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)).
+  Allocate output planes at production stride, add trailing slack, fill with
+  `simd_test_guard_fill()` from `simd_bitexact_test.h`, assert
+  `SIMD_GUARD_ASSERT_UNTOUCHED(simd_test_guard_count_outside(plane, rect), ...)`
+  after call. Inputs + outputs share buffer -> byte-compare whole allocation
+  against scalar run instead (`test_vif_neon.c`,
+  `test_integer_vif_avx2_stages.c`). Sweep small geometries both sides of each
+  vector stride, down to extractor minimum of 17. ADM + VIF parity tests =
+  reference.
 - **Authoritative test twins (ADR-1153)**: `test_dict.cpp` and
   `test_feature.cpp` are sole authoritative test files for `dict`
   and `feature_name`; uncompiled legacy C twins `test_dict.c` and

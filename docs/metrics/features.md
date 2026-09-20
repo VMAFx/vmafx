@@ -400,6 +400,32 @@ only.
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
 | `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured on every backend: CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, the CUDA / SYCL / HIP / Metal `integer_adm` twins, and — since [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md) — the CUDA / SYCL / HIP / Metal `float_adm` twins, which previously hardcoded `p = 3` in their kernels and applied the option to the AIM exponent alone. Applies to the numerator only: the CPU denominator (`adm_den_scale_finalise`) is a fixed cube root, and every twin mirrors that. |
 
+##### Small frames
+
+The fixed-point `adm` extractor needs at least 17x17 pixels. Each of its four
+DWT levels halves the band, and below 17 pixels the coarsest level has a
+single sample. Smaller input fails when the extractor starts, with `-EINVAL`
+and this error:
+
+```text
+libvmaf ERROR integer_adm requires width >= 17 and height >= 17 (got 16x16)
+```
+
+Frames from 17 to 32 pixels wide or high are the smallest it accepts. Two
+things were wrong at those sizes and are fixed:
+
+- Scale 3 read outside its band, so `integer_adm_scale3` could change between
+  two runs on the same input.
+- For frames 17 to 32 pixels wide, the AVX-512 path scored scale 0 up to 0.01
+  away from the scalar path. The scalar, AVX2, AVX-512 and NEON paths now
+  give identical scores at every width in that range.
+
+The CUDA and HIP `integer_adm` twins still score frames 17 to 32 pixels wide
+wrongly, with scale 0 up to 0.2 off the CPU value. The CUDA, HIP and SYCL twins
+also accept frames below 17x17. Score frames that small on the CPU until
+`T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18` in [the bug tracker](../state.md) is
+closed.
+
 ##### Fixed-point CSF limits
 
 The fixed-point `adm` extractor stores each scale's CSF weight as an integer:

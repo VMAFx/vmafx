@@ -1381,6 +1381,7 @@ nav:
         - "ADR-1254: win64-cannot-realign-the-stack": adr/1254-win64-cannot-realign-the-stack.md
         - "ADR-1255: spdx-residual-identifier-correction": adr/1255-spdx-residual-identifier-correction.md
         - "ADR-1256: cambi-spatial-mask-simd-dispatch": adr/1256-cambi-spatial-mask-simd-dispatch.md
+        - "ADR-1257: retire-darwin-adm-dwt2-legacy-dispatch": adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md
         - "ADR-1258: keep-64-bit-only-retire-i686-lane": adr/1258-keep-64-bit-only-retire-i686-lane.md
         - "ADR-1259: ci-build-matrix-as-it-runs": adr/1259-ci-build-matrix-as-it-runs.md
         - "ADR-1260: windows-arm64-cpu-lane": adr/1260-windows-arm64-cpu-lane.md

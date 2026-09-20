@@ -16,319 +16,222 @@
  *
  */
 
+#include "feature/arm64/adm_neon.h"
 #include "feature/integer_adm.h"
 
 #include <arm_neon.h>
 
-// Signed 32 Bits //
-// The macro instance int32x4_t accumulators and accumlates the multiplication of 4 int16x8_t vectors with a 4 elements filter.
-#define NEON_ADM_INSTANCE_ACCUM_AND_MACC_VEC_4_ELEMS_ARR_BY_4_ELEMENTS_FILTER_S32X4_LH(            \
-    accum_name, init_vec, vec_name, filter_vec)                                                    \
-    int32x4_t accum_name##_l = vmlal_lane_s16(init_vec, vget_low_s16(vec_name[0]), filter_vec, 0); \
-    int32x4_t accum_name##_h = vmlal_high_lane_s16(init_vec, vec_name[0], filter_vec, 0);          \
-    accum_name##_l = vmlal_lane_s16(accum_name##_l, vget_low_s16(vec_name[1]), filter_vec, 1);     \
-    accum_name##_h = vmlal_high_lane_s16(accum_name##_h, vec_name[1], filter_vec, 1);              \
-    accum_name##_l = vmlal_lane_s16(accum_name##_l, vget_low_s16(vec_name[2]), filter_vec, 2);     \
-    accum_name##_h = vmlal_high_lane_s16(accum_name##_h, vec_name[2], filter_vec, 2);              \
-    accum_name##_l = vmlal_lane_s16(accum_name##_l, vget_low_s16(vec_name[3]), filter_vec, 3);     \
-    accum_name##_h = vmlal_high_lane_s16(accum_name##_h, vec_name[3], filter_vec, 3);
+/* Four-tap multiply-accumulate of eight int16 lanes, widened to two int32x4
+ * halves: acc = init + f[0] * v[0] + f[1] * v[1] + f[2] * v[2] + f[3] * v[3].
+ * The vertical pass feeds it four source rows, the horizontal pass the two
+ * de-interleaved halves of two vld2q loads. Integer arithmetic throughout, so
+ * the association order cannot perturb the result. */
+typedef struct AdmNeonAccum {
+    int32x4_t lo;
+    int32x4_t hi;
+} AdmNeonAccum;
 
-// The macro instance int32x4_t accumulators and accumlates the multiplication of 2 int16x8x2_t vectors with a 4 elements filter.
-#define NEON_ADM_INSTANCE_ACCUM_AND_MACC_PAIR_VEC_BY_4_ELEMENTS_FILTER_S32X4_LH(                   \
-    accum_name, vec_pair_1, vec_pair_2, init_vec, filter_vec)                                      \
-    int32x4_t accum_name##_l =                                                                     \
-        vmlal_lane_s16(init_vec, vget_low_s16(vec_pair_1.val[0]), filter_vec, 0);                  \
-    int32x4_t accum_name##_h = vmlal_high_lane_s16(init_vec, vec_pair_1.val[0], filter_vec, 0);    \
-    accum_name##_l =                                                                               \
-        vmlal_lane_s16(accum_name##_l, vget_low_s16(vec_pair_1.val[1]), filter_vec, 1);            \
-    accum_name##_h = vmlal_high_lane_s16(accum_name##_h, vec_pair_1.val[1], filter_vec, 1);        \
-    accum_name##_l =                                                                               \
-        vmlal_lane_s16(accum_name##_l, vget_low_s16(vec_pair_2.val[0]), filter_vec, 2);            \
-    accum_name##_h = vmlal_high_lane_s16(accum_name##_h, vec_pair_2.val[0], filter_vec, 2);        \
-    accum_name##_l =                                                                               \
-        vmlal_lane_s16(accum_name##_l, vget_low_s16(vec_pair_2.val[1]), filter_vec, 3);            \
-    accum_name##_h = vmlal_high_lane_s16(accum_name##_h, vec_pair_2.val[1], filter_vec, 3);
+static inline AdmNeonAccum adm_neon_macc4(int32x4_t init, const int16x8_t v[4], int16x4_t filter)
+{
+    AdmNeonAccum acc;
+    acc.lo = vmlal_lane_s16(init, vget_low_s16(v[0]), filter, 0);
+    acc.hi = vmlal_high_lane_s16(init, v[0], filter, 0);
+    acc.lo = vmlal_lane_s16(acc.lo, vget_low_s16(v[1]), filter, 1);
+    acc.hi = vmlal_high_lane_s16(acc.hi, v[1], filter, 1);
+    acc.lo = vmlal_lane_s16(acc.lo, vget_low_s16(v[2]), filter, 2);
+    acc.hi = vmlal_high_lane_s16(acc.hi, v[2], filter, 2);
+    acc.lo = vmlal_lane_s16(acc.lo, vget_low_s16(v[3]), filter, 3);
+    acc.hi = vmlal_high_lane_s16(acc.hi, v[3], filter, 3);
+    return acc;
+}
 
-// The macro takes low and high accumulators, shift them, unzip them into single int16x8_t vector, and stores it
-#define NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(accum_name, shift_vec,            \
-                                                                 store_pointer)                    \
-    {                                                                                              \
-        int16x8_t accum_name =                                                                     \
-            vuzp1q_s16(vreinterpretq_s16_s32(vshlq_s32(accum_name##_l, shift_vec)),                \
-                       vreinterpretq_s16_s32(vshlq_s32(accum_name##_h, shift_vec)));               \
-        vst1q_s16(store_pointer, accum_name);                                                      \
+/* Shift both halves (a negative `shift` is a right shift), narrow them back to
+ * int16 by keeping the low half of every lane, and store eight samples. */
+static inline void adm_neon_store_shifted(int16_t *out, AdmNeonAccum acc, int32x4_t shift)
+{
+    const int16x8_t narrowed = vuzp1q_s16(vreinterpretq_s16_s32(vshlq_s32(acc.lo, shift)),
+                                          vreinterpretq_s16_s32(vshlq_s32(acc.hi, shift)));
+    vst1q_s16(out, narrowed);
+}
+
+enum {
+    ADM_DWT2_8_SHIFT_VP = 8,
+    ADM_DWT2_8_ADD_SHIFT_VP = 128,
+    ADM_DWT2_8_SHIFT_HP = 16,
+    ADM_DWT2_8_ADD_SHIFT_HP = 32768,
+};
+
+/* One vertical-pass column through the scalar arithmetic, for the columns the
+ * 16-wide loop cannot reach. */
+static void adm_dwt2_8_neon_vpass_column(const uint8_t *const rows[4], int j, int16_t *tmplo,
+                                         int16_t *tmphi)
+{
+    int32_t accum_lo = 0;
+    int32_t accum_hi = 0;
+
+    for (int tap = 0; tap < 4; tap++) {
+        const int32_t sample = (int32_t)(uint16_t)rows[tap][j];
+        accum_lo += (int32_t)dwt2_db2_coeffs_lo[tap] * sample;
+        accum_hi += (int32_t)dwt2_db2_coeffs_hi[tap] * sample;
     }
+    accum_lo -= (int32_t)dwt2_db2_coeffs_lo_sum * ADM_DWT2_8_ADD_SHIFT_VP;
+    accum_hi -= (int32_t)dwt2_db2_coeffs_hi_sum * ADM_DWT2_8_ADD_SHIFT_VP;
+    tmplo[j] = (int16_t)((accum_lo + ADM_DWT2_8_ADD_SHIFT_VP) >> ADM_DWT2_8_SHIFT_VP);
+    tmphi[j] = (int16_t)((accum_hi + ADM_DWT2_8_ADD_SHIFT_VP) >> ADM_DWT2_8_SHIFT_VP);
+}
+
+/* Vertical pass of one output row into tmplo/tmphi (w samples each). */
+static void adm_dwt2_8_neon_vpass_row(const uint8_t *const rows[4], int w, int16_t *tmplo,
+                                      int16_t *tmphi)
+{
+    const int16x4_t filter_lo_vec = vld1_s16(dwt2_db2_coeffs_lo);
+    const int16x4_t filter_hi_vec = vld1_s16(dwt2_db2_coeffs_hi);
+    const int32x4_t normalize_vec_vp_lo = vdupq_n_s32(
+        (-1 * (int32_t)dwt2_db2_coeffs_lo_sum * ADM_DWT2_8_ADD_SHIFT_VP) + ADM_DWT2_8_ADD_SHIFT_VP);
+    const int32x4_t normalize_vec_vp_hi = vdupq_n_s32(
+        (-1 * (int32_t)dwt2_db2_coeffs_hi_sum * ADM_DWT2_8_ADD_SHIFT_VP) + ADM_DWT2_8_ADD_SHIFT_VP);
+    const int32x4_t shift_vp_vec = vdupq_n_s32(-ADM_DWT2_8_SHIFT_VP);
+
+    for (int j = 0; j < w - 15; j += 16) {
+        int16x8_t s_16_l[4];
+        int16x8_t s_16_h[4];
+
+        for (int tap = 0; tap < 4; tap++) {
+            const uint8x16_t u_8 = vld1q_u8(rows[tap] + j);
+            s_16_l[tap] = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(u_8)));
+            s_16_h[tap] = vreinterpretq_s16_u16(vmovl_high_u8(u_8));
+        }
+
+        adm_neon_store_shifted(
+            tmplo + j, adm_neon_macc4(normalize_vec_vp_lo, s_16_l, filter_lo_vec), shift_vp_vec);
+        adm_neon_store_shifted(tmplo + j + 8,
+                               adm_neon_macc4(normalize_vec_vp_lo, s_16_h, filter_lo_vec),
+                               shift_vp_vec);
+        adm_neon_store_shifted(
+            tmphi + j, adm_neon_macc4(normalize_vec_vp_hi, s_16_l, filter_hi_vec), shift_vp_vec);
+        adm_neon_store_shifted(tmphi + j + 8,
+                               adm_neon_macc4(normalize_vec_vp_hi, s_16_h, filter_hi_vec),
+                               shift_vp_vec);
+    }
+
+    /* Scalar tail for the columns the 16-wide vertical loop cannot reach.
+     *
+     * The dispatcher in integer_adm.c admits this kernel on `!(w % 8)`, but
+     * the loop above advances 16 at a time and stops at `w - 15`, so for a
+     * width congruent to 8 mod 16 the final 8 columns of tmplo/tmphi were
+     * never written. The horizontal pass then read whatever the previous
+     * row had left there, producing garbage in the last output columns —
+     * silently, because every Netflix golden fixture is 1280, 1920 or 576
+     * pixels wide and all three are multiples of 16. */
+    for (int j = (w / 16) * 16; j < w; ++j) {
+        adm_dwt2_8_neon_vpass_column(rows, j, tmplo, tmphi);
+    }
+}
+
+/* One horizontal output column of all four subbands, read through the ind_x
+ * mirror table exactly like the scalar adm_dwt2_8(). Used for the mirrored
+ * j == 0 column and for the tail the 8-wide loop leaves over. */
+static void adm_dwt2_8_neon_hpass_column(const int16_t *tmplo, const int16_t *tmphi,
+                                         int *const ind_x[4], const adm_dwt_band_t *dst,
+                                         int row_offset, int j)
+{
+    int32_t accum_a = ADM_DWT2_8_ADD_SHIFT_HP;
+    int32_t accum_v = ADM_DWT2_8_ADD_SHIFT_HP;
+    int32_t accum_h = ADM_DWT2_8_ADD_SHIFT_HP;
+    int32_t accum_d = ADM_DWT2_8_ADD_SHIFT_HP;
+
+    for (int tap = 0; tap < 4; tap++) {
+        const int column = ind_x[tap][j];
+        const int16_t s_lo = tmplo[column];
+        const int16_t s_hi = tmphi[column];
+        accum_a += (int32_t)dwt2_db2_coeffs_lo[tap] * s_lo;
+        accum_v += (int32_t)dwt2_db2_coeffs_hi[tap] * s_lo;
+        accum_h += (int32_t)dwt2_db2_coeffs_lo[tap] * s_hi;
+        accum_d += (int32_t)dwt2_db2_coeffs_hi[tap] * s_hi;
+    }
+
+    dst->band_a[row_offset + j] = (int16_t)(accum_a >> ADM_DWT2_8_SHIFT_HP);
+    dst->band_v[row_offset + j] = (int16_t)(accum_v >> ADM_DWT2_8_SHIFT_HP);
+    dst->band_h[row_offset + j] = (int16_t)(accum_h >> ADM_DWT2_8_SHIFT_HP);
+    dst->band_d[row_offset + j] = (int16_t)(accum_d >> ADM_DWT2_8_SHIFT_HP);
+}
+
+/* Horizontal pass of one output row. The 8-wide loop writes columns j..j+7
+ * and reads taps up to 2 * (j + 7) + 2 without consulting ind_x, so its last
+ * column must stay at or below half_w - 2 (the last column whose taps need no
+ * mirror) and it must never store past half_w - 1. Column 0 and everything
+ * from half_w_mod8 on go through ind_x, which applies the mirror. */
+static void adm_dwt2_8_neon_hpass_row(const int16_t *tmplo, const int16_t *tmphi,
+                                      int *const ind_x[4], const adm_dwt_band_t *dst,
+                                      int row_offset, int half_w)
+{
+    const int half_w_mod8 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1;
+    const int16x4_t filter_lo_vec = vld1_s16(dwt2_db2_coeffs_lo);
+    const int16x4_t filter_hi_vec = vld1_s16(dwt2_db2_coeffs_hi);
+    const int32x4_t add_shift_hp_vec = vdupq_n_s32(ADM_DWT2_8_ADD_SHIFT_HP);
+    const int32x4_t shift_hp_vec = vdupq_n_s32(-ADM_DWT2_8_SHIFT_HP);
+
+    /* j = 0 is a special case: src_ind_x[k][0] is the mirrored {1, 0, 1, 2}
+     * rather than {-1, 0, 1, 2}. */
+    adm_dwt2_8_neon_hpass_column(tmplo, tmphi, ind_x, dst, row_offset, 0);
+
+    /* The kernel only runs for even w (the dispatcher requires !(w % 8)), so
+     * between column 1 and half_w_mod8 the taps of column j are simply
+     * 2j - 1, 2j, 2j + 1 and 2j + 2 and ind_x can be ignored. */
+    for (int j = 1; j < half_w_mod8; j += 8) {
+        const int16_t *p_low = tmplo + ((ptrdiff_t)2 * j);
+        const int16_t *p_high = tmphi + ((ptrdiff_t)2 * j);
+        const int16x8x2_t low_s0s1 = vld2q_s16(p_low - 1);
+        const int16x8x2_t low_s2s3 = vld2q_s16(p_low + 1);
+        const int16x8x2_t high_s0s1 = vld2q_s16(p_high - 1);
+        const int16x8x2_t high_s2s3 = vld2q_s16(p_high + 1);
+        /* De-interleaved: val[0] of each load holds the odd-indexed samples
+         * (taps 0 and 2), val[1] the even-indexed ones (taps 1 and 3). */
+        const int16x8_t low_taps[4] = {low_s0s1.val[0], low_s0s1.val[1], low_s2s3.val[0],
+                                       low_s2s3.val[1]};
+        const int16x8_t high_taps[4] = {high_s0s1.val[0], high_s0s1.val[1], high_s2s3.val[0],
+                                        high_s2s3.val[1]};
+        const ptrdiff_t out = (ptrdiff_t)row_offset + j;
+
+        adm_neon_store_shifted(dst->band_a + out,
+                               adm_neon_macc4(add_shift_hp_vec, low_taps, filter_lo_vec),
+                               shift_hp_vec);
+        adm_neon_store_shifted(dst->band_v + out,
+                               adm_neon_macc4(add_shift_hp_vec, low_taps, filter_hi_vec),
+                               shift_hp_vec);
+        adm_neon_store_shifted(dst->band_h + out,
+                               adm_neon_macc4(add_shift_hp_vec, high_taps, filter_lo_vec),
+                               shift_hp_vec);
+        adm_neon_store_shifted(dst->band_d + out,
+                               adm_neon_macc4(add_shift_hp_vec, high_taps, filter_hi_vec),
+                               shift_hp_vec);
+    }
+
+    /* Scalar tail through ind_x: the columns the 8-wide loop must not reach,
+     * including the last one, whose taps mirror back into range. Same guarded
+     * bound as the x86 DWT2 kernels (Netflix/vmaf ea012e387). */
+    for (int j = half_w_mod8; j < half_w; ++j) {
+        adm_dwt2_8_neon_hpass_column(tmplo, tmphi, ind_x, dst, row_offset, j);
+    }
+}
 
 void adm_dwt2_8_neon(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                      int src_stride, int dst_stride)
 {
-    const int16_t shift_VP = 8;
-    const int16_t shift_HP = 16;
-    const int32_t add_shift_VP = 128;
-    const int32_t add_shift_HP = 32768;
-
     int **ind_y = buf->ind_y;
-    int **ind_x = buf->ind_x;
-
+    int *const *ind_x = buf->ind_x;
     int16_t *tmplo = (int16_t *)buf->tmp_ref;
     int16_t *tmphi = tmplo + w;
-
-    const int16x4_t filter_lo_vec = vld1_s16(dwt2_db2_coeffs_lo);
-    const int16x4_t filter_hi_vec = vld1_s16(dwt2_db2_coeffs_hi);
-    const int32x4_t normalize_vec_vp_lo =
-        vdupq_n_s32((-1 * (int32_t)dwt2_db2_coeffs_lo_sum * add_shift_VP) + add_shift_VP);
-    const int32x4_t normalize_vec_vp_hi =
-        vdupq_n_s32((-1 * (int32_t)dwt2_db2_coeffs_hi_sum * add_shift_VP) + add_shift_VP);
-    const int32x4_t shift_vp_vec = vdupq_n_s32(-shift_VP);
-    const int32x4_t add_shift_hp_vec = vdupq_n_s32(add_shift_HP);
-    const int32x4_t shift_hp_vec = vdupq_n_s32(-shift_HP);
+    const int half_w = (w + 1) / 2;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
-        /* Vertical pass. */
-        const uint8_t *const p_src_0_base = src + ind_y[0][i] * src_stride;
-        const uint8_t *const p_src_1_base = src + ind_y[1][i] * src_stride;
-        const uint8_t *const p_src_2_base = src + ind_y[2][i] * src_stride;
-        const uint8_t *const p_src_3_base = src + ind_y[3][i] * src_stride;
-        const uint8_t *p_src_0 = p_src_0_base;
-        const uint8_t *p_src_1 = p_src_1_base;
-        const uint8_t *p_src_2 = p_src_2_base;
-        const uint8_t *p_src_3 = p_src_3_base;
-
-        for (int j = 0; j < w - 15;
-             j += 16, p_src_0 += 16, p_src_1 += 16, p_src_2 += 16, p_src_3 += 16) {
-            uint8x16_t u_8[4];
-            int16x8_t s_16_l[4], s_16_h[4];
-
-            u_8[0] = vld1q_u8(p_src_0);
-            u_8[1] = vld1q_u8(p_src_1);
-            u_8[2] = vld1q_u8(p_src_2);
-            u_8[3] = vld1q_u8(p_src_3);
-
-            s_16_l[0] = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(u_8[0])));
-            s_16_h[0] = vreinterpretq_s16_u16(vmovl_high_u8(u_8[0]));
-            s_16_l[1] = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(u_8[1])));
-            s_16_h[1] = vreinterpretq_s16_u16(vmovl_high_u8(u_8[1]));
-            s_16_l[2] = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(u_8[2])));
-            s_16_h[2] = vreinterpretq_s16_u16(vmovl_high_u8(u_8[2]));
-            s_16_l[3] = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(u_8[3])));
-            s_16_h[3] = vreinterpretq_s16_u16(vmovl_high_u8(u_8[3]));
-
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_VEC_4_ELEMS_ARR_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                accum_lo_l, normalize_vec_vp_lo, s_16_l, filter_lo_vec);
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_VEC_4_ELEMS_ARR_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                accum_lo_h, normalize_vec_vp_lo, s_16_h, filter_lo_vec);
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_VEC_4_ELEMS_ARR_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                accum_hi_l, normalize_vec_vp_hi, s_16_l, filter_hi_vec);
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_VEC_4_ELEMS_ARR_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                accum_hi_h, normalize_vec_vp_hi, s_16_h, filter_hi_vec);
-
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(accum_lo_l, shift_vp_vec,
-                                                                     tmplo + j);
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(accum_lo_h, shift_vp_vec,
-                                                                     tmplo + j + 8);
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(accum_hi_l, shift_vp_vec,
-                                                                     tmphi + j);
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(accum_hi_h, shift_vp_vec,
-                                                                     tmphi + j + 8);
-        }
-
-        /* Scalar tail for the columns the 16-wide vertical loop cannot reach.
-         *
-         * The dispatcher in integer_adm.c admits this kernel on `!(w % 8)`, but
-         * the loop above advances 16 at a time and stops at `w - 15`, so for a
-         * width congruent to 8 mod 16 the final 8 columns of tmplo/tmphi were
-         * never written. The horizontal pass then read whatever the previous
-         * row had left there, producing garbage in the last output columns —
-         * silently, because every Netflix golden fixture is 1280, 1920 or 576
-         * pixels wide and all three are multiples of 16. */
-        for (int j = (w / 16) * 16; j < w; ++j) {
-            const uint16_t u_s0 = p_src_0_base[j];
-            const uint16_t u_s1 = p_src_1_base[j];
-            const uint16_t u_s2 = p_src_2_base[j];
-            const uint16_t u_s3 = p_src_3_base[j];
-
-            int32_t accum = 0;
-            accum += (int32_t)dwt2_db2_coeffs_lo[0] * (int32_t)u_s0;
-            accum += (int32_t)dwt2_db2_coeffs_lo[1] * (int32_t)u_s1;
-            accum += (int32_t)dwt2_db2_coeffs_lo[2] * (int32_t)u_s2;
-            accum += (int32_t)dwt2_db2_coeffs_lo[3] * (int32_t)u_s3;
-            accum -= (int32_t)dwt2_db2_coeffs_lo_sum * add_shift_VP;
-            tmplo[j] = (int16_t)((accum + add_shift_VP) >> shift_VP);
-
-            accum = 0;
-            accum += (int32_t)dwt2_db2_coeffs_hi[0] * (int32_t)u_s0;
-            accum += (int32_t)dwt2_db2_coeffs_hi[1] * (int32_t)u_s1;
-            accum += (int32_t)dwt2_db2_coeffs_hi[2] * (int32_t)u_s2;
-            accum += (int32_t)dwt2_db2_coeffs_hi[3] * (int32_t)u_s3;
-            accum -= (int32_t)dwt2_db2_coeffs_hi_sum * add_shift_VP;
-            tmphi[j] = (int16_t)((accum + add_shift_VP) >> shift_VP);
-        }
-
-        /* Horizontal pass (lo and hi). */
-        // j = 0 is a special case (entry src_ind_x[0][0] is mirrored 101 instead of -1).
-        // Note that j = ((w + 1) / 2) has same mirroring yet that value is ignored/overriden so no need to implement it seperatly.
-        /* from: dwt2_src_indices_filt()
-            src_ind_x[0][0] = 1;
-            src_ind_x[1][0] = 0;
-            src_ind_x[2][0] = 1;
-            src_ind_x[3][0] = 2;
-        */
-        int32_t accum_a = add_shift_HP;
-        int32_t accum_v = add_shift_HP;
-        int32_t accum_h = add_shift_HP;
-        int32_t accum_d = add_shift_HP;
-
-        for (int idx = 0; idx < 4; idx++) {
-            int j_idx = ind_x[idx][0];
-            int16_t s_lo = tmplo[j_idx];
-            int16_t s_hi = tmphi[j_idx];
-            accum_a += (int32_t)dwt2_db2_coeffs_lo[idx] * s_lo;
-            accum_v += (int32_t)dwt2_db2_coeffs_hi[idx] * s_lo;
-            accum_h += (int32_t)dwt2_db2_coeffs_lo[idx] * s_hi;
-            accum_d += (int32_t)dwt2_db2_coeffs_hi[idx] * s_hi;
-        }
-
-        dst->band_a[i * dst_stride] = accum_a >> shift_HP;
-        dst->band_v[i * dst_stride] = accum_v >> shift_HP;
-        dst->band_h[i * dst_stride] = accum_h >> shift_HP;
-        dst->band_d[i * dst_stride] = accum_d >> shift_HP;
-
-        /* Vectorize code assumes w is even (assumption is valid as we call the whole function only in case !(w%8) )
-            As so the whole ind_x can be ignored as:
-                ind1 = 2 * j;
-                ind0 = ind1 - 1;
-                ind2 = ind1 + 1;
-                ind3 = ind1 + 2;
-                src_ind_x[0][j] = ind0; \\ 2*j-1
-                src_ind_x[1][j] = ind1; \\ 2*j
-                src_ind_x[2][j] = ind2; \\ 2*j+1
-                src_ind_x[3][j] = ind3; \\ 2*j+2
-         */
-
-        int16_t *p_low = tmplo + 2;  // 2*j (j=1) - 1 --> 2 -1 = 1
-        int16_t *p_high = tmphi + 2; // 2*j (j=1) - 1 --> 2 -1 = 1
-        int stride_h = i * dst_stride + 1;
-        for (int j = 1; j < ((w + 1) / 2); j += 8, p_low += 16, p_high += 16, stride_h += 8) {
-            int16x8x2_t low_s0s1_vec_s16, low_s2s3_vec_s16;
-            int16x8x2_t high_s0s1_vec_s16, high_s2s3_vec_s16;
-
-            low_s0s1_vec_s16 = vld2q_s16(p_low - 1);
-            low_s2s3_vec_s16 = vld2q_s16(p_low + 1);
-            high_s0s1_vec_s16 = vld2q_s16(p_high - 1);
-            high_s2s3_vec_s16 = vld2q_s16(p_high + 1);
-
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_PAIR_VEC_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                low_accum_vec_lo, low_s0s1_vec_s16, low_s2s3_vec_s16, add_shift_hp_vec,
-                filter_lo_vec);
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_PAIR_VEC_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                low_accum_vec_hi, low_s0s1_vec_s16, low_s2s3_vec_s16, add_shift_hp_vec,
-                filter_hi_vec);
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_PAIR_VEC_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                high_accum_vec_lo, high_s0s1_vec_s16, high_s2s3_vec_s16, add_shift_hp_vec,
-                filter_lo_vec);
-            NEON_ADM_INSTANCE_ACCUM_AND_MACC_PAIR_VEC_BY_4_ELEMENTS_FILTER_S32X4_LH(
-                high_accum_vec_hi, high_s0s1_vec_s16, high_s2s3_vec_s16, add_shift_hp_vec,
-                filter_hi_vec);
-
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(low_accum_vec_lo, shift_hp_vec,
-                                                                     (dst->band_a + stride_h));
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(low_accum_vec_hi, shift_hp_vec,
-                                                                     (dst->band_v + stride_h));
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(
-                high_accum_vec_lo, shift_hp_vec, (dst->band_h + stride_h));
-            NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(
-                high_accum_vec_hi, shift_hp_vec, (dst->band_d + stride_h));
-        }
-
-        /* Re-do the final output column with the mirrored index.
-         *
-         * The vector loop above walks tmplo/tmphi with plain pointer arithmetic
-         * and never consults ind_x, so for the last column it reads
-         * tmplo[2j + 2] == tmplo[w]. That is one past the lo half, i.e. the
-         * first element of tmphi (tmphi == tmplo + w), where the scalar kernel
-         * mirrors the index back to w - 1. Recompute that column the way
-         * dwt2_src_indices_filt() specifies. */
-        {
-            const int j_last = ((w + 1) / 2) - 1;
-            if (j_last >= 1) {
-                const int jx[4] = {ind_x[0][j_last], ind_x[1][j_last], ind_x[2][j_last],
-                                   ind_x[3][j_last]};
-                const int out = i * dst_stride + j_last;
-                int32_t a_a = add_shift_HP, a_v = add_shift_HP;
-                int32_t a_h = add_shift_HP, a_d = add_shift_HP;
-
-                for (int idx = 0; idx < 4; idx++) {
-                    const int16_t s_lo = tmplo[jx[idx]];
-                    const int16_t s_hi = tmphi[jx[idx]];
-                    a_a += (int32_t)dwt2_db2_coeffs_lo[idx] * s_lo;
-                    a_v += (int32_t)dwt2_db2_coeffs_hi[idx] * s_lo;
-                    a_h += (int32_t)dwt2_db2_coeffs_lo[idx] * s_hi;
-                    a_d += (int32_t)dwt2_db2_coeffs_hi[idx] * s_hi;
-                }
-                dst->band_a[out] = (int16_t)(a_a >> shift_HP);
-                dst->band_v[out] = (int16_t)(a_v >> shift_HP);
-                dst->band_h[out] = (int16_t)(a_h >> shift_HP);
-                dst->band_d[out] = (int16_t)(a_d >> shift_HP);
-            }
-        }
-    }
-}
-
-static int16_t adm_dwt2_8_vertical_sample(const uint8_t *src, int *const ind_y[4], int row,
-                                          int column, int src_stride, const int16_t filter[4],
-                                          int32_t filter_sum)
-{
-    const int32_t add_shift_vp = 128;
-    const int16_t shift_vp = 8;
-    int32_t accum = add_shift_vp - filter_sum * add_shift_vp;
-
-    for (int tap = 0; tap < 4; ++tap) {
-        const uint8_t sample = src[ind_y[tap][row] * src_stride + column];
-        accum += (int32_t)filter[tap] * (int32_t)sample;
-    }
-
-    return (int16_t)(accum >> shift_vp);
-}
-
-/* Preserve the immutable Darwin AArch64 quality contract without weakening the
- * universal NEON kernel. Historical Apple releases produced their first DWT2
- * output column from three horizontal taps; the Darwin Python goldens record
- * that result. Run the corrected four-tap kernel first, then overwrite only
- * that legacy boundary column. Linux AArch64 and direct callers continue to use
- * adm_dwt2_8_neon(), which remains bit-exact with the scalar reference. */
-void adm_dwt2_8_neon_apple_legacy(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf,
-                                  int w, int h, int src_stride, int dst_stride)
-{
-    const int16_t shift_hp = 16;
-    const int32_t add_shift_hp = 32768;
-    int **ind_y = buf->ind_y;
-    int **ind_x = buf->ind_x;
-
-    adm_dwt2_8_neon(src, dst, buf, w, h, src_stride, dst_stride);
-
-    for (int row = 0; row < (h + 1) / 2; ++row) {
-        int32_t accum_a = add_shift_hp;
-        int32_t accum_v = add_shift_hp;
-        int32_t accum_h = add_shift_hp;
-        int32_t accum_d = add_shift_hp;
-
-        for (int tap = 0; tap < 3; ++tap) {
-            const int column = ind_x[tap][0];
-            const int16_t sample_lo = adm_dwt2_8_vertical_sample(
-                src, ind_y, row, column, src_stride, dwt2_db2_coeffs_lo, dwt2_db2_coeffs_lo_sum);
-            const int16_t sample_hi = adm_dwt2_8_vertical_sample(
-                src, ind_y, row, column, src_stride, dwt2_db2_coeffs_hi, dwt2_db2_coeffs_hi_sum);
-
-            accum_a += (int32_t)dwt2_db2_coeffs_lo[tap] * (int32_t)sample_lo;
-            accum_v += (int32_t)dwt2_db2_coeffs_hi[tap] * (int32_t)sample_lo;
-            accum_h += (int32_t)dwt2_db2_coeffs_lo[tap] * (int32_t)sample_hi;
-            accum_d += (int32_t)dwt2_db2_coeffs_hi[tap] * (int32_t)sample_hi;
-        }
-
-        const int output = row * dst_stride;
-        dst->band_a[output] = (int16_t)(accum_a >> shift_hp);
-        dst->band_v[output] = (int16_t)(accum_v >> shift_hp);
-        dst->band_h[output] = (int16_t)(accum_h >> shift_hp);
-        dst->band_d[output] = (int16_t)(accum_d >> shift_hp);
+        const uint8_t *const rows[4] = {
+            src + ((ptrdiff_t)ind_y[0][i] * src_stride),
+            src + ((ptrdiff_t)ind_y[1][i] * src_stride),
+            src + ((ptrdiff_t)ind_y[2][i] * src_stride),
+            src + ((ptrdiff_t)ind_y[3][i] * src_stride),
+        };
+        adm_dwt2_8_neon_vpass_row(rows, w, tmplo, tmphi);
+        adm_dwt2_8_neon_hpass_row(tmplo, tmphi, ind_x, dst, i * dst_stride, half_w);
     }
 }

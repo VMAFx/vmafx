@@ -184,6 +184,24 @@ Skill scaffolds:
   (`_mm_storel_epi64`). The fork is 64-bit only (ADR-1258), but these files
   stay 32-bit clean because they are upstream-mirror code and that is
   Netflix#1481's fix (T-X86-64-ONLY-INTRINSICS-2026-09-18).
+- **Integer ADM tail bounds are measured from the loop start, not from
+  column 0.** `adm_decouple_avx2` uses `right - ((right - left) % 8)`, like
+  `adm_decouple_s123_avx2` and every AVX-512 decouple (Netflix/vmaf
+  `03b5562c5`). The DWT2 kernels use
+  `half_w >= 2 ? half_w - 1 - ((half_w - 2) % N) : 1` (fork `0ed57f9f1`),
+  which is not upstream's `(half_w - 2) - ((half_w - 3) % N)`. Keep the fork
+  form on sync. `test_integer_adm_simd` and `test_adm_dwt2_x86` fill the
+  outputs with a guard pattern at the production band stride and fail on any
+  store outside the region
+  ([Research-2063](../../../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)).
+
+- **Integer ADM shift rounding = `adm_half_shift(x)`, never
+  `(uint32_t)pow(2, (x - 1))`.** Frame width 17..32 -> scale-0 cube shift 0
+  -> upstream form converts inf. AVX-512 build: `vcvttsd2usi` ->
+  `0xFFFFFFFF`, scale 0 off by up to 0.01. Helper lives in
+  `../adm_csf_fixed_point.h`, shared with scalar. Keep on sync.
+  `test_integer_adm_tiny_frames` sweeps w 17..32 vs scalar; UBSan lane
+  flags the old form (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18).
 
 ## Governing ADRs
 

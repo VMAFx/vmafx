@@ -166,3 +166,8 @@ immutable Darwin `88.030322` assertion; the universal path stayed
 `88.030458811118052`. Reverting the universal kernel was rejected because it
 would re-break Linux ARM parity, while disabling NEON was falsified by the
 scalar result. No Netflix golden assertion, snapshot, or tolerance changed.
+
+Update (2026-09-18): [ADR-1257](../adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md)
+retired the Apple wrapper after upstream Netflix/vmaf `cba9343ed` fixed the
+same dropped tap. Every AArch64 platform now dispatches the universal kernel.
+See [Research-2063](2063-upstream-sync-2026-09-adm-vif-simd.md).

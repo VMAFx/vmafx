@@ -35,16 +35,18 @@ feature/arm64/
   [`../../../test/`](../../test/) (`test_*_simd.c`, migrated through
   [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h) harness per
   ADR-0245) catch ULP drift.
-- **Integer-ADM has one named Apple production compatibility boundary
-  (ADR-1057, 2026-08-31).** `adm_dwt2_8_neon()` remains universal four-tap,
-  scalar-bit-exact kernel; `test_adm_dwt2_neon` must keep proving that on every
-  AArch64 platform. On Apple AArch64 only, `integer_adm.c` dispatches
-  production calls through `adm_dwt2_8_neon_apple_legacy()`. Wrapper overwrites
-  only first output column with historical three-tap boundary result from
-  immutable Darwin Python goldens. Do not move three-tap rule back into
-  universal kernel, broaden to Linux AArch64, or replace with score offset.
-  Same test separately proves compatibility wrapper matches legacy reference
-  and changes no column except `j == 0`.
+- **Integer-ADM DWT2: one NEON path on every AArch64 platform
+  ([ADR-1257](../../../../docs/adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md),
+  supersedes ADR-1057 Apple wrapper).** `integer_adm.c` dispatches
+  `adm_dwt2_8_neon()` on Apple + Linux alike. Never reintroduce
+  platform-specific first-column rule or score offset.
+- **`adm_dwt2_8_neon()` horizontal 8-wide loop stops at
+  `half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1`** (Netflix/vmaf
+  `ea012e387`, adapted). Column 0 + every column from that bound on go through
+  `adm_dwt2_8_neon_hpass_column()` and `ind_x`, which applies mirror. Without
+  bound: vector store runs past half-resolution row and, on last row, into next
+  band of ADM slab. `test_adm_dwt2_neon` checks bit-exactness + guard band at
+  production band stride.
 - **`#pragma STDC FP_CONTRACT OFF` kept at TU level** even though aarch64 GCC
   ignores it with non-fatal `-Wunknown-pragmas`. Pragma is portable; aarch64 GCC
   does not contract `a + b * c` across statements at default optimisation
