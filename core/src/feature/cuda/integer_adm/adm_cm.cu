@@ -188,7 +188,10 @@ struct CmNeighbours {
 __device__ __forceinline__ CmNeighbours i4_cm_neighbours(int pos, int n, int lo_border,
                                                          int hi_border)
 {
-    CmNeighbours nb = {.lo = pos - 1, .hi = pos + 1};
+    /* Positional, not designated: nvcc's MSVC host frontend rejects C++20
+     * designated initializers in device code (error: expected an expression).
+     * Order is CmNeighbours{lo, hi}. */
+    CmNeighbours nb = {pos - 1, pos + 1};
     if (pos == 0 && lo_border <= 0) {
         nb.lo = pos + 1;
     } else if (pos == (n - 1) && hi_border > (n - 1)) {
@@ -232,17 +235,23 @@ __device__ __forceinline__ I4CmParams i4_cm_params(const AdmBufferCuda &buf,
     const uint32_t shift_cub = __float2uint_ru(__log2f((float)w));
     const uint32_t shift_inner_accum = __float2uint_ru(__log2f((float)h));
     const int rfactor_base = scale * 3;
+    /* Positional, not designated, for the same reason as i4_cm_neighbours above.
+     * Field order is I4CmParams{ref, dis, rfactor, adm_enhn_gain_limit, cube,
+     * shift_inner_accum, add_shift_inner_accum} and
+     * CmCubeShifts{add_shift_sq, shift_sq, add_shift_cub, shift_cub}. */
     return {
-        .ref = &buf.i4_ref_dwt2,
-        .dis = &buf.i4_dis_dwt2,
-        .rfactor = &params.i_rfactor[rfactor_base],
-        .adm_enhn_gain_limit = params.adm_enhn_gain_limit,
-        .cube = {.add_shift_sq = 536870912, /* 1 << 29 */
-                 .shift_sq = 30,
-                 .add_shift_cub = (int32_t)(1u << (shift_cub - 1)),
-                 .shift_cub = shift_cub},
-        .shift_inner_accum = shift_inner_accum,
-        .add_shift_inner_accum = (int32_t)(1u << (shift_inner_accum - 1)),
+        &buf.i4_ref_dwt2,                /* ref */
+        &buf.i4_dis_dwt2,                /* dis */
+        &params.i_rfactor[rfactor_base], /* rfactor */
+        params.adm_enhn_gain_limit,      /* adm_enhn_gain_limit */
+        {
+            536870912,                        /* cube.add_shift_sq = 1 << 29 */
+            30,                               /* cube.shift_sq */
+            (int32_t)(1u << (shift_cub - 1)), /* cube.add_shift_cub */
+            shift_cub,                        /* cube.shift_cub */
+        },
+        shift_inner_accum,                        /* shift_inner_accum */
+        (int32_t)(1u << (shift_inner_accum - 1)), /* add_shift_inner_accum */
     };
 }
 
