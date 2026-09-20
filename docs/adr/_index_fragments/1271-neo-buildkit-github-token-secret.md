@@ -1,0 +1,1 @@
+| [ADR-1271](1271-neo-buildkit-github-token-secret.md) | Pass optional Intel NEO GitHub API credentials through an ephemeral BuildKit secret for raw Docker, Compose, and CI builds; anonymous builds remain supported and Docker's secret-in-ARG warning becomes a hard pre-build failure. | Proposed | build, container, security, supply-chain, ci, fork-local |
