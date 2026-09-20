@@ -148,7 +148,7 @@ forbids pushing the branch or opening a pull request.
 
 - [x] Document v0.2.2's alignment contract: the parser accepts any caller-buffer base alignment, but a consumer must `memcpy` a returned section before typed access when its base is not suitably aligned.
 - [x] Expand the conformance-vector list from fourteen to sixteen and record the non-aligned `header_size` rejection.
-- [x] Add a dated ADR-1113 amendment clarifying that reviewed correctness/security releases trigger a re-pin even without an ABI-minor change. Keep the original vendoring alternatives and append-only ABI decision intact.
+- [x] Add ADR-1276 clarifying that reviewed correctness/security releases trigger a re-pin even without an ABI-minor change. Keep ADR-1113's immutable vendoring alternatives and append-only ABI decision intact.
 - [x] Regenerate the ADR index with the repository generator; do not hand-edit generated ordering/content.
 - [x] Add a research digest containing the exact source commits, the RED sanitizer reproduction, the no-ABI-change evidence, and why exact upstream fixture identity supersedes PR #1351's local lint edits.
 - [x] Reconcile `docs/state.md`: close the #1351 fixture-drift item, but retain the authoritative fixture's `fopen(..., "w")` world-writable-file finding as a separate open upstream-owned follow-up rather than claiming it fixed.

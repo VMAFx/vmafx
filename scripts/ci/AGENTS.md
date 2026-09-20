@@ -402,7 +402,8 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   parse/compile failures still invalidate that measurement. Reports retain
   actual `measured_sources` and `compile_failures` so partial/error output
   never presented as successful whole-tree scan.
-- ADR-1113's manifest-owned Pelorus mirror is outside native-lint ownership.
+- ADR-1113's Pelorus mirror and ADR-1276's manifest-owned boundary are outside
+  native-lint ownership.
   `pelorus-mirror-paths.txt` is the single exact-path exemption set consumed by
   the sync guard, format hooks, changed-file tidy gate, and `tidy-ratchet.py`;
   do not restore prefix/directory classification. Keep one shared
@@ -414,7 +415,7 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   `test_pelorus_mirror.py`, `test_tidy_ratchet.py`, and
   `test_tidy_scoped_write.py`.
 
-## Pelorus mirror provenance gate (ADR-1113)
+## Pelorus mirror provenance gate (ADR-1113, ADR-1276)
 
 `tests/test-sync-pelorus-interop.sh` proves the top-level mirror guard fails
 closed for a plain directory and for a Git checkout lacking the exact pin. It

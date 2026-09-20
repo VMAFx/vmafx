@@ -2,13 +2,17 @@
 
 <!-- markdownlint-disable MD013 -->
 
-- **Status**: Implementation and local verification complete; hosted CI not run
+- **Status**: Active
+- **Workstream**:
+  [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md)
+- **Last updated**: 2026-09-20
 - **VMAFx baseline**: `371ff5891ad43b6d8072d9fac132349ee3ddaaa9`
 - **Previous Pelorus pin**: `818d844066e73326c6300c9827ce7324d04cd884`
 - **Authoritative release source**:
   `93bef1206d68d9e09024c08a12732fb8e77b9b16` (Pelorus v0.2.2)
-- **Related decision**:
-  [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md), 2026-09-20 amendment
+- **Related decisions**:
+  [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md),
+  [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md)
 
 ## Question
 
@@ -131,12 +135,12 @@ opened as a pull request.
 
 ## Maintenance decision
 
-No new architectural alternative was selected: ADR-1113's pinned read-only
-mirror remains the design, and ADR-1120's ABI 1.3 decision remains intact. The
-dated ADR-1113 amendment records the operational consequence exposed here:
-reviewed released parser correctness/security fixes are re-pin triggers even
-without an ABI-minor change. A new ADR remains required when the wire ABI or
-vendoring architecture changes.
+ADR-1113's pinned read-only mirror remains the architecture. ADR-1276 records
+the operational consequence exposed here: reviewed released parser
+correctness/security fixes are re-pin triggers even without an ABI-minor
+change. It supersedes only ADR-1120's old pin and update workflow; ABI 1.3 and
+ADR-1120's complexity-scoring decision remain intact. A new ADR remains
+required when the wire ABI or vendoring architecture changes.
 
 ## Residual finding
 

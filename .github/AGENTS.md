@@ -137,7 +137,7 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on same commit can
 mask real queued or failed ready-for-review checks.
 
-### Pelorus mirror verification stays in required Pre-Commit
+### Pelorus mirror verification stays in required Pre-Commit (ADR-1113, ADR-1276)
 
 The `Pre-Commit` job in `lint-and-format.yml` resolves the full commit declared
 by `scripts/sync-pelorus-interop.sh`, checks out `VMAFx/pelorus` at that exact

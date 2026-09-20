@@ -265,7 +265,7 @@ Rules for those files:
   ~/.cache/vmafx-cross/aarch64-clang.ini`, `meson test -C build/aarch64
   <test>` under qemu. MSVC itself: CI only.
 
-## Pelorus exact-source conformance fixture (ADR-1113)
+## Pelorus exact-source conformance fixture (ADR-1113, ADR-1276)
 
 `test_pelorus_interop.c` is not a fork-authored test implementation. From its
 first vendored `#include` onward, it is the exact Pelorus fixture body at
