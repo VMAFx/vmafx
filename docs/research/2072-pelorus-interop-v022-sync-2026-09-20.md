@@ -1,5 +1,6 @@
+# Research-2072: Pelorus v0.2.2 interop parser safety sync — 2026-09-20
+
 <!-- markdownlint-disable MD013 -->
-# Pelorus v0.2.2 interop parser safety sync — 2026-09-20
 
 - **Status**: Implementation and local verification complete; hosted CI not run
 - **VMAFx baseline**: `371ff5891ad43b6d8072d9fac132349ee3ddaaa9`

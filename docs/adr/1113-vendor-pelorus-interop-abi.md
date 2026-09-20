@@ -116,7 +116,7 @@ append-only ABI rules. It makes their maintenance consequence explicit:
 The earlier pins below remain historical records. The current source is
 `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`, release v0.2.2,
 `libpelorus/{include/pelorus,src,test}`. See
-[the 2026-09-20 research digest](../research/pelorus-interop-v022-sync-2026-09-20.md)
+[Research-2072](../research/2072-pelorus-interop-v022-sync-2026-09-20.md)
 for the sanitizer reproduction and exact-source proof.
 
 ## References

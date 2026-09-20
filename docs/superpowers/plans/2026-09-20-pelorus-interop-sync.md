@@ -139,7 +139,7 @@ forbids pushing the branch or opening a pull request.
 - Modify: `docs/adr/1113-vendor-pelorus-interop-abi.md`
 - Modify: `docs/adr/_index_fragments/1113-vendor-pelorus-interop-abi.md`
 - Modify (generated): `docs/adr/README.md`
-- Add: `docs/research/pelorus-interop-v022-sync-2026-09-20.md`
+- Add: `docs/research/2072-pelorus-interop-v022-sync-2026-09-20.md`
 - Modify: `docs/state.md`
 - Modify: `docs/rebase-notes.md`
 - Modify: `core/test/AGENTS.md`
