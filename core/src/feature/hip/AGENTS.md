@@ -698,12 +698,6 @@ Copying the old `#define` from a neighbour re-adds a reserved identifier
 `core/src/feature/hip/*.c` inside `/* ... */` opens nested comment ->
 `-Wcomment` on every HIP build -> zero-warning gate fails. 14 parity tests had
 it. Name the set in prose: "the .c files under core/src/feature/hip/".
-`max_db` is derived once in `init_fex_hip` right after
-`ms_ssim_hip_init_dims()`, using the CPU's exact expression and integer
-types, and the dB conversion goes through `ms_ssim_convert_to_db()`.
-The guard is `test_hip_ms_ssim_parity.c::test_ms_ssim_clip_db_ceiling`,
-which feeds an IDENTICAL pair — on a merely high-similarity fixture the
-ceiling never binds and the variant passes against the unfixed twin.
 
 ## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
 
