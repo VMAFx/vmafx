@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 220" width="1200" height="220" role="img" aria-label="VMAFx — perceptual video quality assessment, accelerated">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1020"/>
+      <stop offset="55%" stop-color="#111a35"/>
+      <stop offset="100%" stop-color="#0a1a2f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="220" rx="14" fill="url(#bg)"/>
+
+  <!-- reference vs distorted: two traces converging, the thing VMAF measures -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M60 150 C 170 96, 250 176, 360 128 S 560 74, 670 126 S 900 168, 1140 108"
+          stroke="url(#wave)" stroke-width="18"/>
+    <path d="M60 150 C 170 96, 250 176, 360 128 S 560 74, 670 126 S 900 168, 1140 108"
+          stroke="url(#accent)" stroke-width="2.5" opacity="0.95"/>
+    <path d="M60 158 C 170 112, 250 184, 360 140 S 560 92, 670 138 S 900 176, 1140 120"
+          stroke="#7dd3fc" stroke-width="1.6" stroke-dasharray="7 9" opacity="0.6"/>
+  </g>
+
+  <!-- sampling ticks -->
+  <g fill="#38bdf8" opacity="0.55">
+    <rect x="360" y="124" width="3" height="3" rx="1.5"/>
+    <rect x="670" y="122" width="3" height="3" rx="1.5"/>
+    <rect x="900" y="150" width="3" height="3" rx="1.5"/>
+  </g>
+
+  <text x="60" y="86" font-family="ui-sans-serif,Segoe UI,Helvetica,Arial,sans-serif"
+        font-size="58" font-weight="700" fill="#f8fafc" letter-spacing="-1">VMAF<tspan fill="url(#accent)">x</tspan></text>
+  <text x="60" y="120" font-family="ui-sans-serif,Segoe UI,Helvetica,Arial,sans-serif"
+        font-size="19" font-weight="500" fill="#94a3b8">Perceptual video quality assessment — GPU-accelerated, SIMD-tuned, numerically exact</text>
+
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" fill="#64748b">
+    <text x="905" y="52">CUDA · SYCL · HIP · Metal</text>
+    <text x="905" y="74">AVX2 · AVX-512 · NEON · SVE2</text>
+  </g>
+</svg>
