@@ -260,6 +260,98 @@ func videotoolbox(name string) *Adapter {
 	}
 }
 
+func libx264Adapter() *Adapter {
+	return &Adapter{
+		Name: "libx264", Encoder: "libx264", QualityKnob: "crf",
+		QualityRange: [2]int{0, 51}, QualityDefault: 23, InvertQuality: true,
+		Presets: swPresets, AdapterVersion: "2",
+		ProbePreset: "ultrafast", ProbeQuality: 28,
+		SupportsQPFile: true, SupportsEncoderStats: true, SupportsTwoPass: true,
+		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
+		presetStyle: PresetFlagValue, presetFlag: "-preset",
+	}
+}
+
+func libx265Adapter() *Adapter {
+	return &Adapter{
+		Name: "libx265", Encoder: "libx265", QualityKnob: "crf",
+		QualityRange: [2]int{15, 40}, QualityDefault: 28, InvertQuality: true,
+		Presets: x265Presets, ProbePreset: "ultrafast", ProbeQuality: 28,
+		SupportsEncoderStats: true, SupportsTwoPass: true,
+		twoPassStyle: TwoPassX265Params,
+		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
+		presetStyle: PresetFlagValue, presetFlag: "-preset",
+	}
+}
+
+func libaomAV1Adapter() *Adapter {
+	return &Adapter{
+		Name: "libaom-av1", Encoder: "libaom-av1", QualityKnob: "crf",
+		QualityRange: [2]int{0, 63}, QualityDefault: 35, InvertQuality: true,
+		Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 35,
+		SupportsQPFile: true, SupportsTwoPass: true,
+		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
+		presetStyle: PresetFlagValue, presetFlag: "-cpu-used", presetMap: aomCPUUsedMap,
+	}
+}
+
+func proResVideoToolboxAdapter() *Adapter {
+	return &Adapter{
+		Name: "prores_videotoolbox", Encoder: "prores_videotoolbox", AdapterVersion: "1",
+		QualityKnob: "profile:v", QualityRange: [2]int{0, 5}, QualityDefault: 3,
+		InvertQuality: false, Presets: swPresets,
+		ProbePreset: "ultrafast", ProbeQuality: 0,
+		qualityStyle: StyleProResProfile, proresProfiles: proresProfileNames,
+		presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
+	}
+}
+
+func av1VideoToolboxAdapter() *Adapter {
+	return &Adapter{
+		Name: "av1_videotoolbox", Encoder: "av1_videotoolbox",
+		AdapterVersion: "0-placeholder", QualityKnob: "q:v",
+		QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
+		Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
+		qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
+		presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
+		unavailable: "av1_videotoolbox awaiting upstream FFmpeg encoder support — see ADR-0339",
+		availableFn: av1VideoToolboxAvailable,
+	}
+}
+
+func libvvencAdapter() *Adapter {
+	return &Adapter{
+		Name: "libvvenc", Encoder: "libvvenc", AdapterVersion: "2", QualityKnob: "qp",
+		QualityRange: [2]int{17, 50}, QualityDefault: 32, InvertQuality: true,
+		Presets: aomPresets, ProbePreset: "faster", ProbeQuality: 32,
+		SupportsTwoPass: true,
+		qualityStyle:    StyleSingleFlag, qualityFlag: "-qp",
+		presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: vvencPresetMap,
+	}
+}
+
+func libsvtAV1Adapter() *Adapter {
+	return &Adapter{
+		Name: "libsvtav1", Encoder: "libsvtav1", QualityKnob: "crf",
+		QualityRange: [2]int{20, 50}, QualityDefault: 35, InvertQuality: true,
+		Presets: svtPresets, ProbePreset: "veryfast", ProbeQuality: 35,
+		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
+		presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: svtPresetMap,
+	}
+}
+
+func libvpxVP9Adapter() *Adapter {
+	return &Adapter{
+		Name: "libvpx-vp9", Encoder: "libvpx-vp9", AdapterVersion: "1", QualityKnob: "crf",
+		QualityRange: [2]int{0, 63}, QualityDefault: 32, InvertQuality: true,
+		Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 32,
+		SupportsTwoPass: true,
+		qualityStyle:    StyleSingleFlag, qualityFlag: "-crf",
+		presetStyle: PresetVPXDeadline, presetMap: vpxCPUUsedMap,
+		qualityTail: []string{"-b:v", "0"}, extraParams: []string{"-row-mt", "1"},
+	}
+}
+
 func init() {
 	registerAdapters(softwareAdapters())
 	registerAdapters(acceleratedAdapters())

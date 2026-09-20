@@ -67,7 +67,8 @@ func (c PipelineConfig) pixFmtOrDefault() string {
 	return c.PixFmt
 }
 
-// vmafModelOrDefault returns the configured model, defaulting to vmaf_v0.6.1.
+// vmafModelOrDefault returns the configured model, defaulting to the
+// repository's production model.
 func (c PipelineConfig) vmafModelOrDefault() string {
 	if c.VMAFModel == "" {
 		return model.DefaultVersion
@@ -567,10 +568,10 @@ func runVMAF(
 	}
 	jsonPath := tmp.Name()
 	if closeErr := tmp.Close(); closeErr != nil {
-		removeFastArtifact(jsonPath, "unclosed score output")
+		removeFastScoreArtifact(jsonPath)
 		return nil, fmt.Errorf("fast: close score temp: %w", closeErr)
 	}
-	defer removeFastArtifact(jsonPath, "score output")
+	defer removeFastScoreArtifact(jsonPath)
 
 	if needsRawDecode(distorted) {
 		decoded := strings.TrimSuffix(distorted, filepath.Ext(distorted)) + ".decoded.yuv"
@@ -581,7 +582,7 @@ func runVMAF(
 		if decodeErr := decodeToRawYUV(ctx, cfg, distorted, decoded, clamp); decodeErr != nil {
 			return nil, fmt.Errorf("fast: decode %q to raw YUV: %w", distorted, decodeErr)
 		}
-		defer removeFastArtifact(decoded, "decoded input")
+		defer removeFastScoreArtifact(decoded)
 		distorted = decoded
 	}
 
@@ -598,8 +599,8 @@ func runVMAF(
 	return raw, nil
 }
 
-func removeFastArtifact(path, description string) {
+func removeFastScoreArtifact(path string) {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		slog.Warn("fast: remove "+description, "error", err, "path", path)
+		slog.Warn("fast: remove score artifact", "error", err, "path", path)
 	}
 }

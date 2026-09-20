@@ -13,20 +13,21 @@ func TestCLIArgument(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name  string
+		model string
+		want  string
 	}{
-		{name: "bare version", in: "vmaf_v0.6.1", want: "version=vmaf_v0.6.1"},
-		{name: "path selector", in: "path=/models/hdr.json", want: "path=/models/hdr.json"},
-		{name: "version selector", in: "version=vmaf_4k_v0.6.1", want: "version=vmaf_4k_v0.6.1"},
-		{name: "empty without default", in: "", want: "version="},
+		{name: "bare version", model: "vmaf_v0.6.1", want: "version=vmaf_v0.6.1"},
+		{name: "path selector", model: "path=/models/custom.json", want: "path=/models/custom.json"},
+		{name: "formatted version", model: "version=vmaf_4k_v0.6.1", want: "version=vmaf_4k_v0.6.1"},
+		{name: "empty remains an empty version selector", model: "", want: "version="},
 	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := model.CLIArgument(tc.in); got != tc.want {
-				t.Fatalf("CLIArgument(%q) = %q, want %q", tc.in, got, tc.want)
+			if got := model.CLIArgument(tc.model); got != tc.want {
+				t.Errorf("CLIArgument(%q) = %q, want %q", tc.model, got, tc.want)
 			}
 		})
 	}
@@ -35,8 +36,22 @@ func TestCLIArgument(t *testing.T) {
 func TestCLIArgumentOrDefault(t *testing.T) {
 	t.Parallel()
 
-	want := "version=" + model.DefaultVersion
-	if got := model.CLIArgumentOrDefault(""); got != want {
-		t.Fatalf("CLIArgumentOrDefault(\"\") = %q, want %q", got, want)
+	tests := []struct {
+		name  string
+		model string
+		want  string
+	}{
+		{name: "empty uses production default", want: "version=" + model.DefaultVersion},
+		{name: "bare version", model: "vmaf_v0.6.1neg", want: "version=vmaf_v0.6.1neg"},
+		{name: "path selector", model: "path=/models/custom.json", want: "path=/models/custom.json"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := model.CLIArgumentOrDefault(tc.model); got != tc.want {
+				t.Errorf("CLIArgumentOrDefault(%q) = %q, want %q", tc.model, got, tc.want)
+			}
+		})
 	}
 }

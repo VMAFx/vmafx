@@ -52465,3 +52465,12 @@ Rules for any resolution that touches this file:
   `pull_request` and `push` to master, because this workflow runs on both. That
   is why `Sanitizers ASan+UBSan` is required but not strict: its `if:` excludes
   `push`.
+## refactor/tuning-domain-dedupe — canonical Go tuning helpers (2026-09-20)
+
+No rebase impact on upstream Netflix/vmaf: every touched Go path under `cmd/`
+and `pkg/` is fork-local, and the change touches no public C API, header, Meson
+option, FFmpeg patch, or Netflix golden assertion. Within the fork,
+`pkg/scorebackend` remains the sole backend vocabulary, probe implementation,
+and selector. `pkg/corpus/backend.go` is compatibility-only; do not regrow
+backend probing there during a branch rebase. Model CLI selector formatting
+similarly belongs in `pkg/model`, not in individual tuning drivers.

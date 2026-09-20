@@ -464,8 +464,8 @@ func TestRunScore(t *testing.T) {
 		t.Parallel()
 		req := ScoreRequest{Reference: "a", Distorted: "b", Width: 8, Height: 8,
 			PixFmt: "yuv420p", Model: Model1080P}
-		stub := func(context.Context, []string) RunResult { return RunResult{} }
-		got := RunScore(context.Background(), req, "vmaf", stub, t.TempDir(), "")
+		got := RunScore(context.Background(), req, "vmaf",
+			func(context.Context, []string) RunResult { return RunResult{} }, t.TempDir(), "")
 		if got.ExitStatus != 65 {
 			t.Errorf("ExitStatus = %d, want 65 for missing JSON", got.ExitStatus)
 		}
