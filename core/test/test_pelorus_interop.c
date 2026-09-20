@@ -18,7 +18,8 @@
 
 /*
  * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
- * conformance fixture (VMAFx/pelorus@818d844 test/interop_test.c, ABI 1.3).
+ * conformance fixture (VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16
+ * test/interop_test.c, ABI 1.3).
  *
  * Both repos run byte-for-byte the same checks against their own copy of
  * interop.c. A green run here proves vmafx's vendored parser (ADR-1113) is
@@ -40,18 +41,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 static int g_fail;
 
 #define CHECK(cond)                                                                                \
     do {                                                                                           \
         if (!(cond)) {                                                                             \
-            (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
+            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                        \
             g_fail++;                                                                              \
         }                                                                                          \
     } while (0)
@@ -658,6 +653,91 @@ static void test_deband_params(void)
     CHECK(what != NULL && strcmp(what, "range") == 0);
 }
 
+/* Issue #44: the parser must not assume the caller's blob base is 8-byte
+ * aligned. Before the memcpy-based parse this produced 26 -fsanitize=alignment
+ * diagnostics and is genuine UB on strict-alignment targets. The section
+ * pointer handed back is still only castable when the BASE was aligned, so the
+ * check here reads the payload through memcpy, exactly as a careful consumer
+ * (and vmafx's perceptual_weight.c) does. */
+static void test_misaligned_blob_base(void)
+{
+    PelorusSideData meta;
+    PelorusFilmGrainSection grain; /* u64 at offset 0 -> alignment matters */
+    PelorusFilmGrainSection got_grain;
+    PelorusPackSection sec;
+    uint8_t *blob = NULL;
+    uint8_t *raw = NULL;
+    uint8_t *skewed = NULL;
+    size_t len = 0;
+    const void *p = NULL;
+    size_t got = 0;
+    size_t skew;
+
+    fill_meta(&meta);
+    memset(&grain, 0, sizeof(grain));
+    grain.seed = 0xDEADBEEFCAFEULL;
+    sec.id = PEL_SEC_FILMGRAIN;
+    sec.data = &grain;
+    sec.size = (uint32_t)sizeof(grain);
+    CHECK(pel_blob_pack(&meta, &sec, 1, &blob, &len) == PEL_OK);
+
+    /* Re-home the blob at every misalignment in one 8-byte period. */
+    raw = (uint8_t *)malloc(len + 8u);
+    CHECK(raw != NULL);
+    if (raw == NULL) {
+        pel_blob_free(blob);
+        return;
+    }
+    for (skew = 1u; skew < 8u; skew++) {
+        skewed = raw + skew;
+        memcpy(skewed, blob, len);
+
+        CHECK(pel_blob_is_present(skewed, len) == 1);
+
+        p = NULL;
+        got = 0;
+        CHECK(pel_blob_find_section(skewed, len, PEL_SEC_FILMGRAIN, sizeof(PelorusFilmGrainSection),
+                                    &p, &got) == PEL_OK);
+        CHECK(p != NULL && got == sizeof(PelorusFilmGrainSection));
+        if (p != NULL && got == sizeof(got_grain)) {
+            memcpy(&got_grain, p, sizeof(got_grain));
+            CHECK(got_grain.seed == 0xDEADBEEFCAFEULL);
+        }
+    }
+
+    free(raw);
+    pel_blob_free(blob);
+}
+
+/* A header_size that is not a multiple of 8 would put dir[] on a misaligned
+ * start. That is corrupt framing from an untrusted producer, not a short
+ * buffer, so it must be rejected rather than walked. */
+static void test_unaligned_header_size(void)
+{
+    PelorusSideData meta;
+    PelorusFilmGrainSection grain;
+    PelorusPackSection sec;
+    uint8_t *blob = NULL;
+    size_t len = 0;
+    const void *p = NULL;
+    size_t got = 0;
+    PelorusSideData *hdr;
+
+    fill_meta(&meta);
+    memset(&grain, 0, sizeof(grain));
+    sec.id = PEL_SEC_FILMGRAIN;
+    sec.data = &grain;
+    sec.size = (uint32_t)sizeof(grain);
+    CHECK(pel_blob_pack(&meta, &sec, 1, &blob, &len) == PEL_OK);
+
+    hdr = (PelorusSideData *)(void *)(blob + PELORUS_SIDEDATA_UUID_LEN);
+    hdr->header_size = (uint16_t)(hdr->header_size + 4u);
+    CHECK(pel_blob_find_section(blob, len, PEL_SEC_FILMGRAIN, sizeof(PelorusFilmGrainSection), &p,
+                                &got) == PEL_ERR_ABI);
+
+    pel_blob_free(blob);
+}
+
 int main(void)
 {
     test_roundtrip();
@@ -667,6 +747,8 @@ int main(void)
     test_header_only();
     test_truncation();
     test_misaligned_offset();
+    test_misaligned_blob_base();
+    test_unaligned_header_size();
     test_pack_size_overflow();
     test_qp_report_roundtrip();
     test_motion_conf_roundtrip();
@@ -676,12 +758,10 @@ int main(void)
     test_deband_params();
 
     if (g_fail != 0) {
-        (void)fprintf(stderr, "%d check(s) failed\n", g_fail);
+        fprintf(stderr, "%d check(s) failed\n", g_fail);
         return EXIT_FAILURE;
     }
-    (void)printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n",
-                 pelorus_version_string(), PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
+    printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n", pelorus_version_string(),
+           PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
     return EXIT_SUCCESS;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */
