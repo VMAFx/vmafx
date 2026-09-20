@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Local sidecar training
 
 > **Status**: shipped local surface — public API, persistence layout,
@@ -49,7 +48,7 @@ The sidecar is trained from your own encodes. Each capture is a
 4-tuple:
 
 | Field | Source | Persisted? |
-|---|---|---|
+| --- | --- | --- |
 | `features` ([`ShotFeatures`](../../tools/vmaf-tune/src/vmaftune/predictor.py)) | Probe encode + signalstats. Already produced by `vmaftune.predictor_features`. | Yes (in the rolling history ring buffer). |
 | `crf` (int) | The CRF the encoder ran at. | Yes. |
 | `predicted_vmaf` (float) | `Predictor.predict_vmaf(features, crf, codec)`. | Yes (in the residual). |
@@ -97,7 +96,7 @@ The sidecar model is validated by contract tests under
 [`tools/vmaf-tune/tests/test_sidecar.py`](../../tools/vmaf-tune/tests/test_sidecar.py):
 
 | Test | Pin |
-|---|---|
+| --- | --- |
 | `test_cold_start_passes_through` | An empty sidecar adds zero correction → `SidecarPredictor` is bit-equivalent to the bare `Predictor` until the first capture lands. |
 | `test_update_then_predict_reduces_residual` | After 40 captures with a constant +5 VMAF bias, the sidecar's prediction is closer to observed than the bare predictor's by at least 50 % of the bias. |
 | `test_save_load_round_trip` | Train → save → load preserves weights, ``A_inv``, history, and ``n_updates`` exactly; the round-tripped predictor returns the same prediction within 1e-9 VMAF. |
@@ -115,7 +114,7 @@ The CLI surface is validated by
 [`tools/vmaf-tune/tests/test_cli_sidecar.py`](../../tools/vmaf-tune/tests/test_cli_sidecar.py):
 
 | Test | Pin |
-|---|---|
+| --- | --- |
 | `test_sidecar_subparser_is_registered` | `vmaf-tune sidecar` remains a top-level subcommand. |
 | `test_sidecar_help_lists_operator_commands` | Help exposes `status`, `predict`, `record`, and `batch-record`. |
 | `test_sidecar_status_json_uses_requested_cache` | `--cache-dir` is honoured and host UUID creation stays local. |

@@ -105,11 +105,11 @@ static int neg_opts_build(VmafFeatureDictionary **opts)
 static char *run_cpu_float_vif(bool neg_opts, const char *key, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (neg_opts) {
         err = neg_opts_build(&opts);
         mu_assert("CPU: neg_opts_build failed", !err);
@@ -121,84 +121,66 @@ static char *run_cpu_float_vif(bool neg_opts, const char *key, double *score)
 
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
     mu_assert("CPU: vif_scale0 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): the -ENOSYS scaffold skip contract
- * has to be checked after each of the four HIP entry points, which is what
- * makes this longer than the CPU leg. Mirrors test_hip_float_psnr_parity.c. */
+static char *skip_hip_scaffold(VmafContext *vmaf, VmafHipState **hip_state, int *skipped,
+                               const char *stage)
+{
+    (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS%s] ", stage);
+    *skipped = 1;
+    (void)vmaf_close(vmaf);
+    vmaf_hip_state_free(hip_state);
+    return VMAF_NULLPTR;
+}
+
 static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, int *skipped)
 {
     *score = NAN;
     *skipped = 0;
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     VmafHipConfiguration hip_cfg = {.device_index = -1};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    if (err != 0 || hip_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (neg_opts) {
         err = neg_opts_build(&opts);
         mu_assert("HIP: neg_opts_build failed", !err);
     }
     err = vmaf_use_feature(vmaf, "float_vif_hip", opts);
     if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
-        *skipped = 1;
         (void)vmaf_feature_dictionary_free(&opts);
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return skip_hip_scaffold(vmaf, &hip_state, skipped, "");
     }
     if (err)
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("HIP: vmaf_use_feature(float_vif_hip) failed", !err);
 
     err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on feed] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return skip_hip_scaffold(vmaf, &hip_state, skipped, " on feed");
     mu_assert("HIP: feed_frame failed", !err);
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on EOS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
+    if (err == -ENOSYS)
+        return skip_hip_scaffold(vmaf, &hip_state, skipped, " on EOS");
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
@@ -206,15 +188,15 @@ static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, in
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_hip_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif_hip");
-    mu_assert("float_vif_hip extractor must be registered", fex != NULL);
+    mu_assert("float_vif_hip extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_vif_hip name matches", !strcmp(fex->name, "float_vif_hip"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Compare one CPU/HIP pair; `label` names the option set in the failure line. */
@@ -231,7 +213,7 @@ static char *assert_parity(bool neg_opts, const char *key, const char *label)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU float_vif score is non-finite", isfinite(cpu));
     mu_assert("HIP float_vif score is non-finite", isfinite(gpu));
@@ -242,7 +224,7 @@ static char *assert_parity(bool neg_opts, const char *key, const char *label)
                       label, cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("float_vif CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_cpu_hip_parity(void)
@@ -265,5 +247,5 @@ char *run_tests(void)
     mu_run_test(test_float_vif_hip_registered);
     mu_run_test(test_float_vif_cpu_hip_parity);
     mu_run_test(test_float_vif_options_reach_kernel);
-    return NULL;
+    return VMAF_NULLPTR;
 }

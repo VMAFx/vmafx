@@ -992,7 +992,7 @@ const char *vmaf_ort_attached_ep(const VmafOrtSession *sess)
     return sess->ep_name;
 }
 
-int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
+int vmaf_ort_io_count(const VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
 {
     if (!sess || !n_inputs || !n_outputs)
         return -EINVAL;
@@ -1001,7 +1001,7 @@ int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
     return 0;
 }
 
-const char *vmaf_ort_output_name_at(VmafOrtSession *sess, size_t slot)
+const char *vmaf_ort_output_name_at(const VmafOrtSession *sess, size_t slot)
 {
     if (!sess)
         return NULL;
@@ -1257,7 +1257,7 @@ int vmaf_ort_input_shape_at(VmafOrtSession *sess, size_t slot, int64_t *out_shap
     return -ENOSYS;
 }
 
-int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
+int vmaf_ort_io_count(const VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
 {
     (void)sess;
     (void)n_inputs;
@@ -1265,7 +1265,7 @@ int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
     return -ENOSYS;
 }
 
-const char *vmaf_ort_output_name_at(VmafOrtSession *sess, size_t slot)
+const char *vmaf_ort_output_name_at(const VmafOrtSession *sess, size_t slot)
 {
     (void)sess;
     (void)slot;

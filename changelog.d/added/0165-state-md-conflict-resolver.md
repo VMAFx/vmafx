@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **`scripts/dev/resolve-state-md-conflict.py`** — resolves a `docs/state.md`
   rebase conflict the way ADR-0165 requires, instead of by hand. `state.md` is
   deliberately excluded from the `merge=union` list in `.gitattributes` because

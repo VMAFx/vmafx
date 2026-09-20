@@ -19,14 +19,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from vmaftune import CORPUS_ROW_KEYS
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
-if str(_VMAFTUNE_SRC) not in sys.path:
-    sys.path.insert(0, str(_VMAFTUNE_SRC))
-
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
-
 _MERGE_PATH = _REPO_ROOT / "ai" / "scripts" / "merge_corpora.py"
 
 
@@ -34,6 +29,7 @@ def _load_merge_module():
     spec = importlib.util.spec_from_file_location("merge_corpora", _MERGE_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 

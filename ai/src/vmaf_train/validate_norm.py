@@ -77,7 +77,7 @@ def _load_features(path: Path, columns: list[str]) -> tuple[np.ndarray, list[str
     cols = [c for c in columns if c in df.columns]
     if not cols:
         raise ValueError(
-            f"{path} has none of the expected feature columns; " f"available: {list(df.columns)}"
+            f"{path} has none of the expected feature columns; available: {list(df.columns)}"
         )
     return df[cols].to_numpy(dtype=np.float64), cols
 

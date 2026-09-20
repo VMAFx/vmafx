@@ -48,20 +48,16 @@ __device__ __forceinline__ float fpsnr_warp_reduce(float v)
     return v;
 }
 
-extern "C" {
-
 /**
  * 8-bpc kernel: ref/dis are uint8_t arrays (row-major, ref_stride bytes
  * per row). Computes per-pixel (ref - dis)^2 in float and accumulates one
  * partial sum per block into `partials[block_idx]`.
  */
-__global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
-                                       const uint8_t *__restrict__ dis,
-                                       ptrdiff_t ref_stride,
-                                       ptrdiff_t dis_stride,
-                                       float *__restrict__ partials,
-                                       unsigned width,
-                                       unsigned height)
+extern "C" __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
+                                                  const uint8_t *__restrict__ dis,
+                                                  ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                                  float *__restrict__ partials, unsigned width,
+                                                  unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -78,8 +74,8 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
     /* Warp-level reduction. */
     __shared__ float s_warps[FPSNR_WARPS_PER_BLOCK];
     const float w = fpsnr_warp_reduce(my_noise);
-    const unsigned ws      = (unsigned)warpSize;
-    const unsigned lane    = lid % ws;
+    const unsigned ws = (unsigned)warpSize;
+    const unsigned lane = lid % ws;
     const unsigned warp_id = lid / ws;
     if (lane == 0)
         s_warps[warp_id] = w;
@@ -102,14 +98,11 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
  * uint16 value is divided by `scaler` to convert to the [0,255]
  * float range that the CUDA twin uses.
  */
-__global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
-                                        const uint8_t *__restrict__ dis,
-                                        ptrdiff_t ref_stride,
-                                        ptrdiff_t dis_stride,
-                                        float *__restrict__ partials,
-                                        unsigned width,
-                                        unsigned height,
-                                        unsigned bpc)
+extern "C" __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
+                                                   const uint8_t *__restrict__ dis,
+                                                   ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                                   float *__restrict__ partials, unsigned width,
+                                                   unsigned height, unsigned bpc)
 {
     float scaler = 1.0f;
     if (bpc == 10u)
@@ -128,10 +121,8 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
     if (x < (int)width && y < (int)height) {
         /* ref/dis are byte-addressed; cast the row pointer to uint16_t*
          * for each pixel access (matches the CUDA twin's pattern). */
-        const uint16_t rv =
-            reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
-        const uint16_t dv =
-            reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
+        const uint16_t rv = reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
+        const uint16_t dv = reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
         const float r = (float)rv * inv_scaler;
         const float d = (float)dv * inv_scaler;
         const float diff = r - d;
@@ -140,8 +131,8 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
 
     __shared__ float s_warps[FPSNR_WARPS_PER_BLOCK];
     const float w = fpsnr_warp_reduce(my_noise);
-    const unsigned ws      = (unsigned)warpSize;
-    const unsigned lane    = lid % ws;
+    const unsigned ws = (unsigned)warpSize;
+    const unsigned lane = lid % ws;
     const unsigned warp_id = lid / ws;
     if (lane == 0)
         s_warps[warp_id] = w;
@@ -156,5 +147,3 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
         partials[block_idx] = total;
     }
 }
-
-} /* extern "C" */

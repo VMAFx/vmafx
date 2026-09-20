@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1102](1102-phase4b9-container-only-publishing.md) | Container-only canonical artifact publishing (Phase 4b.9) | Accepted | container, build, release, publish, phase4b, docs-policy, fork-local |

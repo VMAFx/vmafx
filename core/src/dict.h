@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_DICT_H__
-#define __VMAF_SRC_DICT_H__
+#ifndef VMAF_SRC_DICT_H_
+#define VMAF_SRC_DICT_H_
 
 #include <stdint.h>
 
@@ -26,9 +26,12 @@ extern "C" {
 #endif
 
 /** @brief A single key/value pair stored in a VmafDictionary. */
-typedef struct VmafDictionaryEntry {
+struct VmafDictionaryEntry {
     const char *key, *val;
-} VmafDictionaryEntry;
+};
+#ifndef __cplusplus
+typedef struct VmafDictionaryEntry VmafDictionaryEntry;
+#endif
 
 /**
  * @brief Simple string-keyed dictionary used to pass feature options.
@@ -36,10 +39,13 @@ typedef struct VmafDictionaryEntry {
  * Internally a flat, heap-allocated array of VmafDictionaryEntry.  Callers
  * pass a pointer-to-pointer so functions can allocate the dict on first use.
  */
-typedef struct VmafDictionary {
+struct VmafDictionary {
     VmafDictionaryEntry *entry;
     unsigned size, cnt;
-} VmafDictionary;
+};
+#ifndef __cplusplus
+typedef struct VmafDictionary VmafDictionary;
+#endif
 
 /**
  * @brief Flags that control dictionary mutation behaviour.
@@ -49,7 +55,11 @@ typedef struct VmafDictionary {
  * @var VMAF_DICT_NORMALIZE_NUMERICAL_VALUES
  *   Canonicalise numeric string values (strip trailing zeros, etc.).
  */
+#ifdef __cplusplus
+enum VmafDictionaryFlags : uint8_t {
+#else
 enum VmafDictionaryFlags {
+#endif
     VMAF_DICT_DO_NOT_OVERWRITE = 1 << 0,
     VMAF_DICT_NORMALIZE_NUMERICAL_VALUES = 1 << 1,
 };
@@ -104,7 +114,7 @@ VmafDictionary *vmaf_dictionary_merge(VmafDictionary **dict_a, VmafDictionary **
  * @param dict_b  Second dictionary.
  * @return 0 if equal, non-zero otherwise.
  */
-int vmaf_dictionary_compare(VmafDictionary *dict_a, VmafDictionary *dict_b);
+int vmaf_dictionary_compare(const VmafDictionary *dict_a, const VmafDictionary *dict_b);
 
 /**
  * @brief Sort @p dict entries in ascending alphabetical key order (in-place).
@@ -125,4 +135,4 @@ int vmaf_dictionary_free(VmafDictionary **dict);
 }
 #endif
 
-#endif /* __VMAF_SRC_DICT_H__ */
+#endif /* VMAF_SRC_DICT_H_ */

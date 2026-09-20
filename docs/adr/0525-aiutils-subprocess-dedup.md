@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0525: Extract `run_cmd` subprocess helper into `aiutils`
 
 - **Status**: Accepted
@@ -38,7 +37,7 @@ return semantics are caller-specific — but its body delegates to `run_cmd`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep inline (status quo) | Zero risk | LOC grows with each new script; pattern diverges over time | Defeats the aiutils consolidation strategy started in earlier PRs |
 | Fully replace `run_one` | More LOC removed | `run_one`'s `(returncode, str)` return type is call-site contract; callers would need updating | Out of scope for a pure-dedup PR; `run_one` stays as a thin wrapper |
 

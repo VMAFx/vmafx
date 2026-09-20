@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research — cargo-machete unused-dependency audit (2026-05-30)
 
 ## Question
@@ -30,7 +29,7 @@ removal?
 The Rust workspace has two member crates:
 
 | Crate | Path | Purpose | Deps |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `vmafx-sys` | `bindings/rust/vmafx-sys/` | Raw FFI bindings to `libvmaf.so` (ADR-0702) | `bindgen` (build-dep) |
 | `vmafx-tad` | `core/src/feature/rust/tad/` | TAD extractor pilot, C header via cbindgen (ADR-0707) | `cbindgen` (build-dep) |
 

@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 import urllib.error
 import warnings
+from pathlib import Path
 from unittest import mock
 
 import numpy as np
@@ -42,6 +42,9 @@ from vmaf.tools.interpolation_utils import InterpolationUtils
 from vmaf.tools.stats import ListStats
 from vmaf.tools.typing_utils import RdPoint
 from vmaf.tools.writer import YuvWriter
+
+GRAY_PIXEL = 7
+MAX_INTERPOLATED_RATE = 4.0
 
 __copyright__ = "Copyright 2026 Lusoris"
 __license__ = "EUPL-1.2"
@@ -134,7 +137,7 @@ class ConvexHullTest(unittest.TestCase):
             RdPoint(rate=2.0, metric=20.0),
         ]
         bad = RdPoint(rate=1.5, metric=5.0)  # higher rate than (1,10), lower metric
-        hull = calculate_convex_hull(good + [bad])
+        hull = calculate_convex_hull([*good, bad])
         # All survivors must still be monotonic.
         self.assertNotIn(bad, hull)
 
@@ -207,7 +210,7 @@ class YuvWriterTest(unittest.TestCase):
             v = np.ones((2, 2), dtype=np.uint8) * 200
             with YuvWriter(path, width=4, height=4, yuv_type="yuv420p") as w:
                 w.next(y, u, v, format="uint")
-            with open(path, "rb") as fh:
+            with Path(path).open("rb") as fh:
                 data = fh.read()
             # 4*4 (Y) + 2*2 (U) + 2*2 (V) = 24 bytes
             self.assertEqual(len(data), 24)
@@ -215,22 +218,22 @@ class YuvWriterTest(unittest.TestCase):
             self.assertEqual(data[16], 50)
             self.assertEqual(data[20], 200)
         finally:
-            os.remove(path)
+            Path(path).unlink()
 
     def test_gray_8bit_no_chroma(self):
         # gray: U/V multipliers are 0; caller must pass None.
         with tempfile.NamedTemporaryFile(suffix=".yuv", delete=False) as tmp:
             path = tmp.name
         try:
-            y = np.full((4, 4), 7, dtype=np.uint8)
+            y = np.full((4, 4), GRAY_PIXEL, dtype=np.uint8)
             with YuvWriter(path, width=4, height=4, yuv_type="gray") as w:
                 w.next(y, None, None, format="uint")
-            with open(path, "rb") as fh:
+            with Path(path).open("rb") as fh:
                 data = fh.read()
             self.assertEqual(len(data), 16)
-            self.assertTrue(all(b == 7 for b in data))
+            self.assertTrue(all(b == GRAY_PIXEL for b in data))
         finally:
-            os.remove(path)
+            Path(path).unlink()
 
     def test_yuv420p10le_float2uint(self):
         # float2uint mode: inputs in [0, 1], scaled to uint16 with (2^10-1).
@@ -242,12 +245,12 @@ class YuvWriterTest(unittest.TestCase):
             v = np.full((2, 2), 0.0, dtype=np.float64)
             with YuvWriter(path, width=4, height=4, yuv_type="yuv420p10le") as w:
                 w.next(y, u, v, format="float2uint")
-            with open(path, "rb") as fh:
+            with Path(path).open("rb") as fh:
                 data = fh.read()
             # 4*4*2 (Y) + 2*2*2 (U) + 2*2*2 (V) = 48 bytes
             self.assertEqual(len(data), 48)
         finally:
-            os.remove(path)
+            Path(path).unlink()
 
     def test_format_assert_rejects_bad_mode(self):
         with tempfile.NamedTemporaryFile(suffix=".yuv", delete=False) as tmp:
@@ -260,7 +263,7 @@ class YuvWriterTest(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     w.next(y, u, v, format="bogus")
         finally:
-            os.remove(path)
+            Path(path).unlink()
 
 
 class InterpolationUtilsTest(unittest.TestCase):
@@ -304,7 +307,7 @@ class InterpolationUtilsTest(unittest.TestCase):
         out = InterpolationUtils.interpolateRateFromMetric(rd, [30.0, 35.0, 38.0, 40.0])
         # Interpolated rate at the original distortion values must lie within
         # [min_rate, max_rate] — the function clamps to the segment bounds.
-        self.assertTrue(all(1.0 <= r <= 4.0 for r in out))
+        self.assertTrue(all(1.0 <= r <= MAX_INTERPOLATED_RATE for r in out))
 
 
 class DecoratorTest(unittest.TestCase):
@@ -373,7 +376,7 @@ class DecoratorTest(unittest.TestCase):
 
         with self.assertRaises(AssertionError):
 
-            class Sub(Base):  # noqa: F841
+            class Sub(Base):
                 @override(Base)
                 def method_does_not_exist(self): ...
 
@@ -393,11 +396,11 @@ class ConfigTest(unittest.TestCase):
 
     def test_vmafconfig_workspace_path_joins(self):
         result = VmafConfig.workspace_path("sub", "leaf.txt")
-        self.assertTrue(result.endswith(os.path.join("sub", "leaf.txt")))
+        self.assertTrue(result.endswith(str(Path("sub") / "leaf.txt")))
 
     def test_vmafconfig_resource_path_joins(self):
         result = VmafConfig.resource_path("ex", "leaf.json")
-        self.assertTrue(result.endswith(os.path.join("ex", "leaf.json")))
+        self.assertTrue(result.endswith(str(Path("ex") / "leaf.json")))
 
     def test_vmafconfig_file_result_store_path(self):
         result = VmafConfig.file_result_store_path("foo")
@@ -423,30 +426,30 @@ class ConfigTest(unittest.TestCase):
         # bypass_download=True must not hit the network; result is just the
         # joined local path.
         result = VmafConfig.test_resource_path("yuv", "x.yuv", bypass_download=True)
-        self.assertTrue(result.endswith(os.path.join("yuv", "x.yuv")))
+        self.assertTrue(result.endswith(str(Path("yuv") / "x.yuv")))
 
     def test_vmafconfig_tools_resource_path(self):
         result = VmafConfig.tools_resource_path("foo.bin")
-        self.assertTrue(result.endswith(os.path.join("tools", "resource", "foo.bin")))
+        self.assertTrue(result.endswith(str(Path("tools") / "resource" / "foo.bin")))
         # Regression (R3-20): the path must point at the relocated
         # compat/python-vmaf/ tree (ADR-0700), not the stale python/vmaf/
         # prefix. Assert a real shipped resource resolves to an existing file —
         # the old endswith()-only check passed even with the wrong prefix.
-        self.assertNotIn(os.path.join("python", "vmaf", "tools"), result)
+        self.assertNotIn(str(Path("python") / "vmaf" / "tools"), result)
         hm = VmafConfig.tools_resource_path("Hanley_McNeil.mat")
         self.assertTrue(
-            os.path.isfile(hm),
+            Path(hm).is_file(),
             "tools_resource_path must resolve to the relocated resource tree; "
             "Hanley_McNeil.mat not found at %s" % hm,
         )
 
     def test_vmafconfig_model_path(self):
         result = VmafConfig.model_path("vmaf_v0.6.1.json")
-        self.assertTrue(result.endswith(os.path.join("model", "vmaf_v0.6.1.json")))
+        self.assertTrue(result.endswith(str(Path("model") / "vmaf_v0.6.1.json")))
 
     def test_vmafconfig_root_path(self):
         result = VmafConfig.root_path("README.md")
-        self.assertTrue(os.path.isabs(result))
+        self.assertTrue(Path(result).is_absolute())
         self.assertTrue(result.endswith("README.md"))
 
     def test_download_reactively_skips_if_local_exists(self):
@@ -458,50 +461,56 @@ class ConfigTest(unittest.TestCase):
                 download_reactively(path, "https://example.invalid/x")
             ret.assert_not_called()
         finally:
-            os.remove(path)
+            Path(path).unlink()
 
     def test_download_reactively_happy_path(self):
         # Stub urlretrieve so we don't hit the network; just write a byte.
         with tempfile.TemporaryDirectory() as tmpdir:
-            target = os.path.join(tmpdir, "subdir", "downloaded.bin")
+            target = Path(tmpdir) / "subdir" / "downloaded.bin"
 
             def fake_urlretrieve(url, tmp_path):
-                with open(tmp_path, "wb") as fh:
+                with Path(tmp_path).open("wb") as fh:
                     fh.write(b"ok")
 
             with mock.patch.object(
                 vmaf_config.urllib.request, "urlretrieve", side_effect=fake_urlretrieve
             ):
-                download_reactively(target, "https://example.invalid/x")
-            self.assertTrue(os.path.exists(target))
-            with open(target, "rb") as fh:
+                download_reactively(target, "https://github.com/example/x")
+            self.assertTrue(target.exists())
+            with target.open("rb") as fh:
                 self.assertEqual(fh.read(), b"ok")
 
     def test_download_reactively_cleans_up_partial_on_failure(self):
         # urlretrieve raises -> partial tempfile must be removed.
         with tempfile.TemporaryDirectory() as tmpdir:
-            target = os.path.join(tmpdir, "fail.bin")
+            target = Path(tmpdir) / "fail.bin"
             with mock.patch.object(
                 vmaf_config.urllib.request,
                 "urlretrieve",
                 side_effect=RuntimeError("network down"),
             ):
                 with self.assertRaises(RuntimeError):
-                    download_reactively(target, "https://example.invalid/x")
+                    download_reactively(target, "https://github.com/example/x")
             # No stray .part files left behind.
-            leftovers = [n for n in os.listdir(tmpdir) if n.endswith(".part") or "fail.bin." in n]
+            leftovers = [
+                path.name
+                for path in Path(tmpdir).iterdir()
+                if path.name.endswith(".part") or "fail.bin." in path.name
+            ]
             self.assertEqual(leftovers, [])
-            self.assertFalse(os.path.exists(target))
+            self.assertFalse(target.exists())
 
     def test_download_reactively_propagates_http_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            target = os.path.join(tmpdir, "404.bin")
-            err = urllib.error.HTTPError(
-                "https://example.invalid/x", 404, "Not Found", hdrs=None, fp=None
-            )
-            with mock.patch.object(vmaf_config.urllib.request, "urlretrieve", side_effect=err):
-                with self.assertRaises(urllib.error.HTTPError):
-                    download_reactively(target, "https://example.invalid/x")
+            target = Path(tmpdir) / "404.bin"
+            remote_url = "https://github.com/example/x"
+            err = urllib.error.HTTPError(remote_url, 404, "Not Found", hdrs=None, fp=None)
+            try:
+                with mock.patch.object(vmaf_config.urllib.request, "urlretrieve", side_effect=err):
+                    with self.assertRaises(urllib.error.HTTPError):
+                        download_reactively(target, remote_url)
+            finally:
+                err.close()
 
     def test_external_config_path_lookups_return_none_without_externals(self):
         # On a clean checkout with no externals.py, every external lookup

@@ -25,12 +25,11 @@ __device__ __forceinline__ float fpsnr_warp_reduce(float v)
     return v;
 }
 
-extern "C" {
-
-__global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
-                                       const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
-                                       ptrdiff_t dis_stride, VmafCudaBuffer partials,
-                                       unsigned width, unsigned height)
+extern "C" __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
+                                                  const uint8_t *__restrict__ dis,
+                                                  ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                                  VmafCudaBuffer partials, unsigned width,
+                                                  unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -61,10 +60,11 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
     }
 }
 
-__global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
-                                        const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
-                                        ptrdiff_t dis_stride, VmafCudaBuffer partials,
-                                        unsigned width, unsigned height, unsigned bpc)
+extern "C" __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
+                                                   const uint8_t *__restrict__ dis,
+                                                   ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                                   VmafCudaBuffer partials, unsigned width,
+                                                   unsigned height, unsigned bpc)
 {
     float scaler = 1.0f;
     if (bpc == 10)
@@ -105,5 +105,3 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
         reinterpret_cast<float *>(partials.data)[block_idx] = total;
     }
 }
-
-} /* extern "C" */

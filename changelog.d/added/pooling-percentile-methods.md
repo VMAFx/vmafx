@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Percentile pooling reaches the Go bindings, the CLI docs and the GPU FFmpeg
   filters.** The C API gained `VMAF_POOL_METHOD_MEDIAN` / `_PERC5` / `_PERC10` /
   `_PERC20` separately (see the `percentile-pooling-methods` entry); this wires

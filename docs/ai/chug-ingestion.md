@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # CHUG UGC-HDR ingestion
 
 `ai/scripts/chug_to_corpus_jsonl.py` ingests the CHUG UGC-HDR dataset
@@ -63,7 +62,7 @@ The common MOS-corpus fields match [mos-corpora.md](mos-corpora.md):
 CHUG-specific fields are also preserved:
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `mos_raw_0_100` | Source `mos_j` value from CHUG's 0-100 MOS axis. |
 | `chug_video_id` | Hashed video ID used in the S3 URL. |
 | `chug_ref` | Reference flag from the CHUG CSV. |

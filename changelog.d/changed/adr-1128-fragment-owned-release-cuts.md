@@ -1,1 +1,5 @@
-- Make changelog fragments the sole release-note source and add a validated, idempotent release rollover that consumes active sources into one versioned section with an audit receipt.
+# Changelog fragment
+
+- Make changelog fragments the sole release-note source and add a validated,
+  idempotent release rollover that consumes active sources into one versioned
+  section with an audit receipt.

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **The cppcheck model test passes on the cppcheck CI actually installs.** Its
   public-roots case asserted a non-zero exit code when an unlisted unused
   function is reported. cppcheck 2.21 propagates a whole-program

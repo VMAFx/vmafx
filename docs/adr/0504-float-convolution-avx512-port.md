@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0504: AVX-512F port of float separable convolution scanlines
 
 - **Status**: Accepted
@@ -50,7 +49,7 @@ The invariants from ADR-0143 are preserved in the new file:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep AVX2 only | No code addition | Leaves 40-50 % of float VIF cycles on the table on AVX-512 CPUs | Performance goal not met |
 | Highway / simde abstraction library | Single source for all widths | Adds a dependency; diverges from fork's "intrinsics by hand" pattern (MEMORY.md) | Not the fork's SIMD style |
 | Dual-issue two AVX2 vectors per iteration | Avoids a new file | Does not reduce instruction count; throughput gain marginal vs AVX-512 | Less clean than a proper 512-bit port |

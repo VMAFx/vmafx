@@ -1,3 +1,5 @@
+# Changelog fragment
+
 **Fixed**: `test_sycl_motion_add_uv_parity` SIGSEGV on Intel Arc A380 — two root
 causes resolved (ADR-1099):
 

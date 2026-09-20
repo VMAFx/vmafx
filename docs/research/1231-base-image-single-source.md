@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 -->
+# Research 1231: base image single source
 
-# Research digest — base-image single source, and what the oneAPI 2026 move actually requires
+**Topic:** base-image single source, and what the oneAPI 2026 move actually
+requires
 
 Supports [ADR-1231](../adr/1231-base-image-single-source.md). Everything below
 was measured on 2026-09-07, not recalled.
@@ -10,12 +11,12 @@ was measured on 2026-09-07, not recalled.
 `git grep` for `FROM` across the tree found 25 pinned bases across 10
 Dockerfiles, resolving to 10 distinct images. Concretely stale:
 
-| Where | Pinned | Rest of tree |
-| --- | --- | --- |
-| `Dockerfile.controller:36`, `Dockerfile.operator:48` | `golang:1.27-bookworm` (Debian 12) | `golang:1.27-trixie` (Debian 13) |
-| `Dockerfile.controller:108` | `distroless/cc-debian12` | `distroless/cc-debian13:nonroot` |
-| `Dockerfile.operator:80` | `distroless/static-debian12` | `distroless/static-debian13:nonroot` |
-| `Dockerfile.production-gpu:82,278` | `nvidia/cuda:13.3.1-*-ubuntu24.04` | `…-ubuntu26.04` in the root `Dockerfile` |
+| Where                                                | Pinned                             | Rest of tree                             |
+| ---------------------------------------------------- | ---------------------------------- | ---------------------------------------- |
+| `Dockerfile.controller:36`, `Dockerfile.operator:48` | `golang:1.27-bookworm` (Debian 12) | `golang:1.27-trixie` (Debian 13)         |
+| `Dockerfile.controller:108`                          | `distroless/cc-debian12`           | `distroless/cc-debian13:nonroot`         |
+| `Dockerfile.operator:80`                             | `distroless/static-debian12`       | `distroless/static-debian13:nonroot`     |
+| `Dockerfile.production-gpu:82,278`                   | `nvidia/cuda:13.3.1-*-ubuntu24.04` | `…-ubuntu26.04` in the root `Dockerfile` |
 
 Both `Dockerfile.controller` and `Dockerfile.operator` also quoted a golang
 digest in their header comments (`ded31c68…`) that did not match the digest in
@@ -23,15 +24,16 @@ their own `FROM` line (`648f440f…`).
 
 ### The pins that were not `FROM` lines
 
-Four more pins hid inside `COPY --from=<image>`, which no `FROM`-oriented
-search finds:
+Four more pins hid inside `COPY --from=<image>`, which no `FROM`-oriented search
+finds:
 
 - `dev/Containerfile:1040` — Go toolchain from `golang:1.27-bookworm`
 - `docker/Dockerfile.node:338` — `nvidia/cuda:13.3.1-runtime-ubuntu24.04`
 - `docker/Dockerfile.node:361,362` — `rocm/dev-ubuntu-24.04:7.2.4`
-- `docker/Dockerfile.node:392,393` — `intel/oneapi-runtime:2025.3.1-…-ubuntu24.04`
+- `docker/Dockerfile.node:392,393` —
+  `intel/oneapi-runtime:2025.3.1-…-ubuntu24.04`
 
-These were the *most* stale pins in the repository, which is the argument for
+These were the _most_ stale pins in the repository, which is the argument for
 the gate covering `COPY --from` and for converting them to named stages.
 
 ## 2. oneAPI: why the follow-up is a restructure, not a pin bump
@@ -53,14 +55,14 @@ not. Any freshness audit of this repo must query `intel/oneapi`.
 Measured by compiling a trivial SYCL program and reading `DT_NEEDED`, and by
 listing the runtime images:
 
-| Component | libsycl |
-| --- | --- |
+| Component                    | libsycl                  |
+| ---------------------------- | ------------------------ |
 | compiled by basekit 2025.3.2 | `DT_NEEDED libsycl.so.8` |
-| runtime 2025.3.1 | ships `libsycl.so.8` |
-| runtime 2026.0.0 | ships `libsycl.so.9` |
-| compiled by 2026.1.1 | `DT_NEEDED libsycl.so.9` |
+| runtime 2025.3.1             | ships `libsycl.so.8`     |
+| runtime 2026.0.0             | ships `libsycl.so.9`     |
+| compiled by 2026.1.1         | `DT_NEEDED libsycl.so.9` |
 
-A major soname bump *is* the ABI break. The usual "runtime ≥ compiler" ordering
+A major soname bump _is_ the ABI break. The usual "runtime ≥ compiler" ordering
 rule only holds while the soname is stable, so a 2025-compiled binary cannot
 load against a 2026 runtime at all. Compiler and runtime must move together.
 
@@ -70,11 +72,11 @@ Two independent blockers:
 
 1. **Version ordering.** `intel/oneapi` ships 2026.1.0 but
    `intel/oneapi-runtime` stops at 2026.0.0. Using both would put the runtime
-   *behind* the compiler — the exact violation the pin is meant to remove.
-2. **libc.** Intel publishes for Ubuntu only. Ubuntu 26.04 carries
-   **glibc 2.43**; Debian 13 carries **glibc 2.41** (both measured). A binary
-   compiled in Intel's image cannot load on the Debian 13 runtime the rest of
-   the release track ships.
+   _behind_ the compiler — the exact violation the pin is meant to remove.
+2. **libc.** Intel publishes for Ubuntu only. Ubuntu 26.04 carries **glibc
+   2.43**; Debian 13 carries **glibc 2.41** (both measured). A binary compiled
+   in Intel's image cannot load on the Debian 13 runtime the rest of the release
+   track ships.
 
 ### 2.4 Intel's apt repo on Debian 13 does work
 
@@ -113,10 +115,10 @@ would have shipped a GPU image that cannot see the GPU.
 
 ## 3. What the follow-ups are
 
-| Item | Owner | Target |
-| --- | --- | --- |
-| ROCm 7.2.4 → 10.0.0 | PR #1386 (carries the HIP changes) | `rocm/dev-ubuntu-26.04:10.0.0-full` |
-| oneAPI 2025 → 2026.1.1 | immediate follow-up to ADR-1231 | Intel apt on Debian 13 + NEO via `fetch-intel-neo.py` |
+| Item                   | Owner                              | Target                                                |
+| ---------------------- | ---------------------------------- | ----------------------------------------------------- |
+| ROCm 7.2.4 → 10.0.0    | PR #1386 (carries the HIP changes) | `rocm/dev-ubuntu-26.04:10.0.0-full`                   |
+| oneAPI 2025 → 2026.1.1 | immediate follow-up to ADR-1231    | Intel apt on Debian 13 + NEO via `fetch-intel-neo.py` |
 
 Both keep an explicit, self-closing Ubuntu 24.04 exemption in
 `scripts/ci/check-base-image-single-source.sh` until they land.

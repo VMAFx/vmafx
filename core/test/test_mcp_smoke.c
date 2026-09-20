@@ -55,7 +55,7 @@
 static char *test_available_returns_one(void)
 {
     mu_assert("vmaf_mcp_available must report 1 in the smoke build", vmaf_mcp_available() == 1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_transport_available_unknown_id_is_zero(void)
@@ -63,22 +63,22 @@ static char *test_transport_available_unknown_id_is_zero(void)
     int id = 999;
     mu_assert("unknown transport id must report unavailable",
               vmaf_mcp_transport_available((VmafMcpTransport)id) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_init_rejects_null_out(void)
 {
-    int rc = vmaf_mcp_init(NULL, (VmafContext *)0x1, NULL);
+    int rc = vmaf_mcp_init(VMAF_NULLPTR, (VmafContext *)0x1, VMAF_NULLPTR);
     mu_assert("NULL out -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_init_rejects_null_ctx(void)
 {
     VmafMcpServer *server = (VmafMcpServer *)0x1;
-    int rc = vmaf_mcp_init(&server, NULL, NULL);
+    int rc = vmaf_mcp_init(&server, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("NULL ctx -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Removed in v3: SSE is no longer -ENOSYS. The negative case
@@ -87,18 +87,18 @@ static char *test_init_rejects_null_ctx(void)
 static char *test_start_sse_rejects_null_cfg(void)
 {
     VmafMcpServer *server = (VmafMcpServer *)0x1;
-    int rc = vmaf_mcp_start_sse(server, NULL);
+    int rc = vmaf_mcp_start_sse(server, VMAF_NULLPTR);
     mu_assert("NULL cfg -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_start_uds_rejects_null_path(void)
 {
     VmafMcpServer *server = (VmafMcpServer *)0x1;
-    VmafMcpUdsConfig cfg = {.path = NULL};
+    VmafMcpUdsConfig cfg = {.path = VMAF_NULLPTR};
     int rc = vmaf_mcp_start_uds(server, &cfg);
     mu_assert("NULL path -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Removed in v2: UDS is no longer -ENOSYS. The negative case
@@ -111,28 +111,28 @@ static char *test_start_stdio_rejects_negative_fd(void)
     VmafMcpStdioConfig cfg = {.fd_in = -1, .fd_out = 1};
     int rc = vmaf_mcp_start_stdio(server, &cfg);
     mu_assert("negative fd_in -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_stop_rejects_null(void)
 {
-    int rc = vmaf_mcp_stop(NULL);
+    int rc = vmaf_mcp_stop(VMAF_NULLPTR);
     mu_assert("NULL server -> -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_close_null_is_noop(void)
 {
-    vmaf_mcp_close(NULL);
-    return NULL;
+    vmaf_mcp_close(VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_close_pointer_to_null_is_noop(void)
 {
-    VmafMcpServer *server = NULL;
+    VmafMcpServer *server = VMAF_NULLPTR;
     vmaf_mcp_close(&server);
-    mu_assert("close leaves *server NULL", server == NULL);
-    return NULL;
+    mu_assert("close leaves *server NULL", server == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -150,8 +150,8 @@ static int harness_init(McpHarness *h)
 {
     h->req_pipe[0] = h->req_pipe[1] = -1;
     h->resp_pipe[0] = h->resp_pipe[1] = -1;
-    h->ctx = NULL;
-    h->server = NULL;
+    h->ctx = VMAF_NULLPTR;
+    h->server = VMAF_NULLPTR;
     if (pipe(h->req_pipe) != 0)
         return -1;
     if (pipe(h->resp_pipe) != 0)
@@ -161,7 +161,7 @@ static int harness_init(McpHarness *h)
     cfg.n_threads = 1u;
     if (vmaf_init(&h->ctx, cfg) != 0)
         return -1;
-    if (vmaf_mcp_init(&h->server, h->ctx, NULL) != 0)
+    if (vmaf_mcp_init(&h->server, h->ctx, VMAF_NULLPTR) != 0)
         return -1;
     VmafMcpStdioConfig scfg = {.fd_in = h->req_pipe[0], .fd_out = h->resp_pipe[1]};
     if (vmaf_mcp_start_stdio(h->server, &scfg) != 0)
@@ -173,7 +173,7 @@ static void harness_teardown(McpHarness *h)
 {
     if (h->req_pipe[1] >= 0)
         (void)close(h->req_pipe[1]);
-    if (h->server != NULL)
+    if (h->server != VMAF_NULLPTR)
         vmaf_mcp_close(&h->server);
     if (h->req_pipe[0] >= 0)
         (void)close(h->req_pipe[0]);
@@ -181,7 +181,7 @@ static void harness_teardown(McpHarness *h)
         (void)close(h->resp_pipe[0]);
     if (h->resp_pipe[1] >= 0)
         (void)close(h->resp_pipe[1]);
-    if (h->ctx != NULL)
+    if (h->ctx != VMAF_NULLPTR)
         (void)vmaf_close(h->ctx);
 }
 
@@ -213,7 +213,7 @@ static char *send_and_read(McpHarness *h, const char *req, size_t req_len, char 
     mu_assert("write request", w == (ssize_t)req_len);
     ssize_t n = read_one_line(h->resp_pipe[0], line, line_cap);
     mu_assert("response received", n > 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -222,23 +222,23 @@ static char *send_and_read(McpHarness *h, const char *req, size_t req_len, char 
 
 static char *test_init_close_lifecycle(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     cfg.log_level = VMAF_LOG_LEVEL_NONE;
     cfg.n_threads = 1u;
     int crc = vmaf_init(&ctx, cfg);
-    mu_assert("vmaf_init must succeed", crc == 0 && ctx != NULL);
+    mu_assert("vmaf_init must succeed", crc == 0 && ctx != VMAF_NULLPTR);
 
-    VmafMcpServer *server = NULL;
-    int rc = vmaf_mcp_init(&server, ctx, NULL);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    int rc = vmaf_mcp_init(&server, ctx, VMAF_NULLPTR);
     mu_assert("v1 init must succeed", rc == 0);
-    mu_assert("v1 init must return a non-NULL handle", server != NULL);
+    mu_assert("v1 init must return a non-NULL handle", server != VMAF_NULLPTR);
 
     vmaf_mcp_close(&server);
-    mu_assert("close NULLs the handle", server == NULL);
+    mu_assert("close NULLs the handle", server == VMAF_NULLPTR);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jsonrpc_tools_list_roundtrip(void)
@@ -249,17 +249,17 @@ static char *test_jsonrpc_tools_list_roundtrip(void)
     static const char tools_list[] = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n";
     char line[8192];
     char *err = send_and_read(&h, tools_list, sizeof(tools_list) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         harness_teardown(&h);
         return err;
     }
-    mu_assert("list contains list_features", strstr(line, "\"list_features\"") != NULL);
-    mu_assert("list contains compute_vmaf", strstr(line, "\"compute_vmaf\"") != NULL);
-    mu_assert("jsonrpc 2.0", strstr(line, "\"jsonrpc\":\"2.0\"") != NULL);
-    mu_assert("id 1", strstr(line, "\"id\":1") != NULL);
+    mu_assert("list contains list_features", strstr(line, "\"list_features\"") != VMAF_NULLPTR);
+    mu_assert("list contains compute_vmaf", strstr(line, "\"compute_vmaf\"") != VMAF_NULLPTR);
+    mu_assert("jsonrpc 2.0", strstr(line, "\"jsonrpc\":\"2.0\"") != VMAF_NULLPTR);
+    mu_assert("id 1", strstr(line, "\"id\":1") != VMAF_NULLPTR);
 
     harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jsonrpc_tools_call_list_features(void)
@@ -271,16 +271,16 @@ static char *test_jsonrpc_tools_call_list_features(void)
                                   "\"params\":{\"name\":\"list_features\",\"arguments\":{}}}\n";
     char line[8192];
     char *err = send_and_read(&h, call_lf, sizeof(call_lf) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         harness_teardown(&h);
         return err;
     }
-    mu_assert("id 2", strstr(line, "\"id\":2") != NULL);
-    mu_assert("content array", strstr(line, "\"content\"") != NULL);
-    mu_assert("mentions features", strstr(line, "features") != NULL);
+    mu_assert("id 2", strstr(line, "\"id\":2") != VMAF_NULLPTR);
+    mu_assert("content array", strstr(line, "\"content\"") != VMAF_NULLPTR);
+    mu_assert("mentions features", strstr(line, "features") != VMAF_NULLPTR);
 
     harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_jsonrpc_method_not_found(void)
@@ -291,15 +291,15 @@ static char *test_jsonrpc_method_not_found(void)
     static const char bogus[] = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"does/not/exist\"}\n";
     char line[2048];
     char *err = send_and_read(&h, bogus, sizeof(bogus) - 1u, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         harness_teardown(&h);
         return err;
     }
-    mu_assert("error envelope", strstr(line, "\"error\"") != NULL);
-    mu_assert("code -32601", strstr(line, "-32601") != NULL);
+    mu_assert("error envelope", strstr(line, "\"error\"") != VMAF_NULLPTR);
+    mu_assert("code -32601", strstr(line, "-32601") != VMAF_NULLPTR);
 
     harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -314,14 +314,14 @@ static char *test_uds_roundtrip(void)
     int n = snprintf(path, sizeof(path), "/tmp/vmaf-mcp-uds-test-%d.sock", (int)getpid());
     mu_assert("path snprintf", n > 0 && (size_t)n < sizeof(path));
 
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration vcfg = {0};
     vcfg.log_level = VMAF_LOG_LEVEL_NONE;
     vcfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     VmafMcpUdsConfig ucfg = {.path = path};
     int rc = vmaf_mcp_start_uds(server, &ucfg);
@@ -344,8 +344,8 @@ static char *test_uds_roundtrip(void)
     char line[8192];
     ssize_t got = read_one_line(cfd, line, sizeof(line));
     mu_assert("uds response received", got > 0);
-    mu_assert("uds id 42", strstr(line, "\"id\":42") != NULL);
-    mu_assert("uds list contains compute_vmaf", strstr(line, "\"compute_vmaf\"") != NULL);
+    mu_assert("uds id 42", strstr(line, "\"id\":42") != VMAF_NULLPTR);
+    mu_assert("uds list contains compute_vmaf", strstr(line, "\"compute_vmaf\"") != VMAF_NULLPTR);
 
     (void)close(cfd);
     vmaf_mcp_close(&server);
@@ -355,7 +355,7 @@ static char *test_uds_roundtrip(void)
     struct stat st;
     int sr = stat(path, &st);
     mu_assert("uds socket file unlinked on close", sr != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -372,7 +372,7 @@ static char *test_compute_vmaf_real_score(void)
     const char *dis_path = "../testdata/dis_576x324_48f.yuv";
     struct stat st;
     if (stat(ref_path, &st) != 0 || stat(dis_path, &st) != 0)
-        return NULL; /* fixture absent on this host — skip. */
+        return VMAF_NULLPTR; /* fixture absent on this host — skip. */
 
     McpHarness h;
     mu_assert("harness init", harness_init(&h) == 0);
@@ -392,19 +392,19 @@ static char *test_compute_vmaf_real_score(void)
      * inside MCP's content envelope, so the line can exceed 1 KiB. */
     static char line[16384];
     char *err = send_and_read(&h, req, (size_t)n, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         harness_teardown(&h);
         return err;
     }
     /* Real path returns a `score` numeric field; the placeholder
      * (which v2 must NOT bring back) returned `deferred_to_v2`. */
-    mu_assert("compute_vmaf id 99", strstr(line, "\"id\":99") != NULL);
-    mu_assert("compute_vmaf returns score", strstr(line, "\\\"score\\\"") != NULL);
-    mu_assert("compute_vmaf no v1 placeholder", strstr(line, "deferred_to_v2") == NULL);
-    mu_assert("compute_vmaf reports frames_scored", strstr(line, "\\\"frames_scored\\\"") != NULL);
+    mu_assert("compute_vmaf id 99", strstr(line, "\"id\":99") != VMAF_NULLPTR);
+    mu_assert("compute_vmaf returns score", strstr(line, "\\\"score\\\"") != VMAF_NULLPTR);
+    mu_assert("compute_vmaf no v1 placeholder", strstr(line, "deferred_to_v2") == VMAF_NULLPTR);
+    mu_assert("compute_vmaf reports frames_scored", strstr(line, "\\\"frames_scored\\\"") != VMAF_NULLPTR);
 
     harness_teardown(&h);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static int write_all_bytes(int fd, const unsigned char *buf, size_t len)
@@ -485,24 +485,24 @@ static char *test_compute_vmaf_yuv420p10_score(void)
 
     static char line[16384];
     char *err = send_and_read(&h, req, (size_t)n, line, sizeof(line));
-    if (err != NULL) {
+    if (err != VMAF_NULLPTR) {
         harness_teardown(&h);
         (void)unsetenv("VMAF_MCP_ALLOW");
         (void)unlink(ref_path);
         (void)unlink(dis_path);
         return err;
     }
-    mu_assert("compute_vmaf 10-bit id 100", strstr(line, "\"id\":100") != NULL);
-    mu_assert("compute_vmaf 10-bit returns score", strstr(line, "\\\"score\\\"") != NULL);
-    mu_assert("compute_vmaf 10-bit reports bitdepth", strstr(line, "\\\"bitdepth\\\":10") != NULL);
+    mu_assert("compute_vmaf 10-bit id 100", strstr(line, "\"id\":100") != VMAF_NULLPTR);
+    mu_assert("compute_vmaf 10-bit returns score", strstr(line, "\\\"score\\\"") != VMAF_NULLPTR);
+    mu_assert("compute_vmaf 10-bit reports bitdepth", strstr(line, "\\\"bitdepth\\\":10") != VMAF_NULLPTR);
     mu_assert("compute_vmaf 10-bit reports frames",
-              strstr(line, "\\\"frames_scored\\\":2") != NULL);
+              strstr(line, "\\\"frames_scored\\\":2") != VMAF_NULLPTR);
 
     harness_teardown(&h);
     (void)unsetenv("VMAF_MCP_ALLOW");
     (void)unlink(ref_path);
     (void)unlink(dis_path);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ============================================================
@@ -558,12 +558,12 @@ static ssize_t sse_test_drain(int fd, char *buf, size_t cap, int timeout_seconds
          * line. Stop as soon as we see the terminator after we have
          * also seen at least one `data:` or `event:` field — which
          * means a real frame has arrived. */
-        if (strstr(buf, "data: ") != NULL && strstr(buf, "\n\n") != NULL)
+        if (strstr(buf, "data: ") != VMAF_NULLPTR && strstr(buf, "\n\n") != VMAF_NULLPTR)
             break;
         /* Inline POST response uses Content-Length; once we have a
          * "\r\n\r\n" header terminator and any JSON-ish content, we
          * are done. */
-        if (strstr(buf, "\r\n\r\n") != NULL && strstr(buf, "\"jsonrpc\"") != NULL)
+        if (strstr(buf, "\r\n\r\n") != VMAF_NULLPTR && strstr(buf, "\"jsonrpc\"") != VMAF_NULLPTR)
             break;
     }
     buf[total] = '\0';
@@ -583,16 +583,16 @@ static char *sse_check_get_stream(uint16_t port)
     ssize_t got = sse_test_drain(gfd, gbuf, sizeof(gbuf), 3);
     (void)close(gfd);
     mu_assert("sse get response", got > 0);
-    mu_assert("sse 200 OK", strstr(gbuf, "200 OK") != NULL);
-    mu_assert("sse content-type", strstr(gbuf, "text/event-stream") != NULL);
+    mu_assert("sse 200 OK", strstr(gbuf, "200 OK") != VMAF_NULLPTR);
+    mu_assert("sse content-type", strstr(gbuf, "text/event-stream") != VMAF_NULLPTR);
     /* Per WHATWG SSE §9.2 (accessed 2026-05-09) an event frame ends
      * in a blank line. The transport emits an initial `event: ready`
      * frame after the response headers — verify both pieces are
      * present. */
-    mu_assert("sse event field", strstr(gbuf, "event: ready") != NULL);
-    mu_assert("sse data field", strstr(gbuf, "data: ") != NULL);
-    mu_assert("sse blank-line terminator", strstr(gbuf, "\n\n") != NULL);
-    return NULL;
+    mu_assert("sse event field", strstr(gbuf, "event: ready") != VMAF_NULLPTR);
+    mu_assert("sse data field", strstr(gbuf, "data: ") != VMAF_NULLPTR);
+    mu_assert("sse blank-line terminator", strstr(gbuf, "\n\n") != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* POST /mcp/sse — verify JSON-RPC tools/list inline round-trip. */
@@ -615,32 +615,32 @@ static char *sse_check_post_jsonrpc(uint16_t port)
     ssize_t pgot = sse_test_drain(pfd, pbuf, sizeof(pbuf), 5);
     (void)close(pfd);
     mu_assert("sse post response", pgot > 0);
-    mu_assert("sse post 200", strstr(pbuf, "200 OK") != NULL);
-    mu_assert("sse post jsonrpc", strstr(pbuf, "\"jsonrpc\":\"2.0\"") != NULL);
-    mu_assert("sse post id 7", strstr(pbuf, "\"id\":7") != NULL);
-    mu_assert("sse post lists features", strstr(pbuf, "list_features") != NULL);
-    return NULL;
+    mu_assert("sse post 200", strstr(pbuf, "200 OK") != VMAF_NULLPTR);
+    mu_assert("sse post jsonrpc", strstr(pbuf, "\"jsonrpc\":\"2.0\"") != VMAF_NULLPTR);
+    mu_assert("sse post id 7", strstr(pbuf, "\"id\":7") != VMAF_NULLPTR);
+    mu_assert("sse post lists features", strstr(pbuf, "list_features") != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_sse_event_stream(void)
 {
     /* Spawn the SSE server on an ephemeral loopback port. */
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration vcfg = {0};
     vcfg.log_level = VMAF_LOG_LEVEL_NONE;
     vcfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
-    VmafMcpSseConfig sse_cfg = {.port = 0, .path = NULL};
+    VmafMcpSseConfig sse_cfg = {.port = 0, .path = VMAF_NULLPTR};
     int sse_rc = vmaf_mcp_start_sse(server, &sse_cfg);
     mu_assert("sse start", sse_rc == 0);
     mu_assert("sse port resolved", sse_cfg.port != 0u);
 
     char *err = sse_check_get_stream(sse_cfg.port);
-    if (err == NULL)
+    if (err == VMAF_NULLPTR)
         err = sse_check_post_jsonrpc(sse_cfg.port);
 
     vmaf_mcp_close(&server);
@@ -683,5 +683,5 @@ char *run_tests(void)
     for (size_t i = 0u; i < k_test_table_len; ++i) {
         mu_run_test(k_test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }

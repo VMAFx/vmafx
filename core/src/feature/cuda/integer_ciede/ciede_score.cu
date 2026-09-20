@@ -30,8 +30,6 @@
 #define BLOCK_X 16
 #define BLOCK_Y 16
 
-extern "C" {
-
 __device__ static inline float pow_pos_2_4(float x)
 {
     return powf(x, 2.4f);
@@ -174,9 +172,10 @@ __device__ static inline float warp_reduce_f32(float v)
     return v;
 }
 
-__global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
-                                            VmafCudaBuffer sum, unsigned width, unsigned height,
-                                            unsigned bpc, unsigned ss_hor, unsigned ss_ver)
+extern "C" __global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
+                                                       VmafCudaBuffer sum, unsigned width,
+                                                       unsigned height, unsigned bpc,
+                                                       unsigned ss_hor, unsigned ss_ver)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -217,9 +216,11 @@ __global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPic
     }
 }
 
-__global__ void calculate_ciede_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
-                                             VmafCudaBuffer sum, unsigned width, unsigned height,
-                                             unsigned bpc, unsigned ss_hor, unsigned ss_ver)
+extern "C" __global__ void calculate_ciede_kernel_16bpc(const VmafPicture ref,
+                                                        const VmafPicture dis, VmafCudaBuffer sum,
+                                                        unsigned width, unsigned height,
+                                                        unsigned bpc, unsigned ss_hor,
+                                                        unsigned ss_ver)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -259,5 +260,3 @@ __global__ void calculate_ciede_kernel_16bpc(const VmafPicture ref, const VmafPi
         reinterpret_cast<float *>(sum.data)[block_idx] = block_sum;
     }
 }
-
-} /* extern "C" */

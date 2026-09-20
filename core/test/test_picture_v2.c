@@ -24,11 +24,14 @@
 #include "libvmaf/picture.h"
 #include "libvmaf/picture_v2.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+static VmafBackendHandle invalid_backend_handle(void)
+{
+    _Static_assert(sizeof(VmafBackendHandle) == sizeof(int), "enum ABI must match int");
+    const int raw = 9999;
+    VmafBackendHandle value;
+    (void)memcpy(&value, &raw, sizeof(value));
+    return value;
+}
 
 /* ------------------------------------------------------------------ */
 /* vmaf_backend_handle_name                                            */
@@ -46,7 +49,7 @@ static char *test_backend_handle_name_known_values(void)
               strcmp(vmaf_backend_handle_name(VMAF_BACKEND_HANDLE_HIP), "hip") == 0);
     mu_assert("METAL maps to 'metal'",
               strcmp(vmaf_backend_handle_name(VMAF_BACKEND_HANDLE_METAL), "metal") == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_backend_handle_name_out_of_range(void)
@@ -55,13 +58,14 @@ static char *test_backend_handle_name_out_of_range(void)
     mu_assert("sentinel maps to 'unknown'",
               strcmp(vmaf_backend_handle_name(VMAF_BACKEND_HANDLE__COUNT), "unknown") == 0);
     /* Large value is also out of range. */
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range handle (ADR-0141) */
-    const VmafBackendHandle out_of_range = (VmafBackendHandle)9999;
+
+    const VmafBackendHandle out_of_range = invalid_backend_handle();
     mu_assert("large value maps to 'unknown'",
               strcmp(vmaf_backend_handle_name(out_of_range), "unknown") == 0);
     /* Never returns NULL. */
-    mu_assert("return is never NULL", vmaf_backend_handle_name(VMAF_BACKEND_HANDLE_NONE) != NULL);
-    return NULL;
+    mu_assert("return is never NULL",
+              vmaf_backend_handle_name(VMAF_BACKEND_HANDLE_NONE) != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -77,11 +81,11 @@ static char *check_picture2_alloc_fields(const VmafPicture2 *pic)
     mu_assert("backend must be NONE for CPU alloc", pic->backend == VMAF_BACKEND_HANDLE_NONE);
     mu_assert("backend_handle must be 0 for CPU alloc", pic->backend_handle == 0);
     mu_assert("ref count must be 1 after alloc", vmaf_ref_load(pic->ref) == 1);
-    mu_assert("data[0] must be non-NULL", pic->data[0] != NULL);
-    mu_assert("data[1] must be non-NULL for YUV420", pic->data[1] != NULL);
-    mu_assert("data[2] must be non-NULL for YUV420", pic->data[2] != NULL);
+    mu_assert("data[0] must be non-NULL", pic->data[0] != VMAF_NULLPTR);
+    mu_assert("data[1] must be non-NULL for YUV420", pic->data[1] != VMAF_NULLPTR);
+    mu_assert("data[2] must be non-NULL for YUV420", pic->data[2] != VMAF_NULLPTR);
     mu_assert("pix_fmt carried through", pic->pix_fmt == VMAF_PIX_FMT_YUV420P);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_picture2_alloc_dims(const VmafPicture2 *pic)
@@ -89,7 +93,7 @@ static char *check_picture2_alloc_dims(const VmafPicture2 *pic)
     mu_assert("bpc carried through", pic->bpc == 8);
     mu_assert("luma width carried through", pic->w[0] == 1920);
     mu_assert("luma height carried through", pic->h[0] == 1080);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture2_alloc_and_unref(void)
@@ -110,23 +114,23 @@ static char *test_picture2_alloc_and_unref(void)
     err = vmaf_picture2_unref(&pic);
     mu_assert("vmaf_picture2_unref failed", !err);
     /* After unref the struct is zeroed. */
-    mu_assert("ref must be NULL after last unref", pic.ref == NULL);
-    return NULL;
+    mu_assert("ref must be NULL after last unref", pic.ref == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture2_alloc_null_rejected(void)
 {
-    int err = vmaf_picture2_alloc(NULL, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    int err = vmaf_picture2_alloc(VMAF_NULLPTR, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
     mu_assert("NULL pic must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_picture2_unref_null_noop(void)
 {
     /* NULL is documented as a no-op. */
-    int err = vmaf_picture2_unref(NULL);
+    int err = vmaf_picture2_unref(VMAF_NULLPTR);
     mu_assert("vmaf_picture2_unref(NULL) must succeed", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,7 +149,7 @@ static char *check_v1_to_v2_fields(const VmafPicture *v1, const VmafPicture2 *v2
     mu_assert("v2.backend_handle must be 0", v2->backend_handle == 0);
     mu_assert("v2.w[0] carried", v2->w[0] == 320);
     mu_assert("v2.h[0] carried", v2->h[0] == 240);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_v1_to_v2_basic(void)
@@ -171,7 +175,7 @@ static char *test_v1_to_v2_basic(void)
     mu_assert("ref count back to 1 after v2 unref", vmaf_ref_load(v1.ref) == 1);
     err = vmaf_picture_unref(&v1);
     mu_assert("v1 unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_v1_to_v2_null_args(void)
@@ -183,16 +187,16 @@ static char *test_v1_to_v2_null_args(void)
     memset(&v1, 0, sizeof(v1));
     memset(&v2, 0, sizeof(v2));
 
-    err = vmaf_picture_v1_to_v2(NULL, &v2);
+    err = vmaf_picture_v1_to_v2(VMAF_NULLPTR, &v2);
     mu_assert("NULL src must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_picture_v1_to_v2(&v1, NULL);
+    err = vmaf_picture_v1_to_v2(&v1, VMAF_NULLPTR);
     mu_assert("NULL dst must return -EINVAL", err == -EINVAL);
 
     /* Zeroed v1 (ref == NULL) must also be rejected. */
     err = vmaf_picture_v1_to_v2(&v1, &v2);
     mu_assert("zeroed v1 (no ref) must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -211,7 +215,7 @@ static char *check_v2_to_v1_fields(const VmafPicture2 *v2, const VmafPicture *v1
     mu_assert("v1.bpc carried", v1->bpc == 10);
     mu_assert("v1.w[0] carried", v1->w[0] == 160);
     mu_assert("v1.h[0] carried", v1->h[0] == 90);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_v2_to_v1_basic(void)
@@ -236,7 +240,7 @@ static char *test_v2_to_v1_basic(void)
     mu_assert("ref count back to 1 after v1 unref", vmaf_ref_load(v2.ref) == 1);
     err = vmaf_picture2_unref(&v2);
     mu_assert("v2 unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_v2_to_v1_null_args(void)
@@ -248,16 +252,16 @@ static char *test_v2_to_v1_null_args(void)
     memset(&v2, 0, sizeof(v2));
     memset(&v1, 0, sizeof(v1));
 
-    err = vmaf_picture_v2_to_v1(NULL, &v1);
+    err = vmaf_picture_v2_to_v1(VMAF_NULLPTR, &v1);
     mu_assert("NULL src must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_picture_v2_to_v1(&v2, NULL);
+    err = vmaf_picture_v2_to_v1(&v2, VMAF_NULLPTR);
     mu_assert("NULL dst must return -EINVAL", err == -EINVAL);
 
     /* Zeroed v2 (ref == NULL) must be rejected. */
     err = vmaf_picture_v2_to_v1(&v2, &v1);
     mu_assert("zeroed v2 (no ref) must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -274,7 +278,7 @@ static char *check_roundtrip_cleanup(VmafPicture *copy, VmafPicture2 *mid, VmafP
     mu_assert("mid unref failed", !err);
     err = vmaf_picture_unref(orig);
     mu_assert("orig unref failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_v1_v2_roundtrip(void)
@@ -306,7 +310,7 @@ static char *test_v1_v2_roundtrip(void)
     char *msg = check_roundtrip_cleanup(&copy, &mid, &orig);
     if (msg)
         return msg;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -325,5 +329,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

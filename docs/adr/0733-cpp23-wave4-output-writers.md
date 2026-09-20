@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0733: C++23 Wave 4 — output writers (XML, JSON, CSV, subtitle)
 
 - **Status**: Accepted
@@ -47,7 +46,7 @@ ADR-0720 (commit `70ed8b3ce3`). This was a pre-existing issue that blocked
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-format file split (output_xml.cpp, output_json.cpp, etc.) | Finer granularity; each format independently reviewable | The four writers share `max_capacity`, `count_written_at`, `fmt_or_default`, and `pool_method_name` — splitting would require a private header or duplicating helpers. The existing single-file layout was deliberate. | Not chosen: extra complexity for no correctness benefit |
 | `std::ofstream` instead of C `FILE*` | Pure C++ I/O | The public API (`vmaf_write_output_xml(..., FILE *outfile, ...)`) passes `FILE*` from the caller; changing to `std::ofstream` would break the C ABI | Not chosen: ABI-breaking |
 | `std::format` instead of `fprintf` + `sf.data()` | Type-safe formatting; no format-string mismatch | `std::format` cannot consume a runtime format string from the caller (the `score_format` parameter); and `std::format` float formatting differs subtly from `printf("%.6f", ...)` at the last digit for some edge values, risking golden-gate drift | Not chosen: ABI + numerical parity risk |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0936: Final `os.path` → `pathlib.Path` sweep + ruff PTH guard
 
 - **Status**: Accepted
@@ -60,7 +59,7 @@ We will:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fix only the 2 named shim files; do not enable `PTH` | Smallest diff; matches literal task scope | No regression guard — the same pattern would silently reappear in the next copy-paste of a shim | Defeats the modernization's purpose; the guard is the point |
 | Enable `PTH` and leave the 10 surfaced violations as `noqa` debt | Even smaller diff | 10 inline suppressions across 7 files is more debt than fixing them mechanically would have cost; obscures the intent of the rule | Cleanups are 1–2 lines each, mechanical, and locally tested — fixing inline costs less than the debt explanation |
 | Force `PTH` onto Netflix upstream too | Maximum consistency | Creates rebase noise on every upstream sync; Netflix style is explicitly not our canon (ADR-0100) | Same policy as the other style-family per-file ignores |

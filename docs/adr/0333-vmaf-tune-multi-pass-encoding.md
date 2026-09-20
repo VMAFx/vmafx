@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0333: `vmaf-tune` Phase F — multi-pass encoding (libx265 first)
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ The decision of which codec adapters to wire 2-pass for is informed
 by published guidance and the encoder's documented modes:
 
 | Codec | 2-pass benefits? | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `libx265` | **Yes** — flagship | Native `--pass 1` / `--pass 2 --stats <file>` via `-x265-params`; documented +1–3 VMAF at target bitrate vs 1-pass ABR. **Phase F first implementation.** |
 | `libx264` | **Yes** | Native `-pass 1 -passlogfile <prefix>` / `-pass 2 -passlogfile <prefix>`; well-understood for VOD. Phase F sibling PR. |
 | `libsvtav1` | **Yes (3-pass too)** | SVT-AV1 supports 1/2/3-pass; the third pass is a refinement of the second. Adapter argv shape differs (`-svtav1-params passes=2`). Phase F sibling PR. |
@@ -117,7 +116,7 @@ We will:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Single adapter method `two_pass_args(N, stats)` + `supports_two_pass` flag (chosen)** | Keeps the per-codec contract narrow; one method per codec; the search loop never branches on codec name | One more method on the contract | Picked: matches the ADR-0288 / ADR-0237 "one-file additions" invariant; the seam stays uniform across codec adapters. |
 | Drive 2-pass from a separate `multi_pass_encode.py` module branching on codec name | Self-contained; no contract growth | Reintroduces the codec-name branch the registry is meant to eliminate; regresses ADR-0237 | Rejected: explicitly the anti-pattern AGENTS.md pinned. |
 | Flip 2-pass to default-on for codecs that support it | Best quality out of the box | Doubles encode time silently; the corpus-row schema would need a per-row `pass_count` to keep historical rows comparable; users who built timing budgets around single-pass would see surprise regressions | Rejected: opt-in keeps the default invariant intact. We can revisit once a corpus-row schema bump and a timing-budget audit land. |

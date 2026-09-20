@@ -1,9 +1,9 @@
-<!-- markdownlint-disable MD013 MD024 MD031 MD033 MD060 -->
 # Tiny-AI Retraining Runbook — `vmaf_v1.0.16_3d0h` Teacher (Epic #1246)
 
 This runbook defines the end-to-end operational procedure for the one-shot
 retraining pass of the fork's tiny-AI models against the canonical
-`vmaf_v1.0.16_3d0h` teacher model (Epic [#1246](https://github.com/VMAFx/vmafx/issues/1246)).
+`vmaf_v1.0.16_3d0h` teacher model (Epic
+[#1246](https://github.com/VMAFx/vmafx/issues/1246)).
 
 The retrain executes **once** when all preceding 1.0.0 epics are closed and
 preconditions are satisfied.
@@ -15,38 +15,42 @@ preconditions are satisfied.
 All procedures in this runbook strictly enforce the binding maintainer decisions
 and architectural records:
 
-- **Maintainer decision, 2026-09-04 (D1 — Student Features)**: Raw extraction collects
-  the union feature pool (`FULL_FEATURES` + `adm3`, 26 raw features per ADR-1173).
-  The shipped student model contract remains locked to canonical-6 (`adm2`,
-  `vif_scale0`..`vif_scale3`, `motion2`) for release 1.0.0 unless post-run sweeps
-  conclusively demonstrate an accuracy advantage for a wider subset.
-- **Maintainer decision, 2026-09-04 (D2 — Training Corpora)**: Retraining consumes all
-  corpora — Netflix Public, CHUG UGC-HDR, BVI-DVC (Part 1, tiers A–D), YouTube UGC,
-  and all 152,265 KoNViD-150k clips. The maintainer accepts an estimated wall-clock
-  duration of ~130 h (K150K alone requires ~105–110 h at 0.36–0.40 clip/s on an
-  RTX 4090). This supersedes the initial 76–82 h estimate in Epic #1246.
-- **Maintainer decision, 2026-09-04 (D3 — Single Teacher Model)**: A single teacher model,
-  `vmaf_v1.0.16_3d0h`, is dispatched for every teacher-scored row. No `vmaf_hdr_v0.6.1`
-  substitution is permitted in the retrain path. HDR rows train the subjective MOS
-  head only.
-- **Maintainer decision, 2026-09-04 (D4 — Geometry Refusals)**: Clips rejected by
-  `libvmaf` geometry limits (<216 px on width or height for 4:2:0, or chroma <80×80)
-  are dropped, counted in the extraction manifest's `fail` tally, and bypassed. A
-  secondary or fallback teacher model is never invoked.
-- **Maintainer decision, 2026-09-04 (D5 — Quantisation Target)**: Int8 static PTQ or
-  QAT in QDQ wire format is the shipped release format. FP32 is the canonical
-  training export and regression baseline. Shipped models are gated on measured drop
-  thresholds (Research-2029).
-- **Maintainer decision, 2026-09-04 (D6 — Hardware Backends)**: Feature extraction is
-  restricted to CPU and CUDA. The SYCL lane remains disabled (`--no_sycl`) until
-  the SYCL v1-model fix (PR [#1307](https://github.com/VMAFx/vmafx/pull/1307)) and
-  open motion2/cambi drift rows are merged and verified.
-- **Ensemble Policy (ADR-1105)**: The five `fr_regressor_v2_ensemble_v1_seed{0..4}`
-  rows remain parked at `smoke: true` until this run executes
-  `train_fr_regressor_v2_ensemble_loso.py` and `export_ensemble_v2_seeds.py` against
-  the retrained corpus at `codec_vocab = 6`.
-- **Golden Data Invariant (ADR-0024)**: Netflix golden-data assertions in `python/test/`
-  (`assertAlmostEqual` values) are never modified.
+- **Maintainer decision, 2026-09-04 (D1 — Student Features)**: Raw extraction
+  collects the union feature pool (`FULL_FEATURES` + `adm3`, 26 raw features per
+  ADR-1173). The shipped student model contract remains locked to canonical-6
+  (`adm2`, `vif_scale0`..`vif_scale3`, `motion2`) for release 1.0.0 unless
+  post-run sweeps conclusively demonstrate an accuracy advantage for a wider
+  subset.
+- **Maintainer decision, 2026-09-04 (D2 — Training Corpora)**: Retraining
+  consumes all corpora — Netflix Public, CHUG UGC-HDR, BVI-DVC (Part 1, tiers
+  A–D), YouTube UGC, and all 152,265 KoNViD-150k clips. The maintainer accepts
+  an estimated wall-clock duration of ~130 h (K150K alone requires ~105–110 h at
+  0.36–0.40 clip/s on an RTX 4090). This supersedes the initial 76–82 h estimate
+  in Epic #1246.
+- **Maintainer decision, 2026-09-04 (D3 — Single Teacher Model)**: A single
+  teacher model, `vmaf_v1.0.16_3d0h`, is dispatched for every teacher-scored
+  row. No `vmaf_hdr_v0.6.1` substitution is permitted in the retrain path. HDR
+  rows train the subjective MOS head only.
+- **Maintainer decision, 2026-09-04 (D4 — Geometry Refusals)**: Clips rejected
+  by `libvmaf` geometry limits (<216 px on width or height for 4:2:0, or chroma
+  <80×80) are dropped, counted in the extraction manifest's `fail` tally, and
+  bypassed. A secondary or fallback teacher model is never invoked.
+- **Maintainer decision, 2026-09-04 (D5 — Quantisation Target)**: Int8 static
+  PTQ or QAT in QDQ wire format is the shipped release format. FP32 is the
+  canonical training export and regression baseline. Shipped models are gated on
+  measured drop thresholds (Research-2029).
+- **Maintainer decision, 2026-09-04 (D6 — Hardware Backends)**: Feature
+  extraction is restricted to CPU and CUDA. The SYCL lane remains disabled
+  (`--no_sycl`) until the SYCL v1-model fix (PR
+  [#1307](https://github.com/VMAFx/vmafx/pull/1307)) and open motion2/cambi
+  drift rows are merged and verified.
+- **Ensemble Policy (ADR-1105)**: The five
+  `fr_regressor_v2_ensemble_v1_seed{0..4}` rows remain parked at `smoke: true`
+  until this run executes `train_fr_regressor_v2_ensemble_loso.py` and
+  `export_ensemble_v2_seeds.py` against the retrained corpus at
+  `codec_vocab = 6`.
+- **Golden Data Invariant (ADR-0024)**: Netflix golden-data assertions in
+  `python/test/` (`assertAlmostEqual` values) are never modified.
 
 ---
 
@@ -55,13 +59,13 @@ and architectural records:
 Before initiating any extraction or training command, the operator must execute
 the verification command for each gate and confirm a passing result.
 
-| Gate | Requirement | Verification Command | Gate Status Today |
-|---|---|---|---|
-| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** — 11 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1245, #1270, #1272. #1244 (container-only publishing) was closed 2026-09-06 after verifying all three of its tasks on `master` plus the enforcement gate #1269 added. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding. |
-| **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 20 --json conclusion,name --jq '[.[]\|select(.conclusion=="failure")]'` | **PASS** as of 2026-09-06 — zero failing runs on `master` HEAD. The release-please failure this row was written for is gone: it was the missing release-bot App credential, warned-not-errored on push by ADR-1171, and the workflow now reports success. |
-| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/VMAFx/vmafx/issues/1246#issuecomment-5555646084). |
-| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **PASS** as of 2026-09-06 — [#1302](https://github.com/VMAFx/vmafx/pull/1302) merged at 13:03Z, so the three assertions it supplied now hold. Re-ran §4.1 end to end against `master` `e91ab8284`: `ok=5 fail=0`, 10.6 s, 0.47 clip/s, 5 parquet rows x 60 columns. All seven §4.2 assertions pass — `schema` = `k150k-feature-extraction-manifest-v1`, `status` = `complete`, manifest `teacher_model` = `vmaf_v1.0.16_3d0h`, `stats.ok` = 5, the `teacher_model` parquet column present with the single value `vmaf_v1.0.16_3d0h`, and `adm3_mean` present. Zero disk leak confirmed: `/tmp/k150k_smoke_scratch` was empty after the run (no per-clip temp survivors) and only the two intended outputs remained, both removed by §4.3. |
-| **G5** | Explicit maintainer authorization | `gh issue view 1246 --comments` | **FAIL** (Awaiting maintainer sign-off) |
+| Gate   | Requirement                                    | Verification Command                                                                                         | Gate Status Today                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **G1** | Every other 1.0.0 epic closed                  | `gh issue list --milestone "1.0.0 — First release" --state open`                                             | **FAIL** — 11 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1245, #1270, #1272. #1244 (container-only publishing) was closed 2026-09-06 after verifying all three of its tasks on `master` plus the enforcement gate #1269 added. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding.                                                                                                                                                                                                                                                              |
+| **G2** | `master` fully green across CI matrix          | `gh run list --branch master --limit 20 --json conclusion,name --jq '[.[]\|select(.conclusion=="failure")]'` | **PASS** as of 2026-09-06 — zero failing runs on `master` HEAD. The release-please failure this row was written for is gone: it was the missing release-bot App credential, warned-not-errored on push by ADR-1171, and the workflow now reports success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command                                                     | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/VMAFx/vmafx/issues/1246#issuecomment-5555646084).                                                                                                                                                                                                                                                                                                                             |
+| **G4** | K150K re-smoke verified with zero disk leak    | See §4 for 5-clip smoke & manifest validation command                                                        | **PASS** as of 2026-09-06 — [#1302](https://github.com/VMAFx/vmafx/pull/1302) merged at 13:03Z, so the three assertions it supplied now hold. Re-ran §4.1 end to end against `master` `e91ab8284`: `ok=5 fail=0`, 10.6 s, 0.47 clip/s, 5 parquet rows x 60 columns. All seven §4.2 assertions pass — `schema` = `k150k-feature-extraction-manifest-v1`, `status` = `complete`, manifest `teacher_model` = `vmaf_v1.0.16_3d0h`, `stats.ok` = 5, the `teacher_model` parquet column present with the single value `vmaf_v1.0.16_3d0h`, and `adm3_mean` present. Zero disk leak confirmed: `/tmp/k150k_smoke_scratch` was empty after the run (no per-clip temp survivors) and only the two intended outputs remained, both removed by §4.3. |
+| **G5** | Explicit maintainer authorization              | `gh issue view 1246 --comments`                                                                              | **FAIL** (Awaiting maintainer sign-off)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 > **Gate status is a measurement, not a plan.** Every cell above says how it was
 > checked and when. G2 and G3 moved to PASS on 2026-09-06 because they were
@@ -73,8 +77,8 @@ the verification command for each gate and confirm a passing result.
 
 ## 3. Container Rebuild and Default-Model CUDA Verification
 
-Canonical builds are produced exclusively inside the `vmaf-dev-mcp` container per
-[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md).
+Canonical builds are produced exclusively inside the `vmaf-dev-mcp` container
+per [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md).
 
 ### 3.1 Rebuild Container
 
@@ -118,10 +122,13 @@ docker exec vmaf-dev-mcp rm -f /tmp/smoke_cuda_v1.json
 
 ## 4. K150K Extraction Re-Smoke (≤5 Clips)
 
-Verify `extract_k150k_features.py` under the rebuilt binary and confirm row-level
-teacher stamping and manifest generation before launching the multi-day run.
+Verify `extract_k150k_features.py` under the rebuilt binary and confirm
+row-level teacher stamping and manifest generation before launching the
+multi-day run.
 
-*(`--vmaf-model` and row-level teacher stamping came from PR [#1302](https://github.com/VMAFx/vmafx/pull/1302), merged 2026-09-06 — they are on `master`.)*
+_(`--vmaf-model` and row-level teacher stamping came from PR
+[#1302](https://github.com/VMAFx/vmafx/pull/1302), merged 2026-09-06 — they are
+on `master`.)_
 
 ### 4.1 Execute Smoke Command
 
@@ -153,15 +160,16 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
 >    the run aborts with `error: cpu-vmaf-bin not found`. `/usr/local/bin/vmaf`
 >    serves both roles.
 > 3. **`--clips-dir` named `clips/`, which is unusable from inside the
->    container.** Its 153,841 entries are symlinks to *host* absolute paths under
->    `/home/kilian/dev/vmaf/.workingdir2/konvid-150k/…`, which do not resolve in
->    the container mount. Every clip failed `ffprobe … returned non-zero exit
->    status 1`, which reads like corrupt media and is really a dangling link. The
->    real files are in `k150ka_extracted/` (152,265 files, e.g. 465,490 bytes,
->    `ffprobe` reports 960x540) — again the script's own default.
-> 4. With those three fixed the pipeline runs clean: **`ok=5 fail=0`** at
->    1.26 clip/s, `status: complete`, `schema:
->    k150k-feature-extraction-manifest-v1`, 5 parquet rows.
+>    container.** Its 153,841 entries are symlinks to _host_ absolute paths
+>    under `/home/kilian/dev/vmaf/.workingdir2/konvid-150k/…`, which do not
+>    resolve in the container mount. Every clip failed
+>    `ffprobe … returned non-zero exit status 1`, which reads like corrupt media
+>    and is really a dangling link. The real files are in `k150ka_extracted/`
+>    (152,265 files, e.g. 465,490 bytes, `ffprobe` reports 960x540) — again the
+>    script's own default.
+> 4. With those three fixed the pipeline runs clean: **`ok=5 fail=0`** at 1.26
+>    clip/s, `status: complete`, `schema: k150k-feature-extraction-manifest-v1`,
+>    5 parquet rows.
 >
 > Verify before committing to the multi-day run:
 >
@@ -174,16 +182,17 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
 >   /workspace/.corpus/konvid-150k/k150ka_extracted/orig_10000251326_540_5s.mp4
 > ```
 >
-> **What still needs [#1302](https://github.com/VMAFx/vmafx/pull/1302).** Of §4.2's
-> assertions, `schema`, `status` and `stats.ok` already pass on `master`. Three do
-> not, and all three are supplied by #1302: `teacher_model` in the manifest,
-> the `teacher_model` parquet column, and `adm3_mean` (`grep -c adm3` on master's
-> extractor returns 0, on #1302's returns 3). G4 is blocked on that PR alone —
-> the corpus, the binary and the pipeline are all verified working.
+> **What still needs [#1302](https://github.com/VMAFx/vmafx/pull/1302).** Of
+> §4.2's assertions, `schema`, `status` and `stats.ok` already pass on `master`.
+> Three do not, and all three are supplied by #1302: `teacher_model` in the
+> manifest, the `teacher_model` parquet column, and `adm3_mean` (`grep -c adm3`
+> on master's extractor returns 0, on #1302's returns 3). G4 is blocked on that
+> PR alone — the corpus, the binary and the pipeline are all verified working.
 
 ### 4.2 Validate Manifest Fields and Schema
 
-Verify the manifest records `teacher_model == "vmaf_v1.0.16_3d0h"` and complete status:
+Verify the manifest records `teacher_model == "vmaf_v1.0.16_3d0h"` and complete
+status:
 
 ```bash
 docker exec vmaf-dev-mcp python3 -c '
@@ -220,9 +229,9 @@ docker exec vmaf-dev-mcp rm -rf \
 ## 5. Per-Corpus Feature Extraction
 
 In accordance with maintainer decision D6 and the worktree/device discipline
-([AGENTS.md](../../AGENTS.md) §12), **devices are never multiplexed**.
-The RTX 4090 is dedicated to K150K extraction, while the Zen 5 CPU handles the
-remaining corpora in parallel. All invocations run under `nohup` with stdout/stderr
+([AGENTS.md](../../AGENTS.md) §12), **devices are never multiplexed**. The RTX
+4090 is dedicated to K150K extraction, while the Zen 5 CPU handles the remaining
+corpora in parallel. All invocations run under `nohup` with stdout/stderr
 redirected to dedicated logs under `runs/logs/`.
 
 Create the logging and run directories first:
@@ -234,11 +243,17 @@ mkdir -p runs/logs runs/shards
 ### 5.1 K150K Corpus (CUDA-Pinned)
 
 - **Target**: 152,265 clips (KoNViD-150k-A).
-- **Backend**: CUDA (RTX 4090, outer parallelism `--threads-cuda 8`, inner `--threads 2`).
+- **Backend**: CUDA (RTX 4090, outer parallelism `--threads-cuda 8`, inner
+  `--threads 2`).
 - **Wall-clock Estimate**: ~105–110 h.
-  - *Basis*: Measured throughput of 0.36–0.40 clip/s with 8 outer workers on RTX 4090.
-    $152{,}265 \text{ clips} \div 0.38 \text{ clip/s} \approx 400{,}700 \text{ s} \approx 111.3 \text{ h}$.
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
+  - _Basis_: Measured throughput of 0.36–0.40 clip/s with 8 outer workers on
+      RTX 4090.
+      $$
+      152{,}265 \text{ clips} \div 0.38 \text{ clip/s}
+      \approx 400{,}700 \text{ s} \approx 111.3 \text{ h}
+      $$
+- **Prerequisite**: Requires PR
+  [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
@@ -259,10 +274,13 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 ### 5.2 Netflix Public Corpus (CPU-Pinned)
 
 - **Target**: 79 (ref, dis) pairs across 9 sources.
-- **Backend**: CPU (`core/build-cpu/tools/vmaf` or `/usr/local/bin/vmaf --no_cuda --no_sycl`).
+- **Backend**: CPU (`core/build-cpu/tools/vmaf` or
+  `/usr/local/bin/vmaf --no_cuda --no_sycl`).
 - **Wall-clock Estimate**: ~1.5–2 h.
-  - *Basis*: 79 pairs × 48–100 frames at ~24 s/pair on Zen 5 CPU, plus residual speed feature extraction passes.
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
+  - _Basis_: 79 pairs × 48–100 frames at ~24 s/pair on Zen 5 CPU, plus
+      residual speed feature extraction passes.
+- **Prerequisite**: Requires PR
+  [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_full_features.py \
@@ -281,8 +299,10 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 - **Target**: 80 sequences × 4 tiers (D, C, B, A), CRF 35 x264 encodes.
 - **Backend**: CPU (`--no_sycl`).
 - **Wall-clock Estimate**: ~8–12 h.
-  - *Basis*: 10-bit YCbCr 4:2:0 decode and scoring: Tier D (~1 h), C (~2 h), B (~3 h), A (~4 h) (Research-0082).
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (teacher model resolution).
+  - _Basis_: 10-bit YCbCr 4:2:0 decode and scoring: Tier D (~1 h), C (~2 h), B
+      (~3 h), A (~4 h) (Research-0082).
+- **Prerequisite**: Requires PR
+  [#1302](https://github.com/VMAFx/vmafx/pull/1302) (teacher model resolution).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/bvi_dvc_to_full_features.py \
@@ -304,8 +324,10 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/b
 - **Target**: ~1,500 pairs (capped to 10 s @ 30 fps = 300 frames/pair).
 - **Backend**: CPU (`--threads 8`).
 - **Wall-clock Estimate**: ~8–10 h.
-  - *Basis*: ~1,500 clips at ~20 s/clip decode and multi-threaded CPU extraction across 8 threads (`docs/ai/youtube-ugc-ingestion.md`).
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302).
+  - _Basis_: ~1,500 clips at ~20 s/clip decode and multi-threaded CPU
+      extraction across 8 threads (`docs/ai/youtube-ugc-ingestion.md`).
+- **Prerequisite**: Requires PR
+  [#1302](https://github.com/VMAFx/vmafx/pull/1302).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_ugc_features.py \
@@ -325,8 +347,10 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 - **Target**: 856 references × 6 ladder encodes = 5,136 distorted clips.
 - **Backend**: CPU.
 - **Wall-clock Estimate**: ~4–6 h.
-  - *Basis*: Resolution scaling + feature extraction on 5,136 HDR clips (`docs/ai/chug-ingestion.md`).
-- **Policy Note**: Per maintainer decision D3, HDR rows train the MOS head only. `vmaf_hdr_v0.6.1` substitution is prohibited.
+  - _Basis_: Resolution scaling + feature extraction on 5,136 HDR clips
+      (`docs/ai/chug-ingestion.md`).
+- **Policy Note**: Per maintainer decision D3, HDR rows train the MOS head only.
+  `vmaf_hdr_v0.6.1` substitution is prohibited.
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/chug_extract_features.py \
@@ -344,9 +368,9 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/c
 
 ## 6. Mixed-Teacher Refusal and Parquet Combination
 
-Every extracted shard carries a `teacher_model` column. Before combining,
-the operator runs a strict refusal check. Any shard lacking the column or
-containing values other than `vmaf_v1.0.16_3d0h` causes immediate failure.
+Every extracted shard carries a `teacher_model` column. Before combining, the
+operator runs a strict refusal check. Any shard lacking the column or containing
+values other than `vmaf_v1.0.16_3d0h` causes immediate failure.
 
 ### 6.1 Pre-Combine Verification Script
 
@@ -375,7 +399,8 @@ for p in shards:
 
 ### 6.2 Combine Shards
 
-*(Note: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) for combiner teacher validation).*
+_(Note: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) for
+combiner teacher validation)._
 
 ```bash
 docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/combine_full_feature_parquets.py \
@@ -482,12 +507,13 @@ docker exec vmaf-dev-mcp env PYTHONPATH=/workspace/ai/src /opt/vmaf-venv/bin/pyt
 
 ### 7.2 Int8 Quantisation Export (Static PTQ and QAT)
 
-Per maintainer decision D5, **int8 static PTQ or QAT in QDQ wire format is the shipped release format**.
+Per maintainer decision D5, **int8 static PTQ or QAT in QDQ wire format is the
+shipped release format**.
 
 #### 7.2.1 Static PTQ (QDQ Format)
 
-Static PTQ collects real activation ranges over a representative calibration slice
-drawn from the feature table:
+Static PTQ collects real activation ranges over a representative calibration
+slice drawn from the feature table:
 
 ```bash
 # Generate calibration set npz from parquet if not staged
@@ -540,7 +566,7 @@ for m in model/tiny/*.onnx; do
 done
 ```
 
-*Every model must report `allowlist OK` and exit with code 0.*
+_Every model must report `allowlist OK` and exit with code 0._
 
 ### 7.4 Quantisation Drop Gate (`measure_quant_drop.py`)
 
@@ -557,12 +583,15 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/measure
 The following thresholds are proposed for the 1.0.0 release pass:
 
 1. **Synthetic PLCC Drop (`measure_quant_drop.py`)**:
-   - **Static PTQ**: PLCC drop $\le 0.002$ (tightened from 0.01; empirical smoke achieved 0.00046).
-   - **QAT**: PLCC drop $\le 0.001$ (tightened from 0.01; empirical smoke achieved 0.00037).
+    - **Static PTQ**: PLCC drop $\le 0.002$ (tightened from 0.01; empirical
+      smoke achieved 0.00046).
+    - **QAT**: PLCC drop $\le 0.001$ (tightened from 0.01; empirical smoke
+      achieved 0.00037).
 2. **Real Feature / Score Validation Gate**:
-   - Mean absolute VMAF score delta across held-out clips: $\le 0.10$ VMAF points.
-   - Maximum single-frame absolute delta: $\le 0.50$ VMAF points.
-   - Held-out feature set PLCC: $\ge 0.990$.
+    - Mean absolute VMAF score delta across held-out clips: $\le 0.10$ VMAF
+      points.
+    - Maximum single-frame absolute delta: $\le 0.50$ VMAF points.
+    - Held-out feature set PLCC: $\ge 0.990$.
 
 ---
 
@@ -572,28 +601,30 @@ The following thresholds are proposed for the 1.0.0 release pass:
 
 Retrained models must pass their respective statistical gates:
 
-- **FR Regressors (`fr_regressor_v1..v3`)**:
-  Mean LOSO PLCC $\ge 0.95$ across folds (ADR-0168 / ADR-0302 / ADR-0309).
-- **Ensemble Seeds (`fr_regressor_v2_ensemble`)**:
-  Mean LOSO PLCC $\ge 0.95$ AND PLCC spread $\le 0.005$ across all 5 seeds (ADR-0303 / ADR-0309).
-- **Tiny Regressors (`vmaf_tiny_v2..v4`)**:
-  Minimum PLCC $\ge 0.990$ against the v1 teacher labels (`ai/scripts/validate_vmaf_tiny_v2.py`).
-- **NR Metric (`nr_metric_v1`)**:
-  Mean PLCC $\ge 0.85$, SROCC $\ge 0.80$, RMSE $\le 0.50$ on held-out MOS splits (ADR-0325).
-- **Per-Shot Predictors (`model/predictor_*.onnx`)**:
-  Mean LOSO PLCC $\ge 0.95$, spread $\le 0.005$ (`train_predictor_v2_realcorpus.py`).
-- **Netflix Golden Preservation**:
-  Execute `make test-netflix-golden` on the host. Must pass 271/271 tests.
+- **FR Regressors (`fr_regressor_v1..v3`)**: Mean LOSO PLCC $\ge 0.95$ across
+  folds (ADR-0168 / ADR-0302 / ADR-0309).
+- **Ensemble Seeds (`fr_regressor_v2_ensemble`)**: Mean LOSO PLCC $\ge 0.95$ AND
+  PLCC spread $\le 0.005$ across all 5 seeds (ADR-0303 / ADR-0309).
+- **Tiny Regressors (`vmaf_tiny_v2..v4`)**: Minimum PLCC $\ge 0.990$ against the
+  v1 teacher labels (`ai/scripts/validate_vmaf_tiny_v2.py`).
+- **NR Metric (`nr_metric_v1`)**: Mean PLCC $\ge 0.85$, SROCC $\ge 0.80$, RMSE
+  $\le 0.50$ on held-out MOS splits (ADR-0325).
+- **Per-Shot Predictors (`model/predictor_*.onnx`)**: Mean LOSO PLCC $\ge 0.95$,
+  spread $\le 0.005$ (`train_predictor_v2_realcorpus.py`).
+- **Netflix Golden Preservation**: Execute `make test-netflix-golden` on the
+  host. Must pass 271/271 tests.
 
 ### 8.2 Model Card Updates
 
-Every retrained model must have its card updated under `docs/ai/models/<model>.md`
-in compliance with the 5-point bar of [ADR-0042](../adr/0042-tinyai-docs-required-per-pr.md):
+Every retrained model must have its card updated under
+`docs/ai/models/<model>.md` in compliance with the 5-point bar of
+[ADR-0042](../adr/0042-tinyai-docs-required-per-pr.md):
 
 1. Plain-English functional summary.
 2. Output range and qualitative interpretation.
 3. Runnable usage example (CLI, C API, or Python).
-4. Full provenance: trained against teacher `vmaf_v1.0.16_3d0h`, dataset composition, git SHA, license (`BSD-3-Clause-Plus-Patent`).
+4. Full provenance: trained against teacher `vmaf_v1.0.16_3d0h`, dataset
+   composition, git SHA, license (`BSD-3-Clause-Plus-Patent`).
 5. Known limitations (geometry bounds, color spaces, unsupported options).
 
 ---
@@ -607,31 +638,38 @@ For every retrained model:
 1. Update `sha256` to the new FP32 ONNX hash (64-character lowercase hex).
 2. Set `quant_mode` to `"static"` or `"qat"`.
 3. Update `int8_sha256` to the new INT8 ONNX hash.
-4. Update `quant_accuracy_budget_plcc` (e.g. `0.002` for static PTQ, `0.001` for QAT).
-5. Ensure sidecars have `"onnx_has_scaler": true` where standardisation runs in-graph.
+4. Update `quant_accuracy_budget_plcc` (e.g. `0.002` for static PTQ, `0.001` for
+   QAT).
+5. Ensure sidecars have `"onnx_has_scaler": true` where standardisation runs
+   in-graph.
 
 ### 9.2 ADR-1105 Ensemble Decision Point
 
 If `train_fr_regressor_v2_ensemble_loso.py` passes the production gate
-(`mean(PLCC) >= 0.95` and `spread <= 0.005` recorded in `runs/ensemble_v2_real/PROMOTE.json`):
+(`mean(PLCC) >= 0.95` and `spread <= 0.005` recorded in
+`runs/ensemble_v2_real/PROMOTE.json`):
 
 1. Run seed export and registry patch:
-   ```bash
-   docker exec vmaf-dev-mcp env PYTHONPATH=/workspace/ai/src \
-     /opt/vmaf-venv/bin/python /workspace/ai/scripts/export_ensemble_v2_seeds.py \
-     --corpus /workspace/runs/phase_a/full_grid/per_frame_canonical6.jsonl \
-     --promote-json /workspace/runs/ensemble_v2_real/PROMOTE.json \
-     --update-registry
-   ```
+
+    ```bash
+    docker exec vmaf-dev-mcp env PYTHONPATH=/workspace/ai/src \
+      /opt/vmaf-venv/bin/python /workspace/ai/scripts/export_ensemble_v2_seeds.py \
+      --corpus /workspace/runs/phase_a/full_grid/per_frame_canonical6.jsonl \
+      --promote-json /workspace/runs/ensemble_v2_real/PROMOTE.json \
+      --update-registry
+    ```
+
 2. Remove `@pytest.mark.xfail(strict=True)` from
    `test_fr_regressor_v2_ensemble_seed_rows_are_production` in
    `python/test/model_registry_schema_test.py`.
 3. Validate registry schema integrity:
-   ```bash
-   docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/validate_model_registry.py
-   ```
 
-*If the ensemble gate fails, retain `smoke: true` on the 5 seeds and leave the xfail marker intact.*
+    ```bash
+    docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/validate_model_registry.py
+    ```
+
+_If the ensemble gate fails, retain `smoke: true` on the 5 seeds and leave the
+xfail marker intact._
 
 ---
 
@@ -641,22 +679,28 @@ If any post-retrain validation gate, quantisation drop threshold, or numerical
 contract fails:
 
 1. **Revert Model Files**:
-   ```bash
-   git checkout origin/master -- model/tiny/
-   ```
+
+    ```bash
+    git checkout origin/master -- model/tiny/
+    ```
+
 2. **Revert Registry and Tests**:
-   ```bash
-   git checkout origin/master -- model/tiny/registry.json python/test/model_registry_schema_test.py
-   ```
+
+    ```bash
+    git checkout origin/master -- model/tiny/registry.json python/test/model_registry_schema_test.py
+    ```
+
 3. **Purge Run Staging**:
-   ```bash
-   rm -rf runs/shards/ runs/ensemble_v2_real/ runs/*.pt runs/*.json
-   ```
-4. **Continue Shipping Prior Baselines**:
-   The existing FP32 models and dynamic-INT8 variants remain fully operational and
-   continue shipping for 1.0.0.
-   *(Note: The default model `vmaf_v1.0.16_3d0h` for classic VMAF calculations is unaffected
-   by tiny-AI rollback; it operates independently under ADR-1169).*
+
+    ```bash
+    rm -rf runs/shards/ runs/ensemble_v2_real/ runs/*.pt runs/*.json
+    ```
+
+4. **Continue Shipping Prior Baselines**: The existing FP32 models and
+   dynamic-INT8 variants remain fully operational and continue shipping for
+   1.0.0. _(Note: The default model `vmaf_v1.0.16_3d0h` for classic VMAF
+   calculations is unaffected by tiny-AI rollback; it operates independently
+   under ADR-1169)._
 
 ---
 
@@ -664,49 +708,55 @@ contract fails:
 
 ### 11.1 Timeline Table (~130 h Total)
 
-| Phase | Operation | Device / Backends | Wall-Clock Estimate | Basis & Source |
-|---|---|---|---|---|
-| **Phase 0** | Preconditions check & container rebuild | Host / Docker | ~0.5 h | Base image rebuild & toolchain verification |
-| **Phase 1** | K150K re-smoke (≤5 clips) & clean | CUDA / CPU | ~0.5 h | Smoke verification & disk zero-leak validation |
-| **Phase 2a** | K150K feature extraction (152,265 clips) | **CUDA** (RTX 4090) | **~105–110 h** | 0.36–0.40 clip/s across 8 worker processes |
-| **Phase 2b** | Netflix, BVI-DVC, UGC, CHUG extraction | **CPU** (Zen 5, 32-th) | *~25–30 h* *(parallel)* | Runs concurrently with Phase 2a on CPU |
-| **Phase 3** | Mixed-teacher check & parquet combination | CPU / PyArrow | ~1.0 h | Read and concatenate Parquet shards |
-| **Phase 4** | FP32 model family retraining & export | CUDA / CPU | ~8–10 h | Multi-epoch MLP, LOSO ensemble & MOS heads |
-| **Phase 5** | Static PTQ, QAT export & `check-ops` | CPU / PyTorch FX | ~3–4 h | Calibration runs, QDQ insertion, op allowlist |
-| **Phase 6** | Quantisation drop gating (`measure_quant_drop`)| CPU / ORT | ~1.0 h | Synthetic & held-out error evaluation |
-| **Phase 7** | Validation gates & model-card updates | Host / Python | ~2.0 h | Golden checks, PLCC confirmation, doc authoring |
-| **Phase 8** | Registry update, Sigstore & ADR-1105 flip | Host | ~1.0 h | SHA-256 recalculation, schema validation |
-| **Total** | **End-to-End One-Shot Retraining Pass** | **Workstation** | **~125–130 h** | Bounded by GPU K150K extraction + retrain pass |
+| Phase        | Operation                                       | Device / Backends      | Wall-Clock Estimate     | Basis & Source                                  |
+| ------------ | ----------------------------------------------- | ---------------------- | ----------------------- | ----------------------------------------------- |
+| **Phase 0**  | Preconditions check & container rebuild         | Host / Docker          | ~0.5 h                  | Base image rebuild & toolchain verification     |
+| **Phase 1**  | K150K re-smoke (≤5 clips) & clean               | CUDA / CPU             | ~0.5 h                  | Smoke verification & disk zero-leak validation  |
+| **Phase 2a** | K150K feature extraction (152,265 clips)        | **CUDA** (RTX 4090)    | **~105–110 h**          | 0.36–0.40 clip/s across 8 worker processes      |
+| **Phase 2b** | Netflix, BVI-DVC, UGC, CHUG extraction          | **CPU** (Zen 5, 32-th) | _~25–30 h_ _(parallel)_ | Runs concurrently with Phase 2a on CPU          |
+| **Phase 3**  | Mixed-teacher check & parquet combination       | CPU / PyArrow          | ~1.0 h                  | Read and concatenate Parquet shards             |
+| **Phase 4**  | FP32 model family retraining & export           | CUDA / CPU             | ~8–10 h                 | Multi-epoch MLP, LOSO ensemble & MOS heads      |
+| **Phase 5**  | Static PTQ, QAT export & `check-ops`            | CPU / PyTorch FX       | ~3–4 h                  | Calibration runs, QDQ insertion, op allowlist   |
+| **Phase 6**  | Quantisation drop gating (`measure_quant_drop`) | CPU / ORT              | ~1.0 h                  | Synthetic & held-out error evaluation           |
+| **Phase 7**  | Validation gates & model-card updates           | Host / Python          | ~2.0 h                  | Golden checks, PLCC confirmation, doc authoring |
+| **Phase 8**  | Registry update, Sigstore & ADR-1105 flip       | Host                   | ~1.0 h                  | SHA-256 recalculation, schema validation        |
+| **Total**    | **End-to-End One-Shot Retraining Pass**         | **Workstation**        | **~125–130 h**          | Bounded by GPU K150K extraction + retrain pass  |
 
 ### 11.2 What to Watch (Workstation as Daily Driver)
 
-- **One Device Per Job (AGENTS.md §12)**:
-  Never schedule sibling jobs on the RTX 4090 while K150K is extracting. The Zen 5
-  CPU handles Netflix/BVI/UGC/CHUG extractions. The SYCL Arc A380 remains idle
-  (`--no_sycl`) per maintainer decision D6.
-- **Process Priority (Nice / Ionice)**:
-  To maintain desktop responsiveness during the multi-day run, launch background
-  docker commands with `nice` and `ionice`:
-  ```bash
-  nice -n 15 ionice -c 3 docker exec ...
-  ```
-- **GPU VRAM & Temperature Monitoring**:
-  Monitor RTX 4090 temperature and memory headroom:
-  ```bash
-  watch -n 5 nvidia-smi
-  ```
-  Expected VRAM usage per worker: ~1.5–2.0 GB (~14–16 GB total across 8 workers).
-- **Disk Headroom**:
-  Ensure $\ge 50$ GB free space on the host volume mounting `/workspace/runs/` and
-  $\ge 20$ GB on `/tmp/` for scratch YUV frames. Scratch YUVs are purged per-clip.
-- **Pause and Resume**:
-  K150K extraction is fully resumable through `.done` tracking files. To pause
-  temporarily without killing state:
-  ```bash
-  kill -STOP <extract_k150k_pid>
-  # To resume:
-  kill -CONT <extract_k150k_pid>
-  ```
+- **One Device Per Job (AGENTS.md §12)**: Never schedule sibling jobs on the RTX
+  4090 while K150K is extracting. The Zen 5 CPU handles Netflix/BVI/UGC/CHUG
+  extractions. The SYCL Arc A380 remains idle (`--no_sycl`) per maintainer
+  decision D6.
+- **Process Priority (Nice / Ionice)**: To maintain desktop responsiveness
+  during the multi-day run, launch background docker commands with `nice` and
+  `ionice`:
+
+    ```bash
+    nice -n 15 ionice -c 3 docker exec ...
+    ```
+
+- **GPU VRAM & Temperature Monitoring**: Monitor RTX 4090 temperature and memory
+  headroom:
+
+    ```bash
+    watch -n 5 nvidia-smi
+    ```
+
+    Expected VRAM usage per worker: ~1.5–2.0 GB (~14–16 GB total across 8
+    workers).
+
+- **Disk Headroom**: Ensure $\ge 50$ GB free space on the host volume mounting
+  `/workspace/runs/` and $\ge 20$ GB on `/tmp/` for scratch YUV frames. Scratch
+  YUVs are purged per-clip.
+- **Pause and Resume**: K150K extraction is fully resumable through `.done`
+  tracking files. To pause temporarily without killing state:
+
+    ```bash
+    kill -STOP <extract_k150k_pid>
+    # To resume:
+    kill -CONT <extract_k150k_pid>
+    ```
 
 ---
 
@@ -715,16 +765,19 @@ contract fails:
 In accordance with project operating rules, the following items cannot be
 verified against current live `master` state and are flagged:
 
-1. **SYCL Feature Extraction Lane (UNVERIFIED)**:
-   The SYCL backend is excluded from this runbook per maintainer decision D6.
-   PR [#1307](https://github.com/VMAFx/vmafx/pull/1307) addresses v1 model crashes
+1. **SYCL Feature Extraction Lane (UNVERIFIED)**: The SYCL backend is excluded
+   from this runbook per maintainer decision D6. PR
+   [#1307](https://github.com/VMAFx/vmafx/pull/1307) addresses v1 model crashes
    on Arc A380, but open drift rows (`T-SYCL-CAMBI-PARITY-DRIFT-2026-09-05` and
-   `T-SYCL-MOTION2-CHECKERBOARD-DRIFT-2026-09-05`) prevent using SYCL for training data.
-2. **`--vmaf-model` CLI Plumbing in `extract_k150k_features.py` (UNVERIFIED on master)**:
-   The `--vmaf-model` argument and row-level provenance logic exist on branch
-   `feat/ai-teacher-single-source` (PR [#1302](https://github.com/VMAFx/vmafx/pull/1302)),
-   which is not yet merged to `master`. Verified on branch PR #1302.
-3. **C Loader `.int8.onnx` Redirect (`vmaf --tiny-model`) (UNVERIFIED on master)**:
-   As documented in Research-2029, `vmaf_use_tiny_model()` currently lacks the
-   `.int8.onnx` redirect logic (tracked as open item in Epic #1242). Retrained
-   models can be verified by explicit path invocation (`--tiny-model model.int8.onnx`).
+   `T-SYCL-MOTION2-CHECKERBOARD-DRIFT-2026-09-05`) prevent using SYCL for
+   training data.
+2. **`--vmaf-model` CLI Plumbing in `extract_k150k_features.py` (UNVERIFIED on
+   master)**: The `--vmaf-model` argument and row-level provenance logic exist
+   on branch `feat/ai-teacher-single-source` (PR
+   [#1302](https://github.com/VMAFx/vmafx/pull/1302)), which is not yet merged
+   to `master`. Verified on branch PR #1302.
+3. **C Loader `.int8.onnx` Redirect (`vmaf --tiny-model`) (UNVERIFIED on
+   master)**: As documented in Research-2029, `vmaf_use_tiny_model()` currently
+   lacks the `.int8.onnx` redirect logic (tracked as open item in Epic #1242).
+   Retrained models can be verified by explicit path invocation
+   (`--tiny-model model.int8.onnx`).

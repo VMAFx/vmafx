@@ -30,7 +30,6 @@ English phrases. Fix: unconditional ``env[...] = "C"``.
 from __future__ import annotations
 
 import os
-import subprocess
 from unittest import mock
 
 import pytest

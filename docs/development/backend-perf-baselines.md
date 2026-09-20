@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Per-backend performance baselines
 
 This page is the operational guide to the fork's per-backend throughput

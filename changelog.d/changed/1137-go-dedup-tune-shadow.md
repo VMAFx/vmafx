@@ -1,8 +1,10 @@
+# Changelog fragment
+
 - **refactor(go):** Consolidated the duplicated Go packages the seven-way
   `vmafx-tune` port integration left behind (ADR-1137). One CPython-compatible
   JSON encoder (`pkg/pyjson`, replacing `internal/pyjson`,
-  `internal/pyjsonstrict` and the `pkg/tune/pyjson` implementation), one
-  ffmpeg argv builder and version parser (`pkg/ffencode`, with `pkg/corpus`,
+  `internal/pyjsonstrict` and the `pkg/tune/pyjson` implementation), one ffmpeg
+  argv builder and version parser (`pkg/ffencode`, with `pkg/corpus`,
   `pkg/encodeprofile` and `pkg/tune/executor` now thin aliases), one codec
   registry (`pkg/codecadapter`), one predictor (`pkg/predictor`, which also
   takes over the ORT-session wiring from `cmd/vmafx-tune`), one HDR port

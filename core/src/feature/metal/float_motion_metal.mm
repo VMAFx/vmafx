@@ -90,7 +90,7 @@ static int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -160,7 +160,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rb; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         id<MTLBuffer> prev = [device newBufferWithLength:s->blur_buf_size
@@ -178,28 +178,28 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
 fail_blurs:
-    if (s->cur_blur_buf)  { (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;  s->cur_blur_buf  = NULL; }
-    if (s->prev_blur_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf; s->prev_blur_buf = NULL; }
+    if (s->cur_blur_buf)  { (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;  s->cur_blur_buf  = nullptr; }
+    if (s->prev_blur_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf; s->prev_blur_buf = nullptr; }
 fail_rb:
     (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90; (void)dist_pic_90; (void)dist_pic;
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
@@ -213,7 +213,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>       device  = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue  = (__bridge id<MTLCommandQueue>)qh;
@@ -283,7 +283,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     if (index > 0) {
         const float *parts = (const float *)s->rb.host_view;
         double sad_sum = 0.0;
-        if (parts != NULL) {
+        if (parts != nullptr) {
             for (size_t i = 0; i < s->partials_count; ++i) {
                 sad_sum += (double)parts[i];
             }
@@ -343,20 +343,20 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_16bpc)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;   s->pso_16bpc    = NULL; }
-    if (s->pso_8bpc)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;    s->pso_8bpc     = NULL; }
-    if (s->cur_blur_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;              s->cur_blur_buf  = NULL; }
-    if (s->prev_blur_buf){ (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf;             s->prev_blur_buf = NULL; }
+    if (s->pso_16bpc)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;   s->pso_16bpc    = nullptr; }
+    if (s->pso_8bpc)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;    s->pso_8bpc     = nullptr; }
+    if (s->cur_blur_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;              s->cur_blur_buf  = nullptr; }
+    if (s->prev_blur_buf){ (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf;             s->prev_blur_buf = nullptr; }
 
     int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
 static const char *provided_features[] = {
-    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", NULL
+    "VMAF_feature_motion_score", "VMAF_feature_motion2_score", nullptr
 };
 
 extern "C" {
@@ -364,7 +364,6 @@ extern "C" {
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_float_motion_metal = {
     .name              = "float_motion_metal",
     .init              = init_fex_metal,

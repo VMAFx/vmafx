@@ -1,4 +1,6 @@
-### Go test coverage round 2
+# Changelog fragment
+
+## Go test coverage round 2
 
 Added targeted test files across five Go packages to push statement coverage
 significantly above the round-1 baseline:
@@ -14,7 +16,7 @@ significantly above the round-1 baseline:
   .json-suffix branches, parseOutput corrupt-file, nil-context fast path,
   repeated Close(). Coverage 78% → 82%.
 - `pkg/observability`: logInfo with non-nil logger, noopShutdown, InitOTel
-  non-numeric sampler-arg, composite shutdown with cancelled context.
-  Coverage 87% → 88%.
-- `cmd/vmafx-operator/internal/controller`: coverage already at 74% via
-  the existing envtest Ginkgo suite (KUBEBUILDER_ASSETS required).
+  non-numeric sampler-arg, composite shutdown with cancelled context. Coverage
+  87% → 88%.
+- `cmd/vmafx-operator/internal/controller`: coverage already at 74% via the
+  existing envtest Ginkgo suite (KUBEBUILDER_ASSETS required).

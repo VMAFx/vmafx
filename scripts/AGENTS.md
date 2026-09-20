@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD038 -->
 # AGENTS.md — scripts/
 
 Orientation for agents on top-level scripts tree (excluding
@@ -83,7 +82,8 @@ Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),
 - Renders Keep-a-Changelog section ordering (Added → Changed →
   Deprecated → Removed → Fixed → Security).
 - Preserves `changelog.d/_pre_fragment_legacy.md` verbatim at top
-  (migrated content from pre-fragment Unreleased block).
+  after stripping its source-only H1 (migrated content from the
+  pre-fragment Unreleased block).
 - Supports `--check` (CI gate) and `--write` (`release-please`
   rewrite) flags.
 
@@ -97,14 +97,13 @@ in same instant.
 boundary on `^## \[` — bracketed form `release-please` uses for
 released sections (`## [vX.Y.Z] - YYYY-MM-DD`) and
 `## [Unreleased]` itself uses. **Do not weaken this regex** to
-`^## ` or `^## [^[]` — both shapes tried previously, both
-failed when fragment bodies contained `## ` headers (23 k+
+`^##` or `^## [^[]` — both shapes tried previously, both
+failed when fragment bodies contained `##` headers (23 k+
 line drift PR #332 / #383 / #401 / #384 observed). Fragment
-bodies may legitimately contain `## ` or `### ` sub-headings;
-renderer demotes leading `# ` / `## ` to `**bold**` at render
-time as defense-in-depth. Authors should still write **bullets,
-not headers** per `changelog.d/README.md`; demoter for
-backwards-compat, not the contract.
+bodies may legitimately contain sub-headings; the renderer flattens
+them to plain labels so no fragment can emit a duplicate heading or
+splice-boundary H2. Authors should still prefer **bullets, not headers**
+per `changelog.d/README.md`.
 
 **Fragment hygiene**: every fragment lives under one of six
 Keep-a-Changelog section directories (`added/`, `changed/`,
@@ -122,8 +121,10 @@ Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),
 
 - `_header.md` = verbatim README prelude (everything before
   `## Index`).
-- One Markdown row per ADR, named by ADR's full slug
-  (`NNNN-kebab-case.md`). Slug-keyed for historical reasons:
+- One standalone Markdown document per ADR, named by ADR's full slug
+  (`NNNN-kebab-case.md`). Each document contains the canonical H1,
+  four-column table header, and exactly one data row; the renderer extracts
+  only that row. Slug-keyed for historical reasons:
   2026-05-02 dedup sweep renumbered duplicate-NNNN ADRs; slug
   filenames remain stable across that remap.
 - Rows render oldest-first by ADR ID.

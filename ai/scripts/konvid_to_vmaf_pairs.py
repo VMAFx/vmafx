@@ -42,6 +42,7 @@ idempotent if `--cache-dir` is set — per-clip JSON caches under
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shlex
@@ -57,13 +58,14 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Canonical-6 student features — same set the LOSO trainer expects.
 DEFAULT_FEATURES = (
@@ -270,12 +272,7 @@ def _process_clip(
     return rows
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
-        prog="konvid_to_vmaf_pairs.py",
-        description=__doc__,
-    )
+def _add_pair_io_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--konvid-root",
         type=Path,
@@ -299,6 +296,9 @@ def main(argv: list[str] | None = None) -> int:
         default=REPO_ROOT / "ai" / "data" / "konvid_vmaf_pairs.parquet",
         help="Output parquet path.",
     )
+
+
+def _add_pair_work_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--scratch",
         type=Path,
@@ -312,10 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         "--cache-dir",
         type=Path,
         default=Path(
-            os.environ.get(
-                "VMAF_TINY_AI_CACHE",
-                str(Path.home() / ".cache" / "vmaf-tiny-ai"),
-            )
+            os.environ.get("VMAF_TINY_AI_CACHE", str(Path.home() / ".cache" / "vmaf-tiny-ai"))
         )
         / "konvid-1k",
         help="Per-clip JSON cache (set --no-cache to disable).",
@@ -344,7 +341,90 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the parquet."
         ),
     )
-    args = ap.parse_args(raw_argv)
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    ap = make_argument_parser(
+        prog="konvid_to_vmaf_pairs.py",
+        description=__doc__,
+    )
+    _add_pair_io_args(ap)
+    _add_pair_work_args(ap)
+    return ap.parse_args(argv)
+
+
+def _process_clips(args, clips, teacher, cache_dir) -> tuple[list[dict], list[str], float]:
+    all_rows: list[dict] = []
+    failed: list[str] = []
+    started = time.monotonic()
+    for index, src_mp4 in enumerate(clips):
+        key = f"KoNViD_1k_videos_{src_mp4.stem}"
+        try:
+            rows = _process_clip(
+                key, src_mp4, args.vmaf_bin, teacher.arg, args.crf, cache_dir, args.scratch
+            )
+        except subprocess.CalledProcessError as exc:
+            print(f"[konvid] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
+            failed.append(key)
+            continue
+        all_rows.extend(rows)
+        if (index + 1) % 10 == 0 or index == len(clips) - 1:
+            print(
+                f"[konvid] {index + 1}/{len(clips)} clips, {len(all_rows)} frames, "
+                f"{time.monotonic() - started:.1f}s",
+                flush=True,
+            )
+    return all_rows, failed, time.monotonic() - started
+
+
+def _write_pairs_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    videos_dir: Path,
+    cache_dir: Path | None,
+    teacher,
+    clips: list[Path],
+    failed_clips: list[str],
+    frame: pd.DataFrame,
+    elapsed_s: float,
+) -> None:
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "konvid-vmaf-pairs-manifest-v1",
+            "teacher_model": teacher.name,
+            "features": list(DEFAULT_FEATURES),
+            "stats": {
+                "clips_selected": len(clips),
+                "clips_failed": len(failed_clips),
+                "clips_processed": len(clips) - len(failed_clips),
+                "frames": len(frame),
+                "elapsed_s": round(elapsed_s, 6),
+            },
+            "failed_clips": failed_clips,
+            "crf": args.crf,
+            "cache_enabled": cache_dir is not None,
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={
+                    "konvid_root": args.konvid_root,
+                    "videos_dir": videos_dir,
+                    "cache_dir": cache_dir,
+                    "vmaf_bin": args.vmaf_bin,
+                    "model": teacher.name,
+                },
+                outputs={"parquet": args.out, "manifest": args.manifest_out},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -370,66 +450,20 @@ def main(argv: list[str] | None = None) -> int:
         clips = clips[: args.max_clips]
     print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
 
-    all_rows: list[dict] = []
-    failed_clips: list[str] = []
-    t0 = time.monotonic()
-    for i, src_mp4 in enumerate(clips):
-        key = f"KoNViD_1k_videos_{src_mp4.stem}"
-        try:
-            rows = _process_clip(
-                key,
-                src_mp4,
-                args.vmaf_bin,
-                resolved_teacher.arg,
-                args.crf,
-                cache_dir,
-                args.scratch,
-            )
-        except subprocess.CalledProcessError as exc:
-            print(f"[konvid] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
-            failed_clips.append(key)
-            continue
-        all_rows.extend(rows)
-        if (i + 1) % 10 == 0 or i == len(clips) - 1:
-            print(
-                f"[konvid] {i + 1}/{len(clips)} clips, {len(all_rows)} frames, "
-                f"{time.monotonic() - t0:.1f}s",
-                flush=True,
-            )
+    all_rows, failed_clips, elapsed_s = _process_clips(args, clips, resolved_teacher, cache_dir)
 
     df = pd.DataFrame(all_rows)
     df.to_parquet(args.out, index=False)
-    write_manifest_json(
-        args.manifest_out,
-        {
-            "schema": "konvid-vmaf-pairs-manifest-v1",
-            "teacher_model": resolved_teacher.name,
-            "features": list(DEFAULT_FEATURES),
-            "stats": {
-                "clips_selected": len(clips),
-                "clips_failed": len(failed_clips),
-                "clips_processed": len(clips) - len(failed_clips),
-                "frames": len(df),
-                "elapsed_s": round(time.monotonic() - t0, 6),
-            },
-            "failed_clips": failed_clips,
-            "crf": args.crf,
-            "cache_enabled": cache_dir is not None,
-            "run_provenance": build_run_provenance(
-                entrypoint=Path(__file__),
-                repo_root=REPO_ROOT,
-                argv=raw_argv,
-                args=args,
-                inputs={
-                    "konvid_root": args.konvid_root,
-                    "videos_dir": videos_dir,
-                    "cache_dir": cache_dir,
-                    "vmaf_bin": args.vmaf_bin,
-                    "model": resolved_teacher.name,
-                },
-                outputs={"parquet": args.out, "manifest": args.manifest_out},
-            ),
-        },
+    _write_pairs_manifest(
+        args,
+        raw_argv,
+        videos_dir,
+        cache_dir,
+        resolved_teacher,
+        clips,
+        failed_clips,
+        df,
+        elapsed_s,
     )
     print(
         f"[konvid] wrote {args.out} ({len(df)} frames, {len(clips)} clips); "

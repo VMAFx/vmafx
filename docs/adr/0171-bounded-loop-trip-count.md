@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 -->
 # ADR-0171: Bounded `Loop.M` trip-count guard (T6-5b)
 
 - **Status**: Accepted
@@ -38,7 +37,7 @@ the rejection.
 
 ### Two-layer enforcement (matching ADR-0167's pattern)
 
-**Layer 1 — Python export-time (rigorous)**
+#### Layer 1 — Python export-time (rigorous)
 
 [`vmaf_train.op_allowlist`](../../ai/src/vmaf_train/op_allowlist.py)
 gains a `_collect_loop_violations` helper that walks the graph,
@@ -62,7 +61,7 @@ a module-level constant; both `check_model` and `check_graph` accept
 a `max_loop_trip_count=` override for callers with longer iterative
 pipelines.
 
-**Layer 2 — C wire-format scanner (counter cap)**
+##### Layer 2 — C wire-format scanner (counter cap)
 
 [`onnx_scan.c`](../../core/src/dnn/onnx_scan.c) gains a counter
 that increments every time we see `op_type == "Loop"` at any depth

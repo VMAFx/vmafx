@@ -14,6 +14,15 @@ import pytest
 
 from vmaf.core.asset import Asset, NorefAsset
 
+_COMPARISON_VALUE_10 = 10
+_COMPARISON_VALUE_200 = 200
+_COMPARISON_VALUE_3 = 3
+_COMPARISON_VALUE_49 = 49
+_COMPARISON_VALUE_5 = 5
+_COMPARISON_VALUE_7 = 7
+_COMPARISON_VALUE_8 = 8
+_COMPARISON_VALUE_99 = 99
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -44,8 +53,8 @@ class TestAssetConstruction:
     def test_basic_fields(self):
         a = _make(dataset="myds", content_id=5, asset_id=7)
         assert a.dataset == "myds"
-        assert a.content_id == 5
-        assert a.asset_id == 7
+        assert a.content_id == _COMPARISON_VALUE_5
+        assert a.asset_id == _COMPARISON_VALUE_7
         assert a.ref_path == _REF
         assert a.dis_path == _DIS
 
@@ -235,11 +244,11 @@ class TestAssetDimensions:
 
     def test_dis_encode_bitdepth_default_8bit(self):
         a = _make()
-        assert a.dis_encode_bitdepth == 8
+        assert a.dis_encode_bitdepth == _COMPARISON_VALUE_8
 
     def test_dis_encode_bitdepth_override_10(self):
         a = _make(asset_dict={"width": 576, "height": 324, "dis_enc_bitdepth": 10})
-        assert a.dis_encode_bitdepth == 10
+        assert a.dis_encode_bitdepth == _COMPARISON_VALUE_10
 
     def test_dis_encode_bitdepth_invalid_raises(self):
         with pytest.raises(AssertionError):
@@ -275,13 +284,13 @@ class TestAssetFrameRange:
         )
         start, end = a.ref_start_end_frame
         assert start == 0
-        assert end == 49  # 2.0*25 - 1
+        assert end == _COMPARISON_VALUE_49  # 2.0*25 - 1
 
     def test_duration_sec_with_fps(self):
         a = _make(asset_dict={"width": 576, "height": 324, "duration_sec": 4.0, "fps": 25.0})
         start, end = a.ref_start_end_frame
         assert start == 0
-        assert end == 99  # 4.0*25 - 1
+        assert end == _COMPARISON_VALUE_99  # 4.0*25 - 1
 
     def test_separate_ref_dis_start_end(self):
         a = _make(
@@ -372,8 +381,8 @@ class TestAssetStringAndHash:
         rp = repr(a)
         b = Asset.from_repr(rp)
         assert b.dataset == "reptest"
-        assert b.content_id == 3
-        assert b.asset_id == 7
+        assert b.content_id == _COMPARISON_VALUE_3
+        assert b.asset_id == _COMPARISON_VALUE_7
 
     def test_to_full_repr_is_string(self):
         a = _make()
@@ -387,7 +396,7 @@ class TestAssetStringAndHash:
         a = Asset("ds", 0, 0, long_ref, long_dis, {"width": 576, "height": 324})
         s = str(a)
         # SHA-1 hex digest is 40 chars; allow a little slack for edge cases.
-        assert len(s) <= 200
+        assert len(s) <= _COMPARISON_VALUE_200
 
 
 # ---------------------------------------------------------------------------

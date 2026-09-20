@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # vmaf-tune — target-VMAF bisect (Phase B)
 
 The `vmaftune.bisect` module finds the **largest CRF whose actual
@@ -16,7 +15,7 @@ for the algorithmic feasibility digest.
 ## When to reach for it
 
 | Use case | What to use |
-|---|---|
+| --- | --- |
 | One source, one codec, one target VMAF — find the CRF | `vmaftune.bisect.bisect_target_vmaf` |
 | Many codecs, same source + target — rank by bitrate | `vmaf-tune compare --width ... --height ...` or `vmaftune.compare.compare_codecs(predicate=make_bisect_predicate(...))` |
 | Per-shot CRF tuning across a movie | `vmaftune.per_shot.tune_per_shot(predicate=...)` (Phase D) |
@@ -130,7 +129,7 @@ by ascending bitrate.
 ## Output schema — `BisectResult`
 
 | Field | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `codec` | `str` | The codec name passed in |
 | `best_crf` | `int` | Largest CRF whose VMAF >= target. `-1` on failure. |
 | `measured_vmaf` | `float` | The actual libvmaf score at `best_crf`. NaN on failure. |
@@ -148,7 +147,7 @@ the comparison schema.
 ## Knobs
 
 | Argument | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `crf_range` | `adapter.quality_range` | Inclusive `(lo, hi)`; widening past the adapter's range is allowed. |
 | `max_iterations` | `8` | Hard cap; binary search asymptote is `ceil(log2(range))`. |
 | `sample_clip_seconds` | `0.0` | `0.0` scores the full source. Positive values shorter than `duration_s` encode the centre window, score the matching `frame_skip_ref` / `frame_cnt` window, and normalise bitrate against the sample duration (ADR-0301). |
@@ -182,7 +181,7 @@ sample clips longer than a second.
 ## Error modes
 
 | Error | Cause | Recovery |
-|---|---|---|
+| --- | --- | --- |
 | `"unknown codec: ..."` | `codec` not registered in `codec_adapters` | Register the adapter or pick a known codec |
 | `"invalid crf_range: lo > hi"` | Inverted window | Pass a valid `(lo, hi)` |
 | `"adapter rejected (preset=..., crf=...)"` | Out-of-range crf or unknown preset | Use a valid preset + clip CRF to `quality_range` |

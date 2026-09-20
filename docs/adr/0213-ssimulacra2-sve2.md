@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0213: SSIMULACRA 2 SVE2 SIMD parity
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ a `cc.compiles()` probe in `core/src/meson.build` that exercises
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Fixed 4-lane SVE2 (chosen)** | Byte-exact with NEON irrespective of VL; trivially lifts the NEON audit trail; no new bit-exactness ADR needed | Wastes lanes >4 on 256-bit / 512-bit hardware (perf, not correctness) | Best correctness/effort ratio; perf gain from wider lanes is a follow-up |
 | **Variable-length SVE2 (`svcntw()`-driven loops)** | Maximises throughput on wide SVE2 hardware (Neoverse V2 = 256-bit, A64FX = 512-bit) | Different reduction order per VL — fails ADR-0138 byte-exact contract; would need a new tolerance ADR + snapshot regen | Breaks the existing audit trail; perf upside not justified now |
 | **SVE1 fallback alongside SVE2** | Covers older Neoverse N1 / Cortex-A510 | SVE1 lacks several SVE2 ops; would mean two sister TUs for marginal coverage; the install base of SVE-only-no-SVE2 silicon is small | Out of scope for T7-38; revisit if a target platform demands it |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # AGENTS.md — core/src/feature
 
 Orientation for agents working on feature extractors (VMAF metric
@@ -380,14 +379,11 @@ feature/
   [ADR-0148](../../../docs/adr/0148-iqa-rename-and-cleanup.md)
   and [rebase-notes 0041](../../../docs/rebase-notes.md).
 
-- **psnr bucket lint shape** (ADR-1142 ratchet, ADR-0278
-  citations): [`psnr.c`](psnr.c) includes its own
-  [`psnr.h`](psnr.h) — upstream does not, and include is
-  what declares `compute_psnr()`'s external linkage to
-  clang-tidy (alternative used for `compute_ssim` /
-  `compute_ms_ssim` is NOLINT; psnr has real header, so it
-  uses it). [`integer_psnr.c`](integer_psnr.c) and
-  [`float_psnr.c`](float_psnr.c) carry
+- **PSNR bucket lint shape** (ADR-1142 ratchet, ADR-0278
+  citations): the unused `compute_psnr()` tools-layer twin and its private
+  `psnr.h` declaration were removed after whole-tree symbol analysis proved
+  that neither had a caller. [`integer_psnr.c`](integer_psnr.c) and
+  [`float_psnr.c`](float_psnr.c) are the live extractors and carry
   `NOLINTNEXTLINE(misc-use-internal-linkage)` on
   `vmaf_fex_psnr` / `vmaf_fex_float_psnr` — same cross-TU
   registry pattern as `cambi.c` and `float_ssim.c` — and their
@@ -485,8 +481,9 @@ feature/
   function under ADR-1057 `optimize("-ffp-contract=off")` /
   `#pragma clang fp contract(off)` bracket; never share DWT helpers
   between it and `adm_dwt2_lo_s()`. (6) Float accumulators in
-  `adm_csf_den_scale_s()` / `adm_cm_s()` stay `float` (`adm_fold3_s()`);
-  only `adm_sum_cube_s()` is `double` (ADR-0418). (7) Both C TUs keep
+  `adm_csf_den_scale_s()` / `adm_cm_s()` stay `float` (`adm_fold3_s()`). The
+  uncalled standalone `adm_sum_cube_s()` reduction was removed rather than
+  kept as a latent alternative implementation. (7) Both C TUs keep
   `NULL` under file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)`
   bracket (ADR-1138); keep `NOLINTEND` line at end of file.
   Bit-exactness proof for any further change: rerun 62-case
@@ -1008,7 +1005,7 @@ strict `cpp/declaration-hides-variable` gate trips. rebase-safe
 identifier dictionary is:
 
 | Surface | Old (origin/Netflix) | New (fork) |
-|---------|----------------------|------------|
+| --------- | ---------------------- | ------------ |
 | ADM AVX2/AVX-512 horizontal pass | `j == 0` block at top of i-loop using `j0`/`j1`/`j2`/`j3`/`s0`/`s1`/`s2`/`s3` | the same names but wrapped in a tight `{ ... }` block; the per-`j` tail loop owns the names afterwards |
 | ADM AVX2/AVX-512 horizontal pass | inner `__m256i add_shift_HP_vex = _mm256_set1_epi32(32768)` | removed (function-scope outer is bit-identical) |
 | `i4_adm_cm_avx2` / `_avx512` rfactor splat | `__m256i rfactor0/1/2` (or `__m512i`) shadowing `float rfactor1[3]` | `rfactor_v0/_v1/_v2` |

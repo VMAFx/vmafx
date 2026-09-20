@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 -->
 # Research-1052: ARM motion_v2 re-registration bisect
 
 No digest needed: trivial. The introducing commit (6bb5464511 / PR #532) is

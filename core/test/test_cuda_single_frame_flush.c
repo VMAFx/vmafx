@@ -54,13 +54,13 @@ static int stub_flush_never_terminates(VmafFeatureExtractor *fex, VmafFeatureCol
 
 static char *test_single_frame_flush_terminates(void)
 {
-    VmafFeatureCollector *vfc = NULL;
+    VmafFeatureCollector *vfc = VMAF_NULLPTR;
     int err = vmaf_feature_collector_init(&vfc);
     mu_assert("feature collector init", err == 0);
 
     stub_flush_calls = 0;
     unsigned guard = 0;
-    while (!stub_flush_single_frame(NULL, vfc)) {
+    while (!stub_flush_single_frame(VMAF_NULLPTR, vfc)) {
         if (++guard > 16U)
             break;
     }
@@ -72,34 +72,32 @@ static char *test_single_frame_flush_terminates(void)
     mu_assert("the single-frame back-fill happened exactly once", err == 0 && score == 0.);
 
     vmaf_feature_collector_destroy(vfc);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_pre_fix_shape_would_spin(void)
 {
-    VmafFeatureCollector *vfc = NULL;
+    VmafFeatureCollector *vfc = VMAF_NULLPTR;
     int err = vmaf_feature_collector_init(&vfc);
     mu_assert("feature collector init", err == 0);
 
     /* First call appends and returns 0; the second still returns 0. A real drain
      * loop would never leave. This is the negative control for the contract. */
     mu_assert("pre-fix flush claims 'appended' on the first call",
-              stub_flush_never_terminates(NULL, vfc) == 0);
+              stub_flush_never_terminates(VMAF_NULLPTR, vfc) == 0);
     mu_assert("pre-fix flush still claims 'appended' on the second call",
-              stub_flush_never_terminates(NULL, vfc) == 0);
+              stub_flush_never_terminates(VMAF_NULLPTR, vfc) == 0);
 
     vmaf_feature_collector_destroy(vfc);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_single_frame_flush_terminates);
     mu_run_test(test_pre_fix_shape_would_spin);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
-}
 
-int tests_run = 0;
+    return VMAF_NULLPTR;
+}

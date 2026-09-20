@@ -32,6 +32,8 @@
  *   `od_bin_fdct8x8` calls are.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <immintrin.h>
 #include <math.h>
@@ -118,7 +120,6 @@ static inline __m256i od_mulrshift_avx2(__m256i x, int32_t k, int32_t round, int
  * wrapping the justification onto a second `//` line would point the
  * suppression at the comment and let the diagnostic through.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
 static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m256i in3,
                                      __m256i in4, __m256i in5, __m256i in6, __m256i in7,
                                      __m256i *out0, __m256i *out1, __m256i *out2, __m256i *out3,
@@ -244,8 +245,8 @@ static inline void transpose8x8_epi32(__m256i *r0, __m256i *r1, __m256i *r2, __m
 
 void od_bin_fdct8x8_avx2(int32_t *y, int32_t ystride, const int32_t *x, int32_t xstride)
 {
-    assert(y != NULL);
-    assert(x != NULL);
+    assert(y != VMAF_NULLPTR);
+    assert(x != VMAF_NULLPTR);
     assert(xstride >= 8);
     assert(ystride >= 8);
     const ptrdiff_t xs = (ptrdiff_t)xstride;
@@ -389,7 +390,7 @@ static void compute_vars(psnr_hvs_block *b)
 
 /* DCT + AC-only mask accumulation; `sqrt` is double-precision to match
  * scalar. d_mask > s_mask fold mirrors the scalar reference. */
-static void compute_masks(psnr_hvs_block *b, float mask[8][8])
+static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
 {
     od_bin_fdct8x8_avx2(b->dct_s, 8, b->dct_s, 8);
     od_bin_fdct8x8_avx2(b->dct_d, 8, b->dct_d, 8);
@@ -411,9 +412,7 @@ static void compute_masks(psnr_hvs_block *b, float mask[8][8])
      * s_gvar` is a float-precision multiply (both operands are float), and the
      * result differs by ~3.77e-7 on the Cb channel at frame 0.
      * Preserve the scalar's (double) cast to maintain byte-for-byte parity. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0138: matches scalar.
     b->s_mask = (float)(sqrt((double)b->s_mask * b->s_gvar) / 32.0);
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0138: matches scalar.
     b->d_mask = (float)(sqrt((double)b->d_mask * b->d_gvar) / 32.0);
     if (b->d_mask > b->s_mask) {
         b->s_mask = b->d_mask;
@@ -431,8 +430,8 @@ static void compute_masks(psnr_hvs_block *b, float mask[8][8])
  * summation tree (IEEE-754 add is non-associative) and break byte-for-byte
  * parity with the scalar reference's inline accumulation at
  * third_party/xiph/psnr_hvs.c:355. */
-static void accumulate_error(const psnr_hvs_block *b, float mask[8][8], float csf[8][8], float *ret,
-                             int *pixels)
+static void accumulate_error(const psnr_hvs_block *b, const float mask[8][8], const float csf[8][8],
+                             float *ret, int *pixels)
 {
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
@@ -448,7 +447,7 @@ static void accumulate_error(const psnr_hvs_block *b, float mask[8][8], float cs
 
 double calc_psnrhvs_avx2(const unsigned char *src, int systride, const unsigned char *dst,
                          int dystride, double par, int depth, int w, int h, int step,
-                         float csf[8][8])
+                         const float csf[8][8])
 {
     float mask[8][8];
     psnr_hvs_block b;

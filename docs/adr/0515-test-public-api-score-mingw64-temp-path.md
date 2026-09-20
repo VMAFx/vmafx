@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0515: Portable temp-path setup for `test_public_api_score` on MinGW64
 
 - **Status**: Accepted
@@ -60,7 +59,7 @@ already gates correctly).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Gate the whole test out of MinGW64 via meson `if host_machine.system() != 'windows'` | One-line fix | Loses Windows coverage of the three public C-API entry points the test was added to cover (the whole point of the audit closure). Hides a real portability gap. | Rejected — drops the test's coverage on the platform that surfaced the bug. |
 | Use POSIX `mkstemp` on MinGW64 (MSYS provides one) but rewrite the template to a runtime-resolved temp dir via `getenv("TMPDIR")`/`getenv("TEMP")` | Slightly simpler, no Windows API call | MinGW64 `mkstemp` is from `<unistd.h>` and present, but on the `windows-latest` runner the MSYS environment leaks `TEMP=D:\...\Temp` (backslashes), which collides with the `XXXXXX` suffix expectations of `mkstemp`. Fragile. | Rejected — `GetTempPathA` matches the precedent in `dnn/test_model_loader.c` and is the canonical Win32 API for this. |
 | Mark the test as `expected_to_fail` on MinGW64 | Zero code change in the test | Doesn't fix the bug; the test would still run and the failure assertion would just be inverted. Adds permanent skip-list debt. | Rejected — leaves CI red on the failure type, just renames the failure. |

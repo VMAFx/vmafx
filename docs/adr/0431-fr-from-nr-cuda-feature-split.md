@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0431: Split CUDA and CPU Feature Passes for FR-from-NR Extraction
 
 - **Status**: Accepted
@@ -29,7 +28,7 @@ aggregation so the parquet schema remains unchanged.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep one generic `--backend cuda` invocation | Fastest command shape, no script complexity | Reproduces CHUG failures on 10-bit clips and loses rows | Rejected because the current local HDR run cannot complete reliably |
 | Force CPU-only extraction | Stable and already documented | Leaves CUDA hardware idle and makes CHUG/K150K passes much slower | Rejected because explicit CUDA feature names work for most of the bundle |
 | Add feature-specific retry after failure | Maximises fallback coverage | Wastes time failing first and makes progress accounting noisy | Rejected in favour of deterministic split routing |

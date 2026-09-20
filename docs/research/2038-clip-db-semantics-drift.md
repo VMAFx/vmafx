@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2038 — When a twin implements the right-sounding thing: `clip_db`
 

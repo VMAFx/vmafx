@@ -29,11 +29,7 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,13 +49,13 @@
 static char *test_stub_skips_all(void)
 {
     /* Compiled without ORT — nothing to inject. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_stub_skips_all);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -88,8 +84,8 @@ struct OrtStatus {
 /* Static storage for mock status objects.  We never need more than two
  * alive at once (the mock hands one out; ort_backend calls ReleaseStatus
  * which zeroes it). */
-static struct OrtStatus g_status_a = {.msg = NULL};
-static struct OrtStatus g_status_b = {.msg = NULL};
+static struct OrtStatus g_status_a = {.msg = VMAF_NULLPTR};
+static struct OrtStatus g_status_b = {.msg = VMAF_NULLPTR};
 
 /* Return a non-NULL status with the given message. */
 static OrtStatus *mk_status(const char *msg)
@@ -167,17 +163,14 @@ static OrtErrorCode ORT_API_CALL mock_GetErrorCode(const OrtStatus *st)
 static const char *ORT_API_CALL mock_GetErrorMessage(const OrtStatus *st)
 {
     if (!st)
-        return NULL;
+        return VMAF_NULLPTR;
     return st->msg;
 }
 
 static void ORT_API_CALL mock_ReleaseStatus(OrtStatus *st)
 {
-    if (st == &g_status_a) {
-        g_status_a.msg = NULL;
-    } else if (st == &g_status_b) {
-        g_status_b.msg = NULL;
-    }
+    if (st)
+        st->msg = VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_CreateEnv(OrtLoggingLevel level, const char *id, OrtEnv **out)
@@ -187,7 +180,7 @@ static OrtStatus *ORT_API_CALL mock_CreateEnv(OrtLoggingLevel level, const char 
     if (g_scenario == SCENARIO_FAIL_CREATE_ENV)
         return mk_status("mock: CreateEnv failure");
     *out = (OrtEnv *)&g_env_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_CreateSessionOptions(OrtSessionOptions **out)
@@ -198,7 +191,7 @@ static OrtStatus *ORT_API_CALL mock_CreateSessionOptions(OrtSessionOptions **out
     if (g_scenario == SCENARIO_FAIL_CREATE_SESSION_RETRY_OPTS && g_create_session_count >= 1)
         return mk_status("mock: CreateSessionOptions retry failure");
     *out = (OrtSessionOptions *)&g_opts_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SetIntraOpNumThreads(OrtSessionOptions *opts, int n)
@@ -211,7 +204,7 @@ static OrtStatus *ORT_API_CALL mock_SetIntraOpNumThreads(OrtSessionOptions *opts
         if (g_intra_threads_count >= 2)
             return mk_status("mock: SetIntraOpNumThreads retry failure");
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* SessionOptionsAppendExecutionProvider: fails with a non-empty message
@@ -242,7 +235,7 @@ static OrtStatus *ORT_API_CALL mock_SessionOptionsAppendExecutionProvider_CUDA(
         return mk_status("mock: CUDA EP unavailable");
     /* In two-stage scenarios we let CUDA EP "attach" to make ep_name="CUDA",
      * then CreateSession will fail with non-CPU ep so the fallback fires. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_CreateSession(const OrtEnv *env, const char *path,
@@ -266,7 +259,7 @@ static OrtStatus *ORT_API_CALL mock_CreateSession(const OrtEnv *env, const char 
     }
 
     *out = (OrtSession *)&g_session_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static void ORT_API_CALL mock_ReleaseSessionOptions(OrtSessionOptions *opts)
@@ -296,21 +289,21 @@ static OrtStatus *ORT_API_CALL mock_GetAllocatorWithDefaultOptions(OrtAllocator 
     g_alloc_vtable.version = ORT_API_VERSION;
 
     *out = &g_alloc_vtable;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SessionGetInputCount(const OrtSession *sess, size_t *out)
 {
     (void)sess;
     *out = 1u;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SessionGetOutputCount(const OrtSession *sess, size_t *out)
 {
     (void)sess;
     *out = 1u;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SessionGetInputName(const OrtSession *sess, size_t index,
@@ -321,7 +314,7 @@ static OrtStatus *ORT_API_CALL mock_SessionGetInputName(const OrtSession *sess, 
     (void)alloc;
     static char name[] = "input";
     *value = name;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SessionGetOutputName(const OrtSession *sess, size_t index,
@@ -332,7 +325,7 @@ static OrtStatus *ORT_API_CALL mock_SessionGetOutputName(const OrtSession *sess,
     (void)alloc;
     static char name[] = "output";
     *value = name;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SessionGetInputTypeInfo(const OrtSession *sess, size_t index,
@@ -341,7 +334,7 @@ static OrtStatus *ORT_API_CALL mock_SessionGetInputTypeInfo(const OrtSession *se
     (void)sess;
     (void)index;
     *out = (OrtTypeInfo *)&g_type_info_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_SessionGetOutputTypeInfo(const OrtSession *sess, size_t index,
@@ -350,7 +343,7 @@ static OrtStatus *ORT_API_CALL mock_SessionGetOutputTypeInfo(const OrtSession *s
     (void)sess;
     (void)index;
     *out = (OrtTypeInfo *)&g_type_info_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_CastTypeInfoToTensorInfo(const OrtTypeInfo *type_info,
@@ -364,7 +357,7 @@ static OrtStatus *ORT_API_CALL mock_CastTypeInfoToTensorInfo(const OrtTypeInfo *
             return mk_status("mock: CastTypeInfoToTensorInfo output failure");
     }
     *out = (const OrtTensorTypeAndShapeInfo *)&g_tinfo_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static OrtStatus *ORT_API_CALL mock_GetTensorElementType(const OrtTensorTypeAndShapeInfo *info,
@@ -383,7 +376,7 @@ static OrtStatus *ORT_API_CALL mock_GetTensorElementType(const OrtTensorTypeAndS
         }
     }
     *out = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static void ORT_API_CALL mock_ReleaseTypeInfo(OrtTypeInfo *ti)
@@ -400,7 +393,7 @@ static OrtStatus *ORT_API_CALL mock_CreateCpuMemoryInfo(enum OrtAllocatorType al
     if (g_scenario == SCENARIO_FAIL_CREATE_CPU_MEM_INFO)
         return mk_status("mock: CreateCpuMemoryInfo failure");
     *out = (OrtMemoryInfo *)&g_cpu_mem_info_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static void ORT_API_CALL mock_ReleaseMemoryInfo(OrtMemoryInfo *mi)
@@ -424,7 +417,7 @@ static OrtStatus *ORT_API_CALL mock_Run(OrtSession *sess, const OrtRunOptions *r
     (void)output_names;
     (void)output_count;
     *output_values = (OrtValue *)&g_value_sentinel;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static void ORT_API_CALL mock_ReleaseValue(OrtValue *v)
@@ -440,7 +433,7 @@ static OrtStatus *ORT_API_CALL mock_AllocatorFree(OrtAllocator *allocator, void 
 {
     (void)allocator;
     (void)p;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- Mock OrtApiBase -------------------------------------------- */
@@ -495,7 +488,7 @@ static const OrtApi *ORT_API_CALL mock_get_api(uint32_t version)
 
 static const OrtApiBase g_mock_api_base = {
     .GetApi = mock_get_api,
-    .GetVersionString = NULL,
+    .GetVersionString = VMAF_NULLPTR,
 };
 
 /* Override OrtGetApiBase: since ort_backend.c is compiled directly into this
@@ -516,8 +509,8 @@ static void reset_scenario(MockScenario s)
     g_create_session_count = 0;
     g_intra_threads_count = 0;
     g_cast_type_info_count = 0;
-    g_status_a.msg = NULL;
-    g_status_b.msg = NULL;
+    g_status_a.msg = VMAF_NULLPTR;
+    g_status_b.msg = VMAF_NULLPTR;
 }
 
 /* ---- Convenience: open with CUDA device so ep_name != "CPU" ------ */
@@ -537,14 +530,14 @@ static char *test_ep_unavailable_nonempty_message(void)
 {
     reset_scenario(SCENARIO_FAIL_EP_GENERIC);
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     /* Both GPU and CPU OpenVINO variants fail → ep_name stays "CPU" → CreateSession
      * succeeds with the CPU EP (no EP-append protection on the CPU path). */
     mu_assert("ep_unavail_nonempty: open must succeed or return -EIO only", rc == 0 || rc == -EIO);
     if (rc == 0)
         vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T2: ort_log_and_release_status called with a non-empty message.
@@ -554,11 +547,11 @@ static char *test_ort_log_nonempty_message(void)
 {
     reset_scenario(SCENARIO_FAIL_CREATE_SESSION_CPU);
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     mu_assert("nonempty_msg: CPU CreateSession failure → -EIO", rc == -EIO);
     /* sess must be NULL after a failed open (vmaf_ort_close is called). */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T3: Two-stage CPU fallback — CreateSessionOptions re-creation fails.
@@ -570,10 +563,10 @@ static char *test_two_stage_retry_create_opts_fails(void)
      * fails (first call → mock returns non-NULL), triggering the two-stage
      * fallback.  Inside the fallback, CreateSessionOptions also fails. */
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     mu_assert("retry_opts_fail: two-stage fallback with failed opts → -EIO", rc == -EIO);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T4: Two-stage CPU fallback — SetIntraOpNumThreads inside retry.
@@ -585,7 +578,7 @@ static char *test_two_stage_retry_set_intra_threads(void)
     reset_scenario(SCENARIO_FAIL_INTRA_THREADS_RETRY);
     /* threads > 0 makes vmaf_ort_open call SetIntraOpNumThreads. */
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA, .threads = 2};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     /* The retry SetIntraOpNumThreads failure is non-fatal; the open should
      * succeed (CreateSession retry succeeds in SCENARIO_FAIL_INTRA_THREADS_RETRY). */
@@ -593,7 +586,7 @@ static char *test_two_stage_retry_set_intra_threads(void)
               rc == 0 || rc == -EIO);
     if (rc == 0)
         vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T5: GetTensorElementType returns error for the output type info slot.
@@ -602,10 +595,10 @@ static char *test_get_tensor_elem_type_output_error(void)
 {
     reset_scenario(SCENARIO_FAIL_GET_TENSOR_ELEM_TYPE_OUT);
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     mu_assert("elem_type_out_error: GetTensorElementType output failure → -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T6: CastTypeInfoToTensorInfo returns error for the output type info slot.
@@ -614,7 +607,7 @@ static char *test_cast_type_info_output_error(void)
 {
     reset_scenario(SCENARIO_FAIL_CAST_TYPE_INFO_OUT);
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     /* CastTypeInfoToTensorInfo output failure is logged but does not abort
      * the open (the code falls through to the else-if branch then continues). */
@@ -622,7 +615,7 @@ static char *test_cast_type_info_output_error(void)
               rc == 0 || rc == -EIO || rc == -EINVAL);
     if (rc == 0)
         vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T7: CreateCpuMemoryInfo failure.
@@ -631,10 +624,10 @@ static char *test_create_cpu_mem_info_failure(void)
 {
     reset_scenario(SCENARIO_FAIL_CREATE_CPU_MEM_INFO);
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     mu_assert("cpu_mem_info_fail: CreateCpuMemoryInfo failure → -EIO", rc == -EIO);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* T8: CUDA EP-attach failure with non-empty message.
@@ -646,13 +639,13 @@ static char *test_cuda_ep_unavailable_nonempty_message(void)
 {
     reset_scenario(SCENARIO_FAIL_EP_CUDA);
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA};
-    VmafOrtSession *sess = NULL;
+    VmafOrtSession *sess = VMAF_NULLPTR;
     /* CUDA EP fails, ep_name stays "CPU", CreateSession succeeds. */
     int rc = vmaf_ort_open(&sess, FAKE_ONNX_PATH, &cfg);
     mu_assert("cuda_ep_fail: open succeeds on CPU fallback", rc == 0 || rc == -EIO);
     if (rc == 0)
         vmaf_ort_close(sess);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -672,5 +665,3 @@ char *run_tests(void)
 }
 
 #endif /* VMAF_HAVE_DNN */
-
-/* NOLINTEND(modernize-use-nullptr) */

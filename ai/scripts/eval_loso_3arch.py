@@ -29,14 +29,18 @@ from pathlib import Path
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
 # Reuse the existing helpers — same constants, same load_session
 # external-data workaround, same per-clip cache loader.
-from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session  # noqa: E402
+from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 ARCHS = ("mlp_small", "mlp_medium", "linear")
 
@@ -114,12 +118,12 @@ def _markdown(report: dict) -> str:
                 lines.append(f"| {clip} | — | — | — | — |")
                 continue
             lines.append(
-                f"| {clip} | {m['n']} | " f"{m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
+                f"| {clip} | {m['n']} | {m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
             )
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--data-root",
@@ -147,7 +151,36 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "runs" / "loso_eval",
     )
-    args = ap.parse_args()
+    return ap.parse_args()
+
+
+def _build_report(
+    args: argparse.Namespace, clip_xy: dict[str, tuple[np.ndarray, np.ndarray]]
+) -> dict:
+    from aiutils.run_manifest import build_run_provenance
+
+    json_out = args.out / "loso_3arch_eval.json"
+    md_out = args.out / "loso_3arch_eval.md"
+    report: dict = {
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "corpus": str(args.data_root),
+        "archs": {},
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv,
+            args=args,
+            inputs={"data_root": args.data_root, "training_runs_dir": args.training_runs_dir},
+            outputs={"json_report": json_out, "markdown_report": md_out},
+        ),
+    }
+    for arch in ARCHS:
+        report["archs"][arch] = _eval_arch(arch, args.training_runs_dir / f"loso_{arch}", clip_xy)
+    return report
+
+
+def main() -> int:
+    args = _parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
     if not args.data_root.is_dir():
@@ -161,27 +194,9 @@ def main() -> int:
     json_out = args.out / "loso_3arch_eval.json"
     md_out = args.out / "loso_3arch_eval.md"
 
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+    from aiutils.run_manifest import write_manifest_json
 
-    report: dict = {
-        "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "corpus": str(args.data_root),
-        "archs": {},
-        "run_provenance": build_run_provenance(
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=sys.argv,
-            args=args,
-            inputs={
-                "data_root": args.data_root,
-                "training_runs_dir": args.training_runs_dir,
-            },
-            outputs={"json_report": json_out, "markdown_report": md_out},
-        ),
-    }
-    for arch in ARCHS:
-        loso_dir = args.training_runs_dir / f"loso_{arch}"
-        report["archs"][arch] = _eval_arch(arch, loso_dir, clip_xy)
+    report = _build_report(args, clip_xy)
 
     write_manifest_json(json_out, report)
     print(f"[eval] wrote {json_out}", flush=True)

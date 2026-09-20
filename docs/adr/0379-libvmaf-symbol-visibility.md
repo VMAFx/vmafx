@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0379: libvmaf Symbol Visibility — Hide Internal Symbols with `-fvisibility=hidden`
 
 - **Status**: Accepted
@@ -47,7 +46,7 @@ public-API symbols, down from 207 + 44 = 251.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Option A — `-fvisibility=hidden` + `VMAF_EXPORT` (chosen)** | Clean: the attribute is on the declaration, visible to consumers; standard GCC/Clang practice; no ELF versioning side-effects | Requires annotating ~60-80 public declarations | Best practice; produces smallest, cleanest DSO |
 | **Option B — GNU version script (`libvmaf.map`)** | No source annotation required; `vmaf_*` glob catches all current public symbols | Adds ELF `SYMVER` versioning which complicates static-link consumers; glob misses non-`vmaf_`-prefixed public symbols added in future | Not chosen because it adds versioning complexity without a clear benefit at this stage |
 | **Option C — Version script now, attributes in next major** | Ships the fix immediately with minimal source changes | Defers the annotation work, leaving header consumers without the `VMAF_EXPORT` attribute they need for their own `-fvisibility=hidden` builds; the versioning baggage is permanent | Not chosen — the annotation pass is mechanical and the attribute benefits header consumers |

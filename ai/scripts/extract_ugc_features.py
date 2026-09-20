@@ -30,23 +30,26 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from ai.data.feature_extractor import (  # noqa: E402
+from ai.data.feature_extractor import (
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 SCHEMA_COLS = (*FULL_FEATURES, "teacher_model", "vmaf")
 
@@ -69,6 +72,14 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
         "Speed_chroma_feature_speed_chroma_uv_score",
     ),
 }
+
+
+@dataclass
+class _ExtractionState:
+    rows: list[dict] = field(default_factory=list)
+    pair_count: int = 0
+    fail_count: int = 0
+    started: float = field(default_factory=time.monotonic)
 
 
 def _ffprobe(path: Path) -> dict:
@@ -296,8 +307,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument(
@@ -330,7 +340,126 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Replay manifest JSON sidecar (default: <out-parquet>.manifest.json).",
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(argv)
+
+
+def _target_geometry(orig: Path, stem: str, args: argparse.Namespace, state: _ExtractionState):
+    try:
+        probe = _ffprobe(orig)
+        original_width, original_height = int(probe["width"]), int(probe["height"])
+        if original_width <= 0 or original_height <= 0:
+            raise ValueError(f"degenerate geometry {original_width}x{original_height}")
+    except Exception as exc:
+        print(f"  [{stem}] ffprobe/geometry failed: {exc}", flush=True)
+        state.fail_count += 1
+        return None
+    height = min(original_height, args.max_height)
+    width = (original_width * height) // original_height
+    width -= width & 1
+    height -= height & 1
+    if width < 2 or height < 2:
+        print(
+            f"  [{stem}] degenerate scaled geometry {original_width}x{original_height} "
+            f"-> {width}x{height}; skip",
+            flush=True,
+        )
+        state.fail_count += 1
+        return None
+    return width, height
+
+
+def _extract_variant(
+    stem: str,
+    suffix: str,
+    files: dict,
+    ref_yuv: Path,
+    width: int,
+    height: int,
+    args: argparse.Namespace,
+    teacher,
+    state: _ExtractionState,
+) -> None:
+    if suffix not in files:
+        return
+    dis_src = Path(files[suffix])
+    if not dis_src.is_file():
+        return
+    dis_yuv = args.yuv_dir / f"{stem}_{suffix}_{width}x{height}.yuv"
+    try:
+        _decode_to_yuv(dis_src, dis_yuv, width, height, args.max_frames)
+    except subprocess.CalledProcessError as exc:
+        print(f"  [{stem}/{suffix}] decode-dis failed: {exc}", flush=True)
+        state.fail_count += 1
+        return
+    try:
+        frames = _run_vmaf(
+            args.vmaf_bin, ref_yuv, dis_yuv, width, height, args.threads, teacher.arg
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"  [{stem}/{suffix}] vmaf failed: {exc}", flush=True)
+        state.fail_count += 1
+        if not args.keep_yuv:
+            dis_yuv.unlink(missing_ok=True)
+        return
+    for frame in frames:
+        row = _frame_row(frame.get("metrics", {}), teacher_model=teacher.name)
+        row.update(
+            corpus="ugc",
+            source=f"ugc-{stem}-{suffix}",
+            frame_index=int(frame.get("frameNum", len(state.rows))),
+        )
+        state.rows.append(row)
+    state.pair_count += 1
+    approx_vmaf = frames[0].get("metrics", {}).get("vmaf", "-") if frames else "-"
+    print(
+        f"  [{stem}/{suffix}] {width}x{height} frames={len(frames)} "
+        f"vmaf~{approx_vmaf} ({time.monotonic() - state.started:.0f}s)",
+        flush=True,
+    )
+    if not args.keep_yuv:
+        dis_yuv.unlink(missing_ok=True)
+
+
+def _extract_manifest(args: argparse.Namespace, teacher, manifest: dict) -> _ExtractionState:
+    state = _ExtractionState()
+    for stem, files in sorted(manifest.items()):
+        orig = Path(files["orig"])
+        if not orig.is_file():
+            print(f"  [{stem}] missing orig, skip", flush=True)
+            continue
+        geometry = _target_geometry(orig, stem, args, state)
+        if geometry is None:
+            continue
+        width, height = geometry
+        ref_yuv = args.yuv_dir / f"{stem}_orig_{width}x{height}.yuv"
+        try:
+            _decode_to_yuv(orig, ref_yuv, width, height, args.max_frames)
+        except subprocess.CalledProcessError as exc:
+            print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
+            state.fail_count += 1
+            continue
+        for suffix in ("cbr", "vod", "vodlb"):
+            _extract_variant(stem, suffix, files, ref_yuv, width, height, args, teacher, state)
+        if not args.keep_yuv:
+            ref_yuv.unlink(missing_ok=True)
+    return state
+
+
+def _write_output(rows: list[dict], path: Path) -> pd.DataFrame:
+    frame = pd.DataFrame(rows)
+    full_cols = ("corpus", "source", "frame_index", *SCHEMA_COLS)
+    for column in full_cols:
+        if column not in frame.columns:
+            frame[column] = float("nan")
+    frame = frame[list(full_cols)]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path, index=False)
+    return frame
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out_parquet.with_suffix(".manifest.json")
 
@@ -349,131 +478,27 @@ def main(argv: list[str] | None = None) -> int:
     manifest = json.loads(args.manifest.read_text())
     print(f"[ugc-extract] manifest stems={len(manifest)}", flush=True)
 
-    rows: list[dict] = []
-    pair_count = 0
-    fail_count = 0
-    t0 = time.monotonic()
-    for stem, files in sorted(manifest.items()):
-        orig = Path(files["orig"])
-        if not orig.is_file():
-            print(f"  [{stem}] missing orig, skip", flush=True)
-            continue
-        try:
-            probe = _ffprobe(orig)
-            ow = int(probe["width"])
-            oh = int(probe["height"])
-            if ow <= 0 or oh <= 0:
-                raise ValueError(f"degenerate geometry {ow}x{oh}")
-        except Exception as exc:  # pragma: no cover
-            # A missing/zero width|height (KeyError / ValueError) or any ffprobe
-            # failure must skip just this clip, not abort the whole run with an
-            # uncaught ZeroDivisionError/KeyError (R3-18).
-            print(f"  [{stem}] ffprobe/geometry failed: {exc}", flush=True)
-            fail_count += 1
-            continue
-        # Down-scale to max_height keeping aspect (oh > 0 guaranteed above).
-        target_h = min(oh, args.max_height)
-        target_w = (ow * target_h) // oh
-        # Make even
-        target_w -= target_w & 1
-        target_h -= target_h & 1
-        if target_w < 2 or target_h < 2:
-            # The integer aspect down-scale rounded a dimension below ffmpeg's
-            # minimum (e.g. a 1px-wide source: (1 * 576) // 720 == 0). Skip the
-            # clip rather than emit a `scale=0:...` error or a ZeroDivisionError
-            # in _decode_to_yuv on resume (R3-18 follow-up).
-            print(
-                f"  [{stem}] degenerate scaled geometry {ow}x{oh} -> "
-                f"{target_w}x{target_h}; skip",
-                flush=True,
-            )
-            fail_count += 1
-            continue
-        ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
-        try:
-            _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)
-        except subprocess.CalledProcessError as exc:
-            print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
-            fail_count += 1
-            continue
-
-        for sfx in ("cbr", "vod", "vodlb"):
-            if sfx not in files:
-                continue
-            dis_src = Path(files[sfx])
-            if not dis_src.is_file():
-                continue
-            dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
-            try:
-                _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
-            except subprocess.CalledProcessError as exc:
-                print(f"  [{stem}/{sfx}] decode-dis failed: {exc}", flush=True)
-                fail_count += 1
-                continue
-            try:
-                frames = _run_vmaf(
-                    args.vmaf_bin,
-                    ref_yuv,
-                    dis_yuv,
-                    target_w,
-                    target_h,
-                    args.threads,
-                    resolved_teacher.arg,
-                )
-            except subprocess.CalledProcessError as exc:
-                print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
-                fail_count += 1
-                if not args.keep_yuv:
-                    dis_yuv.unlink(missing_ok=True)
-                continue
-            source_name = f"ugc-{stem}-{sfx}"
-            for frame in frames:
-                m = frame.get("metrics", {})
-                row = _frame_row(m, teacher_model=resolved_teacher.name)
-                row["corpus"] = "ugc"
-                row["source"] = source_name
-                row["frame_index"] = int(frame.get("frameNum", len(rows)))
-                rows.append(row)
-            pair_count += 1
-            print(
-                f"  [{stem}/{sfx}] {target_w}x{target_h} frames={len(frames)} "
-                f"vmaf~{frames[0].get('metrics', {}).get('vmaf', '-') if frames else '-'} "
-                f"({time.monotonic() - t0:.0f}s)",
-                flush=True,
-            )
-            if not args.keep_yuv:
-                dis_yuv.unlink(missing_ok=True)
-        if not args.keep_yuv:
-            ref_yuv.unlink(missing_ok=True)
-
-    if not rows:
+    state = _extract_manifest(args, resolved_teacher, manifest)
+    if not state.rows:
         print("error: no rows extracted", file=sys.stderr)
         return 2
-
-    df = pd.DataFrame(rows)
-    # Reorder to canonical schema
-    full_cols = ("corpus", "source", "frame_index", *SCHEMA_COLS)
-    for c in full_cols:
-        if c not in df.columns:
-            df[c] = float("nan")
-    df = df[list(full_cols)]
-    args.out_parquet.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(args.out_parquet, index=False)
+    df = _write_output(state.rows, args.out_parquet)
     _write_manifest(
         path=args.manifest_out,
         args=args,
         raw_argv=raw_argv,
         manifest_items=len(manifest),
-        pair_count=pair_count,
-        fail_count=fail_count,
+        pair_count=state.pair_count,
+        fail_count=state.fail_count,
         row_count=len(df),
         source_count=int(df["source"].nunique()),
         teacher_model=resolved_teacher.name,
     )
     print(
-        f"[ugc-extract] wrote {args.out_parquet} pairs={pair_count} fails={fail_count} "
+        f"[ugc-extract] wrote {args.out_parquet} pairs={state.pair_count} "
+        f"fails={state.fail_count} "
         f"rows={len(df)} sources={df['source'].nunique()} "
-        f"wall={time.monotonic() - t0:.0f}s",
+        f"wall={time.monotonic() - state.started:.0f}s",
         flush=True,
     )
     return 0

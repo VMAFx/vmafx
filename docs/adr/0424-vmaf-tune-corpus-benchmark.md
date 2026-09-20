@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0424: `vmaf-tune benchmark` consumes Phase-A corpora
 
 - **Status**: Accepted
@@ -27,7 +26,7 @@ VMAF miss. Output formats are `markdown`, `json`, and `csv`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Extend `compare` | Reuses the existing cross-codec name | `compare` runs Phase-B bisect work; making it also mean "read an existing corpus" blurs runtime expectations | Rejected to keep live encode comparison and offline corpus analysis separate |
 | Add benchmark mode to `recommend` | Reuses existing corpus loader | `recommend` returns one row for one predicate, while Phase G needs one summary per encoder plus baseline deltas | Rejected because the output contract is different |
 | New `benchmark` subcommand | Clear runtime contract; no new encodes; easy to test from synthetic JSONL | Adds another CLI surface | Chosen; the user-visible surface is small and maps directly to the backlog item |

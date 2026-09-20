@@ -119,12 +119,12 @@ def test_konvid_manifest_key_columns(tmp_path: Path) -> None:
     module = _load_module()
     specs = module.load_batch_manifest(_KONVID_MANIFEST, base_dir=tmp_path)
     for spec in specs:
-        assert (
-            spec.config.get("feature_key_column") == "key"
-        ), f"konvid table {spec.table_id!r}: expected feature_key_column='key'"
-        assert (
-            spec.config.get("label_key_column") == "src"
-        ), f"konvid table {spec.table_id!r}: expected label_key_column='src'"
+        assert spec.config.get("feature_key_column") == "key", (
+            f"konvid table {spec.table_id!r}: expected feature_key_column='key'"
+        )
+        assert spec.config.get("label_key_column") == "src", (
+            f"konvid table {spec.table_id!r}: expected label_key_column='src'"
+        )
 
 
 def test_konvid_manifest_key_regex_set(tmp_path: Path) -> None:
@@ -155,9 +155,9 @@ def test_chug_manifest_raw_key_normalize(tmp_path: Path) -> None:
     module = _load_module()
     specs = module.load_batch_manifest(_CHUG_MANIFEST, base_dir=tmp_path)
     chug_spec = next(s for s in specs if s.table_id == "chug-hdr")
-    assert (
-        chug_spec.config.get("key_normalize") == "raw"
-    ), "chug-hdr table must use key_normalize=raw (IDs are not file paths)"
+    assert chug_spec.config.get("key_normalize") == "raw", (
+        "chug-hdr table must use key_normalize=raw (IDs are not file paths)"
+    )
 
 
 def test_chug_manifest_key_columns(tmp_path: Path) -> None:

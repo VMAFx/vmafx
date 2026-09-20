@@ -4,8 +4,10 @@
 #
 # Sections are emitted in the Keep-a-Changelog order:
 #   Added → Changed → Deprecated → Removed → Fixed → Security
-# Each fragment is a stand-alone Markdown bullet (or block of bullets) and
-# may end with an optional trailing newline; the script preserves layout.
+# Each active fragment is a standalone Markdown document whose first line is
+# `# Changelog fragment`; the legacy archive uses
+# `# Pre-fragment changelog archive`. The renderer strips that source-only H1
+# and emits the body under its Keep-a-Changelog section.
 #
 # Inputs:
 #   $REPO_ROOT/changelog.d/<section>/*.md   per-PR fragments
@@ -36,13 +38,9 @@
 #   release header is `## [vX.Y.Z] - YYYY-MM-DD`; never `## Foo`.
 #
 # Fragment-body hygiene:
-#   Stray `## ` headers inside a fragment body are demoted to `**bold**`
-#   pseudo-headers at render time. Reasoning: they were never the right
-#   shape (the renderer emits `### Section` itself) and they hurt the splice
-#   contract above. Authors should write bullets, not in-fragment sections;
-#   the demotion keeps history-rendered text legible without forcing a
-#   cross-PR rewrite of 80+ existing fragments. New fragments are validated
-#   by `--lint`.
+#   Source headings render as plain text labels. The source files remain
+#   independently lintable, while no fragment can inject a duplicate heading
+#   or splice-boundary H2 into the generated changelog.
 #
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
@@ -66,129 +64,148 @@ SECTION_TITLES=(Added Changed Deprecated Removed Fixed Security)
 # the `-v boundary=...` plumbing stays string-clean.
 BOUNDARY_REGEX='^## \\['
 
-# Emit one fragment with stray h1/h2 headers demoted to bold pseudo-headers.
-# The renderer-emitted "### Section" heading is the only h3 the Unreleased
-# block should carry; in-fragment headers would pollute both the visual
-# tree and the splice contract.
+# Emit one fragment without its source-only H1. Body headings become plain
+# labels because CHANGELOG.md and this renderer own the generated hierarchy.
 emit_fragment() {
-  local frag="$1"
-  # Replace leading "# " or "## " with "**…**" using awk so we keep any
-  # trailing newline and avoid sed -E portability gotchas.
-  awk '
-    /^# / {
-      sub(/^# /, "")
-      printf "**%s**\n", $0
+    local frag="$1"
+    local expected_heading="$2"
+    # Buffer the body so trailing blank lines normalize to exactly one
+    # renderer-owned separator.
+    awk -v expected_heading="$expected_heading" -v fragment="$frag" '
+    NR == 1 {
+      if ($0 != expected_heading) {
+        printf "ERROR: %s must begin with %s\n", fragment, expected_heading > "/dev/stderr"
+        failed = 1
+        exit 65
+      }
       next
     }
-    /^## / {
-      sub(/^## /, "")
-      printf "**%s**\n", $0
+    NR == 2 && $0 == "" { next }
+    /^#+ / {
+      match($0, /^#+ /)
+      lines[++count] = substr($0, RLENGTH + 1)
       next
     }
-    { print }
+    { lines[++count] = $0 }
+    END {
+      if (failed) exit 65
+      while (count > 0 && lines[count] ~ /^[[:space:]]*$/) count--
+      if (count == 0) {
+        printf "ERROR: %s has no changelog body\n", fragment > "/dev/stderr"
+        exit 65
+      }
+      for (line_number = 1; line_number <= count; line_number++) print lines[line_number]
+    }
   ' "$frag"
 }
 
 warn_unknown_subdirs() {
-  # Surface (but do not fail on) fragments living in subdirs the renderer
-  # does not know about. PR #384 / ADR-0892 cleaned up perf/ + performance/;
-  # this guard keeps future drifts visible.
-  local known_csv
-  # `releases/` contains small rollover receipts, not active fragments.
-  known_csv="$(printf '%s\n' "${SECTIONS[@]}" releases | LC_ALL=C sort | paste -sd, -)"
-  local unknown
-  unknown="$(find "$FRAG_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
-    LC_ALL=C sort |
-    awk -v known="$known_csv" 'BEGIN { n=split(known, k, ","); for (i=1; i<=n; i++) ok[k[i]]=1 } !($0 in ok) { print }')"
-  if [[ -n "$unknown" ]]; then
-    # ADR-1198: this is an ERROR, not a warning. A fragment under an unknown
-    # subdirectory is silently dropped from the rendered Unreleased block, and a
-    # warning on stderr while still exiting 0 does not stop that: PR #1313's
-    # `changelog.d/docs/retrain-runbook-1246.md` sat on master rendering nothing,
-    # because `--check` compares the rendered output against CHANGELOG.md and both
-    # sides agreed the fragment did not exist. Failing closed is the only reading
-    # that makes the guard do what its own comment claims.
-    while IFS= read -r d; do
-      printf 'ERROR: changelog.d/%s/ is not a Keep-a-Changelog section.\n' "$d" >&2
-      printf '  Fragments here are NOT rendered and would be silently lost.\n' >&2
-      printf '  Move them into one of: %s\n' "$(printf '%s ' "${SECTIONS[@]}")" >&2
-      # Redirect order matters: `2>/dev/null >&2` would point stdout at the
-      # /dev/null stderr had just been sent to, swallowing the listing.
-      find "$FRAG_ROOT/$d" -type f -printf '    %p\n' >&2 2>/dev/null
-    done <<<"$unknown"
-    return 1
-  fi
-  return 0
+    # Surface (but do not fail on) fragments living in subdirs the renderer
+    # does not know about. PR #384 / ADR-0892 cleaned up perf/ + performance/;
+    # this guard keeps future drifts visible.
+    local known_csv
+    # `releases/` contains small rollover receipts, not active fragments.
+    known_csv="$(printf '%s\n' "${SECTIONS[@]}" releases | LC_ALL=C sort | paste -sd, -)"
+    local unknown
+    unknown="$(find "$FRAG_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+        LC_ALL=C sort |
+        awk -v known="$known_csv" 'BEGIN { n=split(known, k, ","); for (i=1; i<=n; i++) ok[k[i]]=1 } !($0 in ok) { print }')"
+    if [[ -n "$unknown" ]]; then
+        # ADR-1198: this is an ERROR, not a warning. A fragment under an unknown
+        # subdirectory is silently dropped from the rendered Unreleased block, and a
+        # warning on stderr while still exiting 0 does not stop that: PR #1313's
+        # `changelog.d/docs/retrain-runbook-1246.md` sat on master rendering nothing,
+        # because `--check` compares the rendered output against CHANGELOG.md and both
+        # sides agreed the fragment did not exist. Failing closed is the only reading
+        # that makes the guard do what its own comment claims.
+        while IFS= read -r d; do
+            printf 'ERROR: changelog.d/%s/ is not a Keep-a-Changelog section.\n' "$d" >&2
+            printf '  Fragments here are NOT rendered and would be silently lost.\n' >&2
+            printf '  Move them into one of: %s\n' "$(printf '%s ' "${SECTIONS[@]}")" >&2
+            # Redirect order matters: `2>/dev/null >&2` would point stdout at the
+            # /dev/null stderr had just been sent to, swallowing the listing.
+            find "$FRAG_ROOT/$d" -type f -printf '    %p\n' >&2 2>/dev/null
+        done <<<"$unknown"
+        return 1
+    fi
+    return 0
 }
 
 render() {
-  # Emit the Unreleased body (without the "## [Unreleased] ..." header).
-  # The body always begins with the legacy archive (verbatim — no edits
-  # to existing entries during migration) and then appends one section
-  # per Keep-a-Changelog category from the fragment tree. Sections that
-  # have no fragments are silently skipped; fragments under unknown
-  # subdirs trigger a stderr warning (per PR #384 / ADR-0892).
-  local section title dir frag
-  warn_unknown_subdirs || return 1
-  if [[ -f "$LEGACY" ]]; then
-    cat "$LEGACY"
-  fi
-  for i in "${!SECTIONS[@]}"; do
-    section="${SECTIONS[$i]}"
-    title="${SECTION_TITLES[$i]}"
-    dir="$FRAG_ROOT/$section"
-    if [[ -d "$dir" ]]; then
-      # Skip dotfiles. Lexical sort; contributors prefix filenames
-      # with task IDs (e.g. T7-12-foo.md) for implicit ordering.
-      local files
-      mapfile -t files < <(find "$dir" -maxdepth 1 -type f -name '*.md' \
-        ! -name '.*' | LC_ALL=C sort)
-      if [[ ${#files[@]} -gt 0 ]]; then
-        local first_in_section=1
-        for frag in "${files[@]}"; do
-          # Skip empty / whitespace-only fragments; warn so the author
-          # notices the stub rather than silently dropping the entry.
-          if [[ ! -s "$frag" ]] || ! grep -q '[^[:space:]]' "$frag"; then
-            printf 'WARNING: %s is empty; skipping.\n' "${frag#"$REPO_ROOT"/}" >&2
-            continue
-          fi
-          if [[ $first_in_section -eq 1 ]]; then
-            printf '### %s\n\n' "$title"
-            first_in_section=0
-          fi
-          emit_fragment "$frag"
-          # Each fragment ends in newline; ensure exactly one blank
-          # line follows so neighbouring bullets don't fuse.
-          [[ "$(tail -c1 "$frag")" == $'\n' ]] || printf '\n'
-          printf '\n'
-        done
-      fi
+    # Emit the Unreleased body (without the "## [Unreleased] ..." header).
+    # The body always begins with the legacy archive (verbatim — no edits
+    # to existing entries during migration) and then appends one section
+    # per Keep-a-Changelog category from the fragment tree. Sections that
+    # have no fragments are silently skipped; fragments under unknown
+    # subdirs trigger a stderr warning (per PR #384 / ADR-0892).
+    local section title dir frag
+    printf '\n'
+    warn_unknown_subdirs || return 1
+    if [[ -f "$LEGACY" ]]; then
+        local legacy_body
+        legacy_body="$(emit_fragment "$LEGACY" "# Pre-fragment changelog archive")" || return $?
+        printf '%s\n\n' "$legacy_body"
     fi
-  done
+    for i in "${!SECTIONS[@]}"; do
+        section="${SECTIONS[$i]}"
+        title="${SECTION_TITLES[$i]}"
+        dir="$FRAG_ROOT/$section"
+        if [[ -d "$dir" ]]; then
+            # Skip dotfiles. Lexical sort; contributors prefix filenames
+            # with task IDs (e.g. T7-12-foo.md) for implicit ordering.
+            local files
+            mapfile -t files < <(find "$dir" -maxdepth 1 -type f -name '*.md' \
+                ! -name '.*' | LC_ALL=C sort)
+            if [[ ${#files[@]} -gt 0 ]]; then
+                local first_in_section=1
+                for frag in "${files[@]}"; do
+                    # Skip empty / whitespace-only fragments; warn so the author
+                    # notices the stub rather than silently dropping the entry.
+                    if [[ ! -s "$frag" ]] || ! grep -q '[^[:space:]]' "$frag"; then
+                        printf 'WARNING: %s is empty; skipping.\n' "${frag#"$REPO_ROOT"/}" >&2
+                        continue
+                    fi
+                    if [[ $first_in_section -eq 1 ]]; then
+                        printf '### %s\n\n' "$title"
+                        first_in_section=0
+                    fi
+                    local fragment_body
+                    fragment_body="$(emit_fragment "$frag" "# Changelog fragment")" || return $?
+                    # Command substitution removes all trailing newlines. Re-add exactly
+                    # one body newline plus one blank separator between fragments.
+                    printf '<!-- changelog fragment boundary -->\n\n%s\n\n' "$fragment_body"
+                done
+            fi
+        fi
+    done
 }
 
 mode="render"
 case "${1:-}" in
-  --check) mode="check" ;;
-  --write) mode="write" ;;
-  --help | -h)
+--check) mode="check" ;;
+--write) mode="write" ;;
+--help | -h)
     sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
-  "") ;;
-  *)
+"") ;;
+*)
     printf 'unknown flag: %s\n' "$1" >&2
     exit 64
     ;;
 esac
 
-rendered="$(render)"
+rendered="$(render)" || {
+    render_status=$?
+    printf 'ERROR: changelog fragment rendering failed\n' >&2
+    exit "$render_status"
+}
 
 if [[ "$mode" == render ]]; then
-  # printf '%s\n' restores the trailing newline that command substitution
-  # stripped from "$rendered" — CHANGELOG.md is newline-terminated.
-  printf '%s\n' "$rendered"
-  exit 0
+    # printf '%s\n' restores the trailing newline that command substitution
+    # stripped from "$rendered" — CHANGELOG.md is newline-terminated.
+    printf '%s\n' "$rendered"
+    exit 0
 fi
 
 # --check / --write splice the rendered body into CHANGELOG.md between the
@@ -204,15 +221,15 @@ current_block="$(awk -v boundary="$BOUNDARY_REGEX" '
 ' "$CHANGELOG")"
 
 if [[ "$mode" == check ]]; then
-  if [[ "$current_block" == "$rendered"* || "$rendered" == "$current_block"* ]]; then
-    # Allow rendered to be a prefix-superset of current (extra trailing newlines)
-    # but on real drift, fail loud.
-    diff <(printf '%s' "$current_block") <(printf '%s' "$rendered") >/dev/null && exit 0
-  fi
-  diff -u <(printf '%s' "$current_block") <(printf '%s' "$rendered") || true
-  printf '\nCHANGELOG.md Unreleased block is out of sync with changelog.d/.\n' >&2
-  printf 'Run: scripts/release/concat-changelog-fragments.sh --write\n' >&2
-  exit 1
+    if [[ "$current_block" == "$rendered"* || "$rendered" == "$current_block"* ]]; then
+        # Allow rendered to be a prefix-superset of current (extra trailing newlines)
+        # but on real drift, fail loud.
+        diff <(printf '%s' "$current_block") <(printf '%s' "$rendered") >/dev/null && exit 0
+    fi
+    diff -u <(printf '%s' "$current_block") <(printf '%s' "$rendered") || true
+    printf '\nCHANGELOG.md Unreleased block is out of sync with changelog.d/.\n' >&2
+    printf 'Run: scripts/release/concat-changelog-fragments.sh --write\n' >&2
+    exit 1
 fi
 
 # --write — splice rendered body in place of the existing Unreleased block.
@@ -226,12 +243,12 @@ trap 'rm -f "$tmp_body" "$tmp_out"' EXIT
 # Command substitution strips trailing newlines from "$rendered". Re-emit one
 # terminal newline and add a blank separator only when a versioned tail exists.
 {
-  printf '%s\n' "$rendered"
-  # Separate Unreleased from an existing version heading, but do not append a
-  # blank line when this pre-first-release changelog has no versioned tail.
-  if grep -q '^## \[[0-9]' "$CHANGELOG"; then
-    printf '\n'
-  fi
+    printf '%s\n' "$rendered"
+    # Separate Unreleased from an existing version heading, but do not append a
+    # blank line when this pre-first-release changelog has no versioned tail.
+    if grep -q '^## \[[0-9]' "$CHANGELOG"; then
+        printf '\n'
+    fi
 } >"$tmp_body"
 
 awk -v boundary="$BOUNDARY_REGEX" '
@@ -256,8 +273,8 @@ awk -v boundary="$BOUNDARY_REGEX" '
 # pipeline produces an unchanged copy and the in-place mv silently leaves the
 # file untouched — caller has no signal. Refuse to overwrite in that case.
 if ! grep -q '^## \[Unreleased\]' "$tmp_out"; then
-  printf 'ERROR: rendered CHANGELOG.md missing "## [Unreleased]" header — aborting overwrite\n' >&2
-  exit 1
+    printf 'ERROR: rendered CHANGELOG.md missing "## [Unreleased]" header — aborting overwrite\n' >&2
+    exit 1
 fi
 
 mv "$tmp_out" "$CHANGELOG"

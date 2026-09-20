@@ -1,4 +1,6 @@
-### dev-mcp container: ubuntu:26.04 + CUDA 13.2 (ADR-0573)
+# Changelog fragment
+
+## dev-mcp container: ubuntu:26.04 + CUDA 13.2 (ADR-0573)
 
 - Base image bumped from `ubuntu:24.04` to `ubuntu:26.04` (Resolute Raccoon,
   April 2026 LTS) in `dev/Containerfile`.

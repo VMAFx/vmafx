@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0578: Hoist VIF scratch buffer from per-frame allocation to VifState
 
 - **Status**: Accepted
@@ -51,7 +50,7 @@ changes lifetime, not contents.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep per-frame malloc | Zero code change | ~79 MB/frame allocator traffic at 1080p; system allocator lock contention in threaded mode | Performance regression is the status quo; ruled out |
 | Thread-local storage for scratch | Zero signature change | Complicates sanitiser / valgrind runs; not idiomatic for this codebase | Not chosen — VifState is already the right place |
 | Opaque scratch pointer in VifState (this ADR's decision) | Matches existing `float_adm`, `ssimulacra2` patterns; zero arithmetic change | Requires signature update to `compute_vif` and `vif.h` | Chosen |

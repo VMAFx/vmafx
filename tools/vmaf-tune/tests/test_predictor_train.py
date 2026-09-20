@@ -447,7 +447,7 @@ def test_predictor_raises_on_missing_model_file(tmp_path: Path) -> None:
 
 
 def test_emit_stub_card_only_does_not_contain_placeholder(tmp_path: Path) -> None:
-    """--emit-stub-card-only must emit a card with no literal PLACEHOLDER text.
+    """--emit-stub-card-only must emit complete, lintable Markdown.
 
     ADR-0546 (ai-01): the synthetic-stub signing note previously emitted
     'PLACEHOLDER', which is misleading.  The replacement text must be
@@ -465,3 +465,9 @@ def test_emit_stub_card_only_does_not_contain_placeholder(tmp_path: Path) -> Non
         "not applicable" in card_text
     ), "expected 'not applicable' in the Sigstore signing note for a synthetic-stub card"
     assert "Sigstore" in card_text, "expected a Sigstore reference in the signing note"
+    assert "\n\n\n" not in card_text, "model card contains consecutive blank lines"
+    assert "```text\n" in card_text, "architecture fence must declare its text language"
+    assert (
+        "\n> synthetic-100 corpus seeded by the codec name." in card_text
+    ), "synthetic warning must be wrapped as a Markdown blockquote"
+    assert "| PLCC | 0.0000 |" in card_text, "metrics table must use compact cell spacing"

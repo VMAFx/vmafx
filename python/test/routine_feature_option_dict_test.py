@@ -20,10 +20,13 @@ and YUV-fixture-free; we assert the keyword arguments passed to it
 are correct under both ``None`` and populated configurations.
 """
 
-import os
+import importlib
 import sys
+import tempfile
 import types
 import unittest
+from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -58,7 +61,7 @@ class _FakeAsset:
         self.raw_groundtruth = None
         # ``explain_model_on_dataset`` prints the dis path before
         # constructing the FeatureAssembler.
-        self.dis_path = "/tmp/t7_32_fake_dis_{0}.yuv".format(content_id)
+        self.dis_path = str(Path(tempfile.gettempdir()) / f"t7_32_fake_dis_{content_id}.yuv")
 
 
 class _FakeResult:
@@ -69,7 +72,7 @@ class _FakeResult:
 class _FakeFAssembler:
     """Records constructor kwargs and yields one empty result per asset."""
 
-    instances = []
+    instances: ClassVar[list["_FakeFAssembler"]] = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -94,7 +97,7 @@ class CvOnDatasetFeatureOptionDictTest(unittest.TestCase):
         _FakeFAssembler.instances = []
 
     def _drive(self, feature_param):
-        from vmaf import routine
+        routine = importlib.import_module("vmaf.routine")
 
         dataset = types.SimpleNamespace(dataset_name="t7-32-fake")
         model_param = types.SimpleNamespace(model_type="LIBSVMNUSVR", model_param_dict={})
@@ -111,30 +114,25 @@ class CvOnDatasetFeatureOptionDictTest(unittest.TestCase):
             patch.object(routine, "ModelCrossValidation") as mcv,
             patch.object(routine, "TrainTestModel") as ttm,
         ):
-            mcv.run_kfold_cross_validation.return_value = (
-                {"ys_label": np.array([1.0]), "ys_label_pred": np.array([1.0])},
-                None,
-            )
+            mcv.run_kfold_cross_validation.return_value = {
+                "aggr_stats": {
+                    "ys_label": np.array([1.0]),
+                    "ys_label_pred": np.array([1.0]),
+                },
+                "contentids": [0],
+            }
             ttm.find_subclass.return_value = MagicMock()
             ttm.format_stats_for_print = staticmethod(lambda s: "")
             ttm.format_stats_for_plot = staticmethod(lambda s: "")
             ttm.plot_scatter = staticmethod(lambda *a, **k: None)
-            try:
-                routine.cv_on_dataset(
-                    dataset,
-                    feature_param,
-                    model_param,
-                    ax,
-                    result_store,
-                    contentid_groups,
-                )
-            except Exception:
-                # We only care that FeatureAssembler was constructed
-                # with the right wiring; downstream stat plotting
-                # exercises a deeper code path the mock cannot fully
-                # satisfy.  The first FeatureAssembler instance is
-                # captured before any of that.
-                pass
+            routine.cv_on_dataset(
+                dataset,
+                feature_param,
+                model_param,
+                ax,
+                result_store,
+                contentid_groups,
+            )
 
         return _FakeFAssembler.instances
 
@@ -167,7 +165,7 @@ class ExplainModelOnDatasetFeatureOptionDictTest(unittest.TestCase):
         _FakeFAssembler.instances = []
 
     def _drive(self, model_dict):
-        from vmaf import routine
+        routine = importlib.import_module("vmaf.routine")
 
         model = MagicMock()
         model.model_dict = model_dict
@@ -188,14 +186,11 @@ class ExplainModelOnDatasetFeatureOptionDictTest(unittest.TestCase):
             patch.object(routine, "LocalExplainer", return_value=explainer),
             patch.object(routine, "DisplayConfig"),
         ):
-            try:
-                routine.explain_model_on_dataset(
-                    model,
-                    test_assets_selected_indexs=[0],
-                    test_dataset_filepath="/dev/null",
-                )
-            except Exception:
-                pass
+            routine.explain_model_on_dataset(
+                model,
+                test_assets_selected_indexs=[0],
+                test_dataset_filepath="/dev/null",
+            )
 
         return _FakeFAssembler.instances
 

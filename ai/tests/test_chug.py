@@ -588,9 +588,9 @@ def test_chug_pairing_never_uses_identity_pairs_for_distorted_rows(
 
     assert len(pairs) == 3
     for pair in pairs:
-        assert (
-            pair.ref_path != pair.dis_path
-        ), f"identity pair detected (ADR-0509 regression): ref={pair.ref_path} dis={pair.dis_path}"
+        assert pair.ref_path != pair.dis_path, (
+            f"identity pair detected (ADR-0509 regression): ref={pair.ref_path} dis={pair.dis_path}"
+        )
         assert pair.ref_row["chug_ref"] == 1
         assert pair.row["chug_ref"] == 0
 

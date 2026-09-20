@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Eight new NEON-vs-scalar parity tests close the coverage gap that let ADR-1057
   reach master: `test_vif_neon`, `test_ssim_neon`, `test_float_adm_neon`,
   `test_float_adm_dwt2_neon`, `test_motion_neon`, `test_float_motion_neon`,

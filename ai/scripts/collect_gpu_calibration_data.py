@@ -40,12 +40,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from aiutils.run_manifest import write_run_manifest
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # Reuse the parity gate's authoritative feature ↔ metric-name table and
 # backend ↔ extractor-suffix table. Importing from a sibling top-level
@@ -363,8 +367,7 @@ def _write_manifest(
     )
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description=__doc__)
+def _add_fixture_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--vmaf-binary",
         type=Path,
@@ -377,6 +380,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--height", type=int, required=True)
     ap.add_argument("--pixel-format", default="420")
     ap.add_argument("--bitdepth", type=int, default=8)
+
+
+def _add_collection_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--arch-id",
         default="cuda:default",
@@ -407,6 +413,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     ap.add_argument("--cuda-device", type=int, default=1)
     ap.add_argument("--sycl-device", type=int, default=0)
+
+
+def _add_output_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--workdir",
         type=Path,
@@ -433,41 +442,37 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
     )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description=__doc__)
+    _add_fixture_args(ap)
+    _add_collection_args(ap)
+    _add_output_args(ap)
     return ap.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    args = parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.output.with_suffix(".manifest.json")
-
+def _validate_inputs(args: argparse.Namespace) -> bool:
     if not args.vmaf_binary.exists():
         sys.stderr.write(f"vmaf binary not found: {args.vmaf_binary}\n")
-        return 2
-    for p in (args.reference, args.distorted):
-        if not p.exists():
-            sys.stderr.write(f"fixture not found: {p}\n")
-            return 2
+        return False
+    for path in (args.reference, args.distorted):
+        if not path.exists():
+            sys.stderr.write(f"fixture not found: {path}\n")
+            return False
+    return True
 
-    # Resolve smoke shortcut (overrides feature / backend / frame defaults
-    # in one go to guarantee a deterministic, hosted-CI-friendly run).
+
+def _select_collection(args: argparse.Namespace) -> tuple[list[str], list[str], int | None]:
     if args.smoke:
-        features = list(SMOKE_FEATURES)
-        backends = list(SMOKE_BACKENDS)
-        frame_limit = SMOKE_FRAME_LIMIT
-    else:
-        features = args.features or sorted(FEATURE_METRICS.keys())
-        backends = args.backends or ["cuda"]
-        frame_limit = args.frame_limit
+        return list(SMOKE_FEATURES), list(SMOKE_BACKENDS), SMOKE_FRAME_LIMIT
+    return args.features or sorted(FEATURE_METRICS), args.backends or ["cuda"], args.frame_limit
 
-    args.workdir.mkdir(parents=True, exist_ok=True)
-    # Vulkan backend was removed per ADR-0726; only cuda and sycl are valid.
-    devices = {
-        "cuda": args.cuda_device,
-        "sycl": args.sycl_device,
-    }
 
+def _collect_rows(
+    args: argparse.Namespace, features: list[str], backends: list[str], frame_limit: int | None
+) -> list[Row]:
+    devices = {"cuda": args.cuda_device, "sycl": args.sycl_device}
     all_rows: list[Row] = []
     for feature in features:
         for backend in backends:
@@ -492,8 +497,24 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"[collect]   → {len(rows)} rows")
             all_rows.extend(rows)
+    return all_rows
 
-    n = write_parquet(all_rows, args.output)
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+
+    if not _validate_inputs(args):
+        return 2
+
+    # Resolve smoke shortcut (overrides feature / backend / frame defaults
+    # in one go to guarantee a deterministic, hosted-CI-friendly run).
+    features, backends, frame_limit = _select_collection(args)
+
+    args.workdir.mkdir(parents=True, exist_ok=True)
+    n = write_parquet(_collect_rows(args, features, backends, frame_limit), args.output)
     _write_manifest(
         path=args.manifest_out,
         args=args,

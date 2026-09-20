@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0093: Vulkan GCC 16 `-Wreturn-mismatch` build-break root-cause
 
 **Date**: 2026-05-10
@@ -12,7 +11,7 @@ two Vulkan feature-extractor files had `return <int-expr>;` inside `static void`
 functions:
 
 | File | Line (pre-fix) | Function | Return expression |
-|------|---------------|----------|-------------------|
+| ------ | --------------- | ---------- | ------------------- |
 | `float_ansnr_vulkan.c` | 299 | `reduce_partials` | `return err_inv;` |
 | `float_ansnr_vulkan.c` | 302 | `reduce_partials` | `return err_inv;` |
 | `cambi_vulkan.c` | 884 | `cambi_vk_readback_image` | `return err_inv_img;` |

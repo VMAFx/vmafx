@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0045: Vulkan picture preallocation — option-space digest
 
 - **Date**: 2026-05-02
@@ -15,7 +14,7 @@ host-allocator pattern?
 ## Reference surfaces compared
 
 | Trait | CUDA (`libvmaf_cuda.h`) | SYCL (`libvmaf_sycl.h`) | Vulkan (this digest) |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Methods | `NONE`, `HOST`, `HOST_PINNED`, `DEVICE` | `NONE`, `HOST`, `DEVICE` | `NONE`, `HOST`, `DEVICE` |
 | Pool depth | Caller-controlled (via `vmaf_cuda_ring_buffer`) | Compile-time `pic_cnt = 2` | Compile-time `pic_cnt = 2` (mirrors SYCL) |
 | Backing | `cudaMalloc` / `cudaMallocHost` / pinned | `sycl::malloc_device` / `sycl::malloc_host` | VMA `AUTO_PREFER_HOST` VkBuffer / regular host |

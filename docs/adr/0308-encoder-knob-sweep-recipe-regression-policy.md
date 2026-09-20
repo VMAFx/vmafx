@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0308: Encoder knob-sweep recipe-regression revision policy
 
 - **Status**: Accepted
@@ -74,7 +73,7 @@ We will adopt the following recipe-revision policy for the fork:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | **A. Adopt structural-only policy with a 7-of-9 threshold (chosen)** | Filters out content flukes; the 7-of-9 cut matches the natural cluster (top-15 cells all hit 9-of-9, no observed cells in 4-6 range); each forbidden recipe has a single-paragraph justification. | Threshold is empirical and could shift if the corpus grows past 9 sources; need to revisit the absolute threshold then (likely to a fraction). | Best fit for the corpus shape we actually have. The structural cluster is sharp (9-of-9 vs 0-of-9), so the 7-of-9 cut is robust to one or two follow-up reruns. |
 | **B. Forbid every detected regression** (no source-count threshold) | Maximally cautious; never lets a regressing recipe through. | Produces 1,915 ship-blockers, most of which are single-source flukes that the per-slice hull lookup already filters at recommend-time. Operationally impossible to maintain. | Drowns the load-bearing structural findings in noise; bisect signals would point at a follow-up that flips a single-source fluke instead of the real cell. |
 | **C. Accept all regressions; rely on per-slice hull lookup at recommend-time only** | Zero adapter changes; aligns with current "recipes are sweep-coverage, not adapter defaults" reality. | Loses the structural-finding signal entirely. Future adapter work that promotes `recipe=bf3` as a default for h264_nvenc would silently regress every NVENC user; nothing in the package would block it. | Concedes the entire ADR-0305 invariant. The whole point of the sweep was to drive adapter defaults; accepting regressions means the sweep was busywork. |

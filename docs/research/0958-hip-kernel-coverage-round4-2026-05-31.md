@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # HIP kernel parity coverage — round 4 audit (2026-05-31)
 
 Companion research digest for ADR-0958. Quantifies the residual
@@ -15,7 +14,7 @@ HIP-related TUs (17 real extractors + `hip_hsaco_stubs.c` build-only
 fallbacks). The effective HIP extractor count is 17.
 
 | Extractor source | Registered name | Tested before round-4? | Round-4 ships test? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `integer_adm_hip.c` | `adm_hip` | yes — `test_hip_adm_parity` (ADR-0539) | — |
 | `integer_motion_v2_hip.c` | `motion_v2_hip` | yes — `test_hip_motion3_parity` | — |
 | `integer_psnr_hip.c` | `psnr_hip` | yes — `test_hip_psnr_parity` (PR #351) | — |
@@ -106,7 +105,7 @@ The 2 round-4 picks were ranked on three axes:
 ## Fixture choices
 
 | Test | Geometry | Bit depth | Frames | Tolerance | Rationale |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | `test_hip_ssimulacra2_parity` | 256×144 | 8 | 1 | 1e-3 | >= 8×8 lower bound (line 851); 6-scale pyramid rounding ≈ MS-SSIM |
 | `test_hip_float_ssim_parity` | 256×144 | 8 | 1 | 1e-3 | >= 8×8 lower bound; mirrors integer SSIM round-2 places=3 budget |
 

@@ -19,7 +19,7 @@
  *    6. iqa_filter_pixel() with NULL kernel (line 273-274).
  *    7. iqa_filter_pixel() edge / non-edge dispatch (line 285-300).
  */
-// NOLINTBEGIN(modernize-use-nullptr) — ADR-1138/ADR-1166: MSVC C NULL.
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +38,7 @@ static char *test_kbnd_symmetric_in_range(void)
     /* (0,0) is in range — identity. */
     mu_assert("KBND_SYMMETRIC in-range identity", KBND_SYMMETRIC(img, 3, 3, 0, 0, 0.0f) == 0.f);
     mu_assert("KBND_SYMMETRIC center", KBND_SYMMETRIC(img, 3, 3, 1, 1, 0.0f) == 4.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_symmetric_negative(void)
@@ -48,7 +48,7 @@ static char *test_kbnd_symmetric_negative(void)
     mu_assert("KBND_SYMMETRIC x=-1 reflects to x=0", KBND_SYMMETRIC(img, 3, 3, -1, 0, 0.0f) == 1.f);
     /* y = -1 → mirror to y = 0 */
     mu_assert("KBND_SYMMETRIC y=-1 reflects to y=0", KBND_SYMMETRIC(img, 3, 3, 0, -1, 0.0f) == 1.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_symmetric_overflow(void)
@@ -58,7 +58,7 @@ static char *test_kbnd_symmetric_overflow(void)
     mu_assert("KBND_SYMMETRIC x=3 reflects to x=2", KBND_SYMMETRIC(img, 3, 3, 3, 1, 0.0f) == 6.f);
     /* y = 3 → reflect to y = 2 */
     mu_assert("KBND_SYMMETRIC y=3 reflects to y=2", KBND_SYMMETRIC(img, 3, 3, 1, 3, 0.0f) == 8.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_replicate_clamp(void)
@@ -68,7 +68,7 @@ static char *test_kbnd_replicate_clamp(void)
     mu_assert("KBND_REPLICATE x>w → x=w-1", KBND_REPLICATE(img, 3, 3, 5, 1, 0.0f) == 6.f);
     mu_assert("KBND_REPLICATE y<0 → y=0", KBND_REPLICATE(img, 3, 3, 1, -1, 0.0f) == 2.f);
     mu_assert("KBND_REPLICATE y>h → y=h-1", KBND_REPLICATE(img, 3, 3, 1, 5, 0.0f) == 8.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_constant_oob(void)
@@ -82,7 +82,7 @@ static char *test_kbnd_constant_oob(void)
     /* x or y < 0 → clamped to 0 (no constant fallthrough). */
     mu_assert("KBND_CONSTANT x<0 → x=0", KBND_CONSTANT(img, 3, 3, -2, 1, 7.0f) == 4.f);
     mu_assert("KBND_CONSTANT y<0 → y=0", KBND_CONSTANT(img, 3, 3, 1, -2, 7.0f) == 2.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -93,9 +93,9 @@ static char *test_iqa_img_filter_null_kernel(void)
 {
     float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
     /* k == NULL → must return non-zero */
-    int rc = iqa_img_filter(img, 3, 3, NULL, NULL);
+    int rc = iqa_img_filter(img, 3, 3, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("iqa_img_filter NULL kernel → non-zero", rc != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_img_filter_owns_buffer(void)
@@ -104,8 +104,8 @@ static char *test_iqa_img_filter_owns_buffer(void)
     float k_vals[9] = {0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f};
     struct iqa_kernel k;
     k.kernel = k_vals;
-    k.kernel_h = NULL;
-    k.kernel_v = NULL;
+    k.kernel_h = VMAF_NULLPTR;
+    k.kernel_v = VMAF_NULLPTR;
     k.w = 3;
     k.h = 3;
     k.normalized = 1;
@@ -115,11 +115,11 @@ static char *test_iqa_img_filter_owns_buffer(void)
     /* When result == NULL, iqa_img_filter mallocs its own dst and
      * copies the result back into img in place. */
     float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
-    int rc = iqa_img_filter(img, 3, 3, &k, NULL);
+    int rc = iqa_img_filter(img, 3, 3, &k, VMAF_NULLPTR);
     mu_assert("iqa_img_filter owns_buffer ok", rc == 0);
     /* Identity kernel — img unchanged (assert one interior cell). */
     mu_assert("identity convolve preserves center", img[4] == 5.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -129,9 +129,9 @@ static char *test_iqa_img_filter_owns_buffer(void)
 static char *test_iqa_filter_pixel_null_kernel(void)
 {
     const float img[9] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f};
-    float v = iqa_filter_pixel(img, 3, 3, 1, 1, NULL, 1.0f);
+    float v = iqa_filter_pixel(img, 3, 3, 1, 1, VMAF_NULLPTR, 1.0f);
     mu_assert("filter_pixel NULL kernel returns raw pixel", v == 4.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_filter_pixel_edge_branch(void)
@@ -142,8 +142,8 @@ static char *test_iqa_filter_pixel_edge_branch(void)
     float k_vals[9] = {0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f};
     struct iqa_kernel k;
     k.kernel = k_vals;
-    k.kernel_h = NULL;
-    k.kernel_v = NULL;
+    k.kernel_h = VMAF_NULLPTR;
+    k.kernel_v = VMAF_NULLPTR;
     k.w = 3;
     k.h = 3;
     k.normalized = 1;
@@ -157,7 +157,7 @@ static char *test_iqa_filter_pixel_edge_branch(void)
     /* Inner case: identity at center (2,2) returns the center pixel. */
     float inner = iqa_filter_pixel(img, 5, 5, 2, 2, &k, 1.0f);
     mu_assert("filter_pixel inner identity at (2,2) returns 3", inner == 3.f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_boundary_tests(void)
@@ -167,7 +167,7 @@ static char *run_boundary_tests(void)
     mu_run_test(test_kbnd_symmetric_overflow);
     mu_run_test(test_kbnd_replicate_clamp);
     mu_run_test(test_kbnd_constant_oob);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -179,7 +179,5 @@ char *run_tests(void)
     mu_run_test(test_iqa_img_filter_owns_buffer);
     mu_run_test(test_iqa_filter_pixel_null_kernel);
     mu_run_test(test_iqa_filter_pixel_edge_branch);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

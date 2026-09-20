@@ -33,6 +33,8 @@
  * memcmp-equality against that reference.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
@@ -42,9 +44,9 @@
 void speed_matmul_avx2(float *dst, int dst_stride, const float *x, int x_stride, const float *y,
                        int y_stride, int rows, int inner, int cols)
 {
-    assert(dst != NULL);
-    assert(x != NULL);
-    assert(y != NULL);
+    assert(dst != VMAF_NULLPTR);
+    assert(x != VMAF_NULLPTR);
+    assert(y != VMAF_NULLPTR);
     assert(rows >= 0);
     assert(inner >= 0);
     assert(cols >= 0);

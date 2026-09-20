@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **CodeQL quality-alert cleanup (code-scanning backlog)**. After triaging the
   full master code-scanning backlog against `origin/master` (124 alerts → 109
   resolved: most were verified false-positives or intentional patterns —

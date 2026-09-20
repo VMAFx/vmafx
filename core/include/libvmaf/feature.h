@@ -64,7 +64,11 @@ extern "C" {
  * `-EINVAL` *and* you either passed a NULL argument or called
  * @ref vmaf_use_feature. Otherwise never.
  */
+#ifdef __cplusplus
+struct VmafFeatureDictionary;
+#else
 typedef struct VmafFeatureDictionary VmafFeatureDictionary;
+#endif
 
 /**
  * @brief Set (or replace) a key/value pair in a feature-extractor options dictionary.

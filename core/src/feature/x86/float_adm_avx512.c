@@ -18,7 +18,9 @@
  */
 
 #include <immintrin.h>
+#include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "feature/adm_tools.h"
@@ -31,264 +33,216 @@ static inline __m512 avx512_abs_ps(__m512 v)
     return _mm512_castsi512_ps(_mm512_and_si512(_mm512_castps_si512(v), mask));
 }
 
-/*
- * Horizontally sum 4 doubles in a __m256d to a scalar double.
- * Tree order: (v[0]+v[1]) + (v[2]+v[3]).
- * Mirrors hadd_pd4 in float_adm_avx2.c — kept here to avoid a cross-TU
- * dependency (each TU is compiled with its own ISA flags).
- */
-/* NOLINTNEXTLINE(readability-function-size) — ADR-0139 bit-exactness: inline
- * horizontal double reduction must not be outline-called. */
-static inline double hadd_pd4(__m256d v)
+/* See float_adm_mul_float_by_double_avx2(): this widening is required for
+ * exact agreement with adm_csf_s(), whose scale literal has type double. */
+static inline __m512 float_adm_mul_float_by_double_avx512(__m512 value, __m512d factor)
 {
-    __m256d h = _mm256_hadd_pd(v, v);
-    return _mm_cvtsd_f64(_mm256_castpd256_pd128(h)) + _mm_cvtsd_f64(_mm256_extractf128_pd(h, 1));
+    const __m256 value_lo = _mm512_castps512_ps256(value);
+    const __m256 value_hi = _mm512_extractf32x8_ps(value, 1);
+    const __m256 result_lo =
+        _mm512_cvtpd_ps(_mm512_mul_pd(_mm512_cvtps_pd(value_lo), factor));
+    const __m256 result_hi =
+        _mm512_cvtpd_ps(_mm512_mul_pd(_mm512_cvtps_pd(value_hi), factor));
+    return _mm512_insertf32x8(_mm512_castps256_ps512(result_lo), result_hi, 1);
 }
 
-/*
- * Widen all 16 float lanes of a __m512 to double and horizontally sum.
- * Splits into four 4-float groups via _mm512_extractf32x4_ps, widens each
- * with _mm256_cvtps_pd, and reduces with hadd_pd4.  The four group-sums are
- * then added left-to-right.  This avoids a float-precision intermediate store
- * and keeps the accumulation in double throughout — ADR-0139 / F2 fix.
- */
-static inline double hsum_ps_to_double(__m512 v)
+static const float dwt2_db2_coeffs_lo[4] = {0.482962913144690f, 0.836516303737469f,
+                                            0.224143868041857f, -0.129409522550921f};
+static const float dwt2_db2_coeffs_hi[4] = {-0.129409522550921f, -0.224143868041857f,
+                                            0.836516303737469f, -0.482962913144690f};
+
+typedef struct Dwt2FiltersAvx512 {
+    __m512 lo[4];
+    __m512 hi[4];
+} Dwt2FiltersAvx512;
+
+typedef struct Dwt2BandsAvx512 {
+    __m512 lo;
+    __m512 hi;
+} Dwt2BandsAvx512;
+
+static inline Dwt2FiltersAvx512 float_adm_dwt2_filters_avx512(void)
 {
-    __m256d d0 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 0));
-    __m256d d1 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 1));
-    __m256d d2 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 2));
-    __m256d d3 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 3));
-    return hadd_pd4(d0) + hadd_pd4(d1) + hadd_pd4(d2) + hadd_pd4(d3);
+    Dwt2FiltersAvx512 filters;
+    for (int tap = 0; tap < 4; ++tap) {
+        filters.lo[tap] = _mm512_set1_ps(dwt2_db2_coeffs_lo[tap]);
+        filters.hi[tap] = _mm512_set1_ps(dwt2_db2_coeffs_hi[tap]);
+    }
+    return filters;
 }
 
-void float_adm_dwt2_avx512(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
-                           int w, int h, int src_stride, int dst_stride)
+static void float_adm_dwt2_vertical_row_avx512(const float *const rows[4], float *tmplo,
+                                               float *tmphi, int w,
+                                               const Dwt2FiltersAvx512 *filters)
 {
-    const float filter_lo[4] = {0.482962913144690f, 0.836516303737469f, 0.224143868041857f,
-                                -0.129409522550921f};
-    const float filter_hi[4] = {-0.129409522550921f, -0.224143868041857f, 0.836516303737469f,
-                                -0.482962913144690f};
+    int j = 0;
+    for (; j + 16 <= w; j += 16) {
+        const __m512 s0 = _mm512_loadu_ps(rows[0] + j);
+        const __m512 s1 = _mm512_loadu_ps(rows[1] + j);
+        const __m512 s2 = _mm512_loadu_ps(rows[2] + j);
+        const __m512 s3 = _mm512_loadu_ps(rows[3] + j);
+        __m512 lo_acc = _mm512_mul_ps(filters->lo[0], s0);
+        lo_acc = _mm512_add_ps(lo_acc, _mm512_mul_ps(filters->lo[1], s1));
+        lo_acc = _mm512_add_ps(lo_acc, _mm512_mul_ps(filters->lo[2], s2));
+        lo_acc = _mm512_add_ps(lo_acc, _mm512_mul_ps(filters->lo[3], s3));
+        _mm512_storeu_ps(tmplo + j, lo_acc);
+        __m512 hi_acc = _mm512_mul_ps(filters->hi[0], s0);
+        hi_acc = _mm512_add_ps(hi_acc, _mm512_mul_ps(filters->hi[1], s1));
+        hi_acc = _mm512_add_ps(hi_acc, _mm512_mul_ps(filters->hi[2], s2));
+        hi_acc = _mm512_add_ps(hi_acc, _mm512_mul_ps(filters->hi[3], s3));
+        _mm512_storeu_ps(tmphi + j, hi_acc);
+    }
+    for (; j < w; ++j) {
+        const float s0 = rows[0][j];
+        const float s1 = rows[1][j];
+        const float s2 = rows[2][j];
+        const float s3 = rows[3][j];
+        tmplo[j] = dwt2_db2_coeffs_lo[0] * s0 + dwt2_db2_coeffs_lo[1] * s1 +
+                   dwt2_db2_coeffs_lo[2] * s2 + dwt2_db2_coeffs_lo[3] * s3;
+        tmphi[j] = dwt2_db2_coeffs_hi[0] * s0 + dwt2_db2_coeffs_hi[1] * s1 +
+                   dwt2_db2_coeffs_hi[2] * s2 + dwt2_db2_coeffs_hi[3] * s3;
+    }
+}
 
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+static inline void float_adm_dwt2_horizontal_scalar_avx512(const adm_dwt_band_t_s *dst, int **ind_x,
+                                                           int row, int column, int dst_px_stride,
+                                                           const float *tmplo, const float *tmphi)
+{
+    const int j0 = ind_x[0][column];
+    const int j1 = ind_x[1][column];
+    const int j2 = ind_x[2][column];
+    const int j3 = ind_x[3][column];
+    const float sl0 = tmplo[j0];
+    const float sl1 = tmplo[j1];
+    const float sl2 = tmplo[j2];
+    const float sl3 = tmplo[j3];
+    const int offset = row * dst_px_stride + column;
+    dst->band_a[offset] = dwt2_db2_coeffs_lo[0] * sl0 + dwt2_db2_coeffs_lo[1] * sl1 +
+                          dwt2_db2_coeffs_lo[2] * sl2 + dwt2_db2_coeffs_lo[3] * sl3;
+    dst->band_v[offset] = dwt2_db2_coeffs_hi[0] * sl0 + dwt2_db2_coeffs_hi[1] * sl1 +
+                          dwt2_db2_coeffs_hi[2] * sl2 + dwt2_db2_coeffs_hi[3] * sl3;
+    const float sh0 = tmphi[j0];
+    const float sh1 = tmphi[j1];
+    const float sh2 = tmphi[j2];
+    const float sh3 = tmphi[j3];
+    dst->band_h[offset] = dwt2_db2_coeffs_lo[0] * sh0 + dwt2_db2_coeffs_lo[1] * sh1 +
+                          dwt2_db2_coeffs_lo[2] * sh2 + dwt2_db2_coeffs_lo[3] * sh3;
+    dst->band_d[offset] = dwt2_db2_coeffs_hi[0] * sh0 + dwt2_db2_coeffs_hi[1] * sh1 +
+                          dwt2_db2_coeffs_hi[2] * sh2 + dwt2_db2_coeffs_hi[3] * sh3;
+}
 
+static inline Dwt2BandsAvx512
+float_adm_dwt2_horizontal_block_avx512(const float *tmp, int column, __m512i idx_even,
+                                       __m512i idx_odd, const Dwt2FiltersAvx512 *filters)
+{
+    const ptrdiff_t start = (ptrdiff_t)column * 2;
+    const __m512 a = _mm512_loadu_ps(tmp + start - 1);
+    const __m512 b = _mm512_loadu_ps(tmp + start - 1 + 16);
+    const __m512 tap0 = _mm512_permutex2var_ps(a, idx_even, b);
+    const __m512 tap1 = _mm512_permutex2var_ps(a, idx_odd, b);
+    const __m512 c = _mm512_loadu_ps(tmp + start + 1);
+    const __m512 d = _mm512_loadu_ps(tmp + start + 1 + 16);
+    const __m512 tap2 = _mm512_permutex2var_ps(c, idx_even, d);
+    const __m512 tap3 = _mm512_permutex2var_ps(c, idx_odd, d);
+    Dwt2BandsAvx512 bands;
+    bands.lo = _mm512_mul_ps(filters->lo[0], tap0);
+    bands.lo = _mm512_add_ps(bands.lo, _mm512_mul_ps(filters->lo[1], tap1));
+    bands.lo = _mm512_add_ps(bands.lo, _mm512_mul_ps(filters->lo[2], tap2));
+    bands.lo = _mm512_add_ps(bands.lo, _mm512_mul_ps(filters->lo[3], tap3));
+    bands.hi = _mm512_mul_ps(filters->hi[0], tap0);
+    bands.hi = _mm512_add_ps(bands.hi, _mm512_mul_ps(filters->hi[1], tap1));
+    bands.hi = _mm512_add_ps(bands.hi, _mm512_mul_ps(filters->hi[2], tap2));
+    bands.hi = _mm512_add_ps(bands.hi, _mm512_mul_ps(filters->hi[3], tap3));
+    return bands;
+}
+
+static void float_adm_dwt2_horizontal_row_avx512(const adm_dwt_band_t_s *dst, int **ind_x, int row,
+                                                 int w, int dst_px_stride, const float *tmplo,
+                                                 const float *tmphi,
+                                                 const Dwt2FiltersAvx512 *filters)
+{
+    const int half_w = (w + 1) / 2;
+    const __m512i idx_even =
+        _mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0);
+    const __m512i idx_odd =
+        _mm512_set_epi32(31, 29, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1);
+    float_adm_dwt2_horizontal_scalar_avx512(dst, ind_x, row, 0, dst_px_stride, tmplo, tmphi);
+    int j = 1;
+    for (; j + 16 <= half_w && 2 * j + 32 < w; j += 16) {
+        const ptrdiff_t output_offset = (ptrdiff_t)row * dst_px_stride + j;
+        const Dwt2BandsAvx512 lo =
+            float_adm_dwt2_horizontal_block_avx512(tmplo, j, idx_even, idx_odd, filters);
+        _mm512_storeu_ps(dst->band_a + output_offset, lo.lo);
+        _mm512_storeu_ps(dst->band_v + output_offset, lo.hi);
+        const Dwt2BandsAvx512 hi =
+            float_adm_dwt2_horizontal_block_avx512(tmphi, j, idx_even, idx_odd, filters);
+        _mm512_storeu_ps(dst->band_h + output_offset, hi.lo);
+        _mm512_storeu_ps(dst->band_d + output_offset, hi.hi);
+    }
+    for (; j < half_w; ++j)
+        float_adm_dwt2_horizontal_scalar_avx512(dst, ind_x, row, j, dst_px_stride, tmplo, tmphi);
+}
+
+int float_adm_dwt2_avx512(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
+                          int w, int h, int src_stride, int dst_stride)
+{
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
     float *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(float) * (w + 32)), MAX_ALIGN);
     float *tmphi = aligned_malloc(ALIGN_CEIL(sizeof(float) * (w + 32)), MAX_ALIGN);
     if (!tmplo || !tmphi) {
         aligned_free(tmplo);
         aligned_free(tmphi);
-        return;
+        return -ENOMEM;
     }
-    // Zero guard zone to avoid garbage reads at right boundary
     memset(tmplo + w, 0, 32 * sizeof(float));
     memset(tmphi + w, 0, 32 * sizeof(float));
-
-    __m512 fl0 = _mm512_set1_ps(filter_lo[0]);
-    __m512 fl1 = _mm512_set1_ps(filter_lo[1]);
-    __m512 fl2 = _mm512_set1_ps(filter_lo[2]);
-    __m512 fl3 = _mm512_set1_ps(filter_lo[3]);
-
-    __m512 fh0 = _mm512_set1_ps(filter_hi[0]);
-    __m512 fh1 = _mm512_set1_ps(filter_hi[1]);
-    __m512 fh2 = _mm512_set1_ps(filter_hi[2]);
-    __m512 fh3 = _mm512_set1_ps(filter_hi[3]);
-
-    int i;
-    int j;
-
-    for (i = 0; i < (h + 1) / 2; ++i) {
-        const float *row0 = src + ind_y[0][i] * src_px_stride;
-        const float *row1 = src + ind_y[1][i] * src_px_stride;
-        const float *row2 = src + ind_y[2][i] * src_px_stride;
-        const float *row3 = src + ind_y[3][i] * src_px_stride;
-
-        /* Vertical pass: process 16 floats per iteration with AVX-512.
-         * F3: mul+add chains match scalar tail; -ffp-contract=off per-TU
-         * (meson.build carve-out) prevents auto-FMA in both paths. */
-        for (j = 0; j + 16 <= w; j += 16) {
-            __m512 s0 = _mm512_loadu_ps(row0 + j);
-            __m512 s1 = _mm512_loadu_ps(row1 + j);
-            __m512 s2 = _mm512_loadu_ps(row2 + j);
-            __m512 s3 = _mm512_loadu_ps(row3 + j);
-
-            __m512 lo_acc = _mm512_mul_ps(fl0, s0);
-            lo_acc = _mm512_add_ps(lo_acc, _mm512_mul_ps(fl1, s1));
-            lo_acc = _mm512_add_ps(lo_acc, _mm512_mul_ps(fl2, s2));
-            lo_acc = _mm512_add_ps(lo_acc, _mm512_mul_ps(fl3, s3));
-            _mm512_storeu_ps(tmplo + j, lo_acc);
-
-            __m512 hi_acc = _mm512_mul_ps(fh0, s0);
-            hi_acc = _mm512_add_ps(hi_acc, _mm512_mul_ps(fh1, s1));
-            hi_acc = _mm512_add_ps(hi_acc, _mm512_mul_ps(fh2, s2));
-            hi_acc = _mm512_add_ps(hi_acc, _mm512_mul_ps(fh3, s3));
-            _mm512_storeu_ps(tmphi + j, hi_acc);
-        }
-
-        /* Scalar tail for vertical pass */
-        for (; j < w; ++j) {
-            float s0 = row0[j];
-            float s1 = row1[j];
-            float s2 = row2[j];
-            float s3 = row3[j];
-
-            tmplo[j] =
-                filter_lo[0] * s0 + filter_lo[1] * s1 + filter_lo[2] * s2 + filter_lo[3] * s3;
-            tmphi[j] =
-                filter_hi[0] * s0 + filter_hi[1] * s1 + filter_hi[2] * s2 + filter_hi[3] * s3;
-        }
-
-        /* Horizontal pass: vectorized interior with deinterleave,
-         * scalar for left boundary (j=0 reflection) and right tail. */
-        {
-            const int half_w = (w + 1) / 2;
-
-            /* Permutation indices for even/odd deinterleaving across 2 zmm regs */
-            const __m512i idx_even =
-                _mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0);
-            const __m512i idx_odd =
-                _mm512_set_epi32(31, 29, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1);
-
-            /* Scalar: j=0 (left boundary has reflection) */
-            {
-                int j0 = ind_x[0][0];
-                int j1 = ind_x[1][0];
-                int j2 = ind_x[2][0];
-                int j3 = ind_x[3][0];
-                float sl0 = tmplo[j0];
-                float sl1 = tmplo[j1];
-                float sl2 = tmplo[j2];
-                float sl3 = tmplo[j3];
-
-                dst->band_a[i * dst_px_stride] = filter_lo[0] * sl0 + filter_lo[1] * sl1 +
-                                                 filter_lo[2] * sl2 + filter_lo[3] * sl3;
-                dst->band_v[i * dst_px_stride] = filter_hi[0] * sl0 + filter_hi[1] * sl1 +
-                                                 filter_hi[2] * sl2 + filter_hi[3] * sl3;
-
-                float sh0 = tmphi[j0];
-                float sh1 = tmphi[j1];
-                float sh2 = tmphi[j2];
-                float sh3 = tmphi[j3];
-
-                dst->band_h[i * dst_px_stride] = filter_lo[0] * sh0 + filter_lo[1] * sh1 +
-                                                 filter_lo[2] * sh2 + filter_lo[3] * sh3;
-                dst->band_d[i * dst_px_stride] = filter_hi[0] * sh0 + filter_hi[1] * sh1 +
-                                                 filter_hi[2] * sh2 + filter_hi[3] * sh3;
-            }
-
-            /* AVX-512 vectorized interior: 16 outputs per iteration.
-             * For j>=1, tap indices are regular stride-2:
-             *   tap0 = tmplo[2j-1], tap1 = tmplo[2j], tap2 = tmplo[2j+1], tap3 = tmplo[2j+2]
-             * Deinterleave even/odd from 32-element load pairs. */
-            j = 1;
-            for (; j + 16 <= half_w && 2 * j + 32 < w; j += 16) {
-                /* 4 loads from tmplo covering indices [2j-1 .. 2j+32] */
-                __m512 A = _mm512_loadu_ps(tmplo + 2 * j - 1);
-                __m512 B = _mm512_loadu_ps(tmplo + 2 * j - 1 + 16);
-                __m512 tap0 = _mm512_permutex2var_ps(A, idx_even, B);
-                __m512 tap1 = _mm512_permutex2var_ps(A, idx_odd, B);
-
-                __m512 C = _mm512_loadu_ps(tmplo + 2 * j + 1);
-                __m512 D = _mm512_loadu_ps(tmplo + 2 * j + 1 + 16);
-                __m512 tap2 = _mm512_permutex2var_ps(C, idx_even, D);
-                __m512 tap3 = _mm512_permutex2var_ps(C, idx_odd, D);
-
-                __m512 ba = _mm512_mul_ps(fl0, tap0);
-                ba = _mm512_add_ps(ba, _mm512_mul_ps(fl1, tap1));
-                ba = _mm512_add_ps(ba, _mm512_mul_ps(fl2, tap2));
-                ba = _mm512_add_ps(ba, _mm512_mul_ps(fl3, tap3));
-                _mm512_storeu_ps(dst->band_a + i * dst_px_stride + j, ba);
-
-                __m512 bv = _mm512_mul_ps(fh0, tap0);
-                bv = _mm512_add_ps(bv, _mm512_mul_ps(fh1, tap1));
-                bv = _mm512_add_ps(bv, _mm512_mul_ps(fh2, tap2));
-                bv = _mm512_add_ps(bv, _mm512_mul_ps(fh3, tap3));
-                _mm512_storeu_ps(dst->band_v + i * dst_px_stride + j, bv);
-
-                A = _mm512_loadu_ps(tmphi + 2 * j - 1);
-                B = _mm512_loadu_ps(tmphi + 2 * j - 1 + 16);
-                tap0 = _mm512_permutex2var_ps(A, idx_even, B);
-                tap1 = _mm512_permutex2var_ps(A, idx_odd, B);
-
-                C = _mm512_loadu_ps(tmphi + 2 * j + 1);
-                D = _mm512_loadu_ps(tmphi + 2 * j + 1 + 16);
-                tap2 = _mm512_permutex2var_ps(C, idx_even, D);
-                tap3 = _mm512_permutex2var_ps(C, idx_odd, D);
-
-                __m512 bh = _mm512_mul_ps(fl0, tap0);
-                bh = _mm512_add_ps(bh, _mm512_mul_ps(fl1, tap1));
-                bh = _mm512_add_ps(bh, _mm512_mul_ps(fl2, tap2));
-                bh = _mm512_add_ps(bh, _mm512_mul_ps(fl3, tap3));
-                _mm512_storeu_ps(dst->band_h + i * dst_px_stride + j, bh);
-
-                __m512 bd = _mm512_mul_ps(fh0, tap0);
-                bd = _mm512_add_ps(bd, _mm512_mul_ps(fh1, tap1));
-                bd = _mm512_add_ps(bd, _mm512_mul_ps(fh2, tap2));
-                bd = _mm512_add_ps(bd, _mm512_mul_ps(fh3, tap3));
-                _mm512_storeu_ps(dst->band_d + i * dst_px_stride + j, bd);
-            }
-
-            /* Scalar tail: right boundary + remaining positions */
-            for (; j < half_w; ++j) {
-                int j0 = ind_x[0][j];
-                int j1 = ind_x[1][j];
-                int j2 = ind_x[2][j];
-                int j3 = ind_x[3][j];
-                float sl0 = tmplo[j0];
-                float sl1 = tmplo[j1];
-                float sl2 = tmplo[j2];
-                float sl3 = tmplo[j3];
-
-                dst->band_a[i * dst_px_stride + j] = filter_lo[0] * sl0 + filter_lo[1] * sl1 +
-                                                     filter_lo[2] * sl2 + filter_lo[3] * sl3;
-                dst->band_v[i * dst_px_stride + j] = filter_hi[0] * sl0 + filter_hi[1] * sl1 +
-                                                     filter_hi[2] * sl2 + filter_hi[3] * sl3;
-
-                float sh0 = tmphi[j0];
-                float sh1 = tmphi[j1];
-                float sh2 = tmphi[j2];
-                float sh3 = tmphi[j3];
-
-                dst->band_h[i * dst_px_stride + j] = filter_lo[0] * sh0 + filter_lo[1] * sh1 +
-                                                     filter_lo[2] * sh2 + filter_lo[3] * sh3;
-                dst->band_d[i * dst_px_stride + j] = filter_hi[0] * sh0 + filter_hi[1] * sh1 +
-                                                     filter_hi[2] * sh2 + filter_hi[3] * sh3;
-            }
-        }
+    const Dwt2FiltersAvx512 filters = float_adm_dwt2_filters_avx512();
+    for (int i = 0; i < (h + 1) / 2; ++i) {
+        const float *rows[4] = {src + (ptrdiff_t)ind_y[0][i] * src_px_stride,
+                                src + (ptrdiff_t)ind_y[1][i] * src_px_stride,
+                                src + (ptrdiff_t)ind_y[2][i] * src_px_stride,
+                                src + (ptrdiff_t)ind_y[3][i] * src_px_stride};
+        float_adm_dwt2_vertical_row_avx512(rows, tmplo, tmphi, w, &filters);
+        float_adm_dwt2_horizontal_row_avx512(dst, ind_x, i, w, dst_px_stride, tmplo, tmphi,
+                                             &filters);
     }
 
     aligned_free(tmplo);
     aligned_free(tmphi);
+    return 0;
 }
 
 void float_adm_csf_avx512(const float *src, float *dst, float *flt, int w, int h, int src_stride,
-                          int dst_stride, float factor, float one_by_30)
+                          int dst_stride, float factor, double one_by_30)
 {
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
-    __m512 vfactor = _mm512_set1_ps(factor);
-    __m512 vone_by_30 = _mm512_set1_ps(one_by_30);
+    const __m512 vfactor = _mm512_set1_ps(factor);
+    const __m512d vone_by_30 = _mm512_set1_pd(one_by_30);
 
     int i;
     int j;
 
     for (i = 0; i < h; ++i) {
-        const float *src_row = src + i * src_px_stride;
-        float *dst_row = dst + i * dst_px_stride;
-        float *flt_row = flt + i * dst_px_stride;
+        const float *src_row = src + (ptrdiff_t)i * src_px_stride;
+        float *dst_row = dst + (ptrdiff_t)i * dst_px_stride;
+        float *flt_row = flt + (ptrdiff_t)i * dst_px_stride;
 
         for (j = 0; j + 16 <= w; j += 16) {
-            __m512 sv = _mm512_loadu_ps(src_row + j);
-            __m512 dst_val = _mm512_mul_ps(vfactor, sv);
+            const __m512 sv = _mm512_loadu_ps(src_row + j);
+            const __m512 dst_val = _mm512_mul_ps(vfactor, sv);
             _mm512_storeu_ps(dst_row + j, dst_val);
-            __m512 abs_dst = avx512_abs_ps(dst_val);
-            __m512 flt_val = _mm512_mul_ps(vone_by_30, abs_dst);
+            const __m512 abs_dst = avx512_abs_ps(dst_val);
+            const __m512 flt_val =
+                float_adm_mul_float_by_double_avx512(abs_dst, vone_by_30);
             _mm512_storeu_ps(flt_row + j, flt_val);
         }
 
         /* Scalar tail */
         for (; j < w; ++j) {
-            float dst_val = factor * src_row[j];
+            const float dst_val = factor * src_row[j];
             dst_row[j] = dst_val;
             flt_row[j] = one_by_30 * fabsf(dst_val);
         }
@@ -304,13 +258,13 @@ float float_adm_csf_den_scale_avx512(const float *src, int w, int h, int src_str
 
     __m512 vfactor = _mm512_set1_ps(factor);
 
-    double accum = 0.0;
+    float accum = 0.0f;
     int i;
     int j;
 
     for (i = top; i < bottom; ++i) {
-        const float *row = src + i * src_px_stride;
-        double row_accum = 0.0;
+        const float *row = src + (ptrdiff_t)i * src_px_stride;
+        float row_accum = 0.0f;
 
         for (j = left; j + 16 <= right; j += 16) {
             __m512 sv = _mm512_loadu_ps(row + j);
@@ -318,53 +272,15 @@ float float_adm_csf_den_scale_avx512(const float *src, int w, int h, int src_str
             __m512 val2 = _mm512_mul_ps(val, val);
             __m512 val3 = _mm512_mul_ps(val2, val);
 
-            /*
-             * F2 fix: widen 16 float lanes to double via _mm512_extractf32x4_ps
-             * + _mm256_cvtps_pd (4 groups of 4), reducing each group with
-             * hadd_pd4 in double.  Avoids a float-precision intermediate store.
-             * See hsum_ps_to_double() above — ADR-0139.
-             */
-            row_accum += hsum_ps_to_double(val3);
+            float lanes[16];
+            _mm512_storeu_ps(lanes, val3);
+            for (int lane = 0; lane < 16; ++lane)
+                row_accum += lanes[lane];
         }
 
         for (; j < right; ++j) {
             float val = fabsf(factor * row[j]);
-            row_accum += (double)(val * val * val);
-        }
-
-        accum += row_accum;
-    }
-
-    return (float)accum;
-}
-
-float float_adm_sum_cube_avx512(const float *x, int w, int h, int stride, int left, int top,
-                                int right, int bottom)
-{
-    (void)w;
-    (void)h;
-    int px_stride = stride / sizeof(float);
-
-    double accum = 0.0;
-    int i;
-    int j;
-
-    for (i = top; i < bottom; ++i) {
-        const float *row = x + i * px_stride;
-        double row_accum = 0.0;
-
-        for (j = left; j + 16 <= right; j += 16) {
-            __m512 val = avx512_abs_ps(_mm512_loadu_ps(row + j));
-            __m512 val2 = _mm512_mul_ps(val, val);
-            __m512 val3 = _mm512_mul_ps(val2, val);
-
-            /* F2 fix: same hsum_ps_to_double path as csf_den_scale above. */
-            row_accum += hsum_ps_to_double(val3);
-        }
-
-        for (; j < right; ++j) {
-            float val = fabsf(row[j]);
-            row_accum += (double)(val * val * val);
+            row_accum += val * val * val;
         }
 
         accum += row_accum;

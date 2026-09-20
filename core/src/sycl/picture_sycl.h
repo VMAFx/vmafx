@@ -79,7 +79,7 @@ int vmaf_sycl_picture_alloc(VmafPicture *pic, void *cookie);
  *
  * @return 0 on success, negative errno on failure.
  */
-int vmaf_sycl_picture_free(VmafPicture *pic, void *cookie);
+int vmaf_sycl_picture_free(VmafPicture *pic, const void *cookie);
 
 /**
  * Pool of pre-allocated USM-backed VmafPictures. Round-robin fetch via

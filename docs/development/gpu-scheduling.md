@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # GPU Scheduling in Kubernetes
 
 This guide explains how VMAFX maps GPU vendor device-plugins to Kubernetes
@@ -15,7 +14,7 @@ available, and the kubelet allocates the physical device to the container.
 VMAFX uses one device-plugin per GPU vendor:
 
 | Vendor | Resource key | Backend | Plugin daemonset |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | NVIDIA | `nvidia.com/gpu` | CUDA | [k8s-device-plugin](https://github.com/NVIDIA/k8s-device-plugin) |
 | AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/RadeonOpenCompute/k8s-device-plugin) |
 | Intel | `gpu.intel.com/i915` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |

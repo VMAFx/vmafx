@@ -1,1 +1,5 @@
-| [ADR-0166](0166-mcp-server-release-channel.md) | MCP server (`vmaf-mcp` Python package) release artifact channel — both PyPI (Trusted Publishing / OIDC, no token) and GitHub release attachment with Sigstore keyless signing + PEP 740 attestations + SLSA L3 provenance + SBOM. Wired as new `mcp-build` / `mcp-sign` / `mcp-publish-pypi` jobs in the existing [`supply-chain.yml`](../../.github/workflows/supply-chain.yml) (one workflow surface for libvmaf + MCP release matrix coherence). Operational note: a one-time PyPI Trusted Publisher binding (project `vmaf-mcp`, owner `lusoris`, repo `vmaf`, workflow `supply-chain.yml`, environment `pypi-publish`) must be configured by the user before the first release after this PR lands. Closes backlog item T7-2. | Accepted | release, mcp, supply-chain, sigstore, pypi |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0166](0166-mcp-server-release-channel.md) | MCP server release artifact channel — PyPI + GitHub release attachment + Sigstore (T7-2) | Accepted | release, mcp, supply-chain, sigstore, pypi |

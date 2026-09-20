@@ -1,1 +1,5 @@
-| [ADR-0135](0135-port-netflix-1424-expose-builtin-model-versions.md) | Port Netflix#1424 — expose `vmaf_model_version_next(prev, &version)` public iterator for built-in VMAF model versions. Corrects three upstream defects during port: NULL-pointer arithmetic UB (missing `else`), off-by-one returning the `{0}` sentinel, and const-qualifier mismatches in the test. Adds `BUILT_IN_MODEL_CNT == 0` early-return for zero-models build configurations. Doxygen-style header doc replaces upstream's one-liner. | Accepted | api, upstream-port, correctness |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0135](0135-port-netflix-1424-expose-builtin-model-versions.md) | Port Netflix#1424 — expose built-in VMAF model-version iterator | Accepted | api, upstream-port, correctness |

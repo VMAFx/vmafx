@@ -1,7 +1,6 @@
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
-import unittest
 
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset, NorefAsset
@@ -511,7 +510,7 @@ def set_default_cambi_video_for_testing_yuv1080p():
 def set_default_cambi_notyuv_asset_for_validation_testing():
     """Returns a notyuv asset with a dummy path for testing validation guards.
     The dummy path is never accessed — assertions fire before any I/O occurs."""
-    asset = NorefAsset(
+    return NorefAsset(
         dataset="test",
         content_id=0,
         asset_id=0,
@@ -526,5 +525,3 @@ def set_default_cambi_notyuv_asset_for_validation_testing():
             "dis_enc_height": 360,
         },
     )
-
-    return asset

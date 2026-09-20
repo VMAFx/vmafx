@@ -1,1 +1,5 @@
-| [ADR-0949](0949-hip-motion3-parity-enosys-skip.md) | HIP motion3 parity test skips cleanly on `-ENOSYS` from `vmaf_read_pictures` when libvmaf was built with `enable_hipcc=false`; mirrors the existing no-HIP-device skip path. Fixes PR #443 audit-flagged `meson test --suite gpu` failure. | Accepted | 2026-05-31 | hip, tests, bugfix, fork-local, dx |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0949](0949-hip-motion3-parity-enosys-skip.md) | HIP motion3 parity test skips cleanly when HIPCC kernels are not built | Accepted | hip, tests, bugfix, fork-local, dx |

@@ -279,7 +279,7 @@ static inline int vmaf_tiny_ai_sample_to_8bit(uint16_t v, unsigned bpc)
     const unsigned max_sample = (bpc == 16u) ? 65535u : ((1u << bpc) - 1u);
     unsigned sample = (v > max_sample) ? max_sample : (unsigned)v;
     const unsigned shift = bpc - 8u;
-    const unsigned round = (shift == 0u) ? 0u : (1u << (shift - 1u));
+    const unsigned round = 1u << (shift - 1u);
     return (int)((sample + round) >> shift);
 }
 

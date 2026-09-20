@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0871: SSIM SIMD dispatch installation must be pthread_once-guarded
 
 - **Status**: Accepted
@@ -92,7 +91,7 @@ other becomes a no-op.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `pthread_once_t` shared via `ssim_tools.c` (chosen) | Single fire across both TUs; full memory barrier; no compile-time coupling to ISA headers in `iqa/`; preserves Tom-Distler import hygiene (no SIMD `#include` added to `iqa/*.c`) | Slightly more indirection than per-TU guard | Selected — only design that races zero on the dispatch globals AND respects the iqa/ import-hygiene constraint from ADR-0125 |
 | Per-TU `pthread_once_t` | Simplest | Each TU's guard fires independently; cross-TU race on dispatch globals persists (confirmed empirically — 4 TSan warnings remained) | Rejected: race not actually fixed |
 | Atomic stores on the dispatch globals | No barriers, no setup ordering | Doesn't fix the "called from every worker" antipattern; pointer-tearing UB on weakly-ordered hardware would be fixed but the redundant work and "first-store-wins" model remain | Rejected: doesn't fix root cause |

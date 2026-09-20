@@ -1,1 +1,5 @@
-- Fixed: applied `rustfmt` edition-2024 import ordering rules to `vmafx-sys` and `vmafx` crates, resolving `cargo fmt --check` failures introduced by the Rust edition upgrade. (PR #831)
+# Changelog fragment
+
+- Fixed: applied `rustfmt` edition-2024 import ordering rules to `vmafx-sys` and
+  `vmafx` crates, resolving `cargo fmt --check` failures introduced by the Rust
+  edition upgrade. (PR #831)

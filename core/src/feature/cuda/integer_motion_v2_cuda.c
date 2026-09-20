@@ -26,6 +26,8 @@
  *  ADR-0337 left open).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stdbool.h>
 #include <string.h>
@@ -44,9 +46,9 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -160,6 +162,39 @@ static const VmafOption options[] = {
     },
     {0}};
 
+static void cleanup_motion_v2_init(VmafFeatureExtractor *fex)
+{
+    MotionV2StateCuda *s = fex->priv;
+    for (unsigned i = 0; i < 2; i++) {
+        if (s->pix[i]) {
+            (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[i]);
+            free(s->pix[i]);
+            s->pix[i] = VMAF_NULLPTR;
+        }
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+}
+
+static int init_motion_v2_buffers(VmafFeatureExtractor *fex)
+{
+    MotionV2StateCuda *s = fex->priv;
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[0], s->plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[1], s->plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, sizeof(uint64_t));
+    if (!ret) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            ret = -ENOMEM;
+    }
+    if (ret)
+        cleanup_motion_v2_init(fex);
+    return ret;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -188,7 +223,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -199,53 +234,61 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "motion_v2_kernel_16bpc"),
                     fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[0], s->plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[1], s->plane_bytes);
-    if (ret)
-        goto free_buffers;
-
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, sizeof(uint64_t));
-    if (ret)
-        goto free_buffers;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_buffers;
-    }
-
-    return 0;
-
-free_buffers:
-    if (s->pix[0]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[0]);
-        free(s->pix[0]);
-        s->pix[0] = NULL;
-    }
-    if (s->pix[1]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[1]);
-        free(s->pix[1]);
-        s->pix[1] = NULL;
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return init_motion_v2_buffers(fex);
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int copy_motion_v2_frame(MotionV2StateCuda *s, const VmafPicture *ref_pic, unsigned cur_idx,
+                                CUstream stream, CudaFunctions *cu_f)
+{
+    CUDA_MEMCPY2D copy;
+    memset(&copy, 0, sizeof(copy));
+    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
+    copy.srcPitch = ref_pic->stride[0];
+    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    copy.dstDevice = (CUdeviceptr)s->pix[cur_idx]->data;
+    copy.dstPitch = (size_t)s->frame_w * (s->bpc <= 8u ? 1U : 2U);
+    copy.WidthInBytes = copy.dstPitch;
+    copy.Height = s->frame_h;
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, stream));
+    return 0;
+}
+
+static int launch_motion_v2(MotionV2StateCuda *s, unsigned cur_idx, unsigned prev_idx,
+                            CUstream stream, CudaFunctions *cu_f)
+{
+    const unsigned block_x = 16;
+    const unsigned block_y = 16;
+    const unsigned grid_x = DIV_ROUND_UP(s->frame_w, block_x);
+    const unsigned grid_y = DIV_ROUND_UP(s->frame_h, block_y);
+    const ptrdiff_t pitch = (ptrdiff_t)s->frame_w * (s->bpc <= 8u ? 1 : 2);
+    if (s->bpc == 8u) {
+        void *args[] = {&s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&pitch,
+                        (void *)&pitch,          (void *)s->rb.device,   (void *)&s->frame_w,
+                        (void *)&s->frame_h};
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, block_x, block_y, 1,
+                                               0, stream, args, VMAF_NULLPTR));
+    } else {
+        void *args[] = {&s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&pitch,
+                        (void *)&pitch,          (void *)s->rb.device,   (void *)&s->frame_w,
+                        (void *)&s->frame_h,     (void *)&s->bpc};
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, block_x, block_y, 1,
+                                               0, stream, args, VMAF_NULLPTR));
+    }
+    return 0;
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)dist_pic;
     (void)ref_pic_90;
@@ -262,26 +305,12 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
 
-    /* Cache cur ref Y plane into pix[cur_idx] so the next frame can
-     * read it as "prev". The picture's plane is itself on device — a
-     * D2D copy of the contiguous Y plane (stride = w*bpp; libvmaf
-     * picture allocator already packs tightly). */
     CHECK_CUDA_RETURN(cu_f,
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(ref_pic),
                                         CU_EVENT_WAIT_DEFAULT));
-    /* Source stride may exceed plane width — copy row by row with
-     * cuMemcpy2D so we land a tightly-packed copy in pix[cur_idx].
-     * Width of the copy = w * bpp; height = h. */
-    CUDA_MEMCPY2D copy = {0};
-    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    copy.srcPitch = ref_pic->stride[0];
-    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.dstDevice = (CUdeviceptr)s->pix[cur_idx]->data;
-    copy.dstPitch = s->frame_w * (s->bpc <= 8u ? 1u : 2u);
-    copy.WidthInBytes = copy.dstPitch;
-    copy.Height = s->frame_h;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
+    int err = copy_motion_v2_frame(s, ref_pic, cur_idx, pic_stream, cu_f);
+    if (err)
+        return err;
 
     /* Frame 0: nothing more to do — emit 0 in collect. */
     if (index == 0) {
@@ -297,29 +326,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * the wait was already issued earlier in this submit. */
     CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->rb.device->data, 0, s->rb.bytes, pic_stream));
 
-    const unsigned block_dim_x = 16;
-    const unsigned block_dim_y = 16;
-    const unsigned grid_dim_x = DIV_ROUND_UP(s->frame_w, block_dim_x);
-    const unsigned grid_dim_y = DIV_ROUND_UP(s->frame_h, block_dim_y);
-    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * (s->bpc <= 8u ? 1u : 2u));
-
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&plane_pitch,
-            (void *)&plane_pitch,    (void *)s->rb.device,   (void *)&s->frame_w,
-            (void *)&s->frame_h,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                               block_dim_y, 1, 0, pic_stream, args, NULL));
-    } else {
-        void *args[] = {
-            &s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&plane_pitch,
-            (void *)&plane_pitch,    (void *)s->rb.device,   (void *)&s->frame_w,
-            (void *)&s->frame_h,     (void *)&s->bpc,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                               block_dim_y, 1, 0, pic_stream, args, NULL));
-    }
+    err = launch_motion_v2(s, cur_idx, prev_idx, pic_stream, cu_f);
+    if (err)
+        return err;
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
@@ -327,6 +336,42 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
                                               s->rb.bytes, s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+}
+
+static double motion_v2_pair_score(const MotionV2StateCuda *s, VmafFeatureCollector *collector,
+                                   const char *sad_name, unsigned index, unsigned n_frames)
+{
+    double current = 0.0;
+    (void)vmaf_feature_collector_get_score(collector, sad_name, &current, index);
+    current *= s->motion_fps_weight;
+    if (index + 1 >= n_frames)
+        return current;
+    double next = 0.0;
+    (void)vmaf_feature_collector_get_score(collector, sad_name, &next, index + 1);
+    next *= s->motion_fps_weight;
+    return current < next ? current : next;
+}
+
+static int append_motion_v2_scores(MotionV2StateCuda *s, VmafFeatureCollector *collector,
+                                   double motion2, double stamp_value, double *previous,
+                                   unsigned index)
+{
+    int err = vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score", motion2, index);
+    if (err)
+        return err;
+    double motion3 = stamp_value;
+    if (index == 0) {
+        *previous = stamp_value;
+    } else {
+        const double processed =
+            VMAF_CUDA_MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
+                          s->motion_max_val);
+        motion3 = s->motion_moving_average ? (processed + *previous) / 2.0 : processed;
+        *previous = processed;
+    }
+    return vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score", motion3, index);
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -376,59 +421,20 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
      * i < min_idx. */
     const unsigned min_idx = 1;
     double stamp_value = 0.;
-    if (n_frames > min_idx) {
-        double sad_at_min_idx;
-        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
-                                              min_idx)) {
-            stamp_value =
-                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-        }
+    double sad_at_min_idx;
+    if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx, min_idx)) {
+        stamp_value = VMAF_CUDA_MIN(
+            motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
+            s->motion_max_val);
     }
 
     double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
-        double score_cur;
-        double score_next;
-        vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
-        /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
-         * Bit-exact when motion_fps_weight = 1.0 (default). */
-        score_cur *= s->motion_fps_weight;
-
-        double motion2;
-        if (i + 1 < n_frames) {
-            vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1);
-            score_next *= s->motion_fps_weight;
-            motion2 = score_cur < score_next ? score_cur : score_next;
-        } else {
-            motion2 = score_cur;
-        }
-
-        int append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score",
-            motion2, i);
-        if (append_err)
-            return append_err;
-
-        /* motion3_v2_score: per-frame blend + clip + optional moving-average.
-         * Mirrors integer_motion_v2.c::flush lines 466-481 byte-for-byte. */
-        double motion3;
-        if (i < min_idx) {
-            motion3 = stamp_value;
-            prev_processed = stamp_value;
-        } else {
-            double processed =
-                MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-            motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;
-            prev_processed = processed;
-        }
-
-        append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score",
-            motion3, i);
-        if (append_err)
-            return append_err;
+        const double motion2 = motion_v2_pair_score(s, feature_collector, sad_name, i, n_frames);
+        const int err =
+            append_motion_v2_scores(s, feature_collector, motion2, stamp_value, &prev_processed, i);
+        if (err)
+            return err;
     }
 
     return 1;
@@ -467,7 +473,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
-                                          "VMAF_integer_feature_motion3_v2_score", NULL};
+                                          "VMAF_integer_feature_motion3_v2_score", VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda = {
     .name = "motion_v2_cuda",
@@ -481,5 +487,3 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_CUDA,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Magic-number audit (fork-added C surfaces) — 2026-05-30
 
 ## Scope
@@ -14,7 +13,7 @@ meaning (CERT C INT07-C, MISRA C:2012 rule 4.10).
 2. Triage by fork-added directory:
 
    | Directory | Raw literal count (post-exclusions) |
-   |---|---|
+   | --- | --- |
    | `core/src/dnn` | 152 |
    | `core/src/mcp` | 80 |
    | `core/src/cuda` | 30 |
@@ -37,7 +36,7 @@ meaning (CERT C INT07-C, MISRA C:2012 rule 4.10).
 ## Findings (pass 1)
 
 | File | Literal | New name | Reason kept after triage |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `core/src/mcp/mcp.c` | `listen(fd, 16)` × 2 | `VMAF_MCP_LISTEN_BACKLOG` | Cross-cutting SOMAXCONN approximation; visible in two TUs |
 | `core/src/mcp/mcp.c` | `(unsigned)transport > 31u` × 2 | `VMAF_MCP_TRANSPORT_BITMASK_MAX` | Encodes the implicit `sizeof(unsigned) * CHAR_BIT - 1` shift safety per CERT INT34-C |
 | `core/src/mcp/mcp.c` | `cfg->max_drain_per_frame > 64u` | `VMAF_MCP_MAX_DRAIN_PER_FRAME` | Public config-validation predicate; reviewer needs to know "why 64" |

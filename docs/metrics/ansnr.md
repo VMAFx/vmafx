@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ANSNR (removed)
 
 !!! warning "This metric was removed"
@@ -20,7 +19,7 @@ energy to signal energy averaged over the frame. It was registered as the
 ## Migration
 
 | Old surface | Status after PR #38 |
-|---|---|
+| --- | --- |
 | `--feature float_ansnr` on the CLI | Unknown feature; the CLI errors out. |
 | `_METRIC_TO_EXTRACTOR["float_ansnr"]` (Python helper in `ai/data/feature_extractor.py`) | Mapping entry removed; passing `features=["float_ansnr"]` raises. |
 | `float_ansnr_hip` / `float_ansnr_cuda` / `float_ansnr_sycl` (GPU twins) | Sources removed together with the CPU registration. |

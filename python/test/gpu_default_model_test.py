@@ -34,13 +34,12 @@ unavailable, so this file is green on a CPU-only machine and on CI.
 from __future__ import absolute_import
 
 import json
-import os
-import subprocess
 import tempfile
 import unittest
-from test.testutil import set_default_576_324_videos_for_testing
+from pathlib import Path
 
-from vmaf import ExternalProgram
+from test.testutil import set_default_576_324_videos_for_testing
+from vmaf import ExternalProgram, run_process
 
 #: The default model's ADM option dict, plus ``adm_p_norm`` so the pooling
 #: exponent is covered too. Order here is irrelevant -- the key is built from
@@ -96,7 +95,7 @@ def _run(feature_spec, backend_flags):
     """
     ref_path, dis_path, _asset, _asset_original = set_default_576_324_videos_for_testing()
     with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "out.json")
+        out = Path(tmp) / "out.json"
         cmd = [
             ExternalProgram.vmafexec,
             "-r",
@@ -117,11 +116,15 @@ def _run(feature_spec, backend_flags):
             "--json",
             "-o",
             out,
-        ] + list(backend_flags)
-        proc = subprocess.run(cmd, check=False, capture_output=True)
-        if proc.returncode != 0 or not os.path.exists(out):
+            *list(backend_flags),
+        ]
+        try:
+            run_process(cmd)
+        except AssertionError:
             return None
-        with open(out, encoding="utf-8") as fh:
+        if not out.exists():
+            return None
+        with out.open(encoding="utf-8") as fh:
             payload = json.load(fh)
     return {k: v.get("mean") for k, v in payload.get("pooled_metrics", {}).items()}
 

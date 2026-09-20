@@ -22,12 +22,6 @@
  *  T6-2b. ADR-0247.
  */
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 #include <errno.h>
 #include <getopt.h>
 #include <inttypes.h>
@@ -39,6 +33,7 @@
 #include <string.h>
 
 #include "libvmaf/dnn.h"
+#include "vmaf_nullptr.h"
 #include "vmaf_roi_core.h"
 #include "vmaf_roi_input.h"
 
@@ -104,7 +99,7 @@ static void print_usage(FILE *out)
 
 static int parse_pixfmt(const char *arg, enum vmaf_roi_pixfmt *out)
 {
-    if (arg == NULL || out == NULL)
+    if (arg == VMAF_NULLPTR || out == VMAF_NULLPTR)
         return -EINVAL;
     if (strcmp(arg, "420") == 0) {
         *out = VMAF_ROI_PIXFMT_420;
@@ -123,7 +118,7 @@ static int parse_pixfmt(const char *arg, enum vmaf_roi_pixfmt *out)
 
 static int parse_encoder(const char *arg, enum vmaf_roi_encoder *out)
 {
-    if (arg == NULL || out == NULL)
+    if (arg == VMAF_NULLPTR || out == VMAF_NULLPTR)
         return -EINVAL;
     if (strcmp(arg, "x265") == 0) {
         *out = VMAF_ROI_ENCODER_X265;
@@ -140,9 +135,9 @@ static int parse_encoder(const char *arg, enum vmaf_roi_encoder *out)
  * list explicitly forbids atoi/atof. */
 static int parse_int_arg(const char *arg, long lo, long hi, long *out)
 {
-    if (arg == NULL || out == NULL)
+    if (arg == VMAF_NULLPTR || out == VMAF_NULLPTR)
         return -EINVAL;
-    char *end = NULL;
+    char *end = VMAF_NULLPTR;
     errno = 0;
     long v = strtol(arg, &end, 10);
     if (errno != 0 || end == arg || *end != '\0')
@@ -155,9 +150,9 @@ static int parse_int_arg(const char *arg, long lo, long hi, long *out)
 
 static int parse_double_arg(const char *arg, double lo, double hi, double *out)
 {
-    if (arg == NULL || out == NULL)
+    if (arg == VMAF_NULLPTR || out == VMAF_NULLPTR)
         return -EINVAL;
-    char *end = NULL;
+    char *end = VMAF_NULLPTR;
     errno = 0;
     double v = strtod(arg, &end);
     if (errno != 0 || end == arg || *end != '\0')
@@ -212,7 +207,7 @@ static size_t frame_bytes(int w, int h, enum vmaf_roi_pixfmt pf, int bitdepth)
 static int load_luma_frame(const struct vmaf_roi_opts *o, uint8_t *dst)
 {
     FILE *fp = fopen(o->reference, "rb");
-    if (fp == NULL) {
+    if (fp == VMAF_NULLPTR) {
         const int saved = errno;
         (void)fprintf(stderr, "vmaf-roi: cannot open %s: errno=%d\n", o->reference, saved);
         return -ENOENT;
@@ -262,8 +257,8 @@ static int run_saliency_model(const struct vmaf_roi_opts *o, const uint8_t *luma
         return -ENOSYS;
     }
 
-    VmafDnnSession *sess = NULL;
-    int rc = vmaf_dnn_session_open(&sess, o->saliency_model, NULL);
+    VmafDnnSession *sess = VMAF_NULLPTR;
+    int rc = vmaf_dnn_session_open(&sess, o->saliency_model, VMAF_NULLPTR);
     if (rc < 0) {
         (void)fprintf(stderr, "vmaf-roi: cannot open saliency model %s: %d\n", o->saliency_model,
                       rc);
@@ -272,7 +267,7 @@ static int run_saliency_model(const struct vmaf_roi_opts *o, const uint8_t *luma
 
     const size_t y_sz = luma_plane_size(o->width, o->height);
     uint8_t *out8 = (uint8_t *)malloc(y_sz);
-    if (out8 == NULL) {
+    if (out8 == VMAF_NULLPTR) {
         vmaf_dnn_session_close(sess);
         return -ENOMEM;
     }
@@ -327,7 +322,7 @@ static int emit_svtav1(FILE *fp, const struct vmaf_roi_opts *o, const float *gri
 {
     const size_t n = (size_t)cols * (size_t)rows;
     int8_t *buf = (int8_t *)malloc(n);
-    if (buf == NULL)
+    if (buf == VMAF_NULLPTR)
         return -ENOMEM;
     for (size_t i = 0U; i < n; ++i) {
         buf[i] = (int8_t)saliency_to_qp_offset(grid[i], o->strength);
@@ -339,13 +334,13 @@ static int emit_svtav1(FILE *fp, const struct vmaf_roi_opts *o, const float *gri
 
 static int emit_sidecar(const struct vmaf_roi_opts *o, const float *grid, int cols, int rows)
 {
-    FILE *fp = NULL;
+    FILE *fp = VMAF_NULLPTR;
     bool close_fp = false;
     if (strcmp(o->output, "-") == 0) {
         fp = stdout;
     } else {
         fp = fopen(o->output, (o->encoder == VMAF_ROI_ENCODER_SVTAV1) ? "wb" : "w");
-        if (fp == NULL) {
+        if (fp == VMAF_NULLPTR) {
             const int saved = errno;
             (void)fprintf(stderr, "vmaf-roi: cannot open %s for writing: errno=%d\n", o->output,
                           saved);
@@ -397,19 +392,19 @@ enum {
 };
 
 static const struct option g_long_opts[] = {
-    {"reference", required_argument, NULL, OPT_REFERENCE},
-    {"output", required_argument, NULL, OPT_OUTPUT},
-    {"width", required_argument, NULL, OPT_WIDTH},
-    {"height", required_argument, NULL, OPT_HEIGHT},
-    {"frame", required_argument, NULL, OPT_FRAME},
-    {"pixel_format", required_argument, NULL, OPT_PIXEL_FORMAT},
-    {"bitdepth", required_argument, NULL, OPT_BITDEPTH},
-    {"ctu-size", required_argument, NULL, OPT_CTU_SIZE},
-    {"encoder", required_argument, NULL, OPT_ENCODER},
-    {"strength", required_argument, NULL, OPT_STRENGTH},
-    {"saliency-model", required_argument, NULL, OPT_SALIENCY_MODEL},
-    {"help", no_argument, NULL, 'h'},
-    {NULL, 0, NULL, 0},
+    {"reference", required_argument, VMAF_NULLPTR, OPT_REFERENCE},
+    {"output", required_argument, VMAF_NULLPTR, OPT_OUTPUT},
+    {"width", required_argument, VMAF_NULLPTR, OPT_WIDTH},
+    {"height", required_argument, VMAF_NULLPTR, OPT_HEIGHT},
+    {"frame", required_argument, VMAF_NULLPTR, OPT_FRAME},
+    {"pixel_format", required_argument, VMAF_NULLPTR, OPT_PIXEL_FORMAT},
+    {"bitdepth", required_argument, VMAF_NULLPTR, OPT_BITDEPTH},
+    {"ctu-size", required_argument, VMAF_NULLPTR, OPT_CTU_SIZE},
+    {"encoder", required_argument, VMAF_NULLPTR, OPT_ENCODER},
+    {"strength", required_argument, VMAF_NULLPTR, OPT_STRENGTH},
+    {"saliency-model", required_argument, VMAF_NULLPTR, OPT_SALIENCY_MODEL},
+    {"help", no_argument, VMAF_NULLPTR, 'h'},
+    {VMAF_NULLPTR, 0, VMAF_NULLPTR, 0},
 };
 
 /* Each option group is dispatched through a small helper so parse_args()
@@ -486,8 +481,7 @@ static int parse_args(int argc, char **argv, struct vmaf_roi_opts *o)
      * warning is inherent to CLI option parsing and matches upstream
      * libvmaf/tools/cli_parse.c. CLI parsing happens before any threads
      * are spawned, so this is safe. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) -- ADR-0247: CLI parsing completes before threads. */
-    while ((c = getopt_long(argc, argv, "h", g_long_opts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "h", g_long_opts, VMAF_NULLPTR)) != -1) {
         if (c == 'h') {
             print_usage(stdout);
             return -ECANCELED; /* signal main() to exit cleanly */
@@ -502,7 +496,8 @@ static int parse_args(int argc, char **argv, struct vmaf_roi_opts *o)
         if (rc < 0)
             return rc;
     }
-    if (o->reference == NULL || o->output == NULL || o->width <= 0 || o->height <= 0) {
+    if (o->reference == VMAF_NULLPTR || o->output == VMAF_NULLPTR || o->width <= 0 ||
+        o->height <= 0) {
         (void)fprintf(stderr, "vmaf-roi: --reference, --output, --width, --height are required\n");
         return -EINVAL;
     }
@@ -516,12 +511,12 @@ static int compute_saliency(const struct vmaf_roi_opts *o, float *sal)
 {
     const size_t y_sz = luma_plane_size(o->width, o->height);
     uint8_t *luma = (uint8_t *)malloc(y_sz);
-    if (luma == NULL)
+    if (luma == VMAF_NULLPTR)
         return -ENOMEM;
 
     int rc = load_luma_frame(o, luma);
     if (rc == 0) {
-        if (o->saliency_model != NULL) {
+        if (o->saliency_model != VMAF_NULLPTR) {
             rc = run_saliency_model(o, luma, sal);
         } else {
             rc = fill_placeholder_saliency(o->width, o->height, sal, y_sz);
@@ -542,7 +537,7 @@ static int run_pipeline(const struct vmaf_roi_opts *opts)
      * defined input to reduce_per_ctu(). compute_saliency() overwrites
      * every cell on the success path. */
     float *sal = (float *)calloc(y_sz, sizeof(float));
-    if (sal == NULL) {
+    if (sal == VMAF_NULLPTR) {
         (void)fprintf(stderr, "vmaf-roi: out of memory\n");
         return -ENOMEM;
     }
@@ -563,7 +558,7 @@ static int run_pipeline(const struct vmaf_roi_opts *opts)
     }
 
     float *grid = (float *)malloc((size_t)cols * (size_t)rows * sizeof(float));
-    if (grid == NULL) {
+    if (grid == VMAF_NULLPTR) {
         free(sal);
         (void)fprintf(stderr, "vmaf-roi: out of memory\n");
         return -ENOMEM;
@@ -590,5 +585,3 @@ int main(int argc, char **argv)
     }
     return (run_pipeline(&opts) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-
-/* NOLINTEND(modernize-use-nullptr) -- ADR-1138 */

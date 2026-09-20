@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0400: encoder-internal-stats capture (corpus expansion v1)
 
 - **Status**: Accepted
@@ -36,7 +35,7 @@ the schema is uniform across the corpus.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Capture stats inline during the production encode | One pass instead of two | x264's stats writer requires `-pass 1` mode; mode-switching mid-encode isn't supported by FFmpeg | Two-pass (stats-only pass + production CRF pass) is the canonical workflow |
 | Parse the post-encode bitstream with `ffprobe -show_frames` | No second encode | Misses RC-internal signal (QP-pre-AQ, partition cost, predicted bits); ffprobe is decoder-side, not encoder-side | Can't recover the "what the encoder considered" signal |
 | Defer until a multi-codec parser is ready (libx265, libvpx) | Single PR delivers all codecs | Predictor-integration follow-up is gated on x264 alone landing; multi-codec adds weeks | Ship x264 now; libx265/libvpx parsers land additively |

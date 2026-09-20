@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0493: Test YUV fixtures must be md5-verified, not just present-by-name
 
 - **Status**: Accepted
@@ -63,7 +62,7 @@ not just file presence. Specifically:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Track YUVs via git-lfs | Always present at clone time; no provisioner needed | Adds LFS bandwidth/storage cost; ~13 MB per file × 2 files (+ checkerboards if extended); duplicates state that already lives at vmaf_resource | The fixtures already live upstream in a versioned form; LFS would mirror them without adding integrity guarantees |
 | Commit binary YUVs into the repo | Zero provisioning friction | Bloats clone, duplicates upstream, requires repo bloat-cleanup if content changes | Same as LFS but worse; rejected on the same grounds upstream had in 2020 |
 | Document the CI curl as a copy-paste recipe | Cheapest in lines-of-code | No md5 verification → the exact same silent-corruption failure mode that this ADR exists to prevent | Recipe-in-prose loses the md5 check, which is the whole point |

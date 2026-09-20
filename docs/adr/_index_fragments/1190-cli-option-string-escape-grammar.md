@@ -1,1 +1,5 @@
-| [ADR-1190](1190-cli-option-string-escape-grammar.md) | Backslash escapes (`\:`, `\=`, `\.`, `\\`) and a Windows drive-letter affordance in the `--model` / `--feature` option-string grammar; a pair's value is everything after the first unescaped `=`, so an inner `=` no longer silently truncates a path | Accepted | cli, parser, windows, upstream, bug |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1190](1190-cli-option-string-escape-grammar.md) | Backslash escapes and a drive-letter affordance in the CLI option-string grammar | Accepted | cli, parser, windows, upstream, bug |

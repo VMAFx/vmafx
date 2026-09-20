@@ -36,11 +36,7 @@
 
 #include "feature/feature_extractor.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/src/feature/float_motion.c. ADR-1138. */
+
 
 /* Allocate priv, apply option defaults (so string fields like
  * vif_prescale_method are not NULL), call init(), then call close() and
@@ -60,10 +56,10 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
 
     if (fex->options) {
         for (unsigned i = 0; fex->options[i].name; i++) {
-            int err = vmaf_option_set(&fex->options[i], priv, NULL);
+            int err = vmaf_option_set(&fex->options[i], priv, VMAF_NULLPTR);
             if (err) {
                 free(priv);
-                fex->priv = NULL;
+                fex->priv = VMAF_NULLPTR;
                 return err;
             }
         }
@@ -73,7 +69,7 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
     if (fex->close)
         (void)fex->close(fex);
     free(priv);
-    fex->priv = NULL;
+    fex->priv = VMAF_NULLPTR;
     return rc;
 }
 
@@ -84,16 +80,16 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
 static char *test_float_vif_rejects_1x1(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor missing", fex != NULL);
+    mu_assert("float_vif extractor missing", fex != VMAF_NULLPTR);
     int rc = invoke_init(fex, 1u, 1u);
     mu_assert("float_vif: init(1x1) must return -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_rejects_below_ladder_minimum(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor missing", fex != NULL);
+    mu_assert("float_vif extractor missing", fex != VMAF_NULLPTR);
     /* 17-tap filter half-width=8: mirror formula 2*h-ii-2 underflows for h<9 */
     mu_assert("float_vif: init(8x8) must return -EINVAL", invoke_init(fex, 8u, 8u) == -EINVAL);
     /* Netflix/vmaf#1582: 9..15 cleared the old scale-0-only floor of 9 but
@@ -104,47 +100,47 @@ static char *test_float_vif_rejects_below_ladder_minimum(void)
               invoke_init(fex, 9u, 9u) == -EINVAL);
     mu_assert("float_vif: init(15x15) must return -EINVAL (scale-3 plane is 1px)",
               invoke_init(fex, 15u, 15u) == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_rejects_Nx8(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor missing", fex != NULL);
+    mu_assert("float_vif extractor missing", fex != VMAF_NULLPTR);
     /* width above floor but height below */
     int rc = invoke_init(fex, 64u, 8u);
     mu_assert("float_vif: init(64x8) must return -EINVAL (height below minimum)", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_rejects_8xN(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor missing", fex != NULL);
+    mu_assert("float_vif extractor missing", fex != VMAF_NULLPTR);
     /* height above floor but width below */
     int rc = invoke_init(fex, 8u, 64u);
     mu_assert("float_vif: init(8x64) must return -EINVAL (width below minimum)", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_accepts_16x16(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor missing", fex != NULL);
+    mu_assert("float_vif extractor missing", fex != VMAF_NULLPTR);
     /* 16 is the exact four-scale minimum at kernelscale 1.0:
      * max over s of ((filter_width_s / 2) + 1) << s = max(9, 10, 12, 16). */
     int rc = invoke_init(fex, 16u, 16u);
     mu_assert("float_vif: init(16x16) must succeed (exact ladder minimum)", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_vif_accepts_576x324(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor missing", fex != NULL);
+    mu_assert("float_vif extractor missing", fex != VMAF_NULLPTR);
     int rc = invoke_init(fex, 576u, 324u);
     mu_assert("float_vif: init(576x324) must succeed (Netflix golden resolution)", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -155,7 +151,5 @@ char *run_tests(void)
     mu_run_test(test_float_vif_rejects_8xN);
     mu_run_test(test_float_vif_accepts_16x16);
     mu_run_test(test_float_vif_accepts_576x324);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

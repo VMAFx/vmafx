@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2037 — Advertised-but-unimplemented options on the float-ADM GPU twins
 

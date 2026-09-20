@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 MD060 -->
 # Research-0024 — VIF kernelscale: fork-vs-upstream divergence and port strategy
 
 _Updated: 2026-04-28._
@@ -117,7 +116,7 @@ with `vif_prescale=1.0` (the defaults).
 ## Decision matrix
 
 | Strategy | Fork goldens | New upstream options | SIMD paths | LoC delta |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **(A) Cherry-pick verbatim** | **BREAKS** at `places=4` (mirror fixed) | All work | Need re-derivation against runtime Gaussian | +600 incl. helpers; net  +400 after dropping table |
 | **(B) Replace fork's table with runtime helpers + accept golden shift** | Goldens move (need `places=3` like upstream did) | All work | Same as (A) | +100 net (table goes away) |
 | **(C) Port options as **opt-in only**, keep fork's table as the default** | UNCHANGED at default settings | New options work; default behaviour bit-identical | Existing SIMD untouched | +700 (helpers + parallel code path) |
@@ -129,8 +128,8 @@ with `vif_prescale=1.0` (the defaults).
 Replicates upstream exactly. **Forces the Netflix golden gate to
 `places=3`** because of the mirror bugfix — that means relaxing the
 fork's `places=4` contract that ADR-0006 / ADR-0024 explicitly froze.
-ADR-0142 (Netflix-authority carve-out) allows this *only when Netflix
-themselves loosen their python tests* — which `bc744aa3` does. So
+ADR-0142 (Netflix-authority carve-out) allows this _only when Netflix
+themselves loosen their python tests_ — which `bc744aa3` does. So
 strictly speaking it's permitted, but **the fork's `places=4` contract
 in `python/test/feature_extractor_test.py` would need a paired
 loosening**.
@@ -138,7 +137,7 @@ loosening**.
 Risk: the SIMD bit-exactness guarantee dies. Runtime Gaussians on AVX2
 vs NEON vs scalar can drift at the float-mantissa level depending on
 implementation of `expf`. The fork's precomputed tables exist
-*specifically* to make AVX2 == NEON == scalar bit-for-bit. Replacing
+_specifically_ to make AVX2 == NEON == scalar bit-for-bit. Replacing
 them re-opens cross-ISA drift bugs that ADR-0138 / 0139 closed.
 
 ### Strategy B — Runtime helpers + golden shift
@@ -243,7 +242,7 @@ chains stay deferred behind ADRs that document the divergence.
 ## Decision matrix (chains-level)
 
 | Chain | Recommended strategy | Reason |
-|---|---|---|
+| --- | --- | --- |
 | **vif** (`4ad6e0ea` / `41d42c9e` / `bc744aa3` / `8c645ce3`) | E (skip + document) | Precomputed-table SIMD discipline > flexibility |
 | **motion** (`a44e5e61` / `62f47d59` / `b949cebf`) | A (verbatim) for `b949cebf` only; mirror bugfix `a44e5e61` already in fork? — verify | float_motion has no precomputed-table issue; cheap to port |
 | **float_adm** (`966be8d5` / `f8fb7b48` / `4dcc2f7c`) | E (skip + document) | 12-param signature change cascades to SIMD + 3 GPU backends |
@@ -265,9 +264,9 @@ chains stay deferred behind ADRs that document the divergence.
 
 ## References
 
-- **`req`** (popup, 2026-04-28): user direction *"All-in: do all
-  three chains in sequence as one big PR train"* — superseded by
-  *"Pause vif chain, write research digest first"* same popup,
+- **`req`** (popup, 2026-04-28): user direction _"All-in: do all
+  three chains in sequence as one big PR train"_ — superseded by
+  _"Pause vif chain, write research digest first"_ same popup,
   later answer.
 - ADR-0006 — Netflix golden tests preserved verbatim as required gate.
 - ADR-0024 — Golden-gate immutability rule.

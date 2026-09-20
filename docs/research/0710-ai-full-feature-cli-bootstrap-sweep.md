@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # AI full-feature CLI bootstrap sweep
 
 Date: 2026-05-22
@@ -18,8 +17,8 @@ and report selection:
 - `ai/scripts/phase3_subset_sweep.py`
 - `ai/scripts/bvi_dvc_to_full_features.py`
 
-`ai/scripts/extract_k150k_features.py` was deliberately left untouched while
-the long-running K150K refresh job is active.
+`ai/scripts/extract_k150k_features.py` was deliberately left untouched while the
+long-running K150K refresh job is active.
 
 ## Findings
 
@@ -49,6 +48,44 @@ invariants from ADR-0680 and ADR-0681.
 
 ## Validation
 
-- `.venv/bin/python -m pytest ai/tests/test_enrich_k150k_parquet_metadata.py ai/tests/test_combine_full_feature_parquets.py ai/tests/test_legacy_corpus_extraction_manifests.py ai/tests/test_merge_corpora.py ai/tests/test_konvid_full_features.py ai/tests/test_bvi_dvc_dir_mode.py ai/tests/test_phase3_subset_sweep.py -q`
-- `.venv/bin/ruff check ai/scripts/enrich_k150k_parquet_metadata.py ai/scripts/combine_full_feature_parquets.py ai/scripts/extract_full_features.py ai/scripts/merge_corpora.py ai/scripts/konvid_to_vmaf_pairs.py ai/scripts/konvid_to_full_features.py ai/scripts/phase3_subset_sweep.py ai/scripts/bvi_dvc_to_full_features.py`
-- `.venv/bin/black --check ai/scripts/enrich_k150k_parquet_metadata.py ai/scripts/combine_full_feature_parquets.py ai/scripts/extract_full_features.py ai/scripts/merge_corpora.py ai/scripts/konvid_to_vmaf_pairs.py ai/scripts/konvid_to_full_features.py ai/scripts/phase3_subset_sweep.py ai/scripts/bvi_dvc_to_full_features.py`
+- Pytest:
+
+  ```sh
+  .venv/bin/python -m pytest \
+      ai/tests/test_enrich_k150k_parquet_metadata.py \
+      ai/tests/test_combine_full_feature_parquets.py \
+      ai/tests/test_legacy_corpus_extraction_manifests.py \
+      ai/tests/test_merge_corpora.py \
+      ai/tests/test_konvid_full_features.py \
+      ai/tests/test_bvi_dvc_dir_mode.py \
+      ai/tests/test_phase3_subset_sweep.py \
+      -q
+  ```
+
+- Ruff:
+
+  ```sh
+  .venv/bin/ruff check \
+      ai/scripts/enrich_k150k_parquet_metadata.py \
+      ai/scripts/combine_full_feature_parquets.py \
+      ai/scripts/extract_full_features.py \
+      ai/scripts/merge_corpora.py \
+      ai/scripts/konvid_to_vmaf_pairs.py \
+      ai/scripts/konvid_to_full_features.py \
+      ai/scripts/phase3_subset_sweep.py \
+      ai/scripts/bvi_dvc_to_full_features.py
+  ```
+
+- Black checks the same eight scripts:
+
+  ```sh
+  .venv/bin/black --check \
+      ai/scripts/enrich_k150k_parquet_metadata.py \
+      ai/scripts/combine_full_feature_parquets.py \
+      ai/scripts/extract_full_features.py \
+      ai/scripts/merge_corpora.py \
+      ai/scripts/konvid_to_vmaf_pairs.py \
+      ai/scripts/konvid_to_full_features.py \
+      ai/scripts/phase3_subset_sweep.py \
+      ai/scripts/bvi_dvc_to_full_features.py
+  ```

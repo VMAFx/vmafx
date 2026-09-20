@@ -48,9 +48,9 @@ def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: P
         metrics = {}
         if "adm_cuda" in names:
             # CUDA leg: must carry --model version=<DEFAULT_MODEL> (Research-0135).
-            assert (
-                f"version={K150K.DEFAULT_MODEL}" in model_args
-            ), f"--model {K150K.DEFAULT_MODEL} must be present on CUDA leg"
+            assert f"version={K150K.DEFAULT_MODEL}" in model_args, (
+                f"--model {K150K.DEFAULT_MODEL} must be present on CUDA leg"
+            )
             metrics["integer_adm2"] = 1.0
             metrics["integer_vif_scale0"] = 2.0
             metrics["integer_motion2"] = 3.0
@@ -69,7 +69,7 @@ def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: P
             # CPU residual leg (float_ssim + cambi only): no model arg needed.
             metrics["float_ssim"] = 0.9
             metrics["cambi"] = 0.1
-            assert "--no_cuda" in cmd
+            assert cmd[cmd.index("--backend") + 1] == "cpu"
         out.write_text(json.dumps({"frames": [{"metrics": metrics}]}), encoding="utf-8")
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
@@ -105,12 +105,12 @@ def test_cpu_feature_pass_uses_generic_extractors(monkeypatch, tmp_path: Path) -
         out = Path(cmd[cmd.index("--output") + 1])
         names = [cmd[idx + 1] for idx, part in enumerate(cmd) if part == "--feature"]
         assert names == list(K150K.EXTRACTOR_NAMES)
-        assert "--no_cuda" in cmd
+        assert cmd[cmd.index("--backend") + 1] == "cpu"
         # CPU path must also carry --model version=<DEFAULT_MODEL> (Research-0135).
         model_args = [cmd[idx + 1] for idx, part in enumerate(cmd) if part == "--model"]
-        assert (
-            f"version={K150K.DEFAULT_MODEL}" in model_args
-        ), f"--model {K150K.DEFAULT_MODEL} must be present"
+        assert f"version={K150K.DEFAULT_MODEL}" in model_args, (
+            f"--model {K150K.DEFAULT_MODEL} must be present"
+        )
         out.write_text(json.dumps({"frames": [{"metrics": {"vmaf": 83.2}}]}), encoding="utf-8")
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
@@ -165,9 +165,8 @@ def test_vmaf_column_non_nan_in_aggregated_output(monkeypatch, tmp_path: Path) -
         threads=1,
         extractor_names=K150K.EXTRACTOR_NAMES,
         backend_args=[
-            "--no_cuda",
-            "--no_sycl",
-            "--no_vulkan",
+            "--backend",
+            "cpu",
             "--model",
             f"version={K150K.DEFAULT_MODEL}",
         ],

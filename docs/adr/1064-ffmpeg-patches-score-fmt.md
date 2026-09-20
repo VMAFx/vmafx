@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1064: Wire score_fmt option on all vmaf FFmpeg filters
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ The pattern is symmetric with `cpumask`/`gpumask` from ADR-0576 (patch 0014).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fold into patch 0001 | Fewer patch files | Breaks the topological ordering; 0001 is a small targeted change; adding struct fields early cascades context changes through 0002–0015 | Not chosen |
 | Separate patch per filter | Surgical | 4 patches for one logical change; series grows unnecessarily | Not chosen |
 | New patch 0016 (chosen) | All four filters updated atomically; easy to bisect; mirrors ADR-0576 pattern | Series grows to 16 patches | Chosen |

@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0323](0323-fr-regressor-v3-train-and-register.md) | `fr_regressor_v3` — train + register on ENCODER_VOCAB v3 (16-slot) | Accepted | ai, fr-regressor, codec-aware, encoder-vocab, loso, fork-local |

@@ -76,14 +76,11 @@ __device__ static const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55
  * Writes six arrays of width*height int64_t:
  *   d_mux, d_muy, d_x2, d_xy, d_y2, d_w
  */
-extern "C" {
-
-__global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
-                                        const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
-                                        int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
-                                        int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy,
-                                        int64_t *__restrict__ d_y2, int64_t *__restrict__ d_w,
-                                        unsigned width, unsigned height)
+extern "C" __global__ void integer_ssim_horiz_8bpc(
+    const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t *__restrict__ cmp,
+    ptrdiff_t cmp_stride, int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+    int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy, int64_t *__restrict__ d_y2,
+    int64_t *__restrict__ d_w, unsigned width, unsigned height)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -124,12 +121,11 @@ __global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff
  * SSIM formula uses raw integer values; normalisation is baked into
  * samplemax in the SSIM formula, not in the pixels themselves).
  */
-__global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
-                                         const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
-                                         int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
-                                         int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy,
-                                         int64_t *__restrict__ d_y2, int64_t *__restrict__ d_w,
-                                         unsigned width, unsigned height)
+extern "C" __global__ void integer_ssim_horiz_16bpc(
+    const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t *__restrict__ cmp,
+    ptrdiff_t cmp_stride, int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+    int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy, int64_t *__restrict__ d_y2,
+    int64_t *__restrict__ d_w, unsigned width, unsigned height)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -178,84 +174,68 @@ __global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdif
  * Writes one int64_t per block into `partial_weights`.
  * Host accumulates: ssim = sum(partials) / sum(partial_weights).
  */
-__global__ void
-integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
-                          const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
-                          const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
-                          double *__restrict__ partials, int64_t *__restrict__ partial_weights,
-                          unsigned width, unsigned height, int64_t samplemax)
+struct IntegerSsimMoments {
+    int64_t mux;
+    int64_t muy;
+    int64_t x2;
+    int64_t xy;
+    int64_t y2;
+    int64_t w;
+};
+
+__device__ __forceinline__ IntegerSsimMoments accumulate_vertical_moments(
+    const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
+    const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
+    const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h, unsigned x, unsigned y,
+    unsigned width, unsigned height)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    double my_ssim = 0.0;
-    int64_t my_weight = 0LL;
-
-    if (x < width && y < height) {
-        /* Vertical 9-tap accumulation over the horizontal moment arrays. */
-        int64_t mux = 0LL, muy = 0LL, x2 = 0LL, xy_ = 0LL, y2 = 0LL, w = 0LL;
-        const int k_min = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
-        const int k_max = ((int)y + ISSIM_HALF_K >= (int)height) ?
-                              ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)height + 1) :
-                              ISSIM_K_SZ;
-
-        for (int k = k_min; k < k_max; k++) {
-            const int src_y = (int)y - ISSIM_HALF_K + k;
-            const unsigned hidx = (unsigned)src_y * width + x;
-            const int64_t vk = (int64_t)ISSIM_KERNEL[k];
-            mux += vk * d_mux_h[hidx];
-            muy += vk * d_muy_h[hidx];
-            x2 += vk * d_x2_h[hidx];
-            xy_ += vk * d_xy_h[hidx];
-            y2 += vk * d_y2_h[hidx];
-            w += vk * d_w_h[hidx];
-        }
-
-        /* SSIM formula in double, mirroring ssim_reduce_row_range. */
-        const double w_d = (double)w;
-        const double sm = (double)samplemax;
-        const double c1 = sm * sm * 0.0001 * w_d * w_d; /* SSIM_K1=0.01, K1^2=1e-4 */
-        const double c2 = sm * sm * 0.0009 * w_d * w_d; /* SSIM_K2=0.03, K2^2=9e-4 */
-        const double dmux = (double)mux;
-        const double dmuy = (double)muy;
-        const double dx2 = (double)x2;
-        const double dxy = (double)xy_;
-        const double dy2 = (double)y2;
-        const double mxy = dmux * dmuy;
-        const double num = (2.0 * mxy + c1) * (2.0 * (dxy * w_d - mxy) + c2);
-        const double den = (dmux * dmux + dmuy * dmuy + c1) *
-                           (dx2 * w_d - dmux * dmux + dy2 * w_d - dmuy * dmuy + c2);
-        if (den != 0.0) {
-            my_ssim = w_d * (num / den);
-            my_weight = w;
-        }
+    IntegerSsimMoments m = {};
+    const int k_min = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
+    const int k_max = ((int)y + ISSIM_HALF_K >= (int)height) ?
+                          ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)height + 1) :
+                          ISSIM_K_SZ;
+    for (int k = k_min; k < k_max; k++) {
+        const int src_y = (int)y - ISSIM_HALF_K + k;
+        const unsigned hidx = (unsigned)src_y * width + x;
+        const int64_t vk = (int64_t)ISSIM_KERNEL[k];
+        m.mux += vk * d_mux_h[hidx];
+        m.muy += vk * d_muy_h[hidx];
+        m.x2 += vk * d_x2_h[hidx];
+        m.xy += vk * d_xy_h[hidx];
+        m.y2 += vk * d_y2_h[hidx];
+        m.w += vk * d_w_h[hidx];
     }
+    return m;
+}
 
-    /* Per-block reduction: double ssim partial + int64 weight partial.
-     * Uses shared memory for two separate tree-reduces. */
-    __shared__ double s_ssim[ISSIM_BLOCK_SZ / 32];
-    __shared__ int64_t s_wgt[ISSIM_BLOCK_SZ / 32];
+__device__ __forceinline__ double integer_ssim_contribution(const IntegerSsimMoments m,
+                                                            int64_t samplemax, int64_t *weight)
+{
+    const double w = (double)m.w;
+    const double sm = (double)samplemax;
+    const double c1 = sm * sm * 0.0001 * w * w;
+    const double c2 = sm * sm * 0.0009 * w * w;
+    const double mux = (double)m.mux;
+    const double muy = (double)m.muy;
+    const double mxy = mux * muy;
+    const double num = (2.0 * mxy + c1) * (2.0 * ((double)m.xy * w - mxy) + c2);
+    const double den = (mux * mux + muy * muy + c1) *
+                       ((double)m.x2 * w - mux * mux + (double)m.y2 * w - muy * muy + c2);
+    if (den == 0.0)
+        return 0.0;
+    *weight = m.w;
+    return w * (num / den);
+}
 
-    /* Warp-level reduce for ssim (float → double). */
+__device__ __forceinline__ void reduce_integer_ssim_block(double my_ssim, int64_t my_weight,
+                                                          double *s_ssim, int64_t *s_wgt,
+                                                          double *__restrict__ partials,
+                                                          int64_t *__restrict__ partial_weights)
+{
     double warp_ssim = my_ssim;
     for (int off = 16; off > 0; off >>= 1)
         warp_ssim += __shfl_down_sync(0xffffffffu, warp_ssim, off);
-
-    /* Warp-level reduce for weight (int64). CUDA has no int64 shuffle
-     * intrinsic, so each step shuffles the two 32-bit halves separately —
-     * but the halves must be REASSEMBLED into an int64 before adding.
-     *
-     * This previously summed `lo` and `hi` as two independent int32
-     * accumulators and only recombined at the end, so a carry out of the low
-     * half was silently dropped and `lo` itself could overflow a signed
-     * int32 (undefined behaviour). It is not reachable today — the per-pixel
-     * weight sum over a 9-tap window stays far below 2^31 — but it is wrong,
-     * and it is wrong in a way that only shows up at large frame sizes or a
-     * future weight scaling. `warp_reduce(int64_t)` in cuda_helper.cuh
-     * already does this correctly; use it rather than keeping a second,
-     * subtly different copy. ADR-1224. */
     const int64_t warp_wgt = warp_reduce(my_weight);
-
     const int tid = threadIdx.y * (int)blockDim.x + threadIdx.x;
     const int lane = tid % 32;
     const int warp_id = tid / 32;
@@ -277,4 +257,24 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         partial_weights[blk] = block_wgt;
     }
 }
-} /* extern "C" */
+
+extern "C" __global__ void
+integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
+                          const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
+                          const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
+                          double *__restrict__ partials, int64_t *__restrict__ partial_weights,
+                          unsigned width, unsigned height, int64_t samplemax)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    double my_ssim = 0.0;
+    int64_t my_weight = 0LL;
+    if (x < width && y < height) {
+        const IntegerSsimMoments moments = accumulate_vertical_moments(
+            d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h, d_w_h, x, y, width, height);
+        my_ssim = integer_ssim_contribution(moments, samplemax, &my_weight);
+    }
+    __shared__ double s_ssim[ISSIM_BLOCK_SZ / 32];
+    __shared__ int64_t s_wgt[ISSIM_BLOCK_SZ / 32];
+    reduce_integer_ssim_block(my_ssim, my_weight, s_ssim, s_wgt, partials, partial_weights);
+}

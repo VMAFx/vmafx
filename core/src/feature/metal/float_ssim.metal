@@ -51,7 +51,7 @@
  *   [[buffer(3)]] consts      — float2 (.x=c1, .y=c2)
  *   [[buffer(4)]] grid_dim    — uint2 (.x=grid_w, .y=grid_h) for partial index
  *   [[buffer(5)]] lcs_parts   — float * (3 × grid_w × grid_h; L/C/S partials;
- *                                NULL / unused when enable_lcs == 0)
+ *                                null/unused / unused when enable_lcs == 0)
  *   [[buffer(6)]] lcs_flags   — uint  (.x=enable_lcs)
  */
 

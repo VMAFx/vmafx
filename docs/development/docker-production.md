@@ -1,12 +1,11 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # VMAFX Production Docker Images
 
-This page covers pulling, running, and building the VMAFX production container images
-hosted at `ghcr.io/vmafx/vmafx`.
+This page covers pulling, running, and building the VMAFX production container
+images hosted at `ghcr.io/vmafx/vmafx`.
 
-> For the **development MCP container** (full GPU toolchain, oneAPI, CUDA, HIP, MCP
-> server pre-installed), see [docs/development/dev-mcp.md](dev-mcp.md). That container
-> is separate from the production images described here.
+> For the **development MCP container** (full GPU toolchain, oneAPI, CUDA, HIP,
+> MCP server pre-installed), see [docs/development/dev-mcp.md](dev-mcp.md). That
+> container is separate from the production images described here.
 
 ## Quick start
 
@@ -30,19 +29,19 @@ docker run --rm \
 
 ## Tag matrix
 
-| Tag | Platforms | Description | Approx. size |
-|-----|-----------|-------------|--------------|
-| `latest`, `vX.Y.Z` | amd64, arm64 | CPU-only CLI (default) | ~150 MB |
-| `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB |
-| `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~500 MB |
-| `vX.Y.Z-rocm7` | amd64 | ROCm 7 HIP runtime added | ~600 MB |
-| `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~500 MB |
+| Tag                 | Platforms    | Description                               | Approx. size |
+| ------------------- | ------------ | ----------------------------------------- | ------------ |
+| `latest`, `vX.Y.Z`  | amd64, arm64 | CPU-only CLI (default)                    | ~150 MB      |
+| `vX.Y.Z-server`     | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB      |
+| `vX.Y.Z-cuda13`     | amd64        | CUDA 13 runtime added                     | ~500 MB      |
+| `vX.Y.Z-rocm7`      | amd64        | ROCm 7 HIP runtime added                  | ~600 MB      |
+| `vX.Y.Z-oneapi2025` | amd64        | Intel oneAPI 2025 SYCL runtime added      | ~500 MB      |
 
 The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
-builder ABI. The server uses the official Python 3.14 slim image (also Debian 13)
-because a virtualenv requires its matching interpreter and standard library. GPU
-variants use their vendors' pinned runtime families so the complete accelerator
-runtime stays aligned with the compiler that produced `libvmaf`.
+builder ABI. The server uses the official Python 3.14 slim image (also
+Debian 13) because a virtualenv requires its matching interpreter and standard
+library. GPU variants use their vendors' pinned runtime families so the complete
+accelerator runtime stays aligned with the compiler that produced `libvmaf`.
 
 ## Recovering a published image set
 
@@ -70,7 +69,8 @@ docker run --rm --gpus all \
   --version
 ```
 
-Requires the NVIDIA Container Toolkit and a host driver compatible with CUDA 13.3.1.
+Requires the NVIDIA Container Toolkit and a host driver compatible with CUDA
+13.3.1.
 
 ### ROCm 7.2.4 (HIP)
 
@@ -85,15 +85,16 @@ docker run --rm \
   --version
 ```
 
-Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` accessible.
+Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>`
+accessible.
 
 ### oneAPI 2025.3 (SYCL / Intel Arc)
 
 The image is compiled in Intel's oneAPI Base Toolkit container tagged 2025.3.2
-and runs on Intel's oneAPI Runtime 2025.3.1 image. Intel has not published a matching
-`oneapi-runtime:2025.3.2-0-devel-ubuntu24.04` tag, so the release keeps the
-runtime on the latest available 2025.3 patch and verifies the resulting image's
-driver-independent `vmaf --version` entrypoint during publication.
+and runs on Intel's oneAPI Runtime 2025.3.1 image. Intel has not published a
+matching `oneapi-runtime:2025.3.2-0-devel-ubuntu24.04` tag, so the release keeps
+the runtime on the latest available 2025.3 patch and verifies the resulting
+image's driver-independent `vmaf --version` entrypoint during publication.
 
 ```bash
 docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2025
@@ -104,7 +105,8 @@ docker run --rm \
   --version
 ```
 
-Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>` accessible.
+Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>`
+accessible.
 
 ## MCP server variant
 
@@ -140,13 +142,13 @@ For the full vmaf-mcp environment variable reference see [docs/mcp/](../mcp/).
 
 ## Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VMAF_MODEL_PATH` | `/usr/local/share/vmafx/model` | Directory searched for `.json` model files |
-| `LD_LIBRARY_PATH` | `/usr/local/lib` | Path containing `libvmaf.so` |
-| `VMAF_BINARY` | `/usr/local/bin/vmaf` | (server only) vmaf binary path for vmaf-mcp |
-| `VMAFX_MCP_HTTP_BIND` | `0.0.0.0` in the server image | HTTP bind address; host installs default to `127.0.0.1` |
-| `VMAFX_MCP_HTTP_TOKEN` | unset (fail closed) | Bearer token required by HTTP requests |
+| Variable               | Default                        | Description                                             |
+| ---------------------- | ------------------------------ | ------------------------------------------------------- |
+| `VMAF_MODEL_PATH`      | `/usr/local/share/vmafx/model` | Directory searched for `.json` model files              |
+| `LD_LIBRARY_PATH`      | `/usr/local/lib`               | Path containing `libvmaf.so`                            |
+| `VMAF_BINARY`          | `/usr/local/bin/vmaf`          | (server only) vmaf binary path for vmaf-mcp             |
+| `VMAFX_MCP_HTTP_BIND`  | `0.0.0.0` in the server image  | HTTP bind address; host installs default to `127.0.0.1` |
+| `VMAFX_MCP_HTTP_TOKEN` | unset (fail closed)            | Bearer token required by HTTP requests                  |
 
 ## Verifying image provenance
 
@@ -209,19 +211,19 @@ Both Dockerfiles use a multi-stage build:
    the compiled binary, shared libraries, and model files.
 4. **Server runtime** (the same pinned `python:3.14-slim` image): provides the
    interpreter to which `/venv/bin/python` links. It runs as UID/GID 65532.
-5. **GPU builders/runtimes**: CUDA 13.3.1 uses NVIDIA devel/runtime images,
-   ROCm 7.2.4 uses AMD's supported dev/application image, and the Intel image
-   uses the oneAPI basekit image tagged 2025.3.2 with the latest published
-   2025.3.1 runtime. Every reference is digest-pinned.
+5. **GPU builders/runtimes**: CUDA 13.3.1 uses NVIDIA devel/runtime images, ROCm
+   7.2.4 uses AMD's supported dev/application image, and the Intel image uses
+   the oneAPI basekit image tagged 2025.3.2 with the latest published 2025.3.1
+   runtime. Every reference is digest-pinned.
 
 Publishing a GitHub release drives the two Docker workflows through the
 `release.published` event. Each workflow checks out
-`github.event.release.tag_name` and uses that same value for every image tag,
-so a release cannot accidentally publish a branch tip under a release tag.
-After each GPU image is signed and receives its SBOM and provenance, the
-workflow verifies the digest-pinned signature before pulling the image and
-runs the driver-independent `vmaf --version` entrypoint. This catches missing
-runtime libraries without requiring accelerator hardware on the smoke runner.
+`github.event.release.tag_name` and uses that same value for every image tag, so
+a release cannot accidentally publish a branch tip under a release tag. After
+each GPU image is signed and receives its SBOM and provenance, the workflow
+verifies the digest-pinned signature before pulling the image and runs the
+driver-independent `vmaf --version` entrypoint. This catches missing runtime
+libraries without requiring accelerator hardware on the smoke runner.
 
-See [ADR-0698](../adr/0698-vmafx-production-dockerfile.md) for the full rationale,
-alternatives considered, and tag matrix design decisions.
+See [ADR-0698](../adr/0698-vmafx-production-dockerfile.md) for the full
+rationale, alternatives considered, and tag matrix design decisions.

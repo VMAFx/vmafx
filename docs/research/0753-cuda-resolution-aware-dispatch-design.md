@@ -1,31 +1,28 @@
-<!-- markdownlint-disable MD050 MD060 -->
 # Research-0753: CUDA Resolution-Aware Dispatch — Design Rationale
 
-**Date**: 2026-05-29
-**Author**: lusoris
-**Status**: Published
-**Related ADR**: [ADR-0753](../adr/0753-cuda-resolution-aware-dispatch.md)
+**Date**: 2026-05-29 **Author**: lusoris **Status**: Published **Related ADR**:
+[ADR-0753](../adr/0753-cuda-resolution-aware-dispatch.md)
 
 ## Summary
 
 Multi-resolution profiling (Research-0748, Research-0749, Research-0751) showed
-that CUDA kernel occupancy optimisations are resolution-regime-specific. A single
-dispatch classifier (`WS_SMALL` / `WS_MEDIUM` / `WS_LARGE`) keyed on luma pixel
-count enables each feature extractor to pick the right variant at runtime.
+that CUDA kernel occupancy optimisations are resolution-regime-specific. A
+single dispatch classifier (`WS_SMALL` / `WS_MEDIUM` / `WS_LARGE`) keyed on luma
+pixel count enables each feature extractor to pick the right variant at runtime.
 
 ## Motivation
 
 ### Measured data driving the design
 
-| Metric / Opt              | 576p (WS_SMALL)   | 1080p (WS_MEDIUM)    | 4K (WS_LARGE)     |
-| ------------------------- | ----------------- | -------------------- | ----------------- |
-| adm_cm `__launch_bounds__ | Neutral (< 1 wave)| −9.3% kernel time    | −0.3% (noise)     |
-| filter1d `__ldg`           | Neutral (0.76w)   | +3.6% end-to-end VIF | Saturated (253w)  |
-| ms_ssim_decimate smem      | 95% L1 hit rate   | 95% L1 hit rate      | 95% L1 hit rate   |
-| motion CUDA vs CPU         | CPU wins          | CUDA wins            | CUDA wins         |
+| Metric / Opt              | 576p (WS_SMALL)    | 1080p (WS_MEDIUM)    | 4K (WS_LARGE)    |
+| ------------------------- | ------------------ | -------------------- | ---------------- |
+| adm_cm `**launch_bounds** | Neutral (< 1 wave) | −9.3% kernel time    | −0.3% (noise)    |
+| filter1d `__ldg`          | Neutral (0.76w)    | +3.6% end-to-end VIF | Saturated (253w) |
+| ms_ssim_decimate smem     | 95% L1 hit rate    | 95% L1 hit rate      | 95% L1 hit rate  |
+| motion CUDA vs CPU        | CPU wins           | CUDA wins            | CUDA wins        |
 
-At 576p, every ADM kernel runs < 1 wave. Occupancy hints that save registers
-but increase instruction count are net-zero at this wave count. At 4K the same
+At 576p, every ADM kernel runs < 1 wave. Occupancy hints that save registers but
+increase instruction count are net-zero at this wave count. At 4K the same
 kernel is register-pressure-free (enough waves to absorb the full register
 budget without stalling).
 
@@ -44,11 +41,11 @@ resolution proxy.
   industry-standard HD boundary. The measured 576p operating point (186624 px)
   falls well within WS_SMALL; a letterboxed 720p60 (921600 px) is right at the
   boundary and classified WS_MEDIUM, which is conservative (it will get the
-  bounded variant — safe, because the bounded variant is never worse than neutral
-  at 720p; the occupancy win materialises fully at 1080p).
-- `VMAF_CUDA_PIXEL_THRESHOLD_LARGE = 3840 * 2160 = 8294400` aligns with the
-  4K UHD boundary. The transition from medium to large at this point matches
-  the profiling data showing zero gain for `adm_cm __launch_bounds__` at 4K.
+  bounded variant — safe, because the bounded variant is never worse than
+  neutral at 720p; the occupancy win materialises fully at 1080p).
+- `VMAF_CUDA_PIXEL_THRESHOLD_LARGE = 3840 * 2160 = 8294400` aligns with the 4K
+  UHD boundary. The transition from medium to large at this point matches the
+  profiling data showing zero gain for `adm_cm __launch_bounds__` at 4K.
 
 ## Scaffolding pattern
 
@@ -57,13 +54,14 @@ The dispatch infrastructure is intentionally minimal:
 1. `resolution_dispatch.h` — header-only enum + one function decl.
 2. `resolution_dispatch.c` — ~20 lines of pure C; no CUDA headers; unit-testable
    in the CPU-only build.
-3. Each extractor adds: one extra `CUfunction` pointer, one `cuModuleGetFunction`
-   call in init, one `if (ws == WS_MEDIUM)` branch at the launch site.
+3. Each extractor adds: one extra `CUfunction` pointer, one
+   `cuModuleGetFunction` call in init, one `if (ws == WS_MEDIUM)` branch at the
+   launch site.
 
 This is deliberately not a generic "dispatch table" framework. A flat branch in
-each extractor is more readable, easier to audit, and avoids the indirection cost
-of a table lookup on a hot path (although the hot path is the GPU kernel, not this
-branch, so the distinction is academic).
+each extractor is more readable, easier to audit, and avoids the indirection
+cost of a table lookup on a hot path (although the hot path is the GPU kernel,
+not this branch, so the distinction is academic).
 
 ## Future expansion
 
@@ -84,6 +82,6 @@ The policy table in ADR-0753 has empty rows for:
 ## Correctness
 
 The two `adm_cm` kernel variants are mathematically identical — they differ only
-in the `__launch_bounds__` annotation that constrains register allocation.
-The cross-backend parity gate (`places=4`) is unchanged because the annotation
-does not affect the computation, only register spilling decisions.
+in the `__launch_bounds__` annotation that constrains register allocation. The
+cross-backend parity gate (`places=4`) is unchanged because the annotation does
+not affect the computation, only register spilling decisions.

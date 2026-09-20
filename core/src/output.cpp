@@ -111,7 +111,7 @@ class LocaleGuard
     VmafThreadLocaleState *state_;
 };
 
-unsigned max_capacity(VmafFeatureCollector *fc)
+unsigned max_capacity(const VmafFeatureCollector *fc)
 {
     unsigned capacity = 0;
 
@@ -167,7 +167,7 @@ inline const char *fmt_or_default(const char *score_format) noexcept
     return score_format ? score_format : DEFAULT_SCORE_FORMAT;
 }
 
-unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
+unsigned count_written_at(const VmafFeatureCollector *fc, unsigned i)
 {
     unsigned cnt = 0;
     for (unsigned j = 0; j < fc->cnt; j++) {
@@ -187,7 +187,8 @@ unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
 /* Writers rely on a final ferror() check to detect I/O failure rather than
  * propagating per-call errors — there is no recoverable action mid-stream. */
 // NOLINTBEGIN(cert-err33-c) — ADR-0141 / ADR-0278: writer ferror pattern
-void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample, const char *sf)
+void xml_write_frames(const VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
+                      const char *sf)
 {
     (void)std::fprintf(outfile, "  <frames>\n");
     for (unsigned i = 0; i < max_capacity(fc); i++) {
@@ -231,7 +232,7 @@ void xml_write_one_metric_pools(VmafContext *vmaf, FILE *outfile, const char *fe
     }
 }
 
-void xml_write_pooled_metrics(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
+void xml_write_pooled_metrics(VmafContext *vmaf, const VmafFeatureCollector *fc, FILE *outfile,
                               unsigned pic_cnt, const char *sf)
 {
     (void)std::fprintf(outfile, "  <pooled_metrics>\n");
@@ -246,7 +247,7 @@ void xml_write_pooled_metrics(VmafContext *vmaf, VmafFeatureCollector *fc, FILE 
     (void)std::fprintf(outfile, "  </pooled_metrics>\n");
 }
 
-void xml_write_aggregate_metrics(VmafFeatureCollector *fc, FILE *outfile, const char *sf)
+void xml_write_aggregate_metrics(const VmafFeatureCollector *fc, FILE *outfile, const char *sf)
 {
     (void)std::fprintf(outfile, "  <aggregate_metrics ");
     for (unsigned i = 0; i < fc->aggregate_vector.cnt; i++) {
@@ -257,8 +258,8 @@ void xml_write_aggregate_metrics(VmafFeatureCollector *fc, FILE *outfile, const 
     (void)std::fprintf(outfile, "/>\n");
 }
 
-void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                                    unsigned pic_cnt, const char *sf)
+void xml_write_pooled_and_aggregate(VmafContext *vmaf, const VmafFeatureCollector *fc,
+                                    FILE *outfile, unsigned pic_cnt, const char *sf)
 {
     xml_write_pooled_metrics(vmaf, fc, outfile, pic_cnt, sf);
     xml_write_aggregate_metrics(fc, outfile, sf);
@@ -266,9 +267,10 @@ void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc,
 
 } // namespace
 
-[[nodiscard]] int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                                        unsigned subsample, unsigned width, unsigned height,
-                                        double fps, unsigned pic_cnt, const char *score_format)
+[[nodiscard]] int vmaf_write_output_xml(VmafContext *vmaf, const VmafFeatureCollector *fc,
+                                        FILE *outfile, unsigned subsample, unsigned width,
+                                        unsigned height, double fps, unsigned pic_cnt,
+                                        const char *score_format)
 {
     if (!vmaf)
         return -EINVAL;
@@ -322,7 +324,7 @@ void json_write_frame_metric(FILE *outfile, const char *name, double value, cons
     }
 }
 
-void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i, unsigned cnt,
+void json_write_frame(const VmafFeatureCollector *fc, FILE *outfile, unsigned i, unsigned cnt,
                       const char *sf)
 {
     (void)std::fprintf(outfile, "    {\n");
@@ -343,7 +345,8 @@ void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i, unsig
     (void)std::fprintf(outfile, "    }");
 }
 
-void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample, const char *sf)
+void json_write_frames(const VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
+                       const char *sf)
 {
     (void)std::fprintf(outfile, "  \"frames\": [");
     /* ADR-0606: track whether we have emitted the first frame entry so the
@@ -421,8 +424,8 @@ void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char *featu
     (void)std::fprintf(outfile, "    }");
 }
 
-void json_write_pooled(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile, unsigned pic_cnt,
-                       const char *sf)
+void json_write_pooled(VmafContext *vmaf, const VmafFeatureCollector *fc, FILE *outfile,
+                       unsigned pic_cnt, const char *sf)
 {
     (void)std::fprintf(outfile, "  \"pooled_metrics\": {");
     for (unsigned i = 0; i < fc->cnt; i++) {
@@ -432,7 +435,7 @@ void json_write_pooled(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfil
     (void)std::fprintf(outfile, "\n  },\n");
 }
 
-void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *sf)
+void json_write_aggregate(const VmafFeatureCollector *fc, FILE *outfile, const char *sf)
 {
     (void)std::fprintf(outfile, "  \"aggregate_metrics\": {");
     for (unsigned i = 0; i < fc->aggregate_vector.cnt; i++) {
@@ -456,9 +459,9 @@ void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *s
 
 } // namespace
 
-[[nodiscard]] int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                                         unsigned subsample, double fps, unsigned pic_cnt,
-                                         const char *score_format)
+[[nodiscard]] int vmaf_write_output_json(VmafContext *vmaf, const VmafFeatureCollector *fc,
+                                         FILE *outfile, unsigned subsample, double fps,
+                                         unsigned pic_cnt, const char *score_format)
 {
     /* ADR-0602: mirror the vmaf_write_output_xml NULL guards so the JSON
      * writer is equally defensive.  vmaf and fc are both dereferenced by the
@@ -500,8 +503,8 @@ void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *s
     return (flush_err != 0 || std::ferror(outfile)) ? -EIO : 0;
 }
 
-[[nodiscard]] int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
-                                        const char *score_format)
+[[nodiscard]] int vmaf_write_output_csv(const VmafFeatureCollector *fc, FILE *outfile,
+                                        unsigned subsample, const char *score_format)
 {
     /* Mirror the XML/JSON writers' NULL guards (ADR-0602). Both fc and outfile
      * are dereferenced unconditionally below; without these this writer
@@ -554,8 +557,8 @@ void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *s
     return (flush_err != 0 || std::ferror(outfile)) ? -EIO : 0;
 }
 
-[[nodiscard]] int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
-                                        const char *score_format)
+[[nodiscard]] int vmaf_write_output_sub(const VmafFeatureCollector *fc, FILE *outfile,
+                                        unsigned subsample, const char *score_format)
 {
     /* Mirror the XML/JSON writers' NULL guards (ADR-0602). See the CSV writer
      * above for rationale. */

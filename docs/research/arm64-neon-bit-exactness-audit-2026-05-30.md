@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ARM64 NEON bit-exactness audit — 2026-05-30
 
 **Purpose**: Verify that the `-ffp-contract=off` carve-out introduced in
@@ -96,7 +95,7 @@ and are compiled in their own libs with `-ffp-contract=off`. No gap.
 ## CI coverage summary
 
 | Test file | NEON covered? | Method |
-|---|---|---|
+| --- | --- | --- |
 | `test_psnr_hvs_neon.c` | Yes | `memcmp` of 8×8 DCT block |
 | `test_ms_ssim_decimate.c` | Yes | `memcmp` on 5 size fixtures |
 | `test_iqa_convolve.c` | Yes | `memcmp` |

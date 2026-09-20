@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # HIP kernel parity coverage — round 2 audit (2026-05-30)
 
 Companion research digest for ADR-0883.  Quantifies the HIP-side coverage
@@ -13,7 +12,7 @@ that round-2 ships.
 `hip_hsaco_stubs.c` build-only entry that registers no extractor).
 
 | Extractor source | Registered name | Tested before round-2? | Round-2 ships test? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `integer_adm_hip.c` | `adm_hip` | yes — `test_hip_adm_parity` (ADR-0539) | — |
 | `integer_motion_v2_hip.c` | `motion_v2_hip` | yes — `test_hip_motion3_parity` | — |
 | `integer_psnr_hip.c` | `psnr_hip` | yes — `test_hip_psnr_parity` (PR #351) | — |
@@ -72,7 +71,7 @@ All 5 tests reuse the `test_hip_vif_parity.c` template verbatim:
 ## Tolerance choices (ADR-0214)
 
 | Kernel | Filter? | Tolerance | Rationale |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ciede2000` | no | 1e-4 (places=4) | Per-pixel reduction; matches CUDA twin in PR #351 |
 | `psnr_hvs` | yes (DCT) | 1e-4 (places=4) | DCT is deterministic; reduction tree is shallow |
 | `motion` v1 | yes (Gaussian) | 1e-4 (places=4) | Same kernel as motion3; equal precision budget |
@@ -98,7 +97,7 @@ will exercise the parity assertions.
 ## Round-3 backlog
 
 | Extractor | Blocker | Resolution path |
-|---|---|---|
+| --- | --- | --- |
 | `cambi_hip` | needs `enc_width`/`enc_height`/`enc_bitdepth` options on the fixture | wrap CPU reference with synthetic encoder metadata |
 | `ssimulacra2_hip` | PR #290 actively refactoring partial-alloc paths | wait for #290 merge, then add test |
 | `speed_chroma_hip`, `speed_temporal_hip` | no scalar CPU reference exists on master | scope a CPU reference first or call into the existing GPU path twice with different RNG seeds |

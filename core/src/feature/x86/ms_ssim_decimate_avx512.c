@@ -7,6 +7,8 @@
  * SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <immintrin.h>
 #include <math.h>
@@ -176,8 +178,8 @@ static void v_pass_row(const float *tmp, float *dst_row, int y_out, int w_out, i
 
 int ms_ssim_decimate_avx512(const float *src, int w, int h, float *dst, int *rw, int *rh)
 {
-    VMAF_ASSERT_DEBUG(src != NULL);
-    VMAF_ASSERT_DEBUG(dst != NULL);
+    VMAF_ASSERT_DEBUG(src != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(dst != VMAF_NULLPTR);
     VMAF_ASSERT_DEBUG(src != dst);
     VMAF_ASSERT_DEBUG(w > 0);
     VMAF_ASSERT_DEBUG(h > 0);
@@ -186,7 +188,7 @@ int ms_ssim_decimate_avx512(const float *src, int w, int h, float *dst, int *rw,
     const int h_out = (h / 2) + (h & 1);
 
     float *tmp = (float *)malloc((size_t)w_out * (size_t)h * sizeof(float));
-    if (tmp == NULL) {
+    if (tmp == VMAF_NULLPTR) {
         return -ENOMEM;
     }
 
@@ -219,10 +221,10 @@ int ms_ssim_decimate_avx512(const float *src, int w, int h, float *dst, int *rw,
 
     free(tmp);
 
-    if (rw != NULL) {
+    if (rw != VMAF_NULLPTR) {
         *rw = w_out;
     }
-    if (rh != NULL) {
+    if (rh != VMAF_NULLPTR) {
         *rh = h_out;
     }
     return 0;

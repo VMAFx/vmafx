@@ -110,11 +110,11 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     int err = 0;
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (fps_weight) {
         err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
         mu_assert("CPU: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
@@ -137,7 +137,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
@@ -145,7 +145,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Per-frame submit helper.  Returns:
@@ -174,10 +174,10 @@ static char *hip_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_ski
      * tears down the partially-initialised VmafContext on a skip. */
     if (err == -ENOSYS) {
         *enosys_skip = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("HIP: vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -190,24 +190,24 @@ static char *run_hip_motion3(const char *fps_weight, const char *key, double *ou
     *out_score = NAN;
     int err = 0;
 
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     VmafHipConfiguration hip_cfg = {.device_index = -1};
     err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    if (err != 0 || hip_state == VMAF_NULLPTR) {
         /* No HIP/ROCm runtime or no device — caller treats NaN as skip. */
         (void)fprintf(stderr, "[skip: no HIP device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("HIP: vmaf_init failed", !err);
 
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (fps_weight) {
         err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
         mu_assert("HIP: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
@@ -227,12 +227,12 @@ static char *run_hip_motion3(const char *fps_weight, const char *key, double *ou
             (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
             (void)vmaf_close(vmaf);
             vmaf_hip_state_free(&hip_state);
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
@@ -242,7 +242,7 @@ static char *run_hip_motion3(const char *fps_weight, const char *key, double *ou
     mu_assert("HIP: vmaf_close failed", !err);
 
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -253,17 +253,17 @@ static char *test_motion3_cpu_hip_parity(void)
     double cpu_score = 0.0;
     double hip_score = NAN;
 
-    char *msg = run_cpu_motion3(NULL, "VMAF_integer_feature_motion3_score", &cpu_score);
+    char *msg = run_cpu_motion3(VMAF_NULLPTR, "VMAF_integer_feature_motion3_score", &cpu_score);
     if (msg)
         return msg;
 
-    msg = run_hip_motion3(NULL, "VMAF_integer_feature_motion3_score", &hip_score);
+    msg = run_hip_motion3(VMAF_NULLPTR, "VMAF_integer_feature_motion3_score", &hip_score);
     if (msg)
         return msg;
 
     /* If no HIP device was found, hip_score is NaN — skip the assertion. */
     if (isnan(hip_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     double delta = fabs(cpu_score - hip_score);
     if (delta > PARITY_TOL) {
@@ -271,7 +271,7 @@ static char *test_motion3_cpu_hip_parity(void)
                       cpu_score, hip_score, delta, PARITY_TOL);
     }
     mu_assert("motion3 CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -303,7 +303,7 @@ static char *test_motion3_fps_weight_applied_once(void)
         return msg;
 
     if (isnan(gpu_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - gpu_score);
     if (delta > PARITY_TOL) {
@@ -313,12 +313,12 @@ static char *test_motion3_fps_weight_applied_once(void)
     }
     mu_assert("motion3 with motion_fps_weight != 1.0 drifts from the CPU reference",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion3_cpu_hip_parity);
     mu_run_test(test_motion3_fps_weight_applied_once);
-    return NULL;
+    return VMAF_NULLPTR;
 }

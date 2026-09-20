@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 MD060 -->
 # ADR-0369: Waterloo IVC 4K-VQA corpus ingestion for `nr_metric_v1`
 
 - **Status**: Accepted
@@ -12,7 +11,9 @@
 VQA model. Its in-flight training corpus stack already
 covers BVI-DVC (ADR-0310), KonViD-150k Phase 2 (ADR-0325, in
 flight as PR #447), and LSVQ (ADR-0333, in flight as PR
-#471). Per the contributor-pack research digest #465 the
+
+\#471). Per the contributor-pack research digest #465 the
+
 union of these three shards has a glaring distribution gap:
 **none of them populate the 2160p resolution bin**. BVI-DVC
 tops out at 1080p; KonViD-150k and LSVQ are predominantly
@@ -95,7 +96,7 @@ collapsing it at consumption time and routing the
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | BVI-DVC + KonViD-150k + LSVQ (skip Waterloo) | Smallest surface; three ingestion adapters; one license-review fewer. | The 2160p resolution bin stays empty. Cross-paper PLCC numbers against 4K-encoded content stay aspirational. The fork already has a 4K validation gap flagged in research digest #465. | The marginal infra (one adapter mirroring LSVQ's shape + tests + a `--max-rows` / `--full` knob) is small; the dataset is genuinely public with no licence drama; the 2160p coverage is otherwise unobtainable. |
 | BVI-DVC + KonViD-150k + LSVQ + Waterloo IVC 4K-VQA | Closes the 2160p resolution bin; permissive academic licence; direct download (no NDA / form gate); 1 200 distorted clips × MOS adds bona-fide subjective signal at 4K. | Working set ~multi-TB; canonical scores.txt is headerless 5-tuple (different shape from LSVQ / KonViD); MOS scale is 0–100, not 1–5 (cross-corpus normaliser becomes a follow-up PR). | **Chosen.** The shape divergences are bounded: the adapter auto-detects between the canonical headerless shape and the standard CSV header; the 0–100 vs 1–5 divergence is a single per-corpus normaliser in the trainer. |
 | Waterloo IVC 4K-VQA only (replace KonViD / LSVQ) | One ingestion path; controlled subjective study; clean licence. | 1 200 clips is far too small a training corpus for `nr_metric_v1`; loses content-diversity coverage from KonViD / LSVQ; UGC distribution disappears entirely. | Premature — DOVER / FAST-VQA / Q-Align all train on the union, not on Waterloo alone. The fork follows the field. |

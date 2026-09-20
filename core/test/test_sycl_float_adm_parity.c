@@ -40,11 +40,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* Fixture must be ≥ 32x32 for the 4-scale DWT2 + CSF footprint;
  * 256x144 matches the round-2 ADM parity test sizing. */
@@ -124,15 +120,15 @@ static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const 
     return vmaf_feature_dictionary_set(opts, name, val);
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
                      double *scores)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("CPU: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm", opts);
@@ -141,7 +137,7 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
@@ -149,29 +145,29 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
     }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_sycl(const char *opt_name, const char *opt_val, const char *const *keys,
                       double *scores)
 {
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
         scores[m] = NAN;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("SYCL: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm_sycl", opts);
@@ -180,7 +176,7 @@ static char *run_sycl(const char *opt_name, const char *opt_val, const char *con
     mu_assert("SYCL: vmaf_use_feature(float_adm_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
@@ -189,29 +185,29 @@ static char *run_sycl(const char *opt_name, const char *opt_val, const char *con
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_adm_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm_sycl");
-    mu_assert("float_adm_sycl extractor must be registered", fex != NULL);
+    mu_assert("float_adm_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_adm_sycl name matches", !strcmp(fex->name, "float_adm_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_adm_cpu_sycl_parity(void)
 {
     double cpu_scores[NUM_ADM_FEATURES] = {0};
     double sycl_scores[NUM_ADM_FEATURES] = {0};
-    char *msg = run_cpu(NULL, NULL, kAdmFeatures, cpu_scores);
+    char *msg = run_cpu(VMAF_NULLPTR, VMAF_NULLPTR, kAdmFeatures, cpu_scores);
     if (msg)
         return msg;
-    msg = run_sycl(NULL, NULL, kAdmFeatures, sycl_scores);
+    msg = run_sycl(VMAF_NULLPTR, VMAF_NULLPTR, kAdmFeatures, sycl_scores);
     if (msg)
         return msg;
     if (isnan(sycl_scores[0]))
-        return NULL;
+        return VMAF_NULLPTR;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
         if (delta > PARITY_TOL) {
@@ -222,7 +218,7 @@ static char *test_float_adm_cpu_sycl_parity(void)
         mu_assert("float_adm CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1220 — adm_p_norm must reach the kernels. The twin declares it with the
@@ -241,7 +237,7 @@ static char *test_float_adm_p_norm_reaches_kernel(void)
     if (msg)
         return msg;
     if (isnan(sycl_scores[0]))
-        return NULL;
+        return VMAF_NULLPTR;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
         if (delta > PARITY_TOL) {
@@ -254,7 +250,7 @@ static char *test_float_adm_p_norm_reaches_kernel(void)
         mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
@@ -277,7 +273,7 @@ static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
     if (msg)
         return msg;
     if (isnan(sycl_scores[0]))
-        return NULL;
+        return VMAF_NULLPTR;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
         if (delta > PARITY_TOL) {
@@ -289,7 +285,7 @@ static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
         mu_assert("float_adm applies adm_csf_scale in Watson mode where the CPU ignores it",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -298,7 +294,5 @@ char *run_tests(void)
     mu_run_test(test_float_adm_cpu_sycl_parity);
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

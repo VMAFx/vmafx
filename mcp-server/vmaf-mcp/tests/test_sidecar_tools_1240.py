@@ -324,6 +324,18 @@ def test_bench_validate_mode_reports_failure_without_raising(
     assert out["exit_code"] == 1
 
 
+def test_bench_validate_mode_raises_when_validation_aborts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_run(_argv: list[str]) -> tuple[str, str, int]:
+        return "", "Validation aborted for 1920x1080 (err=-5)", 2
+
+    monkeypatch.setattr(srv, "_resolve_sidecar", lambda _name: Path("BIN"))
+    monkeypatch.setattr(srv, "_run_sidecar", fake_run)
+    with pytest.raises(RuntimeError, match="vmaf_bench exited 2"):
+        asyncio.run(srv._vmaf_bench({"validate": True}))
+
+
 def test_bench_benchmark_mode_raises_on_a_non_zero_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

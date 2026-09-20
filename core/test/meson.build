@@ -109,6 +109,22 @@ test_hip_wavefront_reduce = executable('test_hip_wavefront_reduce',
 )
 test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
+# ADR-1269: exercise both the compiler-selected null token and the explicit
+# portability fallback used by C translation units on compilers without C23
+# nullptr support.
+test_vmaf_nullptr = executable('test_vmaf_nullptr',
+    ['test.c', 'test_vmaf_nullptr.c'],
+    include_directories : [test_inc],
+)
+test('test_vmaf_nullptr', test_vmaf_nullptr, suite : ['fast'])
+
+test_vmaf_nullptr_fallback = executable('test_vmaf_nullptr_fallback',
+    ['test.c', 'test_vmaf_nullptr.c'],
+    include_directories : [test_inc],
+    c_args : ['-DVMAF_FORCE_NULLPTR_FALLBACK=1'],
+)
+test('test_vmaf_nullptr_fallback', test_vmaf_nullptr_fallback, suite : ['fast'])
+
 # ADR-1188 — percentile temporal pooling (MEDIAN / PERC5 / PERC10 / PERC20).
 # Pools imported per-frame scores, so it needs no YUV fixture and no model.
 test_pool_percentile = executable('test_pool_percentile',
@@ -1422,6 +1438,26 @@ test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+
+test_float_adm_x86 = executable('test_float_adm_x86',
+    ['test.c', 'test_float_adm_x86.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
 endif
 
 
@@ -2471,7 +2507,7 @@ test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
 # Exercise the production private ROI reader and placeholder, not copied math.
 test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
     ['test.c', 'test_vmaf_roi_bounds.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies : [test_vmaf_roi_libm],
 )
 test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
@@ -4150,6 +4186,7 @@ endif
 if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test('test_integer_adm_simd', test_integer_adm_simd, suite : ['fast', 'simd'])
 test('test_adm_dwt2_x86', test_adm_dwt2_x86, suite : ['fast', 'simd'])
+test('test_float_adm_x86', test_float_adm_x86, suite : ['fast', 'simd'])
 endif
 
 if integer_ssim_simd_test_archs.contains(host_machine.cpu_family())

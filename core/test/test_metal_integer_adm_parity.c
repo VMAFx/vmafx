@@ -53,11 +53,7 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* >= 17x17 (CPU integer_adm min) and large enough for a meaningful 4-scale
  * pyramid; matches the float_adm parity fixture geometry. */
@@ -152,7 +148,7 @@ static char *feed_all_frames(VmafContext *vmaf)
         if (err)
             return "vmaf_read_pictures failed";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *read_adm_scores(VmafContext *vmaf, const char *const *keys, double *out_scores)
@@ -162,7 +158,7 @@ static char *read_adm_scores(VmafContext *vmaf, const char *const *keys, double 
         if (err)
             return "vmaf_feature_score_at_index failed";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
@@ -174,18 +170,18 @@ static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
     err = vmaf_metal_import_state(*vmaf, mstate);
     if (err)
         return "Metal: vmaf_metal_import_state failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (use_apn) {
         err = vmaf_feature_dictionary_set(&opts, "adm_p_norm", APN_VALUE);
         mu_assert("CPU: dictionary_set(adm_p_norm) failed", !err);
@@ -199,7 +195,7 @@ static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
     char *feed_err = feed_all_frames(vmaf);
     if (feed_err)
         return feed_err;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_adm_scores(vmaf, keys, out_scores);
@@ -208,7 +204,7 @@ static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_metal(double *out_scores, int *skipped, const char *const *keys, int use_apn)
@@ -219,20 +215,20 @@ static char *run_metal(double *out_scores, int *skipped, const char *const *keys
 
     int err = 0;
     VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
+    VmafMetalState *mstate = VMAF_NULLPTR;
     err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    if (err != 0 || mstate == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no Metal device] ");
         *skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     char *open_err = open_metal_context(&vmaf, mstate);
     if (open_err)
         return open_err;
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (use_apn) {
         err = vmaf_feature_dictionary_set(&opts, "adm_p_norm", APN_VALUE);
         mu_assert("Metal: dictionary_set(adm_p_norm) failed", !err);
@@ -246,7 +242,7 @@ static char *run_metal(double *out_scores, int *skipped, const char *const *keys
     char *feed_err = feed_all_frames(vmaf);
     if (feed_err)
         return feed_err;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err = read_adm_scores(vmaf, keys, out_scores);
@@ -256,7 +252,7 @@ static char *run_metal(double *out_scores, int *skipped, const char *const *keys
     err = vmaf_close(vmaf);
     mu_assert("Metal: vmaf_close failed", !err);
     vmaf_metal_state_free(&mstate);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_adm_cpu_metal_parity(void)
@@ -272,7 +268,7 @@ static char *test_integer_adm_cpu_metal_parity(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         mu_assert("CPU integer_adm score is non-finite", isfinite(cpu_scores[m]));
@@ -287,7 +283,7 @@ static char *test_integer_adm_cpu_metal_parity(void)
         mu_assert("integer_adm CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* adm_p_norm must reach the kernel, not just the feature name.
@@ -312,7 +308,7 @@ static char *test_integer_adm_p_norm_reaches_kernel(void)
     if (msg)
         return msg;
     if (skipped)
-        return NULL;
+        return VMAF_NULLPTR;
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         mu_assert("CPU integer_adm apn score is non-finite", isfinite(cpu_scores[m]));
@@ -328,14 +324,12 @@ static char *test_integer_adm_p_norm_reaches_kernel(void)
         mu_assert("integer_adm with adm_p_norm=2 drifts from the CPU reference",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_integer_adm_cpu_metal_parity);
     mu_run_test(test_integer_adm_p_norm_reaches_kernel);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

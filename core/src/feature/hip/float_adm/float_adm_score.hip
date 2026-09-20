@@ -117,8 +117,6 @@ __device__ static __forceinline__ float fadm_warp_reduce(float v)
     return v;
 }
 
-extern "C" {
-
 /* ------------------------------------------------------------------
  * Stage 0 — DWT vertical pass.
  *
@@ -127,12 +125,12 @@ extern "C" {
  *           [gy * (cur_w * 2) + cur_w + gx]      = hi
  * Z dimension fuses ref+dis (z=0 → ref plane, z=1 → dis plane).
  * ------------------------------------------------------------------ */
-__global__ void float_adm_dwt_vert(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw,
-                                   ptrdiff_t raw_stride, const float *parent_ref_band,
-                                   const float *parent_dis_band, int parent_buf_stride,
-                                   int parent_half_h, int parent_w, int parent_h,
-                                   float *dwt_tmp_ref, float *dwt_tmp_dis, int cur_w, int cur_h,
-                                   int half_h, unsigned bpc, float scaler, float pixel_offset)
+extern "C" __global__ void
+float_adm_dwt_vert(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw, ptrdiff_t raw_stride,
+                   const float *parent_ref_band, const float *parent_dis_band,
+                   int parent_buf_stride, int parent_half_h, int parent_w, int parent_h,
+                   float *dwt_tmp_ref, float *dwt_tmp_dis, int cur_w, int cur_h, int half_h,
+                   unsigned bpc, float scaler, float pixel_offset)
 {
     const int gx = blockIdx.x * blockDim.x + threadIdx.x;
     const int gy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -181,9 +179,10 @@ __device__ static __forceinline__ float fadm_read_dwt_tmp(const float *dwt_tmp, 
     return dwt_tmp[gy * stride + half_offset + x_sub];
 }
 
-__global__ void float_adm_dwt_hori(int scale, const float *dwt_tmp_ref, const float *dwt_tmp_dis,
-                                   float *ref_band, float *dis_band, int cur_w, int half_w,
-                                   int half_h, int buf_stride)
+extern "C" __global__ void float_adm_dwt_hori(int scale, const float *dwt_tmp_ref,
+                                              const float *dwt_tmp_dis, float *ref_band,
+                                              float *dis_band, int cur_w, int half_w, int half_h,
+                                              int buf_stride)
 {
     (void)scale;
     const int gx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -240,10 +239,11 @@ __device__ static __forceinline__ void fadm_write_csf(float *csf_buf, int band, 
     csf_buf[band * slice + y * buf_stride + x] = val;
 }
 
-__global__ void float_adm_decouple_csf(const float *ref_band, const float *dis_band, float *csf_a,
-                                       float *csf_f, int half_w, int half_h, int buf_stride,
-                                       float rfactor_h, float rfactor_v, float rfactor_d,
-                                       float gain_limit)
+extern "C" __global__ void float_adm_decouple_csf(const float *ref_band, const float *dis_band,
+                                                  float *csf_a, float *csf_f, int half_w,
+                                                  int half_h, int buf_stride, float rfactor_h,
+                                                  float rfactor_v, float rfactor_d,
+                                                  float gain_limit)
 {
     const int gx = blockIdx.x * blockDim.x + threadIdx.x;
     const int gy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -351,11 +351,124 @@ __device__ static __forceinline__ float fadm_pnorm_term(float x, float p_norm)
     return (p_norm == 3.0f) ? (x * x * x) : powf(x, p_norm);
 }
 
-__global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, const float *csf_a,
-                                 const float *csf_f, float *accum_out, int half_w, int half_h,
-                                 int buf_stride, int active_left, int active_top, int active_right,
-                                 int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit, float p_norm)
+__device__ static __forceinline__ float fadm_rfactor(unsigned band, float horizontal,
+                                                     float vertical, float diagonal)
+{
+    return band == 0u ? horizontal : band == 1u ? vertical : diagonal;
+}
+
+typedef struct FadmDecouple {
+    float remodulated;
+    float anomaly;
+} FadmDecouple;
+
+__device__ static __forceinline__ FadmDecouple fadm_decouple_value(const float *ref_band,
+                                                                   const float *dis_band, int row,
+                                                                   int col, int buf_stride,
+                                                                   int half_h, unsigned band,
+                                                                   float gain_limit)
+{
+    const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
+    const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
+    const float od = fadm_read_band_at(ref_band, 3, row, col, buf_stride, half_h);
+    const float th = fadm_read_band_at(dis_band, 1, row, col, buf_stride, half_h);
+    const float tv = fadm_read_band_at(dis_band, 2, row, col, buf_stride, half_h);
+    const float td = fadm_read_band_at(dis_band, 3, row, col, buf_stride, half_h);
+    const float ot_dp = (oh * th) + (ov * tv);
+    const float o_mag = (oh * oh) + (ov * ov);
+    const float t_mag = (th * th) + (tv * tv);
+    const bool angle_flag = ot_dp >= 0.0f && ot_dp * ot_dp >= FADM_COS_1DEG_SQ * (o_mag * t_mag);
+    const float original[3] = {oh, ov, od};
+    const float distorted[3] = {th, tv, td};
+    float gain = distorted[band] / (original[band] + FADM_EPS);
+    gain = fmaxf(0.0f, fminf(gain, 1.0f));
+    FadmDecouple result = {gain * original[band], 0.0f};
+    if (angle_flag && result.remodulated > 0.0f)
+        result.remodulated = fminf(result.remodulated * gain_limit, distorted[band]);
+    else if (angle_flag && result.remodulated < 0.0f)
+        result.remodulated = fmaxf(result.remodulated * gain_limit, distorted[band]);
+    result.anomaly = distorted[band] - result.remodulated;
+    return result;
+}
+
+__device__ static __forceinline__ float fadm_cm_threshold(const float *csf_a, const float *csf_f,
+                                                          int row, int col, int half_w, int half_h,
+                                                          int buf_stride)
+{
+    float threshold = 0.0f;
+#pragma unroll
+    for (int band = 0; band < FADM_NUM_BANDS; band++) {
+#pragma unroll
+        for (int dy = -1; dy <= 1; dy++) {
+#pragma unroll
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx != 0 || dy != 0) {
+                    threshold += fadm_read_csf_f_at(csf_f, band, row + dy, col + dx, half_w, half_h,
+                                                    buf_stride);
+                }
+            }
+        }
+    }
+    for (int band = 0; band < FADM_NUM_BANDS; band++) {
+        const float own = fadm_read_csf_a_at(csf_a, band, row, col, half_w, half_h, buf_stride);
+        threshold += FADM_ONE_BY_15 * fabsf(own);
+    }
+    return threshold;
+}
+
+__device__ static __forceinline__ void fadm_reduce_pair(float csf, float cm, unsigned lid,
+                                                        unsigned band, unsigned wg_id, float *s_csf,
+                                                        float *s_cm, float *accum_out)
+{
+    const unsigned lane = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
+    const float warp_csf = fadm_warp_reduce(csf);
+    const float warp_cm = fadm_warp_reduce(cm);
+    if (lane == 0u) {
+        s_csf[warp_id] = warp_csf;
+        s_cm[warp_id] = warp_cm;
+    }
+    __syncthreads();
+    if (lid != 0u)
+        return;
+
+    float total_csf = 0.0f;
+    float total_cm = 0.0f;
+    const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+    for (int i = 0; i < nwarps; i++) {
+        total_csf += s_csf[i];
+        total_cm += s_cm[i];
+    }
+    const unsigned slot = wg_id * FADM_ACCUM_SLOTS;
+    accum_out[slot + band] = total_csf;
+    accum_out[slot + 3u + band] = total_cm;
+}
+
+__device__ static __forceinline__ void fadm_reduce_aim(float value, unsigned lid, unsigned band,
+                                                       unsigned wg_id, float *shared,
+                                                       float *accum_out)
+{
+    const unsigned lane = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
+    const float warp_value = fadm_warp_reduce(value);
+    if (lane == 0u)
+        shared[warp_id] = warp_value;
+    __syncthreads();
+    if (lid != 0u)
+        return;
+
+    float total = 0.0f;
+    const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+    for (int i = 0; i < nwarps; i++)
+        total += shared[i];
+    accum_out[wg_id * FADM_ACCUM_SLOTS + 6u + band] = total;
+}
+
+extern "C" __global__ void
+float_adm_csf_cm(const float *ref_band, const float *dis_band, const float *csf_a,
+                 const float *csf_f, float *accum_out, int half_w, int half_h, int buf_stride,
+                 int active_left, int active_top, int active_right, int active_bottom,
+                 float rfactor_h, float rfactor_v, float rfactor_d, float gain_limit, float p_norm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -372,9 +485,7 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
     const unsigned ty = threadIdx.y;
     const unsigned lid = ty * FADM_BX + tx;
 
-    const float rfactor_band = (band_idx == 0u) ? rfactor_h :
-                               (band_idx == 1u) ? rfactor_v :
-                                                  rfactor_d;
+    const float rfactor_band = fadm_rfactor(band_idx, rfactor_h, rfactor_v, rfactor_d);
     const unsigned WG_SIZE = FADM_BX * FADM_BY;
 
     float local_csf_sum = 0.0f;
@@ -386,86 +497,20 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
         const float csf_o = fabsf(rfactor_band * src_ref);
         local_csf_sum += fadm_pnorm_term(csf_o, p_norm);
 
-        const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
-        const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
-        const float od = fadm_read_band_at(ref_band, 3, row, col, buf_stride, half_h);
-        const float th = fadm_read_band_at(dis_band, 1, row, col, buf_stride, half_h);
-        const float tv = fadm_read_band_at(dis_band, 2, row, col, buf_stride, half_h);
-        const float td = fadm_read_band_at(dis_band, 3, row, col, buf_stride, half_h);
-        (void)od;
-        (void)td;
-
-        const float ot_dp = (oh * th) + (ov * tv);
-        const float o_mag = (oh * oh) + (ov * ov);
-        const float t_mag = (th * th) + (tv * tv);
-        const float lhs = ot_dp * ot_dp;
-        const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-        const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-        float oarr[3] = {oh, ov, od};
-        float tarr[3] = {th, tv, td};
-        float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
-        k = fmaxf(0.0f, fminf(k, 1.0f));
-        float r_val = k * oarr[band_idx];
-        if (angle_flag && r_val > 0.0f)
-            r_val = fminf(r_val * gain_limit, tarr[band_idx]);
-        else if (angle_flag && r_val < 0.0f)
-            r_val = fmaxf(r_val * gain_limit, tarr[band_idx]);
-
-        /* CM threshold sums csf_f over all 3 bands' 8-neighbours +
-         * (1/15)·|csf_a centre| — matches CPU ADM_CM_THRESH_S_I_J. */
-        float thr = 0.0f;
-#pragma unroll
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
-#pragma unroll
-            for (int dy = -1; dy <= 1; dy++) {
-#pragma unroll
-                for (int dx = -1; dx <= 1; dx++) {
-                    if (dx == 0 && dy == 0)
-                        continue;
-                    thr += fadm_read_csf_f_at(csf_f, b, row + dy, col + dx, half_w, half_h,
-                                              buf_stride);
-                }
-            }
-        }
-        const float own_h = fadm_read_csf_a_at(csf_a, 0, row, col, half_w, half_h, buf_stride);
-        const float own_v = fadm_read_csf_a_at(csf_a, 1, row, col, half_w, half_h, buf_stride);
-        const float own_d = fadm_read_csf_a_at(csf_a, 2, row, col, half_w, half_h, buf_stride);
-        thr += FADM_ONE_BY_15 * fabsf(own_h);
-        thr += FADM_ONE_BY_15 * fabsf(own_v);
-        thr += FADM_ONE_BY_15 * fabsf(own_d);
-
-        const float x_val = rfactor_band * r_val;
-        float xa = fabsf(x_val) - thr;
+        const FadmDecouple decoupled = fadm_decouple_value(ref_band, dis_band, row, col, buf_stride,
+                                                           half_h, band_idx, gain_limit);
+        const float threshold =
+            fadm_cm_threshold(csf_a, csf_f, row, col, half_w, half_h, buf_stride);
+        const float x_val = rfactor_band * decoupled.remodulated;
+        float xa = fabsf(x_val) - threshold;
         if (xa < 0.0f)
             xa = 0.0f;
         local_cm_sum += fadm_pnorm_term(xa, p_norm);
     }
 
-    /* Warp + cross-warp reduction. FADM_WARPS_PER_BLOCK = 8 (wave32 worst case). */
     __shared__ float s_csf[FADM_WARPS_PER_BLOCK];
     __shared__ float s_cm[FADM_WARPS_PER_BLOCK];
-    const float wn_csf = fadm_warp_reduce(local_csf_sum);
-    const float wn_cm = fadm_warp_reduce(local_cm_sum);
-    const unsigned lane = lid % (unsigned)warpSize;
-    const unsigned warp_id = lid / (unsigned)warpSize;
-    if (lane == 0u) {
-        s_csf[warp_id] = wn_csf;
-        s_cm[warp_id] = wn_cm;
-    }
-    __syncthreads();
-    if (lid == 0u) {
-        float total_csf = 0.0f;
-        float total_cm = 0.0f;
-        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
-        for (int i = 0; i < nwarps; i++) {
-            total_csf += s_csf[i];
-            total_cm += s_cm[i];
-        }
-        const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
-        accum_out[slot_base + band_idx] = total_csf;
-        accum_out[slot_base + 3u + band_idx] = total_cm;
-    }
+    fadm_reduce_pair(local_csf_sum, local_cm_sum, lid, band_idx, wg_id, s_csf, s_cm, accum_out);
 }
 
 /* ------------------------------------------------------------------
@@ -482,10 +527,10 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
  * Matches the CPU `adm_csf(&decouple_r, &csf_a, &csf_f, ...)` call
  * that precedes `aim_num_scale = adm_cm(&decouple_a, ...)` in adm.c.
  * HIP/CUDA syntax is identical for this kernel. ------------------- */
-__global__ void float_adm_csf_r(const float *ref_band, const float *dis_band, float *csf_a_out,
-                                float *csf_f_out, int half_w, int half_h, int buf_stride,
-                                float rfactor_h, float rfactor_v, float rfactor_d,
-                                float gain_limit)
+extern "C" __global__ void float_adm_csf_r(const float *ref_band, const float *dis_band,
+                                           float *csf_a_out, float *csf_f_out, int half_w,
+                                           int half_h, int buf_stride, float rfactor_h,
+                                           float rfactor_v, float rfactor_d, float gain_limit)
 {
     const int gx = blockIdx.x * blockDim.x + threadIdx.x;
     const int gy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -524,8 +569,7 @@ __global__ void float_adm_csf_r(const float *ref_band, const float *dis_band, fl
         /* CSF on decouple_r: matches adm_csf(&decouple_r, ...) in adm.c. */
         const float csf_a_val = rfac[b] * r_val;
         fadm_write_csf(csf_a_out, b, gy, gx, buf_stride, half_h, csf_a_val);
-        fadm_write_csf(csf_f_out, b, gy, gx, buf_stride, half_h,
-                       FADM_ONE_BY_30 * fabsf(csf_a_val));
+        fadm_write_csf(csf_f_out, b, gy, gx, buf_stride, half_h, FADM_ONE_BY_30 * fabsf(csf_a_val));
     }
 }
 
@@ -541,12 +585,11 @@ __global__ void float_adm_csf_r(const float *ref_band, const float *dis_band, fl
  *   accum_out[wg_id * FADM_ACCUM_SLOTS + 6 + band_idx]
  *
  * HIP/CUDA syntax is identical for this kernel (no warp-mask arg). */
-__global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
-                                 const float *csf_a_aim, const float *csf_f_aim,
-                                 float *accum_out, int half_w, int half_h, int buf_stride,
-                                 int active_left, int active_top, int active_right,
-                                 int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit, float p_norm)
+extern "C" __global__ void
+float_adm_aim_cm(const float *ref_band, const float *dis_band, const float *csf_a_aim,
+                 const float *csf_f_aim, float *accum_out, int half_w, int half_h, int buf_stride,
+                 int active_left, int active_top, int active_right, int active_bottom,
+                 float rfactor_h, float rfactor_v, float rfactor_d, float gain_limit, float p_norm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -563,89 +606,23 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
     const unsigned ty = threadIdx.y;
     const unsigned lid = ty * FADM_BX + tx;
 
-    const float rfactor_band = (band_idx == 0u) ? rfactor_h :
-                               (band_idx == 1u) ? rfactor_v :
-                                                  rfactor_d;
+    const float rfactor_band = fadm_rfactor(band_idx, rfactor_h, rfactor_v, rfactor_d);
     const unsigned WG_SIZE = FADM_BX * FADM_BY;
 
     float local_aim_cm = 0.0f;
 
     for (int col = active_left + (int)lid; col < active_right; col += (int)WG_SIZE) {
-        const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
-        const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
-        const float od = fadm_read_band_at(ref_band, 3, row, col, buf_stride, half_h);
-        const float th = fadm_read_band_at(dis_band, 1, row, col, buf_stride, half_h);
-        const float tv = fadm_read_band_at(dis_band, 2, row, col, buf_stride, half_h);
-        const float td = fadm_read_band_at(dis_band, 3, row, col, buf_stride, half_h);
-        (void)od;
-        (void)td;
-
-        const float ot_dp = (oh * th) + (ov * tv);
-        const float o_mag = (oh * oh) + (ov * ov);
-        const float t_mag = (th * th) + (tv * tv);
-        const float lhs = ot_dp * ot_dp;
-        const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-        const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-        float oarr[3] = {oh, ov, od};
-        float tarr[3] = {th, tv, td};
-        float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
-        k = fmaxf(0.0f, fminf(k, 1.0f));
-        float r_val = k * oarr[band_idx];
-        if (angle_flag && r_val > 0.0f)
-            r_val = fminf(r_val * gain_limit, tarr[band_idx]);
-        else if (angle_flag && r_val < 0.0f)
-            r_val = fmaxf(r_val * gain_limit, tarr[band_idx]);
-        /* decouple_a[band] = t - r (the anomaly component). */
-        const float a_val = tarr[band_idx] - r_val;
-
-        /* AIM CM threshold: cross-band aggregate using aim csf buffers. */
-        float thr = 0.0f;
-#pragma unroll
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
-#pragma unroll
-            for (int dy = -1; dy <= 1; dy++) {
-#pragma unroll
-                for (int dx = -1; dx <= 1; dx++) {
-                    if (dx == 0 && dy == 0)
-                        continue;
-                    thr += fadm_read_csf_f_at(csf_f_aim, b, row + dy, col + dx, half_w, half_h,
-                                              buf_stride);
-                }
-            }
-        }
-        const float own_h = fadm_read_csf_a_at(csf_a_aim, 0, row, col, half_w, half_h, buf_stride);
-        const float own_v = fadm_read_csf_a_at(csf_a_aim, 1, row, col, half_w, half_h, buf_stride);
-        const float own_d = fadm_read_csf_a_at(csf_a_aim, 2, row, col, half_w, half_h, buf_stride);
-        thr += FADM_ONE_BY_15 * fabsf(own_h);
-        thr += FADM_ONE_BY_15 * fabsf(own_v);
-        thr += FADM_ONE_BY_15 * fabsf(own_d);
-
-        /* CM: (|rfactor * a_val| - thr)_+^3; noise_weight=0. */
-        const float x_val = rfactor_band * a_val;
-        float xa = fabsf(x_val) - thr;
+        const FadmDecouple decoupled = fadm_decouple_value(ref_band, dis_band, row, col, buf_stride,
+                                                           half_h, band_idx, gain_limit);
+        const float threshold =
+            fadm_cm_threshold(csf_a_aim, csf_f_aim, row, col, half_w, half_h, buf_stride);
+        const float x_val = rfactor_band * decoupled.anomaly;
+        float xa = fabsf(x_val) - threshold;
         if (xa < 0.0f)
             xa = 0.0f;
         local_aim_cm += fadm_pnorm_term(xa, p_norm);
     }
 
-    /* Warp + cross-warp reduction — same pattern as stage 3. */
     __shared__ float s_aim[FADM_WARPS_PER_BLOCK];
-    const float wn_aim = fadm_warp_reduce(local_aim_cm);
-    const unsigned lane = lid % (unsigned)warpSize;
-    const unsigned warp_id = lid / (unsigned)warpSize;
-    if (lane == 0u)
-        s_aim[warp_id] = wn_aim;
-    __syncthreads();
-    if (lid == 0u) {
-        float total_aim = 0.0f;
-        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
-        for (int i = 0; i < nwarps; i++)
-            total_aim += s_aim[i];
-        /* AIM CM lands in slots 6..8 of the per-WG accumulator. */
-        const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
-        accum_out[slot_base + 6u + band_idx] = total_aim;
-    }
+    fadm_reduce_aim(local_aim_cm, lid, band_idx, wg_id, s_aim, accum_out);
 }
-
-} /* extern "C" */

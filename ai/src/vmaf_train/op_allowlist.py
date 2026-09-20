@@ -153,7 +153,7 @@ def _collect_loop_violations(
                         )
                     elif val < 0 or val > max_trip_count:
                         violations.append(
-                            f"{scope}::Loop(M={val}, " f"max_trip_count={max_trip_count})"
+                            f"{scope}::Loop(M={val}, max_trip_count={max_trip_count})"
                         )
         # Recurse into embedded subgraphs regardless of op_type.
         for attr in node.attribute:

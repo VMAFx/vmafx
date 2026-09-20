@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0306: `vmaf-tune` coarse-to-fine CRF search
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ search domain matches what the user typed on the CLI.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Full grid (status quo) | Trivial; complete picture | 52 encodes per source × preset; 3–4× wasted wall time for target-VMAF flows | Wasteful for the recommend workflow which only needs 1 CRF |
 | Binary search over `0..51` | ⌈log₂(51)⌉ = 6 encodes; minimum work | Adaptive — harder to mock in tests; less corpus data emitted; struggles with VMAF non-monotonicity at boundary CRFs | More fragile to score-curve noise; user requested coarse-to-fine framing for clarity |
 | Bayesian / GP optimiser (e.g. `scikit-optimize`) | Optimal point selection asymptotically | Heavy dependency, flaky with discrete CRF, overkill for 5 points | Way out of scope for Phase A's 0-runtime-deps mandate |

@@ -39,6 +39,8 @@
  *    w*h), analogous to the CUDA twin's `VmafCudaBuffer *blur[2]`.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -61,9 +63,9 @@
 #include "../../hip/hip_handle.h"
 #include "float_motion_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
@@ -135,9 +137,9 @@ static const VmafOption options[] = {
     {0},
 };
 
-static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                              VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                              VmafPicture *dist_pic_90, unsigned index,
+static int extract_force_zero(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                              const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                              const VmafPicture *dist_pic_90, unsigned index,
                               VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic;
@@ -159,13 +161,13 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int init_force_zero_hip(VmafFeatureExtractor *fex, FloatMotionStateHip *s)
 {
     fex->extract = extract_force_zero;
-    fex->submit = NULL;
-    fex->collect = NULL;
-    fex->flush = NULL;
-    fex->close = NULL;
+    fex->submit = VMAF_NULLPTR;
+    fex->collect = VMAF_NULLPTR;
+    fex->flush = VMAF_NULLPTR;
+    fex->close = VMAF_NULLPTR;
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
+    if (s->feature_name_dict == VMAF_NULLPTR) {
         return -ENOMEM;
     }
     return 0;
@@ -206,7 +208,7 @@ static int fm_hip_module_load(FloatMotionStateHip *s)
         rc = hipModuleGetFunction(&s->funcbpc16, s->module, "float_motion_hip_kernel_16bpc");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return fm_hip_rc(rc);
 }
@@ -239,7 +241,7 @@ static int fm_hip_launch_kernel(FloatMotionStateHip *s, ptrdiff_t plane_pitch, u
     };
     const bool is8 = (s->bpc == 8u);
     return fm_hip_rc(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, FMH_BX,
-                                           FMH_BY, 1, 0, pstr, is8 ? args8 : args16, NULL));
+                                           FMH_BY, 1, 0, pstr, is8 ? args8 : args16, VMAF_NULLPTR));
 }
 
 /* HtoD copy ref luma plane, launch the motion kernel, record events,
@@ -247,7 +249,7 @@ static int fm_hip_launch_kernel(FloatMotionStateHip *s, ptrdiff_t plane_pitch, u
  *
  * `compute_sad`: 0 for the first frame (no previous blur — partials will
  * all be 0.0 by kernel contract), 1 for subsequent frames. */
-static int fm_hip_launch(FloatMotionStateHip *s, VmafPicture *ref_pic, unsigned compute_sad)
+static int fm_hip_launch(FloatMotionStateHip *s, const VmafPicture *ref_pic, unsigned compute_sad)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     hipStream_t pstr = vmaf_hip_stream_of(0u); /* no VmafPicture stream handle yet */
@@ -309,24 +311,24 @@ static int fm_hip_bufs_alloc(FloatMotionStateHip *s, unsigned w, unsigned h, uns
     return (rc == hipSuccess) ? 0 : -ENOMEM;
 }
 
-/* Release module + device buffers.  Safe to call with NULL handles. */
+/* Release module + device buffers.  Safe to call with VMAF_NULLPTR handles. */
 static void fm_hip_bufs_free(FloatMotionStateHip *s)
 {
-    if (s->blur[1] != NULL) {
+    if (s->blur[1] != VMAF_NULLPTR) {
         (void)hipFree(s->blur[1]);
-        s->blur[1] = NULL;
+        s->blur[1] = VMAF_NULLPTR;
     }
-    if (s->blur[0] != NULL) {
+    if (s->blur[0] != VMAF_NULLPTR) {
         (void)hipFree(s->blur[0]);
-        s->blur[0] = NULL;
+        s->blur[0] = VMAF_NULLPTR;
     }
-    if (s->ref_in != NULL) {
+    if (s->ref_in != VMAF_NULLPTR) {
         (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
+        s->ref_in = VMAF_NULLPTR;
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
 }
 #endif /* HAVE_HIPCC */
@@ -345,7 +347,7 @@ static int fm_hip_release_device(FloatMotionStateHip *s)
     if (err != 0 && rc == 0)
         rc = err;
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -353,7 +355,7 @@ static int fm_hip_release_device(FloatMotionStateHip *s)
 static int fm_hip_release(FloatMotionStateHip *s)
 {
     int rc = fm_hip_release_device(s);
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         const int err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
@@ -376,7 +378,7 @@ static int fm_hip_init_device(VmafFeatureExtractor *fex, FloatMotionStateHip *s)
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     return err;
@@ -428,8 +430,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return err;
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)dist_pic;
     (void)ref_pic_90;
@@ -567,7 +569,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_feature_motion2_score",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_float_motion_hip;` in
@@ -577,7 +579,6 @@ static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_fea
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_motion_cuda` in
  * `libvmaf/src/feature/cuda/float_motion_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_motion_hip = {
     .name = "float_motion_hip",
     .init = init_fex_hip,
@@ -597,5 +598,3 @@ VmafFeatureExtractor vmaf_fex_float_motion_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

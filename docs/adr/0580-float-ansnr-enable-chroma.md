@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0580: float_ansnr enable_chroma option
 
 - **Status**: Accepted
@@ -26,7 +25,7 @@ plane count to 1 regardless of the flag.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Always compute chroma (remove luma-only mode) | Simpler API | Breaks existing callers that only want `float_ansnr`; increases compute cost for VMAF model pipelines that don't need it | Default `false` preserves back-compat |
 | Separate `float_ansnr_chroma` extractor | Clean separation | Duplicates all state + init logic; two registration entries for one algorithm | Unnecessary complexity; `integer_psnr` precedent is a single extractor with a flag |
 

@@ -4,8 +4,8 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 import unittest
-from test.testutil import set_default_576_324_videos_for_testing
 
+from test.testutil import set_default_576_324_videos_for_testing
 from vmaf.core.feature_assembler import FeatureAssembler
 from vmaf.core.feature_extractor import (
     FeatureExtractor,
@@ -20,7 +20,6 @@ class FeatureAssemblerTest(unittest.TestCase):
     def tearDown(self):
         if hasattr(self, "fassembler"):
             self.fassembler.remove_results()
-        pass
 
     def test_get_fextractor_subclasses(self):
         fextractor_subclasses = FeatureExtractor.get_subclasses_recursively()
@@ -29,7 +28,7 @@ class FeatureAssemblerTest(unittest.TestCase):
 
     def test_feature_assembler_whole_feature(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fassembler = FeatureAssembler(
             feature_dict={"VMAF_feature": "all"},
@@ -59,7 +58,7 @@ class FeatureAssemblerTest(unittest.TestCase):
 
     def test_feature_assembler_whole_feature_processes(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fassembler = FeatureAssembler(
             feature_dict={"VMAF_feature": "all"},
@@ -89,7 +88,7 @@ class FeatureAssemblerTest(unittest.TestCase):
 
     def test_feature_assembler_selected_atom_feature(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fassembler = FeatureAssembler(
             feature_dict={"VMAF_feature": ["vif", "motion"]},
@@ -123,7 +122,7 @@ class FeatureAssemblerTest(unittest.TestCase):
 class FeatureAssemblerUnitTest(MyTestCase):
 
     def test_feature_assembler_get_fextractor_instance(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         fassembler = FeatureAssembler(
             feature_dict={

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest — `__init__.py` export-completeness audit (2026-05-31)
 
 **Companion ADR**: [ADR-0911](../adr/0911-init-py-export-completeness-audit.md)
@@ -36,7 +35,7 @@ so future packages follow it.
 ### In scope (fork-added)
 
 | File | Lines | `__all__`? | Re-exports | Header? | Verdict |
-|---|---:|:---:|---:|:---:|---|
+| --- | ---: | :---: | ---: | :---: | --- |
 | `ai/__init__.py` | 12 | no | 0 | yes | **fix** — add `__all__`, expand docstring with sub-package list |
 | `ai/data/__init__.py` | 19 | no | 0 | yes | **fix** — add `__all__` (docstring already enumerates sub-modules) |
 | `ai/train/__init__.py` | 16 | no | 0 | yes | **fix** — add `__all__`; **also**: docstring was stale (3 of 6 sub-modules listed) |
@@ -49,7 +48,7 @@ so future packages follow it.
 ### Out of scope (upstream-mirror — leave byte-identical)
 
 | File | Reason |
-|---|---|
+| --- | --- |
 | `compat/python-vmaf/__init__.py` (378 lines) | Netflix copyright header; bulk of the upstream Python harness — rebase-sensitive |
 | `compat/python-vmaf/core/__init__.py` | Netflix copyright (`Copyright 2016-2020, Netflix, Inc.`) |
 | `compat/python-vmaf/tools/__init__.py` | Netflix copyright |
@@ -61,7 +60,7 @@ so future packages follow it.
 ### Out of scope (test-marker, empty by convention)
 
 | File | Reason |
-|---|---|
+| --- | --- |
 | `python/test/__init__.py` (0 lines) | Pytest discovery marker; upstream-mirror anyway |
 | `ai/tests/__init__.py` (2 lines, header only) | Pytest discovery marker — adding `__all__` is busywork |
 | `tools/external-bench/tests/__init__.py` (0 lines) | Pytest discovery marker |
@@ -69,7 +68,7 @@ so future packages follow it.
 ### Already well-formed (no change)
 
 | File | `__all__` size | Notes |
-|---|---:|---|
+| --- | ---: | --- |
 | `ai/src/aiutils/__init__.py` | 12 entries | Re-exports concrete symbols; uses `__getattr__` for lazy-import; reference example |
 | `ai/src/corpus/__init__.py` | 10 entries | Re-exports concrete symbols from `.base` |
 | `ai/src/vmaf_train/models/__init__.py` | 4 entries | Re-exports model classes |

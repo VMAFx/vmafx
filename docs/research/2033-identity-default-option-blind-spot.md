@@ -1,19 +1,16 @@
-<!-- markdownlint-disable MD013 -->
+# Research 2033: Identity-default option blind spots
 
-# 2033 — Options whose default is an arithmetic identity are untested by default-options parity tests
-
-**Date**: 2026-09-07
-**Scope**: `motion_fps_weight` on the v1 `integer_motion` GPU twins (CUDA, SYCL,
-HIP); the general class of `VMAF_OPT_FLAG_FEATURE_PARAM` options whose default
-value is a no-op for the arithmetic they control.
+**Date**: 2026-09-07 **Scope**: `motion_fps_weight` on the v1 `integer_motion`
+GPU twins (CUDA, SYCL, HIP); the general class of `VMAF_OPT_FLAG_FEATURE_PARAM`
+options whose default value is a no-op for the arithmetic they control.
 **Outcome**: three real cross-backend defects fixed
 ([ADR-1216](../adr/1216-gpu-motion3-fps-weight-applied-once.md)); the parity
 tests for the affected feature gained non-default-option variants.
 
 ## The defect
 
-The CPU reference applies `motion_fps_weight` in exactly one place —
-`extract()` in `core/src/feature/integer_motion.c`:
+The CPU reference applies `motion_fps_weight` in exactly one place — `extract()`
+in `core/src/feature/integer_motion.c`:
 
 ```c
 score = MIN((double)sad / 256. / (w * h) * s->motion_fps_weight, s->motion_max_val);
@@ -63,8 +60,8 @@ err = vmaf_use_feature(vmaf, "motion", NULL);
 err = vmaf_use_feature(vmaf, "motion_cuda", NULL);
 ```
 
-Under the default the two paths compute the same number, so CPU and GPU agreed
-— on a value neither was computing correctly for any other weight. The test was
+Under the default the two paths compute the same number, so CPU and GPU agreed —
+on a value neither was computing correctly for any other weight. The test was
 not weak in tolerance, coverage of frames, or fixture size; it simply never
 moved the one parameter that separates the two implementations.
 
@@ -77,13 +74,13 @@ clip, any value the data actually reaches; for a boolean, both settings.
 
 This is the third instance of the same shape in the fork's GPU twins:
 
-| Digest / ADR | Pinned parameter that hid the defect |
-| --- | --- |
+| Digest / ADR                                                                                                    | Pinned parameter that hid the defect                                                       |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | [2032](2032-gpu-parity-resolution-blind-spot.md) / [ADR-1206](../adr/1206-gpu-parity-large-fixture-variants.md) | Every fixture was 256x144, so band dimensions never exceeded the ADM border-crop threshold |
-| [ADR-1204](../adr/1204-adm-cm-edge-clamp-gpu-twins.md) | Same fixture size — the asymmetric ADM edge rule only diverges when the crop is 0 |
-| This digest / [ADR-1216](../adr/1216-gpu-motion3-fps-weight-applied-once.md) | Every option left at its default, and this default is an arithmetic identity |
+| [ADR-1204](../adr/1204-adm-cm-edge-clamp-gpu-twins.md)                                                          | Same fixture size — the asymmetric ADM edge rule only diverges when the crop is 0          |
+| This digest / [ADR-1216](../adr/1216-gpu-motion3-fps-weight-applied-once.md)                                    | Every option left at its default, and this default is an arithmetic identity               |
 
-The first two were about *fixture* shape. This one is about *option* values,
+The first two were about _fixture_ shape. This one is about _option_ values,
 which is the cheaper axis to sweep: it needs no new fixture, only a second
 `vmaf_use_feature()` call with a dictionary.
 
@@ -92,11 +89,11 @@ which is the cheaper axis to sweep: it needs no new fixture, only a second
 Setting a `VMAF_OPT_FLAG_FEATURE_PARAM` option changes the key the score is
 filed under ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)):
 the alias base plus `_<alias>_<value>` per non-default param, sorted by option
-*name*, values formatted with `%g`. With only `motion_fps_weight = 0.6` set,
-`VMAF_integer_feature_motion3_score` is read back as
-`integer_motion3_mfw_0.6`. A parity variant that forgets this reads the
-undecorated key, gets `score_at_index failed`, and looks like a harness bug
-rather than a coverage win.
+_name_, values formatted with `%g`. With only `motion_fps_weight = 0.6` set,
+`VMAF_integer_feature_motion3_score` is read back as `integer_motion3_mfw_0.6`.
+A parity variant that forgets this reads the undecorated key, gets
+`score_at_index failed`, and looks like a harness bug rather than a coverage
+win.
 
 ## Candidates worth the same treatment
 

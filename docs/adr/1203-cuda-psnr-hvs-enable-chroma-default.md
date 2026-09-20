@@ -1,6 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
+# ADR-1203: cuda psnr hvs enable chroma default
 
-# ADR-1203: `psnr_hvs_cuda` defaults `enable_chroma` to true, matching every other backend
+**Decision:** `psnr_hvs_cuda` defaults `enable_chroma` to true, matching every
+other backend
 
 - **Status**: Proposed
 - **Date**: 2026-09-06
@@ -18,7 +19,7 @@ quantities under the same feature name.
 
 `psnr_hvs` is defined upstream as the YCbCr-weighted score
 `0.8*Y + 0.1*(Cb + Cr)`. The fork added an `enable_chroma` option as an
-opt-*out* for callers who want the cheaper luma-only value. The CPU twin
+opt-_out_ for callers who want the cheaper luma-only value. The CPU twin
 (`third_party/xiph/psnr_hvs.c`) documents this explicitly and defaults it to
 `true` so that a caller who sets nothing gets the upstream-equivalent result.
 The SYCL twin also defaults to `true`, and the HIP twin computes
@@ -32,9 +33,8 @@ returned the luma-only score under the name `psnr_hvs`, and omitted
 them.
 
 Measured on a 960x540 pair: CPU `psnr_hvs` 41.7803055708, CUDA `psnr_hvs`
-41.4866616015 — and CUDA's value equals the CPU twin's *luma-only*
-`psnr_hvs_y` (41.4870099914) to within 3.5e-04, which is what identified the
-cause.
+41.4866616015 — and CUDA's value equals the CPU twin's _luma-only_ `psnr_hvs_y`
+(41.4870099914) to within 3.5e-04, which is what identified the cause.
 
 This also reaches the tiny-AI training set: `psnr_hvs` is a member of
 `FULL_FEATURES` in `ai/data/feature_extractor.py`, and
@@ -50,24 +50,24 @@ explicit opt-out.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Default CUDA `enable_chroma` to `true` (chosen) | One-line change; makes all four backends agree; `test_cuda_psnr_hvs_parity` passes; restores the documented output set | CUDA `psnr_hvs` values change, and chroma planes cost GPU time | — |
-| Relax the parity test's tolerance | Test goes green immediately | The backends would still compute different quantities under one name. This is test-weakening over a real defect | Rejected outright: the tolerance was correctly reporting a genuine 4% semantic divergence |
-| Default the CPU twin to `false` instead | Also makes the twins agree | Breaks upstream equivalence and the `third_party/xiph` PSNRHVS golden assertions, and silently drops chroma for every existing CPU caller | Aligns the wrong way — CUDA was the sole outlier among four backends |
-| Move `psnr_hvs` to the CPU residual pass in the extraction script | Fixes the training data without touching C | Leaves the CLI defect in place for every other `psnr_hvs_cuda` user, and gives up the GPU speedup | Treats a symptom in one consumer instead of the defect |
-| Document CUDA as luma-only | No behaviour change | Two backends disagreeing under one feature name is a bug, not a documentable variation | Cross-backend agreement is the fork's contract (ADR-0214) |
+| Option                                                            | Pros                                                                                                                   | Cons                                                                                                                                      | Why not chosen                                                                            |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Default CUDA `enable_chroma` to `true` (chosen)                   | One-line change; makes all four backends agree; `test_cuda_psnr_hvs_parity` passes; restores the documented output set | CUDA `psnr_hvs` values change, and chroma planes cost GPU time                                                                            | —                                                                                         |
+| Relax the parity test's tolerance                                 | Test goes green immediately                                                                                            | The backends would still compute different quantities under one name. This is test-weakening over a real defect                           | Rejected outright: the tolerance was correctly reporting a genuine 4% semantic divergence |
+| Default the CPU twin to `false` instead                           | Also makes the twins agree                                                                                             | Breaks upstream equivalence and the `third_party/xiph` PSNRHVS golden assertions, and silently drops chroma for every existing CPU caller | Aligns the wrong way — CUDA was the sole outlier among four backends                      |
+| Move `psnr_hvs` to the CPU residual pass in the extraction script | Fixes the training data without touching C                                                                             | Leaves the CLI defect in place for every other `psnr_hvs_cuda` user, and gives up the GPU speedup                                         | Treats a symptom in one consumer instead of the defect                                    |
+| Document CUDA as luma-only                                        | No behaviour change                                                                                                    | Two backends disagreeing under one feature name is a bug, not a documentable variation                                                    | Cross-backend agreement is the fork's contract (ADR-0214)                                 |
 
 ## Consequences
 
-- **Positive**: `test_cuda_psnr_hvs_parity` passes. CPU↔CUDA `psnr_hvs` agreement
-  improves from 2.9e-01 to 3.0e-04 on the 960x540 measurement pair.
-  `psnr_hvs_cb` / `psnr_hvs_cr` are now emitted on CUDA as
-  `provided_features[]` and the docs already claimed.
+- **Positive**: `test_cuda_psnr_hvs_parity` passes. CPU↔CUDA `psnr_hvs`
+  agreement improves from 2.9e-01 to 3.0e-04 on the 960x540 measurement pair.
+  `psnr_hvs_cb` / `psnr_hvs_cr` are now emitted on CUDA as `provided_features[]`
+  and the docs already claimed.
 - **Negative**: `psnr_hvs_cuda` scores change for any caller that relied on the
   old default, and the CUDA extractor now dispatches three planes instead of
-  one, so it costs more GPU time. Both are the price of computing the metric
-  the name denotes.
+  one, so it costs more GPU time. Both are the price of computing the metric the
+  name denotes.
 - **Neutral / follow-ups**: the residual CPU↔CUDA delta on `psnr_hvs_y`
   (3.5e-04) is ordinary float accumulation order and stays within the parity
   test's per-plane behaviour. `test_cuda_float_adm_parity` remains failing for

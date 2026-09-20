@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-1258: Keep the fork 64-bit only; retire the resurrected i686 lane
 
 - **Status**: Accepted, Supersedes [ADR-0151](0151-i686-ci-netflix-1481.md)

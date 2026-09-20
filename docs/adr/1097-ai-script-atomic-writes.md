@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1097: Atomic file writes for AI-script cache and output files
 
 - **Status**: Accepted
@@ -56,7 +55,7 @@ same helper. The `aggregate_corpora.py` JSONL write is wrapped with
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Catch `json.JSONDecodeError` in cache-read and delete corrupt entry | Recovers from corruption at read time | Does not prevent corruption; adds logic at every read site | Treats a symptom, not the cause |
 | Use `fcntl.flock` to mark files in-progress | Works on most Linux filesystems | Complex locking semantics; still does not prevent partial writes on kill | Over-engineered for a single-writer pipeline |
 | Keep existing behaviour and rely on operator to delete corrupt files | Zero code change | Silently corrupts extraction runs; production impact | Unacceptable data-quality risk |

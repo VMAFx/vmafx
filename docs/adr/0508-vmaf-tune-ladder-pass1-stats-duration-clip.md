@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0508: vmaf-tune ladder pass-1 stats argv honours --duration
 
 - **Status**: Accepted
@@ -53,7 +52,7 @@ two flags never double up.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Mirror V6-1 fallback in `build_pass1_stats_command` (chosen) | Minimal diff, identical semantics to V6-1, easy to test against `build_ffmpeg_command` symmetry | One more place to keep in sync the next time clip semantics evolve | Picked — smallest fix surface, V6-1 invariant preserved |
 | Refactor pass-1 to call `build_ffmpeg_command` with `pass_number=1` | Single source of truth for input-side clipping | Pass-1 stats argv has a different `-pass 1 -passlogfile … -f null /dev/null` tail; the unification would require restructuring `build_ffmpeg_command` to know about a stats-only mode (or wrapping it) — larger blast radius mid-merge-train | Deferred; can land later as a refactor without changing observable behaviour |
 | Drop `supports_encoder_stats` from libx264 when `duration_s > 0` | Sidesteps the bug entirely | Loses the ADR-0332 per-frame stats capture that downstream RC analysis depends on, just because the user asked for a shorter window | Rejected — the stats capture is the point, not a side effect |

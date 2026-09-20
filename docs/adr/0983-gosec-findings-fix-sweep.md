@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-0983: gosec sweep — fix all findings + add CI gate
 
@@ -62,7 +61,7 @@ We will:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `//nolint:gosec` and skip the gate | No code churn | gosec ignores those directives — findings would have re-surfaced on every fresh scan and any new finding would have been buried in the existing noise | The point of the gate is regression-prevention; ignored suppressions defeat the gate |
 | Use a project-level `.gosec.yaml` exclusion file | One central knob | Hides the why-it-is-safe rationale from the call site; violates the CLAUDE.md §12 r12 citation requirement | Inline citation is the established pattern (mirrors the C `// NOLINT(...)` discipline) |
 | Skip the generated-file findings via SARIF post-filter | Allows gating on every finding including generated noise | Adds tooling for no security benefit — the cgo / protobuf casts are bounded by their generators | `-exclude-generated` is already a first-class gosec flag |

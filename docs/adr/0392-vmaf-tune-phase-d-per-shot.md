@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 -->
 # ADR-0392: `vmaf-tune` Phase D — per-shot CRF tuning
 
 - **Status**: Accepted (CLI bisect wiring landed 2026-05-14; native
@@ -12,7 +11,9 @@
 Phase A of `vmaf-tune` (corpus tooling, [ADR-0237](0237-quality-aware-encode-automation.md),
 PR #329) shipped the grid-sweep harness. Research-0061 — the
 `vmaf-tune` capability audit — ranked **per-shot CRF tuning** (Bucket
-#1) as the table-stakes Netflix-equivalent feature: the canonical
+
+\#1) as the table-stakes Netflix-equivalent feature: the canonical
+
 2018 paper reports 10–30 % bitrate savings at constant VMAF when CRF
 is varied per shot instead of held flat across the title.
 

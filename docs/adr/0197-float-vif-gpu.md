@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0197: float_vif GPU kernels — 4-scale pyramid with mirror-asymmetry fix
 
 - **Status**: Accepted
@@ -61,7 +60,7 @@ formula brought the drift to `1.40e-5` at scale 1, well under the
 ### Mirror padding on GPU (final)
 
 | axis | formula |
-|---|---|
+| --- | --- |
 | vertical (V), idx >= sup | `2 * sup - idx - 2` (matches both CPU paths) |
 | horizontal (H), idx >= sup | **`2 * sup - idx - 2` (matches AVX2 production path, NOT scalar)** |
 
@@ -88,11 +87,11 @@ Per-scale `(num, den)` partials at `wg_count[scale]` × 4 × 2 floats
 ### Precision contract: places=4 across all 4 scales, 8-bit and 10-bit
 
 | Backend / bit-depth | scale 0 | scale 1 | scale 2 | scale 3 |
-|---|---:|---:|---:|---:|
-| Vulkan (Mesa anv + Arc A380) — 8-bit  | `1e-6` | `1.4e-5` | `1.8e-5` | `3.7e-5` |
-| Vulkan — 10-bit                       | `1e-6` | `1e-6`   | `7e-6`   | `2e-6`   |
-| CUDA (RTX 4090) — 8-bit               | `1e-6` | `1.4e-5` | `1.8e-5` | `3.7e-5` |
-| SYCL (Arc A380, oneAPI 2025.3) — 8-bit| `1e-6` | `1.4e-5` | `1.8e-5` | `3.7e-5` |
+| --- | ---: | ---: | ---: | ---: |
+| Vulkan (Mesa anv + Arc A380) — 8-bit | `1e-6` | `1.4e-5` | `1.8e-5` | `3.7e-5` |
+| Vulkan — 10-bit | `1e-6` | `1e-6` | `7e-6` | `2e-6` |
+| CUDA (RTX 4090) — 8-bit | `1e-6` | `1.4e-5` | `1.8e-5` | `3.7e-5` |
+| SYCL (Arc A380, oneAPI 2025.3) — 8-bit | `1e-6` | `1.4e-5` | `1.8e-5` | `3.7e-5` |
 
 Identical numbers across backends. All under `places=4` threshold
 (`5e-5`).

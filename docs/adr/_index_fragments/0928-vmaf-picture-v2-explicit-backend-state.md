@@ -1,1 +1,5 @@
-| [ADR-0928](0928-vmaf-picture-v2-explicit-backend-state.md) | VmafPicture v2 — replace `void *priv` overlay with explicit `VmafBackendHandle backend` discriminator + typed `uintptr_t backend_handle`; dual-API window (12 months); SONAME 3→4 scheduled for VMAFX v4.0.0; design + scaffold header only in this PR | Proposed (2026-05-31) | api, abi, gpu, cuda, sycl, hip, metal, ffmpeg, rust, fork-local, vmafx-rebrand |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0928](0928-vmaf-picture-v2-explicit-backend-state.md) | VmafPicture v2 — explicit per-backend GPU state | Proposed | api, abi, gpu, cuda, sycl, hip, metal, ffmpeg, rust, fork-local, vmafx-rebrand |

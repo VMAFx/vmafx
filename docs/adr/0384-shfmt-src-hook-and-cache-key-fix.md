@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0384: Switch shfmt pre-commit hook from binary download to Go-source build
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ Two changes are applied in the same commit:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fix cache key only | Minimal diff; once the cache warms, 502 won't matter | Does not eliminate the fragile CDN download; first run after any `.pre-commit-config.yaml` change still hits the CDN | Not resilient enough — one CDN hiccup recurs |
 | `apt-get install shfmt` + local hook | Deterministic, no network at hook time | Breaks local `pre-commit run` on machines without apt (`shfmt` not in PATH on macOS by default) | Developer-experience regression |
 | `shfmt-docker` | Immune to CDN and Go proxy outages | Requires Docker daemon on every CI runner and local machine; adds 300 MB+ to every fresh runner | Too heavyweight |

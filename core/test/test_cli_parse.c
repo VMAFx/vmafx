@@ -28,11 +28,7 @@
 #include "dict.h"
 #include <string.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 static int cli_free_dicts(CLISettings *settings)
 {
@@ -60,7 +56,7 @@ static char *test_aom_ctc_v1_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aom_ctc_v2_0()
@@ -79,7 +75,7 @@ static char *test_aom_ctc_v2_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aom_ctc_v3_0()
@@ -98,7 +94,7 @@ static char *test_aom_ctc_v3_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aom_ctc_v4_0()
@@ -117,7 +113,7 @@ static char *test_aom_ctc_v4_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aom_ctc_v5_0()
@@ -136,7 +132,7 @@ static char *test_aom_ctc_v5_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aom_ctc_v6_0()
@@ -155,7 +151,7 @@ static char *test_aom_ctc_v6_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_nflx_ctc_v1_0()
@@ -174,7 +170,7 @@ static char *test_nflx_ctc_v1_0()
     cli_free(&settings);
     cli_free_dicts(&settings);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* `--backend cuda` must end up with gpumask == 0 (NOT 1), because
@@ -201,7 +197,7 @@ static char *test_backend_cuda_engages_cuda()
     mu_assert("cli_parse: --backend cuda must NOT set no_cuda", !settings.no_cuda);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_backend_cpu()
@@ -217,7 +213,7 @@ static char *test_backend_cpu()
     mu_assert("cli_parse: --backend cpu must set no_metal = true", settings.no_metal);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_backend_sycl()
@@ -233,7 +229,7 @@ static char *test_backend_sycl()
     mu_assert("cli_parse: --backend sycl must default sycl_device to 0", settings.sycl_device == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* test_backend_vulkan removed — ADR-0726: Vulkan backend dropped. */
@@ -252,7 +248,7 @@ static char *test_backend_hip()
     mu_assert("cli_parse: --backend hip must default hip_device to 0", settings.hip_device == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_backend_metal()
@@ -270,7 +266,7 @@ static char *test_backend_metal()
               settings.metal_device == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_hip_device_explicit()
@@ -284,7 +280,7 @@ static char *test_hip_device_explicit()
     mu_assert("cli_parse: --hip_device must not engage no_hip", !settings.no_hip);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_metal_device_explicit()
@@ -298,7 +294,7 @@ static char *test_metal_device_explicit()
     mu_assert("cli_parse: --metal_device must not engage no_metal", !settings.no_metal);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_no_hip_no_metal_flags()
@@ -315,7 +311,7 @@ static char *test_no_hip_no_metal_flags()
               settings.metal_device == -1);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression for audit finding F1 / ADR-0438: '-c' is declared in
@@ -346,7 +342,7 @@ static char *test_cpumask_short_opt()
     cli_free(&settings2);
     cli_free_dicts(&settings2);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Explicit `--gpumask=N --backend cuda` must preserve the user's gpumask,
@@ -364,7 +360,7 @@ static char *test_backend_cuda_preserves_explicit_gpumask()
               settings.use_gpumask);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_aom_ctc_tests(void)
@@ -376,7 +372,7 @@ static char *run_aom_ctc_tests(void)
     mu_run_test(test_aom_ctc_v5_0);
     mu_run_test(test_aom_ctc_v6_0);
     mu_run_test(test_nflx_ctc_v1_0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Split in two: every mu_run_test expands to a branch, and the combined runner
@@ -390,7 +386,7 @@ static char *run_backend_selection_tests(void)
     /* test_backend_vulkan removed — ADR-0726 */
     mu_run_test(test_backend_hip);
     mu_run_test(test_backend_metal);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_backend_device_tests(void)
@@ -399,14 +395,14 @@ static char *run_backend_device_tests(void)
     mu_run_test(test_metal_device_explicit);
     mu_run_test(test_no_hip_no_metal_flags);
     mu_run_test(test_cpumask_short_opt);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_backend_tests(void)
 {
     mu_run_test(run_backend_selection_tests);
     mu_run_test(run_backend_device_tests);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0520: `--no-reference --tiny-model X --distorted Y` must reach
@@ -438,11 +434,11 @@ static char *test_no_reference_with_tiny_model_passes_parse(void)
     mu_assert("ADR-0520: --no-reference must suppress the default-model "
               "auto-add (model_cnt remains 0 with no -m flag)",
               settings.model_cnt == 0);
-    mu_assert("ADR-0519: --tiny-model path must be captured", settings.tiny_model_path != NULL);
-    mu_assert("ADR-0520: --no-reference must allow path_ref to be NULL", settings.path_ref == NULL);
+    mu_assert("ADR-0519: --tiny-model path must be captured", settings.tiny_model_path != VMAF_NULLPTR);
+    mu_assert("ADR-0520: --no-reference must allow path_ref to be NULL", settings.path_ref == VMAF_NULLPTR);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Underscore alias must take the same code path. */
@@ -464,14 +460,14 @@ static char *test_no_reference_underscore_alias_parses(void)
     mu_assert("ADR-0519: underscore alias must also force no_prediction", settings.no_prediction);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_no_reference_tests(void)
 {
     mu_run_test(test_no_reference_with_tiny_model_passes_parse);
     mu_run_test(test_no_reference_underscore_alias_parses);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0690: detect_vmafx_mode correctly parses argv[0] basename */
@@ -487,10 +483,10 @@ static char *test_detect_vmafx_mode(void)
               detect_vmafx_mode("/usr/local/bin/vmaf") == false);
     mu_assert("detect_vmafx_mode: 'vmaf_bench' must return false",
               detect_vmafx_mode("vmaf_bench") == false);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    mu_assert("detect_vmafx_mode: NULL must return false", detect_vmafx_mode(NULL) == false);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    mu_assert("detect_vmafx_mode: NULL must return false", detect_vmafx_mode(VMAF_NULLPTR) == false);
+
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0690: vmafx invocation defaults to precision=max and modern default model */
@@ -510,8 +506,8 @@ static char *test_vmafx_mode_defaults(void)
               strcmp(settings.model_config[0].version, VMAF_DEFAULT_MODEL_VERSION) == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0696: --netflix-compat restores legacy CPU, %.6f, and v0.6.1 model */
@@ -535,8 +531,8 @@ static char *test_netflix_compat_flag_precision(void)
               strcmp(settings.precision_fmt, "%.6f") == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_netflix_compat_flag_backend_and_model(void)
@@ -551,8 +547,8 @@ static char *test_netflix_compat_flag_backend_and_model(void)
               strcmp(settings.model_config[0].version, VMAF_NETFLIX_COMPAT_MODEL_VERSION) == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0696: underscore alias --netflix_compat and override behavior */
@@ -573,8 +569,8 @@ static char *test_netflix_compat_underscore_override(void)
               strcmp(settings.model_config[0].version, VMAF_NETFLIX_COMPAT_MODEL_VERSION) == 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *run_vmafx_tests(void)
@@ -584,8 +580,8 @@ static char *run_vmafx_tests(void)
     mu_run_test(test_netflix_compat_flag_precision);
     mu_run_test(test_netflix_compat_flag_backend_and_model);
     mu_run_test(test_netflix_compat_underscore_override);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------------
@@ -618,8 +614,8 @@ static const char *opt_value(VmafFeatureDictionary *opts, const char *key)
     VmafDictionary *dict = (VmafDictionary *)opts;
     const VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, key, 0);
     if (!entry) {
-        // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-        return NULL;
+
+        return VMAF_NULLPTR;
     }
     return entry->val;
 }
@@ -638,8 +634,8 @@ static char *test_model_path_keeps_inner_equals(void)
               str_eq(settings.model_config[0].path, "/a/dir=eq/m.json"));
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_path_windows_drive_letter(void)
@@ -651,8 +647,8 @@ static char *test_model_path_windows_drive_letter(void)
               str_eq(settings.model_config[0].path, "C:\\models\\vmaf_v0.6.1.json"));
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_path_escaped_colon(void)
@@ -663,8 +659,8 @@ static char *test_model_path_escaped_colon(void)
               str_eq(settings.model_config[0].path, "/a/dir:colon/m.json"));
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_escaped_equals_and_backslash(void)
@@ -677,8 +673,8 @@ static char *test_model_escaped_equals_and_backslash(void)
               str_eq(settings.model_config[0].version, "vmaf_v0.6.1"));
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 /* No-change regression: the documented forms must parse exactly as before. */
@@ -694,8 +690,8 @@ static char *test_model_plain_options_unchanged(void)
               (settings.model_config[0].cfg.flags & VMAF_MODEL_FLAG_DISABLE_CLIP) != 0);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_feature_overload_unchanged(void)
@@ -712,8 +708,8 @@ static char *test_model_feature_overload_unchanged(void)
     vmaf_feature_dictionary_free(&settings.model_config[0].feature_overload[0].opts_dict);
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_feature_value_keeps_windows_path(void)
@@ -727,8 +723,8 @@ static char *test_feature_value_keeps_windows_path(void)
               str_eq(opt_value(settings.feature_cfg[0].opts_dict, "some_path"), "C:\\x"));
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 /* No-change regression over the exact option string --aom_ctc v1.0 builds. */
@@ -745,8 +741,8 @@ static char *test_feature_plain_options_unchanged(void)
                   str_eq(opt_value(settings.feature_cfg[0].opts_dict, "min_sse"), "0.5"));
     cli_free(&settings);
     cli_free_dicts(&settings);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *run_model_delimiter_tests(void)
@@ -755,8 +751,8 @@ static char *run_model_delimiter_tests(void)
     mu_run_test(test_model_path_windows_drive_letter);
     mu_run_test(test_model_path_escaped_colon);
     mu_run_test(test_model_escaped_equals_and_backslash);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 static char *run_feature_delimiter_tests(void)
@@ -765,8 +761,8 @@ static char *run_feature_delimiter_tests(void)
     mu_run_test(test_model_feature_overload_unchanged);
     mu_run_test(test_feature_value_keeps_windows_path);
     mu_run_test(test_feature_plain_options_unchanged);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
-    return NULL;
+
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -789,7 +785,5 @@ char *run_tests()
     result = run_feature_delimiter_tests();
     if (result)
         return result;
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

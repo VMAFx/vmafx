@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # dev-MCP Docker Container
 
 The `dev-MCP` container runs the full VMAF fork inside Docker with all four
@@ -317,7 +316,7 @@ alone. Pinning the wrong subset silently hid one or more GPU
 backends in earlier image versions:
 
 | Env var | Contract | Why not pinned |
-|---|---|---|
+| --- | --- | --- |
 | `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` | unset by default; Vulkan loader uses `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/` search path | An earlier pin to `lvp_icd.x86_64.json` (typo of `lvp_icd.json`) hid every real GPU. ADR-0509 / Research-0138. |
 | `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` (level-zero UR adapter dlopens it at load time; dropping it causes SYCL "Platforms: 0" on Intel Arc). `tbb/latest/lib` carries `libtbb.so.12` (the Intel CPU OpenCL ICD dlopens it at platform enumeration; dropping it silently removes the Intel CPU OpenCL platform — ADR-0543). |
 | `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env) | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan. |
@@ -425,7 +424,7 @@ Containerfile ARGs to match the host kernel's i915 / xe / KFD ioctl ABI.
 A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 
 | Pin | Current value | Why pinned |
-|---|---|---|
+| --- | --- | --- |
 | `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib` and `IGC` deb packages and checksums are dynamically derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). |
 | `rocm-src` stage image | `rocm/dev-ubuntu-24.04:10.0.0-full` (digest-pinned) | Replaces the old `ARG ROCM_VER` apt install: ROCm >= 7.14 ships only as a container image (ADR-1225). ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls; 10.0.0 was verified against Linux 7.2.3 on `gfx1036`. The stage prunes ~13 GB of math libraries libvmaf never links — but never `librocprofiler-register`, which `libamdhip64.so` needs at load. |
 

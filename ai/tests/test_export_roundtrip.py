@@ -4,21 +4,23 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
-onnx = pytest.importorskip("onnx")
-onnxruntime = pytest.importorskip("onnxruntime")
+try:
+    import_module("onnx")
+    import onnxruntime
+    import torch
+except ImportError:
+    pytest.skip("PyTorch/ONNX dependencies not installed", allow_module_level=True)
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from conftest import guarded_pytorch_lightning_import
 
-requires_pytorch_lightning()
-
-import numpy as np  # noqa: E402
-
-from vmaf_train.models import FRRegressor, LearnedFilter, NRMetric, export_to_onnx  # noqa: E402
+with guarded_pytorch_lightning_import():
+    from vmaf_train.models import FRRegressor, LearnedFilter, NRMetric, export_to_onnx
 
 
 @pytest.mark.parametrize(

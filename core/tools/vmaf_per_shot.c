@@ -44,13 +44,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
 #endif
+
+#include "vmaf_nullptr.h"
 
 /* Per-shot accumulators kept in a static-size array; no dynamic resizing. */
 #define VMAF_PER_SHOT_MAX_SHOTS 4096U
@@ -99,19 +95,19 @@ struct vmaf_per_shot_settings {
 
 /* clang-format off */
 static const struct option per_shot_long_opts[] = {
-    {"reference",       required_argument, NULL, 'r'},
-    {"width",           required_argument, NULL, 'w'},
-    {"height",          required_argument, NULL, 'h'},
-    {"pixel_format",    required_argument, NULL, 'p'},
-    {"bitdepth",        required_argument, NULL, 'b'},
-    {"output",          required_argument, NULL, 'o'},
-    {"target-vmaf",     required_argument, NULL, 't'},
-    {"crf-min",         required_argument, NULL, 'm'},
-    {"crf-max",         required_argument, NULL, 'M'},
-    {"diff-threshold",  required_argument, NULL, 'd'},
-    {"format",          required_argument, NULL, 'f'},
-    {"help",            no_argument,       NULL, 'H'},
-    {NULL, 0, NULL, 0},
+    {"reference",       required_argument, VMAF_NULLPTR, 'r'},
+    {"width",           required_argument, VMAF_NULLPTR, 'w'},
+    {"height",          required_argument, VMAF_NULLPTR, 'h'},
+    {"pixel_format",    required_argument, VMAF_NULLPTR, 'p'},
+    {"bitdepth",        required_argument, VMAF_NULLPTR, 'b'},
+    {"output",          required_argument, VMAF_NULLPTR, 'o'},
+    {"target-vmaf",     required_argument, VMAF_NULLPTR, 't'},
+    {"crf-min",         required_argument, VMAF_NULLPTR, 'm'},
+    {"crf-max",         required_argument, VMAF_NULLPTR, 'M'},
+    {"diff-threshold",  required_argument, VMAF_NULLPTR, 'd'},
+    {"format",          required_argument, VMAF_NULLPTR, 'f'},
+    {"help",            no_argument,       VMAF_NULLPTR, 'H'},
+    {VMAF_NULLPTR, 0, VMAF_NULLPTR, 0},
 };
 /* clang-format on */
 
@@ -143,12 +139,12 @@ static void per_shot_print_usage(FILE *stream)
 static int per_shot_parse_uint(const char *s, unsigned long min, unsigned long max,
                                unsigned long *out)
 {
-    if (s == NULL || *s == '\0' || out == NULL)
+    if (s == VMAF_NULLPTR || *s == '\0' || out == VMAF_NULLPTR)
         return -EINVAL;
-    char *end = NULL;
+    char *end = VMAF_NULLPTR;
     errno = 0;
     unsigned long v = strtoul(s, &end, 10);
-    if (errno != 0 || end == NULL || *end != '\0')
+    if (errno != 0 || end == VMAF_NULLPTR || *end != '\0')
         return -EINVAL;
     if (v < min || v > max)
         return -EINVAL;
@@ -158,12 +154,12 @@ static int per_shot_parse_uint(const char *s, unsigned long min, unsigned long m
 
 static int per_shot_parse_int(const char *s, long min, long max, long *out)
 {
-    if (s == NULL || *s == '\0' || out == NULL)
+    if (s == VMAF_NULLPTR || *s == '\0' || out == VMAF_NULLPTR)
         return -EINVAL;
-    char *end = NULL;
+    char *end = VMAF_NULLPTR;
     errno = 0;
     long v = strtol(s, &end, 10);
-    if (errno != 0 || end == NULL || *end != '\0')
+    if (errno != 0 || end == VMAF_NULLPTR || *end != '\0')
         return -EINVAL;
     if (v < min || v > max)
         return -EINVAL;
@@ -173,12 +169,12 @@ static int per_shot_parse_int(const char *s, long min, long max, long *out)
 
 static int per_shot_parse_double(const char *s, double min, double max, double *out)
 {
-    if (s == NULL || *s == '\0' || out == NULL)
+    if (s == VMAF_NULLPTR || *s == '\0' || out == VMAF_NULLPTR)
         return -EINVAL;
-    char *end = NULL;
+    char *end = VMAF_NULLPTR;
     errno = 0;
     double v = strtod(s, &end);
-    if (errno != 0 || end == NULL || *end != '\0')
+    if (errno != 0 || end == VMAF_NULLPTR || *end != '\0')
         return -EINVAL;
     if (!(v >= min && v <= max))
         return -EINVAL;
@@ -188,7 +184,7 @@ static int per_shot_parse_double(const char *s, double min, double max, double *
 
 static int per_shot_parse_pixfmt(const char *s, unsigned *out)
 {
-    if (s == NULL || out == NULL)
+    if (s == VMAF_NULLPTR || out == VMAF_NULLPTR)
         return -EINVAL;
     if (strcmp(s, "420") == 0) {
         *out = 420U;
@@ -207,7 +203,7 @@ static int per_shot_parse_pixfmt(const char *s, unsigned *out)
 
 static int per_shot_parse_format(const char *s, enum vmaf_per_shot_format *out)
 {
-    if (s == NULL || out == NULL)
+    if (s == VMAF_NULLPTR || out == VMAF_NULLPTR)
         return -EINVAL;
     if (strcmp(s, "csv") == 0) {
         *out = VMAF_PER_SHOT_FMT_CSV;
@@ -282,7 +278,7 @@ static int per_shot_apply_opt(int c, const char *optarg_, struct vmaf_per_shot_s
 
 static int per_shot_validate(const struct vmaf_per_shot_settings *s)
 {
-    if (s->reference == NULL || s->output == NULL)
+    if (s->reference == VMAF_NULLPTR || s->output == VMAF_NULLPTR)
         return -EINVAL;
     if (s->width == 0U || s->height == 0U)
         return -EINVAL;
@@ -315,7 +311,6 @@ static int per_shot_parse_args(int argc, char **argv, struct vmaf_per_shot_setti
     /* getopt_long flagged concurrency-mt-unsafe by clang-tidy; same
      * baseline applies in libvmaf/tools/cli_parse.c — every C CLI
      * uses it, and the binary is single-threaded by construction. */
-    // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0141 / ADR-0278: CLI single-threaded option parsing via getopt_long
     while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:H", per_shot_long_opts, &idx)) !=
            -1) {
         if (c == 'H') {
@@ -355,12 +350,12 @@ static void per_shot_compute_frame_signals(const uint8_t *cur, const uint8_t *pr
     double abs_diff = 0.0;
     if (bitdepth > 8U) {
         const uint16_t *c16 = (const uint16_t *)cur;
-        const uint16_t *p16 = (prev != NULL) ? (const uint16_t *)prev : NULL;
+        const uint16_t *p16 = (prev != VMAF_NULLPTR) ? (const uint16_t *)prev : VMAF_NULLPTR;
         for (size_t i = 0U; i < pixels; ++i) {
             double v = (double)c16[i] * scale;
             sum += v;
             sumsq += v * v;
-            if (p16 != NULL) {
+            if (p16 != VMAF_NULLPTR) {
                 double d = v - (double)p16[i] * scale;
                 abs_diff += (d < 0.0) ? -d : d;
             }
@@ -370,7 +365,7 @@ static void per_shot_compute_frame_signals(const uint8_t *cur, const uint8_t *pr
             double v = (double)cur[i] * scale;
             sum += v;
             sumsq += v * v;
-            if (prev != NULL) {
+            if (prev != VMAF_NULLPTR) {
                 double d = v - (double)prev[i] * scale;
                 abs_diff += (d < 0.0) ? -d : d;
             }
@@ -380,7 +375,7 @@ static void per_shot_compute_frame_signals(const uint8_t *cur, const uint8_t *pr
     const double mean = sum / n;
     const double var = (sumsq / n) - (mean * mean);
     *complexity = (var > 0.0) ? var : 0.0;
-    *motion = (prev != NULL) ? (abs_diff / n) : 0.0;
+    *motion = (prev != VMAF_NULLPTR) ? (abs_diff / n) : 0.0;
 }
 
 /* Decide whether `mean_abs_diff_8bit` crosses the cut threshold. The
@@ -634,10 +629,10 @@ static int per_shot_write_plan_json(FILE *out, const struct vmaf_per_shot_settin
 static int per_shot_write_plan(const struct vmaf_per_shot_settings *s,
                                const struct vmaf_per_shot_record *shots, uint32_t shot_count)
 {
-    if (s == NULL || s->output == NULL)
+    if (s == VMAF_NULLPTR || s->output == VMAF_NULLPTR)
         return -EINVAL;
 
-    FILE *out = NULL;
+    FILE *out = VMAF_NULLPTR;
     bool use_stdout = (strcmp(s->output, "-") == 0);
     if (use_stdout) {
         out = stdout;
@@ -657,21 +652,17 @@ static int per_shot_write_plan(const struct vmaf_per_shot_settings *s,
             return -EIO;
         }
         out = fdopen(fd, "w");
-        if (out == NULL) {
+        if (out == VMAF_NULLPTR) {
             /* strerror() is concurrency-mt-unsafe; the path is enough
              * context for the user to diagnose. */
             (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
-            /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-             * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-             * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-             * second free.  2.21 no longer does. */
-            /* cppcheck-suppress doubleFree ; see the note above */
+            /* POSIX leaves the descriptor open when fdopen() fails. */
             (void)close(fd);
             return -EIO;
         }
 #else
         out = fopen(s->output, "w");
-        if (out == NULL) {
+        if (out == VMAF_NULLPTR) {
             (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
             return -EIO;
         }
@@ -725,8 +716,8 @@ static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per
             return -EIO;
         double complexity = 0.0;
         double motion = 0.0;
-        per_shot_compute_frame_signals(ctx->cur, ctx->have_prev ? ctx->prev : NULL, ctx->pixels,
-                                       s->bitdepth, &complexity, &motion);
+        per_shot_compute_frame_signals(ctx->cur, ctx->have_prev ? ctx->prev : VMAF_NULLPTR,
+                                       ctx->pixels, s->bitdepth, &complexity, &motion);
         /* Detector input is in [0, 1] luma units; rescale to 8-bit
          * domain so the threshold is intuitive. */
         const double mean_abs_diff_8bit = motion * 255.0;
@@ -754,13 +745,14 @@ static int per_shot_scan(const struct vmaf_per_shot_settings *s, struct vmaf_per
 {
     /* Defensive: per_shot_validate() already enforces these, but
      * the static analyser can't see that across the call boundary. */
-    if (s == NULL || s->reference == NULL || shots == NULL || shot_count == NULL) {
+    if (s == VMAF_NULLPTR || s->reference == VMAF_NULLPTR || shots == VMAF_NULLPTR ||
+        shot_count == VMAF_NULLPTR) {
         return -EINVAL;
     }
     if (s->width == 0U || s->height == 0U || s->bitdepth == 0U)
         return -EINVAL;
     FILE *fin = fopen(s->reference, "rb");
-    if (fin == NULL) {
+    if (fin == VMAF_NULLPTR) {
         /* strerror() is concurrency-mt-unsafe; the path is enough
          * context for the user. */
         (void)fprintf(stderr, "vmaf-perShot: cannot open %s\n", s->reference);
@@ -779,7 +771,7 @@ static int per_shot_scan(const struct vmaf_per_shot_settings *s, struct vmaf_per
     ctx.prev = malloc(ctx.luma_bytes);
     ctx.frame_idx = 0U;
     ctx.have_prev = false;
-    if (ctx.cur == NULL || ctx.prev == NULL) {
+    if (ctx.cur == VMAF_NULLPTR || ctx.prev == VMAF_NULLPTR) {
         rc = -ENOMEM;
         goto cleanup;
     }
@@ -799,7 +791,7 @@ cleanup:
 int main(int argc, char **argv)
 {
     assert(argc > 0);
-    assert(argv != NULL);
+    assert(argv != VMAF_NULLPTR);
     struct vmaf_per_shot_settings settings;
     int rc = per_shot_parse_args(argc, argv, &settings);
     if (rc == 1)
@@ -809,7 +801,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
     struct vmaf_per_shot_record *shots = calloc(VMAF_PER_SHOT_MAX_SHOTS, sizeof(*shots));
-    if (shots == NULL) {
+    if (shots == VMAF_NULLPTR) {
         (void)fprintf(stderr, "vmaf-perShot: out of memory\n");
         return EXIT_FAILURE;
     }
@@ -826,11 +818,9 @@ int main(int argc, char **argv)
         free(shots);
         return EXIT_FAILURE;
     }
-    assert(settings.output != NULL);
+    assert(settings.output != VMAF_NULLPTR);
     (void)fprintf(stderr, "vmaf-perShot: wrote %" PRIu32 " shot(s) to %s\n", shot_count,
                   settings.output);
     free(shots);
     return EXIT_SUCCESS;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

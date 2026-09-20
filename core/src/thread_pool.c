@@ -25,7 +25,7 @@
 #include "thread_pool.h"
 
 /* MSVC C23 requires NULL in C sources (ADR-1138). */
-// NOLINTBEGIN(modernize-use-nullptr)
+// NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138.
 
 /* Payload ≤ JOB_INLINE_DATA_SIZE lives inside the job struct itself,
  * avoiding a second malloc per enqueue. Sized to cover every
@@ -72,6 +72,32 @@ typedef struct VmafThreadPool {
      * so the next batch starts clean. */
     int last_error;
 } VmafThreadPool;
+
+/* Cppcheck's POSIX model requires a non-NULL condition-attribute pointer.
+ * Use an explicitly initialised default attribute on POSIX rather than relying
+ * on pthread_cond_init's NULL shorthand. The Windows pthread shim has no
+ * condattr lifecycle functions, but its pthread_cond_init ignores the pointed-
+ * to default value. */
+static int default_condition_init(pthread_cond_t *condition)
+{
+#ifdef _WIN32
+    pthread_condattr_t attributes = NULL;
+    return pthread_cond_init(condition, &attributes);
+#else
+    pthread_condattr_t attributes;
+    const int attributes_init_err = pthread_condattr_init(&attributes);
+    if (attributes_init_err)
+        return attributes_init_err;
+
+    const int condition_init_err = pthread_cond_init(condition, &attributes);
+    const int attributes_destroy_err = pthread_condattr_destroy(&attributes);
+    if (!condition_init_err && attributes_destroy_err) {
+        const int condition_destroy_err = pthread_cond_destroy(condition);
+        return condition_destroy_err ? condition_destroy_err : attributes_destroy_err;
+    }
+    return condition_init_err ? condition_init_err : attributes_destroy_err;
+#endif
+}
 
 static VmafThreadPoolJob *vmaf_thread_pool_fetch_job(VmafThreadPool *pool)
 {
@@ -124,7 +150,8 @@ static void *vmaf_thread_pool_runner(void *p)
     VmafThreadPoolWorker *worker = p;
     VmafThreadPool *pool = worker->pool;
 
-    for (;;) {
+    bool should_stop = false;
+    while (!should_stop) {
         pthread_mutex_lock(&(pool->queue.lock));
         /* Round-5 race fix (finding #6): POSIX allows pthread_cond_wait to
          * return spuriously.  Use while instead of if so a spurious wakeup
@@ -132,28 +159,30 @@ static void *vmaf_thread_pool_runner(void *p)
          * job. */
         while (!pool->queue.head && !pool->stop)
             pthread_cond_wait(&(pool->queue.empty), &(pool->queue.lock));
-        if (pool->stop)
-            break;
-        VmafThreadPoolJob *job = vmaf_thread_pool_fetch_job(pool);
-        if (job) {
-            pool->queue.depth--;
-            (void)pthread_cond_signal(&pool->queue.not_full);
+        if (pool->stop) {
+            should_stop = true;
+        } else {
+            VmafThreadPoolJob *job = vmaf_thread_pool_fetch_job(pool);
+            if (job) {
+                pool->queue.depth--;
+                (void)pthread_cond_signal(&pool->queue.not_full);
+            }
+            pool->n_working++;
+            pthread_mutex_unlock(&(pool->queue.lock));
+            int job_err = 0;
+            if (job) {
+                job_err = job->func(job->data, &worker->data);
+            }
+            pthread_mutex_lock(&(pool->queue.lock));
+            if (job_err)
+                pool->last_error |= job_err;
+            pool->n_working--;
+            if (job)
+                vmaf_thread_pool_job_recycle(pool, job);
+            if (!pool->stop && pool->n_working == 0 && !pool->queue.head)
+                pthread_cond_signal(&(pool->working));
+            pthread_mutex_unlock(&(pool->queue.lock));
         }
-        pool->n_working++;
-        pthread_mutex_unlock(&(pool->queue.lock));
-        int job_err = 0;
-        if (job) {
-            job_err = job->func(job->data, &worker->data);
-        }
-        pthread_mutex_lock(&(pool->queue.lock));
-        if (job_err)
-            pool->last_error |= job_err;
-        pool->n_working--;
-        if (job)
-            vmaf_thread_pool_job_recycle(pool, job);
-        if (!pool->stop && pool->n_working == 0 && !pool->queue.head)
-            pthread_cond_signal(&(pool->working));
-        pthread_mutex_unlock(&(pool->queue.lock));
     }
 
     if (--(pool->n_threads) == 0)
@@ -176,14 +205,14 @@ static int pool_init_primitives(VmafThreadPool *p, VmafThreadPool **pool_out_to_
         *pool_out_to_null = NULL;
         return -ENOMEM;
     }
-    if (pthread_cond_init(&(p->queue.empty), NULL) != 0) {
+    if (default_condition_init(&(p->queue.empty)) != 0) {
         pthread_mutex_destroy(&(p->queue.lock));
         free(p->workers);
         free(p);
         *pool_out_to_null = NULL;
         return -ENOMEM;
     }
-    if (pthread_cond_init(&(p->queue.not_full), NULL) != 0) {
+    if (default_condition_init(&(p->queue.not_full)) != 0) {
         pthread_cond_destroy(&(p->queue.empty));
         pthread_mutex_destroy(&(p->queue.lock));
         free(p->workers);
@@ -191,7 +220,7 @@ static int pool_init_primitives(VmafThreadPool *p, VmafThreadPool **pool_out_to_
         *pool_out_to_null = NULL;
         return -ENOMEM;
     }
-    if (pthread_cond_init(&(p->working), NULL) != 0) {
+    if (default_condition_init(&(p->working)) != 0) {
         pthread_cond_destroy(&(p->queue.not_full));
         pthread_cond_destroy(&(p->queue.empty));
         pthread_mutex_destroy(&(p->queue.lock));
@@ -284,6 +313,38 @@ static int wait_for_queue_capacity(VmafThreadPool *pool)
     return 0;
 }
 
+/* Caller holds queue.lock. Returns a fully initialised detached job. */
+static int prepare_job(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
+                       const void *data, size_t data_sz, VmafThreadPoolJob **job_out)
+{
+    VmafThreadPoolJob *job = pool->free_jobs;
+    if (job) {
+        pool->free_jobs = job->next;
+    } else {
+        job = malloc(sizeof(*job));
+        if (!job)
+            return -ENOMEM;
+    }
+
+    memset(job, 0, sizeof(*job));
+    job->func = func;
+    if (data && data_sz <= JOB_INLINE_DATA_SIZE) {
+        memcpy(job->inline_data, data, data_sz);
+        job->data = job->inline_data;
+    } else if (data) {
+        job->data = malloc(data_sz);
+        if (!job->data) {
+            job->next = pool->free_jobs;
+            pool->free_jobs = job;
+            return -ENOMEM;
+        }
+        memcpy(job->data, data, data_sz);
+    }
+
+    *job_out = job;
+    return 0;
+}
+
 int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
                              const void *data, size_t data_sz)
 {
@@ -300,37 +361,12 @@ int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void 
         return admission_err;
     }
 
-    /* The mutex protects slot reuse against worker-side recycling; allocate
-     * a slot only when none is free. */
-    VmafThreadPoolJob *job = pool->free_jobs;
-    if (job) {
-        pool->free_jobs = job->next;
-    } else {
-        job = malloc(sizeof(*job));
-        if (!job) {
-            pthread_mutex_unlock(&(pool->queue.lock));
-            return -ENOMEM;
-        }
-    }
-
-    memset(job, 0, sizeof(*job));
-    job->func = func;
-    if (data) {
-        if (data_sz <= JOB_INLINE_DATA_SIZE) {
-            memcpy(job->inline_data, data, data_sz);
-            job->data = job->inline_data;
-        } else {
-            job->data = malloc(data_sz);
-            if (!job->data) {
-                /* Return the job slot to the free list; releasing the
-                 * heap copy would defeat the job-pool win on retry. */
-                job->next = pool->free_jobs;
-                pool->free_jobs = job;
-                pthread_mutex_unlock(&(pool->queue.lock));
-                return -ENOMEM;
-            }
-            memcpy(job->data, data, data_sz);
-        }
+    /* The mutex protects slot reuse against worker-side recycling. */
+    VmafThreadPoolJob *job = NULL;
+    const int prepare_err = prepare_job(pool, func, data, data_sz, &job);
+    if (prepare_err) {
+        pthread_mutex_unlock(&(pool->queue.lock));
+        return prepare_err;
     }
 
     if (!pool->queue.head) {

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1108: CUDA motion_v2 twin emits motion3_v2_score
 
@@ -52,7 +51,7 @@ remains unsupported per ADR-0337.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Mirror CPU `flush()` host-side over collected SAD scores (chosen) | Bit-exact by construction; no kernel change; reuses shared `motion_blend` | ~40 lines of host loop duplicated across twins | This is the established v1 precedent (`integer_motion_cuda.c`) and the lowest-risk path to bit-parity |
 | Replicate `motion_blend` as a static inline in the CUDA TU | Self-contained | Duplicates a shared header that is already includable from CUDA TUs (v1 twin includes it) | Needless duplication; drift risk against the CPU source of truth |
 | Promote the CPU streaming post-process (`motion3_postprocess_cuda` style from v1) | Matches v1 twin's streaming shape | v2's `flush()` is a batch loop with `stamp_value` seeding, not a per-frame streaming post-process; reshaping it invites off-by-one bugs | Mirroring v2's own `flush()` is closer to its source of truth |

@@ -1,1 +1,5 @@
-| [ADR-0622](0622-vmaf-neg-integration-impl.md) | VMAF NEG integration for vmaf-tune commands: model resolution, CLI threading, and `--neg` support across recommendation/tuning surfaces. | Accepted | vmaf-tune, docs |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0622](0622-vmaf-neg-integration-impl.md) | VMAF NEG Integration Implementation | Accepted (Implemented) | `vmaf-tune`, `neg`, `docs` |

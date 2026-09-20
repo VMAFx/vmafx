@@ -42,10 +42,7 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 #define NUM_FRAMES 2u
 #define NUM_SCALES 4u
@@ -116,7 +113,7 @@ static int feed_frames(VmafContext *vmaf, Geometry g)
             return err;
         }
     }
-    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    return vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
 }
 
 static int read_scores(VmafContext *vmaf, double scores[NUM_FRAMES * NUM_SCALES])
@@ -138,12 +135,12 @@ static int read_scores(VmafContext *vmaf, double scores[NUM_FRAMES * NUM_SCALES]
 static int run_adm(Geometry g, uint64_t cpumask, double scores[NUM_FRAMES * NUM_SCALES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     if (err) {
         return err;
     }
-    err = vmaf_use_feature(vmaf, "adm", NULL);
+    err = vmaf_use_feature(vmaf, "adm", VMAF_NULLPTR);
     if (!err) {
         err = feed_frames(vmaf, g);
     }
@@ -212,7 +209,7 @@ static char *check_geometry(Geometry g)
                       second[NUM_SCALES - 1]);
     }
     mu_assert("integer ADM scores differ between identical runs on a tiny frame", identical);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_integer_adm_tiny_frames_deterministic(void)
@@ -223,7 +220,7 @@ static char *test_integer_adm_tiny_frames_deterministic(void)
             return msg;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_simd_matches_scalar(Geometry g)
@@ -240,7 +237,7 @@ static char *check_simd_matches_scalar(Geometry g)
                       scalar[0]);
     }
     mu_assert("integer ADM SIMD dispatch differs from scalar on a tiny frame", identical);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Every width whose scale-0 band is 9 to 16 samples, at the height the
@@ -248,19 +245,18 @@ static char *check_simd_matches_scalar(Geometry g)
 static char *test_integer_adm_tiny_widths_simd_matches_scalar(void)
 {
     for (unsigned w = 17u; w <= 32u; w++) {
-        char *msg = check_simd_matches_scalar((Geometry){w, 70u});
+        const Geometry geometry = {.w = w, .h = 70u};
+        char *msg = check_simd_matches_scalar(geometry);
         if (msg) {
             return msg;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_integer_adm_tiny_frames_deterministic);
     mu_run_test(test_integer_adm_tiny_widths_simd_matches_scalar);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

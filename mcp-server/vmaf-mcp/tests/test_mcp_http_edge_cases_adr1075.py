@@ -36,18 +36,20 @@ ADR-0108 deliverables:
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
+
+from vmaf_mcp import http_transport as ht
+
+if TYPE_CHECKING:
+    from aiohttp.test_utils import TestClient
 
 # Skip the entire module if aiohttp or prometheus_client are not installed.
 aiohttp = pytest.importorskip("aiohttp")
 pytest.importorskip("prometheus_client")
-
-import pytest_asyncio  # noqa: E402
-from aiohttp.test_utils import TestClient  # noqa: E402
-from vmaf_mcp import http_transport as ht  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helper: fresh isolated prometheus metrics registry
@@ -186,9 +188,9 @@ async def test_null_body_returns_400(no_auth_client: TestClient) -> None:
     assert "error" in body
     # The error must mention what was received (NoneType) or that an object was expected.
     error_lower = body["error"].lower()
-    assert (
-        "object" in error_lower or "nonetype" in error_lower
-    ), f"Error message does not describe the type mismatch: {body['error']!r}"
+    assert "object" in error_lower or "nonetype" in error_lower, (
+        f"Error message does not describe the type mismatch: {body['error']!r}"
+    )
     assert "request_id" in body, "request_id must be present even on non-dict body rejection"
 
 
@@ -257,9 +259,9 @@ async def test_get_on_score_endpoint_returns_405(no_auth_client: TestClient) -> 
     treated as a 404.
     """
     resp = await no_auth_client.get("/v1/score")
-    assert (
-        resp.status == 405
-    ), f"Expected 405 Method Not Allowed on GET /v1/score, got {resp.status}"
+    assert resp.status == 405, (
+        f"Expected 405 Method Not Allowed on GET /v1/score, got {resp.status}"
+    )
 
 
 @pytest.mark.asyncio
@@ -323,5 +325,5 @@ async def test_concurrent_score_requests_produce_independent_request_ids(
         request_ids.append(body["request_id"])
 
     assert len(set(request_ids)) == n_concurrent, (
-        f"Expected {n_concurrent} distinct request_ids; " f"got duplicates in {request_ids}"
+        f"Expected {n_concurrent} distinct request_ids; got duplicates in {request_ids}"
     )

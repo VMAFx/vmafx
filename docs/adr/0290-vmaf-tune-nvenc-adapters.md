@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0290: NVENC codec adapters for `vmaf-tune` (h264 / hevc / av1)
 
 - **Status**: Accepted
@@ -36,7 +35,7 @@ remain semantically aligned.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | One adapter per output codec (chosen) | Matches ADR-0237 "one file per codec"; downstream codec one-hot remains unambiguous; no harness branching | Three near-identical files; needs a shared helper | — |
 | One shared adapter family with `hardware: bool` flag | Fewer files | Forces codec-identity branching back into the search loop; collides with the codec one-hot in `fr_regressor_v2` | Pushes complexity into exactly the place ADR-0237 said it must not go |
 | Defer NVENC to a later phase | Lower scope | Blocks GPU-host corpus generation and is the smallest of the requested codecs | Defers a low-cost unblocker |

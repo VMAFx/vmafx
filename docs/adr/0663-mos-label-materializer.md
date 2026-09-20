@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0663: MOS Label Materializer
 
 - **Status**: Accepted
@@ -35,7 +34,7 @@ escape hatch.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep synthetic fallback in the trainer | Existing scripts keep running | Real-data mistakes produce plausible synthetic artefacts and waste GPU time | Rejected; real training must fail loudly when labels are absent |
 | Join labels inside each trainer | Fewer operator steps for one model | Duplicates key-matching and coverage policy across KoNViD, CHUG, and future MOS heads | Rejected; table materialisation is easier to audit and reuse |
 | Require exact key equality only | Simple implementation | Public corpus feature tables often carry numeric ids inside filenames or paths | Rejected; regex extraction is needed for KoNViD/CHUG-style joins |

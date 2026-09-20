@@ -2,17 +2,15 @@ from __future__ import absolute_import
 
 import json
 import unittest
-from functools import partial
-from test.testutil import set_default_576_324_videos_for_testing
 
 import numpy as np
 
+from test.testutil import set_default_576_324_videos_for_testing
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
 from vmaf.core.quality_runner import VmafQualityRunner
 from vmaf.core.result import Result
 from vmaf.core.result_store import FileSystemResultStore
-from vmaf.tools.misc import MyTestCase
 from vmaf.tools.stats import ListStats
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
@@ -141,7 +139,7 @@ class ResultAggregatingTest(unittest.TestCase):
 
     def test_from_xml_from_json_and_aggregation(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         asset_list = [asset, asset_original]
 
@@ -172,9 +170,9 @@ class ResultAggregatingTest(unittest.TestCase):
         combined_result = Result.combine_result([results[0], results[1]])
 
         # check that all keys are there
-        combined_result_keys = [key for key in combined_result.result_dict]
-        keys_0 = [key for key in results[0].result_dict]
-        keys_1 = [key for key in results[1].result_dict]
+        combined_result_keys = list(combined_result.result_dict)
+        keys_0 = list(results[0].result_dict)
+        keys_1 = list(results[1].result_dict)
         assert set(keys_0) == set(keys_1) == set(combined_result_keys)
 
         # check that the dictionaries have been copied as expected
@@ -263,7 +261,7 @@ class ScoreAggregationTest(unittest.TestCase):
         self.assertAlmostEqual(self.result["VMAF_array_score"][2], 37.424450246146364, places=1)
         # check that a 3-D array will throw assertion, score aggregation accepts only up to 2-D
         with self.assertRaises(AssertionError):
-            x = self.result["VMAF_3D_array_score"]
+            self.result["VMAF_3D_array_score"]
 
 
 if __name__ == "__main__":

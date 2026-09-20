@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0060: `vmaf-tune fast` — proxy-based recommend (Phase A.5)
 
 - **Date**: 2026-05-03
@@ -36,7 +35,7 @@ Wall-time profile from a 1080p 10-second clip on x86-64 (12-core
 workstation, no GPU usage):
 
 | Stage | Tool | Wall-time | Share |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1. Encode | `ffmpeg -c:v libx264 -preset medium -crf N` | 3–9 s | 60–80 % |
 | 2. Decode + score | `vmaf` (CPU bit-exact, full feature set) | 1.5–3 s | 15–30 % |
 | 3. JSONL emit + cleanup | `corpus.py` | < 0.1 s | < 2 % |
@@ -143,7 +142,7 @@ Baseline: 460-cell grid × 10 s/cell ≈ 4600 s (≈ 75 min) for one
 source.
 
 | Combination | Trials | Per-trial cost | Verify cost | Total wall-time | Speedup |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | **None (Phase A grid)** | 460 | 10 s (encode + CPU score) | – | 4600 s | 1× |
 | **A** (proxy only, dense grid) | 460 | 4 s (encode only; proxy ≈ µs) | 1 s GPU verify | ≈1840 s | ~2.5× |
 | **B** (Bayesian, real score) | 50 | 10 s | – | 500 s | ~9× |
@@ -168,7 +167,7 @@ trials so the pipeline can be exercised without that corpus.
 ## Decision matrix — which combination is "fast-path v1"?
 
 | Combination | Pros | Cons | Recommendation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A + B + E (recommended)** | No new external dep beyond Optuna; works on any host; scales gracefully when GPU is absent (lever E is opt-in); the proxy is already-shipped `fr_regressor_v2.onnx` | Speedup capped at ~50×; encode floor remains software | **First scaffold ships A + B + E.** |
 | A + B + C + E | Headline 100–500× speedup | NVENC requires an FFmpeg compiled with `--enable-nvenc` and an NVIDIA GPU; QSV/AMF analogues fragment the matrix; the proxy needs a hardware-encoder corpus to be calibrated | Follow-up PR. Requires Phase A.5b corpus regeneration with NVENC. |
 | A only (dense grid + proxy) | Zero search-strategy churn; deterministic | Still scans every CRF; barely better than the grid | Rejected; misses the easy Bayesian win. |

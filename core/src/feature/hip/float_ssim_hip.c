@@ -41,6 +41,8 @@
  *  auto-detect path rejects scale>1 with -EINVAL at init.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -61,9 +63,9 @@
 #include "../../hip/picture_hip.h"
 #include "float_ssim_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -239,7 +241,7 @@ static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned
 
 #ifdef HAVE_HIPCC
 /* Load the HSACO fat binary and resolve the three kernel function handles.
- * On failure the module is unloaded again and `s->module` is NULL. */
+ * On failure the module is unloaded again and `s->module` is VMAF_NULLPTR. */
 static int ssim_hip_module_load(SsimStateHip *s)
 {
     hipError_t hip_rc = hipModuleLoadData(&s->module, ssim_score_hsaco);
@@ -255,7 +257,7 @@ static int ssim_hip_module_load(SsimStateHip *s)
         hip_rc = hipModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_hip_vert_combine");
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return ssim_hip_rc(hip_rc);
 }
@@ -294,16 +296,16 @@ static int ssim_hip_bufs_alloc(SsimStateHip *s)
 }
 
 /* Free all seven device buffers, last allocated first. Safe to call with
- * NULL pointers. */
+ * VMAF_NULLPTR pointers. */
 static void ssim_hip_bufs_free(SsimStateHip *s)
 {
     void **slots[SSIM_HIP_N_BUFS];
     ssim_hip_buf_slots(s, slots);
     for (unsigned i = SSIM_HIP_N_BUFS; i > 0u; i--) {
         void **slot = slots[i - 1u];
-        if (*slot != NULL)
+        if (*slot != VMAF_NULLPTR)
             (void)hipFree(*slot);
-        *slot = NULL;
+        *slot = VMAF_NULLPTR;
     }
 }
 
@@ -333,7 +335,7 @@ static int ssim_hip_launch_horiz(SsimStateHip *s, hipStream_t str)
     const bool is8 = (s->bpc == 8u);
     return ssim_hip_rc(hipModuleLaunchKernel(is8 ? s->func_horiz_8 : s->func_horiz_16, grid_horiz_x,
                                              grid_horiz_y, 1u, SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y,
-                                             1u, 0, str, is8 ? args8 : args16, NULL));
+                                             1u, 0, str, is8 ? args8 : args16, VMAF_NULLPTR));
 }
 
 /*
@@ -353,7 +355,7 @@ static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
         (void *)&s->h_final,  (void *)&s->c1,        (void *)&s->c2,
     };
     hipError_t hip_rc = hipModuleLaunchKernel(s->func_vert, grid_x, grid_y, 1u, SSIM_HIP_BLOCK_X,
-                                              SSIM_HIP_BLOCK_Y, 1u, 0, str, args2, NULL);
+                                              SSIM_HIP_BLOCK_Y, 1u, 0, str, args2, VMAF_NULLPTR);
     if (hip_rc != hipSuccess)
         return ssim_hip_rc(hip_rc);
 
@@ -387,9 +389,9 @@ static int ssim_hip_release(SsimStateHip *s)
     int e = 0;
 #ifdef HAVE_HIPCC
     ssim_hip_bufs_free(s);
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         e = ssim_hip_rc(hipModuleUnload(s->module));
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         if (rc == 0)
             rc = e;
     }
@@ -397,13 +399,13 @@ static int ssim_hip_release(SsimStateHip *s)
     e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (rc == 0)
         rc = e;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         e = vmaf_dictionary_free(&s->feature_name_dict);
         if (rc == 0)
             rc = e;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -442,7 +444,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -459,8 +461,8 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* submit / collect                                                    */
 /* ------------------------------------------------------------------ */
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -553,7 +555,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 /* Registration                                                        */
 /* ------------------------------------------------------------------ */
 
-static const char *provided_features[] = {"float_ssim", NULL};
+static const char *provided_features[] = {"float_ssim", VMAF_NULLPTR};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_float_ssim_hip;` in
@@ -563,7 +565,6 @@ static const char *provided_features[] = {"float_ssim", NULL};
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_ssim_cuda` in
  * `libvmaf/src/feature/cuda/integer_ssim_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ssim_hip = {
     .name = "float_ssim_hip",
     .init = init_fex_hip,
@@ -585,5 +586,3 @@ VmafFeatureExtractor vmaf_fex_float_ssim_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

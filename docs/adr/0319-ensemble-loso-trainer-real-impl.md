@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0319: `fr_regressor_v2` ensemble LOSO trainer — real loader + per-fold training
 
 - **Status**: Accepted
@@ -88,7 +87,7 @@ already cleared 0.9681 mean LOSO PLCC (ADR-0291).
 ## Alternatives considered
 
 | Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
+| -------- | ------ | ------ | --------- |
 | **pandas + torch (chosen)** | Mirrors `eval_loso_vmaf_tiny_v3.py` loader pattern; FRRegressor reuse keeps the v2 ONNX-export path open; pandas is already a training-time dep | Adds ~30 MB pandas footprint to the trainer venv (already required by other LOSO scripts) | Selected — minimum-deviation from existing v2 + LOSO patterns |
 | Pure numpy / json loader | No pandas dep; smaller install footprint | Re-implements the source-grouping + column projection that `pandas.groupby` does in two lines; loses parity with `eval_loso_vmaf_tiny_v3.py` reproducer | Rejected — trainer is dev-time, not runtime; pandas is already on the path for the other LOSO scripts |
 | PyTorch Lightning Trainer | Matches `FRRegressor` Lightning class; gets logging / checkpointing for free | 200-epoch loops over 9 folds × 5 seeds inside Lightning add per-fold setup cost; not necessary for a fixed-budget LOSO pass | Rejected — manual `Adam` + `MSELoss` loop is ~50 LOC, Lightning's overhead would dominate on this corpus size |

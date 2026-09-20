@@ -1,20 +1,19 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Languages used in VMAFX
 
-VMAFX is a multi-language project. This page documents the role of each language,
-the minimum toolchain versions required to build the full project, and pointers to
-language-specific setup guides.
+VMAFX is a multi-language project. This page documents the role of each
+language, the minimum toolchain versions required to build the full project, and
+pointers to language-specific setup guides.
 
-See [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702) for
-the policy constraints that govern which language is used for which role.
+See [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702)
+for the policy constraints that govern which language is used for which role.
 
 ## C / C++23 — core library
 
 **Used in:** `core/` (metric engine, feature extractors, GPU backend runtimes)
 
-**Minimum version:** C23 (GCC ≥ 13 or Clang ≥ 17) / C++23 for new fork-added TUs.
-Netflix-inherited C files remain C99-compatible and are migrated per-TU only when
-a PR already touches the file.
+**Minimum version:** C23 (GCC ≥ 13 or Clang ≥ 17) / C++23 for new fork-added
+TUs. Netflix-inherited C files remain C99-compatible and are migrated per-TU
+only when a PR already touches the file.
 
 **Required toolchain:**
 
@@ -30,7 +29,8 @@ brew install llvm
 
 ## Go — production tooling
 
-**Used in:** `cmd/` (future: `cmd/vmafx-server`, `cmd/vmafx-mcp`, `cmd/vmafx-tune`)
+**Used in:** `cmd/` (future: `cmd/vmafx-server`, `cmd/vmafx-mcp`,
+`cmd/vmafx-tune`)
 
 **Minimum version:** Go 1.25 (go.mod: `go 1.26.4`; toolchain 1.26.4)
 
@@ -59,8 +59,8 @@ go test ./...      # or: make go-test
 go vet ./...       # static analysis (required CI gate)
 ```
 
-The Go module root is `github.com/VMAFx/vmafx` (declared in `go.mod`).
-Packages live under `pkg/`; binaries live under `cmd/`.
+The Go module root is `github.com/VMAFx/vmafx` (declared in `go.mod`). Packages
+live under `pkg/`; binaries live under `cmd/`.
 
 ## Rust — FFI bindings + feature-extractor pilots
 
@@ -91,8 +91,8 @@ cargo check --all   # or: make rust-build
 cargo test --all    # or: make rust-test
 ```
 
-The Rust workspace manifest is at `Cargo.toml` in the repo root.
-Members are added by per-sweep PRs (the foundation PR adds none).
+The Rust workspace manifest is at `Cargo.toml` in the repo root. Members are
+added by per-sweep PRs (the foundation PR adds none).
 
 ## Python — ML training and dev scripts
 
@@ -103,11 +103,11 @@ Members are added by per-sweep PRs (the foundation PR adds none).
 
 **Setup:**
 
-The repository root `pyproject.toml` contains only tool configuration
-(Black, Ruff, Pytest, Mypy) for `vmafx-tooling`; it has no build system or
-root project dependencies to install. Running `pip install -e .` fails
-flat-layout package discovery. Instead, the repository uses per-package
-editable installs for its independent distributions. See
+The repository root `pyproject.toml` contains only tool configuration (Black,
+Ruff, Pytest, Mypy) for `vmafx-tooling`; it has no build system or root project
+dependencies to install. Running `pip install -e .` fails flat-layout package
+discovery. Instead, the repository uses per-package editable installs for its
+independent distributions. See
 [python-test-orchestrator.md](python-test-orchestrator.md) for the `nox`
 per-package virtual environments.
 
@@ -131,15 +131,15 @@ Pinning `meson==1.12.0` matches the container and build tree: Meson build
 directories record the absolute path of the generator binary, so mismatching
 Meson executables break `ninja` re-generation.
 
-See [dev-mcp.md](dev-mcp.md) for the full dev-container setup which pins
-all Python dependencies in a stable environment.
+See [dev-mcp.md](dev-mcp.md) for the full dev-container setup which pins all
+Python dependencies in a stable environment.
 
 ### Recovering a destroyed venv
 
 If `.venv` fails with `env: 'bash': Too many levels of symbolic links` or a
 `.venv -> .venv` self-loop, a legacy tracked `.venv` symlink (fixed in PR #1280)
-clobbered the environment. Remove the broken path (`rm -rf .venv`) and rerun
-the setup recipe above to recreate a clean virtualenv.
+clobbered the environment. Remove the broken path (`rm -rf .venv`) and rerun the
+setup recipe above to recreate a clean virtualenv.
 
 ## GPU compute — CUDA / SYCL / HIP / Metal / Vulkan GLSL
 
@@ -155,18 +155,18 @@ See the backend-specific guides:
 
 ## CI toolchain matrix
 
-| Language | CI gate | Workflow file |
-|---|---|---|
-| C / C++23 | clang-tidy, cppcheck, meson test | `.github/workflows/lint-and-format.yml` |
-| Go | `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
-| Rust | `cargo check --all` + `cargo test --all` | `.github/workflows/rust-ci.yml` |
-| Python | ruff + mypy strict + pytest | `.github/workflows/python-ci.yml` |
+| Language  | CI gate                                  | Workflow file                           |
+| --------- | ---------------------------------------- | --------------------------------------- |
+| C / C++23 | clang-tidy, cppcheck, meson test         | `.github/workflows/lint-and-format.yml` |
+| Go        | `go vet ./...` + `go test ./...`         | `.github/workflows/go-ci.yml`           |
+| Rust      | `cargo check --all` + `cargo test --all` | `.github/workflows/rust-ci.yml`         |
+| Python    | ruff + mypy strict + pytest              | `.github/workflows/python-ci.yml`       |
 
 ## References
 
 - [ADR-0702](../adr/0702-vmafx-phase4-language-modernization.md) — language
   modernization umbrella
-- [ADR-0686](../adr/0686-vmafx-rebrand-aggressive-modernization.md) — parent rebrand
-  umbrella
+- [ADR-0686](../adr/0686-vmafx-rebrand-aggressive-modernization.md) — parent
+  rebrand umbrella
 - [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702) —
   policy constraints

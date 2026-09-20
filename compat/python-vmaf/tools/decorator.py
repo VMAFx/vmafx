@@ -1,5 +1,5 @@
-import os
 from functools import partial
+from pathlib import Path
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -44,7 +44,6 @@ def persist(original_func):
     def new_func(*args):
         # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
         # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         h = hashlib.sha1(
             (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
         ).hexdigest()
@@ -104,11 +103,11 @@ def persist_to_file(file_name):
 
     def decorator(original_func):
 
-        if not os.path.exists(file_name):
+        if not Path(file_name).exists():
             cache = {}
         else:
             try:
-                with open(file_name, "rt") as fh:
+                with Path(file_name).open("rt") as fh:
                     cache = json.load(fh)
             except (IOError, ValueError):
                 sys.exit(1)
@@ -116,15 +115,14 @@ def persist_to_file(file_name):
         def new_func(*args):
             # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
             # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
             h = hashlib.sha1(
                 (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
             ).hexdigest()
             if h not in cache:
                 cache[h] = original_func(*args)
-                file_dir = os.path.dirname(file_name)
-                os.makedirs(file_dir, exist_ok=True)
-                with open(file_name, "wt") as fh:
+                file_dir = str(Path(file_name).parent)
+                Path(file_dir).mkdir(parents=True, exist_ok=True)
+                with Path(file_name).open("wt") as fh:
                     json.dump(cache, fh)
             return cache[h]
 
@@ -143,18 +141,17 @@ def persist_to_dir(dir_name):
         def new_func(*args):
             # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
             # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
             h = hashlib.sha1(
                 (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
             ).hexdigest()
-            file_name = os.path.join(dir_name, h)
-            if not os.path.exists(file_name):
-                os.makedirs(dir_name, exist_ok=True)
+            file_name = str(Path(dir_name).joinpath(h))
+            if not Path(file_name).exists():
+                Path(dir_name).mkdir(parents=True, exist_ok=True)
                 res = original_func(*args)
-                with open(file_name, "wt") as fh:
+                with Path(file_name).open("wt") as fh:
                     json.dump(res, fh)
             else:
-                with open(file_name, "rt") as fh:
+                with Path(file_name).open("rt") as fh:
                     res = json.load(fh)
             return res
 

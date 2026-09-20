@@ -16,7 +16,9 @@
  *
  */
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve Netflix NULL; MSVC C nullptr support is unverified. */
+/* lint rationale -- ADR-1138: preserve Netflix VMAF_NULLPTR; MSVC C nullptr support is unverified. */
+
+#include "vmaf_nullptr.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -349,7 +351,7 @@ static int vifdiff_compute_frame(VifDiffWorkspace *work, int w, int h, int frame
     const int ret = compute_vif(work->buffers[VIFDIFF_REF_DIFF], work->buffers[VIFDIFF_DIS_DIFF], w,
                                 h, work->stride, work->stride, &work->score, &work->numerator,
                                 &work->denominator, work->scores, DEFAULT_VIF_ENHN_GAIN_LIMIT,
-                                DEFAULT_VIF_KERNELSCALE, 0, 2.0, NULL, NULL);
+                                DEFAULT_VIF_KERNELSCALE, 0, 2.0, VMAF_NULLPTR, VMAF_NULLPTR);
     if (ret) {
         printf("error: compute_vifdiff failed.\n");
         (void)fflush(stdout);
@@ -399,5 +401,3 @@ int vifdiff(int (*read_frame)(float *ref_data, float *main_data, float *temp_dat
         aligned_free(work.buffers[i]);
     return ret;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

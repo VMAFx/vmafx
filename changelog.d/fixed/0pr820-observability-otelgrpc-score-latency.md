@@ -1,1 +1,5 @@
-- Fixed: wired `otelgrpc` unary/streaming stats handlers into the gRPC server; `ObserveScoreLatency` now propagates the correct request context, enabling accurate distributed trace spans. (PR #820)
+# Changelog fragment
+
+- Fixed: wired `otelgrpc` unary/streaming stats handlers into the gRPC server;
+  `ObserveScoreLatency` now propagates the correct request context, enabling
+  accurate distributed trace spans. (PR #820)

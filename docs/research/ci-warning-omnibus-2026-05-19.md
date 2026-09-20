@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD038 MD060 -->
 # Research: CI Warning Omnibus (2026-05-19)
 
 **Context**: CI run 26111553607 (workflow_dispatch on master) surfaced five
@@ -28,12 +27,12 @@ Node.js 20. The action author has not published a v2 or a Node.js 24 build.
 
 ### Candidate replacements
 
-| Action | Node version | Notes |
-|---|---|---|
-| `TheMrMilchmann/setup-msvc-dev@v4.0.0` | node24 | Functionally identical to ilammy; released 2025-09-01; inputs: `arch` (default amd64), `vs-path`, `sdk`, `toolset` |
-| `microsoft/setup-msbuild@v2` | node20 | Exposes MSBuild entry point only — `cl.exe` not on PATH |
-| `microsoft/setup-msbuild@v3` (hypothetical) | — | Does not exist as of 2026-05-19 |
-| Force `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` | — | Treats symptom; action untested under forced Node.js 24 |
+| Action                                          | Node version | Notes                                                                                                              |
+| ----------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `TheMrMilchmann/setup-msvc-dev@v4.0.0`          | node24       | Functionally identical to ilammy; released 2025-09-01; inputs: `arch` (default amd64), `vs-path`, `sdk`, `toolset` |
+| `microsoft/setup-msbuild@v2`                    | node20       | Exposes MSBuild entry point only — `cl.exe` not on PATH                                                            |
+| `microsoft/setup-msbuild@v3` (hypothetical)     | —            | Does not exist as of 2026-05-19                                                                                    |
+| Force `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` | —            | Treats symptom; action untested under forced Node.js 24                                                            |
 
 **Selected**: `TheMrMilchmann/setup-msvc-dev@v4.0.0`.
 
@@ -41,12 +40,13 @@ Action YAML verified:
 
 ```yaml
 runs:
-  using: 'node24'
-  main: 'dist/index.cjs'
+    using: "node24"
+    main: "dist/index.cjs"
 ```
 
 No required inputs; `arch` defaults to amd64 — matching the current ilammy
-invocation (no inputs specified). SHA: `79dac248aac9d0059f86eae9d8b5bfab4e95e97c`.
+invocation (no inputs specified). SHA:
+`79dac248aac9d0059f86eae9d8b5bfab4e95e97c`.
 
 ---
 
@@ -54,16 +54,16 @@ invocation (no inputs specified). SHA: `79dac248aac9d0059f86eae9d8b5bfab4e95e97c
 
 ### Investigation
 
-GitHub announced that `windows-latest` will redirect to `windows-2025-vs2026`
-on 2026-06-15. The fork's Windows jobs (`windows`, `windows-gpu-build`) both
-use `runs-on: windows-latest`.
+GitHub announced that `windows-latest` will redirect to `windows-2025-vs2026` on
+2026-06-15. The fork's Windows jobs (`windows`, `windows-gpu-build`) both use
+`runs-on: windows-latest`.
 
 Runner image matrix (from `actions/runner-images` README, live 2026-05-19):
 
-| Label | Image |
-|---|---|
-| `windows-latest` or `windows-2025` | Windows Server 2025 |
-| `windows-2025-vs2026` | Windows Server 2025 + VS2026 |
+| Label                              | Image                        |
+| ---------------------------------- | ---------------------------- |
+| `windows-latest` or `windows-2025` | Windows Server 2025          |
+| `windows-2025-vs2026`              | Windows Server 2025 + VS2026 |
 
 The redirect target is `windows-2025-vs2026` (VS2026), not `windows-2025`.
 However, the fork's MSVC builds use `cl.exe` from the toolset, not the VS IDE.
@@ -91,10 +91,10 @@ fi
 ```
 
 On hosted `macos-latest` runners (Apple M-series virtualized), `vulkaninfo`
-writes GPU-capability warnings to stderr (e.g. "No display server running —
-GPU enumeration incomplete") that are captured by `2>&1` and surfaced as CI
-annotations regardless of whether the MoltenVK ICD loads. The grep on stdout
-is the correctness gate; the `::warning::` fires when stdout does not contain
+writes GPU-capability warnings to stderr (e.g. "No display server running — GPU
+enumeration incomplete") that are captured by `2>&1` and surfaced as CI
+annotations regardless of whether the MoltenVK ICD loads. The grep on stdout is
+the correctness gate; the `::warning::` fires when stdout does not contain
 "MoltenVK" or "Apple", which happens when stderr dominates the tee output.
 
 Confirmed: the MoltenVK lane is `continue-on-error: true` (ADR-0338), so the
@@ -116,20 +116,25 @@ The macOS Vulkan lane's ccache restore step logs:
 WARNING: Cache entry deserialization failed, entry ignored
 ```
 
-The ccache key is `ccache-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-${{ github.sha }}`.
-`actions/cache` was upgraded from v4 to v5 (SHA `27d5ce7f107fe9357f9df03efb73ab90386fccae`)
-in a prior PR. The v5 action changed the on-disk cache entry format; entries
-saved by v4 cannot be deserialized by v5. Old entries expire after 7 days but
-produce the deserialization warning on every run until expiry.
+The ccache key joins the literal `ccache`, `${{ matrix.os }}`,
+`${{ matrix.CC }}`, `${{ matrix.meson_extra }}`, and `${{ github.sha }}` with
+hyphens, in that order.
+
+`actions/cache` was upgraded from v4 to v5 (SHA
+`27d5ce7f107fe9357f9df03efb73ab90386fccae`) in a prior PR. The v5 action changed
+the on-disk cache entry format; entries saved by v4 cannot be deserialized by
+v5. Old entries expire after 7 days but produce the deserialization warning on
+every run until expiry.
 
 **Fix**: bump the key prefix from `ccache-` to `ccache-v2-`, forcing all
-consumers to start a fresh cache. One-time ~3–5 min wall-clock hit per cell;
-no correctness impact (ccache is a build accelerator, not a correctness gate).
+consumers to start a fresh cache. One-time ~3–5 min wall-clock hit per cell; no
+correctness impact (ccache is a build accelerator, not a correctness gate).
 
 No other cache steps use a `ccache-` prefix — the Vulkan subproject packagecache
-(`meson-packagecache-vulkan-...`) and fixture cache (`vmaf-fixtures-resource-v1-...`)
-are not affected by the v4→v5 format change (they store plain file archives,
-not build-object caches with v4/v5-specific metadata).
+(`meson-packagecache-vulkan-...`) and fixture cache
+(`vmaf-fixtures-resource-v1-...`) are not affected by the v4→v5 format change
+(they store plain file archives, not build-object caches with v4/v5-specific
+metadata).
 
 ---
 
@@ -142,19 +147,21 @@ not build-object caches with v4/v5-specific metadata).
 `tools.md` is `## \`run_benchmark\``.
 
 Root cause: mkdocs-material's link validator resolves anchors from
-heading-generated slugs. The slug generation for `## \`run_benchmark\`` is
-implementation-defined — some versions strip backticks and produce
-`run_benchmark`; others encode them as `run_benchmark_1` or similar. The
-strict validator rejects any slug it cannot confirm.
+heading-generated slugs. Slug generation for the heading
+`` ## `run_benchmark` `` is implementation-defined. Some versions strip
+backticks and produce `run_benchmark`; others encode them as
+`run_benchmark_1` or similar. The strict validator rejects any slug it cannot
+confirm.
 
 PR #1431 added `<a id="run_benchmark"></a>` as a workaround, but mkdocs-material
 does not index raw HTML `<a id>` tags for link validation — only Markdown
-headings contribute to the slug map. The HTML anchor is visible to browsers
-but invisible to the strict checker.
+headings contribute to the slug map. The HTML anchor is visible to browsers but
+invisible to the strict checker.
 
-Other headings in `tools.md` with the same backtick pattern (`## \`vmaf_score\``,
-`## \`list_models\``, etc.) are not cross-linked from `index.md` or use
-fragment-free links, so they are not caught by the strict validator.
+Other headings in `tools.md` with the same backtick pattern
+(`## \`vmaf_score\``,`##
+\`list_models\``, etc.) are not cross-linked from`index.md` or use fragment-free
+links, so they are not caught by the strict validator.
 
 **Fix**: rename the heading to `## run_benchmark` (no backticks) and drop the
 `<a id>` tag and its `markdownlint-disable-next-line MD033` comment. The slug

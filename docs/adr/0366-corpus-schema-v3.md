@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0366: vmaf-tune corpus schema v3 — canonical-6 per-feature aggregates
 
 - **Status**: Accepted
@@ -60,7 +59,7 @@ exported registry row is always tagged ``smoke: true``.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Status quo (sidecar JSON) | No schema change | Doubles encode wall-time, two sources of truth, every consumer needs sidecar awareness | Already documented as the partial-integration debt that motivated this ADR |
 | Per-frame rows in the corpus | Maximally rich | 30-100x row inflation, breaks Phase B coarse-to-fine row counts, schema overhauled | Aggregates are the input the trainers actually use |
 | Add canonical-6 + extra metrics (cambi, psnr, ssim, ms-ssim) in one bump | One schema change covers Phase D too | Wider blast radius, harder to land before downstream consumers stabilise | Defer additional metrics to a future v4 bump once consumers settle |

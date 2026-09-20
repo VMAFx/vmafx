@@ -410,9 +410,9 @@ def test_pareto_frontier_smoke(aks, synthetic_jsonl, tmp_path):
     hull = aks.pareto_frontier(tie_slice)
     chosen = [r for r in hull if abs(r.bitrate_kbps - 1500) < 1.0]
     assert chosen, "tiebreaker hull entry missing"
-    assert (
-        chosen[0].knob_combo == "knob=tieA"
-    ), f"expected tieA (lowest enc_ms) but got {chosen[0].knob_combo!r}"
+    assert chosen[0].knob_combo == "knob=tieA", (
+        f"expected tieA (lowest enc_ms) but got {chosen[0].knob_combo!r}"
+    )
 
     # Summary file is present and references the regression we expect.
     summary = report["summary_path"].read_text()

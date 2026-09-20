@@ -46,6 +46,8 @@
  *  per-scale synchronous posture of the CUDA twin.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -73,9 +75,9 @@
 
 #include "feature/cambi_internal.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -162,135 +164,71 @@ typedef struct CambiStateHip {
 } CambiStateHip;
 
 /* --- Options --- */
+#define CAMBI_DOUBLE_OPTION(NAME, HELP, FIELD, DEFAULT, MINIMUM, MAXIMUM, ALIAS)                   \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(CambiStateHip, FIELD),                                                  \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = (DEFAULT),                                                                \
+        .min = (MINIMUM),                                                                          \
+        .max = (MAXIMUM),                                                                          \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+#define CAMBI_INT_OPTION(NAME, HELP, FIELD, DEFAULT, MINIMUM, MAXIMUM, ALIAS)                      \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(CambiStateHip, FIELD),                                                  \
+        .type = VMAF_OPT_TYPE_INT,                                                                 \
+        .default_val.i = (DEFAULT),                                                                \
+        .min = (MINIMUM),                                                                          \
+        .max = (MAXIMUM),                                                                          \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+#define CAMBI_STRING_OPTION(NAME, HELP, FIELD, DEFAULT, ALIAS)                                     \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(CambiStateHip, FIELD),                                                  \
+        .type = VMAF_OPT_TYPE_STRING,                                                              \
+        .default_val.s = (DEFAULT),                                                                \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+
 static const VmafOption options[] = {
-    {
-        .name = "cambi_max_val",
-        .help = "maximum value allowed; larger values will be clipped",
-        .offset = offsetof(CambiStateHip, cambi_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_HIP_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "cmxv",
-    },
-    {
-        .name = "enc_width",
-        .help = "Encoding width",
-        .offset = offsetof(CambiStateHip, enc_width),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 180,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "encw",
-    },
-    {
-        .name = "enc_height",
-        .help = "Encoding height",
-        .offset = offsetof(CambiStateHip, enc_height),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 150,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ench",
-    },
-    {
-        .name = "enc_bitdepth",
-        .help = "Encoding bitdepth",
-        .offset = offsetof(CambiStateHip, enc_bitdepth),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 6,
-        .max = 16,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "encbd",
-    },
-    {
-        .name = "window_size",
-        .help = "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
-        .offset = offsetof(CambiStateHip, window_size),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = CAMBI_HIP_DEFAULT_WINDOW_SIZE,
-        .min = 15,
-        .max = 127,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ws",
-    },
-    {
-        .name = "topk",
-        .help = "Ratio of pixels for the spatial pooling computation",
-        .offset = offsetof(CambiStateHip, topk),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_HIP_DEFAULT_TOPK,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_topk",
-        .help = "Ratio of pixels for the spatial pooling computation",
-        .offset = offsetof(CambiStateHip, cambi_topk),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_HIP_DEFAULT_TOPK,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ctpk",
-    },
-    {
-        .name = "tvi_threshold",
-        .help = "Visibility threshold delta-L < tvi_threshold * L_mean",
-        .offset = offsetof(CambiStateHip, tvi_threshold),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_HIP_DEFAULT_TVI,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "tvit",
-    },
-    {
-        .name = "cambi_vis_lum_threshold",
-        .help = "Luminance value below which banding is assumed invisible",
-        .offset = offsetof(CambiStateHip, cambi_vis_lum_threshold),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_HIP_DEFAULT_VLT,
-        .min = 0.0,
-        .max = 300.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "vlt",
-    },
-    {
-        .name = "max_log_contrast",
-        .help = "Maximum log contrast (0 to 5, default 2)",
-        .offset = offsetof(CambiStateHip, max_log_contrast),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = CAMBI_HIP_DEFAULT_MAX_LOG_CONTRAST,
-        .min = 0,
-        .max = 5,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mlc",
-    },
-    {
-        .name = "eotf",
-        .help = "EOTF for visibility-threshold conversion (bt1886 / pq)",
-        .offset = offsetof(CambiStateHip, eotf),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = CAMBI_HIP_DEFAULT_EOTF,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_eotf",
-        .help = "EOTF override for cambi (defaults to eotf)",
-        .offset = offsetof(CambiStateHip, cambi_eotf),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = CAMBI_HIP_DEFAULT_EOTF,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ceot",
-    },
+    CAMBI_DOUBLE_OPTION("cambi_max_val", "maximum value allowed; larger values will be clipped",
+                        cambi_max_val, CAMBI_HIP_DEFAULT_MAX_VAL, 0.0, 1000.0, "cmxv"),
+    CAMBI_INT_OPTION("enc_width", "Encoding width", enc_width, 0, 180, 7680, "encw"),
+    CAMBI_INT_OPTION("enc_height", "Encoding height", enc_height, 0, 150, 7680, "ench"),
+    CAMBI_INT_OPTION("enc_bitdepth", "Encoding bitdepth", enc_bitdepth, 0, 6, 16, "encbd"),
+    CAMBI_INT_OPTION("window_size",
+                     "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k", window_size,
+                     CAMBI_HIP_DEFAULT_WINDOW_SIZE, 15, 127, "ws"),
+    CAMBI_DOUBLE_OPTION("topk", "Ratio of pixels for the spatial pooling computation", topk,
+                        CAMBI_HIP_DEFAULT_TOPK, 0.0001, 1.0, VMAF_NULLPTR),
+    CAMBI_DOUBLE_OPTION("cambi_topk", "Ratio of pixels for the spatial pooling computation",
+                        cambi_topk, CAMBI_HIP_DEFAULT_TOPK, 0.0001, 1.0, "ctpk"),
+    CAMBI_DOUBLE_OPTION("tvi_threshold", "Visibility threshold delta-L < tvi_threshold * L_mean",
+                        tvi_threshold, CAMBI_HIP_DEFAULT_TVI, 0.0001, 1.0, "tvit"),
+    CAMBI_DOUBLE_OPTION("cambi_vis_lum_threshold",
+                        "Luminance value below which banding is assumed invisible",
+                        cambi_vis_lum_threshold, CAMBI_HIP_DEFAULT_VLT, 0.0, 300.0, "vlt"),
+    CAMBI_INT_OPTION("max_log_contrast", "Maximum log contrast (0 to 5, default 2)",
+                     max_log_contrast, CAMBI_HIP_DEFAULT_MAX_LOG_CONTRAST, 0, 5, "mlc"),
+    CAMBI_STRING_OPTION("eotf", "EOTF for visibility-threshold conversion (bt1886 / pq)", eotf,
+                        CAMBI_HIP_DEFAULT_EOTF, VMAF_NULLPTR),
+    CAMBI_STRING_OPTION("cambi_eotf", "EOTF override for cambi (defaults to eotf)", cambi_eotf,
+                        CAMBI_HIP_DEFAULT_EOTF, "ceot"),
     {0},
 };
+
+#undef CAMBI_STRING_OPTION
+#undef CAMBI_INT_OPTION
+#undef CAMBI_DOUBLE_OPTION
 
 /* ------------------------------------------------------------------ */
 /* Helper: compute adjusted window size (mirrors cambi.c). */
@@ -377,7 +315,7 @@ static int cambi_hip_init_tvi(CambiStateHip *s)
     const int num_diffs = 1 << s->max_log_contrast;
     return vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
                                        s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                       s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
+                                       s->buffers.tvi_for_diff, &s->vlt_luma, VMAF_NULLPTR, VMAF_NULLPTR);
 }
 
 #endif /* HAVE_HIPCC — closes opener at line 305 */
@@ -395,19 +333,19 @@ static int cambi_hip_module_load(CambiStateHip *s)
     hip_rc = hipModuleGetFunction(&s->func_mask, s->module, "cambi_spatial_mask_kernel");
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return hip_err(hip_rc);
     }
     hip_rc = hipModuleGetFunction(&s->func_decimate, s->module, "cambi_decimate_kernel");
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return hip_err(hip_rc);
     }
     hip_rc = hipModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel");
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return hip_err(hip_rc);
     }
     return 0;
@@ -437,63 +375,43 @@ static void cambi_hip_free_device_buffers(CambiStateHip *s)
 #endif /* HAVE_HIPCC */
 }
 
-/* ------------------------------------------------------------------ */
-/* Kernel dispatch helpers. */
-/* ------------------------------------------------------------------ */
-#ifdef HAVE_HIPCC
-
-static int dispatch_mask_hip(CambiStateHip *s, hipStream_t stream, unsigned w, unsigned h,
-                             unsigned stride_words, unsigned mask_index)
+static void cambi_hip_free_host_buffers(CambiStateHip *s)
 {
-    const unsigned grid_x = (w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
-    const unsigned grid_y = (h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
-    void *params[] = {&s->d_image, &s->d_mask, &w, &h, &stride_words, &mask_index};
-    hipError_t rc = hipModuleLaunchKernel(s->func_mask, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
-                                          CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, NULL);
-    return hip_err(rc);
+    free(s->buffers.c_values);
+    free(s->buffers.c_values_histograms);
+    free(s->buffers.mask_dp);
+    free(s->buffers.filter_mode_buffer);
+    free(s->buffers.derivative_buffer);
+    free(s->buffers.diffs_to_consider);
+    free(s->buffers.diff_weights);
+    free(s->buffers.all_diffs);
+    free(s->buffers.tvi_for_diff);
+    s->buffers.c_values = VMAF_NULLPTR;
+    s->buffers.c_values_histograms = VMAF_NULLPTR;
+    s->buffers.mask_dp = VMAF_NULLPTR;
+    s->buffers.filter_mode_buffer = VMAF_NULLPTR;
+    s->buffers.derivative_buffer = VMAF_NULLPTR;
+    s->buffers.diffs_to_consider = VMAF_NULLPTR;
+    s->buffers.diff_weights = VMAF_NULLPTR;
+    s->buffers.all_diffs = VMAF_NULLPTR;
+    s->buffers.tvi_for_diff = VMAF_NULLPTR;
 }
 
-static int dispatch_decimate_hip(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t src,
-                                 hipDeviceptr_t dst, unsigned out_w, unsigned out_h,
-                                 unsigned src_stride_words, unsigned dst_stride_words)
+static void cambi_hip_free_pictures(CambiStateHip *s)
 {
-    const unsigned grid_x = (out_w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
-    const unsigned grid_y = (out_h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
-    void *params[] = {&src, &dst, &out_w, &out_h, &src_stride_words, &dst_stride_words};
-    hipError_t rc = hipModuleLaunchKernel(s->func_decimate, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
-                                          CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, NULL);
-    return hip_err(rc);
+    (void)vmaf_picture_unref(&s->pics[0]);
+    (void)vmaf_picture_unref(&s->pics[1]);
 }
 
-static int dispatch_filter_mode_hip(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t in,
-                                    hipDeviceptr_t out, unsigned w, unsigned h,
-                                    unsigned stride_words, int axis)
+static int cambi_hip_free_dictionary(CambiStateHip *s)
 {
-    const unsigned grid_x = (w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
-    const unsigned grid_y = (h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
-    void *params[] = {&in, &out, &w, &h, &stride_words, &axis};
-    hipError_t rc =
-        hipModuleLaunchKernel(s->func_filter_mode, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
-                              CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, NULL);
-    return hip_err(rc);
+    if (s->feature_name_dict == VMAF_NULLPTR)
+        return 0;
+    return vmaf_dictionary_free(&s->feature_name_dict);
 }
 
-#endif /* HAVE_HIPCC */
-
-/* ------------------------------------------------------------------ */
-/* init_fex_hip                                                        */
-/* ------------------------------------------------------------------ */
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+static int cambi_hip_geometry_init(CambiStateHip *s, unsigned bpc, unsigned w, unsigned h)
 {
-    (void)pix_fmt;
-    CambiStateHip *s = fex->priv;
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return -ENOMEM;
-
-    /* Resolve enc geometry (matches cambi.c::init logic). */
     if (s->enc_bitdepth == 0)
         s->enc_bitdepth = (int)bpc;
     if (s->enc_width == 0 || s->enc_height == 0) {
@@ -507,7 +425,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (!cambi_validate_dimensions((unsigned)s->enc_width, (unsigned)s->enc_height)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_hip: encoded resolution %dx%d below minimum %d×%d.\n",
                  s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
         return -EINVAL;
     }
 
@@ -517,72 +434,87 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
     s->adjusted_window = cambi_hip_adjust_window(s->window_size, s->proc_width, s->proc_height);
+    return 0;
+}
 
-#ifndef HAVE_HIPCC
-    (void)s;
-    return -ENOSYS;
-#else
+#ifdef HAVE_HIPCC
+static int cambi_hip_module_unload(CambiStateHip *s)
+{
+    int err = 0;
+    if (s->module != VMAF_NULLPTR)
+        err = hip_err(hipModuleUnload(s->module));
+    s->module = VMAF_NULLPTR;
+    s->func_mask = VMAF_NULLPTR;
+    s->func_decimate = VMAF_NULLPTR;
+    s->func_filter_mode = VMAF_NULLPTR;
+    return err;
+}
+
+static void cambi_hip_context_destroy(CambiStateHip *s)
+{
+    if (s->ctx != VMAF_NULLPTR) {
+        vmaf_hip_context_destroy(s->ctx);
+        s->ctx = VMAF_NULLPTR;
+    }
+}
+
+static int cambi_hip_runtime_base_init(CambiStateHip *s)
+{
     int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err)
+    if (err != 0)
         return err;
 
     err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err)
-        goto fail_after_ctx;
-
-    /* Pinned readback: one double for the pre-computed score. */
+    if (err != 0) {
+        cambi_hip_context_destroy(s);
+        return err;
+    }
     err = vmaf_hip_kernel_readback_alloc(&s->rb_score, s->ctx, sizeof(double));
-    if (err)
-        goto fail_after_lc;
-
-    /* Load HSACO and resolve kernel functions. */
+    if (err != 0) {
+        (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+        cambi_hip_context_destroy(s);
+        return err;
+    }
     err = cambi_hip_module_load(s);
-    if (err)
-        goto fail_after_rb;
+    if (err != 0) {
+        (void)vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
+        (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+        cambi_hip_context_destroy(s);
+    }
+    return err;
+}
 
-    /* Device buffers: flat uint16, proc_w × proc_h (scale-0 size). */
+static int cambi_hip_device_buffers_alloc(CambiStateHip *s)
+{
     s->d_buf_bytes = (size_t)s->proc_width * s->proc_height * sizeof(uint16_t);
-    hipError_t hip_rc = hipMalloc((void **)&s->d_image, s->d_buf_bytes);
-    if (hip_rc != hipSuccess) {
-        err = hip_err(hip_rc);
-        goto fail_after_module;
-    }
-    hip_rc = hipMalloc((void **)&s->d_mask, s->d_buf_bytes);
-    if (hip_rc != hipSuccess) {
-        err = hip_err(hip_rc);
-        goto fail_after_module;
-    }
-    hip_rc = hipMalloc((void **)&s->d_tmp, s->d_buf_bytes);
-    if (hip_rc != hipSuccess) {
-        err = hip_err(hip_rc);
-        goto fail_after_module;
-    }
+    hipError_t rc = hipMalloc((void **)&s->d_image, s->d_buf_bytes);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+    rc = hipMalloc((void **)&s->d_mask, s->d_buf_bytes);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+    rc = hipMalloc((void **)&s->d_tmp, s->d_buf_bytes);
+    return hip_err(rc);
+}
 
-    /* Host VmafPictures for the CPU residual. */
-    err = vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        goto fail_after_module;
-    err = vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        goto fail_after_module;
+static int cambi_hip_pictures_alloc(CambiStateHip *s)
+{
+    int err =
+        vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
+    if (err != 0)
+        return err;
+    return vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
+}
 
-    /* Host scratch buffers for the CPU residual. */
-    const int num_diffs = 1 << s->max_log_contrast;
+static int cambi_hip_diff_buffers_alloc(CambiStateHip *s, int num_diffs)
+{
     s->buffers.diffs_to_consider = malloc(sizeof(uint16_t) * (size_t)num_diffs);
-    if (!s->buffers.diffs_to_consider) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
     s->buffers.diff_weights = malloc(sizeof(int) * (size_t)num_diffs);
-    if (!s->buffers.diff_weights) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
     s->buffers.all_diffs = malloc(sizeof(int) * (size_t)(2 * num_diffs + 1));
-    if (!s->buffers.all_diffs) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
+    s->buffers.tvi_for_diff = malloc(sizeof(uint16_t) * (size_t)num_diffs);
+    if (s->buffers.diffs_to_consider == VMAF_NULLPTR || s->buffers.diff_weights == VMAF_NULLPTR ||
+        s->buffers.all_diffs == VMAF_NULLPTR || s->buffers.tvi_for_diff == VMAF_NULLPTR)
+        return -ENOMEM;
 
     static const int contrast_weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
                                              8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
@@ -592,90 +524,273 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     }
     for (int d = -num_diffs; d <= num_diffs; d++)
         s->buffers.all_diffs[d + num_diffs] = d;
+    return cambi_hip_init_tvi(s);
+}
 
-    s->buffers.tvi_for_diff = malloc(sizeof(uint16_t) * (size_t)num_diffs);
-    if (!s->buffers.tvi_for_diff) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
-
-    err = cambi_hip_init_tvi(s);
-    if (err)
-        goto fail_after_module;
-
-    s->buffers.c_values = malloc(sizeof(float) * s->proc_width * s->proc_height);
-    if (!s->buffers.c_values) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
-
+static int cambi_hip_work_buffers_alloc(CambiStateHip *s, int num_diffs)
+{
     const uint16_t num_bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[2 * num_diffs] -
                                                             s->buffers.all_diffs[0]));
-    s->buffers.c_values_histograms = malloc(sizeof(uint16_t) * s->proc_width * (size_t)num_bins);
-    if (!s->buffers.c_values_histograms) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
-
     const int pad_size = CAMBI_HIP_MASK_FILTER_SIZE / 2;
     const int dp_width = (int)s->proc_width + 2 * pad_size + 1;
     const int dp_height = 2 * pad_size + 2;
+
+    s->buffers.c_values = malloc(sizeof(float) * s->proc_width * s->proc_height);
+    s->buffers.c_values_histograms = malloc(sizeof(uint16_t) * s->proc_width * (size_t)num_bins);
     s->buffers.mask_dp = malloc(sizeof(uint32_t) * (size_t)dp_width * (size_t)dp_height);
-    if (!s->buffers.mask_dp) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
     s->buffers.filter_mode_buffer = malloc(sizeof(uint16_t) * 3u * s->proc_width);
-    if (!s->buffers.filter_mode_buffer) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
     s->buffers.derivative_buffer = malloc(sizeof(uint16_t) * s->proc_width);
-    if (!s->buffers.derivative_buffer) {
-        err = -ENOMEM;
-        goto fail_after_module;
+    if (s->buffers.c_values == VMAF_NULLPTR || s->buffers.c_values_histograms == VMAF_NULLPTR ||
+        s->buffers.mask_dp == VMAF_NULLPTR || s->buffers.filter_mode_buffer == VMAF_NULLPTR ||
+        s->buffers.derivative_buffer == VMAF_NULLPTR)
+        return -ENOMEM;
+    return 0;
+}
+
+static void cambi_hip_abort_initialized(CambiStateHip *s)
+{
+    (void)cambi_hip_module_unload(s);
+    cambi_hip_free_device_buffers(s);
+    cambi_hip_free_pictures(s);
+    cambi_hip_free_host_buffers(s);
+    (void)vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
+    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    cambi_hip_context_destroy(s);
+}
+#endif /* HAVE_HIPCC */
+
+/* ------------------------------------------------------------------ */
+/* Kernel dispatch helpers. */
+/* ------------------------------------------------------------------ */
+#ifdef HAVE_HIPCC
+
+static int dispatch_mask_hip(CambiStateHip *s, hipStream_t stream, unsigned w, unsigned h,
+                             unsigned stride_words, unsigned mask_index)
+{
+    const unsigned grid_x = (w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
+    const unsigned grid_y = (h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
+    void *params[] = {&s->d_image, &s->d_mask, &w, &h, &stride_words, &mask_index};
+    hipError_t rc = hipModuleLaunchKernel(s->func_mask, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
+                                          CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, VMAF_NULLPTR);
+    return hip_err(rc);
+}
+
+static int dispatch_decimate_hip(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t src,
+                                 hipDeviceptr_t dst, unsigned out_w, unsigned out_h,
+                                 unsigned src_stride_words, unsigned dst_stride_words)
+{
+    const unsigned grid_x = (out_w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
+    const unsigned grid_y = (out_h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
+    void *params[] = {&src, &dst, &out_w, &out_h, &src_stride_words, &dst_stride_words};
+    hipError_t rc = hipModuleLaunchKernel(s->func_decimate, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
+                                          CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, VMAF_NULLPTR);
+    return hip_err(rc);
+}
+
+static int dispatch_filter_mode_hip(CambiStateHip *s, hipStream_t stream, hipDeviceptr_t in,
+                                    hipDeviceptr_t out, unsigned w, unsigned h,
+                                    unsigned stride_words, int axis)
+{
+    const unsigned grid_x = (w + CAMBI_HIP_BLOCK_X - 1u) / CAMBI_HIP_BLOCK_X;
+    const unsigned grid_y = (h + CAMBI_HIP_BLOCK_Y - 1u) / CAMBI_HIP_BLOCK_Y;
+    void *params[] = {&in, &out, &w, &h, &stride_words, &axis};
+    hipError_t rc =
+        hipModuleLaunchKernel(s->func_filter_mode, grid_x, grid_y, 1u, CAMBI_HIP_BLOCK_X,
+                              CAMBI_HIP_BLOCK_Y, 1u, 0u, stream, params, VMAF_NULLPTR);
+    return hip_err(rc);
+}
+
+#endif /* HAVE_HIPCC */
+
+/* ------------------------------------------------------------------ */
+/* init_fex_hip                                                        */
+/* ------------------------------------------------------------------ */
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+#ifndef HAVE_HIPCC
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return -ENOSYS;
+#else
+    (void)pix_fmt;
+    CambiStateHip *s = fex->priv;
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (s->feature_name_dict == VMAF_NULLPTR)
+        return -ENOMEM;
+
+    int err = cambi_hip_geometry_init(s, bpc, w, h);
+    if (err != 0) {
+        (void)cambi_hip_free_dictionary(s);
+        return err;
+    }
+    err = cambi_hip_runtime_base_init(s);
+    if (err != 0) {
+        (void)cambi_hip_free_dictionary(s);
+        return err;
+    }
+    err = cambi_hip_device_buffers_alloc(s);
+    if (err == 0)
+        err = cambi_hip_pictures_alloc(s);
+    const int num_diffs = 1 << s->max_log_contrast;
+    if (err == 0)
+        err = cambi_hip_diff_buffers_alloc(s, num_diffs);
+    if (err == 0)
+        err = cambi_hip_work_buffers_alloc(s, num_diffs);
+    if (err != 0) {
+        cambi_hip_abort_initialized(s);
+        (void)cambi_hip_free_dictionary(s);
+        return err;
     }
 
     vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
                                  &s->derivative_callback);
-
     return 0;
-
-fail_after_module:
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-    cambi_hip_free_device_buffers(s);
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
-    if (s->feature_name_dict)
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return err;
 #endif /* HAVE_HIPCC */
 }
 
 /* ------------------------------------------------------------------ */
 /* submit_fex_hip                                                      */
 /* ------------------------------------------------------------------ */
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+#ifdef HAVE_HIPCC
+typedef struct CambiHipScaleState {
+    unsigned width;
+    unsigned height;
+    hipDeviceptr_t image;
+    hipDeviceptr_t mask;
+    hipDeviceptr_t temporary;
+} CambiHipScaleState;
+
+static int cambi_hip_upload_initial(CambiStateHip *s, const VmafPicture *dist_pic, hipStream_t stream)
+{
+    int err = vmaf_cambi_preprocessing(dist_pic, &s->pics[0], (int)s->proc_width,
+                                       (int)s->proc_height, s->enc_bitdepth);
+    if (err != 0)
+        return err;
+
+    const size_t row_bytes = s->proc_width * sizeof(uint16_t);
+    hipError_t rc =
+        hipMemcpy2DAsync(s->d_image, row_bytes, s->pics[0].data[0], (size_t)s->pics[0].stride[0],
+                         row_bytes, s->proc_height, hipMemcpyHostToDevice, stream);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+
+    const unsigned mask_index = (unsigned)cambi_hip_get_mask_index(s->proc_width, s->proc_height,
+                                                                   CAMBI_HIP_MASK_FILTER_SIZE);
+    return dispatch_mask_hip(s, stream, s->proc_width, s->proc_height, s->proc_width, mask_index);
+}
+
+static int cambi_hip_decimate_scale(CambiStateHip *s, hipStream_t stream, CambiHipScaleState *scale)
+{
+    const unsigned new_width = (scale->width + 1u) >> 1;
+    const unsigned new_height = (scale->height + 1u) >> 1;
+    int err = dispatch_decimate_hip(s, stream, scale->image, scale->temporary, new_width,
+                                    new_height, scale->width, new_width);
+    if (err != 0)
+        return err;
+    hipDeviceptr_t swap = scale->image;
+    scale->image = scale->temporary;
+    scale->temporary = swap;
+
+    err = dispatch_decimate_hip(s, stream, scale->mask, scale->temporary, new_width, new_height,
+                                scale->width, new_width);
+    if (err != 0)
+        return err;
+    swap = scale->mask;
+    scale->mask = scale->temporary;
+    scale->temporary = swap;
+    scale->width = new_width;
+    scale->height = new_height;
+    return 0;
+}
+
+static int cambi_hip_filter_and_download(CambiStateHip *s, hipStream_t stream,
+                                         const CambiHipScaleState *scale)
+{
+    int err = dispatch_filter_mode_hip(s, stream, scale->image, scale->temporary, scale->width,
+                                       scale->height, scale->width, 0);
+    if (err != 0)
+        return err;
+    err = dispatch_filter_mode_hip(s, stream, scale->temporary, scale->image, scale->width,
+                                   scale->height, scale->width, 1);
+    if (err != 0)
+        return err;
+
+    const size_t row_bytes = scale->width * sizeof(uint16_t);
+    hipError_t rc =
+        hipMemcpy2DAsync(s->pics[0].data[0], (size_t)s->pics[0].stride[0], scale->image, row_bytes,
+                         row_bytes, scale->height, hipMemcpyDeviceToHost, stream);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+    rc = hipMemcpy2DAsync(s->pics[1].data[0], (size_t)s->pics[1].stride[0], scale->mask, row_bytes,
+                          row_bytes, scale->height, hipMemcpyDeviceToHost, stream);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+    return hip_err(hipStreamSynchronize(stream));
+}
+
+static double cambi_hip_score_scale(CambiStateHip *s, const CambiHipScaleState *scale,
+                                    int num_diffs, double topk)
+{
+    vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
+                                  s->buffers.c_values_histograms, s->adjusted_window,
+                                  (uint16_t)num_diffs, s->buffers.tvi_for_diff, s->vlt_luma,
+                                  s->buffers.diff_weights, s->buffers.all_diffs, (int)scale->width,
+                                  (int)scale->height, s->inc_range_callback, s->dec_range_callback);
+    return vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, scale->width, scale->height);
+}
+
+static int cambi_hip_run_scales(CambiStateHip *s, hipStream_t stream, double scores_per_scale[])
+{
+    CambiHipScaleState scale = {
+        .width = s->proc_width,
+        .height = s->proc_height,
+        .image = s->d_image,
+        .mask = s->d_mask,
+        .temporary = s->d_tmp,
+    };
+    const int num_diffs = 1 << s->max_log_contrast;
+    const double topk = s->topk != CAMBI_HIP_DEFAULT_TOPK ? s->topk : s->cambi_topk;
+
+    for (int i = 0; i < CAMBI_HIP_NUM_SCALES; i++) {
+        int err = i == 0 ? 0 : cambi_hip_decimate_scale(s, stream, &scale);
+        if (err != 0)
+            return err;
+        err = cambi_hip_filter_and_download(s, stream, &scale);
+        if (err != 0)
+            return err;
+        scores_per_scale[i] = cambi_hip_score_scale(s, &scale, num_diffs, topk);
+    }
+    return 0;
+}
+
+static int cambi_hip_record_score(CambiStateHip *s, hipStream_t stream,
+                                  const double scores_per_scale[])
+{
+    const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
+    double score = vmaf_cambi_weight_scores_per_scale(scores_per_scale, pixels_in_window);
+    if (score > s->cambi_max_val)
+        score = s->cambi_max_val;
+    if (score < 0.0)
+        score = 0.0;
+    *(double *)s->rb_score.host_pinned = score;
+
+    hipError_t rc = hipEventRecord((hipEvent_t)s->lc.submit, stream);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+    rc = hipStreamWaitEvent(stream, (hipEvent_t)s->lc.submit, 0u);
+    if (rc != hipSuccess)
+        return hip_err(rc);
+    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+}
+#endif /* HAVE_HIPCC */
+
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
@@ -689,135 +804,16 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #else
     CambiStateHip *s = fex->priv;
     s->index = index;
-
-    /* Host preprocessing: decimate/upcast dist_pic → pics[0] (10-bit). */
-    int err = vmaf_cambi_preprocessing(dist_pic, &s->pics[0], (int)s->proc_width,
-                                       (int)s->proc_height, s->enc_bitdepth);
-    if (err)
-        return err;
-
     const hipStream_t stream = (hipStream_t)s->lc.str;
-
-    /* HtoD upload pics[0].data[0] → d_image.
-     *
-     * One strided 2D copy, not one call per row: the host picture's stride and
-     * the packed device buffer's differ, which is what the pitch arguments are
-     * for. Mirrors the CUDA twin. */
-    const size_t row_bytes = s->proc_width * sizeof(uint16_t);
-    {
-        hipError_t hip_rc = hipMemcpy2DAsync(s->d_image, row_bytes, s->pics[0].data[0],
-                                             (size_t)s->pics[0].stride[0], row_bytes,
-                                             s->proc_height, hipMemcpyHostToDevice, stream);
-        if (hip_rc != hipSuccess)
-            return hip_err(hip_rc);
-    }
-
-    /* GPU spatial mask at full scale. */
-    const unsigned mask_index_0 = (unsigned)cambi_hip_get_mask_index(s->proc_width, s->proc_height,
-                                                                     CAMBI_HIP_MASK_FILTER_SIZE);
-    err = dispatch_mask_hip(s, stream, s->proc_width, s->proc_height, s->proc_width, mask_index_0);
-    if (err)
+    int err = cambi_hip_upload_initial(s, dist_pic, stream);
+    if (err != 0)
         return err;
 
-    /* Per-scale GPU pipeline + CPU residual. */
-    unsigned scaled_w = s->proc_width;
-    unsigned scaled_h = s->proc_height;
-    const int num_diffs = 1 << s->max_log_contrast;
     double scores_per_scale[CAMBI_HIP_NUM_SCALES] = {0.0, 0.0, 0.0, 0.0, 0.0};
-    const double topk = (s->topk != CAMBI_HIP_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
-
-    /* Track d_image / d_mask as locals to allow swapping across scales. */
-    hipDeviceptr_t d_img = s->d_image;
-    hipDeviceptr_t d_msk = s->d_mask;
-    hipDeviceptr_t d_tmp = s->d_tmp;
-
-    for (int scale = 0; scale < CAMBI_HIP_NUM_SCALES; scale++) {
-        if (scale > 0) {
-            const unsigned new_w = (scaled_w + 1u) >> 1;
-            const unsigned new_h = (scaled_h + 1u) >> 1;
-
-            /* GPU decimate d_img → d_tmp. */
-            err = dispatch_decimate_hip(s, stream, d_img, d_tmp, new_w, new_h, scaled_w, new_w);
-            if (err)
-                return err;
-            hipDeviceptr_t t = d_img;
-            d_img = d_tmp;
-            d_tmp = t;
-
-            /* GPU decimate d_msk → d_tmp. */
-            err = dispatch_decimate_hip(s, stream, d_msk, d_tmp, new_w, new_h, scaled_w, new_w);
-            if (err)
-                return err;
-            t = d_msk;
-            d_msk = d_tmp;
-            d_tmp = t;
-
-            scaled_w = new_w;
-            scaled_h = new_h;
-        }
-
-        /* GPU filter_mode H: d_img → d_tmp. */
-        err = dispatch_filter_mode_hip(s, stream, d_img, d_tmp, scaled_w, scaled_h, scaled_w, 0);
-        if (err)
-            return err;
-        /* GPU filter_mode V: d_tmp → d_img. */
-        err = dispatch_filter_mode_hip(s, stream, d_tmp, d_img, scaled_w, scaled_h, scaled_w, 1);
-        if (err)
-            return err;
-
-        /* DtoH: d_img / d_msk → pics[0] / pics[1].
-         *
-         * Two strided 2D copies enqueued on the stream, then one stall that
-         * waits for both. This used to stall first and then issue two BLOCKING
-         * copies per row — at 1080p, thousands of driver round trips a frame.
-         * The CUDA twin carried the identical defect and it cost 0.60 s of a
-         * 1.03 s run there; fixed here by inspection of that measurement, since
-         * this machine has no AMD device. */
-        const size_t scaled_row_bytes = scaled_w * sizeof(uint16_t);
-        hipError_t hip_rc = hipMemcpy2DAsync(s->pics[0].data[0], (size_t)s->pics[0].stride[0],
-                                             d_img, scaled_row_bytes, scaled_row_bytes, scaled_h,
-                                             hipMemcpyDeviceToHost, stream);
-        if (hip_rc != hipSuccess)
-            return hip_err(hip_rc);
-        hip_rc = hipMemcpy2DAsync(s->pics[1].data[0], (size_t)s->pics[1].stride[0], d_msk,
-                                  scaled_row_bytes, scaled_row_bytes, scaled_h,
-                                  hipMemcpyDeviceToHost, stream);
-        if (hip_rc != hipSuccess)
-            return hip_err(hip_rc);
-        hip_rc = hipStreamSynchronize(stream);
-        if (hip_rc != hipSuccess)
-            return hip_err(hip_rc);
-
-        /* CPU residual: calculate_c_values + spatial pooling. */
-        vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
-                                      s->buffers.c_values_histograms, s->adjusted_window,
-                                      (uint16_t)num_diffs, s->buffers.tvi_for_diff, s->vlt_luma,
-                                      s->buffers.diff_weights, s->buffers.all_diffs, (int)scaled_w,
-                                      (int)scaled_h, s->inc_range_callback, s->dec_range_callback);
-
-        scores_per_scale[scale] =
-            vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, scaled_w, scaled_h);
-    }
-
-    /* Compute final score. */
-    const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
-    double score = vmaf_cambi_weight_scores_per_scale(scores_per_scale, pixels_in_window);
-    if (score > s->cambi_max_val)
-        score = s->cambi_max_val;
-    if (score < 0.0)
-        score = 0.0;
-
-    /* Stash score in the pinned readback buffer for collect(). */
-    *(double *)s->rb_score.host_pinned = score;
-
-    /* Record submit event on stream so collect() can wait. */
-    hipError_t hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, stream);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    hip_rc = hipStreamWaitEvent(stream, (hipEvent_t)s->lc.submit, 0u);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+    err = cambi_hip_run_scales(s, stream, scores_per_scale);
+    if (err != 0)
+        return err;
+    return cambi_hip_record_score(s, stream, scores_per_scale);
 #endif /* HAVE_HIPCC */
 }
 
@@ -854,56 +850,36 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     int rc = 0;
 
 #ifdef HAVE_HIPCC
-    if (s->module) {
-        int e = hip_err(hipModuleUnload(s->module));
-        s->module = NULL;
-        if (rc == 0)
-            rc = e;
-    }
+    int err = cambi_hip_module_unload(s);
+    if (rc == 0)
+        rc = err;
     cambi_hip_free_device_buffers(s);
 
-    int e = vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
+    err = vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
     if (rc == 0)
-        rc = e;
-    e = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+        rc = err;
+    err = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
     if (rc == 0)
-        rc = e;
+        rc = err;
 #endif /* HAVE_HIPCC */
 
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-
-    if (s->feature_name_dict) {
-        int e = vmaf_dictionary_free(&s->feature_name_dict);
-        if (rc == 0)
-            rc = e;
-    }
+    cambi_hip_free_pictures(s);
+    cambi_hip_free_host_buffers(s);
+    const int dict_err = cambi_hip_free_dictionary(s);
+    if (rc == 0)
+        rc = dict_err;
 #ifdef HAVE_HIPCC
-    if (s->ctx) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
+    cambi_hip_context_destroy(s);
 #endif /* HAVE_HIPCC */
     return rc;
 }
 
-static const char *provided_features[] = {"Cambi_feature_cambi_score", NULL};
+static const char *provided_features[] = {"Cambi_feature_cambi_score", VMAF_NULLPTR};
 
 /* Load-bearing: declared `extern` in feature_extractor.c's
  * `feature_extractor_list[]` under `#if HAVE_HIP`. Making this static
  * would unlink the extractor from the registry. Same pattern as every
  * HIP extractor (see vmaf_fex_float_psnr_hip). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) -- ADR-0254: registry linkage invariant
 VmafFeatureExtractor vmaf_fex_cambi_hip = {
     .name = "cambi_hip",
     .init = init_fex_hip,
@@ -922,5 +898,3 @@ VmafFeatureExtractor vmaf_fex_cambi_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

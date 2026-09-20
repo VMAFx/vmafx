@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0952: Push test coverage on vendored libsvm + IQA paths the fork uses
 
 - **Status**: Accepted
@@ -77,7 +76,7 @@ attribution stay byte-identical.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Extend `test_svm_parser.c` from PR #381 | Single file to maintain | PR #381 is in flight (not merged); editing the same file would create a merge conflict; parser tests and runtime tests have different concerns | Separate file isolates concerns and lands independently |
 | Coverage-target the iqa scalar paths via an existing benchmark | No new code | Existing benchmarks don't observe correctness; coverage is incidental, not a gate | Need explicit assertions, not just execution |
 | Fold all 8 svm + 21 iqa tests into one mega-file | Smallest meson churn | Different link surfaces (svm needs only `libsvm_static_lib + thread_locale`; iqa needs the full feature lib + cpu lib + dnn shim) | Forced into two separate executables by link topology |

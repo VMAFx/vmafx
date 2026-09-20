@@ -28,12 +28,16 @@ from typing import Any
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train  # noqa: E402
+from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -137,7 +141,7 @@ def _validate_and_stamp_teacher(df: Any, name: str, assume_teacher: str | None) 
     return teacher
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--parquet-base", type=Path, required=True, help="4-corpus parquet (NF+KV+BVI A+B+C+D)."
@@ -155,8 +159,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(argv)
+    return ap.parse_args(argv)
 
+
+def _load_frames(args: argparse.Namespace):
     import pandas as pd
 
     base = pd.read_parquet(args.parquet_base)
@@ -182,34 +188,32 @@ def main(argv: list[str] | None = None) -> int:
         .reset_index(drop=True)
     )
     combined = pd.concat([base, extra], ignore_index=True, sort=False)
+    return base, extra, combined, teacher_base
 
-    print(
-        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} "
-        f"combined_rows={len(combined)}",
-        flush=True,
-    )
 
-    t0 = time.monotonic()
+def _run_comparison(base, combined, args: argparse.Namespace) -> tuple[dict, dict]:
+    started = time.monotonic()
     print("\n=== v2 baseline (mlp_small on 4-corpus) ===", flush=True)
     v2_result = _run_loso(base, "v2", args.epochs, args.batch_size, args.lr, args.seed)
     print("\n=== v5 candidate (mlp_small on 5-corpus) ===", flush=True)
     v5_result = _run_loso(combined, "v5", args.epochs, args.batch_size, args.lr, args.seed)
-    print(f"\n[loso-v5] total wall = {time.monotonic() - t0:.0f}s", flush=True)
+    print(f"\n[loso-v5] total wall = {time.monotonic() - started:.0f}s", flush=True)
+    return v2_result, v5_result
 
-    # Decision rule: v5 wins if mean_plcc improvement >= 1 sigma of v2
-    delta_plcc = v5_result["aggregate"]["mean_plcc"] - v2_result["aggregate"]["mean_plcc"]
-    sigma = v2_result["aggregate"]["std_plcc"]
-    decision = "ship_v5" if delta_plcc >= sigma else "defer"
-    print(
-        f"[loso-v5] decision: v5_PLCC - v2_PLCC = {delta_plcc:+.4f}  "
-        f"(v2_sigma={sigma:.4f}) -> {decision}",
-        flush=True,
-    )
 
+def _write_report(
+    args: argparse.Namespace,
+    teacher: str,
+    v2_result: dict,
+    v5_result: dict,
+    delta_plcc: float,
+    sigma: float,
+    decision: str,
+) -> None:
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = {
-        "teacher_model": teacher_base,
+        "teacher_model": teacher,
         "arch": "mlp_small",
         "epochs": args.epochs,
         "lr": args.lr,
@@ -225,14 +229,35 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=REPO_ROOT,
             argv=sys.argv[1:],
             args=args,
-            inputs={
-                "parquet_base": args.parquet_base,
-                "parquet_extra": args.parquet_extra,
-            },
+            inputs={"parquet_base": args.parquet_base, "parquet_extra": args.parquet_extra},
             outputs={"report_target": str(args.out_json)},
         ),
     }
     write_manifest_json(args.out_json, report)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    base, extra, combined, teacher_base = _load_frames(args)
+
+    print(
+        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} combined_rows={len(combined)}",
+        flush=True,
+    )
+
+    v2_result, v5_result = _run_comparison(base, combined, args)
+
+    # Decision rule: v5 wins if mean_plcc improvement >= 1 sigma of v2
+    delta_plcc = v5_result["aggregate"]["mean_plcc"] - v2_result["aggregate"]["mean_plcc"]
+    sigma = v2_result["aggregate"]["std_plcc"]
+    decision = "ship_v5" if delta_plcc >= sigma else "defer"
+    print(
+        f"[loso-v5] decision: v5_PLCC - v2_PLCC = {delta_plcc:+.4f}  "
+        f"(v2_sigma={sigma:.4f}) -> {decision}",
+        flush=True,
+    )
+
+    _write_report(args, teacher_base, v2_result, v5_result, delta_plcc, sigma, decision)
     print(f"[loso-v5] wrote {args.out_json}")
     return 0
 

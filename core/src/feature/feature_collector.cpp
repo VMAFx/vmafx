@@ -86,7 +86,8 @@ int aggregate_vector_append(AggregateVector *aggregate_vector, const char *featu
 
     const unsigned cnt = aggregate_vector->cnt;
     if (cnt >= aggregate_vector->capacity) {
-        assert(aggregate_vector->capacity > 0);
+        if (aggregate_vector->capacity == 0)
+            return -EINVAL;
         const size_t initial_size =
             sizeof(aggregate_vector->metric[0]) * aggregate_vector->capacity;
         void *metric = realloc(aggregate_vector->metric, initial_size * 2);
@@ -116,8 +117,8 @@ void aggregate_vector_destroy(AggregateVector *aggregate_vector)
     if (!aggregate_vector)
         return;
     for (unsigned i = 0; i < aggregate_vector->cnt; i++) {
-        /* free(NULL) is well-defined per C99 §7.20.3.2 / POSIX free(3);
-         * the NULL guard is redundant. CodeQL cpp/guarded-free. */
+        /* free(nullptr) is well-defined per C99 §7.20.3.2 / POSIX free(3);
+         * the nullptr guard is redundant. CodeQL cpp/guarded-free. */
         free(aggregate_vector->metric[i].name);
     }
     free(aggregate_vector->metric);
@@ -136,7 +137,8 @@ int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = aggregate_vector_append(&feature_collector->aggregate_vector, feature_name, score);
+    int const err =
+        aggregate_vector_append(&feature_collector->aggregate_vector, feature_name, score);
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
@@ -158,7 +160,7 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
     }
     int err = 0;
 
-    double *s = nullptr;
+    const double *s = nullptr;
     for (unsigned i = 0; i < feature_collector->aggregate_vector.cnt; i++) {
         const char *f = feature_collector->aggregate_vector.metric[i].name;
         if (!strcmp(f, feature_name)) {
@@ -207,7 +209,7 @@ free_name:
 free_fv:
     free(fv);
 fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
+    /* nullptr the caller's handle so it cannot be dereferenced after a failed
      * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
     *feature_vector = nullptr;
     return -ENOMEM;
@@ -236,7 +238,8 @@ int feature_vector_append(FeatureVector *feature_vector, unsigned index, double 
         return -EINVAL;
 
     while (index >= feature_vector->capacity) {
-        assert(feature_vector->capacity > 0);
+        if (feature_vector->capacity == 0)
+            return -EINVAL;
         /* Doubling stays within `unsigned` because FEATURE_VECTOR_MAX_INDEX is
          * far below UINT_MAX/2; the loop is guaranteed to terminate. */
         const size_t initial_size = sizeof(feature_vector->score[0]) * feature_vector->capacity;
@@ -302,7 +305,7 @@ free_fc:
     *feature_collector =
         nullptr; /* prevent dangling pointer — mirrors feature_collector.c:265 pattern */
 fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
+    /* nullptr the caller's handle so it cannot be dereferenced after a failed
      * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
     *feature_collector = nullptr;
     return -ENOMEM;
@@ -334,7 +337,8 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     return 0;
 }
 
-int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector,
+                                         const VmafModel *model)
 {
     if (!feature_collector)
         return -EINVAL;
@@ -372,15 +376,18 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
         return -EINVAL;
 
     VmafCallbackList *metadata = feature_collector->metadata;
-    int err = vmaf_metadata_append(metadata, metadata_cfg);
+    int const err = vmaf_metadata_append(metadata, metadata_cfg);
     if (err)
         return err;
 
     return 0;
 }
 
-[[nodiscard]] static FeatureVector *find_feature_vector(VmafFeatureCollector *fc,
-                                                        const char *feature_name) noexcept
+namespace
+{
+
+[[nodiscard]] FeatureVector *find_feature_vector(VmafFeatureCollector *fc,
+                                                  const char *feature_name) noexcept
 {
     FeatureVector *feature_vector = nullptr;
     for (unsigned i = 0; i < fc->cnt; i++) {
@@ -392,6 +399,8 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
     }
     return feature_vector;
 }
+
+} // namespace
 
 FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char *feature_name)
 {
@@ -408,12 +417,16 @@ FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char 
     return fv;
 }
 
-[[nodiscard]] static int
-feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcept
+namespace
+{
+
+[[nodiscard]] int feature_collector_grow_capacity(
+    VmafFeatureCollector *feature_collector) noexcept
 {
     if (feature_collector->cnt + 1 <= feature_collector->capacity)
         return 0;
-    assert(feature_collector->capacity > 0);
+    if (feature_collector->capacity == 0)
+        return -EINVAL;
     const size_t entry_sz = sizeof(FeatureVector *);
     const size_t old_bytes = entry_sz * feature_collector->capacity;
     FeatureVector **fv = static_cast<FeatureVector **>(
@@ -426,9 +439,9 @@ feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcep
     return 0;
 }
 
-[[nodiscard]] static int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
-                                                         const char *feature_name,
-                                                         FeatureVector **out) noexcept
+[[nodiscard]] int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
+                                                  const char *feature_name,
+                                                  FeatureVector **out) noexcept
 {
     FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
     if (feature_vector) {
@@ -449,15 +462,15 @@ feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcep
     return 0;
 }
 
-static void feature_collector_run_model_predict(VmafFeatureCollector *feature_collector,
-                                                unsigned picture_index, double *score)
+void feature_collector_run_model_predict(VmafFeatureCollector *feature_collector,
+                                         unsigned picture_index, double *score)
 {
-    VmafPredictModel *model_iter = feature_collector->models;
+    VmafPredictModel const *model_iter = feature_collector->models;
     while (model_iter) {
         VmafModel *model = model_iter->model;
 
         pthread_mutex_unlock(&(feature_collector->lock));
-        int res =
+        int const res =
             vmaf_feature_collector_get_score(feature_collector, model->name, score, picture_index);
         pthread_mutex_lock(&(feature_collector->lock));
 
@@ -471,11 +484,11 @@ static void feature_collector_run_model_predict(VmafFeatureCollector *feature_co
     }
 }
 
-static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_collector,
-                                                const char *feature_name, unsigned picture_index,
-                                                double score)
+void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_collector,
+                                         const char *feature_name, unsigned picture_index,
+                                         double score)
 {
-    VmafCallbackItem *metadata_iter =
+    VmafCallbackItem const *metadata_iter =
         feature_collector->metadata ? feature_collector->metadata->head : nullptr;
     while (metadata_iter) {
         // Check current feature name is the same as the metadata feature name
@@ -494,6 +507,8 @@ static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_co
         metadata_iter = metadata_iter->next;
     }
 }
+
+} // namespace
 
 int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const char *feature_name,
                                   double score, unsigned picture_index)
@@ -538,7 +553,7 @@ int vmaf_feature_collector_append_with_dict(VmafFeatureCollector *fc, VmafDictio
     if (!dict)
         return -EINVAL;
 
-    VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, feature_name, 0);
+    VmafDictionaryEntry const *entry = vmaf_dictionary_get(&dict, feature_name, 0);
     const char *fn = entry ? entry->val : feature_name;
     return vmaf_feature_collector_append(fc, fn, score, index);
 }
@@ -560,7 +575,7 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
     }
     int err = 0;
 
-    FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
+    FeatureVector const *feature_vector = find_feature_vector(feature_collector, feature_name);
 
     if (!feature_vector || index >= feature_vector->capacity) {
         err = -EINVAL;

@@ -145,9 +145,9 @@ class KoNViDPairDataset(Dataset):  # type: ignore[misc]
         # Non-finite rows are dropped in __init__; assert here so a future
         # regression that bypasses that filter surfaces loudly instead of
         # silently producing NaN gradients.
-        assert (
-            np.isfinite(x).all() and np.isfinite(y).all()
-        ), "non-finite values reached numpy_arrays() despite __init__ filter"
+        assert np.isfinite(x).all() and np.isfinite(y).all(), (
+            "non-finite values reached numpy_arrays() despite __init__ filter"
+        )
         return x, y
 
     @property

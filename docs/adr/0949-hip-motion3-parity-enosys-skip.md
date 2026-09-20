@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0949: HIP motion3 parity test skips cleanly when HIPCC kernels are not built
 
 - **Status**: Accepted
@@ -61,7 +60,7 @@ exercises the real device kernel exactly as before.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Probe `vmaf_hip_available()` from the test (compile-time `HAVE_HIP` proxy) | Single function call, no extractor invocation | Reports the runtime flag, not the kernel-embed flag — fails to distinguish the `enable_hip=true, enable_hipcc=false` posture this fix targets | Does not fix the bug |
 | Add a `vmaf_hip_kernels_available()` public API that mirrors `HAVE_HIPCC` | Cleanest separation of concerns | New public surface for a test-only need; bumps the libvmaf SO contract; requires documentation + a corresponding header export | Disproportionate for a test fix |
 | Inline `-ENOSYS` detection without extracting a helper | Minimal diff | `run_hip_motion3` grows from 49 to 64 lines, tripping `readability-function-size.LineThreshold=60` in `.clang-tidy` | Per CLAUDE.md §12 rule 12, refactor before NOLINT; helper keeps both functions under the budget |

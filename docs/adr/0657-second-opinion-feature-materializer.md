@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0657: Second-Opinion Feature Materializer
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ NR/MOS scorer names as no-reference / subjective-MOS evidence.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Run external competitors directly from corpus feature extraction | One command could produce all columns | Pulls licence-bound external tools into a training path and makes tests depend on optional binaries | Violates the wrapper-only posture and makes reproducibility worse |
 | Extend `tools/external-bench/compare.py` into a corpus enricher | Reuses wrapper discovery | The benchmark harness is aggregate/report-oriented and currently loses row-table context | Keep benchmark comparison and feature-table enrichment separate |
 | Join second-opinion scores inside each trainer | No extra operator step | Duplicates join logic across MOS heads, predictor training, and future refresh scripts | Central table materialisation is easier to audit and test |

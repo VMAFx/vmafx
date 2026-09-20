@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 dataset_name = "example"
 
@@ -9,11 +9,11 @@ ref_score = 100.0
 
 quality_width, quality_height = 1920, 1080
 
-dir = "/dir"
+dir = Path("/dir")
 
 ref_videos = [
-    {"content_id": 0, "path": os.path.join(dir, "yuv", "checkerboard_1920_1080_10_3_0_0.yuv")},
-    {"content_id": 1, "path": os.path.join(dir, "yuv", "flat_1920_1080_0.yuv")},
+    {"content_id": 0, "path": str(dir / "yuv" / "checkerboard_1920_1080_10_3_0_0.yuv")},
+    {"content_id": 1, "path": str(dir / "yuv" / "flat_1920_1080_0.yuv")},
 ]
 
 dis_videos = [
@@ -21,24 +21,24 @@ dis_videos = [
         "content_id": 0,
         "asset_id": 0,
         "os": [100, 100, 100, 100, 100],
-        "path": os.path.join(dir, "yuv", "checkerboard_1920_1080_10_3_0_0.yuv"),
+        "path": str(dir / "yuv" / "checkerboard_1920_1080_10_3_0_0.yuv"),
     },  # ref
     {
         "content_id": 0,
         "asset_id": 1,
         "os": [40, 45, 50, 55, 60],
-        "path": os.path.join(dir, "yuv", "checkerboard_1920_1080_10_3_1_0.yuv"),
+        "path": str(dir / "yuv" / "checkerboard_1920_1080_10_3_1_0.yuv"),
     },
     {
         "content_id": 1,
         "asset_id": 2,
         "os": [90, 90, 90, 90, 90],
-        "path": os.path.join(dir, "yuv", "flat_1920_1080_0.yuv"),
+        "path": str(dir / "yuv" / "flat_1920_1080_0.yuv"),
     },  # ref
     {
         "content_id": 1,
         "asset_id": 3,
         "os": [70, 75, 80, 85, 90],
-        "path": os.path.join(dir, "yuv", "flat_1920_1080_10.yuv"),
+        "path": str(dir / "yuv" / "flat_1920_1080_10.yuv"),
     },
 ]

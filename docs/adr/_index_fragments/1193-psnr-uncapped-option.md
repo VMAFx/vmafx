@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1193](1193-psnr-uncapped-option.md) | Opt-in `uncapped` option splits the PSNR infinity sentinel from the truncation | Accepted | core, feature, psnr, options, cuda, sycl, hip, metal, gpu-twins, upstream |

@@ -47,9 +47,10 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -437,10 +438,8 @@ def write_summary_md(
             "(ADR-0305 / `ai/AGENTS.md` knob-sweep corpus invariant):"
         )
         lines.append("")
-        lines.append(
-            "| source | codec | rc_mode | knob_combo | " "cand vmaf | bare vmaf | Δ vmaf |"
-        )
-        lines.append("|--------|-------|---------|-----------|" "----------:|----------:|-------:|")
+        lines.append("| source | codec | rc_mode | knob_combo | cand vmaf | bare vmaf | Δ vmaf |")
+        lines.append("|--------|-------|---------|-----------|----------:|----------:|-------:|")
         for reg in regressions:
             lines.append(
                 "| {source} | {codec} | {rc_mode} | "
@@ -496,7 +495,7 @@ def analyze(jsonl_path: Path, out_dir: Path) -> dict[str, object]:
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = make_argument_parser(
         prog="analyze_knob_sweep.py",
-        description=("Encoder knob-space Pareto-frontier analysis " "(ADR-0305 / Research-0077)."),
+        description=("Encoder knob-space Pareto-frontier analysis (ADR-0305 / Research-0077)."),
     )
     parser.add_argument(
         "--jsonl",

@@ -1,1 +1,5 @@
-| [ADR-1227](1227-short-workflow-display-names.md) | Apply the existing ≤30-character job-name budget to workflow-level `name:` fields too, superseding ADR-0116 §2 (workflow names only). GitHub's `badge.svg` paints the workflow name into the badge, so names like `Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI / Coverage` (72 chars) rendered the README's seven status badges as 60-70-character banners. Fourteen workflows relabelled (`Tests`, `Security`, `Builds`, `FFmpeg`, …), matching the badge link labels that were already short; the axis list moves into a file header comment. Filenames are untouched, so no badge URL churn and no branch-protection re-pin. | Accepted | ci, docs, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1227](1227-short-workflow-display-names.md) | Workflow display names are short labels; the axis list lives in the file | Accepted | ci, docs, fork-local |

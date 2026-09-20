@@ -31,7 +31,7 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-static int is_cudastate_empty(VmafCudaState *cu_state)
+static int is_cudastate_empty(const VmafCudaState *cu_state)
 {
     if (!cu_state)
         return 1;
@@ -84,6 +84,69 @@ static int check_device_arch(VmafCudaState *cu_state, CUdevice dev)
     return -ENOTSUP;
 }
 
+static int cleanup_context_init(VmafCudaState *cu_state, int err, bool context_pushed,
+                                bool release_primary)
+{
+    if (context_pushed)
+        (void)cu_state->f->cuCtxPopCurrent(NULL);
+    if (cu_state->str)
+        (void)cu_state->f->cuStreamDestroy(cu_state->str);
+    cu_state->str = 0;
+    if (release_primary)
+        (void)cu_state->f->cuDevicePrimaryCtxRelease(cu_state->dev);
+    cu_state->ctx = 0;
+    cu_state->release_ctx = 0;
+    return err;
+}
+
+static int get_context_device(VmafCudaState *cu_state, CUdevice *cu_device)
+{
+    const CUresult res = cu_state->f->cuCtxGetDevice(cu_device);
+    if (res != CUDA_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to get CUDA device\n");
+        return -EINVAL;
+    }
+    return check_device_arch(cu_state, *cu_device);
+}
+
+static int init_context_stream(VmafCudaState *cu_state, CUcontext cu_context, CUdevice cu_device,
+                               bool device_known, bool release_primary, bool high_priority)
+{
+    int _cuda_err;
+    int ctx_pushed = 0;
+    cu_state->ctx = cu_context;
+    cu_state->release_ctx = release_primary;
+    if (device_known)
+        cu_state->dev = cu_device;
+    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_context), fail);
+    ctx_pushed = 1;
+
+    if (!device_known) {
+        _cuda_err = get_context_device(cu_state, &cu_device);
+        if (_cuda_err)
+            return cleanup_context_init(cu_state, _cuda_err, true, release_primary);
+        cu_state->dev = cu_device;
+    }
+
+    int low;
+    int high;
+    CHECK_CUDA_GOTO(cu_state->f, cuCtxGetStreamPriorityRange(&low, &high), fail);
+    /* Primary-context work gets the highest available priority so it can
+     * preempt lower-priority NVENC/NVDEC work on a shared GPU. */
+    const int priority = high_priority ? high : 0;
+    const int bounded_priority = VMAF_CUDA_MAX(low, VMAF_CUDA_MIN(high, priority));
+    CHECK_CUDA_GOTO(
+        cu_state->f,
+        cuStreamCreateWithPriority(&cu_state->str, CU_STREAM_NON_BLOCKING, bounded_priority), fail);
+    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_stream);
+    return 0;
+
+fail:
+    return cleanup_context_init(cu_state, _cuda_err, ctx_pushed != 0, release_primary);
+fail_after_stream:
+    return cleanup_context_init(cu_state, _cuda_err, false, release_primary);
+}
+
 static int init_with_primary_context(VmafCudaState *cu_state)
 {
     if (!cu_state)
@@ -119,47 +182,7 @@ static int init_with_primary_context(VmafCudaState *cu_state)
         return -EINVAL;
     }
 
-    cu_state->ctx = cu_context;
-    cu_state->release_ctx = 1;
-    cu_state->dev = cu_device;
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent((cu_state->ctx)), fail);
-    ctx_pushed = 1;
-
-    int low;
-    int high;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxGetStreamPriorityRange(&low, &high), fail);
-    // Use highest priority for VMAF compute to preempt lower-priority
-    // work (e.g., NVENC/NVDEC) when sharing the GPU
-    const int prio = high;
-    const int prio2 = MAX(low, MIN(high, prio));
-    CHECK_CUDA_GOTO(cu_state->f,
-                    cuStreamCreateWithPriority(&cu_state->str, CU_STREAM_NON_BLOCKING, prio2),
-                    fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_stream);
-    return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_after_stream:
-    /* ADR-0960 (round-25 audit A.1) — destroy the stream before releasing
-     * the primary context; cuCtxPopCurrent failure on the success path
-     * previously jumped past cuStreamDestroy, leaking cu_state->str. */
-    if (cu_state->str)
-        (void)cu_state->f->cuStreamDestroy(cu_state->str);
-    cu_state->str = 0;
-    /* fall-through after fail_after_stream - no explicit goto target */
-    /* Netflix#1300 — release the primary context we just retained so
-     * vmaf_cuda_state_init's unwind only has to free c + c->f. Without
-     * this the driver keeps the primary context alive for the lifetime
-     * of the process. */
-    (void)cu_state->f->cuDevicePrimaryCtxRelease(cu_state->dev);
-    cu_state->ctx = 0;
-    cu_state->release_ctx = 0;
-    return _cuda_err;
+    return init_context_stream(cu_state, cu_context, cu_device, true, true, true);
 }
 
 static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_context)
@@ -169,55 +192,43 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     if (!cu_context)
         return -EINVAL;
 
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_context), fail);
-    ctx_pushed = 1;
+    return init_context_stream(cu_state, cu_context, 0, false, false, false);
+}
 
-    CUdevice cu_device = 0;
-    int err = cu_state->f->cuCtxGetDevice(&cu_device);
+static int init_cuda_driver(VmafCudaState *cu_state)
+{
+    /* cuda_load_functions dlopens libcuda.so.1 via nv-codec-headers. A
+     * failure here is almost always a runtime-env issue, not a bug in
+     * libvmaf: the driver stub is either missing, not on the loader
+     * path, or shadowed by a stale version. Every downstream kernel
+     * launch dereferences c->f, so we must hard-fail with an
+     * actionable message before any extractor touches it. */
+    int err = cuda_load_functions(&cu_state->f, NULL /* log_ctx */);
+    if (err || !cu_state->f) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "CUDA: failed to load the Nvidia driver library.\n"
+                 "      libvmaf dlopens libcuda.so.1 at runtime via "
+                 "nv-codec-headers; this step failed.\n"
+                 "      Check that libcuda.so.1 exists and is on the "
+                 "dynamic-loader path:\n"
+                 "        ldconfig -p | grep -iE 'libcuda|libnvcuvid'\n"
+                 "      The libvmaf_cuda backend cannot run without it. "
+                 "See docs/backends/cuda/overview.md#runtime-requirements.\n");
+        return -ENOSYS;
+    }
+
+    err = cu_state->f->cuInit(0);
     if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to get CUDA device\n");
-        _cuda_err = -EINVAL;
-        goto fail;
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "CUDA: cuInit(0) failed (err=%d). The driver was "
+                 "loaded but initialization failed — typically a "
+                 "driver/userspace version mismatch or no CUDA-capable "
+                 "device visible to the process.\n",
+                 err);
+        cuda_free_functions(&cu_state->f);
+        return -ENODEV;
     }
-
-    /* ADR-1223 — the caller supplied the context, but the device behind it
-     * still has to clear the compute-capability floor. */
-    const int arch_err = check_device_arch(cu_state, cu_device);
-    if (arch_err) {
-        _cuda_err = arch_err;
-        goto fail;
-    }
-
-    cu_state->ctx = cu_context;
-    cu_state->release_ctx = 0;
-    cu_state->dev = cu_device;
-
-    int low;
-    int high;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxGetStreamPriorityRange(&low, &high), fail);
-    const int prio = 0;
-    const int prio2 = MAX(low, MIN(high, prio));
-    CHECK_CUDA_GOTO(cu_state->f,
-                    cuStreamCreateWithPriority(&cu_state->str, CU_STREAM_NON_BLOCKING, prio2),
-                    fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_stream);
-
     return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_after_stream:
-    /* ADR-0960 (round-25 audit A.1) — destroy the stream before returning
-     * the error; cuCtxPopCurrent failure on the success path previously
-     * jumped past cuStreamDestroy, leaking cu_state->str. */
-    if (cu_state->str)
-        (void)cu_state->f->cuStreamDestroy(cu_state->str);
-    cu_state->str = 0;
-    /* fall-through after fail_after_stream - no explicit goto target */
-    return _cuda_err;
 }
 
 int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
@@ -230,49 +241,11 @@ int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
         return -ENOMEM;
     memset(c, 0, sizeof(*c));
 
-    /* cuda_load_functions dlopens libcuda.so.1 via nv-codec-headers. A
-     * failure here is almost always a runtime-env issue, not a bug in
-     * libvmaf: the driver stub is either missing, not on the loader
-     * path, or shadowed by a stale version. Every downstream kernel
-     * launch dereferences c->f, so we must hard-fail with an
-     * actionable message before any extractor touches it. */
-    int err = cuda_load_functions(&c->f, NULL /* log_ctx */);
-    if (err || !c->f) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "CUDA: failed to load the Nvidia driver library.\n"
-                 "      libvmaf dlopens libcuda.so.1 at runtime via "
-                 "nv-codec-headers; this step failed.\n"
-                 "      Check that libcuda.so.1 exists and is on the "
-                 "dynamic-loader path:\n"
-                 "        ldconfig -p | grep -iE 'libcuda|libnvcuvid'\n"
-                 "      The libvmaf_cuda backend cannot run without it. "
-                 "See docs/backends/cuda/overview.md#runtime-requirements.\n");
-        free(c);
-        *cu_state = NULL;
-        /* -ENOSYS: the runtime capability (libcuda.so.1) is absent from
-         * this system — analogous to a syscall not implemented.  Callers
-         * can probe this code to degrade gracefully to a CPU path.
-         * Mirror: SYCL common.cpp returns -ENOSYS for a missing runtime. */
-        return -ENOSYS;
-    }
-
-    err = c->f->cuInit(0);
+    int err = init_cuda_driver(c);
     if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "CUDA: cuInit(0) failed (err=%d). The driver was "
-                 "loaded but initialization failed — typically a "
-                 "driver/userspace version mismatch or no CUDA-capable "
-                 "device visible to the process.\n",
-                 err);
-        cuda_free_functions(&c->f);
         free(c);
         *cu_state = NULL;
-        /* -ENODEV: the driver loaded but cuInit(0) failed — the most
-         * common cause is no CUDA-capable device visible to the process
-         * (VM with no GPU passthrough, driver/userspace version mismatch).
-         * Mirror: sycl/common.cpp and cuda/cuda_helper.cuh both return
-         * -ENODEV when no usable device is found. */
-        return -ENODEV;
+        return err;
     }
 
     /* Netflix#1300 — if the inner init fails (no visible device,
@@ -291,28 +264,12 @@ int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
     return err;
 }
 
-int vmaf_cuda_sync(VmafCudaState *cu_state)
-{
-    if (is_cudastate_empty(cu_state))
-        return -EINVAL;
-
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent((cu_state->ctx)), fail);
-    int err = cu_state->f->cuCtxSynchronize();
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail);
-
-    return err;
-
-fail:
-    return _cuda_err;
-}
-
 int vmaf_cuda_release(VmafCudaState *cu_state)
 {
     if (is_cudastate_empty(cu_state))
         return 0;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -371,7 +328,7 @@ int vmaf_cuda_buffer_alloc(VmafCudaState *cu_state, VmafCudaBuffer **p_buf, size
         return -ENOMEM;
     buf->size = size;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -397,7 +354,7 @@ int vmaf_cuda_buffer_free(VmafCudaState *cu_state, VmafCudaBuffer *buf)
     if (!buf)
         return -EINVAL;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -421,15 +378,15 @@ int vmaf_cuda_buffer_host_alloc(VmafCudaState *cu_state, void **p_buf, size_t si
     if (!p_buf)
         return -EINVAL;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_state->f, cuMemHostAlloc(p_buf, size, 0x01), fail);
     if (!(*p_buf)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to allocate host memory\n");
-        _cuda_err = -ENOMEM;
-        goto fail;
+        (void)cu_state->f->cuCtxPopCurrent(NULL);
+        return -ENOMEM;
     }
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
     return 0;
@@ -448,7 +405,7 @@ int vmaf_cuda_buffer_host_free(VmafCudaState *cu_state, void *buf)
     if (!buf)
         return -EINVAL;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -463,63 +420,7 @@ fail_after_pop:
     return _cuda_err;
 }
 
-int vmaf_cuda_buffer_upload_async(VmafCudaState *cu_state, VmafCudaBuffer *buf, const void *src,
-                                  CUstream c_stream)
-{
-    if (is_cudastate_empty(cu_state))
-        return -EINVAL;
-    if (!buf)
-        return -EINVAL;
-    if (!src)
-        return -EINVAL;
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(
-        cu_state->f,
-        cuMemcpyHtoDAsync(buf->data, src, buf->size, c_stream != 0 ? c_stream : cu_state->str),
-        fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
-    return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
-}
-
-int vmaf_cuda_buffer_download_async(VmafCudaState *cu_state, VmafCudaBuffer *buf, void *dst,
-                                    CUstream c_stream)
-{
-    if (is_cudastate_empty(cu_state))
-        return -EINVAL;
-    if (!buf)
-        return -EINVAL;
-    if (!dst)
-        return -EINVAL;
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(
-        cu_state->f,
-        cuMemcpyDtoHAsync(dst, buf->data, buf->size, c_stream != 0 ? c_stream : cu_state->str),
-        fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
-    return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
-}
-
-int vmaf_cuda_buffer_get_dptr(VmafCudaBuffer *buf, CUdeviceptr *ptr)
+int vmaf_cuda_buffer_get_dptr(const VmafCudaBuffer *buf, CUdeviceptr *ptr)
 {
     if (!buf)
         return -EINVAL;

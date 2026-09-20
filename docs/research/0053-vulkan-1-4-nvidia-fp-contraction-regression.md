@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0053: Vulkan 1.4 bump — NVIDIA-only float contraction regression
 
 Date: 2026-05-03
@@ -47,7 +46,7 @@ cause and decides the path forward.
 ### 1. Implicated shaders
 
 | Failing feature | Shader file | Workgroup geometry | Float math hot path |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `integer_vif_scale2` | [`core/src/feature/vulkan/shaders/vif.comp`](../../core/src/feature/vulkan/shaders/vif.comp) | 32 × 4 | `g = sigma12 / sigma1_sq`, `sv_sq = sigma2_sq − g·sigma12`, `gg = g·g·sigma1_sq` (lines 498–503) — three FMA-reorderable expressions on float32 |
 | `ciede2000` | [`core/src/feature/vulkan/shaders/ciede.comp`](../../core/src/feature/vulkan/shaders/ciede.comp) | 16 × 8 | yuv→rgb 3×3 mat-mul, sRGB `pow`, xyz→Lab cube root, ciede2000 chained `pow`/`sqrt`/`sin`/`cos`/`atan` (lines 132–260) — entire per-pixel chain is float32 with no `precise` qualifiers |
 
@@ -91,7 +90,7 @@ so the driver picks defaults.
 1.4.329) reports:
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | `apiVersion` | `1.4.329` |
 | `VK_KHR_shader_float_controls2` | revision 1 (core in 1.4) |
 | `shaderFloatControls2` | `true` |

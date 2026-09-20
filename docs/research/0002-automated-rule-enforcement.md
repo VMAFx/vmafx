@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0002: Automating process-ADR enforcement
 
 - **Status**: Active
@@ -34,7 +33,7 @@ without drowning contributors in false-positive blocks?
 ### What's enforceable mechanically vs what isn't
 
 | Rule | Can CI parse it? | Noise risk |
-|---|---|---|
+| --- | --- | --- |
 | ADR-0108 six-checkbox gate | Yes — PR body is structured Markdown; checkboxes are `- [ ]` / `- [x]`; opt-outs are `no <item> needed: <reason>` per ADR-0108 §Opt-out-lines | Low |
 | ADR-0108 "referenced file exists in diff" | Yes — grep PR diff for `+.*docs/research/`, `+.*docs/rebase-notes.md`, `+.*CHANGELOG.md`; match if checkbox is ticked and no opt-out | Low |
 | ADR-0105 copyright-header presence | Yes — `grep -q 'Copyright'` on each new `*.c/*.h/*.cpp/*.cu/*.cuh` | Low |

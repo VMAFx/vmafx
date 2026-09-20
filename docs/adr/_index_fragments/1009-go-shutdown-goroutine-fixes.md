@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1009](1009-go-shutdown-goroutine-fixes.md) | Fix Go shutdown / goroutine correctness — WaitForShutdown unconditional block, unbounded GracefulStop | Accepted | `go`, `server`, `controller`, `shutdown`, `correctness` |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0929: Rust `vmafx` safe binding crate — Phase 1 scaffold
 
 - **Status**: Accepted
@@ -59,7 +58,7 @@ design:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | Keep the safe layer inside `vmafx-sys` | No new crate; smaller workspace | Breaks Rust `-sys`/wrapper convention; forces bindgen transitive dep on every safe-API consumer; harder to evolve without breaking `vmafx-sys` consumers | Convention exists for a reason; cost of the split is one extra `Cargo.toml` |
 | Ship the full surface in Phase 1 (model collections, per-feature scores, output writers) | Single PR; complete API | ~10× the scope; harder to review; harder to revert if a design choice turns out wrong | Phase-gating keeps each PR reviewable and lets the API mature in slices |
 | Build on `thiserror` / `anyhow` for the error type | Less boilerplate | Pulls dependencies into the safe surface that downstream consumers may not want; surfaces in public API force the choice on every caller | Hand-written `Error` enum is ~80 lines and keeps the public surface dependency-free |

@@ -1,1 +1,5 @@
-- Fixed: restored `should_fail: true` for `test_pic_preallocation`; GPU CI runner continued to fail after PR #808 removal, causing required-check breakage. (PR #809)
+# Changelog fragment
+
+- Fixed: restored `should_fail: true` for `test_pic_preallocation`; GPU CI
+  runner continued to fail after PR #808 removal, causing required-check
+  breakage. (PR #809)

@@ -16,7 +16,6 @@
  *
  */
 
-#pragma once
 
 #ifndef MOMENT_OPTIONS_H_
 #define MOMENT_OPTIONS_H_

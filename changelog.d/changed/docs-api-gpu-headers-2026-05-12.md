@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - docs: API reference and backends pages now include Vulkan/HIP/Metal headers
   and the verified Metal scaffold count (8/17 registered, not 4/17). Updates
   `docs/api/index.md`, `docs/api/gpu.md`, `docs/backends/index.md`, and

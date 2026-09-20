@@ -289,71 +289,54 @@ def _encoder_onehot(idx: int) -> np.ndarray:
     return v
 
 
-def _row_to_features(
-    row: dict, *, warn_missing: bool = True
-) -> tuple[np.ndarray, np.ndarray, float]:
-    """Materialise one (canonical6, codec_block, target) tuple from a corpus row.
-
-    Returns ``(canonical6 ndarray shape (6,), codec_block ndarray shape (N_ENCODERS+2,),
-    target float)``. ``codec_block`` packs ``[onehot(N_ENCODERS), preset_norm, crf_norm]``.
-
-    Schema v3 (ADR-0331) lifts the canonical-6 features into top-level
-    ``<feature>_mean`` columns aggregated over the scored frames. v2
-    rows pre-date the bump and synthetic smoke rows under the old
-    ``per_frame_features`` payload still flow through this path; both
-    are honoured. Cells that are NaN (libvmaf didn't expose the
-    feature, or the encode failed) collapse to 0.0 in the materialised
-    vector — the caller is expected to drop NaN rows upstream when it
-    matters; the legacy smoke path relies on the per-frame fallback.
-    """
+def _canonical_features(row: dict) -> tuple[np.ndarray, bool]:
     canon = np.zeros(6, dtype=np.float32)
     have_features = False
-
-    # v3 path: top-level ``<feature>_mean`` columns from the corpus row.
-    for i, name in enumerate(CANONICAL6):
-        v = row.get(f"{name}_mean")
-        if v is None:
+    for index, name in enumerate(CANONICAL6):
+        value = row.get(f"{name}_mean")
+        if value is None:
             continue
         try:
-            fv = float(v)
+            numeric = float(value)
         except (TypeError, ValueError):
             continue
-        if math.isnan(fv):
+        if math.isnan(numeric):
             continue
-        canon[i] = fv
+        canon[index] = numeric
         have_features = True
-
-    # Legacy / synthetic-smoke path: ``per_frame_features`` payload.
     if not have_features:
-        pf = row.get("per_frame_features") or {}
-        for i, name in enumerate(CANONICAL6):
-            if name in pf:
+        per_frame = row.get("per_frame_features") or {}
+        for index, name in enumerate(CANONICAL6):
+            if name in per_frame:
                 try:
-                    canon[i] = float(pf[name])
+                    canon[index] = float(per_frame[name])
                     have_features = True
                 except (TypeError, ValueError):
                     pass
+    return canon, have_features
 
+
+def _codec_features(row: dict) -> np.ndarray:
+    enc_idx = _encoder_index(row.get("encoder"))
+    preset_norm = _preset_ordinal(str(row.get("encoder", "unknown")), row.get("preset", "medium"))
+    crf_norm = float(row.get("crf", 23)) / CRF_MAX
+    return np.concatenate(
+        [_encoder_onehot(enc_idx), np.asarray([preset_norm, crf_norm], dtype=np.float32)]
+    )
+
+
+def _row_to_features(
+    row: dict, *, warn_missing: bool = True
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Materialise one canonical-6 vector, codec block, and target."""
+    canon, have_features = _canonical_features(row)
     if not have_features and warn_missing:
         # Pre-ADR-0331 corpora carry aggregate ``vmaf_score`` only; the
         # row materialises to all-zero canonical features. Trainers
         # consuming legacy data should either filter on
         # ``schema_version >= 3`` or fall back to ``--synthetic``.
         pass
-
-    enc_idx = _encoder_index(row.get("encoder"))
-    preset_norm = _preset_ordinal(str(row.get("encoder", "unknown")), row.get("preset", "medium"))
-    crf = row.get("crf", 23)
-    crf_norm = float(crf) / CRF_MAX
-
-    codec_block = np.concatenate(
-        [
-            _encoder_onehot(enc_idx),
-            np.asarray([preset_norm, crf_norm], dtype=np.float32),
-        ]
-    )
-    target = float(row.get("vmaf_score", 0.0))
-    return canon, codec_block, target
+    return canon, _codec_features(row), float(row.get("vmaf_score", 0.0))
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -458,6 +441,25 @@ def _materialise(rows: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     )
 
 
+def _fit_epochs(model, loader, *, epochs: int, lr: float, weight_decay: float) -> None:
+    import torch
+
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    loss_fn = torch.nn.MSELoss()
+    model.train()
+    for epoch in range(epochs):
+        epoch_loss = 0.0
+        for features, codec, target in loader:
+            opt.zero_grad()
+            loss = loss_fn(model(features, codec), target)
+            loss.backward()
+            opt.step()
+            epoch_loss += float(loss.item())
+        if epoch == 0 or (epoch + 1) % max(1, epochs // 5) == 0:
+            mean_loss = epoch_loss / max(1, len(loader))
+            print(f"  epoch {epoch + 1}/{epochs} loss={mean_loss:.4f}", flush=True)
+
+
 def _train(
     x_canon: np.ndarray,
     x_codec: np.ndarray,
@@ -502,21 +504,7 @@ def _train(
         torch.from_numpy(y.astype(np.float32)),
     )
     loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn = torch.nn.MSELoss()
-
-    model.train()
-    for ep in range(epochs):
-        ep_loss = 0.0
-        for xb, kb, yb in loader:
-            opt.zero_grad()
-            pred = model(xb, kb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            opt.step()
-            ep_loss += float(loss.item())
-        if ep == 0 or (ep + 1) % max(1, epochs // 5) == 0:
-            print(f"  epoch {ep + 1}/{epochs} loss={ep_loss / max(1, len(loader)):.4f}", flush=True)
+    _fit_epochs(model, loader, epochs=epochs, lr=lr, weight_decay=weight_decay)
 
     scaler = {"feature_mean": mean.tolist(), "feature_std": std.tolist()}
     return model, scaler
@@ -595,19 +583,7 @@ def _metrics(pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _write_sidecar_and_registry(
-    *,
-    onnx_path: Path,
-    sidecar_path: Path,
-    registry_path: Path,
-    scaler: dict,
-    in_sample: dict[str, float],
-    n_rows: int,
-    smoke: bool,
-    run_provenance: dict[str, Any],
-    notes_extra: str = "",
-) -> dict[str, Any]:
-    digest = sha256(onnx_path)
+def _model_notes(in_sample: dict[str, float], smoke: bool, notes_extra: str) -> str:
     notes = (
         "Tiny FR regressor v2 (codec-aware) — 6 canonical libvmaf features "
         "(adm2, vif_scale0..3, motion2) + 8-D codec block "
@@ -620,8 +596,21 @@ def _write_sidecar_and_registry(
     )
     if notes_extra:
         notes = notes + " " + notes_extra
+    return notes
 
-    sidecar = {
+
+def _sidecar_document(
+    *,
+    onnx_path: Path,
+    scaler: dict,
+    in_sample: dict[str, float],
+    n_rows: int,
+    smoke: bool,
+    run_provenance: dict[str, Any],
+    digest: str,
+    notes: str,
+) -> dict[str, Any]:
+    return {
         "id": "fr_regressor_v2",
         "kind": "fr",
         "onnx": onnx_path.name,
@@ -651,9 +640,11 @@ def _write_sidecar_and_registry(
         },
         "run_provenance": run_provenance,
     }
-    write_manifest_json(sidecar_path, sidecar)
 
-    # Update registry — idempotent.
+
+def _update_registry(
+    registry_path: Path, onnx_path: Path, digest: str, notes: str, smoke: bool
+) -> None:
     registry = json.loads(registry_path.read_text())
     models = registry.get("models", [])
     new_entry = {
@@ -670,10 +661,57 @@ def _write_sidecar_and_registry(
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
     registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+
+
+def _write_sidecar_and_registry(
+    *,
+    onnx_path: Path,
+    sidecar_path: Path,
+    registry_path: Path,
+    scaler: dict,
+    in_sample: dict[str, float],
+    n_rows: int,
+    smoke: bool,
+    run_provenance: dict[str, Any],
+    notes_extra: str = "",
+) -> dict[str, Any]:
+    digest = sha256(onnx_path)
+    notes = _model_notes(in_sample, smoke, notes_extra)
+    sidecar = _sidecar_document(
+        onnx_path=onnx_path,
+        scaler=scaler,
+        in_sample=in_sample,
+        n_rows=n_rows,
+        smoke=smoke,
+        run_provenance=run_provenance,
+        digest=digest,
+        notes=notes,
+    )
+    write_manifest_json(sidecar_path, sidecar)
+    _update_registry(registry_path, onnx_path, digest, notes, smoke)
     return sidecar
 
 
-def main() -> int:
+def _add_output_arguments(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument(
+        "--out-onnx", type=Path, default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.onnx"
+    )
+    ap.add_argument(
+        "--out-sidecar", type=Path, default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.json"
+    )
+    ap.add_argument("--registry", type=Path, default=REPO_ROOT / "model" / "tiny" / "registry.json")
+    ap.add_argument(
+        "--metrics-out",
+        type=Path,
+        default=None,
+        help="Path for metrics JSON; defaults under $VMAFX_RUNS_DIR, runs/, or /tmp for smoke.",
+    )
+    ap.add_argument(
+        "--no-export", action="store_true", help="Skip ONNX export + registry update (dev mode)."
+    )
+
+
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(prog="train_fr_regressor_v2.py")
     ap.add_argument(
         "--corpus",
@@ -698,131 +736,64 @@ def main() -> int:
     )
     ap.add_argument("--depth", type=int, default=2)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument(
-        "--out-onnx",
-        type=Path,
-        default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.onnx",
-    )
-    ap.add_argument(
-        "--out-sidecar",
-        type=Path,
-        default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.json",
-    )
-    ap.add_argument(
-        "--registry",
-        type=Path,
-        default=REPO_ROOT / "model" / "tiny" / "registry.json",
-    )
-    ap.add_argument(
-        "--metrics-out",
-        type=Path,
-        default=None,
-        help="Path for the metrics JSON output. "
-        "Defaults to $VMAFX_RUNS_DIR/fr_regressor_v2_metrics.json "
-        "(or <repo>/runs/fr_regressor_v2_metrics.json if $VMAFX_RUNS_DIR is unset). "
-        "In --smoke mode defaults to a temp file unless explicitly overridden.",
-    )
-    ap.add_argument(
-        "--no-export", action="store_true", help="Skip ONNX export + registry update (dev mode)."
-    )
-    args = ap.parse_args()
+    _add_output_arguments(ap)
+    return ap.parse_args()
 
+
+def _validate_and_resolve_args(args: argparse.Namespace) -> bool:
     if args.smoke and args.corpus is not None:
         print("error: --smoke and --corpus are mutually exclusive", file=sys.stderr)
-        return 2
+        return False
     if not args.smoke and args.corpus is None:
         print("error: provide --corpus PATH or use --smoke", file=sys.stderr)
-        return 2
-
-    # Resolve --metrics-out: smoke mode writes to a temp file so read-only
-    # workspaces (e.g. the container /workspace mount) are not written to.
-    # Production mode respects $VMAFX_RUNS_DIR or falls back to <repo>/runs/.
+        return False
     if args.metrics_out is None:
         if args.smoke:
             args.metrics_out = Path(tempfile.gettempdir()) / "fr_regressor_v2_smoke_metrics.json"
         else:
-            _runs_root = Path(os.environ.get("VMAFX_RUNS_DIR", str(REPO_ROOT / "runs")))
-            args.metrics_out = _runs_root / "fr_regressor_v2_metrics.json"
+            runs_root = Path(os.environ.get("VMAFX_RUNS_DIR", str(REPO_ROOT / "runs")))
+            args.metrics_out = runs_root / "fr_regressor_v2_metrics.json"
+    return True
 
-    run_provenance = build_run_provenance(
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=sys.argv[1:],
-        args=args,
-        inputs={
-            "corpus": args.corpus if args.corpus is not None else "synthetic-smoke",
-        },
-        outputs={
-            "onnx_target": str(args.out_onnx),
-            "sidecar_target": str(args.out_sidecar),
-            "registry_target": str(args.registry),
-            "metrics_target": str(args.metrics_out),
-        },
-    )
 
+def _load_training_rows(args: argparse.Namespace) -> tuple[list[dict], int] | None:
     if args.smoke:
         print("[fr-v2] SMOKE mode — synthesising 100 fake corpus rows", flush=True)
-        rows = _synth_smoke_corpus(n=100, seed=args.seed)
-        epochs = 1
-    else:
-        if not args.corpus.is_file():
-            print(f"error: corpus not found at {args.corpus}", file=sys.stderr)
-            return 2
-        print(f"[fr-v2] loading corpus {args.corpus}", flush=True)
-        rows = _load_jsonl(args.corpus)
-        epochs = args.epochs
+        return _synth_smoke_corpus(n=100, seed=args.seed), 1
+    if not args.corpus.is_file():
+        print(f"error: corpus not found at {args.corpus}", file=sys.stderr)
+        return None
+    print(f"[fr-v2] loading corpus {args.corpus}", flush=True)
+    return _load_jsonl(args.corpus), args.epochs
 
-    if not rows:
-        print("error: corpus has zero rows", file=sys.stderr)
-        return 2
 
-    print(f"[fr-v2] materialising {len(rows)} rows -> 9-D feature space", flush=True)
-    x_canon, x_codec, y = _materialise(rows)
-    print(
-        f"[fr-v2] shapes: canon={x_canon.shape} codec={x_codec.shape} y={y.shape} "
-        f"(canonical6={x_canon.shape[1]}, codec_block={x_codec.shape[1]})",
-        flush=True,
-    )
-
-    t0 = time.time()
-    model, scaler = _train(
-        x_canon,
-        x_codec,
-        y,
-        epochs=epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        seed=args.seed,
-        hidden=args.hidden,
-        depth=args.depth,
-    )
-    print(f"[fr-v2] training done in {time.time() - t0:.1f}s", flush=True)
-
-    # In-sample sanity prediction.
+def _in_sample_metrics(model, scaler: dict, x_canon, x_codec, target) -> dict[str, float]:
     import torch
 
     model.eval()
     with torch.no_grad():
-        x_canon_norm = (
-            x_canon - np.asarray(scaler["feature_mean"], dtype=np.float32)
-        ) / np.asarray(scaler["feature_std"], dtype=np.float32)
-        preds = (
+        normalized = (x_canon - np.asarray(scaler["feature_mean"], dtype=np.float32)) / np.asarray(
+            scaler["feature_std"], dtype=np.float32
+        )
+        predictions = (
             model(
-                torch.from_numpy(x_canon_norm.astype(np.float32)),
+                torch.from_numpy(normalized.astype(np.float32)),
                 torch.from_numpy(x_codec.astype(np.float32)),
             )
             .cpu()
             .numpy()
         )
-    in_sample = _metrics(preds, y)
-    print(
-        f"[fr-v2] in-sample: PLCC={in_sample['plcc']:.4f} "
-        f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
-        flush=True,
-    )
+    return _metrics(predictions, target)
 
-    metrics_out = {
+
+def _write_metrics(
+    args: argparse.Namespace,
+    rows: list[dict],
+    epochs: int,
+    in_sample: dict[str, float],
+    run_provenance: dict[str, Any],
+) -> None:
+    metrics = {
         "feature_subset": "canonical6+codec",
         "canonical6": list(CANONICAL6),
         "encoder_vocab": list(ENCODER_VOCAB),
@@ -837,8 +808,79 @@ def main() -> int:
         "run_provenance": run_provenance,
     }
     args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-    write_manifest_json(args.metrics_out, metrics_out)
+    write_manifest_json(args.metrics_out, metrics)
     print(f"[fr-v2] wrote metrics to {args.metrics_out}")
+
+
+def _run_provenance(args: argparse.Namespace) -> dict[str, Any]:
+    return build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={"corpus": args.corpus if args.corpus is not None else "synthetic-smoke"},
+        outputs={
+            "onnx_target": str(args.out_onnx),
+            "sidecar_target": str(args.out_sidecar),
+            "registry_target": str(args.registry),
+            "metrics_target": str(args.metrics_out),
+        },
+    )
+
+
+def _train_with_log(args, x_canon, x_codec, target, epochs):  # type: ignore[no-untyped-def]
+    started = time.time()
+    model, scaler = _train(
+        x_canon,
+        x_codec,
+        target,
+        epochs=epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+        hidden=args.hidden,
+        depth=args.depth,
+    )
+    print(f"[fr-v2] training done in {time.time() - started:.1f}s", flush=True)
+    return model, scaler
+
+
+def main() -> int:
+    args = _parse_args()
+
+    if not _validate_and_resolve_args(args):
+        return 2
+
+    run_provenance = _run_provenance(args)
+
+    loaded = _load_training_rows(args)
+    if loaded is None:
+        return 2
+    rows, epochs = loaded
+
+    if not rows:
+        print("error: corpus has zero rows", file=sys.stderr)
+        return 2
+
+    print(f"[fr-v2] materialising {len(rows)} rows -> 9-D feature space", flush=True)
+    x_canon, x_codec, y = _materialise(rows)
+    print(
+        f"[fr-v2] shapes: canon={x_canon.shape} codec={x_codec.shape} y={y.shape} "
+        f"(canonical6={x_canon.shape[1]}, codec_block={x_codec.shape[1]})",
+        flush=True,
+    )
+
+    model, scaler = _train_with_log(args, x_canon, x_codec, y, epochs)
+
+    in_sample = _in_sample_metrics(model, scaler, x_canon, x_codec, y)
+    print(
+        f"[fr-v2] in-sample: PLCC={in_sample['plcc']:.4f} "
+        f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
+        flush=True,
+    )
+
+    _write_metrics(args, rows, epochs, in_sample, run_provenance)
 
     if args.no_export:
         print("[fr-v2] --no-export set; skipping ONNX export.")

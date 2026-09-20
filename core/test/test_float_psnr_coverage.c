@@ -19,11 +19,7 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -63,12 +59,12 @@ static int alloc_grey(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned b
 /* Helper: run a full init→extract→close cycle and return the float_psnr score. */
 static int run_float_psnr(unsigned bpc, unsigned ref_val, unsigned dist_val, double *score_out)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_psnr");
     if (!fex)
         return -ENOENT;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     if (err)
         return err;
 
@@ -78,7 +74,7 @@ static int run_float_psnr(unsigned bpc, unsigned ref_val, unsigned dist_val, dou
         return err;
     }
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&fc);
     if (err) {
         (void)vmaf_feature_extractor_context_close(ctx);
@@ -97,7 +93,7 @@ static int run_float_psnr(unsigned bpc, unsigned ref_val, unsigned dist_val, dou
         goto cleanup;
     }
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     if (err) {
         vmaf_picture_unref(&ref);
         vmaf_picture_unref(&dist);
@@ -127,7 +123,7 @@ static char *test_float_psnr_8bit_identical(void)
     mu_assert("float_psnr 8-bit identical: finite score", isfinite(score));
     /* Identical inputs → noise = 0 → clamped to psnr_max = 60 dB for 8-bit. */
     mu_assert("float_psnr 8-bit identical: score at psnr_max (60)", score >= 59.9 && score <= 60.1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_psnr_8bit_distinct(void)
@@ -138,7 +134,7 @@ static char *test_float_psnr_8bit_distinct(void)
     mu_assert("float_psnr 8-bit distinct: finite score", isfinite(score));
     mu_assert("float_psnr 8-bit distinct: score < psnr_max", score < 60.0);
     mu_assert("float_psnr 8-bit distinct: score > 0", score > 0.0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_psnr_10bit_identical(void)
@@ -151,7 +147,7 @@ static char *test_float_psnr_10bit_identical(void)
     /* psnr_max for 10-bit is 72 dB. */
     mu_assert("float_psnr 10-bit identical: score at psnr_max (72)",
               score >= 71.9 && score <= 72.1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_psnr_12bit_identical(void)
@@ -164,7 +160,7 @@ static char *test_float_psnr_12bit_identical(void)
     /* psnr_max for 12-bit is 84 dB. */
     mu_assert("float_psnr 12-bit identical: score at psnr_max (84)",
               score >= 83.9 && score <= 84.1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_psnr_16bit_identical(void)
@@ -176,25 +172,25 @@ static char *test_float_psnr_16bit_identical(void)
     /* psnr_max for 16-bit is 108 dB. */
     mu_assert("float_psnr 16-bit identical: score at psnr_max (108)",
               score >= 107.9 && score <= 108.1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_psnr_invalid_bpc(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_psnr");
-    mu_assert("float_psnr extractor present", fex != NULL);
+    mu_assert("float_psnr extractor present", fex != VMAF_NULLPTR);
 
     /* Allocate priv manually and call init() with bpc=7 (invalid). */
     void *priv = calloc(1u, fex->priv_size);
-    mu_assert("priv alloc", priv != NULL);
+    mu_assert("priv alloc", priv != VMAF_NULLPTR);
     fex->priv = priv;
     int err = fex->init(fex, VMAF_PIX_FMT_YUV420P, 7u, FP_W, FP_H);
     mu_assert("float_psnr init bpc=7 must fail", err != 0);
     if (fex->close)
         (void)fex->close(fex);
     free(priv);
-    fex->priv = NULL;
-    return NULL;
+    fex->priv = VMAF_NULLPTR;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -205,7 +201,5 @@ char *run_tests(void)
     mu_run_test(test_float_psnr_12bit_identical);
     mu_run_test(test_float_psnr_16bit_identical);
     mu_run_test(test_float_psnr_invalid_bpc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

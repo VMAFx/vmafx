@@ -377,7 +377,8 @@ VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
  * "OpenVINO:NPU". Returns NULL if @p sess is NULL or libvmaf was built
  * without DNN support. Lifetime: owned by @p sess.
  *
- * @param sess  open session from @ref vmaf_dnn_session_open.
+ * @param sess  Open session from @ref vmaf_dnn_session_open. The accessor
+ *              does not modify the session.
  *
  * @return NUL-terminated provider tag, or NULL if @p sess is NULL or
  *         libvmaf was built without DNN support.
@@ -385,7 +386,7 @@ VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
  * @thread-safety Safe to call from any thread once the session is open and
  *               no concurrent inference is in flight on that session.
  */
-VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
+VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(const VmafDnnSession *sess);
 
 /**
  * Verify the Sigstore bundle for a tiny model against the model registry

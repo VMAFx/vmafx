@@ -14,7 +14,7 @@ The main `pull_request`-triggered workflows include:
 | --- | --- |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build (advisory). |
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
-| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, strict whole-tree clang-tidy plus its inventory ratchet (ADR-1142 / ADR-1267), unsuppressed cppcheck, mypy, registry validate, and twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
@@ -198,39 +198,40 @@ bash scripts/ci/twin-drift-check.sh
 bash scripts/ci/tests/test-twin-drift-check.sh   # 24 fixture cases
 ```
 
-## Whole-tree lint ratchet (ADR-1142)
+## Whole-tree lint and zero-debt migration (ADR-1267)
 
-Since [ADR-1142](../adr/1142-whole-codebase-standards.md) the coding standards
-apply to every file in the tree, and CI enforces that with a **ratchet**
-instead of a touched-files rule:
+The coding standards apply to every file in the tree. [ADR-1267](../adr/1267-whole-tree-zero-debt-completion.md)
+supersedes the old touched-file boundary and ADR-1142's permanent-ratchet
+endpoint: **zero** is the only repository-clean result. During the cleanup,
+the ratchet remains a deterministic migration inventory that partitions work
+and prevents backsliding; matching a nonzero baseline is not completion:
 
 - `scripts/ci/tidy-ratchet.py` runs clang-tidy over **every** translation
   unit in a `compile_commands.json`, deduplicates diagnostics by
-  `(path, line, column, check)`, counts `NOLINT` markers with no inline
-  `ADR-NNNN` citation (a citation counts on the previous, the same or the
-  next line, or anywhere in the `/* ... */` block comment that holds the
-  marker), and compares the per-file numbers with the committed baseline
+  `(path, line, column, check)`, inventories `NOLINT` markers with no inline
+  `ADR-NNNN` citation (a citation counts only inside the marker's exact
+  lexical comment: one `/* ... */` block or contiguous `//` run), and
+  compares the per-file numbers with the committed baseline
   `scripts/ci/tidy-baseline-<lane>.json`.
-- The rule is *baseline equals measurement*. Exit codes: `0` match, `2` a file
-  is above its baseline (fix the code, never raise the baseline), `3` a file is
-  below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
-  in the same PR), `4` a compilation, tool or diagnostic-parse failure made
-  the measurement unusable (fail closed), `5` usage/IO or scoped-validation error.
+- Required CI and the default `make tidy-ratchet` target pass `--require-zero`.
+  That mode still prints baseline deltas for migration triage, but a matching
+  nonzero warning or any `NOLINT` marker, cited or not, fails with exit `6`.
+  Exit `2` means a migration comparison
+  exceeded its baseline, `3` means the inventory is stale-high, `4` means a
+  compilation, tool or diagnostic-parse failure made the measurement unusable,
+  and `5` means usage/IO or scoped-validation error. Running without
+  `--require-zero` or using `--write` is inventory maintenance, never an
+  acceptance gate.
 - **`cpu` lane** — the required context `Tidy Ratchet` in
-  `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
-  it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
-  impact planner (`scripts/ci/plan-ci-impact.py`, step id `impact`); the
-  install / build / ratchet steps run only when the planner's `c_core`
-  selector is `true`, otherwise a `Not impacted` notice satisfies the context.
-  `.clang-tidy`, `scripts/ci/**` (the ratchet and its baselines) and the
-  workflow file are CI-authority inputs that force `mode=full`, so a ratchet
-  or baseline edit always runs the lane. It uploads `tidy-ratchet-cpu` (the
-  measurement JSON): when the job fails with exit 3 after a cleanup, download
-  that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
-  full `cpu` baseline comes from CI's own measurement (the hosted build
-  lacks optional dependencies, so its TU set differs from a workstation
-  build). The guarded scoped update below can subsequently tighten measured
-  translation units while retaining that full-report metadata. The compile
+  `lint-and-format.yml` (aggregator list, ADR-0313). It builds and measures the
+  entire configured CPU compilation database on every non-draft PR and every
+  push to `master`; no impact planner, path filter, source origin or diff
+  membership can skip it. It uploads `tidy-ratchet-cpu`, the complete
+  measurement JSON, even when the strict gate fails. The full `cpu` migration
+  inventory comes from that hosted measurement because the hosted build lacks
+  optional dependencies and its TU set differs from a workstation build. The
+  guarded scoped writer below can subsequently tighten measured translation
+  units while retaining the full-report metadata. The compile
   database also lists the model-JSON → C translation
   units meson generates under `build/src/` (`vmaf_v0.6.1.json.c`, …); they are
   measured like every other TU and appear in the baseline under that path, so
@@ -243,14 +244,16 @@ instead of a touched-files rule:
   `--cuda-host-only -nocudalib`, HIP with `-x hip -D__HIP_PLATFORM_AMD__=1`,
   SYCL through `scripts/ci/clang-tidy-sycl.sh`). Run locally with
   `make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=build-gpu` (same for
-  `sycl`, `hip`). They become PR-required contexts as soon as a hosted
-  toolchain exists for the lane; until then a lane that cannot run is reported
-  as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
+  `sycl`, `hip`). `Tidy SYCL` is now a required, non-advisory whole-database
+  `--require-zero` context and uploads its complete measurement. CUDA and HIP
+  remain blocked on hosted toolchain lanes and therefore cannot yet support a
+  repository-wide zero-debt claim. Metal (`.mm` / `.metal`) has no Linux
   toolchain and is tracked by structural proxy only.
-- The changed-files job `Tidy Changed` stays as fast
-  feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
-  file ends the PR at zero" is unchanged. The ratchet adds the bound on
-  untouched files.
+- `Tidy Changed` is retained as the historical branch-protection display name,
+  but it no longer reads a diff. It runs clang-tidy with
+  `--warnings-as-errors='*'` across every translation unit in the configured
+  CPU database. Source origin, vendor status, and whether a file changed do not
+  affect acceptance.
 
 When a full matching CPU build is unavailable, [ADR-1243](../adr/1243-tidy-scoped-baseline-tightening.md)
 allows an existing compilation database to measure and tighten selected source
@@ -291,29 +294,36 @@ measurement; a successful write does not certify safety against arbitrary
 concurrent repository mutation. Unreadable NOLINT source/header files also fail
 closed instead of clearing their allowance.
 
-`--only` without `--write` remains diagnostic-only and skips comparison. Required
-CI continues to measure the full configured tree; a successful scoped write
-cannot stand in for that gate or clear unmeasured debt.
+`--only` without `--write` remains diagnostic-only and skips comparison. It
+cannot be combined with `--require-zero`, because a partial measurement cannot
+certify whole-tree zero. Required CI continues to measure the full configured
+tree; a successful scoped write cannot stand in for that gate or clear
+unmeasured debt.
 
-Baselines at the time this landed (2026-09-02): cpu 5,241 warnings / 281 TUs /
-83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,780).
+Historical baselines when ADR-1142 landed (2026-09-02): cpu 5,241 warnings /
+281 TUs / 83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (lane-counted
+total ≈ 8,780). These are progress history, not an accepted floor. Every
+current lane target is zero warnings, zero suppression markers, and zero tool
+or compilation failures. `modernize-use-nullptr` is disabled only for `.c`
+translation units because `nullptr` is a C++ construct and is unavailable in
+the supported MSVC C23 mode; C++, CUDA, and HIP translation units continue to
+enforce it.
 
-### Carve-outs still open after ADR-1142
+### Coverage gaps that block a zero-debt claim
 
 The 2026-09-02 inventory ([research digest](../research/2027-lint-carveout-inventory-2026-09-02.md))
-found 218 scope restrictions across the lint/CI configuration. This ADR's PR
-retires the nightly `|| true` and bounds the whole CPU tree; the remaining
-rows are owned by the wave that brings the blocking toolchain or build option
-to CI:
+found 218 scope restrictions across the lint/CI configuration. Remaining rows
+are missing receipts, not accepted carve-outs. Each must be retired by the
+wave that brings the blocking toolchain or build option to CI; until then the
+repository cannot claim whole-tree zero:
 
 | Carve-out | Blocker | Owner / plan |
 | --- | --- | --- |
-| Changed-files clang-tidy job excludes `core/src/cuda/`, `core/src/feature/cuda/`, `core/test/test_cuda_*`, `core/test/test_gpu_picture_pool.c` | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | cuda lane → PR-required; retire the `grep -v` lines in the same PR |
-| … excludes `core/src/sycl/`, `core/src/feature/sycl/`, `core/test/test_sycl*`; `Tidy SYCL (advisory)` job is `continue-on-error` | oneAPI on the runner (the advisory job already installs it) | sycl lane → PR-required first; drop `continue-on-error` |
-| … excludes `core/src/hip/`, `core/src/feature/hip/`, `core/test/test_hip*` | ROCm headers on the hosted runner | hip lane → PR-required |
-| … excludes `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
-| … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |
-| `.cppcheck-suppressions.txt` per-file suppressions, `.clang-tidy` disabled checks, `.semgrep.yml` path excludes, `pyproject.toml` per-file ignores | none — each is a fix-the-code item | rework waves; each removal is a ratchet decrease |
+| CUDA translation units | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | promote the existing CUDA configured lane to a PR-required context |
+| HIP translation units | ROCm headers on the hosted runner | promote the existing HIP configured lane to a PR-required context |
+| `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
+| `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to configured CI profiles |
+| residual inline suppressions, disabled clang-tidy checks, Semgrep path excludes, and Python rule ignores | none — each is a fix-the-code item | rework waves; do not add new suppressions |
 
 ## Resolving a `docs/state.md` rebase conflict
 
@@ -468,11 +478,11 @@ CI round-trip.
 
 `make lint` runs clang-tidy and cppcheck for the configured tracked native
 sources, Ruff and Black for `python/`, `ai/` and `scripts/`, shell checks,
-Markdown checks, gosec, and generated-document consistency checks. Mypy
-remains advisory. IWYU and Semgrep are separate tools/jobs; this Make target
-does not invoke them. Markdown defaults to changed files against
-`origin/master`; use `MDLINT_SCOPE=all` for the configured whole-document
-scope.
+Markdown checks, gosec, mypy, and generated-document consistency checks. IWYU
+and Semgrep are separate tools/jobs; this Make target does not invoke them.
+Markdown lint always scans every tracked Markdown file;
+generated, vendored, fixture, historical, and upstream-origin files are not
+excluded.
 
 Configure the intended profile before linting. `lint-c` asks Meson to
 reconfigure the existing build with no option overrides, then runs the
@@ -527,27 +537,51 @@ locally with an installed cppcheck (`CPPCHECK_BIN` selects an explicit binary):
 python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
 ```
 
-This configuration adds type/function knowledge without disabling any diagnostic
-category. Local `--enable=all` and the CI job's existing
-`warning,performance,portability` selection remain unchanged.
+This configuration adds type/function knowledge without suppressing project
+diagnostics. Local lint and CI enable
+`warning,style,performance,portability,unusedFunction`; Cppcheck's always-on
+`error` diagnostics remain active in both. The `information` category is omitted
+because it reports analyzer coverage metadata such as absent system-header
+models rather than source defects. Neither path
+passes `--inline-suppr` or a suppressions list. The legacy
+`.cppcheck-suppressions.txt` file has been removed, so neither an inline marker
+nor a repository list can hide a diagnostic.
 
-Both paths also load the shared
+Both paths also load three external-call models. The shared
 [`cppcheck-public-entrypoints.cfg`](../../scripts/ci/cppcheck-public-entrypoints.cfg)
-model ([ADR-1246](../adr/1246-cppcheck-public-entrypoints.md)). It identifies
-16 reviewed public C functions whose external callers are absent from the CPU
-database, including disabled HIP/Metal fallbacks. It does not mark private
-helpers or every backend scaffold as public. The model does not disable body
-checks: unlisted unused functions and defects inside listed functions still
-fail their applicable checks. Missing or invalid model files fail analysis.
+model ([ADR-1246](../adr/1246-cppcheck-public-entrypoints.md)) identifies the
+reviewed installed `VMAF_EXPORT` functions whose external callers are absent
+from the CPU database, including disabled HIP/Metal fallbacks. The
+[`cppcheck-cjson-entrypoints.cfg`](../../scripts/ci/cppcheck-cjson-entrypoints.cfg)
+model identifies every `CJSON_PUBLIC` declaration in the vendored cJSON header.
+It is needed because those library entry points are consumed outside cJSON's
+translation unit even when this repository's configured database has no caller.
+The
+[`cppcheck-linked-entrypoints.cfg`](../../scripts/ci/cppcheck-linked-entrypoints.cfg)
+model covers exactly five proven relationships absent from one configured
+compile database: each test executable's `core/test/test.c` harness calls that
+executable's `run_tests` definition; the ORT error-injection executable provides
+`OrtGetApiBase` to its separately compiled `ort_backend.c`; the compatibility
+Cython extension calls `adm_dwt2_d`; the SYCL build calls
+`speed_internal_compute_means`; and the SYCL, HIP, and Metal builds call
+`vmaf_cambi_init_tvi_and_vlt`. No model marks private helpers or backend
+scaffolds as public. They do not disable body checks: unlisted unused functions
+and defects inside listed functions still fail their applicable checks. Missing
+or invalid model files fail analysis.
 
-Before adding a name, verify its `VMAF_EXPORT` declaration and the header's
+Before adding a VMAF name, verify its `VMAF_EXPORT` declaration and the header's
 unconditional or conditional installation in `core/include/libvmaf/meson.build`.
-The existing configured-driver tests enforce those declarations and reject empty,
-duplicate, misspelled and non-public entries. The real-tool suite above checks
-the external-root behavior, private-function/body-defect negatives and malformed
-models. Cppcheck compares names without linkage or scope: a same-named static
-function is also treated as an entrypoint. Keep public C names unique; this
-model is not a visibility or ABI checker. See
+The configured-driver tests enforce those declarations and reject empty,
+duplicate, misspelled and non-public entries. The same tests require exact set
+equality between the cJSON model and `CJSON_PUBLIC` declarations in
+`core/src/mcp/3rdparty/cJSON/cJSON.h`; adding or removing cJSON API must update
+both together. They also pin the linked-root model to its five exact names and
+verify every caller/definition relationship in the tree.
+The real-tool suite above checks external-root behavior, private-function/body-
+defect negatives and malformed models. Cppcheck compares
+names without linkage or scope: a same-named static function is also treated as
+an entrypoint. Keep public C names unique; these models are not visibility or
+ABI checkers. See
 [the verified roots and version limits](../research/1246-cppcheck-public-entrypoints.md).
 
 Both paths use `--check-level=exhaustive` ([ADR-1245](../adr/1245-cppcheck-exhaustive-configured-analysis.md)).

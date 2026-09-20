@@ -1,4 +1,6 @@
-## `docs/mcp`: tools catalogue completeness + duplicate-section cleanup + ADR-ref fixes
+# Changelog fragment
+
+## mcp tools catalogue audit fixes
 
 - `docs/mcp/index.md`: tool catalogue expanded from 7 to 15 entries — added
   `vmaf_score_encoded`, `probe_backend`, `vmaf_version`, `run_compare`,
@@ -10,5 +12,5 @@
   (ADR-0608 is the Zed editor config; ADR-0638 is the MCP P1 surface decision).
 - `docs/mcp/http-transport.md`: `/v1/score` `bitdepth` field updated from
   `8 or 10` to `8 | 10 | 12 | 16` to match the canonical `vmaf_score` tool docs.
-- `docs/mcp/release-channel.md`: "two MCP server flavours" corrected to
-  "three"; Go binary (`vmafx-mcp`) entry and release checklist added.
+- `docs/mcp/release-channel.md`: "two MCP server flavours" corrected to "three";
+  Go binary (`vmafx-mcp`) entry and release checklist added.

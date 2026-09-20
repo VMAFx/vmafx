@@ -27,15 +27,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-onnx = pytest.importorskip("onnx")
-ort = pytest.importorskip("onnxruntime")
+try:
+    import onnx
+    import onnxruntime as ort
+    from onnx import TensorProto, helper
+except ImportError:
+    pytest.skip("ONNX dependencies not installed", allow_module_level=True)
 
-import numpy as np  # noqa: E402
-from onnx import TensorProto, helper  # noqa: E402
-
-from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features  # noqa: E402
+from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Honour VMAF_BIN so any worktree / CI run can point at a freshly-built binary.

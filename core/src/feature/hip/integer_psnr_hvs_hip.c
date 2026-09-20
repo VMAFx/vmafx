@@ -22,6 +22,8 @@
  *  engine reports "runtime not ready" rather than crashing.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -42,9 +44,9 @@
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -128,18 +130,92 @@ static int psnr_hvs_hip_module_load(PsnrHvsStateHip *s)
     rc = hipModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs_hip");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         return psnr_hvs_hip_rc(rc);
     }
     return 0;
 }
+
+static void psnr_hvs_hip_plane_free(PsnrHvsStateHip *s, int plane)
+{
+    if (s->d_ref[plane] != VMAF_NULLPTR)
+        (void)hipFree(s->d_ref[plane]);
+    if (s->d_dist[plane] != VMAF_NULLPTR)
+        (void)hipFree(s->d_dist[plane]);
+    if (s->d_partials[plane] != VMAF_NULLPTR)
+        (void)hipFree(s->d_partials[plane]);
+    if (s->h_ref[plane] != VMAF_NULLPTR)
+        (void)hipHostFree(s->h_ref[plane]);
+    if (s->h_dist[plane] != VMAF_NULLPTR)
+        (void)hipHostFree(s->h_dist[plane]);
+    if (s->h_partials[plane] != VMAF_NULLPTR)
+        (void)hipHostFree(s->h_partials[plane]);
+    if (s->h_uint_ref[plane] != VMAF_NULLPTR)
+        (void)hipHostFree(s->h_uint_ref[plane]);
+    if (s->h_uint_dist[plane] != VMAF_NULLPTR)
+        (void)hipHostFree(s->h_uint_dist[plane]);
+
+    s->d_ref[plane] = VMAF_NULLPTR;
+    s->d_dist[plane] = VMAF_NULLPTR;
+    s->d_partials[plane] = VMAF_NULLPTR;
+    s->h_ref[plane] = VMAF_NULLPTR;
+    s->h_dist[plane] = VMAF_NULLPTR;
+    s->h_partials[plane] = VMAF_NULLPTR;
+    s->h_uint_ref[plane] = VMAF_NULLPTR;
+    s->h_uint_dist[plane] = VMAF_NULLPTR;
+}
+
+static int psnr_hvs_hip_resources_free(PsnrHvsStateHip *s)
+{
+    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; plane++)
+        psnr_hvs_hip_plane_free(s, plane);
+
+    int err = 0;
+    if (s->module != VMAF_NULLPTR && hipModuleUnload(s->module) != hipSuccess)
+        err = -EIO;
+    s->module = VMAF_NULLPTR;
+    s->func_psnr_hvs = VMAF_NULLPTR;
+    return err;
+}
+
+static int psnr_hvs_hip_plane_alloc(PsnrHvsStateHip *s, int plane)
+{
+    const size_t plane_bytes = (size_t)s->width[plane] * s->height[plane] * sizeof(float);
+    const size_t partials_bytes = (size_t)s->num_blocks[plane] * sizeof(float);
+    const unsigned bpc_bytes = s->bpc <= 8u ? 1u : 2u;
+    const size_t uint_bytes = (size_t)s->width[plane] * s->height[plane] * bpc_bytes;
+
+    if (hipMalloc((void **)&s->d_ref[plane], plane_bytes) != hipSuccess)
+        return -ENOMEM;
+    if (hipMalloc((void **)&s->d_dist[plane], plane_bytes) != hipSuccess)
+        return -ENOMEM;
+    if (hipMalloc((void **)&s->d_partials[plane], partials_bytes) != hipSuccess)
+        return -ENOMEM;
+    if (hipHostMalloc((void **)&s->h_ref[plane], plane_bytes, hipHostMallocDefault) != hipSuccess)
+        return -ENOMEM;
+    if (hipHostMalloc((void **)&s->h_dist[plane], plane_bytes, hipHostMallocDefault) != hipSuccess)
+        return -ENOMEM;
+    if (hipHostMalloc((void **)&s->h_partials[plane], partials_bytes, hipHostMallocDefault) !=
+        hipSuccess)
+        return -ENOMEM;
+    if (hipHostMalloc(&s->h_uint_ref[plane], uint_bytes, hipHostMallocDefault) != hipSuccess)
+        return -ENOMEM;
+    if (hipHostMalloc(&s->h_uint_dist[plane], uint_bytes, hipHostMallocDefault) != hipSuccess)
+        return -ENOMEM;
+    return 0;
+}
 #endif /* HAVE_HIPCC */
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+static void psnr_hvs_context_destroy(PsnrHvsStateHip *s)
 {
-    PsnrHvsStateHip *s = fex->priv;
+    if (s->ctx != VMAF_NULLPTR) {
+        vmaf_hip_context_destroy(s->ctx);
+        s->ctx = VMAF_NULLPTR;
+    }
+}
 
+static int psnr_hvs_validate(unsigned bpc, enum VmafPixelFormat pix_fmt, unsigned w, unsigned h)
+{
     if (bpc > 12u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: invalid bitdepth (%u); bpc must be <= 12\n",
                  bpc);
@@ -154,7 +230,12 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: input %ux%u smaller than 8x8 block\n", w, h);
         return -EINVAL;
     }
+    return 0;
+}
 
+static int psnr_hvs_dimensions_init(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                                    unsigned w, unsigned h)
+{
     s->bpc = bpc;
     const int32_t samplemax = (int32_t)((1u << bpc) - 1u);
     s->samplemax_sq = samplemax * samplemax;
@@ -190,129 +271,65 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
         s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
     }
+    return 0;
+}
 
+static void psnr_hvs_runtime_abort(PsnrHvsStateHip *s)
+{
+#ifdef HAVE_HIPCC
+    (void)psnr_hvs_hip_resources_free(s);
+#endif /* HAVE_HIPCC */
+    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    psnr_hvs_context_destroy(s);
+}
+
+static int psnr_hvs_runtime_init(PsnrHvsStateHip *s)
+{
     int err = vmaf_hip_context_new(&s->ctx, 0);
     if (err != 0)
         return err;
 
     err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
+    if (err != 0) {
+        psnr_hvs_context_destroy(s);
+        return err;
+    }
 
 #ifdef HAVE_HIPCC
     err = psnr_hvs_hip_module_load(s);
-    if (err != 0)
-        goto fail_after_lc;
-
-    const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
-        const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
-
-        hipError_t rc = hipMalloc((void **)&s->d_ref[p], plane_bytes);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipMalloc((void **)&s->d_dist[p], plane_bytes);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipMalloc((void **)&s->d_partials[p], partials_bytes);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-
-        rc = hipHostMalloc((void **)&s->h_ref[p], plane_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc((void **)&s->h_dist[p], plane_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc((void **)&s->h_partials[p], partials_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc(&s->h_uint_ref[p], uint_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc(&s->h_uint_dist[p], uint_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
+    for (int plane = 0; err == 0 && plane < PSNR_HVS_NUM_PLANES; plane++) {
+        err = psnr_hvs_hip_plane_alloc(s, plane);
     }
 #endif /* HAVE_HIPCC */
+
+    if (err != 0)
+        psnr_hvs_runtime_abort(s);
+    return err;
+}
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    PsnrHvsStateHip *s = fex->priv;
+    int err = psnr_hvs_validate(bpc, pix_fmt, w, h);
+    if (err != 0)
+        return err;
+
+    err = psnr_hvs_dimensions_init(s, pix_fmt, bpc, w, h);
+    if (err != 0)
+        return err;
+
+    err = psnr_hvs_runtime_init(s);
+    if (err != 0)
+        return err;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        goto fail_after_module;
-#else
-        goto fail_after_lc;
-#endif
+    if (s->feature_name_dict == VMAF_NULLPTR) {
+        psnr_hvs_runtime_abort(s);
+        return -ENOMEM;
     }
     return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        if (s->d_ref[p]) {
-            (void)hipFree(s->d_ref[p]);
-            s->d_ref[p] = NULL;
-        }
-        if (s->d_dist[p]) {
-            (void)hipFree(s->d_dist[p]);
-            s->d_dist[p] = NULL;
-        }
-        if (s->d_partials[p]) {
-            (void)hipFree(s->d_partials[p]);
-            s->d_partials[p] = NULL;
-        }
-        if (s->h_ref[p]) {
-            (void)hipHostFree(s->h_ref[p]);
-            s->h_ref[p] = NULL;
-        }
-        if (s->h_dist[p]) {
-            (void)hipHostFree(s->h_dist[p]);
-            s->h_dist[p] = NULL;
-        }
-        if (s->h_partials[p]) {
-            (void)hipHostFree(s->h_partials[p]);
-            s->h_partials[p] = NULL;
-        }
-        if (s->h_uint_ref[p]) {
-            (void)hipHostFree(s->h_uint_ref[p]);
-            s->h_uint_ref[p] = NULL;
-        }
-        if (s->h_uint_dist[p]) {
-            (void)hipHostFree(s->h_uint_dist[p]);
-            s->h_uint_dist[p] = NULL;
-        }
-    }
-    if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
-    return err;
 }
 
 #ifdef HAVE_HIPCC
@@ -414,7 +431,7 @@ static int launch_psnr_hvs(PsnrHvsStateHip *s)
             (void *)&nby,         (void *)&plane_arg,    (void *)&bpc_arg,
         };
         rc = hipModuleLaunchKernel(s->func_psnr_hvs, nbx, nby, 1, PSNR_HVS_BLOCK_DIM,
-                                   PSNR_HVS_BLOCK_DIM, 1, 0, str, args, NULL);
+                                   PSNR_HVS_BLOCK_DIM, 1, 0, str, args, VMAF_NULLPTR);
         if (rc != hipSuccess)
             return psnr_hvs_hip_rc(rc);
 
@@ -428,8 +445,8 @@ static int launch_psnr_hvs(PsnrHvsStateHip *s)
 }
 #endif /* HAVE_HIPCC */
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -464,12 +481,12 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
      * skips on.
      *
      * This used to call `vmaf_hip_kernel_submit_pre_launch(&s->lc, s->ctx,
-     * NULL, ...)` first and return its result on error. That call passes
-     * `rb == NULL`, which the helper rejects outright, so it ALWAYS returned
+     * VMAF_NULLPTR, ...)` first and return its result on error. That call passes
+     * `rb == VMAF_NULLPTR`, which the helper rejects outright, so it ALWAYS returned
      * -EINVAL and the `-ENOSYS` below was unreachable. The extractor therefore
      * failed instead of skipping on every default-configured HIP build, and
      * `test_hip_psnr_hvs_parity` / `..._large` failed with it. The call did
-     * nothing else: the NULL check is the helper's first statement, ahead of
+     * nothing else: the VMAF_NULLPTR check is the helper's first statement, ahead of
      * any work. */
     (void)s;
     return -ENOSYS;
@@ -521,67 +538,26 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
 
 #ifdef HAVE_HIPCC
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        if (s->d_ref[p]) {
-            (void)hipFree(s->d_ref[p]);
-            s->d_ref[p] = NULL;
-        }
-        if (s->d_dist[p]) {
-            (void)hipFree(s->d_dist[p]);
-            s->d_dist[p] = NULL;
-        }
-        if (s->d_partials[p]) {
-            (void)hipFree(s->d_partials[p]);
-            s->d_partials[p] = NULL;
-        }
-        if (s->h_ref[p]) {
-            (void)hipHostFree(s->h_ref[p]);
-            s->h_ref[p] = NULL;
-        }
-        if (s->h_dist[p]) {
-            (void)hipHostFree(s->h_dist[p]);
-            s->h_dist[p] = NULL;
-        }
-        if (s->h_partials[p]) {
-            (void)hipHostFree(s->h_partials[p]);
-            s->h_partials[p] = NULL;
-        }
-        if (s->h_uint_ref[p]) {
-            (void)hipHostFree(s->h_uint_ref[p]);
-            s->h_uint_ref[p] = NULL;
-        }
-        if (s->h_uint_dist[p]) {
-            (void)hipHostFree(s->h_uint_dist[p]);
-            s->h_uint_dist[p] = NULL;
-        }
-    }
-    if (s->module != NULL) {
-        hipError_t hip_err = hipModuleUnload(s->module);
-        if (hip_err != hipSuccess && rc == 0)
-            rc = -EIO;
-        s->module = NULL;
-    }
+    const int hip_err = psnr_hvs_hip_resources_free(s);
+    if (hip_err != 0 && rc == 0)
+        rc = hip_err;
 #endif /* HAVE_HIPCC */
 
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         int err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
     }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
+    psnr_hvs_context_destroy(s);
     return rc;
 }
 
 static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 /* Load-bearing: registered in feature_extractor.c's feature_extractor_list[].
  * Making this static would unlink the extractor from the registry. Same
  * pattern as every other HIP consumer (see integer_psnr_hip.c). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_hvs_hip = {
     .name = "psnr_hvs_hip",
     .init = init_fex_hip,
@@ -600,5 +576,3 @@ VmafFeatureExtractor vmaf_fex_psnr_hvs_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

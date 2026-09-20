@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0544: deduplicate `feature_extractor_list[]` registrations
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ We will:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Just delete the duplicate rows (no audit, no test) | Smallest diff | Nothing prevents a future editor mishap from re-introducing the bug; the original misregistration sat in the tree undetected for multiple releases | Insufficient guardrail given the cost of recurrence |
 | Replace the array with a hash-set built at startup | Strongest dedup guarantee at runtime | Requires non-trivial allocator wiring + new init/teardown lifecycle; loses the constant-init guarantee of the static array | Disproportionate to the bug; the audit + test combo is sufficient |
 | Use a generated `static_assert` instead of a runtime audit | Compile-time failure | C99 `_Static_assert` can't iterate a string-comparing predicate over a pointer array; would need a code-gen step | Adds build complexity for marginal gain over the runtime audit that already runs on every `vmaf_init` |

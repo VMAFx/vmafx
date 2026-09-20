@@ -1,8 +1,7 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1103 — Fix integer_vif_hip boundary condition: clamp_i → mirror2_i
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | **Status** | Accepted |
 | **Date** | 2026-06-13 |
 | **Deciders** | lusoris |
@@ -104,7 +103,7 @@ clamp produces places~2.75.
 ## Alternatives considered
 
 | Option | Notes | Decision |
-|--------|-------|----------|
+| -------- | ------- | ---------- |
 | Keep clamp_i, accept places=3 | Violates ADR-0214 and ADR-0566. | Rejected |
 | LUT-based log (match CPU exactly) | Python simulation showed log computation is bit-identical for the same normalized 16-bit inputs; it is not the source of the delta. | Not applicable |
 | Shared-memory tiling (match CUDA exactly) | CUDA uses smem tiles to amortize the mirror boundary; HIP scalar-per-thread avoids the smem complexity. mirror2_i achieves the same numerical result at scalar per-thread cost. | Deferred (performance optimization, not correctness) |

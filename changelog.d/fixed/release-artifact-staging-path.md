@@ -1,1 +1,5 @@
-- Repair Linux release staging to publish Meson's complete materialized `libvmaf.so` SONAME chain and prove the downloaded CLI resolves it in a clean environment before signing or attestation.
+# Changelog fragment
+
+- Repair Linux release staging to publish Meson's complete materialized
+  `libvmaf.so` SONAME chain and prove the downloaded CLI resolves it in a clean
+  environment before signing or attestation.

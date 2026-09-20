@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0332: Agent worktree-drift hard guard
 
 - **Status**: Accepted
@@ -55,7 +54,7 @@ Aider, Continue, Codex, Claude Code) sees the same canonical pattern.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Process-side rule only (status quo) | Zero new code; lives in agent prompts and global memory. | Already failed five times in one session — agents drift faster than the rule can be reinforced. | Insufficient on its own; we keep it as Layer 1 alongside the new guard. |
 | Refuse *all* commits from main while *any* agent worktree exists ever, no bypass | Strongest invariant. | Blocks the human user's legitimate commits to master from the main checkout — false positive on every release-please push, every doc-only edit by the user. | Too aggressive; conflicts with day-to-day human workflow. |
 | Wrapper around `git` itself (shell alias, function) | Catches drift before staging, not just before commit. | Per-shell, per-user; doesn't survive a fresh agent process group; doesn't compose with `git -C` invocations from tool calls. | Brittle; easily bypassed by agents that exec `/usr/bin/git` directly. |

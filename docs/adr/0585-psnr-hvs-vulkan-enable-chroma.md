@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0585: Add `enable_chroma` option to `psnr_hvs_vulkan`
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ callers that do not pass the option see identical behaviour.
 ## Alternatives considered
 
 | Option | Reason rejected |
-|--------|----------------|
+| -------- | ---------------- |
 | Default `enable_chroma=false` | Would be a breaking change for all existing callers that rely on `psnr_hvs_cb`, `psnr_hvs_cr`, and `psnr_hvs` being emitted |
 | Add to CPU `psnr_hvs` extractor instead | The CPU extractor always needs all three planes for the DCT-based HVS metric; the GPU path's per-plane dispatch design makes per-plane opt-out natural and low-cost |
 | Suppress combined score but still dispatch chroma | Inconsistent; wastes GPU cycles for data that is not consumed |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0704: vmafx-mcp Go port (JSON-RPC, stdio transport)
 
 - **Status**: Accepted
@@ -47,7 +46,7 @@ the Python server's "vlm extras not installed" fallback.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Hand-rolled JSON-RPC 2.0 | No external dep, full control | ~400 LOC of boilerplate; drift from MCP spec over time | MCP Go SDK is now stable (v1.6.1); maintenance burden not justified |
 | Keep Python only | Zero migration effort | Blocks Phase 4 language consolidation; Python wheel chain stays in critical path | ADR-0701 direction |
 | Port to Rust | Strong type safety, zero-cost abstractions | No existing cgo bridging story; no team familiarity | Go is the Phase 4 decision |

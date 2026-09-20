@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0286](0286-saliency-student-fork-trained-on-duts.md) | Fork-trained saliency student `saliency_student_v1` on DUTS-TR | Accepted | ai, dnn, mobilesal, saliency, training, license, fork-local, docs |

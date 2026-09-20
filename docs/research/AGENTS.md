@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research Digests — Agent Invariants
 
 Parent: [../../AGENTS.md](../../AGENTS.md). Deep-dive deliverable contract

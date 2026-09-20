@@ -1,6 +1,9 @@
 from abc import ABCMeta, abstractmethod
+from functools import partial
+from pathlib import Path
+from typing import ClassVar
 
-import defusedxml.ElementTree as ElementTree
+from defusedxml import ElementTree
 
 from vmaf.tools.decorator import deprecated, override
 
@@ -16,6 +19,107 @@ from vmaf import ExternalProgramCaller
 from vmaf.core.executor import Executor
 from vmaf.core.result import BasicResult, Result
 from vmaf.tools.reader import YuvReader
+
+_COMPARISON_VALUE_2 = 2
+
+_FLOAT_OPTION_FEATURE = {
+    **dict.fromkeys(
+        (
+            "vif_enhn_gain_limit",
+            "vif_kernelscale",
+            "vif_sigma_nsq",
+            "vif_skip_scale0",
+            "vif_scale1_min_val",
+            "vif_scale2_min_val",
+            "vif_scale3_min_val",
+        ),
+        "float_vif",
+    ),
+    **dict.fromkeys(
+        (
+            "adm_csf_mode",
+            "adm_enhn_gain_limit",
+            "adm_norm_view_dist",
+            "adm_ref_display_height",
+            "adm_dlm_weight",
+            "adm_skip_scale0",
+            "adm_min_val",
+            "adm_noise_weight",
+            "adm_csf_scale",
+            "adm_csf_diag_scale",
+            "adm_f1s0",
+            "adm_f1s1",
+            "adm_f1s2",
+            "adm_f1s3",
+            "adm_f2s0",
+            "adm_f2s1",
+            "adm_f2s2",
+            "adm_f2s3",
+        ),
+        "float_adm",
+    ),
+    **dict.fromkeys(
+        (
+            "motion_force_zero",
+            "motion_fps_weight",
+            "motion_blend_factor",
+            "motion_blend_offset",
+            "motion_max_val",
+            "motion_filter_size",
+            "motion_five_frame_window",
+            "motion_moving_average",
+        ),
+        "float_motion",
+    ),
+}
+
+_INTEGER_OPTION_FEATURE = {
+    **dict.fromkeys(("vif_enhn_gain_limit", "vif_skip_scale0"), "vif"),
+    **dict.fromkeys(
+        (
+            "adm_enhn_gain_limit",
+            "adm_norm_view_dist",
+            "adm_ref_display_height",
+            "adm_csf_mode",
+            "adm_csf_scale",
+            "adm_csf_diag_scale",
+            "adm_dlm_weight",
+            "adm_skip_scale0",
+            "adm_min_val",
+            "adm_noise_weight",
+        ),
+        "adm",
+    ),
+    **dict.fromkeys(
+        (
+            "motion_force_zero",
+            "motion_fps_weight",
+            "motion_blend_factor",
+            "motion_blend_offset",
+            "motion_max_val",
+            "motion_five_frame_window",
+            "motion_moving_average",
+        ),
+        "motion",
+    ),
+}
+
+
+def _apply_feature_options(options, optional_dict, option_feature):
+    if optional_dict is None:
+        return
+    for option, value in optional_dict.items():
+        feature = option_feature.get(option)
+        if feature is not None:
+            options[feature][option] = value
+
+
+def _apply_global_options(options, optional_dict):
+    if optional_dict is None:
+        return
+    for option in ("disable_avx", "n_threads"):
+        if option in optional_dict:
+            options[option] = optional_dict[option]
 
 
 class FeatureExtractor(Executor):
@@ -67,7 +171,7 @@ class FeatureExtractor(Executor):
             atom_feature_scores_dict[atom_feature] = []
             atom_feature_idx_dict[atom_feature] = 0
 
-        with open(log_file_path, "rt") as log_file:
+        with Path(log_file_path).open("rt") as log_file:
             for line in log_file.readlines():
                 for atom_feature in self.ATOM_FEATURES:
                     re_template = "{af}: ([0-9]+) ([a-zA-Z0-9.-]+)".format(af=atom_feature)
@@ -137,12 +241,12 @@ class VmafexecFeatureExtractorMixin(object):
                     frame, i_feature, feature, feature_scores, feature_nicknames
                 )
 
-        for i_feature, feature in enumerate(self.ATOM_FEATURES):
+        for i_feature in range(len(self.ATOM_FEATURES)):
             if len(feature_scores[i_feature]) != 0:
                 assert len(feature_scores[i_feature]) == len(feature_scores[0])
 
         feature_result = {}
-        for i_feature, feature in enumerate(self.ATOM_FEATURES):
+        for i_feature in range(len(self.ATOM_FEATURES)):
             if len(feature_scores[i_feature]) != 0:
                 assert feature_nicknames[i_feature] is not None
                 feature_result[self.get_scores_key(feature_nicknames[i_feature])] = feature_scores[
@@ -226,7 +330,7 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = '0.2.20'  # move adm2, adm_scale0, adm_scale1, adm_scale2 and adm_scale3 to ATOM features
     VERSION = "0.2.21"  # add adm_skip_scale0 for skipping scale0 in ADM calculation
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "vif",
         "adm",
         "adm2",
@@ -265,12 +369,14 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "adm_scale3",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = dict(zip(ATOM_FEATURES, ATOM_FEATURES))
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = dict(
+        zip(ATOM_FEATURES, ATOM_FEATURES, strict=False)
+    )
     # motion3, aim and adm3 now have short aliases registered in alias.c
     # (motion3, aim, adm3 respectively), so the XML key matches the feature name
     # directly — no override needed beyond the default zip mapping.
 
-    DERIVED_ATOM_FEATURES = [
+    DERIVED_ATOM_FEATURES: ClassVar = [
         "vif2",
     ]
 
@@ -298,83 +404,8 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
             "float_motion": {"debug": True},
         }
 
-        if self.optional_dict is not None:
-            for opt in self.optional_dict:
-                if opt == "vif_enhn_gain_limit":
-                    options["float_vif"]["vif_enhn_gain_limit"] = self.optional_dict[opt]
-                elif opt == "vif_kernelscale":
-                    options["float_vif"]["vif_kernelscale"] = self.optional_dict[opt]
-                elif opt == "vif_sigma_nsq":
-                    options["float_vif"]["vif_sigma_nsq"] = self.optional_dict[opt]
-                elif opt == "vif_skip_scale0":
-                    options["float_vif"]["vif_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "vif_scale1_min_val":
-                    options["float_vif"]["vif_scale1_min_val"] = self.optional_dict[opt]
-                elif opt == "vif_scale2_min_val":
-                    options["float_vif"]["vif_scale2_min_val"] = self.optional_dict[opt]
-                elif opt == "vif_scale3_min_val":
-                    options["float_vif"]["vif_scale3_min_val"] = self.optional_dict[opt]
-                elif opt == "adm_csf_mode":
-                    options["float_adm"]["adm_csf_mode"] = self.optional_dict[opt]
-                elif opt == "adm_enhn_gain_limit":
-                    options["float_adm"]["adm_enhn_gain_limit"] = self.optional_dict[opt]
-                elif opt == "adm_norm_view_dist":
-                    options["float_adm"]["adm_norm_view_dist"] = self.optional_dict[opt]
-                elif opt == "adm_ref_display_height":
-                    options["float_adm"]["adm_ref_display_height"] = self.optional_dict[opt]
-                elif opt == "adm_dlm_weight":
-                    options["float_adm"]["adm_dlm_weight"] = self.optional_dict[opt]
-                elif opt == "adm_skip_scale0":
-                    options["float_adm"]["adm_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "adm_min_val":
-                    options["float_adm"]["adm_min_val"] = self.optional_dict[opt]
-                elif opt == "adm_noise_weight":
-                    options["float_adm"]["adm_noise_weight"] = self.optional_dict[opt]
-                elif opt == "adm_csf_scale":
-                    options["float_adm"]["adm_csf_scale"] = self.optional_dict[opt]
-                elif opt == "adm_csf_diag_scale":
-                    options["float_adm"]["adm_csf_diag_scale"] = self.optional_dict[opt]
-                elif opt == "adm_f1s0":
-                    options["float_adm"]["adm_f1s0"] = self.optional_dict[opt]
-                elif opt == "adm_f1s1":
-                    options["float_adm"]["adm_f1s1"] = self.optional_dict[opt]
-                elif opt == "adm_f1s2":
-                    options["float_adm"]["adm_f1s2"] = self.optional_dict[opt]
-                elif opt == "adm_f1s3":
-                    options["float_adm"]["adm_f1s3"] = self.optional_dict[opt]
-                elif opt == "adm_f2s0":
-                    options["float_adm"]["adm_f2s0"] = self.optional_dict[opt]
-                elif opt == "adm_f2s1":
-                    options["float_adm"]["adm_f2s1"] = self.optional_dict[opt]
-                elif opt == "adm_f2s2":
-                    options["float_adm"]["adm_f2s2"] = self.optional_dict[opt]
-                elif opt == "adm_f2s3":
-                    options["float_adm"]["adm_f2s3"] = self.optional_dict[opt]
-                elif opt == "motion_force_zero":
-                    options["float_motion"]["motion_force_zero"] = self.optional_dict[opt]
-                elif opt == "motion_fps_weight":
-                    options["float_motion"]["motion_fps_weight"] = self.optional_dict[opt]
-                elif opt == "motion_blend_factor":
-                    options["float_motion"]["motion_blend_factor"] = self.optional_dict[opt]
-                elif opt == "motion_blend_offset":
-                    options["float_motion"]["motion_blend_offset"] = self.optional_dict[opt]
-                elif opt == "motion_max_val":
-                    options["float_motion"]["motion_max_val"] = self.optional_dict[opt]
-                elif opt == "motion_filter_size":
-                    options["float_motion"]["motion_filter_size"] = self.optional_dict[opt]
-                elif opt == "motion_five_frame_window":
-                    options["float_motion"]["motion_five_frame_window"] = self.optional_dict[opt]
-                elif opt == "motion_moving_average":
-                    options["float_motion"]["motion_moving_average"] = self.optional_dict[opt]
-                else:
-                    pass
-
-        if self.optional_dict2 is not None:
-            for opt in self.optional_dict2:
-                if opt == "disable_avx":
-                    options["disable_avx"] = self.optional_dict2["disable_avx"]
-                elif opt == "n_threads":
-                    options["n_threads"] = self.optional_dict2["n_threads"]
+        _apply_feature_options(options, self.optional_dict, _FLOAT_OPTION_FEATURE)
+        _apply_global_options(options, self.optional_dict2)
 
         ExternalProgramCaller.call_vmafexec_multi_features(
             features, yuv_type, ref_path, dis_path, w, h, log_file_path, logger, options=options
@@ -447,10 +478,11 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
 
     TYPE = "VMAF_integer_feature"
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = dict(
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = dict(
         zip(
             VmafFeatureExtractor.ATOM_FEATURES,
             [f"integer_{f}" for f in VmafFeatureExtractor.ATOM_FEATURES],
+            strict=False,
         )
     )
 
@@ -473,61 +505,8 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
             "motion": {"debug": True},
         }
 
-        if self.optional_dict is not None:
-            for opt in self.optional_dict:
-                if opt == "vif_enhn_gain_limit":
-                    options["vif"]["vif_enhn_gain_limit"] = self.optional_dict[
-                        "vif_enhn_gain_limit"
-                    ]
-                elif opt == "adm_enhn_gain_limit":
-                    options["adm"]["adm_enhn_gain_limit"] = self.optional_dict[
-                        "adm_enhn_gain_limit"
-                    ]
-                elif opt == "adm_norm_view_dist":
-                    options["adm"]["adm_norm_view_dist"] = self.optional_dict["adm_norm_view_dist"]
-                elif opt == "adm_ref_display_height":
-                    options["adm"]["adm_ref_display_height"] = self.optional_dict[
-                        "adm_ref_display_height"
-                    ]
-                elif opt == "adm_csf_mode":
-                    options["adm"]["adm_csf_mode"] = self.optional_dict[opt]
-                elif opt == "adm_csf_scale":
-                    options["adm"]["adm_csf_scale"] = self.optional_dict[opt]
-                elif opt == "adm_csf_diag_scale":
-                    options["adm"]["adm_csf_diag_scale"] = self.optional_dict[opt]
-                elif opt == "adm_dlm_weight":
-                    options["adm"]["adm_dlm_weight"] = self.optional_dict[opt]
-                elif opt == "adm_skip_scale0":
-                    options["adm"]["adm_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "adm_min_val":
-                    options["adm"]["adm_min_val"] = self.optional_dict[opt]
-                elif opt == "adm_noise_weight":
-                    options["adm"]["adm_noise_weight"] = self.optional_dict[opt]
-                elif opt == "vif_skip_scale0":
-                    options["vif"]["vif_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "motion_force_zero":
-                    options["motion"]["motion_force_zero"] = self.optional_dict["motion_force_zero"]
-                elif opt == "motion_fps_weight":
-                    options["motion"]["motion_fps_weight"] = self.optional_dict[opt]
-                elif opt == "motion_blend_factor":
-                    options["motion"]["motion_blend_factor"] = self.optional_dict[opt]
-                elif opt == "motion_blend_offset":
-                    options["motion"]["motion_blend_offset"] = self.optional_dict[opt]
-                elif opt == "motion_max_val":
-                    options["motion"]["motion_max_val"] = self.optional_dict[opt]
-                elif opt == "motion_five_frame_window":
-                    options["motion"]["motion_five_frame_window"] = self.optional_dict[opt]
-                elif opt == "motion_moving_average":
-                    options["motion"]["motion_moving_average"] = self.optional_dict[opt]
-                else:
-                    pass
-
-        if self.optional_dict2 is not None:
-            for opt in self.optional_dict2:
-                if opt == "disable_avx":
-                    options["disable_avx"] = self.optional_dict2["disable_avx"]
-                elif opt == "n_threads":
-                    options["n_threads"] = self.optional_dict2["n_threads"]
+        _apply_feature_options(options, self.optional_dict, _INTEGER_OPTION_FEATURE)
+        _apply_global_options(options, self.optional_dict2)
 
         ExternalProgramCaller.call_vmafexec_multi_features(
             features, yuv_type, ref_path, dis_path, w, h, log_file_path, logger, options=options
@@ -540,7 +519,7 @@ class VifFrameDifferenceFeatureExtractor(FeatureExtractor):
 
     VERSION = "0.1"
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "vifdiff",
         "vifdiff_num",
         "vifdiff_den",
@@ -554,7 +533,7 @@ class VifFrameDifferenceFeatureExtractor(FeatureExtractor):
         "vifdiff_den_scale3",
     ]
 
-    DERIVED_ATOM_FEATURES = [
+    DERIVED_ATOM_FEATURES: ClassVar = [
         "vifdiff_scale0",
         "vifdiff_scale1",
         "vifdiff_scale2",
@@ -647,18 +626,16 @@ class PyFeatureExtractorMixin(object):
         """
         log_file_path = self._get_log_file_path(asset)
 
-        with open(log_file_path, "rt") as log_file:
+        with Path(log_file_path).open("rt") as log_file:
             log_dicts = json.load(log_file)
 
-        feature_result = dict()
-        frm = 0
-        for log_dict in log_dicts:
+        feature_result = {}
+        for frm, log_dict in enumerate(log_dicts):
             assert frm == log_dict["frame"]
             for feature in self.ATOM_FEATURES:
                 feature_result.setdefault(self.get_scores_key(feature), []).append(
                     log_dict[feature]
                 )
-            frm += 1
 
         return feature_result
 
@@ -668,7 +645,7 @@ class PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor):
     TYPE = "PyPsnr_feature"
     VERSION = "1.0"
 
-    ATOM_FEATURES = ["psnry", "psnru", "psnrv"]
+    ATOM_FEATURES: ClassVar = ["psnry", "psnru", "psnrv"]
 
     @staticmethod
     def _assert_bit_depth(ref_yuv_reader, dis_yuv_reader):
@@ -681,28 +658,27 @@ class PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor):
         elif ref_yuv_reader._is_16bitle():
             assert dis_yuv_reader._is_16bitle()
         else:
-            assert False, "unknown bit depth and type"
+            raise AssertionError("unknown bit depth and type")
 
     def _get_max_db(self, ref_yuv_reader):
         if self.optional_dict is not None and "max_db" in self.optional_dict:
             max_db = self.optional_dict["max_db"]
             assert isinstance(max_db, (int, float))
             return max_db
-        elif ref_yuv_reader._is_8bit():
+        if ref_yuv_reader._is_8bit():
             return 60.0
-        elif ref_yuv_reader._is_10bitle():
+        if ref_yuv_reader._is_10bitle():
             return 72.0
-        elif ref_yuv_reader._is_12bitle():
+        if ref_yuv_reader._is_12bitle():
             return 84.0
-        elif ref_yuv_reader._is_16bitle():
+        if ref_yuv_reader._is_16bitle():
             return 108.0
-        else:
-            assert False, "unknown bit depth and type"
+        raise AssertionError("unknown bit depth and type")
 
     def _generate_result(self, asset):
         quality_w, quality_h = asset.quality_width_height
         yuv_type = self._get_workfile_yuv_type(asset)
-        log_dicts = list()
+        log_dicts = []
         with YuvReader(
             filepath=asset.ref_procfile_path, width=quality_w, height=quality_h, yuv_type=yuv_type
         ) as ref_yuv_reader:
@@ -716,14 +692,10 @@ class PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor):
                 self._assert_bit_depth(ref_yuv_reader, dis_yuv_reader)
                 max_db = self._get_max_db(ref_yuv_reader)
 
-                frm = 0
-                while True:
-                    try:
-                        ref_yuv = ref_yuv_reader.next(format="float")
-                        dis_yuv = dis_yuv_reader.next(format="float")
-                    except StopIteration:
-                        break
-
+                ref_frames = iter(partial(ref_yuv_reader.next, format="float"), None)
+                dis_frames = iter(partial(dis_yuv_reader.next, format="float"), None)
+                frame_pairs = zip(ref_frames, dis_frames, strict=False)
+                for frm, (ref_yuv, dis_yuv) in enumerate(frame_pairs):
                     ref_y, ref_u, ref_v = ref_yuv
                     dis_y, dis_u, dis_v = dis_yuv
                     mse_y, mse_u, mse_v = (
@@ -746,10 +718,8 @@ class PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor):
                         }
                     )
 
-                    frm += 1
-
         log_file_path = self._get_log_file_path(asset)
-        with open(log_file_path, "wt") as log_file:
+        with Path(log_file_path).open("wt") as log_file:
             json.dump(log_dicts, log_file)
 
 
@@ -773,7 +743,7 @@ class PyPsnrMaxdb100FeatureExtractor(PyPsnrFeatureExtractor):
         if self.optional_dict is not None:
             assert "max_db" not in self.optional_dict
         if self.optional_dict is None:
-            self.optional_dict = dict()
+            self.optional_dict = {}
         self.optional_dict["max_db"] = 100.0
 
 
@@ -793,9 +763,9 @@ class PsnrFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = "1.0"
     VERSION = "1.1"  # call vmaf to replace standalone psnr exec
 
-    ATOM_FEATURES = ["psnr"]
+    ATOM_FEATURES: ClassVar = ["psnr"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "psnr": "float_psnr",
     }
 
@@ -813,7 +783,7 @@ class PsnrFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "float_psnr",
@@ -835,14 +805,14 @@ class MomentFeatureExtractor(FeatureExtractor):
     # VERSION = "1.0" # call executable
     VERSION = "1.1"  # python only
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "ref1st",
         "ref2nd",
         "dis1st",
         "dis2nd",
     ]
 
-    DERIVED_ATOM_FEATURES = [
+    DERIVED_ATOM_FEATURES: ClassVar = [
         "refvar",
         "disvar",
     ]
@@ -860,14 +830,12 @@ class MomentFeatureExtractor(FeatureExtractor):
             yuv_type=self._get_workfile_yuv_type(asset),
         ) as ref_yuv_reader:
             scores_mtx_list = []
-            i = 0
             for ref_yuv in ref_yuv_reader:
                 ref_y = ref_yuv[0]
                 ref_y = ref_y.astype(np.double)
                 firstm = ref_y.mean()
                 secondm = ref_y.var() + firstm**2
                 scores_mtx_list.append(np.hstack(([firstm], [secondm])))
-                i += 1
             ref_scores_mtx = np.vstack(scores_mtx_list)
 
         with YuvReader(
@@ -877,14 +845,12 @@ class MomentFeatureExtractor(FeatureExtractor):
             yuv_type=self._get_workfile_yuv_type(asset),
         ) as dis_yuv_reader:
             scores_mtx_list = []
-            i = 0
             for dis_yuv in dis_yuv_reader:
                 dis_y = dis_yuv[0]
                 dis_y = dis_y.astype(np.double)
                 firstm = dis_y.mean()
                 secondm = dis_y.var() + firstm**2
                 scores_mtx_list.append(np.hstack(([firstm], [secondm])))
-                i += 1
             dis_scores_mtx = np.vstack(scores_mtx_list)
 
         assert ref_scores_mtx is not None and dis_scores_mtx is not None
@@ -895,7 +861,7 @@ class MomentFeatureExtractor(FeatureExtractor):
         }
 
         log_file_path = self._get_log_file_path(asset)
-        with open(log_file_path, "wt") as log_file:
+        with Path(log_file_path).open("wt") as log_file:
             json.dump(log_dict, log_file)
 
     def _get_feature_scores(self, asset):
@@ -904,24 +870,22 @@ class MomentFeatureExtractor(FeatureExtractor):
 
         log_file_path = self._get_log_file_path(asset)
 
-        with open(log_file_path, "rt") as log_file:
+        with Path(log_file_path).open("rt") as log_file:
             log_dict = json.load(log_file)
         ref_scores_mtx = np.array(log_dict["ref_scores_mtx"])
         dis_scores_mtx = np.array(log_dict["dis_scores_mtx"])
 
         _, num_ref_features = ref_scores_mtx.shape
-        assert num_ref_features == 2  # ref1st, ref2nd
+        assert num_ref_features == _COMPARISON_VALUE_2  # ref1st, ref2nd
         _, num_dis_features = dis_scores_mtx.shape
-        assert num_dis_features == 2  # dis1st, dis2nd
+        assert num_dis_features == _COMPARISON_VALUE_2  # dis1st, dis2nd
 
-        feature_result = {
+        return {
             self.get_scores_key("ref1st"): list(ref_scores_mtx[:, 0]),
             self.get_scores_key("ref2nd"): list(ref_scores_mtx[:, 1]),
             self.get_scores_key("dis1st"): list(dis_scores_mtx[:, 0]),
             self.get_scores_key("dis2nd"): list(dis_scores_mtx[:, 1]),
         }
-
-        return feature_result
 
     @classmethod
     @override(Executor)
@@ -936,17 +900,28 @@ class MomentFeatureExtractor(FeatureExtractor):
         disvar_scores_key = cls.get_scores_key("disvar")
         dis1st_scores_key = cls.get_scores_key("dis1st")
         dis2nd_scores_key = cls.get_scores_key("dis2nd")
-        get_var = lambda m: m[1] - m[0] * m[0]
+
+        def get_var(m):
+            return m[1] - m[0] * m[0]
+
         result.result_dict[refvar_scores_key] = list(
             map(
                 get_var,
-                zip(result.result_dict[ref1st_scores_key], result.result_dict[ref2nd_scores_key]),
+                zip(
+                    result.result_dict[ref1st_scores_key],
+                    result.result_dict[ref2nd_scores_key],
+                    strict=False,
+                ),
             )
         )
         result.result_dict[disvar_scores_key] = list(
             map(
                 get_var,
-                zip(result.result_dict[dis1st_scores_key], result.result_dict[dis2nd_scores_key]),
+                zip(
+                    result.result_dict[dis1st_scores_key],
+                    result.result_dict[dis2nd_scores_key],
+                    strict=False,
+                ),
             )
         )
 
@@ -965,14 +940,14 @@ class SsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = "1.2"  # call vmaf to replace standalone ssim exec
     VERSION = "1.3"  # add ssim_l, ssim_c, ssim_s as optional output
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "ssim",
         "ssim_l",
         "ssim_c",
         "ssim_s",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "ssim": "float_ssim",
         "ssim_l": "float_ssim_l",
         "ssim_c": "float_ssim_c",
@@ -993,7 +968,7 @@ class SsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "float_ssim",
@@ -1016,7 +991,7 @@ class MsSsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = "1.2"  # call vmaf to replace standalone ms_ssim exec
     VERSION = "1.3"  # add ssim_l_scalex, ssim_c_scalex, ssim_s_scalex as optional output
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "ms_ssim",
         "ms_ssim_l_scale0",
         "ms_ssim_c_scale0",
@@ -1035,7 +1010,7 @@ class MsSsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "ms_ssim_s_scale4",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "ms_ssim": "float_ms_ssim",
         "ms_ssim_l_scale0": "float_ms_ssim_l_scale0",
         "ms_ssim_l_scale1": "float_ms_ssim_l_scale1",
@@ -1068,7 +1043,7 @@ class MsSsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "float_ms_ssim",
@@ -1104,15 +1079,15 @@ class SpeedChromaFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtracto
     # VERSION = "0.8"  # Compute the filter coefficients on the fly rather than precomputing
     VERSION = "0.9"  # Impute singular channel score from the other channel
 
-    ATOM_FEATURES = ["speed_chroma_u", "speed_chroma_v", "speed_chroma_uv"]
+    ATOM_FEATURES: ClassVar = ["speed_chroma_u", "speed_chroma_v", "speed_chroma_uv"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "speed_chroma_u": "speed_chroma_u",
         "speed_chroma_v": "speed_chroma_v",
         "speed_chroma_uv": "speed_chroma_uv",
     }
 
-    DERIVED_ATOM_FEATURES = []
+    DERIVED_ATOM_FEATURES: ClassVar = []
 
     def _generate_result(self, asset):
         # Routine to call the command-line executable and generate quality
@@ -1125,8 +1100,8 @@ class SpeedChromaFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtracto
         dis_path = asset.dis_procfile_path
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "speed_chroma",
@@ -1154,13 +1129,13 @@ class SpeedTemporalFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtrac
     TYPE = "Speed_temporal_feature"
     VERSION = "0.1"  # original version
 
-    ATOM_FEATURES = ["speed_temporal"]
+    ATOM_FEATURES: ClassVar = ["speed_temporal"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "speed_temporal": "speed_temporal",
     }
 
-    DERIVED_ATOM_FEATURES = []
+    DERIVED_ATOM_FEATURES: ClassVar = []
 
     def _generate_result(self, asset):
         # Routine to call the command-line executable and generate quality
@@ -1173,8 +1148,8 @@ class SpeedTemporalFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtrac
         dis_path = asset.dis_procfile_path
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "speed_temporal",

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 -->
 # Research-0090 — Pre-push PR-body deliverables validator
 
 **Date**: 2026-05-09
@@ -22,7 +21,9 @@ non-draft `pull_request` event. The parser is intentionally strict:
   paths and "Rebase note" against `^docs/rebase-notes\.md$`.
 
 In practice, the strict parser caused ≥7 retries per session on PRs
-#461, #438, #470, #473, #486, #511, #468, and #526. Every retry
+
+\#461, #438, #470, #473, #486, #511, #468, and #526. Every retry
+
 costs a 3–10 minute CI cycle.
 
 ## Goal

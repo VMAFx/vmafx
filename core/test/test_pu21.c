@@ -17,15 +17,11 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #include "mu_table.h"
 #include "test.h"
-// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test deliberately includes pu21.c to reach the static pu21_compute_psnr and encode helpers, as test_ciede.c does (ADR-0141 / ADR-0278).
+
 #include "feature/pu21.c"
 
 /* places=4 → tolerance 5e-5 (the fork's non-negotiable golden tolerance).
@@ -64,7 +60,7 @@ static char *test_pu21_encode_banding_glare(void)
     mu_assert("pu21_encode(100) should map to ~256",
               almost_equal(pu21_encode(pu21_clamp_luminance(100.0), p), 256.3838973127, EPS_6));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Encoder oracle: a SECOND variant (peaks) at four in-domain luminances, to
@@ -92,7 +88,7 @@ static char *test_pu21_encode_peaks(void)
                   almost_equal(v, cases[i].v, EPS_6));
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* End-to-end PU-PSNR oracle: 1x1 luma, V_ref/V_dist from enc(100)/enc(99).
@@ -112,7 +108,7 @@ static char *test_pu21_psnr_oracle(void)
     mu_assert("PU-PSNR(100,99) should be 51.873338803 dB",
               almost_equal(score, 51.87333880351542, EPS_4));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* MSE == 0 (identical planes) must yield a large finite dB, not +inf/NaN. */
@@ -123,7 +119,7 @@ static char *test_pu21_psnr_identical(void)
     mu_assert("PU-PSNR for identical planes must be finite", isfinite(score));
     mu_assert("PU-PSNR for identical planes must be large (>100 dB)", score > 100.0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* PQ EOTF anchor: the peak code value (Ep=1.0) maps to 10000 cd/m^2. */
@@ -133,7 +129,7 @@ static char *test_pu21_pq_eotf(void)
               almost_equal(pu21_pq_eotf_nits(1.0), 10000.0, EPS_4));
     mu_assert("PQ EOTF at 0 should be 0 nits", almost_equal(pu21_pq_eotf_nits(0.0), 0.0, EPS_4));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* PU-SSIM self-consistency: identical planes score exactly 1.0.
@@ -149,7 +145,7 @@ static char *test_pu21_ssim_identical(void)
     for (int i = 0; i < w * h; i++)
         plane[i] = (double)(100 + (i % 7));
 
-    struct pu21_ssim_workspace ws = {0};
+    struct pu21_ssim_workspace ws = {VMAF_NULLPTR};
     mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
 
     double score = 0.0;
@@ -158,7 +154,7 @@ static char *test_pu21_ssim_identical(void)
     mu_assert("pu21_compute_ssim returned error", err == 0);
     mu_assert("PU-SSIM of identical planes should be 1.0", almost_equal(score, 1.0, EPS_4));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Minimum valid plane: w = h = GAUSSIAN_LEN (11). The valid interior region is
@@ -178,7 +174,7 @@ static char *test_pu21_ssim_min_valid(void)
         dist[i] = (double)(80 + ((i + 1) % 13));
     }
 
-    struct pu21_ssim_workspace ws = {0};
+    struct pu21_ssim_workspace ws = {VMAF_NULLPTR};
     mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
 
     double score = -1.0;
@@ -187,7 +183,7 @@ static char *test_pu21_ssim_min_valid(void)
     mu_assert("pu21_compute_ssim (11x11 minimum) should succeed", err == 0);
     mu_assert("PU-SSIM (11x11) must be finite", isfinite(score));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Below-minimum plane: w = h = 10 (< GAUSSIAN_LEN). Must be rejected with
@@ -200,7 +196,7 @@ static char *test_pu21_ssim_reject_small(void)
     for (int i = 0; i < w * h; i++)
         plane[i] = (double)(100 + (i % 5));
 
-    struct pu21_ssim_workspace ws = {0};
+    struct pu21_ssim_workspace ws = {VMAF_NULLPTR};
     mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
 
     double score = 0.0;
@@ -208,7 +204,7 @@ static char *test_pu21_ssim_reject_small(void)
     pu21_ssim_workspace_free(&ws);
     mu_assert("pu21_compute_ssim (10x10) must reject with -EINVAL", err == -EINVAL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Non-square plane (13x17): exercises the asymmetric reduced-stride geometry
@@ -221,7 +217,7 @@ static char *test_pu21_ssim_nonsquare(void)
     for (int i = 0; i < w * h; i++)
         plane[i] = (double)(120 + (i % 11));
 
-    struct pu21_ssim_workspace ws = {0};
+    struct pu21_ssim_workspace ws = {VMAF_NULLPTR};
     mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
 
     double score = 0.0;
@@ -231,7 +227,7 @@ static char *test_pu21_ssim_nonsquare(void)
     mu_assert("PU-SSIM (13x17) must be finite", isfinite(score));
     mu_assert("PU-SSIM (13x17) of identical planes should be 1.0", almost_equal(score, 1.0, EPS_4));
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -249,5 +245,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

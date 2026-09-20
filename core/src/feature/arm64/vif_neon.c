@@ -24,6 +24,8 @@
  * accumulator differently from the later taps (a plain product rather than a
  * multiply-accumulate), that tap keeps its own `*_init` helper. */
 
+#include "vmaf_nullptr.h"
+
 #include <arm_neon.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -428,8 +430,8 @@ static FORCE_INLINE void vif_subsample_horizontal_row(const VifBuffer *buf, unsi
 
 void vif_subsample_rd_8_neon(const VifBuffer *buf, unsigned int w, unsigned int h)
 {
-    VMAF_ASSERT_DEBUG(buf->ref != NULL);
-    VMAF_ASSERT_DEBUG(buf->dis != NULL);
+    VMAF_ASSERT_DEBUG(buf->ref != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(buf->dis != VMAF_NULLPTR);
     VMAF_ASSERT_DEBUG(w > 0 && h > 0);
     const unsigned int fwidth = vif_filter1d_width[1];
 
@@ -444,8 +446,8 @@ void vif_subsample_rd_8_neon(const VifBuffer *buf, unsigned int w, unsigned int 
 void vif_subsample_rd_16_neon(const VifBuffer *buf, unsigned int w, unsigned int h, int scale,
                               int bpc)
 {
-    VMAF_ASSERT_DEBUG(buf->ref != NULL);
-    VMAF_ASSERT_DEBUG(buf->dis != NULL);
+    VMAF_ASSERT_DEBUG(buf->ref != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(buf->dis != VMAF_NULLPTR);
     VMAF_ASSERT_DEBUG(w > 0 && h > 0);
     VMAF_ASSERT_DEBUG(scale >= 0 && scale < 3);
     VMAF_ASSERT_DEBUG(bpc >= 8 && bpc <= 16);
@@ -785,13 +787,11 @@ static FORCE_INLINE void vif_stat8_vertical_row(const VifBuffer *buf, unsigned w
         vif_stat8_vertical_tail(buf, i, j);
 }
 
-/* Research-2045: integer_vif.c assigns this function to VifState callbacks
- * taking VifPublicState *, shared with the scalar and other ISA implementations. */
-// cppcheck-suppress constParameterPointer
-void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h)
+void vif_statistic_8_neon(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                          unsigned h)
 {
-    VMAF_ASSERT_DEBUG(s != NULL);
-    VMAF_ASSERT_DEBUG(num != NULL && den != NULL);
+    VMAF_ASSERT_DEBUG(s != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(num != VMAF_NULLPTR && den != VMAF_NULLPTR);
     VMAF_ASSERT_DEBUG(w > 0 && h > 0);
     const unsigned int uiw7 = (w > 7 ? w - 7 : 0);
     const unsigned int fwidth = vif_filter1d_width[0];
@@ -941,11 +941,8 @@ static FORCE_INLINE void vif_stat16_vertical_row(const VifBuffer *buf, unsigned 
         vif_stat16_vertical_tail(buf, i, j, p);
 }
 
-/* Research-2045: integer_vif.c assigns this function to VifState callbacks
- * taking VifPublicState *, shared with the scalar and other ISA implementations. */
-// cppcheck-suppress constParameterPointer
-void vif_statistic_16_neon(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
-                           int bpc, int scale)
+void vif_statistic_16_neon(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                           unsigned h, int bpc, int scale)
 {
     const unsigned int uiw7 = (w > 7 ? w - 7 : 0);
     const VifFilterPlan plan = vif_filter_plan(scale, bpc, scale);

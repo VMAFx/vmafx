@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0019 — Tiny-AI Training on the Netflix VMAF Corpus
 
 **Date**: 2026-04-27
@@ -130,7 +129,7 @@ Learning of Blind Image Quality Assessment" (2020)**:
 Given the fork's 70-pair corpus, two label strategies are viable:
 
 | Strategy | Source | Data points | Variance |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Soft labels from `vmaf_v0.6.1` | Deterministic teacher | 70 × N_frames | Zero (teacher is deterministic) |
 | Hard MOS from Netflix ACM MM 2016 appendix | Human annotations (∼15 raters/clip) | ≤ 70 clips | σ ≈ 8–12 DMOS units |
 | Both (teacher + MOS joint loss) | Mixed | 70 clips | Moderate (MOS-weighted correction) |
@@ -166,7 +165,7 @@ Empirical results from quality-metric regression literature (Ghadiyaram and
 Bovik 2017; Ke et al. 2021) suggest:
 
 | Hidden width | Depth | Params (6→H→1) | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 16 | 1 | ≈ 130 | Underfits; below the SVM baseline on < 100 clips |
 | 32 | 2 | ≈ 1 K | Good starting point; current `fr_tiny_v1` |
 | 64 | 2 | ≈ 4 K | Marginal gain over 32-wide on small corpora |
@@ -178,7 +177,7 @@ Bovik 2017; Ke et al. 2021) suggest:
 ### 3.3 Loss function choices
 
 | Loss | Stability | Correlation proxy | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | MSE | High | Penalises absolute error | Standard for distillation |
 | Huber (δ=5) | High | Less sensitive to outlier clips | Good when teacher has occasional artefacts |
 | PLCC-optimised (differentiable rank loss) | Medium | Directly optimises Pearson r | Higher variance on small datasets; use as secondary metric |

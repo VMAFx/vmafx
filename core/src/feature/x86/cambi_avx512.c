@@ -122,7 +122,7 @@ void get_derivative_data_for_row_avx512(const uint16_t *image_data, uint16_t *de
 static inline __m512 accumulate_c_value_chunk_avx512(
     __m512i value_v, __m512i compact_v, __m512i col_v, __m512i p0, __mmask16 mask_active,
     const uint16_t *histograms, int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds,
-    const int *diff_weights, const int *all_diffs, const float *reciprocal_lut, __m512i width_v,
+    const int *diff_weights, const int *all_diffs, const float *reciprocal_table, __m512i width_v,
     __m512i vlt_luma_v, __m512i band_max_v, __m512i zero, __m512i lo16_mask)
 {
     (void)width;
@@ -174,7 +174,7 @@ static inline __m512 accumulate_c_value_chunk_avx512(
         __m512 num_f = _mm512_cvtepi32_ps(num_int);
 
         /* rcp = reciprocal_lut[denom]; LUT is hot in L1. */
-        __m512 rcp = _mm512_i32gather_ps(denom, reciprocal_lut, 4);
+        __m512 rcp = _mm512_i32gather_ps(denom, reciprocal_table, 4);
 
         __m512 val = _mm512_mul_ps(num_f, rcp);
         /* Mask off lanes where predicate is false. */
@@ -187,7 +187,7 @@ static inline __m512 accumulate_c_value_chunk_avx512(
 static inline float calculate_c_value_pixel_scalar_avx512(
     uint16_t img_val, int col, int width, const uint16_t *histograms, const uint16_t num_diffs,
     const uint16_t *tvi_thresholds, uint16_t vlt_luma, const int *diff_weights,
-    const int *all_diffs, const float *reciprocal_lut, uint16_t v_band_base, uint16_t v_band_size)
+    const int *all_diffs, const float *reciprocal_table, uint16_t v_band_base, uint16_t v_band_size)
 {
     int compact_v_signed = (int)img_val - (int)v_band_base;
     if ((unsigned)compact_v_signed >= v_band_size) {
@@ -206,7 +206,7 @@ static inline float calculate_c_value_pixel_scalar_avx512(
             uint16_t p_1 = histograms[(ptrdiff_t)idx1 * width + col];
             uint16_t p_2 = (idx2 >= 0) ? histograms[(ptrdiff_t)idx2 * width + col] : 0;
             uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-            float val = (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
+            float val = (float)(diff_weights[d] * p_0 * p_max) * reciprocal_table[p_max + p_0];
             if (val > c_v) {
                 c_v = val;
             }
@@ -218,14 +218,14 @@ static inline float calculate_c_value_pixel_scalar_avx512(
 static void calculate_c_values_row_scalar_tail_avx512(
     float *c_row, const uint16_t *histograms, const uint16_t *image_row, const uint16_t *mask_row,
     int col_start, int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds,
-    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs, const float *reciprocal_lut,
+    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs, const float *reciprocal_table,
     uint16_t v_band_base, uint16_t v_band_size)
 {
     for (int col = col_start; col < width; col++) {
         c_row[col] = mask_row[col] ? calculate_c_value_pixel_scalar_avx512(
                                          image_row[col], col, width, histograms, num_diffs,
                                          tvi_thresholds, vlt_luma, diff_weights, all_diffs,
-                                         reciprocal_lut, v_band_base, v_band_size) :
+                                         reciprocal_table, v_band_base, v_band_size) :
                                      0.0f;
     }
 }
@@ -233,7 +233,7 @@ static void calculate_c_values_row_scalar_tail_avx512(
 static inline int process_c_values_row_chunks_avx512(
     float *c_row, const uint16_t *image_row, const uint16_t *mask_row, const uint16_t *histograms,
     int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds, const int *diff_weights,
-    const int *all_diffs, const float *reciprocal_lut, uint16_t v_band_base, uint16_t v_band_size,
+    const int *all_diffs, const float *reciprocal_table, uint16_t v_band_base, uint16_t v_band_size,
     __m512i vlt_luma_v)
 {
     const __m512i col_base = _mm512_set_epi32(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
@@ -275,7 +275,7 @@ static inline int process_c_values_row_chunks_avx512(
 
         __m512 c_value = accumulate_c_value_chunk_avx512(
             value_v, compact_v, col_v, p0, mask_active, histograms, width, num_diffs,
-            tvi_thresholds, diff_weights, all_diffs, reciprocal_lut, width_v, vlt_luma_v,
+            tvi_thresholds, diff_weights, all_diffs, reciprocal_table, width_v, vlt_luma_v,
             band_max_v, zero, lo16_mask);
 
         /* Apply active-lane mask and store 16 floats. */
@@ -290,7 +290,7 @@ void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
                                    ptrdiff_t stride, const uint16_t num_diffs,
                                    const uint16_t *tvi_thresholds, uint16_t vlt_luma,
                                    const int *diff_weights, const int *all_diffs,
-                                   const float *reciprocal_lut)
+                                   const float *reciprocal_table)
 {
     int v_lo_signed_sc = (int)vlt_luma - 3 * (int)num_diffs + 1;
     uint16_t v_band_base = v_lo_signed_sc > 0 ? (uint16_t)v_lo_signed_sc : 0;
@@ -303,11 +303,11 @@ void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
 
     int col = process_c_values_row_chunks_avx512(
         c_row, image_row, mask_row, histograms, width, num_diffs, tvi_thresholds, diff_weights,
-        all_diffs, reciprocal_lut, v_band_base, v_band_size, vlt_luma_v);
+        all_diffs, reciprocal_table, v_band_base, v_band_size, vlt_luma_v);
 
-    calculate_c_values_row_scalar_tail_avx512(c_row, histograms, image_row, mask_row, col, width,
-                                              num_diffs, tvi_thresholds, vlt_luma, diff_weights,
-                                              all_diffs, reciprocal_lut, v_band_base, v_band_size);
+    calculate_c_values_row_scalar_tail_avx512(
+        c_row, histograms, image_row, mask_row, col, width, num_diffs, tvi_thresholds, vlt_luma,
+        diff_weights, all_diffs, reciprocal_table, v_band_base, v_band_size);
 }
 
 /*
@@ -642,7 +642,7 @@ CAMBI_SCAN_NOINLINE static void scan_slide_avx512(const CambiCValuesFrame *f, in
     }
 }
 
-void calculate_c_values_avx512(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+void calculate_c_values_avx512(const VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
                                uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
                                const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                                const int *diff_weights, const int *all_diffs, int width, int height)

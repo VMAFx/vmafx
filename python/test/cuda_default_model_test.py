@@ -3,24 +3,26 @@
 
 import json
 import os
-import subprocess
+import shutil
 import tempfile
 import unittest
+from pathlib import Path
 
+from vmaf import run_process
 from vmaf.config import VmafConfig
 
 
 def _find_vmaf_binary():
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    repo_root = Path(__file__).resolve().parents[2]
     candidates = [
-        os.path.join(repo_root, "core", "build", "tools", "vmaf"),
-        os.path.join(repo_root, "build", "tools", "vmaf"),
-        os.path.join(repo_root, "core", "build-cuda", "tools", "vmaf"),
-        os.path.join(repo_root, "core", "build-all", "tools", "vmaf"),
+        repo_root / "core" / "build" / "tools" / "vmaf",
+        repo_root / "build" / "tools" / "vmaf",
+        repo_root / "core" / "build-cuda" / "tools" / "vmaf",
+        repo_root / "core" / "build-all" / "tools" / "vmaf",
     ]
-    for c in candidates:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
     return None
 
 
@@ -28,11 +30,12 @@ def _probe_cuda(vmaf_bin):
     if not vmaf_bin:
         return False
     # Check if nvidia-smi runs and CUDA device is responsive
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi is None:
+        return False
     try:
-        res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if res.returncode != 0:
-            return False
-    except FileNotFoundError:
+        run_process([nvidia_smi])
+    except (AssertionError, FileNotFoundError):
         return False
     return True
 
@@ -49,7 +52,7 @@ class CudaDefaultModelTest(unittest.TestCase):
 
         cls.ref_yuv = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv")
         cls.dis_yuv = VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv")
-        if not os.path.isfile(cls.ref_yuv) or not os.path.isfile(cls.dis_yuv):
+        if not Path(cls.ref_yuv).is_file() or not Path(cls.dis_yuv).is_file():
             raise unittest.SkipTest("Required test YUV video files not found")
 
     def test_cuda_default_model_exit_zero_and_pooled_metrics(self):
@@ -78,10 +81,9 @@ class CudaDefaultModelTest(unittest.TestCase):
                 "--output",
                 out_json,
             ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            self.assertEqual(res.returncode, 0, f"CUDA vmaf run failed: {res.stderr}\n{res.stdout}")
+            run_process(cmd)
 
-            with open(out_json, "r", encoding="utf-8") as jf:
+            with Path(out_json).open(encoding="utf-8") as jf:
                 data = json.load(jf)
 
             pooled = data.get("pooled_metrics", {})
@@ -91,8 +93,8 @@ class CudaDefaultModelTest(unittest.TestCase):
             self.assertGreater(vmaf_score, 0.0)
             self.assertLessEqual(vmaf_score, 100.0)
         finally:
-            if os.path.exists(out_json):
-                os.remove(out_json)
+            if Path(out_json).exists():
+                Path(out_json).unlink()
 
     def test_cuda_cpu_parity_default_model(self):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f_cuda:
@@ -123,10 +125,7 @@ class CudaDefaultModelTest(unittest.TestCase):
                 "--output",
                 cuda_json,
             ]
-            res_cuda = subprocess.run(
-                cmd_cuda, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            self.assertEqual(res_cuda.returncode, 0, f"CUDA run failed: {res_cuda.stderr}")
+            run_process(cmd_cuda)
 
             cmd_cpu = [
                 self.vmaf_bin,
@@ -149,14 +148,11 @@ class CudaDefaultModelTest(unittest.TestCase):
                 "--output",
                 cpu_json,
             ]
-            res_cpu = subprocess.run(
-                cmd_cpu, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            self.assertEqual(res_cpu.returncode, 0, f"CPU run failed: {res_cpu.stderr}")
+            run_process(cmd_cpu)
 
-            with open(cuda_json, "r", encoding="utf-8") as f:
+            with Path(cuda_json).open(encoding="utf-8") as f:
                 cuda_data = json.load(f)
-            with open(cpu_json, "r", encoding="utf-8") as f:
+            with Path(cpu_json).open(encoding="utf-8") as f:
                 cpu_data = json.load(f)
 
             cuda_pooled = cuda_data["pooled_metrics"]
@@ -191,10 +187,10 @@ class CudaDefaultModelTest(unittest.TestCase):
                 msg="Overall vmaf score should closely match between CUDA and CPU runs",
             )
         finally:
-            if os.path.exists(cuda_json):
-                os.remove(cuda_json)
-            if os.path.exists(cpu_json):
-                os.remove(cpu_json)
+            if Path(cuda_json).exists():
+                Path(cuda_json).unlink()
+            if Path(cpu_json).exists():
+                Path(cpu_json).unlink()
 
     def test_unknown_option_typo_rejected(self):
         cmd = [
@@ -215,11 +211,9 @@ class CudaDefaultModelTest(unittest.TestCase):
             "adm=adm_csf_moed=2",
             "--no_prediction",
         ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.assertNotEqual(
-            res.returncode, 0, "Typo option should cause vmaf to exit with non-zero"
-        )
-        combined_output = res.stdout + res.stderr
+        with self.assertRaises(AssertionError) as error:
+            run_process(cmd)
+        combined_output = str(error.exception)
         self.assertIn(
             "unknown option 'adm_csf_moed'",
             combined_output,

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0903: Wire Codecov upload into the existing Coverage Gate jobs
 
 - **Status**: Accepted
@@ -69,7 +68,7 @@ the maintenance bot for action SHAs).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Wire `codecov/codecov-action` (chosen)** | Industry-standard; fork-aware OIDC eliminates token management; existing gcovr step already emits Cobertura XML; flag-aware UI separates CPU vs GPU views | Adds a 3rd-party dependency on the Codecov service; one more action SHA for Renovate to track | Lowest-friction path to closing the PR #383 gap; the gcovr gate remains the authoritative threshold check, so Codecov outages cannot block merges |
 | Coveralls (`coverallsapp/github-action`) | Similar feature set; also OIDC-capable | Smaller adoption in C / C++ ecosystem; lcov-tracefile is its native input (we would have to add `--coveralls` to the gcovr invocation or a converter); no clear advantage for our use case | Codecov is the de-facto standard for public OSS C projects and integrates more cleanly with the existing Cobertura XML |
 | Self-hosted dashboard (e.g. Grafana + parsing `coverage.json`) | Full control; no third-party data sharing | Operational burden (host, auth, persistence, alerting); replicates infra the team is not asking to operate; no PR-comment integration | Disproportionate cost for what is fundamentally a "render gcovr output prettier" need |

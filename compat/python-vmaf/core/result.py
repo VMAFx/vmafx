@@ -2,11 +2,14 @@ import json
 import re
 from collections import OrderedDict
 from collections.abc import Callable
+from importlib import import_module
 
 import numpy as np
 
 from vmaf.core.asset import Asset
 from vmaf.tools.misc import get_file_name_with_extension
+
+_COMPARISON_VALUE_2 = 2
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -66,11 +69,11 @@ class BasicResult(object):
                     scores = np.asarray(scores)
                 # dimension assertion: scores should be either 1-D (one prediction per frame) or 2-D (single/multiple predictions per frame)
                 assert (
-                    scores.ndim <= 2
+                    scores.ndim <= _COMPARISON_VALUE_2
                 ), "Per frame score aggregation is not well-defined; scores cannot be saved in a N-D array with N > 2."
 
                 # check if there are more than one models (first dimension)
-                if scores.ndim == 2:
+                if scores.ndim == _COMPARISON_VALUE_2:
                     # check that there are > 1 models present
                     assert (
                         scores.shape[0] > 1
@@ -80,9 +83,8 @@ class BasicResult(object):
                     # apply score aggregation on each individual model
                     # a scores "piece" corresponds to a single model's predictions over all frames
                     return [self.score_aggregate_method(scores_piece) for scores_piece in scores]
-                else:
-                    # just one prediction per frame
-                    return self.score_aggregate_method(scores)
+                # just one prediction per frame
+                return self.score_aggregate_method(scores)
         raise KeyError(error)
 
     def get_ordered_list_scores_key(self):
@@ -92,8 +94,7 @@ class BasicResult(object):
             lambda key: re.search(r"_scores$", key) and np.asarray(self.result_dict[key]).ndim == 1,
             self.result_dict.keys(),
         )
-        list_scores_key = sorted(list_scores_key)
-        return list_scores_key
+        return sorted(list_scores_key)
 
     def get_ordered_list_multimodel_scores_key(self):
         # e.g. ['BOOTSTRAP_VMAF_all_models_scores']
@@ -102,147 +103,57 @@ class BasicResult(object):
             lambda key: re.search(r"_scores$", key) and np.asarray(self.result_dict[key]).ndim > 1,
             self.result_dict.keys(),
         )
-        list_scores_key = sorted(list_scores_key)
-        return list_scores_key
+        return sorted(list_scores_key)
 
     def get_ordered_list_score_key(self):
         # e.g. ['VMAF_score', 'VMAF_vif_score']
         list_scores_key = self.get_ordered_list_scores_key()
-        return list(map(lambda scores_key: scores_key[:-1], list_scores_key))
+        return [scores_key[:-1] for scores_key in list_scores_key]
 
     def get_ordered_list_multimodel_score_key(self):
         # e.g. ['BOOTSTRAP_VMAF_all_models_score']
         list_scores_key = self.get_ordered_list_multimodel_scores_key()
-        return list(map(lambda scores_key: scores_key[:-1], list_scores_key))
+        return [scores_key[:-1] for scores_key in list_scores_key]
 
     def _get_scores_str(self, unit_name="Frame"):
         list_scores_key = self.get_ordered_list_scores_key()
         list_score_key = self.get_ordered_list_score_key()
-        list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
+        list_scores = [self.result_dict[key] for key in list_scores_key]
         str_perframe = "\n".join(
-            list(
-                map(
-                    lambda tframe_scores: "{unit} {num}: ".format(
-                        unit=unit_name, num=tframe_scores[0]
+            [
+                "{unit} {num}: ".format(unit=unit_name, num=tframe_scores[0])
+                + (
+                    ", ".join(
+                        [
+                            "{score_key}:{score:.6f}".format(score_key=tscore[0], score=tscore[1])
+                            for tscore in zip(list_score_key, tframe_scores[1], strict=False)
+                        ]
                     )
-                    + (
-                        ", ".join(
-                            list(
-                                map(
-                                    lambda tscore: "{score_key}:{score:.6f}".format(
-                                        score_key=tscore[0], score=tscore[1]
-                                    ),
-                                    zip(list_score_key, tframe_scores[1]),
-                                )
-                            )
-                        )
-                    ),
-                    enumerate(zip(*list_scores)),
                 )
-            )
+                for tframe_scores in enumerate(zip(*list_scores, strict=False))
+            ]
         )
         str_perframe += "\n"
         return str_perframe
 
     def _get_aggregate_score_str(self):
         list_score_key = self.get_ordered_list_score_key()
-        str_aggregate = "Aggregate ({}): ".format(self.score_aggregate_method.__name__) + (
+        return "Aggregate ({}): ".format(self.score_aggregate_method.__name__) + (
             ", ".join(
-                list(
-                    map(
-                        lambda tscore: "{score_key}:{score:.6f}".format(
-                            score_key=tscore[0], score=tscore[1]
-                        ),
-                        zip(
-                            list_score_key,
-                            list(map(lambda score_key: self[score_key], list_score_key)),
-                        ),
+                [
+                    "{score_key}:{score:.6f}".format(score_key=tscore[0], score=tscore[1])
+                    for tscore in zip(
+                        list_score_key,
+                        [self[score_key] for score_key in list_score_key],
+                        strict=False,
                     )
-                )
+                ]
             )
         )
-        return str_aggregate
 
     @staticmethod
     def scores_key_wildcard_match(result_dict, scores_key, excluded_scores_keys=None):
-        """
-        Find all matching score keys from a result dictionary. When a list of keys is provided via excluded_scores_keys,
-        these particular keys will be ommited from the query result.
-        >>> BasicResult.scores_key_wildcard_match({'VMAF_integer_feature_vif_scale0_egl_1_scores': [0.983708]}, 'VMAF_integer_feature_vif_scale0_scores')
-        'VMAF_integer_feature_vif_scale0_egl_1_scores'
-        >>> BasicResult.scores_key_wildcard_match({'VMAF_integer_feature_vif_scale0_egl_1_scores': [0.983708]}, 'VMAF_integer_feature_vif_scale1_scores')
-        Traceback (most recent call last):
-        ...
-        KeyError: 'no key matches VMAF_integer_feature_vif_scale1_scores'
-        >>> d = {'VMAF_feature_adm_den_scale0_scores': [111.207703], \
-                 'VMAF_feature_adm_den_scale1_scores': [109.423508], \
-                 'VMAF_feature_adm_den_scale2_scores': [196.427551], \
-                 'VMAF_feature_adm_den_scale3_scores': [328.864075], \
-                 'VMAF_feature_adm_den_scores': [745.922836], \
-                 'VMAF_feature_adm_num_scale0_scores': [107.988159], \
-                 'VMAF_feature_adm_num_scale1_scores': [96.965546], \
-                 'VMAF_feature_adm_num_scale2_scores': [178.08934], \
-                 'VMAF_feature_adm_num_scale3_scores': [317.582733], \
-                 'VMAF_feature_adm_num_scores': [700.625778], \
-                 'VMAF_feature_adm_scores': [0.939274], \
-                 'VMAF_feature_motion2_scores': [0.0], \
-                 'VMAF_feature_motion_scores': [0.0], \
-                 'VMAF_feature_vif_den_scale0_scores': [30884050.0], \
-                 'VMAF_feature_vif_den_scale1_scores': [7006361.0], \
-                 'VMAF_feature_vif_den_scale2_scores': [1696758.0], \
-                 'VMAF_feature_vif_den_scale3_scores': [429003.59375], \
-                 'VMAF_feature_vif_den_scores': [40016172.59375], \
-                 'VMAF_feature_vif_num_scale0_scores': [18583060.0], \
-                 'VMAF_feature_vif_num_scale1_scores': [5836731.5], \
-                 'VMAF_feature_vif_num_scale2_scores': [1545453.125], \
-                 'VMAF_feature_vif_num_scale3_scores': [408037.5], \
-                 'VMAF_feature_vif_num_scores': [26373282.125], \
-                 'VMAF_feature_vif_scores': [0.659066]}
-        >>> BasicResult.scores_key_wildcard_match(d, 'VMAF_feature_adm_num_scores')
-        'VMAF_feature_adm_num_scores'
-        >>> BasicResult.scores_key_wildcard_match(d, 'VMAF_feature_adm_num_scale_scores')
-        Traceback (most recent call last):
-        ...
-        KeyError: "more than one keys matches VMAF_feature_adm_num_scale_scores: ['VMAF_feature_adm_num_scale0_scores', 'VMAF_feature_adm_num_scale1_scores', 'VMAF_feature_adm_num_scale2_scores', 'VMAF_feature_adm_num_scale3_scores']"
-        >>> e = {'VMAF_feature_adm_den_egl_1_scores': [290.148182], \
-                 'VMAF_feature_adm_den_scale0_egl_1_scores': [36.143059], \
-                 'VMAF_feature_adm_den_scale1_egl_1_scores': [56.709286], \
-                 'VMAF_feature_adm_den_scale2_egl_1_scores': [83.719971], \
-                 'VMAF_feature_adm_den_scale3_egl_1_scores': [113.575867], \
-                 'VMAF_feature_adm_num_egl_1_scores': [277.796806], \
-                 'VMAF_feature_adm_num_scale0_egl_1_scores': [35.399879], \
-                 'VMAF_feature_adm_num_scale1_egl_1_scores': [54.699654], \
-                 'VMAF_feature_adm_num_scale2_egl_1_scores': [80.061874], \
-                 'VMAF_feature_adm_num_scale3_egl_1_scores': [107.635399], \
-                 'VMAF_feature_adm_scale0_egl_1_scores': [0.979438], \
-                 'VMAF_feature_motion2_scores': [0.0], \
-                 'VMAF_feature_motion_scores': [0.0], \
-                 'VMAF_feature_vif_den_egl_1_scores': [584014.634277], \
-                 'VMAF_feature_vif_den_scale0_egl_1_scores': [452763.03125], \
-                 'VMAF_feature_vif_den_scale1_egl_1_scores': [100037.859375], \
-                 'VMAF_feature_vif_den_scale2_egl_1_scores': [24712.830078], \
-                 'VMAF_feature_vif_den_scale3_egl_1_scores': [6500.913574], \
-                 'VMAF_feature_vif_num_egl_1_scores': [576352.736328], \
-                 'VMAF_feature_vif_num_scale0_egl_1_scores': [445400.1875], \
-                 'VMAF_feature_vif_num_scale1_egl_1_scores': [99781.773438], \
-                 'VMAF_feature_vif_num_scale2_egl_1_scores': [24675.099609], \
-                 'VMAF_feature_vif_num_scale3_egl_1_scores': [6495.675781], \
-                 'VMAF_feature_vif_scale0_egl_1_scores': [0.983738]}
-        >>> BasicResult.scores_key_wildcard_match(e, 'VMAF_feature_adm_num_scores')
-        'VMAF_feature_adm_num_egl_1_scores'
-        >>> f = {'VMAF_integer_feature_vif_scale0_egl_1_scores': [111.207703], \
-                 'VMAF_integer_feature_vif_scale0_eg_1_scores': [109.423508]}
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores')
-        'VMAF_integer_feature_vif_scale0_eg_1_scores'
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=[])
-        'VMAF_integer_feature_vif_scale0_eg_1_scores'
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=['VMAF_integer_feature_vif_scale0_eg_1_scores'])
-        'VMAF_integer_feature_vif_scale0_egl_1_scores'
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=['VMAF_integer_feature_vif_scale0_eg_1_scores', 'VMAF_integer_feature_vif_scale0_egl_1_scores'])
-        Traceback (most recent call last):
-        ...
-        KeyError: 'no key matches VMAF_integer_feature_vif_scale0_scores'
-        """
+        """Find the exact or shortest unambiguous matching score key."""
 
         # first look for exact match
         result_keys_sorted = [
@@ -262,16 +173,14 @@ class BasicResult(object):
                 matched_result_keys.append(result_key)
         if len(matched_result_keys) == 0:
             raise KeyError(f"no key matches {scores_key}")
-        elif len(matched_result_keys) == 1:
+        if len(matched_result_keys) == 1:
             return matched_result_keys[0]
-        else:
-            # look for shortest match
-            strlens = [len(s) for s in matched_result_keys]
-            argmin_strlen = np.concatenate(np.where(strlens == np.min(strlens))).tolist()
-            if len(argmin_strlen) == 1:
-                return matched_result_keys[argmin_strlen[0]]
-            else:
-                raise KeyError(f"more than one keys matches {scores_key}: {matched_result_keys}")
+        # look for shortest match
+        strlens = [len(s) for s in matched_result_keys]
+        argmin_strlen = np.concatenate(np.where(strlens == np.min(strlens))).tolist()
+        if len(argmin_strlen) == 1:
+            return matched_result_keys[argmin_strlen[0]]
+        raise KeyError(f"more than one keys matches {scores_key}: {matched_result_keys}")
 
 
 class Result(BasicResult):
@@ -291,6 +200,7 @@ class Result(BasicResult):
         "scores_key",
         "scores",  # one score per unit - frame, chunk or else
     )
+    __hash__ = None
 
     def __init__(self, asset, executor_id, result_dict):
         super(Result, self).__init__(asset, result_dict)
@@ -351,76 +261,51 @@ class Result(BasicResult):
         s += self._get_aggregate_score_str()
         return s
 
+    def _output_score_data(self):
+        score_keys = self.get_ordered_list_score_key()
+        scores = [self.result_dict[key] for key in self.get_ordered_list_scores_key()]
+        aggregates = [self[key] for key in score_keys]
+        multimodel_score_keys = self.get_ordered_list_multimodel_score_key()
+        multimodel_scores = [
+            self.result_dict[key].T.tolist()
+            for key in self.get_ordered_list_multimodel_scores_key()
+        ]
+        score_keys += multimodel_score_keys
+        scores += multimodel_scores
+        aggregates += [self[key] for key in multimodel_score_keys]
+        return score_keys, scores, aggregates
+
+    @staticmethod
+    def _prettify_xml(element):
+        minidom = import_module("xml.dom.minidom")
+        element_tree = import_module("xml.etree.ElementTree")
+        rough_string = element_tree.tostring(element, "utf-8")
+        return minidom.parseString(rough_string).toprettyxml(indent="  ")
+
     def to_xml(self):
-        """Example:
-        <?xml version="1.0" ?>
-        <result executorId="SSIM_V1.0">
-          <asset identifier="test_0_0_checkerboard_1920_1080_10_3_0_0_1920x1080_vs_checkerboard_1920_1080_10_3_1_0_1920x1080_q_1920x1080"/>
-          <frames>
-            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512" SSIM_feature_ssim_s_score="0.935803" SSIM_score="0.901161" frameNum="0"/>
-            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512" SSIM_feature_ssim_s_score="0.935803" SSIM_score="0.90116" frameNum="1"/>
-            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965514" SSIM_feature_ssim_s_score="0.935804" SSIM_score="0.901163" frameNum="2"/>
-          </frames>
-          <aggregate SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512666667" SSIM_feature_ssim_s_score="0.935803333333" SSIM_score="0.901161333333"/>
-        </result>
-        """
-
-        from xml.dom import minidom
-        from xml.etree import ElementTree
-
-        list_scores_key = self.get_ordered_list_scores_key()
-        list_score_key = self.get_ordered_list_score_key()
-        list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
-        list_aggregate_score = list(map(lambda key: self[key], list_score_key))
-
-        list_multimodel_scores_key = self.get_ordered_list_multimodel_scores_key()
-        list_multimodel_score_key = self.get_ordered_list_multimodel_score_key()
-        # here we need to transpose, since printing is per frame and not per model
-        # we also need to turn the 2D array to a list of lists, for unpacking to work as expected
-        list_multimodel_scores = list(
-            map(lambda key: self.result_dict[key].T.tolist(), list_multimodel_scores_key)
-        )
-        list_aggregate_multimodel_score = list(
-            map(lambda key: self[key], list_multimodel_score_key)
-        )
-
-        # append multimodel scores and keys (if any)
-        list_scores_key += list_multimodel_scores_key
-        list_score_key += list_multimodel_score_key
-        list_scores += list_multimodel_scores
-        list_aggregate_score += list_aggregate_multimodel_score
-
-        list_scores_reordered = zip(*list_scores)
-
-        def prettify(elem):
-            rough_string = ElementTree.tostring(elem, "utf-8")
-            reparsed = minidom.parseString(rough_string)
-            return reparsed.toprettyxml(indent="  ")
-
-        top = ElementTree.Element("result")
+        """Return frame and aggregate scores as pretty-printed XML."""
+        element_tree = import_module("xml.etree.ElementTree")
+        score_keys, scores, aggregates = self._output_score_data()
+        top = element_tree.Element("result")
         top.set("executorId", self.executor_id)
-
-        asset = ElementTree.SubElement(top, "asset")
+        asset = element_tree.SubElement(top, "asset")
         asset.set("identifier", str(self.asset))
-
-        frames = ElementTree.SubElement(top, "frames")
-        for i, list_score in enumerate(list_scores_reordered):
-            frame = ElementTree.SubElement(frames, "frame")
-            frame.set("frameNum", str(i))
-            for score_key, score in zip(list_score_key, list_score):
+        frames = element_tree.SubElement(top, "frames")
+        for frame_number, frame_scores in enumerate(zip(*scores, strict=False)):
+            frame = element_tree.SubElement(frames, "frame")
+            frame.set("frameNum", str(frame_number))
+            for score_key, score in zip(score_keys, frame_scores, strict=False):
                 frame.set(score_key, str(score))
-
-        aggregate = ElementTree.SubElement(top, "aggregate")
+        aggregate = element_tree.SubElement(top, "aggregate")
         aggregate.set("method", self.score_aggregate_method.__name__)
-        for score_key, score in zip(list_score_key, list_aggregate_score):
+        for score_key, score in zip(score_keys, aggregates, strict=False):
             aggregate.set(score_key, str(score))
-
-        return prettify(top)
+        return self._prettify_xml(top)
 
     @classmethod
     def from_xml(cls, xml_string):
 
-        from xml.etree import ElementTree
+        ElementTree = import_module("xml.etree.ElementTree")
 
         top = ElementTree.fromstring(xml_string)
         asset = top.find("asset").get("identifier")
@@ -432,7 +317,7 @@ class Result(BasicResult):
 
         pred_result_key = None
 
-        for frame_ind, frame in enumerate(frames):
+        for _frame_ind, frame in enumerate(frames):
             for score_key, score_value in frame.attrib.items():
                 if "score" in score_key:
                     # same convention of 'score' and 'scores' as in _try_get_aggregate_score
@@ -461,7 +346,7 @@ class Result(BasicResult):
 
         pred_result_key = None
 
-        for frame_ind, frame in enumerate(frames):
+        for _frame_ind, frame in enumerate(frames):
             for score_key, score_value in frame.items():
                 if "score" in score_key:
                     # same convention of 'score' and 'scores' as in _try_get_aggregate_score
@@ -486,7 +371,7 @@ class Result(BasicResult):
         executor_id = executor_ids[0]
         combined_result_dict = OrderedDict()
 
-        sorted_scores_keys = sorted([key for key in results[0].result_dict.keys()], reverse=True)
+        sorted_scores_keys = sorted(results[0].result_dict.keys(), reverse=True)
 
         # initialize dictionary
         for scores_key in sorted_scores_keys:
@@ -496,95 +381,32 @@ class Result(BasicResult):
             result_dict = result.result_dict
             # assert if the keys in result_dict match
             assert (
-                sorted([key for key in result_dict.keys()], reverse=True) == sorted_scores_keys
+                sorted(result_dict.keys(), reverse=True) == sorted_scores_keys
             ), "Score keys do not match."
             for scores_key in sorted_scores_keys:
                 combined_result_dict[scores_key] += list(result_dict[scores_key])
 
-        pred_result_key = [key for key in sorted_scores_keys if "feature" not in key][0]
+        pred_result_key = next(key for key in sorted_scores_keys if "feature" not in key)
         combined_result_dict[pred_result_key] = np.array(combined_result_dict[pred_result_key])
 
         return Result("combined_asset", executor_id, combined_result_dict)
 
     def to_dict(self):
-        """Example:
-        {
-            "executorId": "SSIM_V1.0",
-            "asset": {
-                "identifier": "test_0_0_checkerboard_1920_1080_10_3_0_0_1920x1080_vs_checkerboard_1920_1080_10_3_1_0_1920x1080_q_1920x1080"
-            },
-            "frames": [
-                {
-                    "frameNum": 0,
-                    "SSIM_feature_ssim_c_score": 0.997404,
-                    "SSIM_feature_ssim_l_score": 0.965512,
-                    "SSIM_feature_ssim_s_score": 0.935803,
-                    "SSIM_score": 0.901161
-                },
-                {
-                    "frameNum": 1,
-                    "SSIM_feature_ssim_c_score": 0.997404,
-                    "SSIM_feature_ssim_l_score": 0.965512,
-                    "SSIM_feature_ssim_s_score": 0.935803,
-                    "SSIM_score": 0.90116
-                },
-                {
-                    "frameNum": 2,
-                    "SSIM_feature_ssim_c_score": 0.997404,
-                    "SSIM_feature_ssim_l_score": 0.965514,
-                    "SSIM_feature_ssim_s_score": 0.935804,
-                    "SSIM_score": 0.901163
-                }
-            ],
-            "aggregate": {
-                "SSIM_feature_ssim_c_score": 0.99740399999999996,
-                "SSIM_feature_ssim_l_score": 0.96551266666666669,
-                "SSIM_feature_ssim_s_score": 0.93580333333333332,
-                "SSIM_score": 0.90116133333333337
-            }
-        }
-        """
-        list_scores_key = self.get_ordered_list_scores_key()
-        list_score_key = self.get_ordered_list_score_key()
-        list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
-        list_aggregate_score = list(map(lambda key: self[key], list_score_key))
-
-        list_multimodel_scores_key = self.get_ordered_list_multimodel_scores_key()
-        list_multimodel_score_key = self.get_ordered_list_multimodel_score_key()
-        # here we need to transpose, since printing is per frame and not per model
-        # we also need to turn the 2D array to a list of lists, for unpacking to work as expected
-        list_multimodel_scores = list(
-            map(lambda key: self.result_dict[key].T.tolist(), list_multimodel_scores_key)
-        )
-        list_aggregate_multimodel_score = list(
-            map(lambda key: self[key], list_multimodel_score_key)
-        )
-
-        # append multimodel scores and keys (if any)
-        list_scores_key += list_multimodel_scores_key
-        list_score_key += list_multimodel_score_key
-        list_scores += list_multimodel_scores
-        list_aggregate_score += list_aggregate_multimodel_score
-
-        list_scores_reordered = zip(*list_scores)
-
+        """Return frame and aggregate scores as a JSON-compatible mapping."""
+        score_keys, scores, aggregates = self._output_score_data()
         top = OrderedDict()
         top["executorId"] = self.executor_id
         top["asset"] = {"identifier": str(self.asset)}
-
         top["frames"] = []
-        for i, list_score in enumerate(list_scores_reordered):
-            frame = OrderedDict()
-            frame["frameNum"] = i
-            for score_key, score in zip(list_score_key, list_score):
+        for frame_number, frame_scores in enumerate(zip(*scores, strict=False)):
+            frame = OrderedDict(frameNum=frame_number)
+            for score_key, score in zip(score_keys, frame_scores, strict=False):
                 frame[score_key] = score
             top["frames"].append(frame)
         top["aggregate"] = OrderedDict()
-
-        for score_key, score in zip(list_score_key, list_aggregate_score):
+        for score_key, score in zip(score_keys, aggregates, strict=False):
             top["aggregate"][score_key] = score
         top["aggregate"]["method"] = self.score_aggregate_method.__name__
-
         return top
 
     def to_json(self):
@@ -594,49 +416,16 @@ class Result(BasicResult):
         return json.dumps(self.to_dict(), sort_keys=False, indent=4)
 
     def to_dataframe(self):
-        """
-        Export to pandas dataframe with columns: dataset, content_id, asset_id,
-        ref_name, dis_name, asset, executor_id, scores_key, scores
-        Example:
-                                                       asset  asset_id  content_id  \
-        0  {"asset_dict": {"height": 1080, "width": 1920}...         0           0
-        1  {"asset_dict": {"height": 1080, "width": 1920}...         0           0
-        2  {"asset_dict": {"height": 1080, "width": 1920}...         0           0
-        3  {"asset_dict": {"height": 1080, "width": 1920}...         0           0
-        4  {"asset_dict": {"height": 1080, "width": 1920}...         0           0
-
-          dataset                             dis_name executor_id  \
-        0    test  checkerboard_1920_1080_10_3_1_0.yuv   VMAF_V0.1
-        1    test  checkerboard_1920_1080_10_3_1_0.yuv   VMAF_V0.1
-        2    test  checkerboard_1920_1080_10_3_1_0.yuv   VMAF_V0.1
-        3    test  checkerboard_1920_1080_10_3_1_0.yuv   VMAF_V0.1
-        4    test  checkerboard_1920_1080_10_3_1_0.yuv   VMAF_V0.1
-
-                                      ref_name  \
-        0  checkerboard_1920_1080_10_3_0_0.yuv
-        1  checkerboard_1920_1080_10_3_0_0.yuv
-        2  checkerboard_1920_1080_10_3_0_0.yuv
-        3  checkerboard_1920_1080_10_3_0_0.yuv
-        4  checkerboard_1920_1080_10_3_0_0.yuv
-
-                                                  scores          scores_key
-        0                  [0.798588, 0.84287, 0.800122]     VMAF_adm_scores
-        2                    [0.0, 18.489031, 18.542355]  VMAF_motion_scores
-        3  [42.1117149479, 47.6544689539, 40.6168118533]         VMAF_scores
-        4                 [0.156106, 0.156163, 0.156119]     VMAF_vif_scores
-
-        [5 rows x 9 columns]
-        :return:
-        """
-        import pandas as pd
+        """Export one row per score series using ``DATAFRAME_COLUMNS``."""
+        pd = import_module("pandas")
 
         asset = self.asset
         executor_id = self.executor_id
         list_scores_key = self.get_ordered_list_scores_key()
-        list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
+        list_scores = [self.result_dict[key] for key in list_scores_key]
 
         rows = []
-        for scores_key, scores in zip(list_scores_key, list_scores):
+        for scores_key, scores in zip(list_scores_key, list_scores, strict=False):
             row = [
                 asset.dataset,
                 asset.content_id,
@@ -651,9 +440,9 @@ class Result(BasicResult):
             rows.append(row)
 
         # zip rows into a dict, and wrap with df
-        df = pd.DataFrame(dict(zip(self.DATAFRAME_COLUMNS, zip(*rows))))
-
-        return df
+        return pd.DataFrame(
+            dict(zip(self.DATAFRAME_COLUMNS, zip(*rows, strict=False), strict=False))
+        )
 
     @classmethod
     def from_dataframe(cls, df, AssetClass=Asset):

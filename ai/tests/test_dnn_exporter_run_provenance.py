@@ -5,29 +5,17 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
+from conftest import guarded_pytorch_lightning_import
 
-pytest.importorskip("torch")
-
-# Place repo root on sys.path BEFORE importing the conftest helper, since
-# conftest.py lives next to this file and `from conftest import ...` works
-# only when the tests dir is on the path (pytest sets this automatically).
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
-
-from conftest import requires_pytorch_lightning  # noqa: E402
-
-requires_pytorch_lightning()
-
-import export_fastdvdnet_pre as fastdvdnet_real  # noqa: E402
-import export_fastdvdnet_pre_placeholder as fastdvdnet_placeholder  # noqa: E402
-import export_tiny_models as tiny_export  # noqa: E402
-import export_transnet_v2 as transnet_real  # noqa: E402
-import export_transnet_v2_placeholder as transnet_placeholder  # noqa: E402
+with guarded_pytorch_lightning_import():
+    import export_fastdvdnet_pre as fastdvdnet_real
+    import export_fastdvdnet_pre_placeholder as fastdvdnet_placeholder
+    import export_tiny_models as tiny_export
+    import export_transnet_v2 as transnet_real
+    import export_transnet_v2_placeholder as transnet_placeholder
 
 
 def _provenance(entrypoint: str) -> dict[str, object]:

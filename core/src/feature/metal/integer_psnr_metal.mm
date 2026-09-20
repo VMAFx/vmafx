@@ -79,7 +79,7 @@ static const VmafOption options[] = {
                 "(an all-zero SSE still reports psnr_max)",
         .offset = offsetof(IntegerPsnrStateMetal, uncapped),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {0}};
 
@@ -92,7 +92,7 @@ static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -157,7 +157,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rb; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
     if (err != 0) { goto fail_rb; }
@@ -165,12 +165,12 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
 fail_rb:
     for (int p = 0; p < PSNR_NUM_PLANES; ++p) {
         (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[p], s->ctx);
@@ -180,13 +180,13 @@ fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
 static int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
                           id<MTLCommandQueue> queue, id<MTLComputePipelineState> pso,
-                          VmafPicture *ref_pic, VmafPicture *dis_pic, int plane)
+                          const VmafPicture *ref_pic, const VmafPicture *dis_pic, int plane)
 {
     const unsigned pw = ref_pic->w[plane];
     const unsigned ph = ref_pic->h[plane];
@@ -246,9 +246,9 @@ static int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
     return 0;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90; (void)dist_pic_90; (void)index;
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
@@ -258,7 +258,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
@@ -289,7 +289,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         const size_t cnt    = grid_w * grid_h;
 
         double sse_d = 0.0;
-        if (lo_p != NULL && hi_p != NULL) {
+        if (lo_p != nullptr && hi_p != nullptr) {
             for (size_t i = 0; i < cnt; ++i) {
                 const uint64_t wg_sse =
                     ((uint64_t)hi_p[i] << 32u) | (uint64_t)lo_p[i];
@@ -324,8 +324,8 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
 
     for (int p = 0; p < PSNR_NUM_PLANES; ++p) {
         int err = vmaf_metal_kernel_buffer_free(&s->rb_hi[p], s->ctx);
@@ -334,24 +334,23 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
         if (err != 0 && rc == 0) { rc = err; }
     }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_psnr_metal = {
     .name              = "integer_psnr_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerPsnrStateMetal),

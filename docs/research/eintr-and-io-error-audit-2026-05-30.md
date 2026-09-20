@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research: POSIX I/O EINTR + return-value audit (2026-05-30)
 
 **Companion to:** [ADR-0872](../adr/0872-io-error-and-eintr-audit.md)
@@ -26,7 +25,7 @@
 ## Findings
 
 | Bin | Count | Sites |
-|---|---|---|
+| --- | --- | --- |
 | HIGH | 0 | — primary I/O helpers (`read_line`, `write_all_with_newline`, `sse_read_n`, `sse_write_all`, `read_exact`) already retry on EINTR and loop partial r/w correctly |
 | MEDIUM (EINTR-unsafe drain) | 2 | `core/src/mcp/transport_stdio.c:150-156`, `core/src/mcp/transport_uds.c:134-139` — line-too-long drain loop did not retry on EINTR |
 | MEDIUM (discarded `close(2)` return) | 7 | `core/src/libvmaf.c:2846`, `core/src/feature/cambi.c:739`, `core/src/sycl/dmabuf_import.cpp:323`, `core/src/sycl/dmabuf_import.cpp:350`, `core/tools/vmaf_vpl.c:117`, `core/tools/vmaf_vpl.c:136`, `core/tools/vmaf_vpl.c:145` |

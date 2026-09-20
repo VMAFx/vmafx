@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0264: Vulkan 1.4 API-version bump blocked on shader FP-contraction audit
 
 - **Status**: Accepted
@@ -75,7 +74,7 @@ explicitly rejected — see *Alternatives considered*.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Defer + audit + bump (chosen)** | Honours `places=4` gate; bit-exact on all measured drivers post-fix; matches the existing `psnr_hvs_strict_shaders` precedent in [`core/src/vulkan/meson.build`](../../core/src/vulkan/meson.build); zero operational cost (no feature requires 1.4 today) | Defers the bump indefinitely if the audit slips | Highest-quality outcome; aligns with no-test-weakening rule |
 | Bump now and lower the cross-backend gate to `places=3` | Unblocks the API bump immediately | Violates [the no-test-weakening rule](../../CLAUDE.md) and [ADR-0214](0214-gpu-parity-ci-gate.md) — the gate exists precisely to catch this class of drift | Rejected on principle |
 | Bump now and gate NVIDIA out of the cross-backend run | Unblocks for lavapipe + RADV CI | Violates the no-skip-shortcuts rule; lawrence's local NVIDIA GPU is the only NVIDIA validation lane; CI doesn't run NVIDIA today so the "fix" is illusory | Rejected — turns a known regression into invisible debt |

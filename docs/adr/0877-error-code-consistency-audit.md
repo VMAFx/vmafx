@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0877: Error-code consistency audit — fork-added MS-SSIM decimate dispatcher
 
 - **Status**: Accepted
@@ -47,7 +46,7 @@ patterns documented above.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Convert every `return -1` / `return 1` in fork-added C | Maximum sweep | Most of the matches are framework-correct (flush signals, qsort, boolean) — converting them would break the framework contract | Rejected |
 | Tighten only the SIMD decimate paths but leave the scalar untouched | Smaller diff | Header doc applies to the scalar entry point; if the scalar still returns `-1` the doc is inconsistent | Rejected |
 | Also rewrite `mkdirp.c` (`-1` on failure) | Aligns the directory helper too | Original MIT-licensed Stephen Mathieson code; the `-1` is the public contract documented in the header comment and matches the original C source | Rejected |

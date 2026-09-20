@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0926: Parquet schema v2 — canonical column order, zstd-3, schema metadata
 
 - **Status**: Accepted
@@ -64,7 +63,7 @@ The v2 contract:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | zstd-9 (max ratio) | Another 5-10 % smaller | 2-4x write CPU; marginal benefit | The default has to stay cheap on the extraction hot path. Cold archives can opt into a higher level. |
 | brotli | Best ratio on tabular text | Pyarrow brotli support varies across builds | Pyarrow zstd is the de-facto standard; portability beats marginal ratio. |
 | LZ4 | Faster than snappy | Worse ratio than snappy | We want more compression, not less. |

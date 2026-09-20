@@ -418,7 +418,7 @@ class TestFastRecommendProductionOODFlag:
     """``fast_recommend`` marks result OOD when proxy/verify gap > tolerance."""
 
     def test_ood_flag_appears_in_notes_when_gap_exceeds_tolerance(self) -> None:
-        optuna = pytest.importorskip("optuna")  # noqa: F841
+        pytest.importorskip("optuna")
 
         from vmaftune.fast import TrialSample, fast_recommend
 

@@ -1,1 +1,5 @@
-| [ADR-0424](0424-vmaf-tune-corpus-benchmark.md) | `vmaf-tune benchmark` consumes existing Phase-A JSONL corpora and reports one matched-quality row per encoder. The command filters successful finite rows, chooses the lowest-bitrate point clearing `--target-vmaf`, keeps closest misses visible as `unmet`, and emits markdown / JSON / CSV without launching FFmpeg or libvmaf. | Accepted | vmaf-tune, cli, benchmark, corpus |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0424](0424-vmaf-tune-corpus-benchmark.md) | `vmaf-tune benchmark` consumes Phase-A corpora | Accepted | vmaf-tune, cli, benchmark, corpus |

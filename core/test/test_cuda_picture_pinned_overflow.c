@@ -49,30 +49,30 @@ static char *test_pinned_alloc_rejects_overflow_dimensions()
     VmafPicture pic;
 
     /* w == 0 must be rejected before any CUDA-state access. */
-    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 0, 1080, NULL);
+    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 0, 1080, VMAF_NULLPTR);
     mu_assert("pinned alloc must reject w=0 with -EINVAL", err == -EINVAL);
 
     /* h == 0 must be rejected. */
-    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 1920, 0, NULL);
+    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 1920, 0, VMAF_NULLPTR);
     mu_assert("pinned alloc must reject h=0 with -EINVAL", err == -EINVAL);
 
     /* w just past the cap must be rejected. */
-    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 32769, 1080, NULL);
+    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 32769, 1080, VMAF_NULLPTR);
     mu_assert("pinned alloc must reject w=32769 with -EINVAL", err == -EINVAL);
 
     /* h just past the cap must be rejected. */
-    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 1920, 32769, NULL);
+    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 1920, 32769, VMAF_NULLPTR);
     mu_assert("pinned alloc must reject h=32769 with -EINVAL", err == -EINVAL);
 
     /* Near-UINT32_MAX width — the exact 32-bit wrap that under-allocated. */
-    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 0xFFFFFFE1u, 1080, NULL);
+    err = vmaf_cuda_picture_alloc_pinned(&pic, VMAF_PIX_FMT_YUV420P, 8, 0xFFFFFFE1u, 1080, VMAF_NULLPTR);
     mu_assert("pinned alloc must reject near-UINT32_MAX width with -EINVAL", err == -EINVAL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_pinned_alloc_rejects_overflow_dimensions);
-    return NULL;
+    return VMAF_NULLPTR;
 }

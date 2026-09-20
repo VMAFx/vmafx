@@ -1,1 +1,5 @@
-| [ADR-0130](0130-ssimulacra2-scalar-implementation.md) | Ship scalar C port of the SSIMULACRA 2 metric (libjxl tools/ssimulacra2.cc). BT.709 limited-range YUV→sRGB→linear→XYB pipeline, 6-scale pyramid with separable Gaussian blur (σ=1.5, reflect padding) replacing libjxl's FastGaussian IIR, 108-weight polynomial pool. Snapshot JSON deferred to follow-up PR. Implementation closeout for ADR-0126 (Proposed, PR #67). | Accepted | metrics, feature-extractor, ssimulacra2 |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0130](0130-ssimulacra2-scalar-implementation.md) | SSIMULACRA 2 scalar implementation | Accepted | `metrics`, `feature-extractor`, `ssimulacra2` |

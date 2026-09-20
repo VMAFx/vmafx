@@ -71,7 +71,7 @@ typedef struct FloatSsimStateMetal {
     void *pso_horiz;                 /* float_ssim_horiz (pass 0) */
     void *pso_vert;                  /* float_ssim_vert_combine (pass 1) */
     void *hbuf_buf;                  /* intermediate 5-plane buffer */
-    void *lcs_buf;                   /* 3 × partials_count floats; NULL unless enable_lcs */
+    void *lcs_buf;                   /* 3 × partials_count floats; nullptr unless enable_lcs */
 
     /* Options (matching float_ssim.c CPU). */
     bool    enable_lcs;
@@ -159,7 +159,7 @@ static int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -241,7 +241,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rb; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         /* hbuf: 5 planes × w_h × H floats */
@@ -267,29 +267,29 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_vert)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;  s->pso_vert  = NULL; }
-    if (s->pso_horiz) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz; s->pso_horiz = NULL; }
+    if (s->pso_vert)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;  s->pso_vert  = nullptr; }
+    if (s->pso_horiz) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz; s->pso_horiz = nullptr; }
 fail_lcs:
-    if (s->lcs_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->lcs_buf; s->lcs_buf = NULL; }
+    if (s->lcs_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->lcs_buf; s->lcs_buf = nullptr; }
 fail_hbuf:
-    if (s->hbuf_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf; s->hbuf_buf = NULL; }
+    if (s->hbuf_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf; s->hbuf_buf = nullptr; }
 fail_rb:
     (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90; (void)dist_pic_90; (void)index;
     FloatSsimStateMetal *s = (FloatSsimStateMetal *)fex->priv;
@@ -304,7 +304,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
@@ -350,7 +350,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     {
         id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
         [blit fillBuffer:par_buf range:NSMakeRange(0, s->partials_count * sizeof(float)) value:0];
-        if (s->lcs_buf != NULL) {
+        if (s->lcs_buf != nullptr) {
             id<MTLBuffer> lcs_b = (__bridge id<MTLBuffer>)s->lcs_buf;
             [blit fillBuffer:lcs_b range:NSMakeRange(0, 3u * s->partials_count * sizeof(float)) value:0];
         }
@@ -381,7 +381,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         /* Dummy 4-byte LCS buffer when enable_lcs == false; Metal requires a
          * bound buffer even for [[buffer(5)]] when the kernel declares it.
          * We re-use par_buf's first 4 bytes (read-only by the disabled path). */
-        id<MTLBuffer> lcs_b = (s->lcs_buf != NULL)
+        id<MTLBuffer> lcs_b = (s->lcs_buf != nullptr)
             ? (__bridge id<MTLBuffer>)s->lcs_buf
             : par_buf;
 
@@ -417,7 +417,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 
     const float *parts = (const float *)s->rb.host_view;
     double ssim_sum = 0.0;
-    if (parts != NULL) {
+    if (parts != nullptr) {
         for (size_t i = 0; i < s->partials_count; ++i) {
             ssim_sum += (double)parts[i];
         }
@@ -433,9 +433,9 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         feature_collector, s->feature_name_dict, "float_ssim", ssim, index);
     if (err != 0) { return err; }
 
-    if (s->enable_lcs && s->lcs_buf != NULL) {
+    if (s->enable_lcs && s->lcs_buf != nullptr) {
         const float *lp = (const float *)[(__bridge id<MTLBuffer>)s->lcs_buf contents];
-        if (lp != NULL) {
+        if (lp != nullptr) {
             double l_sum = 0.0, c_sum = 0.0, ss_sum = 0.0;
             for (size_t i = 0; i < s->partials_count; ++i) {
                 l_sum  += (double)lp[0 * s->partials_count + i];
@@ -462,20 +462,20 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     FloatSsimStateMetal *s = (FloatSsimStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_vert)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;  s->pso_vert  = NULL; }
-    if (s->pso_horiz) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz; s->pso_horiz = NULL; }
-    if (s->lcs_buf)   { (void)(__bridge_transfer id<MTLBuffer>)s->lcs_buf;                 s->lcs_buf   = NULL; }
-    if (s->hbuf_buf)  { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                s->hbuf_buf  = NULL; }
+    if (s->pso_vert)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;  s->pso_vert  = nullptr; }
+    if (s->pso_horiz) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz; s->pso_horiz = nullptr; }
+    if (s->lcs_buf)   { (void)(__bridge_transfer id<MTLBuffer>)s->lcs_buf;                 s->lcs_buf   = nullptr; }
+    if (s->hbuf_buf)  { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                s->hbuf_buf  = nullptr; }
 
     int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
 static const char *provided_features[] = {
-    "float_ssim", "float_ssim_l", "float_ssim_c", "float_ssim_s", NULL
+    "float_ssim", "float_ssim_l", "float_ssim_c", "float_ssim_s", nullptr
 };
 
 extern "C" {
@@ -483,13 +483,12 @@ extern "C" {
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend, ADR-0589 ssim LCS dB parity; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0589 / ADR-0278
 VmafFeatureExtractor vmaf_fex_float_ssim_metal = {
     .name              = "float_ssim_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(FloatSsimStateMetal),

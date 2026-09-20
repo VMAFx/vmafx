@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0237: Quality-aware encode automation surface (`vmaf-tune`)
 
 - **Status**: Accepted (Phase A only; Phases B–F remain Proposed)
@@ -67,7 +66,7 @@ greenlighting the design + corpus plan in this ADR.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Hybrid C + Python under `tools/vmaf-tune/` (chosen)** | Matches existing fork tools (`vmaf-perShot`, `vmaf_roi`); harness can call libvmaf in-process via the C API for speed; Python wraps FFmpeg + search + AI inference; meson installs alongside `vmaf` | Two-language seam adds complexity; build-system surface grows | Picked per `req` (popup Q3 chose `tools/vmaf-tune/`) and matches the existing pattern; the C-side avoids a process-boundary penalty when the harness scores thousands of encodes |
 | Pure Python under `ai/automation/` | Fastest iteration; reuses `ai/`'s `pyproject.toml`; ships as console script | Process-boundary cost on every score (spawn `vmaf` binary per encode); doesn't compose with libvmaf's preallocation API; mixing automation + training under `ai/` muddies the separation | Rejected: the harness is an installable binary, not a research script — wrong tree |
 | Top-level `automation/` subtree | Signals "new product surface"; clean for growth into multiple binaries | New top-level dir for one tool initially; no integration with existing meson build | Rejected: premature; revisit if `vmaf-tune` grows multiple sibling binaries |

@@ -1,1 +1,5 @@
-| [ADR-0905](0905-gitignore-and-workflow-audit.md) | `.gitignore` + `.github/workflows/` staleness audit — drop dead rules, rewire post-ADR-0700 paths, no workflow removals | Accepted | 2026-05-30 | repo-hygiene, ci, docs |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0905](0905-gitignore-and-workflow-audit.md) | `.gitignore` + `.github/workflows/` staleness audit (2026-05-30) | Accepted | `repo-hygiene`, `ci`, `docs` |

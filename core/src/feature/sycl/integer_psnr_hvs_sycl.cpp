@@ -186,9 +186,9 @@ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, i
     y7 = t7;
 }
 
-static void od_bin_fdct8x8(int blk[64])
+template <typename Block, typename Scratch>
+static void od_bin_fdct8x8(const Block &blk, const Scratch &z)
 {
-    int z[64];
     for (int i = 0; i < 8; i++) {
         int y0;
         int y1;
@@ -261,6 +261,7 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
     q.submit([=](sycl::handler &h_) {
         sycl::local_accessor<int, 1> const s_ref(sycl::range<1>(64), h_);
         sycl::local_accessor<int, 1> const s_dist(sycl::range<1>(64), h_);
+        sycl::local_accessor<int, 1> const dct_scratch(sycl::range<1>(64), h_);
 
         h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const size_t blk_y = it.get_group(0);
@@ -290,13 +291,6 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
             if (local_idx != 0u)
                 return;
 
-            int dct_s[64];
-            int dct_d[64];
-            for (int i = 0; i < 64; i++)
-                dct_s[i] = s_ref[i];
-            for (int i = 0; i < 64; i++)
-                dct_d[i] = s_dist[i];
-
             float s_means[4] = {0.f, 0.f, 0.f, 0.f};
             float d_means[4] = {0.f, 0.f, 0.f, 0.f};
             float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
@@ -311,10 +305,10 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {
                     const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                    s_gmean += (float)dct_s[i * 8 + j];
-                    d_gmean += (float)dct_d[i * 8 + j];
-                    s_means[sub] += (float)dct_s[i * 8 + j];
-                    d_means[sub] += (float)dct_d[i * 8 + j];
+                    s_gmean += (float)s_ref[i * 8 + j];
+                    d_gmean += (float)s_dist[i * 8 + j];
+                    s_means[sub] += (float)s_ref[i * 8 + j];
+                    d_means[sub] += (float)s_dist[i * 8 + j];
                 }
             }
             s_gmean /= 64.f;
@@ -327,12 +321,12 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {
                     const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                    const float ds = (float)dct_s[i * 8 + j] - s_gmean;
-                    const float dd = (float)dct_d[i * 8 + j] - d_gmean;
+                    const float ds = (float)s_ref[i * 8 + j] - s_gmean;
+                    const float dd = (float)s_dist[i * 8 + j] - d_gmean;
                     s_gvar += ds * ds;
                     d_gvar += dd * dd;
-                    const float qs = (float)dct_s[i * 8 + j] - s_means[sub];
-                    const float qd = (float)dct_d[i * 8 + j] - d_means[sub];
+                    const float qs = (float)s_ref[i * 8 + j] - s_means[sub];
+                    const float qd = (float)s_dist[i * 8 + j] - d_means[sub];
                     s_vars[sub] += qs * qs;
                     d_vars[sub] += qd * qd;
                 }
@@ -348,29 +342,25 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
             if (d_gvar > 0.f)
                 d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
 
-            od_bin_fdct8x8(dct_s);
-            od_bin_fdct8x8(dct_d);
+            od_bin_fdct8x8(s_ref, dct_scratch);
+            od_bin_fdct8x8(s_dist, dct_scratch);
 
-            float mask[64];
             for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
+                const int j0 = (i == 0) ? 1 : 0;
+                for (int j = j0; j < 8; j++) {
                     const float c = CSF_TABLES[e_plane][i * 8 + j];
                     const float m = c * 0.3885746225901003f;
-                    mask[i * 8 + j] = m * m;
+                    const int sq = s_ref[i * 8 + j] * s_ref[i * 8 + j];
+                    s_mc += (float)sq * (m * m);
                 }
             }
             for (int i = 0; i < 8; i++) {
                 const int j0 = (i == 0) ? 1 : 0;
                 for (int j = j0; j < 8; j++) {
-                    const int sq = dct_s[i * 8 + j] * dct_s[i * 8 + j];
-                    s_mc += (float)sq * mask[i * 8 + j];
-                }
-            }
-            for (int i = 0; i < 8; i++) {
-                const int j0 = (i == 0) ? 1 : 0;
-                for (int j = j0; j < 8; j++) {
-                    const int sq = dct_d[i * 8 + j] * dct_d[i * 8 + j];
-                    d_mc += (float)sq * mask[i * 8 + j];
+                    const float c = CSF_TABLES[e_plane][i * 8 + j];
+                    const float m = c * 0.3885746225901003f;
+                    const int sq = s_dist[i * 8 + j] * s_dist[i * 8 + j];
+                    d_mc += (float)sq * (m * m);
                 }
             }
             float sm = sycl::sqrt(s_mc * s_gvar) / 32.f;
@@ -383,9 +373,10 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {
                     const float c = CSF_TABLES[e_plane][i * 8 + j];
-                    float err = sycl::fabs((float)dct_s[i * 8 + j] - (float)dct_d[i * 8 + j]);
+                    float err = sycl::fabs((float)s_ref[i * 8 + j] - (float)s_dist[i * 8 + j]);
                     if (i != 0 || j != 0) {
-                        const float t = thresh / mask[i * 8 + j];
+                        const float m = c * 0.3885746225901003f;
+                        const float t = thresh / (m * m);
                         err = err < t ? 0.f : err - t;
                     }
                     ret += (err * c) * (err * c);
@@ -412,12 +403,11 @@ static const VmafOption options_psnr_hvs_sycl[] = {
                 "psnr_hvs_y (mirrors CPU PR #946 / ADR-0453)",
         .offset = offsetof(PsnrHvsStateSycl, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = true,
+        .default_val = {.b = true},
     },
     {nullptr},
 };
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -522,7 +512,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
 /* Per-plane picture_copy clone (since libvmaf's picture_copy
  * hardcodes plane 0). */
-static void picture_copy_plane(float *dst, VmafPicture *pic, int plane, unsigned width,
+static void picture_copy_plane(float *dst, const VmafPicture *pic, int plane, unsigned width,
                                unsigned height)
 {
     if (pic->bpc <= 8) {
@@ -548,8 +538,8 @@ static void picture_copy_plane(float *dst, VmafPicture *pic, int plane, unsigned
     }
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -614,8 +604,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
 
     int err = 0;
-    static const char const *plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
-                                                                    "psnr_hvs_cr"};
+    static const char *const plane_features[PSNR_HVS_NUM_PLANES] = {
+        "psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr"};
     for (int p = 0; p < (int)s->n_active_planes; p++) {
         const double db = 10.0 * (-1.0 * std::log10(plane_score[p]));
         err |= vmaf_feature_collector_append(feature_collector, plane_features[p], db, index);
@@ -680,4 +670,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

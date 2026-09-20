@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0721 — AI run manifest strict JSON
 
 ## Question
@@ -28,7 +27,7 @@ data structures before the write boundary.
 ## Alternatives considered
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Patch each caller | Local control per schema | Repeats the same bug fix across dozens of scripts | Rejected |
 | Keep raw `json.dumps()` | No behavior change | Allows invalid JSON tokens in durable evidence files | Rejected |
 | Normalize in shared writer | One central contract for reports and manifests | Callers that bypass the helper remain future backlog | Chosen |

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - `python/tox.ini` test env bumped `py311` → `py314` to match the CI Python
   (`actions/setup-python` installs 3.14.5). The fork's Python deps already
   require ≥3.12 (`numpy>=2.4.6`, `scipy>=1.18.0`, `pandas>=3.0.3`), so the stale

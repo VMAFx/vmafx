@@ -1,5 +1,5 @@
-import os
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -72,8 +72,8 @@ class DisYUVRawVideoExtractorTest(unittest.TestCase):
         self.h5py_filepath = VmafConfig.workdir_path("test.hdf5")
 
     def tearDown(self):
-        if os.path.exists(self.h5py_filepath):
-            os.remove(self.h5py_filepath)
+        if Path(self.h5py_filepath).exists():
+            Path(self.h5py_filepath).unlink()
 
     def test_run_dis_yuv_raw_video_extractor(self):
         ref_path = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv")
@@ -167,8 +167,8 @@ class ParallelDisYRawVideoExtractorTest(unittest.TestCase):
         self.h5py_filepath = VmafConfig.workdir_path("test.hdf5")
 
     def tearDown(self):
-        if os.path.exists(self.h5py_filepath):
-            os.remove(self.h5py_filepath)
+        if Path(self.h5py_filepath).exists():
+            Path(self.h5py_filepath).unlink()
 
     def test_run_parallel_dis_y_fextractor(self):
         ref_path = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv")

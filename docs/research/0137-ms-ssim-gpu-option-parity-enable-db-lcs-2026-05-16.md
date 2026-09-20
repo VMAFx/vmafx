@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0137: MS-SSIM GPU option parity — `enable_db`, `clip_db`, `enable_lcs`
 
 **Date**: 2026-05-16
@@ -12,7 +11,7 @@ The wiring audit of 2026-05-16 (`.workingdir/wiring-audit-2026-05-16.md` and
 option-table gaps for the `float_ms_ssim` GPU extractors:
 
 | Backend | Missing option | Effect |
-|---------|---------------|--------|
+| --------- | --------------- | -------- |
 | CUDA | `enable_db` | dB-domain score silently not applied |
 | CUDA | `clip_db` | clip before dB conversion silently ignored |
 | SYCL | `enable_lcs` | 15 per-scale LCS triples not emitted |
@@ -49,7 +48,7 @@ manual min/max in CUDA (C99-compatible).
 ## Parity status after this fix
 
 | Option | CPU | CUDA | SYCL | Vulkan |
-|--------|-----|------|------|--------|
+| -------- | ----- | ------ | ------ | -------- |
 | `enable_lcs` | yes | yes (ADR-0243) | **yes (this PR)** | yes |
 | `enable_db` | yes | **yes (this PR)** | **yes (this PR)** | yes |
 | `clip_db` | yes | **yes (this PR)** | **yes (this PR)** | yes |

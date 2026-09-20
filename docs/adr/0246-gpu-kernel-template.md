@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0246: Per-backend GPU kernel scaffolding templates (CUDA + Vulkan)
 
 - **Status**: Accepted
@@ -49,7 +48,7 @@ existing `places=4` cross-backend-diff lane (per
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-backend templates (this ADR) | Honest about the underlying platform; helpers can use the platform's idioms (events vs fences) directly; small, focused diffs | Two headers instead of one; a new GPU backend (HIP, Metal) needs its own template | Chosen — matches the actual shape of CUDA vs Vulkan code |
 | Single cross-backend template | One mental model for "GPU kernel lifecycle"; new backends bolt onto the same shape | Lowest-common-denominator API drops async-stream nuance on CUDA *and* descriptor-pool nuance on Vulkan; helper bodies become switch-on-backend ladders | Sister-agent analysis showed the two backends share no concrete shape — the unified API would be a fiction |
 | Macros (CUDA helper-style `BEGIN/END` pairs) | One-line use-sites; matches the existing `CHECK_CUDA_GOTO` style | cuda-gdb / Nsight / RenderDoc step poorly through macro-expanded blocks; type errors land at expansion sites, not call sites | Step-debugging GPU code is already hard; the macro form raises the floor unnecessarily |

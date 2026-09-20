@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0320: `fr_regressor_v2` ensemble seeds — production flip (smoke → false)
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ ADRs 0303 / 0309 / 0319 are the contract this flip honours.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Flip now (chosen)** | Honours ADR-0303's gate contract immediately; both gate components pass with substantial margin (mean PLCC 0.9973 vs 0.95 threshold; spread 0.00095 vs 0.005 threshold); unblocks the in-flight `vmaf-tune --quality-confidence` consumer (ADR-0237) which needs production-eligible ensemble seeds; verdict file is reproducible from the harness. | The corpus is NVENC-only (`h264_nvenc` × 4 CQs); QSV / AMF / VideoToolbox seeds were not exercised. | Selected — gate is corpus-agnostic by design; ADR-0303's contract makes no demand on encoder coverage at flip time. Encoder-coverage gaps are a follow-up backlog item, not a flip blocker. |
 | Re-run with QSV first | Broader hardware-encoder coverage before promotion; would catch any QSV-specific PLCC degradation. | The gate threshold is per-seed mean PLCC, not per-encoder; ADR-0303's two-part gate is already satisfied; deferring promotion to chase additional encoder coverage adds wall-time without changing the gate-pass verdict. | Rejected — ADR-0303's gate is what it is; chasing additional encoder coverage is scope-creep against the established contract. Tracked as follow-up T-row. |
 | Wait for BVI-DVC corpus expansion (ADR-0310) | Larger / more diverse corpus would tighten the calibration story. | BVI-DVC corpus ingestion is gated on dataset access negotiations (open-ended); deferring flip indefinitely punishes the `vmaf-tune` consumer for an external-trigger event. | Rejected — corpus expansion is independent of the promotion gate. When BVI-DVC lands, a fresh PROMOTE.json + new flip ADR (or supersedure of this one) is the right path, not blocking on it now. |

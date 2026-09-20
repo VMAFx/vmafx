@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Added Pelorus-driven perceptual spatial-pooling weighting (ADR-1118): a new
 opt-in C-API (`vmaf_set_perceptual_weight_enabled`,
 `vmaf_set_perceptual_weight_strength`, `vmaf_set_perceptual_sidedata`, in

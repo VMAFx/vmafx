@@ -1,12 +1,14 @@
-# CLI: HIP and Metal backend selectors (`--no_hip`, `--hip_device`, `--no_metal`, `--metal_device`, `--backend hip|metal`)
+# Changelog fragment
+
+## cli hip metal backend selectors
 
 The standalone `vmaf` CLI now exposes the HIP (AMD ROCm) and Metal (Apple
 Silicon) backends via the same flag pairs used by CUDA, SYCL, and Vulkan:
 
 - `--no_hip` — suppress HIP dispatch even when the binary was built with
   `-Denable_hip=true`.
-- `--hip_device <N>` — activate the HIP backend and pick device by ordinal
-  (0 = first AMD GPU).
+- `--hip_device <N>` — activate the HIP backend and pick device by ordinal (0 =
+  first AMD GPU).
 - `--no_metal` — suppress Metal dispatch (macOS only).
 - `--metal_device <N>` — activate the Metal backend and pick device by ordinal
   (0 = first Metal device, typically the integrated Apple GPU on Apple Silicon).

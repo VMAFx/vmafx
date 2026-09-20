@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -28,10 +30,10 @@
 #include <unistd.h>
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -128,8 +130,8 @@ typedef void (*VmafDerivativeCalculator)(const uint16_t *image_data, uint16_t *d
                                          int width, int height, int row, int stride);
 typedef void (*VmafFilterMode)(const VmafPicture *image, int width, int height, uint16_t *buffer);
 typedef void (*VmafDecimate)(VmafPicture *image, unsigned width, unsigned height);
-typedef void (*VmafCalcCValues)(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
-                                uint16_t *histograms, uint16_t window_size,
+typedef void (*VmafCalcCValues)(const VmafPicture *pic, const VmafPicture *mask_pic,
+                                float *c_values, uint16_t *histograms, uint16_t window_size,
                                 const uint16_t num_diffs, const uint16_t *tvi_for_diff,
                                 uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                 int width, int height);
@@ -141,7 +143,7 @@ typedef void (*VmafComputeMaskRow)(uint16_t *mask_row, const uint32_t *dp_bottom
 
 static void filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer);
 static void decimate(VmafPicture *image, unsigned width, unsigned height);
-static void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+static void calculate_c_values(const VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
                                uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
                                const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                                const int *diff_weights, const int *all_diffs, int width,
@@ -193,190 +195,110 @@ typedef struct CambiState {
     VmafDictionary *feature_name_dict;
 } CambiState;
 
+#define CAMBI_INT_OPTION(NAME_VALUE, HELP_VALUE, MEMBER, DEFAULT_VALUE, MINIMUM, MAXIMUM,          \
+                         ALIAS_VALUE)                                                              \
+    {                                                                                              \
+        .name = (NAME_VALUE),                                                                      \
+        .help = (HELP_VALUE),                                                                      \
+        .alias = (ALIAS_VALUE),                                                                    \
+        .offset = offsetof(CambiState, MEMBER),                                                    \
+        .type = VMAF_OPT_TYPE_INT,                                                                 \
+        .default_val.i = (DEFAULT_VALUE),                                                          \
+        .min = (MINIMUM),                                                                          \
+        .max = (MAXIMUM),                                                                          \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+#define CAMBI_DOUBLE_OPTION(NAME_VALUE, HELP_VALUE, MEMBER, DEFAULT_VALUE, MINIMUM, MAXIMUM,       \
+                            ALIAS_VALUE)                                                           \
+    {                                                                                              \
+        .name = (NAME_VALUE),                                                                      \
+        .help = (HELP_VALUE),                                                                      \
+        .alias = (ALIAS_VALUE),                                                                    \
+        .offset = offsetof(CambiState, MEMBER),                                                    \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = (DEFAULT_VALUE),                                                          \
+        .min = (MINIMUM),                                                                          \
+        .max = (MAXIMUM),                                                                          \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+#define CAMBI_STRING_OPTION(NAME_VALUE, HELP_VALUE, MEMBER, DEFAULT_VALUE, FLAGS_VALUE,            \
+                            ALIAS_VALUE)                                                           \
+    {                                                                                              \
+        .name = (NAME_VALUE),                                                                      \
+        .help = (HELP_VALUE),                                                                      \
+        .alias = (ALIAS_VALUE),                                                                    \
+        .offset = offsetof(CambiState, MEMBER),                                                    \
+        .type = VMAF_OPT_TYPE_STRING,                                                              \
+        .default_val.s = (DEFAULT_VALUE),                                                          \
+        .flags = (FLAGS_VALUE),                                                                    \
+    }
+#define CAMBI_BOOL_OPTION(NAME_VALUE, HELP_VALUE, MEMBER, DEFAULT_VALUE)                           \
+    {                                                                                              \
+        .name = (NAME_VALUE),                                                                      \
+        .help = (HELP_VALUE),                                                                      \
+        .offset = offsetof(CambiState, MEMBER),                                                    \
+        .type = VMAF_OPT_TYPE_BOOL,                                                                \
+        .default_val.b = (DEFAULT_VALUE),                                                          \
+    }
+
 static const VmafOption options[] = {
-    {
-        .name = "cambi_max_val",
-        .help = "maximum value allowed; larger values will be clipped to this value",
-        .offset = offsetof(CambiState, cambi_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_CAMBI_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "cmxv",
-    },
-    {
-        .name = "enc_width",
-        .help = "Encoding width",
-        .offset = offsetof(CambiState, enc_width),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 180,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "encw",
-    },
-    {
-        .name = "enc_height",
-        .help = "Encoding height",
-        .offset = offsetof(CambiState, enc_height),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 150,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ench",
-    },
-    {
-        .name = "enc_bitdepth",
-        .help = "Encoding bitdepth",
-        .offset = offsetof(CambiState, enc_bitdepth),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 6,
-        .max = 16,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "encbd",
-    },
-    {
-        .name = "src_width",
-        .help = "Source width. Only used when full_ref=true.",
-        .offset = offsetof(CambiState, src_width),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 320,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "srcw",
-    },
-    {
-        .name = "src_height",
-        .help = "Source height. Only used when full_ref=true.",
-        .offset = offsetof(CambiState, src_height),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 200,
-        .max = 4320,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "srch",
-    },
-    {
-        .name = "window_size",
-        .help = "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
-        .offset = offsetof(CambiState, window_size_opt),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = DEFAULT_CAMBI_WINDOW_SIZE,
-        .min = 15,
-        .max = 127,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ws",
-    },
-    {
-        .name = "topk",
-        .help = "Ratio of pixels for the spatial pooling computation, must be 0 < topk <= 1.0",
-        .offset = offsetof(CambiState, topk),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_CAMBI_TOPK_POOLING,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_topk",
-        .help =
-            "Ratio of pixels for the spatial pooling computation, must be 0 < cambi_topk <= 1.0",
-        .offset = offsetof(CambiState, cambi_topk),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_CAMBI_TOPK_POOLING,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ctpk",
-    },
-    {
-        .name = "tvi_threshold",
-        .help = "Visibilty threshold for luminance ΔL < tvi_threshold*L_mean",
-        .offset = offsetof(CambiState, tvi_threshold),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_CAMBI_TVI,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "tvit",
-    },
-    {
-        .name = "cambi_vis_lum_threshold",
-        .help = "Luminance value below which we assume any banding is not visible",
-        .offset = offsetof(CambiState, cambi_vis_lum_threshold),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_CAMBI_VLT,
-        .min = 0.0,
-        .max = 300.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "vlt",
-    },
-    {
-        .name = "max_log_contrast",
-        .help = "Maximum contrast in log luma level (2^max_log_contrast) at 10-bits, "
-                "e.g., 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. "
-                "From 0 to 5: default 2 is recommended for banding from compression.",
-        .offset = offsetof(CambiState, max_log_contrast_opt),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = DEFAULT_CAMBI_MAX_LOG_CONTRAST,
-        .min = 0,
-        .max = 5,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mlc",
-    },
-    {
-        .name = "heatmaps_path",
-        .help = "Path where heatmaps will be dumped.",
-        .offset = offsetof(CambiState, heatmaps_path),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = NULL,
-    },
-    {
-        .name = "full_ref",
-        .help =
-            "If true, CAMBI will be run in full-reference mode and will be computed on both the reference and distorted inputs",
-        .offset = offsetof(CambiState, full_ref),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = DEFAULT_CAMBI_FULL_REF_FLAG,
-    },
-    {
-        .name = "eotf",
-        .help =
-            "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'",
-        .offset = offsetof(CambiState, eotf),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = DEFAULT_CAMBI_EOTF,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_eotf",
-        .help =
-            "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'. If both eotf and cambi_eotf are set, cambi_eotf takes precedence.",
-        .offset = offsetof(CambiState, cambi_eotf),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = DEFAULT_CAMBI_EOTF,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ceot",
-    },
-    {
-        .name = "cambi_high_res_speedup",
-        .help =
-            "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p. "
-            "Min speed-up resolution possible values: [1080, 1440, 2160, 0]. Default: 0 (not applied)"
-            "Note some loss of accuracy is expected with this speedup.",
-        .offset = offsetof(CambiState, cambi_high_res_speedup),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = DEFAULT_CAMBI_HIGH_RES_SPEEDUP,
-        .min = 0,
-        .max = CAMBI_4K_HEIGHT,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "hrs",
-    },
+    CAMBI_DOUBLE_OPTION("cambi_max_val",
+                        "maximum value allowed; larger values will be clipped to this value",
+                        cambi_max_val, DEFAULT_CAMBI_MAX_VAL, 0.0, 1000.0, "cmxv"),
+    CAMBI_INT_OPTION("enc_width", "Encoding width", enc_width, 0, 180, 7680, "encw"),
+    CAMBI_INT_OPTION("enc_height", "Encoding height", enc_height, 0, 150, 7680, "ench"),
+    CAMBI_INT_OPTION("enc_bitdepth", "Encoding bitdepth", enc_bitdepth, 0, 6, 16, "encbd"),
+    CAMBI_INT_OPTION("src_width", "Source width. Only used when full_ref=true.", src_width, 0, 320,
+                     7680, "srcw"),
+    CAMBI_INT_OPTION("src_height", "Source height. Only used when full_ref=true.", src_height, 0,
+                     200, 4320, "srch"),
+    CAMBI_INT_OPTION("window_size",
+                     "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
+                     window_size_opt, DEFAULT_CAMBI_WINDOW_SIZE, 15, 127, "ws"),
+    CAMBI_DOUBLE_OPTION(
+        "topk", "Ratio of pixels for the spatial pooling computation, must be 0 < topk <= 1.0",
+        topk, DEFAULT_CAMBI_TOPK_POOLING, 0.0001, 1.0, VMAF_NULLPTR),
+    CAMBI_DOUBLE_OPTION(
+        "cambi_topk",
+        "Ratio of pixels for the spatial pooling computation, must be 0 < cambi_topk <= 1.0",
+        cambi_topk, DEFAULT_CAMBI_TOPK_POOLING, 0.0001, 1.0, "ctpk"),
+    CAMBI_DOUBLE_OPTION("tvi_threshold",
+                        "Visibilty threshold for luminance ΔL < tvi_threshold*L_mean",
+                        tvi_threshold, DEFAULT_CAMBI_TVI, 0.0001, 1.0, "tvit"),
+    CAMBI_DOUBLE_OPTION("cambi_vis_lum_threshold",
+                        "Luminance value below which we assume any banding is not visible",
+                        cambi_vis_lum_threshold, DEFAULT_CAMBI_VLT, 0.0, 300.0, "vlt"),
+    CAMBI_INT_OPTION("max_log_contrast",
+                     "Maximum contrast in log luma level (2^max_log_contrast) at 10-bits, "
+                     "e.g., 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. "
+                     "From 0 to 5: default 2 is recommended for banding from compression.",
+                     max_log_contrast_opt, DEFAULT_CAMBI_MAX_LOG_CONTRAST, 0, 5, "mlc"),
+    CAMBI_STRING_OPTION("heatmaps_path", "Path where heatmaps will be dumped.", heatmaps_path, VMAF_NULLPTR,
+                        0, VMAF_NULLPTR),
+    CAMBI_BOOL_OPTION(
+        "full_ref",
+        "If true, CAMBI will be run in full-reference mode and will be computed on both the reference and distorted inputs",
+        full_ref, DEFAULT_CAMBI_FULL_REF_FLAG),
+    CAMBI_STRING_OPTION(
+        "eotf",
+        "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'",
+        eotf, DEFAULT_CAMBI_EOTF, VMAF_OPT_FLAG_FEATURE_PARAM, VMAF_NULLPTR),
+    CAMBI_STRING_OPTION(
+        "cambi_eotf",
+        "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'. If both eotf and cambi_eotf are set, cambi_eotf takes precedence.",
+        cambi_eotf, DEFAULT_CAMBI_EOTF, VMAF_OPT_FLAG_FEATURE_PARAM, "ceot"),
+    CAMBI_INT_OPTION(
+        "cambi_high_res_speedup",
+        "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p. "
+        "Min speed-up resolution possible values: [1080, 1440, 2160, 0]. Default: 0 (not applied)"
+        "Note some loss of accuracy is expected with this speedup.",
+        cambi_high_res_speedup, DEFAULT_CAMBI_HIGH_RES_SPEEDUP, 0, CAMBI_4K_HEIGHT, "hrs"),
     {0}};
+
+#undef CAMBI_BOOL_OPTION
+#undef CAMBI_STRING_OPTION
+#undef CAMBI_DOUBLE_OPTION
+#undef CAMBI_INT_OPTION
 
 enum CambiTVIBisectFlag {
     CAMBI_TVI_BISECT_TOO_SMALL,
@@ -436,8 +358,11 @@ static int get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth, VmafLu
     if (tvi_bisect == CAMBI_TVI_BISECT_CORRECT)
         return head;
 
-    // bisect
-    while (1) {
+    /* Each step halves a range bounded by the sample bit depth. The extra
+     * iteration covers the final adjacent endpoints without permitting a
+     * malformed threshold predicate to spin forever. */
+    const unsigned max_iterations = (unsigned)bitdepth + 1U;
+    for (unsigned iteration = 0; iteration < max_iterations; iteration++) {
         int mid = foot + (head - foot) / 2;
         tvi_bisect = tvi_hard_threshold_condition(mid, diff, tvi_threshold, luma_range, eotf);
         if (tvi_bisect == CAMBI_TVI_BISECT_TOO_BIG) {
@@ -446,10 +371,14 @@ static int get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth, VmafLu
             foot = mid;
         } else if (tvi_bisect == CAMBI_TVI_BISECT_CORRECT) {
             return mid;
-        } else { // Should never get here (todo: add assert)
-            (void)0;
+        } else {
+            /* tvi_hard_threshold_condition() only returns the three declared
+             * states. Terminate safely if that contract is ever broken rather
+             * than spinning forever on an invalid enum value. */
+            return 0;
         }
     }
+    return 0;
 }
 
 static int get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
@@ -492,16 +421,16 @@ static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_con
     *diffs_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
     if (!(*diffs_weights)) {
         aligned_free(*diffs_to_consider);
-        *diffs_to_consider = NULL;
+        *diffs_to_consider = VMAF_NULLPTR;
         return -ENOMEM;
     }
 
     *all_diffs = aligned_malloc(ALIGN_CEIL(sizeof(int)) * (2 * num_diffs + 1), 32);
     if (!(*all_diffs)) {
         aligned_free(*diffs_to_consider);
-        *diffs_to_consider = NULL;
+        *diffs_to_consider = VMAF_NULLPTR;
         aligned_free(*diffs_weights);
-        *diffs_weights = NULL;
+        *diffs_weights = VMAF_NULLPTR;
         return -ENOMEM;
     }
 
@@ -844,6 +773,15 @@ static void setup_callbacks(CambiState *s)
 #endif
 }
 
+static int cleanup_failed_init(VmafFeatureExtractor *fex, int init_err)
+{
+    const int cleanup_err = close_cambi(fex);
+    if (cleanup_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: partial-init cleanup failed: %d\n", cleanup_err);
+    }
+    return init_err;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -865,35 +803,27 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     int err = validate_and_setup_dimensions(s, bpc, w, h);
     if (err)
-        goto fail;
+        return cleanup_failed_init(fex, err);
 
     const int num_diffs = 1 << s->max_log_contrast;
 
     err = setup_contrast_and_luminance(s, num_diffs);
     if (err)
-        goto fail;
+        return cleanup_failed_init(fex, err);
 
     int alloc_w = s->full_ref ? MAX(s->src_width, s->enc_width) : s->enc_width;
     int alloc_h = s->full_ref ? MAX(s->src_height, s->enc_height) : s->enc_height;
 
     err = alloc_cambi_buffers(s, alloc_w, alloc_h, num_diffs);
     if (err)
-        goto fail;
+        return cleanup_failed_init(fex, err);
 
     err = open_heatmaps(s);
     if (err)
-        goto fail;
+        return cleanup_failed_init(fex, err);
 
     setup_callbacks(s);
     return 0;
-
-fail:
-    /* Partial init: free every buffer/picture/dict acquired so far.
-     * close_cambi tolerates a partially-populated state because fex->priv
-     * is zero-initialised before init() runs, so unallocated pointers are
-     * NULL (aligned_free(NULL) and unref of a zeroed picture are no-ops). */
-    (void)close_cambi(fex);
-    return err;
 }
 
 /* Preprocessing functions */
@@ -1525,7 +1455,7 @@ static void c_values_bottom_edge(float *c_values, uint16_t *histograms, const ui
     }
 }
 
-static void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+static void calculate_c_values(const VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
                                uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
                                const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                                const int *diff_weights, const int *all_diffs, int width, int height)
@@ -1742,11 +1672,9 @@ static double combine_dist_src_scores(double dist_score, double src_score)
     return MAX(0, dist_score - src_score);
 }
 
-/* ADR-0205 / feature_extractor.h: the shared extract callback fixes mutable picture types. */
-// cppcheck-suppress constParameterCallback
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   // cppcheck-suppress constParameterCallback
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
@@ -1794,7 +1722,7 @@ static int close_cambi(VmafFeatureExtractor *fex)
     int err = 0;
     for (unsigned i = 0; i < PICS_BUFFER_SIZE; i++) {
         /* Skip never-allocated (zero-initialised) slots: vmaf_picture_unref
-         * returns -EINVAL on a NULL ref, which would otherwise poison err when
+         * returns -EINVAL on a VMAF_NULLPTR ref, which would otherwise poison err when
          * close runs after a partial init. */
         if (s->pics[i].ref)
             err |= vmaf_picture_unref(&s->pics[i]);
@@ -1812,8 +1740,8 @@ static int close_cambi(VmafFeatureExtractor *fex)
 
     if (s->heatmaps_path) {
         for (int scale = 0; scale < NUM_SCALES; scale++) {
-            /* NULL-tolerant: a partial init() failure may close before every
-             * scale's file was opened; fclose(NULL) is undefined. */
+            /* VMAF_NULLPTR-tolerant: a partial init() failure may close before every
+             * scale's file was opened; fclose(VMAF_NULLPTR) is undefined. */
             if (s->heatmaps_files[scale])
                 (void)fclose(s->heatmaps_files[scale]);
         }
@@ -1825,9 +1753,8 @@ static int close_cambi(VmafFeatureExtractor *fex)
     return err;
 }
 
-static const char *provided_features[] = {"Cambi_feature_cambi_score", NULL};
+static const char *provided_features[] = {"Cambi_feature_cambi_score", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_cambi = {
     .name = "cambi",
     .init = init,
@@ -1846,37 +1773,8 @@ VmafFeatureExtractor vmaf_fex_cambi = {
 /* ------------------------------------------------------------------ */
 #include "cambi_internal.h"
 
-/* ADR-0205: retained private GPU scaffold; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
-void vmaf_cambi_get_spatial_mask(const VmafPicture *image, VmafPicture *mask, uint32_t *dp,
-                                 uint16_t *derivative_buffer, unsigned width, unsigned height,
-                                 VmafCambiDerivativeCalculator derivative_callback)
-{
-    /* The trampoline keeps the scalar dp/mask row kernels, matching the scalar
-     * derivative the GPU twins bind; every SIMD twin is bit-exact against them. */
-    get_spatial_mask(image, mask, dp, derivative_buffer, width, height,
-                     (VmafDerivativeCalculator)derivative_callback, compute_dp_row,
-                     compute_mask_row);
-}
-
-/* ADR-0205: retained private GPU scaffold; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
-void vmaf_cambi_decimate(VmafPicture *image, unsigned width, unsigned height)
-{
-    decimate(image, width, height);
-}
-
-/* ADR-0205: retained private GPU scaffold; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
-void vmaf_cambi_filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer)
-{
-    filter_mode(image, width, height, buffer);
-}
-
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
-void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
-                                   uint16_t *histograms, uint16_t window_size,
+void vmaf_cambi_calculate_c_values(const VmafPicture *pic, const VmafPicture *mask_pic,
+                                   float *c_values, uint16_t *histograms, uint16_t window_size,
                                    const uint16_t num_diffs, const uint16_t *tvi_for_diff,
                                    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                    int width, int height, VmafCambiRangeUpdater inc_range_callback,
@@ -1894,29 +1792,21 @@ void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic
                        vlt_luma, diff_weights, all_diffs, width, height);
 }
 
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
 double vmaf_cambi_spatial_pooling(float *c_values, double topk, unsigned width, unsigned height)
 {
     return spatial_pooling(c_values, topk, width, height);
 }
 
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
 double vmaf_cambi_weight_scores_per_scale(const double *scores_per_scale, uint16_t normalization)
 {
     return weight_scores_per_scale(scores_per_scale, normalization);
 }
 
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
 uint16_t vmaf_cambi_get_pixels_in_window(uint16_t window_length)
 {
     return get_pixels_in_window(window_length);
 }
 
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
 void vmaf_cambi_default_callbacks(VmafCambiRangeUpdater *inc, VmafCambiRangeUpdater *dec,
                                   VmafCambiDerivativeCalculator *deriv)
 {
@@ -1925,16 +1815,12 @@ void vmaf_cambi_default_callbacks(VmafCambiRangeUpdater *inc, VmafCambiRangeUpda
     *deriv = (VmafCambiDerivativeCalculator)get_derivative_data_for_row;
 }
 
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
 int vmaf_cambi_preprocessing(const VmafPicture *image, VmafPicture *preprocessed, int width,
                              int height, int enc_bitdepth)
 {
     return cambi_preprocessing(image, preprocessed, width, height, enc_bitdepth);
 }
 
-/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
-// cppcheck-suppress unusedFunction
 int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider,
                                 double tvi_threshold, double cambi_vis_lum_threshold,
                                 const char *cambi_eotf, const char *eotf, uint16_t *tvi_for_diff,
@@ -1982,5 +1868,3 @@ int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider
 
     return 0;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

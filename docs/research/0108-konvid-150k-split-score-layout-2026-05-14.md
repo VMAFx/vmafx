@@ -1,7 +1,4 @@
-<!-- markdownlint-disable MD025 MD060 -->
 # Research 0108 — KonViD-150k Split Score Layout
-
-# Research-0108
 
 Date: 2026-05-14
 
@@ -30,7 +27,7 @@ manifest path does.
 ## Alternatives Considered
 
 | Option | Result | Reason |
-|---|---|---|
+| --- | --- | --- |
 | Require operators to synthesize `manifest.csv` manually | Rejected | Leaves the in-tree adapter unable to consume the common score-drop layout and repeats fragile local conversion logic. |
 | Add separate `--split-score-layout` CLI mode | Rejected | The default directory has an unambiguous discovery order: use explicit/real `manifest.csv` first, otherwise discover split score CSVs. |
 | Widen JSONL with `split` / score-source columns | Rejected | Downstream MOS-corpus consumers rely on the shared schema. Split identity is useful for diagnostics but not part of the trainer contract. |

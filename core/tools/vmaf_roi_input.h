@@ -6,14 +6,14 @@
 #ifndef LIBVMAF_TOOLS_VMAF_ROI_INPUT_H_
 #define LIBVMAF_TOOLS_VMAF_ROI_INPUT_H_
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve C/upstream NULL
- * compatibility; required Windows MSVC /std:clatest does not document nullptr. */
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "vmaf_nullptr.h"
 
 /* Existing CLI dimension limit; bounds all input and saliency allocations. */
 #define VMAF_ROI_MAX_DIM 16384
@@ -27,10 +27,10 @@ static inline size_t luma_plane_size(int w, int h)
 
 static inline int read_luma8(FILE *fp, uint8_t *dst, size_t y_sz, int bitdepth, size_t *got_bytes)
 {
-    if (got_bytes == NULL)
+    if (got_bytes == VMAF_NULLPTR)
         return -EINVAL;
     *got_bytes = 0U;
-    if (fp == NULL || dst == NULL || y_sz == 0U ||
+    if (fp == VMAF_NULLPTR || dst == VMAF_NULLPTR || y_sz == 0U ||
         y_sz > (size_t)VMAF_ROI_MAX_DIM * (size_t)VMAF_ROI_MAX_DIM ||
         (bitdepth != 8 && bitdepth != 10 && bitdepth != 12 && bitdepth != 16))
         return -EINVAL;
@@ -43,7 +43,7 @@ static inline int read_luma8(FILE *fp, uint8_t *dst, size_t y_sz, int bitdepth, 
     }
 
     uint8_t *raw = (uint8_t *)malloc(y_sz * 2U);
-    if (raw == NULL)
+    if (raw == VMAF_NULLPTR)
         return -ENOMEM;
     size_t got = fread(raw, 2U, y_sz, fp);
     *got_bytes = got * 2U;
@@ -75,7 +75,7 @@ static inline int read_luma8(FILE *fp, uint8_t *dst, size_t y_sz, int bitdepth, 
  * testing the sidecar plumbing -- NOT a substitute for MobileSal. */
 static inline int fill_placeholder_saliency(int w, int h, float *dst, size_t n)
 {
-    if (dst == NULL || n == 0U || n != luma_plane_size(w, h))
+    if (dst == VMAF_NULLPTR || n == 0U || n != luma_plane_size(w, h))
         return -EINVAL;
     const double cx = (double)(w - 1) * 0.5;
     const double cy = (double)(h - 1) * 0.5;
@@ -94,5 +94,4 @@ static inline int fill_placeholder_saliency(int w, int h, float *dst, size_t n)
     return 0;
 }
 
-/* NOLINTEND(modernize-use-nullptr) -- ADR-1138 */
 #endif /* LIBVMAF_TOOLS_VMAF_ROI_INPUT_H_ */

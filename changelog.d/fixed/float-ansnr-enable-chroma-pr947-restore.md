@@ -1,4 +1,6 @@
-### `float_ansnr`: restore `enable_chroma` option clobbered by PR #1067
+# Changelog fragment
+
+## `float_ansnr`: restore `enable_chroma` option clobbered by PR #1067
 
 PR #1067 (bootstrap-name-builder dedup refactor) inadvertently replaced the
 `enable_chroma`-aware `float_ansnr.c` that PR #947 had introduced with the

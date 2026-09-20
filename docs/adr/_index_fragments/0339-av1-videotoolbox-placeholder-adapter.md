@@ -1,1 +1,5 @@
-| [ADR-0339](0339-av1-videotoolbox-placeholder-adapter.md) | Placeholder `Av1VideoToolboxAdapter` for `tools/vmaf-tune/` codec-adapter registry. Apple M3 / M4 silicon has hardware AV1 encode but FFmpeg upstream has not exposed it (verified against master `8518599cd1`, 2026-05-09). The adapter registers with `supports_runtime=False` and raises `Av1VideoToolboxUnavailableError` until a runtime probe of `ffmpeg -h encoder=av1_videotoolbox` confirms the encoder exists, at which point it self-activates without a code change. Paired with `scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh` and a weekly cron workflow that opens a tracking GitHub issue when the encoder lands. First instance of the upstream-watcher pattern documented in [`docs/development/upstream-watchers.md`](../development/upstream-watchers.md). | Accepted | tooling, ai, ffmpeg, codec, hardware-encoder, apple, fork-local, upstream-blocked |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0339](0339-av1-videotoolbox-placeholder-adapter.md) | `av1_videotoolbox` placeholder adapter + upstream watcher | Accepted | tooling, ai, ffmpeg, codec, hardware-encoder, apple, fork-local, upstream-blocked |

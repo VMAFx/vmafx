@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0650: Add a Signal-Mix Audit CLI
 
 - **Status**: Accepted
@@ -23,28 +22,28 @@ clear signal map before model promotion.
 
 ## Decision
 
-We will ship `ai/scripts/signal_mix_audit.py` as a table-only diagnostic CLI.
-It reads parquet/JSONL/JSON feature tables, classifies columns into VQA signal
+We will ship `ai/scripts/signal_mix_audit.py` as a table-only diagnostic CLI. It
+reads parquet/JSONL/JSON feature tables, classifies columns into VQA signal
 families, computes target correlations, flags redundant pairs, surfaces
-cross-family complementary intersections, and renders JSON plus Markdown
-reports with missing/weak signal-family recommendations.
+cross-family complementary intersections, and renders JSON plus Markdown reports
+with missing/weak signal-family recommendations.
 
 The CLI is advisory and side-effect free. It does not extract features, train
 models, mutate corpus files, or gate CI by default.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Extend `feature_correlation.py` | Reuses an existing script | That script is intentionally narrow: pairwise correlations and sklearn importances for one parquet target | Rejected; the new question is signal-family coverage and candidate intersections, not just ranking columns |
-| Keep documenting audits manually | Fast for one session and flexible for narrative notes | Goes stale immediately after refreshes and does not inspect generated tables | Rejected; stale speed-feature notes already showed why prose-only audits are unreliable |
-| Build the full continuous feature-mix evaluator now | Most complete long-term answer | Larger scope: YAML grids, subset search, model fitting, uncertainty intervals, and cost weighting | Deferred; this PR gives a safe first diagnostic layer while longer evaluator work remains separate |
-| Add table-only signal-mix audit | Cheap, deterministic, can run on current local tables, highlights missing metric families and candidate intersections | Heuristic column-family mapping can miss custom names until updated | Accepted |
+| Option                                              | Pros                                                                                                                  | Cons                                                                                                      | Why not chosen                                                                                             |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Extend `feature_correlation.py`                     | Reuses an existing script                                                                                             | That script is intentionally narrow: pairwise correlations and sklearn importances for one parquet target | Rejected; the new question is signal-family coverage and candidate intersections, not just ranking columns |
+| Keep documenting audits manually                    | Fast for one session and flexible for narrative notes                                                                 | Goes stale immediately after refreshes and does not inspect generated tables                              | Rejected; stale speed-feature notes already showed why prose-only audits are unreliable                    |
+| Build the full continuous feature-mix evaluator now | Most complete long-term answer                                                                                        | Larger scope: YAML grids, subset search, model fitting, uncertainty intervals, and cost weighting         | Deferred; this PR gives a safe first diagnostic layer while longer evaluator work remains separate         |
+| Add table-only signal-mix audit                     | Cheap, deterministic, can run on current local tables, highlights missing metric families and candidate intersections | Heuristic column-family mapping can miss custom names until updated                                       | Accepted                                                                                                   |
 
 ## Consequences
 
-- **Positive**: model-refresh and HDR work can see missing signal families before
-  burning compute on a retrain.
+- **Positive**: model-refresh and HDR work can see missing signal families
+  before burning compute on a retrain.
 - **Positive**: the report explicitly calls out candidate metrics that are not
   yet wired, such as U2NetP, DISTS, HDR-VDP, DOVER, Q-Align, and panel metadata.
 - **Positive**: stale prose audits become inputs to compare against, not the
@@ -63,5 +62,7 @@ models, mutate corpus files, or gate CI by default.
   cross-metric feature-fusion rationale.
 - [continuous-feature-mix-evaluation-design-2026-05-18](../research/continuous-feature-mix-evaluation-design-2026-05-18.md)
   — broader evaluator design this diagnostic does not try to replace.
-- Source: req: "well and in this audit perhaps find gaps that we have no metric/signal for at all or so"
-- Source: req: "yeah every possible gain through intersection (even of not yet included metrics)... thats an interesting topic for sure lol"
+- Source: req: "well and in this audit perhaps find gaps that we have no
+  metric/signal for at all or so"
+- Source: req: "yeah every possible gain through intersection (even of not yet
+  included metrics)... thats an interesting topic for sure lol"

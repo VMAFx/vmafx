@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0073: vmaf-tune content-addressed cache
 
 - **Status**: Adopted by [ADR-0298](../adr/0298-vmaf-tune-cache.md)
@@ -62,7 +61,7 @@ Single-clip 6-cell `(medium, slow) × (22, 28, 34)` sweep against a
 1080p10s YUV on a Ryzen 7 7700 + RTX 4070:
 
 | Path | Wall-clock |
-|---|---|
+| --- | --- |
 | Cold run (cache empty) | ~12 minutes |
 | Re-run, all hits | ~250 ms (probe + 6 fs-read) |
 | Re-run, one cell changed | ~2 minutes (1 encode + 1 score) |

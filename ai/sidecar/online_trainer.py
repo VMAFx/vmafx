@@ -57,6 +57,8 @@ _LR = float(os.environ.get("VMAFX_SIDECAR_LR", "0.0001"))
 _EMA_DECAY = float(os.environ.get("VMAFX_SIDECAR_EMA_DECAY", "0.999"))
 _CHECKPOINT_INTERVAL_S = float(os.environ.get("VMAFX_SIDECAR_CKPT_INTERVAL_S", "600"))
 _MIN_SAMPLES_PER_CKPT = int(os.environ.get("VMAFX_SIDECAR_MIN_SAMPLES_CKPT", "1000"))
+_MAX_CONNECTION_READS = 1_000_000
+_MAX_MESSAGE_BYTES = 1 << 20
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +75,7 @@ def _build_fallback_model(n_features: int) -> Any:
     so the sidecar can start accepting samples immediately without blocking
     on a base model that is temporarily unavailable.
     """
-    import torch.nn as nn
+    from torch import nn
 
     return nn.Sequential(
         nn.Linear(n_features, 64),
@@ -358,11 +360,17 @@ def _handle_connection(
     logger.debug("Connection from %s", addr)
     buf = b""
     try:
-        while True:
+        for _read_index in range(_MAX_CONNECTION_READS):
             chunk = conn.recv(65536)
             if not chunk:
                 break
             buf += chunk
+            if len(buf) > _MAX_MESSAGE_BYTES and b"\n" not in buf:
+                err = json.dumps(
+                    {"ok": False, "error": f"message exceeds {_MAX_MESSAGE_BYTES} bytes"}
+                )
+                conn.sendall((err + "\n").encode())
+                return
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 if not line.strip():
@@ -382,6 +390,11 @@ def _handle_connection(
                     # kill the per-connection daemon thread (R3-3).
                     err = json.dumps({"ok": False, "error": str(exc)}) + "\n"
                     conn.sendall(err.encode())
+        else:
+            err = json.dumps(
+                {"ok": False, "error": f"connection read limit exceeded ({_MAX_CONNECTION_READS})"}
+            )
+            conn.sendall((err + "\n").encode())
     except OSError as exc:
         logger.debug("Connection closed: %s", exc)
     finally:

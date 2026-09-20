@@ -713,7 +713,8 @@ int err = vmaf_context_get_backend(vmaf, &backend);
 
 Returns the compute backend that was imported into `vmaf` via a
 `vmaf_<backend>_import_state()` call. For CPU-only contexts (no GPU state
-imported) the value is `VMAF_BACKEND_UNKNOWN` (0).
+imported) the value is `VMAF_BACKEND_UNKNOWN` (0). The context parameter is
+`const VmafContext *`; introspection never mutates the scoring context.
 
 | `enum VmafBackend` value | Integer | Meaning |
 | --- | --- | --- |

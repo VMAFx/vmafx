@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0928: VmafPicture v2 — explicit per-backend GPU state
 
 - **Status**: Proposed
@@ -78,7 +77,7 @@ No SONAME bump. Header is declared, not yet built into libvmaf.so.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Keep `void *priv`, document harder** | Zero ABI churn, no soname bump | Doesn't solve any of the three pain points; backend mis-routing remains silent UB; Rust bindings still need an out-of-band lookup table | Loses the cross-backend round-trip property the rebrand depends on |
 | **Add `backend` enum to v1 in-place via end-of-struct growth** | No new header, no v1/v2 split | Header rule (`AGENTS.md`: "Configuration / Picture-configuration structs grow at the end") allows the addition, but doesn't solve the `priv` overlay confusion — backends would still cast `priv` and ignore the new discriminator | Half-measure; ships the cost of an ABI growth without the round-trip win |
 | **Replace v1 in place + bump soname now** | Single ABI break, smallest long-term surface | Breaks every consumer in the same release: FFmpeg patches 0002–0006, MCP server, Rust binding (mod #11), every downstream Python wheel. No transition path for ffmpeg-patches reviewers | Violates CLAUDE.md §12 r14 (FFmpeg patches must update in lockstep), and gives downstream zero migration window |

@@ -17,6 +17,8 @@
  *  Output feature: Speed_temporal_feature_speed_temporal_score.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -39,9 +41,9 @@
 #include "feature/speed_internal.h"
 #include "cuda/speed_temporal_cuda.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -137,82 +139,63 @@ typedef struct SpeedTemporalCudaState {
     SpeedInternalSingularTally singular_tally;
 } SpeedTemporalCudaState;
 
+#define SPEED_TEMPORAL_DOUBLE_OPTION(NAME, HELP, FIELD, DEFAULT, MINIMUM, MAXIMUM, ALIAS)          \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(SpeedTemporalCudaState, FIELD),                                         \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = (DEFAULT),                                                                \
+        .min = (MINIMUM),                                                                          \
+        .max = (MAXIMUM),                                                                          \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+#define SPEED_TEMPORAL_STRING_OPTION(NAME, HELP, FIELD, DEFAULT, ALIAS)                            \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(SpeedTemporalCudaState, FIELD),                                         \
+        .type = VMAF_OPT_TYPE_STRING,                                                              \
+        .default_val.s = (DEFAULT),                                                                \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+#define SPEED_TEMPORAL_BOOL_OPTION(NAME, HELP, FIELD, DEFAULT, ALIAS)                              \
+    {                                                                                              \
+        .name = (NAME),                                                                            \
+        .help = (HELP),                                                                            \
+        .offset = offsetof(SpeedTemporalCudaState, FIELD),                                         \
+        .type = VMAF_OPT_TYPE_BOOL,                                                                \
+        .default_val.b = (DEFAULT),                                                                \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = (ALIAS),                                                                          \
+    }
+
 static const VmafOption options[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the Gaussian kernel",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_KERNELSCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_PRESCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = ST_DEFAULT_PRESCALE_METHOD,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_SIGMA_NN,
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor fraction",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_NN_FLOOR,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "clip output to this maximum",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_use_ref_diff",
-        .help = "use reference frame difference instead of distorted",
-        .offset = offsetof(SpeedTemporalCudaState, speed_temporal_use_ref_diff),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "urd",
-    },
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_kernelscale", "scaling factor for the Gaussian kernel",
+                                 speed_temporal_kernelscale, ST_DEFAULT_KERNELSCALE, 0.1, 4.0,
+                                 "ks"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_prescale", "scaling factor for the frame",
+                                 speed_temporal_prescale, ST_DEFAULT_PRESCALE, 0.1, 4.0, "ps"),
+    SPEED_TEMPORAL_STRING_OPTION("speed_prescale_method",
+                                 "scaling method [nearest, bilinear, bicubic, lanczos4]",
+                                 speed_temporal_prescale_method, ST_DEFAULT_PRESCALE_METHOD, "psm"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_sigma_nn", "standard deviation of neural noise",
+                                 speed_temporal_sigma_nn, ST_DEFAULT_SIGMA_NN, 0.1, 2.0, "snn"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_nn_floor", "neural noise floor fraction",
+                                 speed_temporal_nn_floor, ST_DEFAULT_NN_FLOOR, 0.0, 1.0, "nnf"),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_max_val", "clip output to this maximum",
+                                 speed_temporal_max_val, ST_DEFAULT_MAX_VAL, 0.0, 1000.0, "mxv"),
+    SPEED_TEMPORAL_BOOL_OPTION("speed_use_ref_diff",
+                               "use reference frame difference instead of distorted",
+                               speed_temporal_use_ref_diff, false, "urd"),
     {0},
 };
+
+#undef SPEED_TEMPORAL_BOOL_OPTION
+#undef SPEED_TEMPORAL_STRING_OPTION
+#undef SPEED_TEMPORAL_DOUBLE_OPTION
 
 /* ------------------------------------------------------------------ */
 /* Helpers (shared with speed_chroma_cuda.c, copied for TU isolation) */
@@ -240,14 +223,14 @@ static void free_cuda_buffers_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
     do {                                                                                           \
         if ((p)) {                                                                                 \
             (void)cu_f->cuMemFreeHost((p));                                                        \
-            (p) = NULL;                                                                            \
+            (p) = VMAF_NULLPTR;                                                                            \
         }                                                                                          \
     } while (0)
 #define FREE_A(p)                                                                                  \
     do {                                                                                           \
         if ((p)) {                                                                                 \
             aligned_free((p));                                                                     \
-            (p) = NULL;                                                                            \
+            (p) = VMAF_NULLPTR;                                                                            \
         }                                                                                          \
     } while (0)
 
@@ -295,7 +278,7 @@ static void free_cuda_buffers_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
 static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *h_plane,
                                CUdeviceptr d_indterm, size_t plane_op_bytes)
 {
-    int _cuda_err = 0;
+    int _cuda_err;
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
     const uint32_t op_w = (uint32_t)s->dim.truncated_width;
@@ -313,7 +296,7 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
                         (void *)&submatrix_w, (void *)&submatrix_h};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_means, grid_x, 1u, 1u, ST_MEANS_BLOCK, 1u, 1u, 0u,
-                                       s->stream, args, NULL),
+                                       s->stream, args, VMAF_NULLPTR),
                         fail);
     }
     /* K2: cov */
@@ -323,7 +306,7 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
                         (void *)&submatrix_w, (void *)&submatrix_h};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_cov, ST_ELEMENTS, ST_ELEMENTS, 1u, ST_COV_BLOCK, 1u,
-                                       1u, 0u, s->stream, args, NULL),
+                                       1u, 0u, s->stream, args, VMAF_NULLPTR),
                         fail);
     }
     /* K3: indterm */
@@ -334,12 +317,12 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
                         (void *)&num_blocks_h, (void *)&num_blocks};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_indterm, grid_x, 1u, 1u, ST_INDTERM_BLOCK, 1u, 1u,
-                                       0u, s->stream, args, NULL),
+                                       0u, s->stream, args, VMAF_NULLPTR),
                         fail);
     }
     CHECK_CUDA_GOTO(cu_f,
                     cuMemcpyDtoHAsync(s->h_cov_mat, s->d_cov_mat,
-                                      ST_ELEMENTS * ST_ELEMENTS * sizeof(float), s->stream),
+                                      (size_t)ST_ELEMENTS * (size_t)ST_ELEMENTS * sizeof(float), s->stream),
                     fail);
     const size_t indterm_bytes = (size_t)ST_ELEMENTS * num_blocks * sizeof(float);
     float *h_ind = (d_indterm == s->d_indterm_ref) ? s->h_indterm_ref : s->h_indterm_dis;
@@ -358,7 +341,7 @@ fail:
 static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *h_indterm,
                              CUdeviceptr d_sol, bool *singular_out)
 {
-    int _cuda_err = 0;
+    int _cuda_err;
     const int sz = (int)ST_ELEMENTS;
     const int nb = (int)s->dim.num_blocks;
 
@@ -394,7 +377,7 @@ static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, flo
         void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,
-                                       s->stream, args, NULL),
+                                       s->stream, args, VMAF_NULLPTR),
                         fail);
         CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
     }
@@ -409,7 +392,7 @@ fail:
 
 static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *score_out)
 {
-    int _cuda_err = 0;
+    int _cuda_err;
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const float sigma_nn = (float)s->opt.speed_sigma_nn;
 
@@ -422,7 +405,7 @@ static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *s
             (void *)&s->d_dis_variances,   (void *)&num_blocks,         (void *)&sigma_nn};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
-                                       s->stream, args, NULL),
+                                       s->stream, args, VMAF_NULLPTR),
                         fail);
     }
     const size_t ab = (size_t)num_blocks * sizeof(float);
@@ -474,8 +457,138 @@ static void release_cuda_module_and_stream_st(SpeedTemporalCudaState *s, CudaFun
     }
     if (s->module) {
         (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
+}
+
+static void speed_temporal_set_options(SpeedTemporalCudaState *s)
+{
+    s->opt = (SpeedInternalOptions){
+        .speed_kernelscale = s->speed_temporal_kernelscale,
+        .speed_prescale = s->speed_temporal_prescale,
+        .speed_prescale_method = s->speed_temporal_prescale_method,
+        .speed_sigma_nn = s->speed_temporal_sigma_nn,
+        .speed_nn_floor = s->speed_temporal_nn_floor,
+        .speed_weight_var_mode = 0,
+    };
+}
+
+static int speed_temporal_load_module(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->module, speed_score_ptx));
+    struct KernelSlot {
+        CUfunction *function;
+        const char *name;
+    } kernels[] = {
+        {&s->func_means, "speed_means_kernel"},     {&s->func_cov, "speed_cov_kernel"},
+        {&s->func_indterm, "speed_indterm_kernel"}, {&s->func_solve, "speed_solve_kernel"},
+        {&s->func_score, "speed_score_kernel"},
+    };
+    for (size_t i = 0; i < sizeof(kernels) / sizeof(kernels[0]); i++) {
+        CHECK_CUDA_RETURN(cu_f,
+                          cuModuleGetFunction(kernels[i].function, s->module, kernels[i].name));
+    }
+    return 0;
+}
+
+static int speed_temporal_alloc_device(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    const size_t stride = s->float_stride / sizeof(float);
+    const size_t plane = s->dim.alloc_height * stride * sizeof(float);
+    const size_t indterm = (size_t)ST_ELEMENTS * s->dim.num_blocks * sizeof(float);
+    const size_t covariance = (size_t)ST_ELEMENTS * (size_t)ST_ELEMENTS * sizeof(float);
+    const size_t score = s->dim.num_blocks * sizeof(float);
+    CUdeviceptr *buffers[] = {
+        &s->d_plane,         &s->d_means,           &s->d_cov_mat,       &s->d_indterm_ref,
+        &s->d_indterm_dis,   &s->d_sol_ref,         &s->d_sol_dis,       &s->d_R,
+        &s->d_eigenvalues,   &s->d_eigenvalues_ref, &s->d_ref_entropies, &s->d_ref_variances,
+        &s->d_dis_entropies, &s->d_dis_variances,
+    };
+    const size_t sizes[] = {plane,
+                            indterm,
+                            covariance,
+                            indterm,
+                            indterm,
+                            indterm,
+                            indterm,
+                            covariance,
+                            (size_t)ST_ELEMENTS * sizeof(float),
+                            (size_t)ST_ELEMENTS * sizeof(float),
+                            score,
+                            score,
+                            score,
+                            score};
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        CHECK_CUDA_RETURN(cu_f, cuMemAlloc(buffers[i], sizes[i]));
+    return 0;
+}
+
+static int speed_temporal_alloc_pinned(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    const size_t covariance = (size_t)ST_ELEMENTS * (size_t)ST_ELEMENTS * sizeof(float);
+    const size_t score = s->dim.num_blocks * sizeof(float);
+    float **buffers[] = {&s->h_cov_mat, &s->h_ref_entropies, &s->h_ref_variances,
+                         &s->h_dis_entropies, &s->h_dis_variances};
+    const size_t sizes[] = {covariance, score, score, score, score};
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        CHECK_CUDA_RETURN(cu_f, cuMemHostAlloc((void **)buffers[i], sizes[i], 0x01u));
+    return 0;
+}
+
+static int speed_temporal_create_stream(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuStreamCreate(&s->stream, CU_STREAM_NON_BLOCKING));
+    return 0;
+}
+
+static int speed_temporal_init_device(VmafFeatureExtractor *fex, SpeedTemporalCudaState *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    CUresult push = cu_f->cuCtxPushCurrent(fex->cu_state->ctx);
+    if (push != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push);
+    int ret = speed_temporal_load_module(s, cu_f);
+    if (!ret)
+        ret = speed_temporal_create_stream(s, cu_f);
+    if (!ret)
+        ret = speed_temporal_alloc_device(s, cu_f);
+    if (!ret)
+        ret = speed_temporal_alloc_pinned(s, cu_f);
+    const CUresult pop = cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
+    if (!ret && pop != CUDA_SUCCESS)
+        ret = vmaf_cuda_result_to_errno((int)pop);
+    return ret;
+}
+
+static int speed_temporal_alloc_cpu(SpeedTemporalCudaState *s)
+{
+    const size_t stride = s->float_stride / sizeof(float);
+    const size_t plane = s->dim.alloc_height * stride * sizeof(float);
+    const size_t indterm = (size_t)ST_ELEMENTS * s->dim.num_blocks * sizeof(float);
+    const size_t covariance = (size_t)ST_ELEMENTS * (size_t)ST_ELEMENTS * sizeof(float);
+    float **buffers[] = {&s->h_ref[0],      &s->h_ref[1],      &s->h_dis[0],      &s->h_dis[1],
+                         &s->h_eigenvalues, &s->h_eig_scratch, &s->h_Q,           &s->h_R,
+                         &s->h_qr_scratch,  &s->h_indterm_ref, &s->h_indterm_dis, &s->h_qt_scratch};
+    const size_t sizes[] = {
+        plane,
+        plane,
+        plane,
+        plane,
+        (size_t)ST_ELEMENTS * sizeof(float),
+        ((size_t)ST_ELEMENTS * (size_t)ST_ELEMENTS + (size_t)4U * ST_ELEMENTS) * sizeof(float),
+        covariance,
+        covariance,
+        4u * covariance,
+        indterm,
+        indterm,
+        indterm,
+    };
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
+        *buffers[i] = (float *)aligned_malloc(sizes[i], 32);
+        if (!*buffers[i])
+            return -ENOMEM;
+    }
+    return 0;
 }
 
 static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -486,279 +599,161 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
 
     SpeedTemporalCudaState *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
-    int err = 0;
-
-    s->opt = (SpeedInternalOptions){
-        .speed_kernelscale = s->speed_temporal_kernelscale,
-        .speed_prescale = s->speed_temporal_prescale,
-        .speed_prescale_method = s->speed_temporal_prescale_method,
-        .speed_sigma_nn = s->speed_temporal_sigma_nn,
-        .speed_nn_floor = s->speed_temporal_nn_floor,
-        .speed_weight_var_mode = 0,
-    };
-
-    err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
+    speed_temporal_set_options(s);
+    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
     if (err)
         return err;
-
     s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t num_blocks = s->dim.num_blocks;
-    const size_t plane_alloc = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = ST_ELEMENTS * num_blocks * sizeof(float);
-    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
-    const size_t score_bytes = num_blocks * sizeof(float);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, speed_score_ptx), fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_means, s->module, "speed_means_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_cov, s->module, "speed_cov_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_indterm, s->module, "speed_indterm_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_solve, s->module, "speed_solve_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_score, s->module, "speed_score_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuStreamCreate(&s->stream, CU_STREAM_NON_BLOCKING), fail_pop);
-
-#define ALLOC_D(field, sz) CHECK_CUDA_GOTO(cu_f, cuMemAlloc(&(s->field), (sz)), fail_pop)
-    ALLOC_D(d_plane, plane_alloc);
-    ALLOC_D(d_means, indterm_bytes);
-    ALLOC_D(d_cov_mat, cov_bytes);
-    ALLOC_D(d_indterm_ref, indterm_bytes);
-    ALLOC_D(d_indterm_dis, indterm_bytes);
-    ALLOC_D(d_sol_ref, indterm_bytes);
-    ALLOC_D(d_sol_dis, indterm_bytes);
-    ALLOC_D(d_R, cov_bytes);
-    ALLOC_D(d_eigenvalues, ST_ELEMENTS * sizeof(float));
-    ALLOC_D(d_eigenvalues_ref, ST_ELEMENTS * sizeof(float));
-    ALLOC_D(d_ref_entropies, score_bytes);
-    ALLOC_D(d_ref_variances, score_bytes);
-    ALLOC_D(d_dis_entropies, score_bytes);
-    ALLOC_D(d_dis_variances, score_bytes);
-#undef ALLOC_D
-
-#define ALLOC_H(field, sz)                                                                         \
-    CHECK_CUDA_GOTO(cu_f, cuMemHostAlloc((void **)&(s->field), (sz), 0x01u), fail_pop)
-    ALLOC_H(h_cov_mat, cov_bytes);
-    ALLOC_H(h_ref_entropies, score_bytes);
-    ALLOC_H(h_ref_variances, score_bytes);
-    ALLOC_H(h_dis_entropies, score_bytes);
-    ALLOC_H(h_dis_variances, score_bytes);
-#undef ALLOC_H
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_pop);
-
-    /* CPU buffers. */
-    s->h_ref[0] = (float *)aligned_malloc(plane_alloc, 32);
-    s->h_ref[1] = (float *)aligned_malloc(plane_alloc, 32);
-    s->h_dis[0] = (float *)aligned_malloc(plane_alloc, 32);
-    s->h_dis[1] = (float *)aligned_malloc(plane_alloc, 32);
-    s->h_eigenvalues = (float *)aligned_malloc(ST_ELEMENTS * sizeof(float), 32);
-    s->h_eig_scratch =
-        (float *)aligned_malloc((ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float), 32);
-    s->h_Q = (float *)aligned_malloc(cov_bytes, 32);
-    s->h_R = (float *)aligned_malloc(cov_bytes, 32);
-    s->h_qr_scratch = (float *)aligned_malloc(4u * cov_bytes, 32);
-    s->h_indterm_ref = (float *)aligned_malloc(indterm_bytes, 32);
-    s->h_indterm_dis = (float *)aligned_malloc(indterm_bytes, 32);
-    s->h_qt_scratch = (float *)aligned_malloc(indterm_bytes, 32);
-
-    if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
-        !s->h_eig_scratch || !s->h_Q || !s->h_R || !s->h_qr_scratch || !s->h_indterm_ref ||
-        !s->h_indterm_dis || !s->h_qt_scratch) {
-        err = -ENOMEM;
-        goto free_all;
+    err = speed_temporal_alloc_cpu(s);
+    if (!err)
+        err = speed_temporal_init_device(fex, s);
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
     }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_all;
+    if (err) {
+        free_cuda_buffers_st(s, cu_f);
+        release_cuda_module_and_stream_st(s, cu_f);
+        return err;
     }
-
     s->index = 0;
     return 0;
-
-free_all:
-    release_cuda_module_and_stream_st(s, cu_f);
-    free_cuda_buffers_st(s, cu_f);
-    return err;
-fail_pop:
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    release_cuda_module_and_stream_st(s, cu_f);
-    free_cuda_buffers_st(s, cu_f);
-    return _cuda_err;
-fail:
-    return _cuda_err;
 }
 
-static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int speed_temporal_copy_input(VmafFeatureExtractor *fex, SpeedTemporalCudaState *s,
+                                     const VmafPicture *ref, const VmafPicture *dist, int cyclic)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    const size_t ref_bytes = (size_t)ref->h[0] * ref->stride[0];
+    const size_t dist_bytes = (size_t)dist->h[0] * dist->stride[0];
+    uint8_t *raw_ref = (uint8_t *)aligned_malloc(ref_bytes, 32);
+    uint8_t *raw_dist = (uint8_t *)aligned_malloc(dist_bytes, 32);
+    if (!raw_ref || !raw_dist) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dist);
+        return -ENOMEM;
+    }
+    const CUresult push = cu_f->cuCtxPushCurrent(fex->cu_state->ctx);
+    if (push != CUDA_SUCCESS) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dist);
+        return vmaf_cuda_result_to_errno((int)push);
+    }
+    const bool copy_failed =
+        cu_f->cuMemcpyDtoH(raw_ref, (CUdeviceptr)ref->data[0], ref_bytes) != CUDA_SUCCESS ||
+        cu_f->cuMemcpyDtoH(raw_dist, (CUdeviceptr)dist->data[0], dist_bytes) != CUDA_SUCCESS;
+    (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
+    if (!copy_failed) {
+        VmafPicture host_ref = *ref;
+        VmafPicture host_dist = *dist;
+        host_ref.data[0] = raw_ref;
+        host_dist.data[0] = raw_dist;
+        picture_copy(s->h_ref[cyclic], s->float_stride, &host_ref, -128, ref->bpc, 0);
+        picture_copy(s->h_dis[cyclic], s->float_stride, &host_dist, -128, ref->bpc, 0);
+    }
+    aligned_free(raw_ref);
+    aligned_free(raw_dist);
+    return copy_failed ? -EIO : 0;
+}
+
+static void speed_temporal_prepare_diff(SpeedTemporalCudaState *s, int current, int previous)
+{
+    const int width = (int)s->dim.original_width;
+    const int height = (int)s->dim.original_height;
+    subtract_plane(s->h_ref[previous], s->h_ref[current], width, height, s->float_stride);
+    if (s->speed_temporal_use_ref_diff) {
+        subtract_plane(s->h_dis[previous], s->h_ref[current], width, height, s->float_stride);
+    } else {
+        subtract_plane(s->h_dis[previous], s->h_dis[current], width, height, s->float_stride);
+}
+}
+
+static int speed_temporal_filter_diff(SpeedTemporalCudaState *s, int previous)
+{
+    const size_t stride = s->float_stride / sizeof(float);
+    const size_t elements = 2u * s->dim.alloc_height * stride;
+    float *scratch = (float *)aligned_malloc(elements * sizeof(float), 32);
+    if (!scratch)
+        return -ENOMEM;
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[previous], scratch,
+                                        s->float_stride);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[previous], scratch,
+                                        s->float_stride);
+    aligned_free(scratch);
+    return 0;
+}
+
+static int speed_temporal_stash_eigenvalues(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_RETURN(
+        cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, (size_t)ST_ELEMENTS * sizeof(float)));
+    return 0;
+}
+
+static int speed_temporal_score_diff(VmafFeatureExtractor *fex, SpeedTemporalCudaState *s,
+                                     int previous, float *score)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    const size_t plane_bytes =
+        s->dim.truncated_height * (s->float_stride / sizeof(float)) * sizeof(float);
+    const CUresult push = cu_f->cuCtxPushCurrent(fex->cu_state->ctx);
+    if (push != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push);
+    bool singular_ref = false;
+    int ret = run_gpu_pipeline_st(s, cu_f, s->h_ref[previous], s->d_indterm_ref, plane_bytes);
+    if (!ret)
+        ret = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
+    if (!ret)
+        ret = speed_temporal_stash_eigenvalues(s, cu_f);
+    bool singular_dis = false;
+    if (!ret)
+        ret = run_gpu_pipeline_st(s, cu_f, s->h_dis[previous], s->d_indterm_dis, plane_bytes);
+    if (!ret)
+        ret = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
+    *score = 0.0f;
+    if (!ret && singular_ref == singular_dis)
+        ret = run_score_st(s, cu_f, score);
+    const CUresult pop = cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
+    if (!ret && pop != CUDA_SUCCESS)
+        ret = vmaf_cuda_result_to_errno((int)pop);
+    return ret;
+}
+
+static int extract_fex_st(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                          const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                          const VmafPicture *dist_pic_90, unsigned index,
                           VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
 
     SpeedTemporalCudaState *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
-    int err = 0;
-
     const int cyclic = (int)(index % 2u);
     const int other = (int)((index + 1u) % 2u);
-
-    /* The CUDA pipeline feeds DEVICE-resident pictures (ref_pic->data[] are
-     * CUdeviceptr), but picture_copy reads HOST memory — download the luma
-     * plane first (same device-pointer SEGV as speed_chroma_cuda). The DtoH
-     * copy needs the CUDA context active (the GPU pipeline below pushes it
-     * again later, so push/pop locally here). */
-    const size_t raw_ref_bytes = (size_t)ref_pic->h[0] * ref_pic->stride[0];
-    const size_t raw_dis_bytes = (size_t)dist_pic->h[0] * dist_pic->stride[0];
-    uint8_t *raw_ref = (uint8_t *)aligned_malloc(raw_ref_bytes, 32);
-    uint8_t *raw_dis = (uint8_t *)aligned_malloc(raw_dis_bytes, 32);
-    if (!raw_ref || !raw_dis) {
-        aligned_free(raw_ref);
-        aligned_free(raw_dis);
-        return -ENOMEM;
-    }
-    if (cu_f->cuCtxPushCurrent(fex->cu_state->ctx) != CUDA_SUCCESS) {
-        aligned_free(raw_ref);
-        aligned_free(raw_dis);
-        return -EIO;
-    }
-    _cuda_err = (cu_f->cuMemcpyDtoH(raw_ref, (CUdeviceptr)ref_pic->data[0], raw_ref_bytes) !=
-                     CUDA_SUCCESS ||
-                 cu_f->cuMemcpyDtoH(raw_dis, (CUdeviceptr)dist_pic->data[0], raw_dis_bytes) !=
-                     CUDA_SUCCESS);
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    if (_cuda_err) {
-        aligned_free(raw_ref);
-        aligned_free(raw_dis);
-        return -EIO;
-    }
-    VmafPicture host_ref = *ref_pic;
-    VmafPicture host_dis = *dist_pic;
-    host_ref.data[0] = raw_ref;
-    host_dis.data[0] = raw_dis;
-
-    /* Copy current frame luma planes to ping-pong buffers. */
-    picture_copy(s->h_ref[cyclic], s->float_stride, &host_ref, -128, ref_pic->bpc, 0);
-    picture_copy(s->h_dis[cyclic], s->float_stride, &host_dis, -128, ref_pic->bpc, 0);
-    aligned_free(raw_ref);
-    aligned_free(raw_dis);
-
-    /* Frame 0: emit score 0 (no previous frame to diff against). */
+    int err = speed_temporal_copy_input(fex, s, ref_pic, dist_pic, cyclic);
+    if (err)
+        return err;
     if (index == 0) {
         return vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
             0.0, index);
     }
-
-    /* Temporal difference: other_index = previous frame. */
-    const int w = (int)s->dim.original_width;
-    const int h = (int)s->dim.original_height;
-    subtract_plane(s->h_ref[other], s->h_ref[cyclic], w, h, s->float_stride);
-    if (s->speed_temporal_use_ref_diff) {
-        subtract_plane(s->h_dis[other], s->h_ref[cyclic], w, h, s->float_stride);
-    } else {
-        subtract_plane(s->h_dis[other], s->h_dis[cyclic], w, h, s->float_stride);
-    }
-
-    /* Allocate filter tmp buffer. */
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
-    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
-    if (!tmp_filter)
-        return -ENOMEM;
-
-    /* Filter+downscale the temporal diff planes. */
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[other], tmp_filter,
-                                        s->float_stride);
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
-                                        s->float_stride);
-    aligned_free(tmp_filter);
-
-    const size_t plane_op_bytes = s->dim.truncated_height * stride_px * sizeof(float);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-
-    /* GPU pipeline for reference diff. */
-    err = run_gpu_pipeline_st(s, cu_f, s->h_ref[other], s->d_indterm_ref, plane_op_bytes);
+    speed_temporal_prepare_diff(s, cyclic, other);
+    err = speed_temporal_filter_diff(s, other);
     if (err)
-        goto pop_ctx;
-
-    /* CPU eigendecomp + QR for the reference diff. Uploads ref eigenvalues
-     * into the shared s->d_eigenvalues buffer. */
-    bool singular_ref = false;
-    err = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
-    if (err)
-        goto pop_ctx;
-
-    /* Stash the reference eigenvalues aside before the distorted linalg pass
-     * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
-     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
-     * needs both. Synchronize first so the async eigenvalue H2D from
-     * run_cpu_linalg_st is complete before the DtoD copy. */
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), pop_ctx);
-    CHECK_CUDA_GOTO(
-        cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float)),
-        pop_ctx);
-
-    /* GPU pipeline for distorted diff (keeps the DIS covariance in h_cov_mat —
-     * no save/restore of the ref covariance). */
-    err = run_gpu_pipeline_st(s, cu_f, s->h_dis[other], s->d_indterm_dis, plane_op_bytes);
-    if (err)
-        goto pop_ctx;
-
-    /* CPU eigendecomp + QR for the distorted diff (uses the DIS cov_mat).
-     * Uploads dis eigenvalues into s->d_eigenvalues. */
-    bool singular_dis = false;
-    err = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
-    if (err)
-        goto pop_ctx;
-
-    /* Exactly one side numerically unstable: report 0 rather than the inflated
-     * score a zeroed solution on one side produces. Verbatim the CPU rule in
-     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
-     * sides are singular the CPU still scores, from two zeroed solutions — so
-     * do we, which is why the singular branch above zeroes `d_sol` on the
-     * device. ADR-1218. */
+        return err;
     float score = 0.0f;
-    if (singular_ref != singular_dis) {
-        score = 0.0f;
-    } else {
-        err = run_score_st(s, cu_f, &score);
-        if (err)
-            goto pop_ctx;
-    }
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_pop);
-
+    err = speed_temporal_score_diff(fex, s, other, &score);
+    if (err)
+        return err;
     const double clipped =
         (double)score < s->speed_temporal_max_val ? (double)score : s->speed_temporal_max_val;
-
-    err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                  "Speed_temporal_feature_speed_temporal_score",
-                                                  clipped, index);
-    return err;
-
-pop_ctx:
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    return err;
-fail_pop:
-    /* The pop itself failed after a successful push: retry it so the CUDA
-     * context stack is not left unbalanced (a per-frame leak), then propagate
-     * the original CUDA error rather than the success path's err. */
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    return _cuda_err;
-fail:
-    return _cuda_err;
+    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "Speed_temporal_feature_speed_temporal_score",
+                                                   clipped, index);
 }
 
 static int close_fex_st(VmafFeatureExtractor *fex)
@@ -778,7 +773,7 @@ static int close_fex_st(VmafFeatureExtractor *fex)
 /* Registration                                                        */
 /* ------------------------------------------------------------------ */
 
-static const char *provided_features[] = {"Speed_temporal_feature_speed_temporal_score", NULL};
+static const char *provided_features[] = {"Speed_temporal_feature_speed_temporal_score", VMAF_NULLPTR};
 
 /* ADR-0567: Real GPU kernels — means, covariance, indterm,
  * backward-substitution, score.  TEMPORAL flag guarantees sequential
@@ -793,5 +788,3 @@ VmafFeatureExtractor vmaf_fex_speed_temporal_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_CUDA,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

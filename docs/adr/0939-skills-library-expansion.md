@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0939: Skills library expansion — MCP, k8s, audit, bisect consolidation
 
 - **Status**: Accepted
@@ -66,7 +65,7 @@ Add three new flagship scaffolding skills and one shared shell library:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Single mega-skill `/add-*` with subcommands | One entry point | Hides the per-surface checklists; harder to discover; breaks the existing `/add-gpu-backend`, `/add-feature-extractor`, `/add-model`, `/add-simd-path` precedent | Inconsistent with the established skill-per-surface pattern |
 | Skip the MCP scaffold; rely on copy-paste | Zero new code | The Go ↔ Python parity drift problem persists; per-tool doc page still skipped half the time | Already proven to drift during the merge train |
 | Skip the k8s scaffold; tell operators to hand-edit | Zero new code | Eight files in lock-step is exactly the kind of error-prone surface a scaffold should cover | Operator-evolution friction is the gating bug |

@@ -15,11 +15,7 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stdint.h>
 #include <string.h>
 
@@ -53,10 +49,10 @@ static int alloc_grey8(VmafPicture *pic, uint8_t v)
  * Both tests below start this way; neither uses dictionary options. */
 static char *float_ssim_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim");
-    mu_assert("float_ssim extractor present", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim");
+    mu_assert("float_ssim extractor present", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
 
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, FSSIM_W, FSSIM_H);
@@ -64,13 +60,13 @@ static char *float_ssim_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeat
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ssim_8bit_identical(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg = float_ssim_fixture_open(&ctx, &fc);
     if (msg)
         return msg;
@@ -82,7 +78,7 @@ static char *test_float_ssim_8bit_identical(void)
     err = alloc_grey8(&dist, 128u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0u, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0u, fc);
     mu_assert("extract ok", err == 0);
 
     double ssim = NAN;
@@ -97,13 +93,13 @@ static char *test_float_ssim_8bit_identical(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ssim_8bit_distinct(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg = float_ssim_fixture_open(&ctx, &fc);
     if (msg)
         return msg;
@@ -115,7 +111,7 @@ static char *test_float_ssim_8bit_distinct(void)
     err = alloc_grey8(&dist, 200u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0u, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0u, fc);
     mu_assert("extract ok", err == 0);
 
     double ssim = NAN;
@@ -129,16 +125,16 @@ static char *test_float_ssim_8bit_distinct(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ssim_10bit_init(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim");
-    mu_assert("float_ssim extractor present", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim");
+    mu_assert("float_ssim extractor present", fex != VMAF_NULLPTR);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
 
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 10u, FSSIM_W, FSSIM_H);
@@ -146,7 +142,7 @@ static char *test_float_ssim_10bit_init(void)
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -154,7 +150,5 @@ char *run_tests(void)
     mu_run_test(test_float_ssim_8bit_identical);
     mu_run_test(test_float_ssim_8bit_distinct);
     mu_run_test(test_float_ssim_10bit_init);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # Research digest — Netflix benchmark re-run on `cd52f2670` (2026-09-06)
 

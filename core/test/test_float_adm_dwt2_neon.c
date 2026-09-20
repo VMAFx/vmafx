@@ -64,11 +64,7 @@
 
 #include "feature/arm64/float_adm_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* Sentinel poison for cells neither kernel is allowed to touch: a quiet-NaN
  * payload that is trivially recognisable in a bit-pattern dump. */
@@ -120,12 +116,12 @@ static char *compare_geometry(int w, int h, int src_pad, int dst_pad, int signed
     const size_t dst_cells = (size_t)h_half * (size_t)dst_px_stride;
     static const char *const names[4] = {"band_a", "band_v", "band_h", "band_d"};
 
-    float *src = NULL;
+    float *src = VMAF_NULLPTR;
     float *bands[8] = {0};
     int *iy[4] = {0}, *ix[4] = {0};
     adm_dwt_band_t_s ref_band, simd_band;
     uint32_t seed = 0x5eed0000u ^ (uint32_t)(w * 131 + h * 7 + 1);
-    char *msg = NULL;
+    char *msg = VMAF_NULLPTR;
     int mismatches = 0, tail_col_mismatches = 0, last_col_mismatches = 0;
 
     *out_mismatches = 0;
@@ -264,7 +260,7 @@ out:
 static char *test_float_adm_dwt2_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL; /* NEON kernel is aarch64-only. */
+    return VMAF_NULLPTR; /* NEON kernel is aarch64-only. */
 #else
     /* {w, h, src stride padding (px), dst stride padding (px)} */
     static const int geom[][4] = {
@@ -303,10 +299,10 @@ static char *test_float_adm_dwt2_neon_matches_scalar(void)
         int mismatches = 0;
         char *msg =
             compare_geometry(geom[t][0], geom[t][1], geom[t][2], geom[t][3], 0, 1, &mismatches);
-        mu_assert(msg, msg == NULL);
+        mu_assert(msg, msg == VMAF_NULLPTR);
         mu_assert("float_adm_dwt2_neon diverges from adm_dwt2_s", mismatches == 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -317,7 +313,7 @@ static char *test_float_adm_dwt2_neon_matches_scalar(void)
 static char *test_float_adm_dwt2_neon_geometry_sweep(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     for (int w = 2; w <= 40; ++w) {
         for (int h = 2; h <= 12; ++h) {
@@ -325,7 +321,7 @@ static char *test_float_adm_dwt2_neon_geometry_sweep(void)
             /* Vary the padding with the geometry so the sweep also covers
              * tight and padded strides for each residue class. */
             char *msg = compare_geometry(w, h, w % 5, h % 3, 0, 0, &mismatches);
-            mu_assert(msg, msg == NULL);
+            mu_assert(msg, msg == VMAF_NULLPTR);
             if (mismatches) {
                 (void)fprintf(stderr, "  sweep: first divergence at %dx%d\n", w, h);
                 /* Re-run verbosely so the failure report carries the detail. */
@@ -335,7 +331,7 @@ static char *test_float_adm_dwt2_neon_geometry_sweep(void)
                       mismatches == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -346,13 +342,13 @@ static char *test_float_adm_dwt2_neon_geometry_sweep(void)
 static char *test_float_adm_dwt2_neon_preserves_signed_zero(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int mismatches = 0;
     char *msg = compare_geometry(8, 6, 0, 0, 1, 1, &mismatches);
-    mu_assert(msg, msg == NULL);
+    mu_assert(msg, msg == VMAF_NULLPTR);
     mu_assert("float_adm_dwt2_neon diverges from scalar signed-zero contract", mismatches == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -368,7 +364,5 @@ char *run_tests(void)
     (void)test_float_adm_dwt2_neon_geometry_sweep;
     (void)test_float_adm_dwt2_neon_preserves_signed_zero;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

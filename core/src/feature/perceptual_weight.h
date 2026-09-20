@@ -19,6 +19,8 @@
 #ifndef LIBVMAF_FEATURE_PERCEPTUAL_WEIGHT_H
 #define LIBVMAF_FEATURE_PERCEPTUAL_WEIGHT_H
 
+#include "vmaf_nullptr.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -53,7 +55,7 @@ void vmaf_perceptual_weight_store_destroy(VmafPerceptualWeightStore *store);
  * Parse a UUID-prefixed Pelorus blob, derive the frame salience, and store it
  * at `pic_index`. Mirrors the public vmaf_set_perceptual_sidedata contract:
  *   0        success
- *   -EINVAL  store or blob NULL
+ *   -EINVAL  store or blob VMAF_NULLPTR
  *   -ENOENT  not a Pelorus blob (cleanly ignored)
  *   -EPROTO  ABI-major mismatch (cleanly ignored; caller logs)
  *   -ENOMEM  allocation failure

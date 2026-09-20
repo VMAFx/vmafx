@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD014 -->
 # Research digest — Metal kernel coverage round 4 (closeout)
 
 **Date**: 2026-05-31
@@ -29,7 +28,7 @@ prevents silent regression the day a 9th kernel lands?
 2. **Enumerate `test_metal_*` tests on `master`:**
 
    ```text
-   $ find core/test -maxdepth 2 -name 'test_metal*' -type f | sort
+   find core/test -maxdepth 2 -name 'test_metal*' -type f | sort
    ```
 
    Yields **only** `test_metal_install_header.c` + `test_metal_smoke.c`.

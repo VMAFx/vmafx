@@ -238,8 +238,15 @@ func LoadCorpusJSONL(path string) ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = f.Close() }()
-	return ParseCorpusJSONL(f)
+	rows, parseErr := ParseCorpusJSONL(f)
+	closeErr := f.Close()
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return rows, nil
 }
 
 // ParseCorpusJSONL parses JSONL rows from r. Split out from LoadCorpusJSONL so
@@ -415,6 +422,74 @@ var ErrNoEligibleRows = errors.New("no successful finite corpus rows to benchmar
 // ErrNoEncoderNames is returned when eligible rows carry no encoder token.
 var ErrNoEncoderNames = errors.New("corpus rows do not include encoder names")
 
+// groupRowsByEncoder drops rows with an empty encoder token and groups the
+// remainder without changing their source order.
+func groupRowsByEncoder(rows []Row) map[string][]Row {
+	byEncoder := map[string][]Row{}
+	for _, row := range rows {
+		enc := pyStr(row.get("encoder", ""))
+		if enc != "" {
+			byEncoder[enc] = append(byEncoder[enc], row)
+		}
+	}
+	return byEncoder
+}
+
+// summarizeEncoder builds the report row for one encoder group.
+func summarizeEncoder(enc string, group []Row, targetVMAF float64) Summary {
+	status, row := bestRow(group, targetVMAF)
+	bitrate, _ := finiteFloat(row["bitrate_kbps"])
+	vmaf, _ := finiteFloat(row["vmaf_score"])
+
+	srcs := map[string]struct{}{}
+	presets := map[string]struct{}{}
+	encodeSamples := make([]*float64, 0, len(group))
+	scoreSamples := make([]*float64, 0, len(group))
+	for _, candidate := range group {
+		srcs[pyStr(candidate.get("src", ""))] = struct{}{}
+		presets[pyStr(candidate.get("preset", ""))] = struct{}{}
+		encodeSamples = append(encodeSamples, rowEncodeFPS(candidate))
+		scoreSamples = append(scoreSamples, rowScoreFPS(candidate))
+	}
+
+	return Summary{
+		Encoder: enc, Status: status, Rows: len(group),
+		SourceCount: len(srcs), PresetCount: len(presets),
+		BestRow: row, TargetVMAF: targetVMAF, Margin: vmaf - targetVMAF,
+		BitratekBps: bitrate, EncodeFPS: meanPositive(encodeSamples),
+		ScoreFPS: meanPositive(scoreSamples),
+	}
+}
+
+// summarizeEncoderGroups orders encoder names before constructing summaries,
+// preserving the deterministic Python-compatible tie-breaking order.
+func summarizeEncoderGroups(byEncoder map[string][]Row, targetVMAF float64) []Summary {
+	encoders := make([]string, 0, len(byEncoder))
+	for enc := range byEncoder {
+		encoders = append(encoders, enc)
+	}
+	sort.Strings(encoders)
+
+	raw := make([]Summary, 0, len(encoders))
+	for _, enc := range encoders {
+		raw = append(raw, summarizeEncoder(enc, byEncoder[enc], targetVMAF))
+	}
+	return raw
+}
+
+// applyBitrateDeltas fills the optional delta field when a usable baseline
+// exists.
+func applyBitrateDeltas(summaries []Summary, baseline *Summary) {
+	if baseline == nil || baseline.BitratekBps <= 0 {
+		return
+	}
+	base := baseline.BitratekBps
+	for i := range summaries {
+		delta := ((summaries[i].BitratekBps - base) / base) * 100.0
+		summaries[i].BitrateDeltaPct = &delta
+	}
+}
+
 // Summarize returns the best matched-quality point per encoder.
 //
 // baselineEncoder selects the encoder that bitrate deltas are measured
@@ -425,69 +500,17 @@ func Summarize(rows []Row, targetVMAF float64, baselineEncoder string) ([]Summar
 		return nil, ErrNoEligibleRows
 	}
 
-	byEncoder := map[string][]Row{}
-	for _, row := range eligible {
-		enc := pyStr(row.get("encoder", ""))
-		if enc == "" {
-			continue
-		}
-		byEncoder[enc] = append(byEncoder[enc], row)
-	}
+	byEncoder := groupRowsByEncoder(eligible)
 	if len(byEncoder) == 0 {
 		return nil, ErrNoEncoderNames
 	}
 
-	encoders := make([]string, 0, len(byEncoder))
-	for enc := range byEncoder {
-		encoders = append(encoders, enc)
-	}
-	sort.Strings(encoders)
-
-	raw := make([]Summary, 0, len(encoders))
-	for _, enc := range encoders {
-		group := byEncoder[enc]
-		status, row := bestRow(group, targetVMAF)
-		bitrate, _ := finiteFloat(row["bitrate_kbps"])
-		vmaf, _ := finiteFloat(row["vmaf_score"])
-
-		srcs := map[string]struct{}{}
-		presets := map[string]struct{}{}
-		encodeSamples := make([]*float64, 0, len(group))
-		scoreSamples := make([]*float64, 0, len(group))
-		for _, r := range group {
-			srcs[pyStr(r.get("src", ""))] = struct{}{}
-			presets[pyStr(r.get("preset", ""))] = struct{}{}
-			encodeSamples = append(encodeSamples, rowEncodeFPS(r))
-			scoreSamples = append(scoreSamples, rowScoreFPS(r))
-		}
-
-		raw = append(raw, Summary{
-			Encoder:     enc,
-			Status:      status,
-			Rows:        len(group),
-			SourceCount: len(srcs),
-			PresetCount: len(presets),
-			BestRow:     row,
-			TargetVMAF:  targetVMAF,
-			Margin:      vmaf - targetVMAF,
-			BitratekBps: bitrate,
-			EncodeFPS:   meanPositive(encodeSamples),
-			ScoreFPS:    meanPositive(scoreSamples),
-		})
-	}
-
+	raw := summarizeEncoderGroups(byEncoder, targetVMAF)
 	baseline, err := resolveBaseline(raw, baselineEncoder)
 	if err != nil {
 		return nil, err
 	}
-	if baseline != nil && baseline.BitratekBps > 0 {
-		base := baseline.BitratekBps
-		for i := range raw {
-			delta := ((raw[i].BitratekBps - base) / base) * 100.0
-			raw[i].BitrateDeltaPct = &delta
-		}
-	}
-
+	applyBitrateDeltas(raw, baseline)
 	sortSummaries(raw)
 	return raw, nil
 }
@@ -651,30 +674,53 @@ func csvCell(v any) string {
 	return pyStr(v)
 }
 
-// RenderMarkdown renders the summaries as a compact Markdown table.
+// markdownRow renders one compact-style Markdown table row. Empty cells use
+// exactly one space between the surrounding pipes, as required by MD060.
+func markdownRow(cells []string) string {
+	var row strings.Builder
+	row.WriteByte('|')
+	for _, cell := range cells {
+		row.WriteByte(' ')
+		row.WriteString(cell)
+		if cell != "" {
+			row.WriteByte(' ')
+		}
+		row.WriteByte('|')
+	}
+	return row.String()
+}
+
+// RenderMarkdown renders the summaries as a titled, compact Markdown table.
 func RenderMarkdown(summaries []Summary) string {
 	lines := []string{
-		"| Encoder | Status | VMAF | kbps | Δ kbps | Preset | CRF | Rows | Encode fps | Score fps |",
-		"| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |",
+		"# VMAF encoder benchmark",
+		"",
+		markdownRow([]string{
+			"Encoder", "Status", "VMAF", "kbps", "Δ kbps",
+			"Preset", "CRF", "Rows", "Encode fps", "Score fps",
+		}),
+		markdownRow([]string{
+			"---", "---", "---:", "---:", "---:",
+			"---", "---:", "---:", "---:", "---:",
+		}),
 	}
 	for _, item := range summaries {
 		row := item.BestRow
 		vmaf, _ := finiteFloat(row["vmaf_score"])
-		lines = append(lines, fmt.Sprintf(
-			"| %s | %s | %.3f | %.1f | %s | %s | %s | %d | %s | %s |",
+		lines = append(lines, markdownRow([]string{
 			item.Encoder,
 			item.Status,
-			vmaf,
-			item.BitratekBps,
+			fmt.Sprintf("%.3f", vmaf),
+			fmt.Sprintf("%.1f", item.BitratekBps),
 			formatOptional(item.BitrateDeltaPct),
 			// f"{row.get('preset', '')}" — an f-string, so a present-but-null
 			// value stringifies as "None" rather than blank. Mirrored.
 			pyStr(row.get("preset", "")),
 			pyStr(row.get("crf", "")),
-			item.Rows,
+			strconv.Itoa(item.Rows),
 			formatOptional(item.EncodeFPS),
 			formatOptional(item.ScoreFPS),
-		))
+		}))
 	}
 	return strings.Join(lines, "\n") + "\n"
 }

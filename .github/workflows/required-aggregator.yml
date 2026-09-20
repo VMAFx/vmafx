@@ -71,6 +71,7 @@ jobs:
               'Semgrep',
               'Tidy Changed',
               'Tidy Ratchet',
+              'Tidy SYCL',
               'Cppcheck',
               'Dependency Review',
               'Gitleaks',

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2036 — Three CAMBI divergences behind one vacuous fixture
 

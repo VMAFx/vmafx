@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Fix two `dev/Containerfile` build-correctness bugs:
 
 - **Package-verify false negatives**: the three GPU/VA-API install-verify loops

@@ -25,7 +25,7 @@
 
 /* Preserve Netflix-compatible NULL spelling without relying on undocumented
  * MSVC C nullptr support (ADR-1138); retain the C++ nullptr ratchet. */
-// NOLINTBEGIN(modernize-use-nullptr)
+
 
 typedef struct VifStageFixture {
     VifPublicState state;
@@ -37,7 +37,7 @@ typedef struct VifStageFixture {
 
 static void free_fixture(VifStageFixture *fixture)
 {
-    if (fixture != NULL) {
+    if (fixture != VMAF_NULLPTR) {
         free(fixture->storage);
         free(fixture);
     }
@@ -46,16 +46,16 @@ static void free_fixture(VifStageFixture *fixture)
 static VifStageFixture *alloc_fixture(unsigned width, unsigned height)
 {
     VifStageFixture *fixture = calloc(1, sizeof(*fixture));
-    if (fixture == NULL)
-        return NULL;
+    if (fixture == VMAF_NULLPTR)
+        return VMAF_NULLPTR;
     const size_t stride = (width * sizeof(uint16_t) + 31u) & ~(size_t)31u;
     const size_t plane = stride * (height + 16u);
     const size_t temporary = (width + 16u) * sizeof(uint32_t);
     fixture->bytes = plane * 4u + temporary * 7u;
     fixture->storage = calloc(1, fixture->bytes);
-    if (fixture->storage == NULL) {
+    if (fixture->storage == VMAF_NULLPTR) {
         free_fixture(fixture);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     fixture->width = width;
     fixture->height = height;
@@ -113,7 +113,7 @@ static int compare_statistic(unsigned width, unsigned height, unsigned bpc, unsi
 {
     VifStageFixture *scalar = alloc_fixture(width, height);
     VifStageFixture *simd = alloc_fixture(width, height);
-    if (scalar == NULL || simd == NULL) {
+    if (scalar == VMAF_NULLPTR || simd == VMAF_NULLPTR) {
         free_fixture(scalar);
         free_fixture(simd);
         return -1;
@@ -172,7 +172,7 @@ static int compare_geometry(unsigned width, unsigned height)
 static char *test_integer_vif_avx2_stages(void)
 {
     if (!simd_test_have_avx2())
-        return NULL;
+        return VMAF_NULLPTR;
     const unsigned widths[] = {9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 257};
     const unsigned heights[] = {7, 17, 18, 24};
     for (size_t w = 0; w < sizeof(widths) / sizeof(widths[0]); ++w) {
@@ -181,13 +181,11 @@ static char *test_integer_vif_avx2_stages(void)
                       compare_geometry(widths[w], heights[h]) == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_integer_vif_avx2_stages);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr)

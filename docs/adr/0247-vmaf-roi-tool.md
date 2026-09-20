@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0247: vmaf-roi sidecar binary for per-CTU QP offsets
 
 - **Status**: Accepted
@@ -55,7 +54,7 @@ We ship `vmaf-roi` as a fork-local sidecar binary at
 ## Alternatives considered
 
 | Axis | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Format | **ASCII per-row grid (chosen for x265)** | Human-readable; matches x265's `--qpfile-style` precedent; trivial to diff in CI | ~2 - 3x larger on disk than binary; slower to parse for very large grids | Selected for x265 — the encoder's own qpfile-style is ASCII, so we follow that convention rather than fight it. |
 | Format | **Raw int8 binary (chosen for SVT-AV1)** | Compact (1 byte per CTU); matches SVT-AV1's `--roi-map-file` byte layout | Not human-readable; needs a hex-dump tool to inspect | Selected for SVT-AV1 — the encoder explicitly requires this layout, no choice. |
 | Format | Single universal format (e.g. JSON) | Encoder-agnostic on disk | Every encoder driver still needs a converter; defeats the purpose of "sidecar" | Rejected: it just moves the conversion cost to the consumer. |

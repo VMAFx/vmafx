@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0218: MobileSal saliency feature extractor (T6-2a)
 
 - **Status**: Accepted
@@ -61,7 +60,7 @@ remains the T6-2b follow-up.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Real upstream MobileSal weights now | Immediate quality signal; users can correlate against actual saliency content | Upstream re-export non-trivial (custom ops, ImageNet-in-graph, opset alignment); blocks unrelated PR scope; pulls in 10 MB binary before the surface stabilises | Deferred to T6-2a-followup; placeholder unblocks plumbing |
 | Synthetic placeholder ONNX (smoke=true) | Zero-friction landing; locks down C / registry / sidecar / docs; deterministic sha256; 330 bytes; same precedent as `smoke_v0.onnx` | Score is content-independent until real weights land | **Chosen** — placeholder is explicitly labelled smoke-only in `registry.json` and `docs/ai/models/mobilesal.md` |
 | Skip the placeholder, gate the extractor on a missing `.onnx` | Smaller PR | Leaves the feature uncallable end-to-end; smoke test cannot exercise the pipeline; pattern diverges from `smoke_v0` / `smoke_fp16_v0` precedent | Rejected — defeats T6-2a's purpose |

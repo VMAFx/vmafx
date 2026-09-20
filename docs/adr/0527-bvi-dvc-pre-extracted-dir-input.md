@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0527: Accept pre-extracted BVI-DVC YUVs via `--bvi-dir`
 
 - **Status**: Accepted
@@ -34,7 +33,7 @@ fallback) is preserved when neither flag is provided.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `--bvi-dir` as implemented | Zero extraction overhead for pre-decoded YUV; MP4 inputs reuse existing decode path; backward-compatible (neither flag → zip default) | Tier is inferred from resolution rather than filename prefix, so clips with non-standard resolutions are skipped with a warning | Chosen — the four BVI-DVC canonical resolutions are a closed set; the warning + skip is the right safety valve |
 | Auto-scan a well-known search path (e.g. `.workingdir2/bvi-dvc-extracted/`) | No extra flag required | Silently wrong if the user's extraction landed somewhere else; non-obvious from `--help`; not composable with other input sources | Rejected — an explicit flag is clearer and safer |
 | Single `--bvi-input` flag that auto-detects zip vs. directory | Fewer flags; slightly simpler `--help` | Ambiguous if the path points at a directory named `*.zip`; makes the mutual-exclusion constraint implicit rather than explicit | Rejected — explicit `add_mutually_exclusive_group()` is the right argparse pattern here |

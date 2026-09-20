@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0674: Second-Opinion Materializer Batch Manifest
 
 - **Status**: Accepted
@@ -37,17 +36,17 @@ binaries.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Manifest-driven batch wrapper over the shared joiner | Repeatable multi-table joins; one provenance report; preserves the no-external-scorer boundary | Adds one operator-facing CLI | Chosen: it closes the execution gap without changing row semantics |
-| Keep shell loops | No new Python surface | No stable batch artifact, weak provenance, easy label/path drift | Rejected: shell history is not adequate training evidence |
-| Invoke competitor scorers from the batch runner | Fully automated end-to-end scorer generation | Vendors/links third-party competitors and violates ADR-0657's table-side boundary | Rejected: scorer execution remains outside this repo |
-| Add corpus-specific second-opinion scripts | Simple per-corpus defaults | Duplicates join policy and column semantics | Rejected: corpus differences are already expressible in manifest entries |
+| Option                                               | Pros                                                                                           | Cons                                                                              | Why not chosen                                                           |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Manifest-driven batch wrapper over the shared joiner | Repeatable multi-table joins; one provenance report; preserves the no-external-scorer boundary | Adds one operator-facing CLI                                                      | Chosen: it closes the execution gap without changing row semantics       |
+| Keep shell loops                                     | No new Python surface                                                                          | No stable batch artifact, weak provenance, easy label/path drift                  | Rejected: shell history is not adequate training evidence                |
+| Invoke competitor scorers from the batch runner      | Fully automated end-to-end scorer generation                                                   | Vendors/links third-party competitors and violates ADR-0657's table-side boundary | Rejected: scorer execution remains outside this repo                     |
+| Add corpus-specific second-opinion scripts           | Simple per-corpus defaults                                                                     | Duplicates join policy and column semantics                                       | Rejected: corpus differences are already expressible in manifest entries |
 
 ## Consequences
 
-- **Positive**: Second-opinion joins for CHUG, KoNViD, UGC, Netflix, and BVI
-  can be replayed from one manifest and cited by retraining jobs.
+- **Positive**: Second-opinion joins for CHUG, KoNViD, UGC, Netflix, and BVI can
+  be replayed from one manifest and cited by retraining jobs.
 - **Negative**: Join option changes must keep the single-table script and batch
   manifest validation in sync.
 - **Neutral / follow-ups**: Generate scorer sidecars, run the batch manifest on
@@ -61,5 +60,6 @@ binaries.
 - [ADR-0661](0661-ai-run-manifest-provenance.md) — shared AI run provenance.
 - [Research-0694](../research/0694-second-opinion-materializer-batch-manifest.md)
   — implementation digest.
-- Source: req — "yeah every possible gain through intersection (even of not yet included metrics)... thats an interesting topic for sure lol"
+- Source: req — "yeah every possible gain through intersection (even of not yet
+  included metrics)... thats an interesting topic for sure lol"
 - Source: req — "well go on i guess we have enough backlog..."

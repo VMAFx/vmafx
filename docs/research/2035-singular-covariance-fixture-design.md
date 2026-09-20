@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2035 — Designing a fixture that can actually observe a numerical-degeneracy bug
 

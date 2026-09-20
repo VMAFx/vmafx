@@ -135,8 +135,7 @@ def audit_learned_filter(
 
         if abs(stats.mean_shift) > mean_shift_max * peak:
             report.warnings.append(
-                f"frame {idx}: |Δmean| = {abs(stats.mean_shift):.3g} "
-                f"> {mean_shift_max * peak:.3g}"
+                f"frame {idx}: |Δmean| = {abs(stats.mean_shift):.3g} > {mean_shift_max * peak:.3g}"
             )
         if stats.std_ratio > std_ratio_max:
             report.warnings.append(
@@ -149,8 +148,7 @@ def audit_learned_filter(
             )
         if stats.ssim < ssim_min:
             report.warnings.append(
-                f"frame {idx}: SSIM = {stats.ssim:.2f} < {ssim_min} "
-                f"(filter destroying structure)"
+                f"frame {idx}: SSIM = {stats.ssim:.2f} < {ssim_min} (filter destroying structure)"
             )
 
     # Summary stats for a single-line CI gate.

@@ -53,144 +53,124 @@ __device__ __forceinline__ int mv2_mirror(int idx, int sup)
     return idx;
 }
 
-extern "C" {
+__device__ __forceinline__ void load_mv2_tile_8bpc(int32_t tile[][MV2_TILE_PITCH],
+                                                   const uint8_t *__restrict__ prev,
+                                                   const uint8_t *__restrict__ cur,
+                                                   ptrdiff_t prev_stride, ptrdiff_t cur_stride,
+                                                   unsigned width, unsigned height, unsigned lid)
+{
+    const int origin_x = blockIdx.x * MV2_BLOCK_X - MV2_RADIUS;
+    const int origin_y = blockIdx.y * MV2_BLOCK_Y - MV2_RADIUS;
+    for (unsigned i = lid; i < MV2_TILE_W * MV2_TILE_H; i += MV2_BLOCK_X * MV2_BLOCK_Y) {
+        const unsigned ty = i / MV2_TILE_W;
+        const unsigned tx = i % MV2_TILE_W;
+        const int gx = mv2_mirror(origin_x + (int)tx, (int)width);
+        const int gy = mv2_mirror(origin_y + (int)ty, (int)height);
+        tile[ty][tx] = (int)prev[gy * prev_stride + gx] - (int)cur[gy * cur_stride + gx];
+    }
+}
 
-__launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
+__device__ __forceinline__ void load_mv2_tile_16bpc(int32_t tile[][MV2_TILE_PITCH],
+                                                    const uint8_t *__restrict__ prev,
+                                                    const uint8_t *__restrict__ cur,
+                                                    ptrdiff_t prev_stride, ptrdiff_t cur_stride,
+                                                    unsigned width, unsigned height, unsigned lid)
+{
+    const int origin_x = blockIdx.x * MV2_BLOCK_X - MV2_RADIUS;
+    const int origin_y = blockIdx.y * MV2_BLOCK_Y - MV2_RADIUS;
+    for (unsigned i = lid; i < MV2_TILE_W * MV2_TILE_H; i += MV2_BLOCK_X * MV2_BLOCK_Y) {
+        const unsigned ty = i / MV2_TILE_W;
+        const unsigned tx = i % MV2_TILE_W;
+        const int gx = mv2_mirror(origin_x + (int)tx, (int)width);
+        const int gy = mv2_mirror(origin_y + (int)ty, (int)height);
+        const int p = (int)reinterpret_cast<const uint16_t *>(prev + gy * prev_stride)[gx];
+        const int c = (int)reinterpret_cast<const uint16_t *>(cur + gy * cur_stride)[gx];
+        tile[ty][tx] = p - c;
+    }
+}
+
+__device__ __forceinline__ int64_t blur_mv2_tile_8bpc(const int32_t tile[][MV2_TILE_PITCH])
+{
+    const unsigned lx = threadIdx.x + MV2_RADIUS;
+    const unsigned ly = threadIdx.y + MV2_RADIUS;
+    int64_t blurred = 0;
+#pragma unroll
+    for (int xf = 0; xf < 5; ++xf) {
+        int32_t blurred_y = 0;
+#pragma unroll
+        for (int yf = 0; yf < 5; ++yf)
+            blurred_y += mv2_filter_d[yf] * tile[ly - MV2_RADIUS + yf][lx - MV2_RADIUS + xf];
+        const int32_t v = (blurred_y + (1 << 7)) >> 8;
+        blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
+    }
+    const int64_t filtered = (blurred + (1 << 15)) >> 16;
+    return filtered < 0 ? -filtered : filtered;
+}
+
+__device__ __forceinline__ int64_t blur_mv2_tile_16bpc(const int32_t tile[][MV2_TILE_PITCH],
+                                                       unsigned bpc)
+{
+    const unsigned lx = threadIdx.x + MV2_RADIUS;
+    const unsigned ly = threadIdx.y + MV2_RADIUS;
+    int64_t blurred = 0;
+#pragma unroll
+    for (int xf = 0; xf < 5; ++xf) {
+        int64_t blurred_y = 0;
+#pragma unroll
+        for (int yf = 0; yf < 5; ++yf)
+            blurred_y += (int64_t)mv2_filter_d[yf] *
+                         (int64_t)tile[ly - MV2_RADIUS + yf][lx - MV2_RADIUS + xf];
+        const int32_t v = (int32_t)((blurred_y + (1LL << (bpc - 1))) >> bpc);
+        blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
+    }
+    const int64_t filtered = (blurred + (1 << 15)) >> 16;
+    return filtered < 0 ? -filtered : filtered;
+}
+
+__device__ __forceinline__ void accumulate_mv2_sad(int64_t abs_h, VmafCudaBuffer sad)
+{
+    abs_h += __shfl_down_sync(0xffffffff, abs_h, 16);
+    abs_h += __shfl_down_sync(0xffffffff, abs_h, 8);
+    abs_h += __shfl_down_sync(0xffffffff, abs_h, 4);
+    abs_h += __shfl_down_sync(0xffffffff, abs_h, 2);
+    abs_h += __shfl_down_sync(0xffffffff, abs_h, 1);
+    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) & 31;
+    if (lane == 0) {
+        atomicAdd(reinterpret_cast<unsigned long long *>(sad.data),
+                  static_cast<unsigned long long>(abs_h));
+    }
+}
+
+extern "C" __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
     void motion_v2_kernel_8bpc(const uint8_t *__restrict__ prev, const uint8_t *__restrict__ cur,
                                ptrdiff_t prev_stride, ptrdiff_t cur_stride, VmafCudaBuffer sad,
                                unsigned width, unsigned height)
 {
-    /* Shared tile holds the signed diff (prev - cur) so the nested
-     * separable filter operates on a single dataset. Inner dim is
-     * MV2_TILE_PITCH (= MV2_TILE_W + 1) for bank-conflict padding. */
     __shared__ int32_t s_diff[MV2_TILE_H][MV2_TILE_PITCH];
-
-    constexpr int shift_y = 8;
-    constexpr int round_y = 1 << 7;
-    constexpr int shift_x = 16;
-    constexpr int round_x = 1 << 15;
-
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    const int tile_origin_x = blockIdx.x * MV2_BLOCK_X - MV2_RADIUS;
-    const int tile_origin_y = blockIdx.y * MV2_BLOCK_Y - MV2_RADIUS;
-    const unsigned tile_elems = MV2_TILE_W * MV2_TILE_H;
-    const unsigned wg_size = MV2_BLOCK_X * MV2_BLOCK_Y;
-
-    for (unsigned i = lid; i < tile_elems; i += wg_size) {
-        const unsigned ty = i / MV2_TILE_W;
-        const unsigned tx = i % MV2_TILE_W;
-        const int gx = mv2_mirror(tile_origin_x + (int)tx, (int)width);
-        const int gy = mv2_mirror(tile_origin_y + (int)ty, (int)height);
-        const int p = (int)prev[gy * prev_stride + gx];
-        const int c = (int)cur[gy * cur_stride + gx];
-        s_diff[ty][tx] = p - c;
-    }
+    load_mv2_tile_8bpc(s_diff, prev, cur, prev_stride, cur_stride, width, height,
+                       threadIdx.y * blockDim.x + threadIdx.x);
     __syncthreads();
-
     int64_t abs_h = 0;
-    if (x < (int)width && y < (int)height) {
-        const unsigned lx = threadIdx.x + MV2_RADIUS;
-        const unsigned ly = threadIdx.y + MV2_RADIUS;
-
-        int64_t blurred = 0;
-#pragma unroll
-        for (int xf = 0; xf < 5; ++xf) {
-            int32_t blurred_y = 0;
-#pragma unroll
-            for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += mv2_filter_d[yf] * s_diff[ly - MV2_RADIUS + yf][lx - MV2_RADIUS + xf];
-            }
-            const int32_t v = (blurred_y + round_y) >> shift_y;
-            blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
-        }
-        const int64_t h = (blurred + round_x) >> shift_x;
-        abs_h = h < 0 ? -h : h;
-    }
-
-    /* Warp reduction (lane 0 carries the warp's partial). */
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 16);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 8);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 4);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 2);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 1);
-    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) & 31;
-    if (lane == 0) {
-        atomicAdd(reinterpret_cast<unsigned long long *>(sad.data),
-                  static_cast<unsigned long long>(abs_h));
-    }
+    if (x < (int)width && y < (int)height)
+        abs_h = blur_mv2_tile_8bpc(s_diff);
+    accumulate_mv2_sad(abs_h, sad);
 }
 
-__launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
+extern "C" __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
     void motion_v2_kernel_16bpc(const uint8_t *__restrict__ prev, const uint8_t *__restrict__ cur,
                                 ptrdiff_t prev_stride, ptrdiff_t cur_stride, VmafCudaBuffer sad,
                                 unsigned width, unsigned height, unsigned bpc)
 {
-    /* Inner dim is MV2_TILE_PITCH for bank-conflict padding (see
-     * comment in the 8bpc kernel above). */
     __shared__ int32_t s_diff[MV2_TILE_H][MV2_TILE_PITCH];
-
-    const int shift_y = (int)bpc;
-    const int round_y = 1 << ((int)bpc - 1);
-    constexpr int shift_x = 16;
-    constexpr int round_x = 1 << 15;
-
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    const int tile_origin_x = blockIdx.x * MV2_BLOCK_X - MV2_RADIUS;
-    const int tile_origin_y = blockIdx.y * MV2_BLOCK_Y - MV2_RADIUS;
-    const unsigned tile_elems = MV2_TILE_W * MV2_TILE_H;
-    const unsigned wg_size = MV2_BLOCK_X * MV2_BLOCK_Y;
-
-    for (unsigned i = lid; i < tile_elems; i += wg_size) {
-        const unsigned ty = i / MV2_TILE_W;
-        const unsigned tx = i % MV2_TILE_W;
-        const int gx = mv2_mirror(tile_origin_x + (int)tx, (int)width);
-        const int gy = mv2_mirror(tile_origin_y + (int)ty, (int)height);
-        const int p = (int)reinterpret_cast<const uint16_t *>(prev + gy * prev_stride)[gx];
-        const int c = (int)reinterpret_cast<const uint16_t *>(cur + gy * cur_stride)[gx];
-        s_diff[ty][tx] = p - c;
-    }
+    load_mv2_tile_16bpc(s_diff, prev, cur, prev_stride, cur_stride, width, height,
+                        threadIdx.y * blockDim.x + threadIdx.x);
     __syncthreads();
-
     int64_t abs_h = 0;
-    if (x < (int)width && y < (int)height) {
-        const unsigned lx = threadIdx.x + MV2_RADIUS;
-        const unsigned ly = threadIdx.y + MV2_RADIUS;
-
-        int64_t blurred = 0;
-#pragma unroll
-        for (int xf = 0; xf < 5; ++xf) {
-            /* For bpc=16 the per-tap product can reach 26386 * 65535
-             * ≈ 1.7e9 and the 5-tap sum overflows int32 — int64 in
-             * the inner accumulator. */
-            int64_t blurred_y = 0;
-#pragma unroll
-            for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += (int64_t)mv2_filter_d[yf] *
-                             (int64_t)s_diff[ly - MV2_RADIUS + yf][lx - MV2_RADIUS + xf];
-            }
-            const int32_t v = (int32_t)((blurred_y + (int64_t)round_y) >> shift_y);
-            blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
-        }
-        const int64_t h = (blurred + (int64_t)round_x) >> shift_x;
-        abs_h = h < 0 ? -h : h;
-    }
-
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 16);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 8);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 4);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 2);
-    abs_h += __shfl_down_sync(0xffffffff, abs_h, 1);
-    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) & 31;
-    if (lane == 0) {
-        atomicAdd(reinterpret_cast<unsigned long long *>(sad.data),
-                  static_cast<unsigned long long>(abs_h));
-    }
+    if (x < (int)width && y < (int)height)
+        abs_h = blur_mv2_tile_16bpc(s_diff, bpc);
+    accumulate_mv2_sad(abs_h, sad);
 }
-
-} /* extern "C" */

@@ -1,1 +1,5 @@
-| [ADR-0438](0438-cli-parse-short-opt-handler-coverage.md) | CLI parser short-option handler coverage invariant — every short option in `short_opts[]` must have a `case` arm; adds missing `case 'c':` for `--cpumask` | Accepted | cli, lint, testing, correctness |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0438](0438-cli-parse-short-opt-handler-coverage.md) | CLI parser short-option handler coverage invariant | Accepted | `cli`, `lint`, `testing`, `correctness` |

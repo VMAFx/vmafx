@@ -1,1 +1,5 @@
-| [ADR-0717](0717-vmafx-node-ffmpeg-latest.md) | vmafx-node ffmpeg version policy: pin to latest stable tag (n8.2); multi-stage Dockerfile with cpu/cuda/rocm/sycl variants | Accepted | node, ffmpeg, docker, phase4b, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0717](0717-vmafx-node-ffmpeg-latest.md) | vmafx-node — ffmpeg latest-tag pinning + ffmpeg-patches bundled into Dockerfile | Accepted | node, ffmpeg, docker, phase4b, fork-local |

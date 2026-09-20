@@ -36,11 +36,11 @@ static char *test_adm_csf()
     mu_assert("adm csf mismatch", almost_equal(adm_native_csf(3, 3.0, 1080, 0), 0.986264592442799));
     mu_assert("adm csf mismatch",
               almost_equal(adm_native_csf(3, 3.0, 1080, 45), 0.8773599546532113));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_adm_csf);
-    return NULL;
+    return VMAF_NULLPTR;
 }

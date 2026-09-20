@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research-1128: Fragment-owned release cuts
 
 ## Question

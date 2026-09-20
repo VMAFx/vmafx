@@ -42,11 +42,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* Use a slightly larger fixture than the static-image parity tests
  * so the motion SAD has enough block-aligned area for the SYCL
@@ -92,14 +88,14 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "motion_v2", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(motion_v2) failed", !err);
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
@@ -111,7 +107,7 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
         err = vmaf_feature_score_at_index(vmaf, MOTION_V2_FEATURES[k], &scores_out[k], 1u);
@@ -119,28 +115,28 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_sycl_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++)
         scores_out[k] = NAN;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "motion_v2_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(motion_v2_sycl) failed", !err);
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
@@ -152,7 +148,7 @@ static char *run_sycl_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("SYCL: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
         err = vmaf_feature_score_at_index(vmaf, MOTION_V2_FEATURES[k], &scores_out[k], 1u);
@@ -161,15 +157,15 @@ static char *run_sycl_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2_sycl");
-    mu_assert("motion_v2_sycl extractor must be registered", fex != NULL);
+    mu_assert("motion_v2_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("motion_v2_sycl name matches", !strcmp(fex->name, "motion_v2_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_cpu_sycl_parity(void)
@@ -184,7 +180,7 @@ static char *test_motion_v2_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu[0]))
-        return NULL;
+        return VMAF_NULLPTR;
 
     /* motion3_v2 (index 2) must be a real, finite score on the SYCL
      * path — guards against the pre-ADR-1108 gap where the SYCL twin
@@ -202,14 +198,12 @@ static char *test_motion_v2_cpu_sycl_parity(void)
         mu_assert("motion_v2 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion_v2_sycl_registered);
     mu_run_test(test_motion_v2_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

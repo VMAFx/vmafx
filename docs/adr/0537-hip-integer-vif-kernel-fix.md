@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0537: HIP integer VIF kernel crash fix — filter upload, bounds, HtoD staging
 
 - **Status**: Accepted
@@ -131,7 +130,7 @@ The same PR also closes three small adjacent gaps surfaced by the
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Port the CUDA twin verbatim (templates + shared-memory + warp-reduce) | Best perf; closer parity story | ~3× more code; HIP wavefront-size differences (RDNA2=32, gfx9XX=64) need separate tuning; risk of subtle numerical divergence in the warp-reduce path | Scalar-per-thread is sufficient correctness baseline; perf optimisation is its own ADR once the parity gate is stable |
 | Pass the filter table as a by-value struct (CUDA pattern) | Avoids the device-pointer indirection | HIP module-launch struct-by-value works but adds an aliasing surface for the kernel's `(const uint32_t *)&mu1` reinterpret pattern; the 144-byte upload is one-shot at init so the perf cost is amortised | Device-pointer pattern is the more portable HIP idiom and matches the integer_motion_hip / float_psnr_hip precedent |
 | Keep the flag cleared and defer the kernel fix | Smallest delta; lowest risk of new regression | Leaves the model-driven `--backend hip` path inconsistent (some flagged, some cleared); blocks the cross-backend parity gate from running VIF on HIP | The flag flip is the entire point of ADR-0530's follow-up; deferring it leaves the gap permanently |

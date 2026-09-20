@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0126: SSIMULACRA 2 perceptual metric as a fork-local feature extractor
 
 - **Status**: Accepted
@@ -68,7 +67,7 @@ sub-metrics libjxl exposes. The extractor:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Port libjxl C++ → C (chosen) | Known-good reference; 1:1 math; small surface; no new build dependency | Manual port work; need to track libjxl upstream changes (slow-moving) | Best fit for our "pure C with bolt-on SIMD" pattern and the existing `add-feature-extractor` scaffold |
 | Link libjxl as a `subprojects/` wrap | No port work; get updates for free | Drags in libjxl's huge dependency tree (highway SIMD lib, brotli, skcms); complicates CUDA/SYCL static linking; license-legal only, not license-ideal | Dependency bloat disqualifies it — libjxl is ~2 MB compiled for one extractor's worth of output |
 | FFI to Rust `ssimulacra2_bin` | Mature, actively maintained port; good perf | Introduces Rust as a build-time dep on a pure-C/C++ library; breaks the Netflix-upstream-sync story (upstream is C, we stay C) | Adding Rust to the build matrix is a strictly larger decision than this one and would need its own ADR |
@@ -76,7 +75,7 @@ sub-metrics libjxl exposes. The extractor:
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - Closes the biggest cited gap in "VMAF doesn't understand modern
   codecs"; gives the fork a distinctive feature in the crowded VQA
@@ -89,7 +88,7 @@ sub-metrics libjxl exposes. The extractor:
 - Small, focused surface for the CI matrix: one new CPU-only feature,
   no GPU kernel required for shipping.
 
-**Negative**
+### Negative
 
 - Upstream drift: libjxl is unlikely to rewrite SSIMULACRA 2, but any
   fix or extension they ship has to be manually mirrored. Mitigated
@@ -103,7 +102,7 @@ sub-metrics libjxl exposes. The extractor:
   not a requirement (libjxl uses `-ffast-math` in some builds, which
   we do not).
 
-**Neutral**
+### Neutral
 
 - No impact on the Netflix golden gate (CLAUDE.md §8) — it does not
   exercise SSIMULACRA 2.

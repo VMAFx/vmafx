@@ -1,10 +1,9 @@
-<!-- markdownlint-disable MD013 MD041 -->
 
 # `make preflight` — the local gate that matches CI
 
 ```bash
-make preflight                       # everything, on the files you changed
-scripts/dev/preflight.sh --full      # everything, on the whole tree
+make preflight                         # every stage, across the whole tree
+scripts/dev/preflight.sh --full        # compatibility alias for the same scope
 scripts/dev/preflight.sh --stage clang # just one stage
 scripts/dev/preflight.sh --list      # which CI context each stage mirrors
 ```
@@ -45,21 +44,21 @@ for about three hours.
 | `clang` | Ubuntu clang(+DNN) | clang-only syntax; gcc is far more permissive about attributes and extensions |
 | `msvcism` | Windows MSVC+CUDA / +SYCL | constructs MSVC rejects, checked statically so no MSVC is needed |
 | `sanitizers` | Sanitizers (address) / (undefined) | UB the plain build hides |
-| `tidy` | Tidy Changed | clang-tidy on the touched files, using the workflow's own exclusion list |
-| `cppcheck` | Cppcheck | cppcheck's findings |
+| `tidy` | Tidy Changed | strict-zero clang-tidy on every TU in the configured database; the display name is retained only for branch protection |
+| `cppcheck` | Cppcheck | exhaustive, unsuppressed analysis of every TU in the configured database |
 
-A stage whose toolchain is missing is **skipped with a notice**, not failed, so
-the script is still useful on a partially provisioned machine.
+A missing toolchain fails its stage. An unavailable lane is not evidence of a
+clean tree and must never produce a green preflight result (ADR-1267).
 
 There is no 32-bit stage. The fork is 64-bit only, and the `m32` stage went
 with the i686 lane it mirrored (ADR-1258).
 
 ## Behaviours worth knowing
 
-**It looks at uncommitted work.** Not just `origin/master...HEAD` — the edit
-you are about to commit is exactly what you want checked. (The first version of
-this script did not, and cheerfully passed against a deliberately planted
-break.)
+**It always checks the whole tracked tree.** Diff membership and source origin
+do not affect the static portability scans. Compiler and analyzer stages use
+their complete configured build databases; no touched-file exclusion list is
+applied.
 
 **`sanitizers` needs `-Db_lundef=false`.** Clang links the sanitizer runtime
 into executables, not shared libraries, so `libvmaf.so` is left with undefined

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0286: Fork-trained saliency student `saliency_student_v1` on DUTS-TR
 
 - **Status**: Accepted
@@ -66,7 +65,7 @@ redistributed in-tree; only the trained weights are.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Fork-train a tiny saliency student on DUTS-TR (this ADR)** | Wholly fork-owned weights under BSD-3-Clause-Plus-Patent; permissive dataset with stable HTTP URL; ~10 min on one GPU; same I/O contract → drop-in for `feature_mobilesal.c`; first content-dependent saliency signal on the fork | Model is small (~113 K params) so absolute IoU is below upstream u2netp; needs a training-script in `ai/scripts/`; in-loop validation only in v1 | **Chosen** — see Research-0054 for the survey supporting this |
 | Re-investigate U-2-Net `u2netp` real-weights swap | Apache-2.0 codebase; pure RGB; well-known SOD architecture; pretrained `u2netp` is 4.7 MB | Trained checkpoints distributed via Google Drive viewer URLs (same problem ADR-0257 hit on MobileSal); 4.7 MB dwarfs every other entry under `model/tiny/`; legal review still required for the trained-weight redistribution chain | Rejected — the licence-compatible code surface is welcome but the licence-compatible weights surface still isn't reachable |
 | Ship the placeholder forever and rely on `saliency_mean` as a content-independent constant | Zero engineering | Defeats the purpose of having `saliency_mean` as a feature; downstream consumers see no signal; ADR-0257's "Negative" consequence stays open | Rejected — the deferral was always meant to unblock |

@@ -69,18 +69,18 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx, int distort)
 static char *drive(const char *fex_name, int use_cuda, double *out_score)
 {
     *out_score = NAN;
-    VmafCudaState *cu_state = NULL;
+    VmafCudaState *cu_state = VMAF_NULLPTR;
     if (use_cuda) {
-        VmafCudaConfiguration cuda_cfg = {0};
+        VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
         int rc = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-        if (rc != 0 || cu_state == NULL) {
+        if (rc != 0 || cu_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no CUDA device] ");
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -89,11 +89,12 @@ static char *drive(const char *fex_name, int use_cuda, double *out_score)
         mu_assert("vmaf_cuda_import_state failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
+    err = vmaf_use_feature(vmaf, fex_name, VMAF_NULLPTR);
     mu_assert("vmaf_use_feature failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_fixture(&ref, i, 0);
         mu_assert("fill_fixture(ref) failed", !err);
         err = fill_fixture(&dist, i, 1);
@@ -101,7 +102,7 @@ static char *drive(const char *fex_name, int use_cuda, double *out_score)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "Speed_temporal_feature_speed_temporal_score",
@@ -115,7 +116,7 @@ static char *drive(const char *fex_name, int use_cuda, double *out_score)
         err = vmaf_cuda_state_free(cu_state);
         mu_assert("vmaf_cuda_state_free failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_temporal_cpu_cuda_parity(void)
@@ -132,7 +133,7 @@ static char *test_speed_temporal_cpu_cuda_parity(void)
         return msg;
 
     if (isnan(cuda_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - cuda_score);
     if (delta > PARITY_TOL) {
@@ -141,11 +142,11 @@ static char *test_speed_temporal_cpu_cuda_parity(void)
                       cpu_score, cuda_score, delta, PARITY_TOL);
     }
     mu_assert("speed_temporal CPU vs CUDA delta exceeds places=4 tolerance", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_speed_temporal_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

@@ -62,7 +62,7 @@ static char *test_wave32_reduce_produces_correct_sum(void)
 
     float got = host_warp_reduce_sum(vals, 256, 32);
     mu_assert("wave32 reduce of 256×1.0 must equal 256.0", fabsf(got - 256.0f) < 1e-4f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_wave64_reduce_produces_correct_sum(void)
@@ -74,7 +74,7 @@ static char *test_wave64_reduce_produces_correct_sum(void)
 
     float got = host_warp_reduce_sum(vals, 256, 64);
     mu_assert("wave64 reduce of 256×1.0 must equal 256.0", fabsf(got - 256.0f) < 1e-4f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_wave32_and_wave64_agree_on_identical_input(void)
@@ -87,7 +87,7 @@ static char *test_wave32_and_wave64_agree_on_identical_input(void)
     float r64 = host_warp_reduce_sum(vals, 256, 64);
     mu_assert("wave32 and wave64 reductions of same input must agree to 1e-3",
               fabsf(r32 - r64) < 1e-3f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -95,5 +95,5 @@ char *run_tests(void)
     mu_run_test(test_wave32_reduce_produces_correct_sum);
     mu_run_test(test_wave64_reduce_produces_correct_sum);
     mu_run_test(test_wave32_and_wave64_agree_on_identical_input);
-    return NULL;
+    return VMAF_NULLPTR;
 }

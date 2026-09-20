@@ -38,10 +38,16 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
+if str(_VMAFTUNE_SRC) not in sys.path:
+    sys.path.insert(0, str(_VMAFTUNE_SRC))
 
 # Support both ``python ai/train/train.py`` (script) and
 # ``python -m ai.train.train`` (module) invocations. When run as a
@@ -50,9 +56,8 @@ import numpy as np
 # invocation works for the documented smoke-test command.
 if __package__ in (None, ""):
     _here = Path(__file__).resolve()
-    _ai_parent = _here.parent.parent.parent  # repo root
-    if str(_ai_parent) not in sys.path:
-        sys.path.insert(0, str(_ai_parent))
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
     __package__ = "ai.train"  # required for the relative imports below
 
 
@@ -216,86 +221,40 @@ def _train_loop(  # type: ignore[no-untyped-def]
     yield export_onnx(module, feature_dim, out_dir / f"{arch}_final.onnx")
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+def _parse_assume_dims(value: str | None) -> tuple[int, int] | None:
+    """Parse an optional ``WxH`` override."""
+    if value is None:
+        return None
+    width, height = (int(part) for part in value.lower().split("x"))
+    return width, height
 
-    # Lazy imports so ``--help`` / argparse remains snappy and the module
-    # is importable without torch installed.
-    try:
-        import torch  # noqa: F401
-    except ImportError as e:
-        print(
-            f"error: PyTorch is required for training: {e}",
-            file=sys.stderr,
-        )
-        return 2
 
-    from ..data.feature_extractor import DEFAULT_FEATURES
+def _load_training_arrays(args):  # type: ignore[no-untyped-def]
+    """Load the configured train and validation splits."""
     from .dataset import NetflixFrameDataset
 
-    feature_dim = len(DEFAULT_FEATURES)
-    module = _build_model(args.model_arch, feature_dim)
-    n_params = count_params(module)
-    print(f"[train] arch={args.model_arch} params={n_params} " f"feature_dim={feature_dim}")
-
-    if not args.data_root.is_dir():
-        print(
-            f"[train] data-root {args.data_root} does not exist — " "exporting initial ONNX only.",
-            file=sys.stderr,
-        )
-        export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
-        return 0
-
-    assume_dims: tuple[int, int] | None = None
-    if args.assume_dims:
-        try:
-            w, h = (int(x) for x in args.assume_dims.lower().split("x"))
-        except ValueError as e:
-            print(
-                f"error: --assume-dims must be WxH (got {args.assume_dims!r}): {e}", file=sys.stderr
-            )
-            return 2
-        assume_dims = (w, h)
-
-    # When ``--epochs 0`` we still want the smoke command to work even
-    # without a built ``vmaf`` binary, so inject a zero-filled payload
-    # provider that fakes one frame per pair.
+    assume_dims = _parse_assume_dims(args.assume_dims)
     payload_provider = None
     if args.epochs == 0:
         from .dataset import _make_zero_payload
 
         payload_provider = _make_zero_payload
 
-    train_ds = NetflixFrameDataset(
-        args.data_root,
-        split="train",
-        val_source=args.val_source,
-        max_pairs=args.max_pairs,
-        assume_dims=assume_dims,
-        payload_provider=payload_provider,
-        use_cache=False,
-    )
-    val_ds = NetflixFrameDataset(
-        args.data_root,
-        split="val",
-        val_source=args.val_source,
-        max_pairs=args.max_pairs,
-        assume_dims=assume_dims,
-        payload_provider=payload_provider,
-        use_cache=False,
-    )
+    common = {
+        "val_source": args.val_source,
+        "max_pairs": args.max_pairs,
+        "assume_dims": assume_dims,
+        "payload_provider": payload_provider,
+        "use_cache": False,
+    }
+    train_ds = NetflixFrameDataset(args.data_root, split="train", **common)
+    val_ds = NetflixFrameDataset(args.data_root, split="val", **common)
     print(f"[train] train samples={len(train_ds)} val samples={len(val_ds)}")
+    return train_ds.numpy_arrays(), val_ds.numpy_arrays()
 
-    train_xy = train_ds.numpy_arrays()
-    val_xy = val_ds.numpy_arrays()
 
-    if args.epochs == 0:
-        # Smoke path: emit a single initial-weights ONNX and stop.
-        out = export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
-        print(f"[train] epochs=0 — exported initial-weights ONNX to {out}")
-        return 0
-
+def _train_and_report(module, feature_dim, train_xy, val_xy, args):  # type: ignore[no-untyped-def]
+    """Run training and report every emitted checkpoint."""
     last: Path | None = None
     for ckpt in _train_loop(
         module,
@@ -315,6 +274,53 @@ def main(argv: list[str] | None = None) -> int:
     if last is not None:
         print(f"[train] final checkpoint: {last}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Lazy imports so ``--help`` / argparse remains snappy and the module
+    # is importable without torch installed.
+    try:
+        import_module("torch")
+    except ImportError as e:
+        print(
+            f"error: PyTorch is required for training: {e}",
+            file=sys.stderr,
+        )
+        return 2
+
+    from ..data.feature_extractor import DEFAULT_FEATURES
+
+    feature_dim = len(DEFAULT_FEATURES)
+    module = _build_model(args.model_arch, feature_dim)
+    n_params = count_params(module)
+    print(f"[train] arch={args.model_arch} params={n_params} feature_dim={feature_dim}")
+
+    if not args.data_root.is_dir():
+        print(
+            f"[train] data-root {args.data_root} does not exist — exporting initial ONNX only.",
+            file=sys.stderr,
+        )
+        export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
+        return 0
+
+    try:
+        train_xy, val_xy = _load_training_arrays(args)
+    except ValueError as error:
+        print(
+            f"error: --assume-dims must be WxH (got {args.assume_dims!r}): {error}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.epochs == 0:
+        # Smoke path: emit a single initial-weights ONNX and stop.
+        out = export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
+        print(f"[train] epochs=0 — exported initial-weights ONNX to {out}")
+        return 0
+    return _train_and_report(module, feature_dim, train_xy, val_xy, args)
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests

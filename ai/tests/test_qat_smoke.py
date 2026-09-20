@@ -54,8 +54,8 @@ def test_qat_run_smoke(tmp_path: Path) -> None:
     import numpy as np
     import onnxruntime as ort
 
-    from ai.src.vmaf_train.models import LearnedFilter
     from ai.train.qat import QatConfig, run_qat
+    from vmaf_train.models import LearnedFilter
 
     int8_path = tmp_path / "smoke.int8.onnx"
     cfg = QatConfig(
@@ -114,9 +114,9 @@ def test_qat_train_cli_smoke(tmp_path: Path) -> None:
         str(report_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=REPO_ROOT)
-    assert (
-        proc.returncode == 0
-    ), f"qat_train smoke failed: stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert proc.returncode == 0, (
+        f"qat_train smoke failed: stdout={proc.stdout}\nstderr={proc.stderr}"
+    )
     assert int8_path.is_file(), f"no int8 ONNX written; tmp={list(tmp_path.iterdir())}"
     report = json.loads(report_path.read_text())
     assert report["mode"] == "qat"

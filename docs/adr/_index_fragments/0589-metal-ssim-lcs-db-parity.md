@@ -1,1 +1,5 @@
-| [ADR-0589](0589-metal-ssim-lcs-db-parity.md) | Metal `float_ssim` option parity — `enable_lcs`, `enable_db`, `clip_db`, `scale` | Accepted | metal, ssim, option-parity, apple-silicon, kernel, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0589](0589-metal-ssim-lcs-db-parity.md) | Metal `float_ssim` option parity — `enable_lcs`, `enable_db`, `clip_db`, `scale` | Accepted | `metal`, `ssim`, `option-parity`, `apple-silicon`, `kernel`, `fork-local` |

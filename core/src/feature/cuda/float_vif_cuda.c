@@ -14,6 +14,8 @@
  *  async stream pattern matches motion_cuda.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -32,9 +34,9 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -121,6 +123,68 @@ static void compute_per_scale_dims(FloatVifStateCuda *s)
     }
 }
 
+static void free_float_vif_buffer(VmafFeatureExtractor *fex, VmafCudaBuffer **buffer)
+{
+    if (!*buffer)
+        return;
+    (void)vmaf_cuda_buffer_free(fex->cu_state, *buffer);
+    free(*buffer);
+    *buffer = VMAF_NULLPTR;
+}
+
+static void cleanup_float_vif_buffers(VmafFeatureExtractor *fex)
+{
+    FloatVifStateCuda *s = fex->priv;
+    free_float_vif_buffer(fex, &s->ref_raw);
+    free_float_vif_buffer(fex, &s->dis_raw);
+    for (int i = 0; i < 2; i++) {
+        free_float_vif_buffer(fex, &s->ref_buf[i]);
+        free_float_vif_buffer(fex, &s->dis_buf[i]);
+    }
+    for (int i = 0; i < 4; i++) {
+        free_float_vif_buffer(fex, &s->num_partials[i]);
+        free_float_vif_buffer(fex, &s->den_partials[i]);
+        if (s->num_host[i])
+            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->num_host[i]);
+        if (s->den_host[i])
+            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
+        s->num_host[i] = VMAF_NULLPTR;
+        s->den_host[i] = VMAF_NULLPTR;
+    }
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+}
+
+static int init_float_vif_buffers(VmafFeatureExtractor *fex, size_t raw_bytes)
+{
+    FloatVifStateCuda *s = fex->priv;
+    const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_raw, raw_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_raw, raw_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[0], fbytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[0], fbytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
+    for (int i = 0; i < 4 && !ret; i++) {
+        const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
+        const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
+        s->wg_count[i] = gx * gy;
+        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
+        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
+    }
+    if (!ret) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        ret = s->feature_name_dict ? 0 : -ENOMEM;
+    }
+    if (ret)
+        cleanup_float_vif_buffers(fex);
+    return ret ? -ENOMEM : 0;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -157,7 +221,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -166,86 +230,133 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t raw_bytes = (size_t)w * h * bpp;
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_raw, raw_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_raw, raw_bytes);
-    const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[0], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[0], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
-    if (ret)
-        goto free_buffers;
-
-    for (int i = 0; i < 4; i++) {
-        const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
-        const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
-        s->wg_count[i] = gx * gy;
-        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
-    }
-    if (ret)
-        goto free_buffers;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto free_buffers;
-    return 0;
-
-free_buffers:
-    if (s->ref_raw) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_raw);
-        free(s->ref_raw);
-    }
-    if (s->dis_raw) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_raw);
-        free(s->dis_raw);
-    }
-    for (int i = 0; i < 2; i++) {
-        if (s->ref_buf[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_buf[i]);
-            free(s->ref_buf[i]);
-        }
-        if (s->dis_buf[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_buf[i]);
-            free(s->dis_buf[i]);
-        }
-    }
-    for (int i = 0; i < 4; i++) {
-        if (s->num_partials[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->num_partials[i]);
-            free(s->num_partials[i]);
-        }
-        if (s->den_partials[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->den_partials[i]);
-            free(s->den_partials[i]);
-        }
-        if (s->num_host[i])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->num_host[i]);
-        if (s->den_host[i])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
-    }
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return -ENOMEM;
+    return init_float_vif_buffers(fex, (size_t)w * h * bpp);
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+typedef struct FloatVifLaunchContext {
+    CUdeviceptr ref_raw;
+    CUdeviceptr dis_raw;
+    ptrdiff_t raw_stride;
+    float noise;
+    float gain_limit;
+    float sigma_max_inv;
+    CUstream stream;
+    CudaFunctions *cu_f;
+} FloatVifLaunchContext;
+
+static int prepare_float_vif_submit(FloatVifStateCuda *s, const VmafPicture *ref_pic,
+                                    const VmafPicture *dist_pic, FloatVifLaunchContext *ctx)
+{
+    CUDA_MEMCPY2D cpy;
+    memset(&cpy, 0, sizeof(cpy));
+    cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+    cpy.srcDevice = (CUdeviceptr)ref_pic->data[0];
+    cpy.srcPitch = ref_pic->stride[0];
+    cpy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    cpy.dstDevice = ctx->ref_raw;
+    cpy.dstPitch = ctx->raw_stride;
+    cpy.WidthInBytes = ctx->raw_stride;
+    cpy.Height = s->height;
+    CHECK_CUDA_RETURN(ctx->cu_f, cuMemcpy2DAsync(&cpy, ctx->stream));
+    cpy.srcDevice = (CUdeviceptr)dist_pic->data[0];
+    cpy.srcPitch = dist_pic->stride[0];
+    cpy.dstDevice = ctx->dis_raw;
+    CHECK_CUDA_RETURN(ctx->cu_f, cuMemcpy2DAsync(&cpy, ctx->stream));
+    for (int i = 0; i < 4; i++) {
+        const size_t bytes = (size_t)s->wg_count[i] * sizeof(float);
+        CHECK_CUDA_RETURN(ctx->cu_f,
+                          cuMemsetD8Async(s->num_partials[i]->data, 0, bytes, ctx->stream));
+        CHECK_CUDA_RETURN(ctx->cu_f,
+                          cuMemsetD8Async(s->den_partials[i]->data, 0, bytes, ctx->stream));
+    }
+    return 0;
+}
+
+static int launch_float_vif_compute(FloatVifStateCuda *s, FloatVifLaunchContext *ctx, int scale)
+{
+    const int buffer_index = (scale - 1) % 2;
+    CUdeviceptr ref_float = scale ? (CUdeviceptr)s->ref_buf[buffer_index]->data : 0;
+    CUdeviceptr dis_float = scale ? (CUdeviceptr)s->dis_buf[buffer_index]->data : 0;
+    CUdeviceptr num = (CUdeviceptr)s->num_partials[scale]->data;
+    CUdeviceptr den = (CUdeviceptr)s->den_partials[scale]->data;
+    ptrdiff_t float_stride = (ptrdiff_t)s->scale_w[scale];
+    unsigned w = s->scale_w[scale];
+    unsigned h = s->scale_h[scale];
+    unsigned grid_x = (w + FVIF_BX - 1u) / FVIF_BX;
+    unsigned grid_y = (h + FVIF_BY - 1u) / FVIF_BY;
+    void *args[] = {&scale,
+                    &ctx->ref_raw,
+                    &ctx->dis_raw,
+                    &ctx->raw_stride,
+                    &ref_float,
+                    &dis_float,
+                    &float_stride,
+                    &num,
+                    &den,
+                    &w,
+                    &h,
+                    &s->bpc,
+                    &grid_x,
+                    &ctx->noise,
+                    &ctx->gain_limit,
+                    &ctx->sigma_max_inv};
+    CHECK_CUDA_RETURN(ctx->cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX,
+                                                FVIF_BY, 1, 0, ctx->stream, args, VMAF_NULLPTR));
+    return 0;
+}
+
+static int launch_float_vif_decimate(FloatVifStateCuda *s, FloatVifLaunchContext *ctx,
+                                     int next_scale)
+{
+    const int dst_index = (next_scale - 1) % 2;
+    const bool raw_input = next_scale == 1;
+    CUdeviceptr ref_in = raw_input ? ctx->ref_raw : (CUdeviceptr)s->ref_buf[1 - dst_index]->data;
+    CUdeviceptr dis_in = raw_input ? ctx->dis_raw : (CUdeviceptr)s->dis_buf[1 - dst_index]->data;
+    CUdeviceptr ref_out = (CUdeviceptr)s->ref_buf[dst_index]->data;
+    CUdeviceptr dis_out = (CUdeviceptr)s->dis_buf[dst_index]->data;
+    ptrdiff_t in_stride = raw_input ? 0 : (ptrdiff_t)s->scale_w[next_scale - 1];
+    ptrdiff_t out_stride = (ptrdiff_t)s->scale_w[next_scale];
+    unsigned out_w = s->scale_w[next_scale];
+    unsigned out_h = s->scale_h[next_scale];
+    unsigned in_w = s->scale_w[next_scale - 1];
+    unsigned in_h = s->scale_h[next_scale - 1];
+    unsigned grid_x = (out_w + FVIF_BX - 1u) / FVIF_BX;
+    unsigned grid_y = (out_h + FVIF_BY - 1u) / FVIF_BY;
+    void *args[] = {&next_scale, &ref_in,  &dis_in,  &ctx->raw_stride, &ref_in, &dis_in,
+                    &in_stride,  &ref_out, &dis_out, &out_stride,      &out_w,  &out_h,
+                    &in_w,       &in_h,    &s->bpc};
+    CHECK_CUDA_RETURN(ctx->cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1, FVIF_BX,
+                                                FVIF_BY, 1, 0, ctx->stream, args, VMAF_NULLPTR));
+    return 0;
+}
+
+static int finish_float_vif_submit(VmafFeatureExtractor *fex, FloatVifLaunchContext *ctx)
+{
+    FloatVifStateCuda *s = fex->priv;
+    CHECK_CUDA_RETURN(ctx->cu_f, cuEventRecord(s->lc.submit, ctx->stream));
+    CHECK_CUDA_RETURN(ctx->cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
+    for (int i = 0; i < 4; i++) {
+        const size_t bytes = (size_t)s->wg_count[i] * sizeof(float);
+        CHECK_CUDA_RETURN(ctx->cu_f, cuMemcpyDtoHAsync(s->num_host[i], s->num_partials[i]->data,
+                                                       bytes, s->lc.str));
+        CHECK_CUDA_RETURN(ctx->cu_f, cuMemcpyDtoHAsync(s->den_host[i], s->den_partials[i]->data,
+                                                       bytes, s->lc.str));
+    }
+    return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+}
+
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -253,158 +364,33 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     FloatVifStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
 
-    const ptrdiff_t raw_stride = (ptrdiff_t)(s->width * (s->bpc <= 8u ? 1u : 2u));
+    const ptrdiff_t raw_stride = (ptrdiff_t)s->width * (s->bpc <= 8u ? 1 : 2);
 
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
     CHECK_CUDA_RETURN(cu_f,
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
                                         CU_EVENT_WAIT_DEFAULT));
 
-    CUDA_MEMCPY2D cpy = {0};
-    cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    cpy.srcPitch = ref_pic->stride[0];
-    cpy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.dstDevice = (CUdeviceptr)s->ref_raw->data;
-    cpy.dstPitch = raw_stride;
-    cpy.WidthInBytes = raw_stride;
-    cpy.Height = s->height;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy, pic_stream));
-
-    CUDA_MEMCPY2D cpy_d = cpy;
-    cpy_d.srcDevice = (CUdeviceptr)dist_pic->data[0];
-    cpy_d.srcPitch = dist_pic->stride[0];
-    cpy_d.dstDevice = (CUdeviceptr)s->dis_raw->data;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_d, pic_stream));
-
-    /* Reset partials. */
-    for (int i = 0; i < 4; i++) {
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemsetD8Async(s->num_partials[i]->data, 0,
-                                          (size_t)s->wg_count[i] * sizeof(float), pic_stream));
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemsetD8Async(s->den_partials[i]->data, 0,
-                                          (size_t)s->wg_count[i] * sizeof(float), pic_stream));
+    FloatVifLaunchContext ctx = {
+        .ref_raw = (CUdeviceptr)s->ref_raw->data,
+        .dis_raw = (CUdeviceptr)s->dis_raw->data,
+        .raw_stride = raw_stride,
+        .noise = (float)s->vif_sigma_nsq,
+        .gain_limit = (float)s->vif_enhn_gain_limit,
+        .sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0)),
+        .stream = pic_stream,
+        .cu_f = cu_f,
+    };
+    int err = prepare_float_vif_submit(s, ref_pic, dist_pic, &ctx);
+    if (err)
+        return err;
+    err = launch_float_vif_compute(s, &ctx, 0);
+    for (int scale = 1; scale < 4 && !err; scale++) {
+        err = launch_float_vif_decimate(s, &ctx, scale);
+        if (!err)
+            err = launch_float_vif_compute(s, &ctx, scale);
     }
-
-    /* Launch sequence: 4 compute + 3 decimate, one stream so launches
-     * serialise naturally. */
-    CUdeviceptr ref_raw_d = (CUdeviceptr)s->ref_raw->data;
-    CUdeviceptr dis_raw_d = (CUdeviceptr)s->dis_raw->data;
-    CUdeviceptr ref_buf0 = (CUdeviceptr)s->ref_buf[0]->data;
-    CUdeviceptr dis_buf0 = (CUdeviceptr)s->dis_buf[0]->data;
-    CUdeviceptr ref_buf1 = (CUdeviceptr)s->ref_buf[1]->data;
-    CUdeviceptr dis_buf1 = (CUdeviceptr)s->dis_buf[1]->data;
-    CUdeviceptr null_dptr = 0;
-
-    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
-     * options; the compute kernel used to hardcode their defaults, which
-     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
-     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
-     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
-    const float vif_nsq_f = (float)s->vif_sigma_nsq;
-    const float vif_egl_f = (float)s->vif_enhn_gain_limit;
-    const float sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
-
-    /* Helper for compute: pass scale, raw or float input via the
-     * appropriate set of args; the kernel selects via `is_raw =
-     * (scale == 0)`. */
-    {
-        int scale = 0;
-        CUdeviceptr num_d = (CUdeviceptr)s->num_partials[0]->data;
-        CUdeviceptr den_d = (CUdeviceptr)s->den_partials[0]->data;
-        ptrdiff_t f_stride = (ptrdiff_t)s->scale_w[0];
-        unsigned w = s->scale_w[0];
-        unsigned h = s->scale_h[0];
-        unsigned grid_x = (w + FVIF_BX - 1u) / FVIF_BX;
-        unsigned grid_y = (h + FVIF_BY - 1u) / FVIF_BY;
-        void *args[] = {
-            &scale,          &ref_raw_d,         &dis_raw_d,         (void *)&raw_stride,
-            &null_dptr,      &null_dptr,         (void *)&f_stride,  &num_d,
-            &den_d,          (void *)&w,         (void *)&h,         (void *)&s->bpc,
-            (void *)&grid_x, (void *)&vif_nsq_f, (void *)&vif_egl_f, (void *)&sigma_max_inv};
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY,
-                                               1, 0, pic_stream, args, NULL));
-    }
-
-    for (int next_scale = 1; next_scale < 4; next_scale++) {
-        /* Decimate prev → ref_buf[(next-1)%2], dis_buf[(next-1)%2]. */
-        const int dst_idx = (next_scale - 1) % 2;
-        const bool prev_is_raw = (next_scale == 1);
-        CUdeviceptr ref_in = prev_is_raw ? ref_raw_d : (dst_idx == 0 ? ref_buf1 : ref_buf0);
-        CUdeviceptr dis_in = prev_is_raw ? dis_raw_d : (dst_idx == 0 ? dis_buf1 : dis_buf0);
-        const ptrdiff_t in_f_stride = prev_is_raw ? 0 : (ptrdiff_t)s->scale_w[next_scale - 1];
-        CUdeviceptr ref_out = (dst_idx == 0) ? ref_buf0 : ref_buf1;
-        CUdeviceptr dis_out = (dst_idx == 0) ? dis_buf0 : dis_buf1;
-        const ptrdiff_t out_f_stride = (ptrdiff_t)s->scale_w[next_scale];
-        unsigned out_w = s->scale_w[next_scale];
-        unsigned out_h = s->scale_h[next_scale];
-        unsigned in_w = s->scale_w[next_scale - 1];
-        unsigned in_h = s->scale_h[next_scale - 1];
-        unsigned dec_grid_x = (out_w + FVIF_BX - 1u) / FVIF_BX;
-        unsigned dec_grid_y = (out_h + FVIF_BY - 1u) / FVIF_BY;
-        int scale_arg = next_scale;
-        void *args[] = {
-            &scale_arg,
-            &ref_in,
-            &dis_in,
-            (void *)&raw_stride,
-            &ref_in,
-            &dis_in,
-            (void *)&in_f_stride,
-            &ref_out,
-            &dis_out,
-            (void *)&out_f_stride,
-            (void *)&out_w,
-            (void *)&out_h,
-            (void *)&in_w,
-            (void *)&in_h,
-            (void *)&s->bpc,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, dec_grid_x, dec_grid_y, 1, FVIF_BX,
-                                               FVIF_BY, 1, 0, pic_stream, args, NULL));
-
-        /* Compute at this scale on the just-written buffer. */
-        CUdeviceptr num_d = (CUdeviceptr)s->num_partials[next_scale]->data;
-        CUdeviceptr den_d = (CUdeviceptr)s->den_partials[next_scale]->data;
-        const ptrdiff_t comp_f_stride = (ptrdiff_t)s->scale_w[next_scale];
-        unsigned w = s->scale_w[next_scale];
-        unsigned h = s->scale_h[next_scale];
-        unsigned grid_x = (w + FVIF_BX - 1u) / FVIF_BX;
-        unsigned grid_y = (h + FVIF_BY - 1u) / FVIF_BY;
-        int scale_arg2 = next_scale;
-        void *cargs[] = {&scale_arg2,
-                         &ref_raw_d,
-                         &dis_raw_d,
-                         (void *)&raw_stride,
-                         &ref_out,
-                         &dis_out,
-                         (void *)&comp_f_stride,
-                         &num_d,
-                         &den_d,
-                         (void *)&w,
-                         (void *)&h,
-                         (void *)&s->bpc,
-                         (void *)&grid_x,
-                         (void *)&vif_nsq_f,
-                         (void *)&vif_egl_f,
-                         (void *)&sigma_max_inv};
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY,
-                                               1, 0, pic_stream, cargs, NULL));
-    }
-
-    /* Sync over to our event-driven stream + D2H copy partials. */
-    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
-    CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    for (int i = 0; i < 4; i++) {
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->num_host[i], (CUdeviceptr)s->num_partials[i]->data,
-                                            (size_t)s->wg_count[i] * sizeof(float), s->lc.str));
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync(s->den_host[i], (CUdeviceptr)s->den_partials[i]->data,
-                                            (size_t)s->wg_count[i] * sizeof(float), s->lc.str));
-    }
-    return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+    return err ? err : finish_float_vif_submit(fex, &ctx);
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -526,7 +512,7 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_den_scale2",
                                           "vif_num_scale3",
                                           "vif_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_float_vif_cuda = {
     .name = "float_vif_cuda",
@@ -539,5 +525,3 @@ VmafFeatureExtractor vmaf_fex_float_vif_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

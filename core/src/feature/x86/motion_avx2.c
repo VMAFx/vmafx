@@ -23,6 +23,7 @@
 #include <stdlib.h>
 
 #include "feature/integer_motion.h"
+#include "feature/x86/motion_avx2.h"
 
 static inline int mirror(int idx, int size)
 {
@@ -153,7 +154,8 @@ uint64_t motion_score_pipeline_16_avx2(const uint8_t *prev_u8, ptrdiff_t prev_st
     uint64_t sad = 0;
 
     for (unsigned i = 0; i < h; i++) {
-        const uint16_t *pp[5], *cp[5];
+        const uint16_t *pp[5];
+        const uint16_t *cp[5];
         for (int k = 0; k < 5; k++) {
             int r = mirror((int)i - 2 + k, (int)h);
             pp[k] = prev + r * p_stride;
@@ -248,7 +250,8 @@ uint64_t motion_score_pipeline_8_avx2(const uint8_t *prev, ptrdiff_t prev_stride
     uint64_t sad = 0;
 
     for (unsigned i = 0; i < h; i++) {
-        const uint8_t *p[5], *c[5];
+        const uint8_t *p[5];
+        const uint8_t *c[5];
         for (int k = 0; k < 5; k++) {
             int r = mirror((int)i - 2 + k, (int)h);
             p[k] = prev + r * prev_stride;

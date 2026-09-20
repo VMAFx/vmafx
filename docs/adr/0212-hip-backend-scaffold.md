@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0212: HIP (AMD ROCm) compute backend — scaffold-only audit-first PR (T7-10)
 
 - **Status**: Accepted
@@ -100,7 +99,7 @@ the same syntax (`-Denable_<vendor>=true|false`).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Land scaffold + runtime + first kernel in one PR | Single round of review, the kernel is exercised against real HIP from the start | Too large to review in one pass; splits the trust boundary between "the scaffold compiles + smoke-tests" and "this kernel produces correct numbers" — different review skills, different CI gates | Audit-first separation per the same pattern as ADR-0175 / ADR-0173 |
 | Default `enable_hip` to `auto` / `enabled` (feature option) | Builds with ROCm installed pick HIP up automatically; matches the Vulkan convention | Silent flip on a CI host that happens to have ROCm packages; consumer mode mismatch (a build claims HIP support but `vmaf_hip_available` returns 1 even though every other call is `-ENOSYS`) | Boolean default-off keeps the scaffold opt-in and matches `enable_cuda` / `enable_sycl`; uniform GPU-vendor flag syntax |
 | Skip the scaffold; auto-translate the existing CUDA backend with `hipify-perl` / `hipify-clang` | Free initial coverage of every CUDA kernel; no manual port | `hipify` produces source that diverges from idiomatic HIP for non-trivial kernels (warp-level intrinsics, async memcpy, cooperative groups); the fork's CUDA backend uses several CUDA-12 features (`cudaGraphConditional`, NVTX) that have no clean HIP equivalent; bit-exactness vs CPU + CUDA + SYCL + Vulkan would still need a per-kernel audit | Reject — a hand-written HIP backend gives the fork a known-good codebase under fork license; `hipify` is fine as a porting *tool* but not as a production source generator. The runtime PR may still selectively use it as a starting point per kernel |

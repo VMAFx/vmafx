@@ -74,9 +74,6 @@
  * 256 minus the rest, giving a sum of exactly 256. */
 __device__ static const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
 
-namespace
-{
-
 /* The taps [k_min, k_max) of the window centred on `pos` that fall inside
  * [0, len): the k_min / k_max formulas of ssim_accumulate_row() and
  * calc_ssim(). */
@@ -154,17 +151,12 @@ __device__ __forceinline__ double issim_pixel_term(int64_t mux, int64_t muy, int
            ((mx2 + my2 + c1) * ((double)x2 * w_d - mx2 + (double)y2 * w_d - my2 + c2));
 }
 
-} /* namespace */
-
-extern "C" {
-
 /* Pass 1, 8-bit samples. */
-__global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
-                                        const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
-                                        int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
-                                        int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy,
-                                        int64_t *__restrict__ d_y2, int64_t *__restrict__ d_w,
-                                        unsigned width, unsigned height)
+extern "C" __global__ void integer_ssim_horiz_8bpc(
+    const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t *__restrict__ cmp,
+    ptrdiff_t cmp_stride, int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+    int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy, int64_t *__restrict__ d_y2,
+    int64_t *__restrict__ d_w, unsigned width, unsigned height)
 {
     issim_horiz<uint8_t>(ref, ref_stride, cmp, cmp_stride, d_mux, d_muy, d_x2, d_xy, d_y2, d_w,
                          width, height);
@@ -173,12 +165,11 @@ __global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff
 /* Pass 1, 9..16-bit samples stored as little-endian uint16_t. The raw sample
  * values are used, as on the CPU; the bit depth only enters pass 2 through
  * `samplemax`. */
-__global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
-                                         const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
-                                         int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
-                                         int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy,
-                                         int64_t *__restrict__ d_y2, int64_t *__restrict__ d_w,
-                                         unsigned width, unsigned height)
+extern "C" __global__ void integer_ssim_horiz_16bpc(
+    const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t *__restrict__ cmp,
+    ptrdiff_t cmp_stride, int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+    int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy, int64_t *__restrict__ d_y2,
+    int64_t *__restrict__ d_w, unsigned width, unsigned height)
 {
     issim_horiz<uint16_t>(ref, ref_stride, cmp, cmp_stride, d_mux, d_muy, d_x2, d_xy, d_y2, d_w,
                           width, height);
@@ -187,7 +178,7 @@ __global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdif
 /* Pass 2: vertical 9-tap over the pass-1 planes, the per-pixel SSIM term,
  * and one (term sum, weight sum) pair per block at
  * blockIdx.y * gridDim.x + blockIdx.x. `samplemax` is (1 << bpc) - 1. */
-__global__ void
+extern "C" __global__ void
 integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
                           const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
                           const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
@@ -243,5 +234,3 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         partial_weights[blk] = s_weight[0];
     }
 }
-
-} /* extern "C" */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Performance Benchmarking
 
 This page describes how to benchmark VMAF throughput across resolutions,
@@ -34,7 +33,7 @@ scripts/perf/bench-multi-resolution.sh [OPTIONS]
 ```
 
 | Flag | Default | Description |
-|------|---------|-------------|
+| ------ | --------- | ------------- |
 | `--backends` | `cpu` | Comma-separated list: `cpu`, `cuda`, `sycl` |
 | `--resolutions` | all | Comma-separated height keys: `576`, `720`, `1080`, `1440`, `2160` |
 | `--metrics` | all | `vif`, `adm`, `motion`, `ssim`, `ms_ssim` |
@@ -47,7 +46,7 @@ scripts/perf/bench-multi-resolution.sh [OPTIONS]
 ### Environment variables
 
 | Variable | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | `VMAF_BIN` | Override vmaf binary path |
 | `VMAF_CUDA_HOME` | Override CUDA install prefix (fallback: `$CUDA_HOME`, `/opt/cuda`, `/usr/local/cuda`) |
 | `VMAF_ONEAPI_SETVARS` | Override oneAPI `setvars.sh` path |
@@ -103,7 +102,7 @@ scripts/perf/bench-multi-resolution.sh [OPTIONS]
 ## Fixtures
 
 | Key | Size | Source |
-|-----|------|--------|
+| ----- | ------ | -------- |
 | `576` | 576×324, 48f | Native — Netflix golden `testdata/ref_576x324_48f.yuv` |
 | `720` | 640×480, 48f | Native — `testdata/ref_640x480_48f.yuv` |
 | `1080` | 1920×1080, 48f | Generated on first run — ffmpeg bilinear upscale from 576×324 |

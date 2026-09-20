@@ -18,9 +18,7 @@
 
 #include <hip/hip_runtime.h>
 
-extern "C" {
-
-__global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
+extern "C" __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
     const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
     float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
     unsigned in_offset, unsigned out_offset)
@@ -72,7 +70,7 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
     }
 }
 
-__global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
+extern "C" __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
     const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
     float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
     unsigned in_offset, unsigned out_offset)
@@ -120,5 +118,3 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
         }
     }
 }
-
-} /* extern "C" */

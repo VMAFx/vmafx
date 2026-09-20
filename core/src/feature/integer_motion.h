@@ -37,15 +37,17 @@ static inline uint32_t edge_16(bool horizontal, const uint16_t *src, int width, 
         int j_tap = horizontal ? j - radius + k : j;
 
         if (horizontal) {
-            if (j_tap < 0)
+            if (j_tap < 0) {
                 j_tap = -j_tap;
-            else if (j_tap >= width)
+            } else if (j_tap >= width) {
                 j_tap = width - (j_tap - width + 2);
+}
         } else {
-            if (i_tap < 0)
+            if (i_tap < 0) {
                 i_tap = -i_tap;
-            else if (i_tap >= height)
+            } else if (i_tap >= height) {
                 i_tap = height - (i_tap - height + 2);
+}
         }
         accum += filter[k] * src[i_tap * stride + j_tap];
     }

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0676: MOS Corpus Adapter Manifests
 
 - **Status**: Accepted
@@ -30,12 +29,12 @@ ADR-0661 `run_provenance`.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Shared base helper plus per-adapter `--manifest-out` | One schema path; consistent counters/provenance; minimal per-script code | Touches several CLI docs and tests in one PR | Chosen: it closes the whole adapter family rather than leaving partial evidence |
-| Add manifests only to CHUG | Fastest HDR-specific patch | KoNViD/UGC/LSVQ/LIVE/Waterloo shards remain anonymous and inconsistent | Rejected: MOS-head refreshes combine multiple corpora |
-| Rely on downstream merge manifests | No new CLI flags | Merge manifests cannot prove download attrition, max-row caps, source roots, or corpus-specific parser config | Rejected: source-adapter choices are lost before merge |
-| Embed run metadata into every JSONL row | Single artifact | Repeats run-level metadata per row and changes trainer row shape | Rejected: row schemas should remain stable; run evidence belongs in a sidecar |
+| Option                                               | Pros                                                                     | Cons                                                                                                          | Why not chosen                                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Shared base helper plus per-adapter `--manifest-out` | One schema path; consistent counters/provenance; minimal per-script code | Touches several CLI docs and tests in one PR                                                                  | Chosen: it closes the whole adapter family rather than leaving partial evidence |
+| Add manifests only to CHUG                           | Fastest HDR-specific patch                                               | KoNViD/UGC/LSVQ/LIVE/Waterloo shards remain anonymous and inconsistent                                        | Rejected: MOS-head refreshes combine multiple corpora                           |
+| Rely on downstream merge manifests                   | No new CLI flags                                                         | Merge manifests cannot prove download attrition, max-row caps, source roots, or corpus-specific parser config | Rejected: source-adapter choices are lost before merge                          |
+| Embed run metadata into every JSONL row              | Single artifact                                                          | Repeats run-level metadata per row and changes trainer row shape                                              | Rejected: row schemas should remain stable; run evidence belongs in a sidecar   |
 
 ## Consequences
 
@@ -44,8 +43,7 @@ ADR-0661 `run_provenance`.
 - **Negative**: Any new MOS adapter CLI must document and test its manifest
   sidecar in addition to row schema.
 - **Neutral / follow-ups**: Regenerate local CHUG/KoNViD/UGC/LSVQ/LIVE/Waterloo
-  JSONL shards with sidecars before using them in a promoted model-card
-  refresh.
+  JSONL shards with sidecars before using them in a promoted model-card refresh.
 
 ## References
 
@@ -54,5 +52,6 @@ ADR-0661 `run_provenance`.
   merge manifests.
 - [ADR-0670](0670-ai-legacy-corpus-extraction-manifests.md) — legacy corpus
   extraction manifests.
-- Source: req — "so all, netflix, regressors, encoders etc... everything we did so far needs updates"
+- Source: req — "so all, netflix, regressors, encoders etc... everything we did
+  so far needs updates"
 - Source: req — "well go on i guess we have enough backlog..."

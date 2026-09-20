@@ -53,12 +53,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _log = logging.getLogger(__name__)
 
@@ -717,18 +718,7 @@ def calibrate(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = make_argument_parser(
-        prog="calibrate_nr_threshold.py",
-        description=(
-            "Calibrate the δ_fast threshold for NR early-elimination "
-            "(ADR-0615 / ADR-0624). "
-            "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
-            "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
-            "calibration_slope/intercept and calibration_threshold = 2σ "
-            "to model/tiny/nr_metric_v1.json."
-        ),
-    )
+def _add_calibration_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--corpus",
         type=Path,
@@ -770,6 +760,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=_DEFAULT_PRESET,
         help=f"encoder preset (default: {_DEFAULT_PRESET})",
     )
+
+
+def _add_calibration_media_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--width",
         type=int,
@@ -812,6 +805,9 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="directory for the calibration Markdown report (default: docs/ai/models/)",
     )
+
+
+def _add_calibration_policy_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--delta-fast",
         type=float,
@@ -833,6 +829,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "(default: auto)"
         ),
     )
+
+
+def _add_calibration_gate_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--min-calibration-samples",
         type=int,
@@ -875,6 +874,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="verbose logging",
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = make_argument_parser(
+        prog="calibrate_nr_threshold.py",
+        description=(
+            "Calibrate the δ_fast threshold for NR early-elimination "
+            "(ADR-0615 / ADR-0624). "
+            "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
+            "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
+            "calibration_slope/intercept and calibration_threshold = 2σ "
+            "to model/tiny/nr_metric_v1.json."
+        ),
+    )
+    _add_calibration_input_args(p)
+    _add_calibration_media_args(p)
+    _add_calibration_policy_args(p)
+    _add_calibration_gate_args(p)
     return p
 
 

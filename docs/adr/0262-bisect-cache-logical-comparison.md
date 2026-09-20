@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0262: bisect-model-quality cache check uses logical comparison for parquet
 
 - **Status**: Accepted
@@ -67,7 +66,7 @@ comparison; keep ONNX byte-equality as-is. Concretely:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Logical (Arrow Table) parquet compare + onnx byte compare** (chosen) | Tolerates harmless writer-version drift; still catches content/schema/row-count drift; one-time fix; no recurring maintenance | Loses byte-level detection of compression-codec or footer-layout changes (none of which has ever produced a real signal) | Best fit: the failure mode we keep hitting is exactly the one this skips |
 | Pin `pyarrow==23.0.1` in `ai/pyproject.toml` and the workflow | Restores byte equality immediately; no script change | Brittle: every `dependabot` / `renovate` bump or transitive constraint forces another regeneration cycle; conflicts with `pyarrow>=17.0` floor that real training jobs need | Punts the problem; doesn't solve "version-string-as-load-bearing-byte" |
 | Regenerate the committed cache against pyarrow 24, commit, repeat per ADR-0109 §Negative | Lowest blast radius; matches the ADR's documented escape valve | Treadmill: the next pyarrow release breaks it again; consumed 14 days of stale comment already with nobody noticing | Doesn't scale; the maintenance cost the ADR accepted turned out to be unaffordable |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest — Pre-commit config audit (2026-05-30)
 
 **Companion ADR**: [ADR-0893](../adr/0893-pre-commit-audit-2026-05-30.md)
@@ -26,7 +25,7 @@
 ## 2. Inventory + drift per hook
 
 | Repo / id | Pinned rev | Latest stable | Δ class | Action |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `pre-commit/pre-commit-hooks/trailing-whitespace` | v6.0.0 | v6.0.0 | none | keep |
 | `pre-commit/pre-commit-hooks/end-of-file-fixer` | v6.0.0 | v6.0.0 | none | already present (one of user-listed hygiene hooks) |
 | `pre-commit/pre-commit-hooks/check-merge-conflict` | v6.0.0 | v6.0.0 | none | already present (PR #182 wired it) |

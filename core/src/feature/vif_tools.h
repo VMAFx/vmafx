@@ -16,7 +16,6 @@
  *
  */
 
-#pragma once
 
 #ifndef VIF_TOOLS_H_
 #define VIF_TOOLS_H_
@@ -54,8 +53,6 @@ void vif_dec2_s(const float *src, float *dst, int src_w, int src_h, int src_stri
 
 void vif_dec16_s(const float *src, float *dst, int src_w, int src_h, int src_stride,
                  int dst_stride); // stride >= width, multiple of 16 or 32 typically
-
-float vif_sum_s(const float *x, int w, int h, int stride);
 
 void vif_statistic_s(const float *mu1_sq, const float *mu2_sq, const float *xx_filt,
                      const float *yy_filt, const float *xy_filt, float *num, float *den, int w,

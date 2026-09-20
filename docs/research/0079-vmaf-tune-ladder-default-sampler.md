@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0079: `vmaf-tune` Phase E ladder default sampler — gap analysis
 
 - **Date**: 2026-05-05
@@ -81,7 +80,7 @@ gracefully degrades.
 ## Alternatives considered
 
 | Option | Encodes per cell | Verdict |
-|---|---|---|
+| --- | --- | --- |
 | **5-point fixed sweep `(18, 23, 28, 33, 38)` (chosen)** | 5 | Mirrors ADR-0306 coarse pass; covers x264's perceptual range; deterministic encode-count for downstream sizing |
 | 7-point fixed sweep `(15, 20, 25, 30, 35, 40, 45)` | 7 | 40 % more encode cost; marginal accuracy gain doesn't pay off |
 | Adaptive binary bisect over `[0, 51]` | ~6 (variable) | Duplicates `pick_target_vmaf` logic; non-deterministic count makes wall-time sizing harder; struggles with VMAF non-monotonicity at boundary CRFs |

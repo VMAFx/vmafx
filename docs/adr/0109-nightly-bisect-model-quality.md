@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0109: Nightly bisect-model-quality runs against a synthetic placeholder cache
 
 - **Status**: Accepted
@@ -53,7 +52,7 @@ swaps in via a follow-up. Concretely:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Synthetic-timeline placeholder cache (chosen) | Ships now; deterministic; tiny commit (~16 KB); easy swap path | "No regression" verdict by construction until real models replace it | Best fit: unblocks the wiring without faking real signal |
 | Wait for full DMOS-aligned cache + real timeline | True quality regression detection | Open-ended blocker; depends on dataset licensing + label collection + frozen libvmaf build; AC stays open for months | Not viable in current quarter |
 | Workflow scaffold with no cache, runs `--help` only | Trivial PR | Documents intent only, proves nothing, leaves cron slot occupied with a no-op | Lowest signal; punts the work |

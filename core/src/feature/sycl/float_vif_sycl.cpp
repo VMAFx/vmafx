@@ -466,8 +466,8 @@ static const VmafOption options_float_vif_sycl[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false}},
     {.name = "vif_enhn_gain_limit",
-     .alias = "egl",
      .help = "enhancement gain (>=1.0)",
+     .alias = "egl",
      .offset = offsetof(FloatVifStateSycl, vif_enhn_gain_limit),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 100.0},
@@ -483,8 +483,8 @@ static const VmafOption options_float_vif_sycl[] = {
      .max = 4.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_sigma_nsq",
-     .alias = "snsq",
      .help = "neural noise variance",
+     .alias = "snsq",
      .offset = offsetof(FloatVifStateSycl, vif_sigma_nsq),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 2.0},
@@ -492,15 +492,14 @@ static const VmafOption options_float_vif_sycl[] = {
      .max = 5.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_skip_scale0",
-     .alias = "ssclz",
      .help = "when set, skip scale 0 calculations",
+     .alias = "ssclz",
      .offset = offsetof(FloatVifStateSycl, vif_skip_scale0),
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {nullptr}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -589,8 +588,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -745,7 +744,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         err |= vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "vif_den_scale0",
             s->vif_skip_scale0 ? -1.0 : scores[1], index);
-        const char const *names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
+        const char *const names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
                                       "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"};
         for (int i = 0; i < 6; i++) {
             err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
@@ -821,4 +820,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_vif_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

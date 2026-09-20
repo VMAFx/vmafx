@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_FEATURE_NAME_H__
-#define __VMAF_FEATURE_NAME_H__
+#ifndef VMAF_FEATURE_NAME_H_
+#define VMAF_FEATURE_NAME_H_
 
 #include "dict.h"
 #include "opt.h"
@@ -36,4 +36,4 @@ VmafDictionary *vmaf_feature_name_dict_from_provided_features(const char **provi
 }
 #endif
 
-#endif /* __VMAF_FEATURE_NAME_H__ */
+#endif /* VMAF_FEATURE_NAME_H_ */

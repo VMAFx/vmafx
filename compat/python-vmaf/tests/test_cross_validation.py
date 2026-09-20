@@ -10,84 +10,79 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from vmaf.core.cross_validation import ModelCrossValidation
 
-# ---------------------------------------------------------------------------
-# Helpers: lightweight fake train/test model class
-# ---------------------------------------------------------------------------
+_COMPARISON_VALUE_10_0 = 10.0
+_COMPARISON_VALUE_2 = 2
+_COMPARISON_VALUE_3 = 3
+_COMPARISON_VALUE_4 = 4
+_COMPARISON_VALUE_5 = 5
+_COMPARISON_VALUE_50 = 50
+
+
+class _FakeModel:
+    def __init__(self, model_param, metrics, logger=None, optional_dict2=None):
+        self.model_param = model_param
+        self.metrics = metrics
+
+    def train(self, xys):
+        pass
+
+    def evaluate(self, xs, ys):
+        return self.metrics.copy()
+
+
+class _FakeModelClass:
+    reset_called = 0
+    metrics: ClassVar[dict[str, float]] = {"SRCC": 0.9, "PCC": 0.85, "RMSE": 5.0}
+
+    @classmethod
+    def reset(cls):
+        cls.reset_called += 1
+
+    @staticmethod
+    def _result_count(results, indexs):
+        return len(results) if indexs is None else len(indexs)
+
+    @classmethod
+    def get_xys_from_results(cls, results, indexs=None):
+        count = cls._result_count(results, indexs)
+        return {"label": list(map(float, range(count))), "content_id": list(range(count))}
+
+    @classmethod
+    def get_xs_from_results(cls, results, indexs=None):
+        count = cls._result_count(results, indexs)
+        return {"feature_x": list(map(float, range(count)))}
+
+    get_ys_from_results = get_xys_from_results
+
+    def __init__(self, model_param, logger=None, optional_dict2=None):
+        self._model = _FakeModel(model_param, self.metrics, logger, optional_dict2)
+
+    def train(self, xys):
+        self._model.train(xys)
+
+    def evaluate(self, xs, ys):
+        return self._model.evaluate(xs, ys)
+
+    @classmethod
+    def aggregate_stats_list(cls, statss):
+        return {key: sum(stats[key] for stats in statss) / len(statss) for key in cls.metrics}
+
+    @staticmethod
+    def get_objective_score(stats, score_type="SRCC"):
+        return stats.get(score_type, 0.0)
 
 
 def _make_model_class(srcc: float = 0.9, pcc: float = 0.85, rmse: float = 5.0):
-    """Return a minimal fake train-test model class for cross-validation tests.
+    class ConfiguredFakeModel(_FakeModelClass):
+        metrics: ClassVar[dict[str, float]] = {"SRCC": srcc, "PCC": pcc, "RMSE": rmse}
 
-    The class satisfies the interface expected by ModelCrossValidation:
-    - get_xys_from_results(results, indices)
-    - get_xs_from_results(results, indices)
-    - get_ys_from_results(results, indices)
-    - __init__(model_param, logger, optional_dict2)
-    - train(xys)
-    - evaluate(xs, ys) -> stats dict
-    - aggregate_stats_list(statss) -> aggregated stats
-    - get_objective_score(stats, score_type) -> float
-    """
-
-    class FakeModel:
-        def __init__(self, model_param, logger=None, optional_dict2=None):
-            self.model_param = model_param
-
-        def train(self, xys):
-            pass
-
-        def evaluate(self, xs, ys):
-            return {"SRCC": srcc, "PCC": pcc, "RMSE": rmse}
-
-    class FakeModelClass:
-        """Mimics the class-level interface of TrainTestModel."""
-
-        reset_called = 0
-
-        @classmethod
-        def reset(cls):
-            cls.reset_called += 1
-
-        @classmethod
-        def get_xys_from_results(cls, results, indexs=None):
-            # Return a minimal xys dict; content doesn't matter for CV logic tests.
-            n = len(results) if indexs is None else len(indexs)
-            return {"label": [float(i) for i in range(n)], "content_id": list(range(n))}
-
-        @classmethod
-        def get_xs_from_results(cls, results, indexs=None):
-            n = len(results) if indexs is None else len(indexs)
-            return {"feature_x": [float(i) for i in range(n)]}
-
-        @classmethod
-        def get_ys_from_results(cls, results, indexs=None):
-            n = len(results) if indexs is None else len(indexs)
-            return {"label": [float(i) for i in range(n)], "content_id": list(range(n))}
-
-        def __init__(self, model_param, logger=None, optional_dict2=None):
-            self._model = FakeModel(model_param, logger, optional_dict2)
-
-        def train(self, xys):
-            self._model.train(xys)
-
-        def evaluate(self, xs, ys):
-            return self._model.evaluate(xs, ys)
-
-        @classmethod
-        def aggregate_stats_list(cls, statss):
-            # Simple element-wise mean of SRCC, PCC, RMSE.
-            keys = ("SRCC", "PCC", "RMSE")
-            return {k: sum(s[k] for s in statss) / len(statss) for k in keys}
-
-        @staticmethod
-        def get_objective_score(stats, score_type="SRCC"):
-            return stats.get(score_type, 0.0)
-
-    return FakeModelClass
+    return ConfiguredFakeModel
 
 
 # ---------------------------------------------------------------------------
@@ -144,13 +139,13 @@ class TestRunKfoldCrossValidationInteger:
         mc = _make_model_class()
         results = list(range(20))
         out = ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=4)
-        assert len(out["statss"]) == 4
+        assert len(out["statss"]) == _COMPARISON_VALUE_4
 
     def test_kfold_models_length_equals_k(self):
         mc = _make_model_class()
         results = list(range(20))
         out = ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=4)
-        assert len(out["models"]) == 4
+        assert len(out["models"]) == _COMPARISON_VALUE_4
 
     def test_kfold_contentids_populated(self):
         mc = _make_model_class()
@@ -163,14 +158,14 @@ class TestRunKfoldCrossValidationInteger:
         mc = _make_model_class()
         results = list(range(10))
         out = ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=2)
-        assert len(out["statss"]) == 2
+        assert len(out["statss"]) == _COMPARISON_VALUE_2
 
     def test_kfold_reset_called_if_available(self):
         mc = _make_model_class()
         mc.reset_called = 0
         results = list(range(8))
         ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=2)
-        assert mc.reset_called == 2  # once per fold
+        assert mc.reset_called == _COMPARISON_VALUE_2  # once per fold
 
 
 # ---------------------------------------------------------------------------
@@ -183,16 +178,16 @@ class TestRunKfoldCrossValidationList:
         mc = _make_model_class()
         results = list(range(12))
         # 3 folds of 4 items each — LOSO-style
-        kfold = [list(range(0, 4)), list(range(4, 8)), list(range(8, 12))]
+        kfold = [list(range(4)), list(range(4, 8)), list(range(8, 12))]
         out = ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=kfold)
         assert "aggr_stats" in out
 
     def test_list_kfold_statss_length_equals_folds(self):
         mc = _make_model_class()
         results = list(range(12))
-        kfold = [list(range(0, 4)), list(range(4, 8)), list(range(8, 12))]
+        kfold = [list(range(4)), list(range(4, 8)), list(range(8, 12))]
         out = ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=kfold)
-        assert len(out["statss"]) == 3
+        assert len(out["statss"]) == _COMPARISON_VALUE_3
 
     def test_single_item_folds_each_fold_has_one_test(self):
         """Each fold is a single item — leave-one-out style."""
@@ -200,7 +195,7 @@ class TestRunKfoldCrossValidationList:
         results = list(range(5))
         kfold = [[i] for i in range(5)]
         out = ModelCrossValidation.run_kfold_cross_validation(mc, {}, results, kfold=kfold)
-        assert len(out["statss"]) == 5
+        assert len(out["statss"]) == _COMPARISON_VALUE_5
 
     def test_kfold_too_short_raises(self):
         mc = _make_model_class()
@@ -233,21 +228,21 @@ class TestFindMostFrequentDict:
         d = {"x": 3}
         result, count = self._fn([d, d])
         assert result == d
-        assert count == 2
+        assert count == _COMPARISON_VALUE_2
 
     def test_majority_wins(self):
         d1 = {"x": 1}
         d2 = {"x": 2}
         result, count = self._fn([d1, d2, d1, d1])
         assert result == d1
-        assert count == 3
+        assert count == _COMPARISON_VALUE_3
 
     def test_multiple_keys_dict(self):
         d1 = {"a": 1, "b": 2}
         d2 = {"a": 3, "b": 4}
         result, count = self._fn([d1, d2, d1])
         assert result == d1
-        assert count == 2
+        assert count == _COMPARISON_VALUE_2
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +283,7 @@ class TestSampleModelParamList:
     def test_returns_correct_count(self):
         sr = {"C": [1, 10], "kernel": ["rbf", "linear"]}
         samples = ModelCrossValidation._sample_model_param_list(sr, 50)
-        assert len(samples) == 50
+        assert len(samples) == _COMPARISON_VALUE_50
 
     def test_each_sample_is_dict_with_all_keys(self):
         sr = {"alpha": [0.1, 0.5, 1.0], "beta": [0, 1]}
@@ -300,7 +295,7 @@ class TestSampleModelParamList:
         sr = {"C": {"low": 1.0, "high": 10.0, "decimal": 2}}
         samples = ModelCrossValidation._sample_model_param_list(sr, 100)
         for s in samples:
-            assert 1.0 <= s["C"] <= 10.0
+            assert 1.0 <= s["C"] <= _COMPARISON_VALUE_10_0
 
     def test_values_from_list_are_members(self):
         choices = [1, 5, 10, 50]

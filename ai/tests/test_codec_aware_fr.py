@@ -20,17 +20,17 @@ Covers ai/src/vmaf_train/codec.py + the ``num_codecs`` extension to
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
+try:
+    import torch
+except ImportError:
+    pytest.skip("PyTorch not installed", allow_module_level=True)
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from conftest import requires_pytorch_lightning
 
-requires_pytorch_lightning()
-
-import numpy as np  # noqa: E402
-
-from vmaf_train.codec import (  # noqa: E402
+from vmaf_train.codec import (
     CODEC_VOCAB,
     NUM_CODECS,
     UNKNOWN_INDEX,
@@ -38,6 +38,8 @@ from vmaf_train.codec import (  # noqa: E402
     codec_one_hot,
     codec_one_hot_batch,
 )
+
+requires_pytorch_lightning()
 
 
 def test_codec_vocab_contract() -> None:

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **`make lint-tools` installed an older ruff than the pre-commit hook ran.**
   The `Makefile` promised its ruff and black pins were identical to
   `.pre-commit-config.yaml`, but Renovate only ever raised the hook side: the

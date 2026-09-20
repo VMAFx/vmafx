@@ -1,8 +1,7 @@
 # `changelog.d/` — per-PR CHANGELOG fragment files
 
-The fork's `CHANGELOG.md` Unreleased block is **rendered**, not edited
-directly. Each PR adds one fragment file under one of the
-Keep-a-Changelog sections:
+The fork's `CHANGELOG.md` Unreleased block is **rendered**, not edited directly.
+Each PR adds one fragment file under one of the Keep-a-Changelog sections:
 
 ```text
 changelog.d/
@@ -17,42 +16,41 @@ changelog.d/
                             section at the next release tag)
 ```
 
-A fragment under any other directory is an **error**, not a silent skip: the run fails
-and names the files that would be lost (ADR-1198). There is no `docs/` section either —
-a documentation change worth a release note is an `Added` or `Changed` entry describing
-the surface it documents.
+A fragment under any other directory is an **error**, not a silent skip: the run
+fails and names the files that would be lost (ADR-1198). There is no `docs/`
+section either — a documentation change worth a release note is an `Added` or
+`Changed` entry describing the surface it documents.
 
-There is **no `perf/` or `performance/` directory** — the renderer
-warns on any non-Keep-a-Changelog subdirectory and skips its
-contents. Performance fragments live in `changed/` with a `perf-`
-filename prefix so they sort contiguously inside the rendered
-`### Changed` section. See [ADR-0892](../docs/adr/0892-conventional-commits-and-changelog-fragment-hygiene.md)
+There is **no `perf/` or `performance/` directory** — the renderer warns on any
+non-Keep-a-Changelog subdirectory and skips its contents. Performance fragments
+live in `changed/` with a `perf-` filename prefix so they sort contiguously
+inside the rendered `### Changed` section. See
+[ADR-0892](../docs/adr/0892-conventional-commits-and-changelog-fragment-hygiene.md)
 and [ADR-0913](../docs/adr/0913-changelog-renderer-splice-contract.md).
 
 ## How to add a fragment
 
 1. Pick the section directory matching your change (Keep-a-Changelog).
-2. Create one file `changelog.d/<section>/<task-id>-<topic>.md`. The
-   filename is sorted lexicographically inside the section, so a task-id
-   prefix (e.g. `T7-39-changelog-fragments.md`) gives implicit ordering.
-3. Write a Markdown bullet (or a small block of bullets) — same shape as
-   what you would have pasted into `CHANGELOG.md`.
+2. Create one file `changelog.d/<section>/<task-id>-<topic>.md`. The filename is
+   sorted lexicographically inside the section, so a task-id prefix (e.g.
+   `T7-39-changelog-fragments.md`) gives implicit ordering.
+3. Start the file with the source-only heading `# Changelog fragment`, then a
+   blank line and the Markdown bullet or small block you want rendered into
+   `CHANGELOG.md`.
 4. Run `bash scripts/release/concat-changelog-fragments.sh --write` to
-   regenerate `CHANGELOG.md` locally before pushing. CI runs `--check`
-   and fails on drift.
+   regenerate `CHANGELOG.md` locally before pushing. CI runs `--check` and fails
+   on drift.
 
 ## How fragments render
 
-`scripts/release/concat-changelog-fragments.sh` emits the legacy
-archive first (preserves migration content end-to-end), then for each
-section it concatenates the `*.md` files in lexical order under one
-`### Section` heading. Sections with no fragments are skipped. The
-rendered body replaces the existing `## [Unreleased]` block in
-`CHANGELOG.md`.
+`scripts/release/concat-changelog-fragments.sh` emits the legacy archive first,
+then extracts each active fragment body below its source-only H1 and places it
+under one `### Section` heading. Sections with no fragments are skipped. The
+rendered body replaces the existing `## [Unreleased]` block in `CHANGELOG.md`.
 
 ## Why fragments
 
-See [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md).
-Short version: every PR-pair editing `CHANGELOG.md` directly fights a
-merge conflict on the section-header line. Fragment files are
-per-path, so two PRs in flight don't collide.
+See [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md). Short
+version: every PR-pair editing `CHANGELOG.md` directly fights a merge conflict
+on the section-header line. Fragment files are per-path, so two PRs in flight
+don't collide.

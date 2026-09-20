@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0531: Per-shot plan emits bitrate_kbps + chart shows last shot
 
 - **Status**: Accepted
@@ -53,7 +52,7 @@ inside the right viewport boundary, so it is always fully rendered.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Widen `PredicateFn` to return a 3-tuple `(crf, vmaf, bitrate)` | No side-channel needed | Breaks all existing custom predicates and the `_default_predicate` stub; requires a major API version bump | Breaking change with low ROI |
 | Execute per-shot segment encodes after `tune_per_shot` to measure bitrate | Bit-exact bitrate from the actual final segment | Doubles total encode time; the bisect already encodes the best-CRF segment — re-encoding wastes resources | Unnecessary work |
 | Symmetric x_pad on both sides for Bug B | Simpler code | Right side padding of 2 % is too small for short clips; the last shot still clips at some DPI settings | Insufficient fix |

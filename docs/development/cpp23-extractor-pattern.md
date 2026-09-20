@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # C++23 extractor conversion pattern
 
 When converting a `core/src/*.c` internal file to C++23 per the ADR-0708 /
@@ -109,7 +108,7 @@ the `extern "C"` boundary and converted to an `int` error code (typically
 ## Reference implementations
 
 | File | ADR | C++ idioms used |
-|---|---|---|
+| --- | --- | --- |
 | `core/src/metadata_handler.cpp` | ADR-0708 | `std::unique_ptr` + custom deleter for linked-list teardown |
 | `core/src/fex_ctx_vector.cpp` | ADR-0723 | C-compatible pointer-array ownership with checked `malloc`/`realloc`; `extern "C"` + pre-`<atomic>` include pattern |
 

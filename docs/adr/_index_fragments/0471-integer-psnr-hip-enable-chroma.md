@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0471](0471-integer-psnr-hip-enable-chroma.md) | Add `enable_chroma` to `integer_psnr_hip` (chroma parity with CUDA/SYCL/Vulkan twins) | Accepted | hip, psnr, option-parity, chroma, fork-local |

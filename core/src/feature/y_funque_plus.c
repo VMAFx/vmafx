@@ -53,9 +53,11 @@
  * limitation, see ADR-1114).
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -583,27 +585,27 @@ static int yf_alloc_level(YFLevel *lev, unsigned w, unsigned h)
 static void yf_free_level(YFLevel *lev)
 {
     free(lev->approx.data);
-    lev->approx.data = NULL;
+    lev->approx.data = VMAF_NULLPTR;
     for (unsigned b = 0; b < 3u; b++) {
         free(lev->detail[b].data);
-        lev->detail[b].data = NULL;
+        lev->detail[b].data = VMAF_NULLPTR;
     }
 }
 
 static void yf_free_all(YFunqueState *s)
 {
     free(s->luma_ref);
-    s->luma_ref = NULL;
+    s->luma_ref = VMAF_NULLPTR;
     free(s->luma_dist);
-    s->luma_dist = NULL;
+    s->luma_dist = VMAF_NULLPTR;
     free(s->ds_tmp);
-    s->ds_tmp = NULL;
+    s->ds_tmp = VMAF_NULLPTR;
     free(s->src_norm);
-    s->src_norm = NULL;
+    s->src_norm = VMAF_NULLPTR;
     free(s->prev_approx);
-    s->prev_approx = NULL;
+    s->prev_approx = VMAF_NULLPTR;
     free(s->dlm_scratch);
-    s->dlm_scratch = NULL;
+    s->dlm_scratch = VMAF_NULLPTR;
     for (unsigned lev = 0; lev < YF_LEVELS; lev++) {
         yf_free_level(&s->ref_pyr[lev]);
         yf_free_level(&s->dist_pyr[lev]);
@@ -683,24 +685,24 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    if (yf_alloc_buffers(s))
-        goto fail;
+    if (yf_alloc_buffers(s)) {
+        yf_free_all(s);
+        return -ENOMEM;
+    }
 
     s->have_prev = false;
-    s->prev_approx = NULL;
+    s->prev_approx = VMAF_NULLPTR;
     s->prev_approx_w = s->ref_pyr[YF_LEVELS - 1u].approx.w;
     s->prev_approx_h = s->ref_pyr[YF_LEVELS - 1u].approx.h;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
+    if (!s->feature_name_dict) {
+        yf_free_all(s);
+        return -ENOMEM;
+    }
 
     return 0;
-
-fail:
-    yf_free_all(s);
-    return -ENOMEM;
 }
 
 /* MAD-Ref atom: mean|ref_approx_last[t] - ref_approx_last[t-1]|; 0 on the
@@ -731,8 +733,9 @@ static int yf_mad_ref(YFunqueState *s, const YFPlane *cur_approx, double *out_ma
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     assert(fex && fex->priv && ref_pic && dist_pic && feature_collector);
@@ -794,7 +797,7 @@ static int close_fex(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"y_funque_plus_ms_ssim", "y_funque_plus_dlm",
-                                          "y_funque_plus_mad", NULL};
+                                          "y_funque_plus_mad", VMAF_NULLPTR};
 
 /* Registry symbol: must have external linkage so feature_extractor.cpp can
  * resolve it via `extern VmafFeatureExtractor vmaf_fex_y_funque_plus`. The
@@ -802,7 +805,6 @@ static const char *provided_features[] = {"y_funque_plus_ms_ssim", "y_funque_plu
  * every extractor in the tree (e.g. ssimulacra2.c, niqe.c); making it static
  * would break the registry. Suppressed per the same load-bearing-invariant
  * carve-out those files use (ADR-0141 / ADR-1114). */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
 VmafFeatureExtractor vmaf_fex_y_funque_plus = {
     .name = "y_funque_plus",
     .init = init,
@@ -815,5 +817,3 @@ VmafFeatureExtractor vmaf_fex_y_funque_plus = {
      * cached state is the wavelet approx subband, not the raw picture. */
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

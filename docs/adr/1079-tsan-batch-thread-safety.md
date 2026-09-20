@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1079: TSan-eligible thread-safety test for threaded_extract_batch_func
 
 - **Status**: Accepted
@@ -32,9 +31,9 @@ covers the entire test binary, including the threading sub-tests that have no
 huge-alloc dependency.
 
 This leaves the post-PR `threaded_extract_batch_func` PREV_REF code path —
-specifically the `vmaf_picture_unref` + `memset` sequence and the `is_initialized`
-write — with no TSan coverage. A latent data race that escapes the
-`happens-before` edges established by `vmaf_thread_pool_wait` would be
+specifically the `vmaf_picture_unref` + `memset` sequence and the
+`is_initialized` write — with no TSan coverage. A latent data race that escapes
+the `happens-before` edges established by `vmaf_thread_pool_wait` would be
 undetectable until a production deadlock or ASan report surfaced it.
 
 ## Decision
@@ -43,17 +42,17 @@ Add `core/test/test_thread_safety_batch.c`, a TSan-eligible regression test that
 covers the same `threaded_extract_batch_func` + `flush_context_threaded` code
 paths using `vmaf_picture_alloc` (heap allocation, no pool) and small (64×64)
 frames. The test is registered in `core/test/meson.build` as a `fast`-suite
-target, is NOT added to any sanitizer exclusion list, and therefore automatically
-participates in the TSan run in `sanitizers.yml`.
+target, is NOT added to any sanitizer exclusion list, and therefore
+automatically participates in the TSan run in `sanitizers.yml`.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Fix `test_pic_preallocation.c` to avoid huge allocs | Single file, no new file | The pool-based tests are the point of that file; removing the pool would defeat them. The TSan crash is inherent to `vmaf_preallocate_pictures` at large pool sizes. | Structural conflict between pool-size stress and sanitizer allocator limits. |
-| Split `test_pic_preallocation.c` into pool and non-pool halves | Keeps all preallocation tests together | Changes an existing excluded file and risks re-triggering the SIGABRT on new sub-tests if the split is imperfect. | New file is safer: zero risk of accidentally reintroducing huge-alloc patterns. |
-| Guard huge-alloc sub-tests with `#if __has_feature(thread_sanitizer)` | Single file | Requires TSan-detection macros in every affected sub-test; fragile across compilers; masks the sub-test from the sanitizer view rather than running a clean variant. | More fragile than a dedicated file that is clean by construction. |
-| Do nothing (accept the coverage gap) | No new code | The ADR-1072/ADR-1073 fixes have zero TSan visibility; any regression in the PREV_REF lifecycle or is_initialized guard would be silent until a deadlock surfaces in production. | Unacceptable for two fixes that directly address data-race-adjacent lifetime bugs. |
+| Option                                                                | Pros                                   | Cons                                                                                                                                                                             | Why not chosen                                                                     |
+| --------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Fix `test_pic_preallocation.c` to avoid huge allocs                   | Single file, no new file               | The pool-based tests are the point of that file; removing the pool would defeat them. The TSan crash is inherent to `vmaf_preallocate_pictures` at large pool sizes.             | Structural conflict between pool-size stress and sanitizer allocator limits.       |
+| Split `test_pic_preallocation.c` into pool and non-pool halves        | Keeps all preallocation tests together | Changes an existing excluded file and risks re-triggering the SIGABRT on new sub-tests if the split is imperfect.                                                                | New file is safer: zero risk of accidentally reintroducing huge-alloc patterns.    |
+| Guard huge-alloc sub-tests with `#if __has_feature(thread_sanitizer)` | Single file                            | Requires TSan-detection macros in every affected sub-test; fragile across compilers; masks the sub-test from the sanitizer view rather than running a clean variant.             | More fragile than a dedicated file that is clean by construction.                  |
+| Do nothing (accept the coverage gap)                                  | No new code                            | The ADR-1072/ADR-1073 fixes have zero TSan visibility; any regression in the PREV_REF lifecycle or is_initialized guard would be silent until a deadlock surfaces in production. | Unacceptable for two fixes that directly address data-race-adjacent lifetime bugs. |
 
 ## Consequences
 
@@ -75,4 +74,6 @@ participates in the TSan run in `sanitizers.yml`.
 - ADR-1072: `docs/adr/1072-prev-ref-batch-refcount-leak.md` (PR #765)
 - ADR-1073: `docs/adr/1073-mcp-score-at-index-eagain-guard.md` (PR #769)
 - TSan exclusion list: `.github/workflows/sanitizers.yml` lines 206–210
-- req: "Look for new shared state in PRs #765-#771 that lacks TSan coverage. Especially threaded_extract_batch_func paths and sycl_state graph_extractors array"
+- req: "Look for new shared state in PRs #765-#771 that lacks TSan coverage.
+  Especially threaded_extract_batch_func paths and sycl_state graph_extractors
+  array"

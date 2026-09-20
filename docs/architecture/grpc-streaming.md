@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # gRPC streaming (`ScoreStream`)
 
 Status: **Accepted / implemented** (ADR-0933). Phase 1 shipped the schema +
@@ -44,7 +43,7 @@ The proto lives in [`proto/vmafx.proto`](../../proto/vmafx.proto).
 Summarised:
 
 | Direction | Message | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | client -> server | `ScoreStreamRequest{ config: StreamConfig }` | Exactly once, first. Declares `width`, `height`, `pixel_format`, optional `model`, optional `frame_count_hint`. |
 | client -> server | `ScoreStreamRequest{ frame_pair: FramePair }` | Repeated. `frame_index` strictly monotonic from 0. `raw_reference` / `raw_distorted` are planar Y/U/V bytes in the declared pixel format. |
 | server -> client | `ScoreStreamResponse{ frame_score: FrameScore }` | One per processed frame. `frame_index`, `score`, per-feature map. |
@@ -65,7 +64,7 @@ after Phase 3 lands. The follow-up ADR will document the timeline.
 ## Phase rollout
 
 | Phase | Surface | Status |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Proto schema + regenerated Go bindings + server handler stub that validates framing and returns `codes.Unimplemented` + client wrapper in `pkg/score` + smoke tests + this doc. | **Done** (ADR-0933). |
 | 2 | Wire the handler to `pkg/libvmaf` via the in-memory `StreamScorer` picture-import path that takes raw planar bytes instead of a file path. Per-frame scoring is real; `AggregateScore` returns the pooled VMAF. `vmafx-node` also serves the RPC (ADR-1109). | **Done** (2026-06-13). |
 | 3 | Benchmarks vs. path-unary; tune `max-recv-msg-size` and stream window sizes; flip the unary `Score` handler to internally delegate to `ScoreStream` for the single-file case (network surface unchanged). | Tracked under ADR-0933 follow-up. |

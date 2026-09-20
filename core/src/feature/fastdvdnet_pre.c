@@ -41,9 +41,11 @@
  *  optional-runtime contract rather than a missing-model error.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -136,16 +138,16 @@ static void release_buffers(FastDvdnetPreState *s)
     for (unsigned i = 0; i < FASTDVDNET_PRE_WINDOW; ++i) {
         if (s->frames[i]) {
             aligned_free(s->frames[i]);
-            s->frames[i] = NULL;
+            s->frames[i] = VMAF_NULLPTR;
         }
     }
     if (s->input_tensor) {
         aligned_free(s->input_tensor);
-        s->input_tensor = NULL;
+        s->input_tensor = VMAF_NULLPTR;
     }
     if (s->output_tensor) {
         aligned_free(s->output_tensor);
-        s->output_tensor = NULL;
+        s->output_tensor = VMAF_NULLPTR;
     }
 }
 
@@ -187,7 +189,7 @@ static int fastdvdnet_pre_init(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     rc = vmaf_tiny_ai_open_session("fastdvdnet_pre", path, &s->sess);
     if (rc < 0)
         return rc;
-    assert(s->sess != NULL);
+    assert(s->sess != VMAF_NULLPTR);
 
     s->w = w;
     s->h = h;
@@ -198,7 +200,7 @@ static int fastdvdnet_pre_init(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     if (rc < 0) {
         release_buffers(s);
         vmaf_dnn_session_close(s->sess);
-        s->sess = NULL;
+        s->sess = VMAF_NULLPTR;
         return rc;
     }
     return 0;
@@ -241,17 +243,17 @@ static double mean_abs_residual(const float *centre, const float *denoised, size
     return n > 0u ? acc / (double)n : 0.0;
 }
 
-static int fastdvdnet_pre_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                                  VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                                  VmafPicture *dist_pic_90, unsigned index,
+static int fastdvdnet_pre_extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                                  const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                                  const VmafPicture *dist_pic_90, unsigned index,
                                   VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
     FastDvdnetPreState *s = fex->priv;
-    assert(s != NULL);
-    assert(s->sess != NULL);
+    assert(s != VMAF_NULLPTR);
+    assert(s->sess != VMAF_NULLPTR);
 
     if (ref_pic->w[0] != s->w || ref_pic->h[0] != s->h)
         return -ERANGE;
@@ -310,9 +312,8 @@ static const VmafOption fastdvdnet_pre_options[] = {
     {0},
 };
 
-static const char *fastdvdnet_pre_provided_features[] = {"fastdvdnet_pre_l1_residual", NULL};
+static const char *fastdvdnet_pre_provided_features[] = {"fastdvdnet_pre_l1_residual", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_fastdvdnet_pre` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_fastdvdnet_pre = {
     .name = "fastdvdnet_pre",
     .init = fastdvdnet_pre_init,
@@ -326,5 +327,3 @@ VmafFeatureExtractor vmaf_fex_fastdvdnet_pre = {
      * shared with feature_lpips.c). */
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

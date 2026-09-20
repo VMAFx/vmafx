@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Pre-push mkdocs strict-mode gate
 
 The fork runs `mkdocs build --strict` in CI (the `docs.yml` lane) on
@@ -42,7 +41,7 @@ pip install -r docs/requirements.txt
 ## Bypassing the hook
 
 | Situation | Command |
-|---|---|
+| --- | --- |
 | Skip this hook only | `SKIP=mkdocs-strict git push` |
 | Skip all pre-push hooks | `git push --no-verify` |
 

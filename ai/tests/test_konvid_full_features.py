@@ -35,7 +35,7 @@ def _load_module():
 def _make_fake_vmaf_json(n_frames: int = 2) -> str:
     frames = []
     for frame_num in range(n_frames):
-        metrics = {feature: 1.0 + frame_num for feature in FULL_FEATURES}
+        metrics = dict.fromkeys(FULL_FEATURES, 1.0 + frame_num)
         metrics["vmaf"] = 80.0 - frame_num
         frames.append({"frameNum": frame_num, "metrics": metrics})
     return json.dumps({"frames": frames})

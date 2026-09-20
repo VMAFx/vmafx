@@ -38,11 +38,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* Test fixture geometry — large enough for the 5-tap Gaussian, small enough
  * for a fast CI run. Motion3 requires ≥ 2 frames (index 0 and index 1). */
@@ -88,17 +84,17 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 /* CPU path — run the "motion" extractor for NUM_FRAMES frames.        */
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* ------------------------------------------------------------------ */
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_cpu_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     int err = 0;
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (fps_weight) {
         err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
         mu_assert("CPU: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
@@ -122,7 +118,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
@@ -130,7 +126,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -138,30 +134,30 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* Returns a skip sentinel (out_score = NaN) if no SYCL device.      */
 /* ------------------------------------------------------------------ */
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_sycl_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     *out_score = NAN;
     int err = 0;
 
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         /* No SYCL GPU available — caller treats NaN as skip. */
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
 
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (fps_weight) {
         err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
         mu_assert("SYCL: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
@@ -185,7 +181,7 @@ static char *run_sycl_motion3(const char *fps_weight, const char *key, double *o
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
@@ -195,7 +191,7 @@ static char *run_sycl_motion3(const char *fps_weight, const char *key, double *o
     mu_assert("SYCL: vmaf_close failed", !err);
 
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -206,17 +202,17 @@ static char *test_motion3_cpu_sycl_parity(void)
     double cpu_score = 0.0;
     double sycl_score = NAN;
 
-    char *msg = run_cpu_motion3(NULL, "VMAF_integer_feature_motion3_score", &cpu_score);
+    char *msg = run_cpu_motion3(VMAF_NULLPTR, "VMAF_integer_feature_motion3_score", &cpu_score);
     if (msg)
         return msg;
 
-    msg = run_sycl_motion3(NULL, "VMAF_integer_feature_motion3_score", &sycl_score);
+    msg = run_sycl_motion3(VMAF_NULLPTR, "VMAF_integer_feature_motion3_score", &sycl_score);
     if (msg)
         return msg;
 
     /* If no SYCL device was found, sycl_score is NaN — skip the assertion. */
     if (isnan(sycl_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
@@ -224,7 +220,7 @@ static char *test_motion3_cpu_sycl_parity(void)
                       cpu_score, sycl_score, delta, PARITY_TOL);
     }
     mu_assert("motion3 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -260,17 +256,52 @@ static int fill_checkerboard_fixture(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test harness setup and per-frame loop */
+static char *feed_checkerboard_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < CHK_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_checkerboard_fixture(&ref, i);
+        if (err)
+            return "checkerboard: fill ref failed";
+        err = fill_checkerboard_fixture(&dist, i);
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
+            return "checkerboard: fill dist failed";
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err)
+            return "checkerboard: vmaf_read_pictures failed";
+    }
+    return VMAF_NULLPTR;
+}
+
+static char *read_checkerboard_scores(VmafContext *vmaf, double *m2_f1, double *m2_f2,
+                                      double *m3_f1, double *m3_f2)
+{
+    int err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
+    mu_assert("checkerboard: vmaf_read_pictures(EOS) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f1, 1u);
+    mu_assert("checkerboard: motion2 at idx=1 failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f2, 2u);
+    mu_assert("checkerboard: motion2 at idx=2 failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f1, 1u);
+    mu_assert("checkerboard: motion3 at idx=1 failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f2, 2u);
+    mu_assert("checkerboard: motion3 at idx=2 failed", !err);
+    return VMAF_NULLPTR;
+}
+
 static char *run_cpu_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, double *m3_f2)
 {
     int err = 0;
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = vmaf_feature_dictionary_set(&opts, "motion_max_val", "18.0");
     mu_assert("CPU: vmaf_feature_dictionary_set(motion_max_val) failed", !err);
 
@@ -279,36 +310,15 @@ static char *run_cpu_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, d
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
-    for (unsigned i = 0; i < CHK_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = fill_checkerboard_fixture(&ref, i);
-        mu_assert("CPU: fill_checkerboard_fixture(ref) failed", !err);
-        err = fill_checkerboard_fixture(&dist, i);
-        mu_assert("CPU: fill_checkerboard_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f1, 1u);
-    mu_assert("CPU: motion2 at idx=1 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f2, 2u);
-    mu_assert("CPU: motion2 at idx=2 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f1, 1u);
-    mu_assert("CPU: motion3 at idx=1 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f2, 2u);
-    mu_assert("CPU: motion3 at idx=2 failed", !err);
+    char *msg = feed_checkerboard_frames(vmaf);
+    if (!msg)
+        msg = read_checkerboard_scores(vmaf, m2_f1, m2_f2, m3_f1, m3_f2);
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return msg;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test harness setup and per-frame loop */
 static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, double *m3_f2)
 {
     *m2_f1 = NAN;
@@ -317,23 +327,23 @@ static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, 
     *m3_f2 = NAN;
     int err = 0;
 
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
 
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = vmaf_feature_dictionary_set(&opts, "motion_max_val", "18.0");
     mu_assert("SYCL: vmaf_feature_dictionary_set(motion_max_val) failed", !err);
 
@@ -342,38 +352,18 @@ static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, 
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
 
-    for (unsigned i = 0; i < CHK_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = fill_checkerboard_fixture(&ref, i);
-        mu_assert("SYCL: fill_checkerboard_fixture(ref) failed", !err);
-        err = fill_checkerboard_fixture(&dist, i);
-        mu_assert("SYCL: fill_checkerboard_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("SYCL: vmaf_read_pictures failed", !err);
-    }
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f1, 1u);
-    mu_assert("SYCL: motion2 at idx=1 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f2, 2u);
-    mu_assert("SYCL: motion2 at idx=2 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f1, 1u);
-    mu_assert("SYCL: motion3 at idx=1 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f2, 2u);
-    mu_assert("SYCL: motion3 at idx=2 failed", !err);
+    char *msg = feed_checkerboard_frames(vmaf);
+    if (!msg)
+        msg = read_checkerboard_scores(vmaf, m2_f1, m2_f2, m3_f1, m3_f2);
 
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
 
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return msg;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *test_motion_checkerboard_1080p_parity(void)
 {
     double cpu_m2_f1 = 0.0;
@@ -395,7 +385,7 @@ static char *test_motion_checkerboard_1080p_parity(void)
         return msg;
 
     if (isnan(sycl_m2_f1))
-        return NULL;
+        return VMAF_NULLPTR;
 
     /* Verify motion_max_val=18.0 clipping on both CPU and SYCL */
     mu_assert("CPU motion2 frame 1 must be clipped to 18.0", fabs(cpu_m2_f1 - 18.0) < 1e-6);
@@ -409,7 +399,7 @@ static char *test_motion_checkerboard_1080p_parity(void)
     mu_assert("motion3 frame 1 CPU vs SYCL parity", fabs(cpu_m3_f1 - sycl_m3_f1) <= PARITY_TOL);
     mu_assert("motion3 frame 2 CPU vs SYCL parity", fabs(cpu_m3_f2 - sycl_m3_f2) <= PARITY_TOL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -441,7 +431,7 @@ static char *test_motion3_fps_weight_applied_once(void)
         return msg;
 
     if (isnan(gpu_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - gpu_score);
     if (delta > PARITY_TOL) {
@@ -451,7 +441,7 @@ static char *test_motion3_fps_weight_applied_once(void)
     }
     mu_assert("motion3 with motion_fps_weight != 1.0 drifts from the CPU reference",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -459,7 +449,5 @@ char *run_tests(void)
     mu_run_test(test_motion3_cpu_sycl_parity);
     mu_run_test(test_motion3_fps_weight_applied_once);
     mu_run_test(test_motion_checkerboard_1080p_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

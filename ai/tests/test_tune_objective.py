@@ -33,9 +33,9 @@ class TestAllNanMetricsReturnsInf:
         df = pd.DataFrame({"val/mse": [float("nan")]})
         with caplog.at_level(logging.WARNING, logger="vmaf_train.tune"):
             result = _read_best_metric(df, "val/mse")
-        assert any(
-            "all-NaN metrics" in msg for msg in caplog.messages
-        ), "expected a WARNING log containing 'all-NaN metrics'"
+        assert any("all-NaN metrics" in msg for msg in caplog.messages), (
+            "expected a WARNING log containing 'all-NaN metrics'"
+        )
         assert math.isinf(result) and result > 0
 
     def test_empty_column_returns_inf(self, caplog) -> None:
@@ -45,9 +45,9 @@ class TestAllNanMetricsReturnsInf:
         df = pd.DataFrame({"val/mse": pd.Series([], dtype=float)})
         with caplog.at_level(logging.WARNING, logger="vmaf_train.tune"):
             result = _read_best_metric(df, "val/mse")
-        assert any(
-            "all-NaN metrics" in msg for msg in caplog.messages
-        ), "expected a WARNING log containing 'all-NaN metrics'"
+        assert any("all-NaN metrics" in msg for msg in caplog.messages), (
+            "expected a WARNING log containing 'all-NaN metrics'"
+        )
         assert math.isinf(result) and result > 0
 
     def test_nan_result_is_not_passed_to_optuna(self) -> None:

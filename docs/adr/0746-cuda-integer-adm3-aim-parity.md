@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0746: integer_adm_cuda — emit integer_adm3 + integer_aim (parity with CPU)
 
 - **Status**: Accepted
@@ -68,7 +67,7 @@ are exposed: `adm_skip_aim` (default `false`) and `adm_dlm_weight` (default
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Reuse float kernel from integer path | No new kernel code | Defeats integer-path perf advantage; mixes fp32 and int64 accumulators; precision characteristics differ | Rejected — defeats the entire point of the integer path |
 | Separate AIM CSF buffer (like float_adm_cuda ADR-0574) | Symmetric with float_adm approach | Requires new buffer alloc (same size as csf_f), one extra kernel launch, extra VRAM | Not needed — full inline costs ≤ 9× decouple_r recomputes per neighbourhood; decouple is light math |
 | Post-process AIM from existing adm_cm accumulators | Zero new kernel code | Mathematically impossible — the AIM threshold swap changes which pixels are masked; the accumulator values are not equivalent | Not viable |

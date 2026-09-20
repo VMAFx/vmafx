@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest: GitHub Actions hardening audit (2026-05-30)
 
 Companion research digest for [ADR-0875](../adr/0875-github-actions-audit-2026-05-30.md).
@@ -41,7 +40,7 @@ actions remain.
 22 of 24 workflows already declare a top-level `permissions:` block:
 
 | Workflow | Top-level perms |
-|---|---|
+| --- | --- |
 | `build.yml` | `contents: read` |
 | `docker-image.yml` | `contents: read` |
 | `docker-publish-production.yml` | `contents: read` |
@@ -74,7 +73,7 @@ Wide per-job permissions are present where genuinely needed and all
 are justifiable:
 
 | Workflow / job | Permission | Justification |
-|---|---|---|
+| --- | --- | --- |
 | `docker-publish-production.yml::build-*` | `packages: write, id-token: write, attestations: write` | Push image to GHCR + OIDC-sign + attest |
 | `release-please.yml::release-please` | `contents: write, pull-requests: write` | Manage release PR |
 | `rule-enforcement.yml` (multiple) | `pull-requests: write` | Post checklist comments |
@@ -94,7 +93,7 @@ anywhere in the workflow tree.
 remained:
 
 | File | Line | Job | Pushes to git? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `sanitizers.yml` | 63 | `asan-ubsan` | No |
 | `sanitizers.yml` | 117 | `tsan` | No |
 | `supply-chain.yml` | 34 | `build-artifacts` | No (uploads via `actions/upload-artifact`) |

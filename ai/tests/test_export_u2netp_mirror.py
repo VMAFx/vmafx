@@ -5,19 +5,17 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-torch = pytest.importorskip("torch")
-onnx = pytest.importorskip("onnx")
+try:
+    import onnx
+    import torch
+except ImportError:
+    pytest.skip("PyTorch/ONNX dependencies are not installed", allow_module_level=True)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
-
-import export_u2netp_mirror as exporter  # noqa: E402
+import export_u2netp_mirror as exporter
 
 
 def _write_fake_upstream(root: Path) -> Path:

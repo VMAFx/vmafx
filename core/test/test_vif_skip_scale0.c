@@ -35,11 +35,7 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stdint.h>
 #include <string.h>
 
@@ -89,9 +85,9 @@ static char *check_vif_skip_scale0_pictures(VmafContext *vmaf)
     mu_assert("vmaf_read_pictures should succeed", err == 0);
 
     /* Flush: pass NULL, NULL to trigger the EOS path in vmaf_read_pictures. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("flush should succeed", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -104,9 +100,9 @@ static char *check_vif_skip_scale0_true_setup(VmafContext **vmaf_out)
     int err = vmaf_init(vmaf_out, cfg);
     mu_assert("vmaf_init should succeed", err == 0);
     if (err)
-        return NULL;
+        return VMAF_NULLPTR;
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     err = vmaf_feature_dictionary_set(&opts, "vif_skip_scale0", "true");
     mu_assert("dictionary_set vif_skip_scale0 should succeed", err == 0);
 
@@ -115,13 +111,13 @@ static char *check_vif_skip_scale0_true_setup(VmafContext **vmaf_out)
      * vmaf_feature_dictionary_free() on opts after this call — that would be a
      * double-free (CWE-415).  See ADR-0806. */
     err = vmaf_use_feature(*vmaf_out, "vif", opts);
-    opts = NULL; /* consumed by vmaf_use_feature */
+    opts = VMAF_NULLPTR; /* consumed by vmaf_use_feature */
     mu_assert("vmaf_use_feature(vif) with vif_skip_scale0 should succeed", err == 0);
     if (err) {
         (void)vmaf_close(*vmaf_out);
-        return NULL;
+        return VMAF_NULLPTR;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_vif_skip_scale0_true_scores(VmafContext *vmaf)
@@ -140,12 +136,12 @@ static char *check_vif_skip_scale0_true_scores(VmafContext *vmaf)
     err = vmaf_feature_score_at_index(vmaf, "integer_vif_scale1_ssclz", &scale1, 0);
     mu_assert("scale1 score retrieval should succeed", err == 0);
     mu_assert("scale1_score should be finite and non-negative", isfinite(scale1) && scale1 >= 0.0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vif_skip_scale0_true(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     char *msg = check_vif_skip_scale0_true_setup(&vmaf);
     if (msg)
         return msg;
@@ -159,7 +155,7 @@ static char *test_vif_skip_scale0_true(void)
         return msg;
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -172,16 +168,16 @@ static char *check_vif_skip_scale0_false_setup(VmafContext **vmaf_out)
     int err = vmaf_init(vmaf_out, cfg);
     mu_assert("vmaf_init should succeed", err == 0);
     if (err)
-        return NULL;
+        return VMAF_NULLPTR;
 
     /* No opts_dict -> vif_skip_scale0 defaults to false; standard feature names. */
-    err = vmaf_use_feature(*vmaf_out, "vif", NULL);
+    err = vmaf_use_feature(*vmaf_out, "vif", VMAF_NULLPTR);
     mu_assert("vmaf_use_feature(vif) default should succeed", err == 0);
     if (err) {
         (void)vmaf_close(*vmaf_out);
-        return NULL;
+        return VMAF_NULLPTR;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *check_vif_skip_scale0_false_scores(VmafContext *vmaf)
@@ -193,12 +189,12 @@ static char *check_vif_skip_scale0_false_scores(VmafContext *vmaf)
     /* Without skip, scale0_score is a finite positive ratio. */
     mu_assert("vif_skip_scale0=false: scale0_score must be finite and > 0",
               isfinite(scale0) && scale0 > 0.0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vif_skip_scale0_false(void)
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     char *msg = check_vif_skip_scale0_false_setup(&vmaf);
     if (msg)
         return msg;
@@ -212,14 +208,12 @@ static char *test_vif_skip_scale0_false(void)
         return msg;
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_vif_skip_scale0_true);
     mu_run_test(test_vif_skip_scale0_false);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

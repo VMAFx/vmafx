@@ -1,3 +1,5 @@
+# Changelog fragment
+
 `vmaf --help` now exits 0 (previously exited 1 because `--help` was not a
 registered getopt option and fell through to the "reference required" error
 path). Help text is now printed to stdout rather than stderr when invoked via

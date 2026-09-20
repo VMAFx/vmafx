@@ -47,12 +47,16 @@ import pandas as pd
 import pyarrow.parquet as pq
 from onnx import TensorProto, helper
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from aiutils.run_manifest import write_run_manifest
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 DEFAULT_FEATURES = (
     "adm2",
@@ -306,7 +310,7 @@ def check(
             for d in diffs:
                 print(f"DRIFT  {d}", file=sys.stderr)
             print(
-                "\nRegenerate the committed cache:\n" "  python ai/scripts/build_bisect_cache.py\n",
+                "\nRegenerate the committed cache:\n  python ai/scripts/build_bisect_cache.py\n",
                 file=sys.stderr,
             )
             return 1
@@ -314,8 +318,7 @@ def check(
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument(
         "--out",
@@ -346,7 +349,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional replay manifest JSON sidecar with ADR-0661 run provenance.",
     )
-    args = p.parse_args(raw_argv)
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
     if args.check:
         rc = check(args.out, source_features=args.source_features, target_column=args.target_column)
         if args.manifest_out is not None:

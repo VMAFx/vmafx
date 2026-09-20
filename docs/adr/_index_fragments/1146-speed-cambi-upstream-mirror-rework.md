@@ -1,1 +1,5 @@
-| [ADR-1146](1146-speed-cambi-upstream-mirror-rework.md) | SPEED and CAMBI feature translation units reworked to fork lint profile (0 warnings, bit-exact max-precision numerical identity preserved). | Accepted | 2026-09-02 | lint, ci, refactor, feature, speed, cambi, bit-exact |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1146](1146-speed-cambi-upstream-mirror-rework.md) | SPEED and CAMBI Feature Rework to Fork Standards (Bit-Exact) | Accepted | `lint`, `ci`, `refactor`, `feature`, `speed`, `cambi`, `bit-exact` |

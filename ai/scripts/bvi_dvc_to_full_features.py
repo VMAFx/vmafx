@@ -80,16 +80,17 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-from ai.data.feature_extractor import FULL_FEATURES, _extractors_for  # noqa: E402
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.feature_extractor import FULL_FEATURES, _extractors_for
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model
 
 # isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import write_text_atomic  # noqa: E402
-from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import write_text_atomic
+from aiutils.parquet_utils import write_parquet_atomic
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 EXTRACTORS = tuple(_extractors_for(FULL_FEATURES))
 
@@ -468,10 +469,7 @@ def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> P
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zf.open(info) as src, dest.open("wb") as out:
         # 4 MiB chunks — keeps RAM bounded for the 372 MB A-tier clips.
-        while True:
-            chunk = src.read(4 * 1024 * 1024)
-            if not chunk:
-                break
+        for chunk in iter(lambda: src.read(4 * 1024 * 1024), b""):
             out.write(chunk)
     return dest
 
@@ -710,14 +708,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
-        prog="bvi_dvc_to_full_features.py",
-        description=__doc__,
-    )
-
-    # Mutually exclusive input-source group (ADR-0524).
+def _add_input_args(ap: argparse.ArgumentParser) -> None:
     src_group = ap.add_mutually_exclusive_group()
     src_group.add_argument(
         "--bvi-zip",
@@ -760,6 +751,9 @@ def main(argv: list[str] | None = None) -> int:
             f"default ({DEFAULT_MODEL} via ADR-1168/ADR-1173)."
         ),
     )
+
+
+def _add_output_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--out",
         type=Path,
@@ -809,34 +803,44 @@ def main(argv: list[str] | None = None) -> int:
         "encodes via libx264 today; this flag exists so a future "
         "multi-codec sweep can reuse the same harness.",
     )
-    args = ap.parse_args(raw_argv)
 
-    # Resolve the default input source: if neither flag was given, fall
-    # back to the legacy VMAF_BVI_DVC_ZIP env-var / hard-coded path so
-    # existing callers that omit --bvi-zip keep working.
-    if args.bvi_zip is None and args.bvi_dir is None:
-        args.bvi_zip = Path(
-            os.environ.get(
-                "VMAF_BVI_DVC_ZIP",
-                str(REPO_ROOT / ".corpus" / "bvi-dvc-raw" / "BVI-DVC Part 1.zip"),
-            )
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    ap = make_argument_parser(
+        prog="bvi_dvc_to_full_features.py",
+        description=__doc__,
+    )
+    _add_input_args(ap)
+    _add_output_args(ap)
+    return ap.parse_args(argv)
+
+
+def _apply_default_source(args: argparse.Namespace) -> None:
+    if args.bvi_zip is not None or args.bvi_dir is not None:
+        return
+    args.bvi_zip = Path(
+        os.environ.get(
+            "VMAF_BVI_DVC_ZIP",
+            str(REPO_ROOT / ".corpus" / "bvi-dvc-raw" / "BVI-DVC Part 1.zip"),
         )
+    )
 
-    if not args.vmaf_bin.is_file():
-        print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
-        return 2
 
+def _resolve_and_validate_teacher(args: argparse.Namespace):
     resolved_teacher = resolve_teacher_model(args.model)
-    if resolved_teacher.is_path:
-        p_str = (
-            resolved_teacher.arg[5:]
-            if resolved_teacher.arg.startswith("path=")
-            else resolved_teacher.arg
-        )
-        if not Path(p_str).is_file():
-            print(f"error: model not found at {p_str}", file=sys.stderr)
-            return 2
+    if not resolved_teacher.is_path:
+        return resolved_teacher
+    path = (
+        resolved_teacher.arg[5:]
+        if resolved_teacher.arg.startswith("path=")
+        else resolved_teacher.arg
+    )
+    if not Path(path).is_file():
+        raise FileNotFoundError(path)
+    return resolved_teacher
 
+
+def _prepare_output_paths(args: argparse.Namespace) -> tuple[Path, Path | None]:
     out_path = args.out or (REPO_ROOT / "runs" / f"full_features_bvi_dvc_{args.tier}.parquet")
     args.out = out_path
     if args.manifest_out is None:
@@ -845,19 +849,41 @@ def main(argv: list[str] | None = None) -> int:
     cache_dir = None if args.no_cache else args.cache_dir
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
+    return out_path, cache_dir
 
+
+def _run_selected_mode(
+    args: argparse.Namespace, out_path: Path, cache_dir: Path | None, teacher
+) -> tuple[int, dict[str, object]]:
     if args.bvi_dir is not None:
         if not args.bvi_dir.is_dir():
             print(f"error: --bvi-dir path is not a directory: {args.bvi_dir}", file=sys.stderr)
-            return 2
-        rc, stats = _run_dir_mode(
-            args, out_path, cache_dir, resolved_teacher.arg, resolved_teacher.name
-        )
-    else:
-        # --bvi-zip path (original behaviour).
-        rc, stats = _run_zip_mode(
-            args, out_path, cache_dir, resolved_teacher.arg, resolved_teacher.name
-        )
+            return 2, {}
+        return _run_dir_mode(args, out_path, cache_dir, teacher.arg, teacher.name)
+    return _run_zip_mode(args, out_path, cache_dir, teacher.arg, teacher.name)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+
+    # Resolve the default input source: if neither flag was given, fall
+    # back to the legacy VMAF_BVI_DVC_ZIP env-var / hard-coded path so
+    # existing callers that omit --bvi-zip keep working.
+    _apply_default_source(args)
+
+    if not args.vmaf_bin.is_file():
+        print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
+        return 2
+
+    try:
+        resolved_teacher = _resolve_and_validate_teacher(args)
+    except FileNotFoundError as exc:
+        print(f"error: model not found at {exc}", file=sys.stderr)
+        return 2
+
+    out_path, cache_dir = _prepare_output_paths(args)
+    rc, stats = _run_selected_mode(args, out_path, cache_dir, resolved_teacher)
 
     if rc == 0:
         _write_manifest(

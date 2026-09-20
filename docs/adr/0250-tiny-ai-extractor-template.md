@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0250: Tiny-AI extractor template — shared scaffolding header
 
 - **Status**: Accepted
@@ -51,7 +50,7 @@ worthwhile. The recipe lives in `docs/ai/extractor-template.md`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A. Inline helpers + one option-table macro (chosen)** | Power-of-10 friendly (no recursion / no setjmp / bounded macros), clangd jumps directly to source, debugger steps through normally. Each helper is ≤ 25 LOC and trivially auditable. | Doesn't dedup the lifecycle skeleton — that stays per-file. | — |
 | B. Codegen (Jinja template emitting a stub `feature_<name>.c`) | Maximum dedup; new extractor = one YAML file. | Adds a Python build dep + an extra meson custom-target step. Generated C is harder to debug (stack traces point at generated lines). Pre-commit and clang-tidy paths get longer. The variation between extractors (LPIPS two-input, FastDVDnet 5-frame ring, TransNet 100-frame window) needs four templates anyway. | Cost > savings for a 4-file population. |
 | C. Helper functions exposed via a fnptr table (`VmafTinyAiHooks`) — extractors fill `init_alloc` / `release` / `extract` callbacks, the template orchestrates | Cleanest factoring on paper; every extractor reduces to the hook impls. | Indirect calls hide control flow from the static analysers (CERT MSC22-C-friendly but lints noisily). The varying extract shapes (different tensor names, output shapes, score names emitted) push most of the per-frame logic back into the hook anyway. Frame-window extractors need the hook to stash a ring-buffer slot — the template fights the data. | Power-of-10 rule 9 (limited use of function pointers) + the pattern doesn't actually save LOC. |

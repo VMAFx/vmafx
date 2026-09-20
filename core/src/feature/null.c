@@ -31,8 +31,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     (void)fex;

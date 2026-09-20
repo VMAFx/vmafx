@@ -1,4 +1,6 @@
-### Removed
+# Changelog fragment
+
+## Removed
 
 - **CAMBI Vulkan scaffolding** (`core/src/feature/vulkan/cambi_vulkan.c`,
   `shaders/cambi_{preprocess,derivative,filter_mode,decimate,mask_dp}.comp`,

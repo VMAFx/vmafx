@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0628: Remote-aware ADR number allocator — cross-worktree collision prevention
 
 - **Status**: Accepted
@@ -79,7 +78,7 @@ network round-trip.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Server-side reservation (central DB or GitHub label) | Perfectly serialised across machines | Requires network for every claim; adds external dependency; complex to set up | Not suitable for offline dev workflows |
 | Single shared worktree (no isolation) | No cross-worktree visibility problem | Violates ADR-0535 isolation rule; agents writing to same working tree cause checkout conflicts | Explicitly rejected by `feedback_agents_isolated_worktree_only.md` |
 | Monotonic counter in a git note | Persists across forks without a DB | Git notes are easy to lose on rebase; requires force-push to update; racy without a lock | Too fragile; rebase notes do not solve the cross-worktree gap |

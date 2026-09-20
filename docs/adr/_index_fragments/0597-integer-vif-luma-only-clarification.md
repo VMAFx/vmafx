@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0597](0597-integer-vif-luma-only-clarification.md) | `integer_vif` is luma-only across every backend; CUDA `enable_chroma` is a documented no-op | Accepted | cuda, vif, parity, docs, audit-disposition |

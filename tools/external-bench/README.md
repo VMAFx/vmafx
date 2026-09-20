@@ -1,15 +1,14 @@
-<!-- markdownlint-disable MD060 -->
 # `tools/external-bench/` — external-competitor benchmark harness
 
 Side-by-side numerical comparison between the fork's perceptual-quality
 predictors and two external open-source competitors:
 
 | Competitor | Surface | Upstream | Upstream licence |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `fork-fr-regressor` | `fr_regressor_v2_ensemble` (full-reference) | this repo | BSD-3-Clause-Plus-Patent |
-| `fork-nr-metric`    | `nr_metric_v1` (no-reference)               | this repo | BSD-3-Clause-Plus-Patent |
-| `x264-pvmaf`        | Synamedia/Quortex predicted-VMAF           | [quortex/x264-pVMAF](https://github.com/quortex/x264-pVMAF) (Nov 2024) | **GPL-2.0** |
-| `dover-mobile`      | DOVER-Mobile no-reference quality predictor | [DOVER](https://github.com/QualityAssessment/DOVER) | Apache-2.0 (code) / CC-BY-NC-SA 4.0 (weights) |
+| `fork-nr-metric` | `nr_metric_v1` (no-reference) | this repo | BSD-3-Clause-Plus-Patent |
+| `x264-pvmaf` | Synamedia/Quortex predicted-VMAF | [quortex/x264-pVMAF](https://github.com/quortex/x264-pVMAF) (Nov 2024) | **GPL-2.0** |
+| `dover-mobile` | DOVER-Mobile no-reference quality predictor | [DOVER](https://github.com/QualityAssessment/DOVER) | Apache-2.0 (code) / CC-BY-NC-SA 4.0 (weights) |
 
 ## Licence boundary — wrapper-only architecture
 
@@ -106,7 +105,7 @@ Netflix Public Drop. Both are local-only (see [ADR-0310](../../docs/adr/0310-bvi
 the fork ships neither corpus.
 
 | Corpus | Default expected path | Override flag |
-|---|---|---|
+| --- | --- | --- |
 | BVI-DVC test fold | `~/.workingdir2/bvi-dvc/test/` (containing `<src>__ref.yuv` + `<src>__dis*.yuv`, geometry encoded as `..._WxH_...` in the stem) | `--bvi-dvc-root <DIR>` |
 | Netflix Public Drop | `<repo>/.workingdir2/netflix/<src>/{ref,dis}/*.yuv` (per the local layout convention from ADR-0310 / `docs/state.md`) | `--netflix-public-root <DIR>` |
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0659: Modernization audit false-positive filter
 
 - **Status**: Accepted
@@ -28,7 +27,7 @@ gap.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the raw text scan | Finds every marker with no heuristics | Continues to rank closed historical prose above real gaps | Rejected — the audit is a queue-shaping tool, so precision matters more than literal marker recall |
 | Maintain a file-level suppressions list | Precise per false-positive row | Adds another state file to keep fresh and hides future real gaps in suppressed files | Rejected — the current false positives share simple local line context |
 | Filter historical / exception-handler / disabled-build context | Keeps live `raise NotImplementedError` and bare `return -ENOSYS` rows while removing stale prose and documented contracts | A future unusual marker may need another local context rule | Chosen — small, testable, and keeps the report useful without manual suppressions |

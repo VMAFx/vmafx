@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0960: GPU runtime error-path leak fixes — round 25 (A.1 + A.2 + A.3)
 
 - **Status**: Accepted
@@ -82,7 +81,7 @@ the current harness.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Refactor both init functions to use RAII-style cleanup list | Eliminates goto labels; cleaner unwind | Non-trivial refactor; deviates from the existing goto-unwind convention used throughout the file | The existing pattern is correct when labels are ordered properly; targeted fix is lower-risk |
 | Wrap `vmaf_picture_pool_fetch` in a retry loop rather than signal | Avoids the condvar issue by never blocking | Busy-waits; wastes CPU; changes observable behaviour | Correctness fix is always preferable to a workaround |
 | Null `pic->priv` unconditionally at function entry | Simpler | Would clobber a valid pointer if the caller reuses the struct without zeroing | Point-of-error null is safer and self-documenting |

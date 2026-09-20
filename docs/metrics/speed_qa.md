@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # SpEED-QA Feature Extractor
 
 **Feature name:** `speed_qa`

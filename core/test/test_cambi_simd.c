@@ -41,11 +41,7 @@
 
 #include <stddef.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -245,7 +241,7 @@ static char *test_avx512_parity_seed_a(void)
                                   fx.diff_weights, fx.all_diffs, g_reciprocal_lut);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "avx512 parity seed_a");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -266,7 +262,7 @@ static char *test_avx512_parity_seed_b(void)
                                   fx.diff_weights, fx.all_diffs, g_reciprocal_lut);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "avx512 parity seed_b");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -291,7 +287,7 @@ static char *test_avx512_all_masked_out(void)
                                   fx.diff_weights, fx.all_diffs, g_reciprocal_lut);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "avx512 all-masked-out");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -317,7 +313,7 @@ static char *test_neon_parity_seed_a(void)
                                 fx.diff_weights, fx.all_diffs, g_reciprocal_lut);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "neon parity seed_a");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_neon_parity_seed_b(void)
@@ -336,7 +332,7 @@ static char *test_neon_parity_seed_b(void)
                                 fx.diff_weights, fx.all_diffs, g_reciprocal_lut);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "neon parity seed_b");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_neon_all_masked_out(void)
@@ -358,7 +354,7 @@ static char *test_neon_all_masked_out(void)
                                 fx.diff_weights, fx.all_diffs, g_reciprocal_lut);
 
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "neon all-masked-out");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_AARCH64 */
@@ -394,7 +390,5 @@ char *run_tests(void)
     (void)fprintf(stderr, "skipping: arch lacks cambi SIMD\n");
 #endif
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

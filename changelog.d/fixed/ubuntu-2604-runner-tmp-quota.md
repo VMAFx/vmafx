@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **CI moved to the `ubuntu-26.04` runner image, and the jobs that staged
   gigabytes under `/tmp` were fixed to survive it.** On that image `/tmp` is a
   RAM-backed tmpfs with a per-user quota, so the Tiny AI job's virtualenv

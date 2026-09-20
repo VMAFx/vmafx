@@ -45,11 +45,7 @@
 #if ARCH_X86
 #include "feature/x86/psnr_hvs_avx2.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 #endif
 
@@ -63,7 +59,7 @@ typedef int32_t od_coeff;
 #define OD_UNBIASED_RSHIFT32(_a, _b) (((int32_t)(((uint32_t)(_a) >> (32 - (_b))) + (_a))) >> (_b))
 #define OD_DCT_RSHIFT(_a, _b) OD_UNBIASED_RSHIFT32(_a, _b)
 
-// NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar reference (ADR-0138 / ADR-0141 / ADR-0278).
+
 static void ref_od_bin_fdct8(od_coeff y[8], const od_coeff *x, int xstride)
 {
     const ptrdiff_t xs = (ptrdiff_t)xstride;
@@ -144,7 +140,7 @@ static char *check_dct_block(uint32_t seed)
     od_bin_fdct8x8_avx2(out_avx2, 8, in, 8);
     SIMD_BITEXACT_ASSERT_MEMCMP(out_scalar, out_avx2, sizeof(out_scalar),
                                 "DCT AVX2 not bit-identical to scalar");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_dct_seed_a(void)
@@ -173,7 +169,7 @@ static char *test_dct_delta(void)
     od_bin_fdct8x8_avx2(out_avx2, 8, in, 8);
     SIMD_BITEXACT_ASSERT_MEMCMP(out_scalar, out_avx2, sizeof(out_scalar),
                                 "DCT AVX2 delta input not bit-identical");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Constant-field input — DC-only output exercise. */
@@ -189,7 +185,7 @@ static char *test_dct_constant(void)
     od_bin_fdct8x8_avx2(out_avx2, 8, in, 8);
     SIMD_BITEXACT_ASSERT_MEMCMP(out_scalar, out_avx2, sizeof(out_scalar),
                                 "DCT AVX2 constant input not bit-identical");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* ARCH_X86 */
 
@@ -197,7 +193,7 @@ char *run_tests(void)
 {
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_dct_seed_a);
     mu_run_test(test_dct_seed_b);
@@ -207,7 +203,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: non-x86 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

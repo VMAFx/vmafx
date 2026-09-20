@@ -17,6 +17,8 @@
  *  collect scaffolding.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -35,9 +37,9 @@
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -82,7 +84,29 @@ static int ciede_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
                             &height,     &bpc,        &ss_hor,          &ss_ver};
     CUfunction func = (bpc == 8) ? funcbpc8 : funcbpc16;
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                           block_dim_y, 1, 0, stream, kernelParams, NULL));
+                                           block_dim_y, 1, 0, stream, kernelParams, VMAF_NULLPTR));
+    return 0;
+}
+
+static int init_ciede_readback(VmafFeatureExtractor *fex, unsigned w, unsigned h)
+{
+    CiedeStateCuda *s = fex->priv;
+    const unsigned grid_x = (w + 15u) / 16u;
+    const unsigned grid_y = (h + 15u) / 16u;
+    s->partials_capacity = grid_x * grid_y;
+    int err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state,
+                                              (size_t)s->partials_capacity * sizeof(float));
+    if (err) {
+        (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+        return err;
+    }
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict) {
+        (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
+        return -ENOMEM;
+    }
     return 0;
 }
 
@@ -102,7 +126,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     /* Module + function lookup is metric-specific; the template
      * doesn't (yet) own that step. */
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
@@ -113,48 +137,24 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_ciede_kernel_16bpc"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(VMAF_NULLPTR), fail_after_pop);
 
     s->bpc = bpc;
     s->ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     s->ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
 
-    /* Pre-size partials for the announced (w, h). Submit reuses if
-     * the picture is the same size; reallocates if a larger picture
-     * arrives (rare, but the API doesn't pin geometry). */
-    const unsigned grid_x = (w + 15u) / 16u;
-    const unsigned grid_y = (h + 15u) / 16u;
-    s->partials_capacity = grid_x * grid_y;
-
-    err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state,
-                                          (size_t)s->partials_capacity * sizeof(float));
-    if (err)
-        goto free_ref;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_ref;
-    }
-
-    return 0;
-
-free_ref:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return err;
+    return init_ciede_readback(fex, w, h);
 
 fail:
     if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)cu_f->cuCtxPopCurrent(VMAF_NULLPTR);
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_cuda(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -234,7 +234,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     return rc;
 }
 
-static const char *provided_features[] = {"ciede2000", NULL};
+static const char *provided_features[] = {"ciede2000", VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_ciede_cuda = {
     .name = "ciede_cuda",
@@ -254,5 +254,3 @@ VmafFeatureExtractor vmaf_fex_ciede_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

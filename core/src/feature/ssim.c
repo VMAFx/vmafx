@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +30,7 @@
 #include "iqa/math_utils.h"
 #include "iqa/decimate.h"
 #include "iqa/ssim_tools.h"
+#include "ssim.h"
 
 static void ssim_init_window(struct iqa_kernel *window, int gaussian)
 {
@@ -103,7 +106,6 @@ static int ssim_decimate_pair(float *ref_f, float *cmp_f, int *w, int *h, int sc
 
 /* Cross-TU: declared in ssim.h, called from float_ssim.c. clang-tidy
  * misc-use-internal-linkage runs per-TU and can't see the header bridge. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_stride, int cmp_stride,
                  double *score, double *l_score, double *c_score, double *s_score,
                  int scale_override)
@@ -122,11 +124,13 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
     }
     const int stride = ref_stride / (int)sizeof(float); /* in pixels */
 
-    /* args is hardcoded NULL (default Gaussian SSIM); the args branch
+    /* args is hardcoded VMAF_NULLPTR (default Gaussian SSIM); the args branch
      * is preserved for upstream-parity readability. */
     const struct iqa_ssim_args *args = 0;
     const int gaussian = 1;
-    int scale = (scale_override > 0) ? scale_override : _max(1, _round((float)_min(w, h) / 256.0f));
+    int scale = (scale_override > 0) ?
+                    scale_override :
+                    iqa_max(1, iqa_round((float)iqa_min(w, h) / 256.0f));
 
     struct iqa_kernel window;
     ssim_init_window(&window, gaussian);
@@ -153,7 +157,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
         }
     }
 
-    result = iqa_ssim(ref_f, cmp_f, w, h, &window, NULL, args, &l, &c, &s);
+    result = iqa_ssim(ref_f, cmp_f, w, h, &window, VMAF_NULLPTR, args, &l, &c, &s);
 
     free(ref_f);
     free(cmp_f);

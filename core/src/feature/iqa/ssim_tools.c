@@ -34,6 +34,8 @@
  * contrast and structure.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <stdlib.h>
 #include <math.h>
 #include <stddef.h>
@@ -50,9 +52,9 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 /* SIMD dispatch function pointers (set via iqa_ssim_set_dispatch) */
-static ssim_precompute_fn g_ssim_precompute = NULL;
-static ssim_variance_fn g_ssim_variance = NULL;
-static ssim_accumulate_fn g_ssim_accumulate = NULL;
+static ssim_precompute_fn g_ssim_precompute = VMAF_NULLPTR;
+static ssim_variance_fn g_ssim_variance = VMAF_NULLPTR;
+static ssim_accumulate_fn g_ssim_accumulate = VMAF_NULLPTR;
 
 void iqa_ssim_set_dispatch(ssim_precompute_fn precompute, ssim_variance_fn variance,
                            ssim_accumulate_fn accumulate)
@@ -63,7 +65,7 @@ void iqa_ssim_set_dispatch(ssim_precompute_fn precompute, ssim_variance_fn varia
 }
 
 /* SIMD dispatch for iqa_convolve (see ADR-0138) */
-static iqa_convolve_fn g_iqa_convolve = NULL;
+static iqa_convolve_fn g_iqa_convolve = VMAF_NULLPTR;
 
 void iqa_convolve_set_dispatch(iqa_convolve_fn convolve)
 {
@@ -93,17 +95,17 @@ void iqa_convolve_set_dispatch(iqa_convolve_fn convolve)
  * dispatch globals through pthread_once's full barrier. */
 #include <stdatomic.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 static pthread_once_t g_ssim_dispatch_once = PTHREAD_ONCE_INIT;
 /* ATOMIC_VAR_INIT was deprecated in C17 and is absent from MSVC's <stdatomic.h>;
- * plain NULL initialisation is semantically identical per C11 §7.17.2.1 p3 and
+ * plain VMAF_NULLPTR initialisation is semantically identical per C11 §7.17.2.1 p3 and
  * is accepted by GCC, Clang, and MSVC. */
-static _Atomic(void (*)(void)) g_ssim_dispatch_installer = NULL;
+static _Atomic(void (*)(void)) g_ssim_dispatch_installer = VMAF_NULLPTR;
 
 static void iqa_ssim_dispatch_trampoline(void)
 {
@@ -113,8 +115,7 @@ static void iqa_ssim_dispatch_trampoline(void)
         installer();
 }
 
-/* NOLINTNEXTLINE(readability-non-const-parameter) — POSIX pthread_once mutates *guard (ADR-0141 / ADR-0278). */
-void iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(void))
+void iqa_ssim_install_dispatch_once(const pthread_once_t *guard, void (*installer)(void))
 {
     /* `guard` parameter is retained for API symmetry with the
      * per-TU header signature; the actual guard is the shared
@@ -129,7 +130,7 @@ void iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(voi
      * routine. We use a relaxed store guarded by a CAS so only the
      * first publisher writes — eliminating the TSan-visible data
      * race on the installer pointer itself. */
-    void (*expected)(void) = NULL;
+    void (*expected)(void) = VMAF_NULLPTR;
     (void)atomic_compare_exchange_strong_explicit(&g_ssim_dispatch_installer, &expected, installer,
                                                   memory_order_release, memory_order_relaxed);
     (void)pthread_once(&g_ssim_dispatch_once, iqa_ssim_dispatch_trampoline);
@@ -269,10 +270,10 @@ static void ssim_accumulate_default_scalar(const float *ref_mu, const float *cmp
 }
 
 /* Scalar path for the user-tweaked (alpha/beta/gamma) branch. Reached only
- * when the caller passes non-NULL args. Returns INFINITY if mr->map signals
+ * when the caller passes non-VMAF_NULLPTR args. Returns INFINITY if mr->map signals
  * abort, otherwise the reduced score. */
 static float ssim_accumulate_user_args_scalar(float *ref_sigma_sqd, float *cmp_sigma_sqd,
-                                              float *sigma_both, const float *ref_mu,
+                                              const float *sigma_both, const float *ref_mu,
                                               const float *cmp_mu, int w, int h, float C1, float C2,
                                               float C3, float alpha, float beta, float gamma,
                                               const struct iqa_map_reduce *mr)
@@ -331,7 +332,7 @@ static int ssim_workspace_alloc(struct ssim_workspace *ws, size_t n_elems)
 
 static void ssim_workspace_free(struct ssim_workspace *ws)
 {
-    /* free(NULL) is a well-defined no-op (C89 §7.20.3.2) */
+    /* free(VMAF_NULLPTR) is a well-defined no-op (C89 §7.20.3.2) */
     free(ws->ref_mu);
     free(ws->cmp_mu);
     free(ws->ref_sigma_sqd);
@@ -393,7 +394,7 @@ float iqa_ssim(float *ref, float *cmp, int w, int h, const struct iqa_kernel *k,
     float K2 = 0.03f;
 
     /* The assert(!args) that was here fired when iqa_ssim was called with a
-     * non-NULL args pointer (the Rouse MS-SSIM path passes its own struct).
+     * non-VMAF_NULLPTR args pointer (the Rouse MS-SSIM path passes its own struct).
      * Replace with a runtime guard: non-default args require a map-reduce
      * context (mr), otherwise the reduction step has no place to store
      * per-pixel contributions.  No abort() in production paths.            */
@@ -441,5 +442,3 @@ float iqa_ssim(float *ref, float *cmp, int w, int h, const struct iqa_kernel *k,
     }
     return user_args_result;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

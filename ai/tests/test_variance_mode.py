@@ -15,15 +15,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
+try:
+    import torch
+except ImportError:
+    pytest.skip("PyTorch not installed", allow_module_level=True)
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from conftest import requires_pytorch_lightning
 
 requires_pytorch_lightning()
-
-import numpy as np  # noqa: E402
 
 
 def test_fr_default_mode_unchanged() -> None:

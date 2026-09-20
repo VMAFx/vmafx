@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Upstream-backlog re-audit — 2026-04-29 (T7-4)
 
 > Quarterly upstream-backlog re-audit per
@@ -44,7 +43,7 @@
 ## Per-commit triage
 
 | upstream-sha | subject | fork-status | recommended-action | T-row |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `c70debb1` | libvmaf/test: port new adm/vif/speed tests | port | port the adm + vif test deltas; speed tests pend on T-NEW-1 | T-NEW-2 |
 | `314db130` | libvmaf/feature: remove empty translation unit `all.c` | already-on-fork | none — landed via PR #181 (`6eab09c0`) | — |
 | `9dac0a59` | libvmaf/feature: update alias map for cambi/speed | partial | cambi half is on fork (PR #160 `79288e8d`); speed half pends on T-NEW-1 | T-NEW-1 |

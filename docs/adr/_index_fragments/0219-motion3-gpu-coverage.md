@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0219](0219-motion3-gpu-coverage.md) | motion3 GPU coverage on Vulkan + CUDA + SYCL (3-frame window) | Accepted | gpu, vulkan, cuda, sycl, motion, feature-extractor, fork-local, t3-15c, places-4 |

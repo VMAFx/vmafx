@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Fix `ModuleNotFoundError: No module named 'vmaf_mcp'` collection crash in
   `mcp-server/vmaf-mcp/tests/` by adding `pythonpath = ["src"]` to the pytest
   config (Issue 1 from PR #1553 audit).

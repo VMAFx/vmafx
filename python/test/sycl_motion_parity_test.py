@@ -12,33 +12,31 @@ from __future__ import absolute_import
 
 import json
 import os
-import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
-from vmaf import ExternalProgram
+from vmaf import ExternalProgram, run_process
 from vmaf.config import VmafConfig
 
 
 def _get_vmaf_cli():
     # Prefer worktree build if present
-    worktree_vmaf = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../core/build/tools/vmaf")
-    )
-    if os.path.exists(worktree_vmaf) and os.access(worktree_vmaf, os.X_OK):
-        return worktree_vmaf
+    worktree_vmaf = Path(__file__).resolve().parents[2] / "core" / "build" / "tools" / "vmaf"
+    if worktree_vmaf.exists() and os.access(worktree_vmaf, os.X_OK):
+        return str(worktree_vmaf)
     return ExternalProgram.vmafexec
 
 
 def _probe_sycl():
     vmaf = _get_vmaf_cli()
-    if not os.path.exists(vmaf) or not os.access(vmaf, os.X_OK):
+    if not Path(vmaf).exists() or not os.access(vmaf, os.X_OK):
         return False
     ref = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv")
-    if not os.path.exists(ref):
+    if not Path(ref).exists():
         return False
     with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "probe.json")
+        out = Path(tmp) / "probe.json"
         cmd = [
             vmaf,
             "-r",
@@ -63,9 +61,9 @@ def _probe_sycl():
             "--json",
         ]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            return res.returncode == 0 and os.path.exists(out)
-        except Exception:
+            run_process(cmd, timeout=30)
+            return out.exists()
+        except (AssertionError, FileNotFoundError, OSError):
             return False
 
 
@@ -80,12 +78,12 @@ class SyclMotionParityTest(unittest.TestCase):
     def _run_pair(self, ref_file, dis_file, width, height, option_str="motion_max_val=18.0"):
         ref_path = VmafConfig.test_resource_path("yuv", ref_file)
         dis_path = VmafConfig.test_resource_path("yuv", dis_file)
-        if not os.path.exists(ref_path) or not os.path.exists(dis_path):
+        if not Path(ref_path).exists() or not Path(dis_path).exists():
             raise unittest.SkipTest(f"Missing test fixture: {ref_file} or {dis_file}")
 
         with tempfile.TemporaryDirectory() as tmp:
-            out_cpu = os.path.join(tmp, "cpu.json")
-            out_sycl = os.path.join(tmp, "sycl.json")
+            out_cpu = Path(tmp) / "cpu.json"
+            out_sycl = Path(tmp) / "sycl.json"
 
             cmd_cpu = [
                 self.vmaf,
@@ -134,12 +132,12 @@ class SyclMotionParityTest(unittest.TestCase):
                 "--json",
             ]
 
-            subprocess.run(cmd_cpu, check=True, capture_output=True, text=True)
-            subprocess.run(cmd_sycl, check=True, capture_output=True, text=True)
+            run_process(cmd_cpu)
+            run_process(cmd_sycl)
 
-            with open(out_cpu, encoding="utf-8") as f:
+            with out_cpu.open(encoding="utf-8") as f:
                 data_cpu = json.load(f)
-            with open(out_sycl, encoding="utf-8") as f:
+            with out_sycl.open(encoding="utf-8") as f:
                 data_sycl = json.load(f)
 
         return data_cpu, data_sycl
@@ -163,7 +161,7 @@ class SyclMotionParityTest(unittest.TestCase):
         self.assertAlmostEqual(sycl_frames[1]["metrics"][metric], 18.0, places=6)
         self.assertAlmostEqual(sycl_frames[2]["metrics"][metric], 18.0, places=6)
 
-        for i, (fc, fs) in enumerate(zip(cpu_frames, sycl_frames)):
+        for i, (fc, fs) in enumerate(zip(cpu_frames, sycl_frames, strict=False)):
             c_val = fc["metrics"][metric]
             s_val = fs["metrics"][metric]
             self.assertAlmostEqual(
@@ -189,7 +187,7 @@ class SyclMotionParityTest(unittest.TestCase):
         self.assertAlmostEqual(sycl_frames[1]["metrics"][metric], 18.0, places=6)
         self.assertAlmostEqual(sycl_frames[2]["metrics"][metric], 18.0, places=6)
 
-        for i, (fc, fs) in enumerate(zip(cpu_frames, sycl_frames)):
+        for i, (fc, fs) in enumerate(zip(cpu_frames, sycl_frames, strict=False)):
             c_val = fc["metrics"][metric]
             s_val = fs["metrics"][metric]
             self.assertAlmostEqual(
@@ -210,7 +208,7 @@ class SyclMotionParityTest(unittest.TestCase):
         s_mean = data_sycl["pooled_metrics"][metric]["mean"]
         self.assertAlmostEqual(c_mean, s_mean, places=5)
 
-        for i, (fc, fs) in enumerate(zip(cpu_frames, sycl_frames)):
+        for i, (fc, fs) in enumerate(zip(cpu_frames, sycl_frames, strict=False)):
             c_val = fc["metrics"][metric]
             s_val = fs["metrics"][metric]
             self.assertAlmostEqual(

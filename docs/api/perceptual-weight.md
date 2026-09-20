@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Perceptual spatial-pooling weighting — `libvmaf/perceptual_weight.h`
 
 This C API lets libvmaf consume the per-frame side-data that the

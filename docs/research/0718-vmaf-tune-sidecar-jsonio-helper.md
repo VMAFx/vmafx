@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0718 — vmaf-tune sidecar strict JSON persistence
 
 ## Question
@@ -30,7 +29,7 @@ while preserving strict JSON parseability.
 ## Alternatives considered
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave sidecar persistence on raw `json.dump()` | Smallest diff | Operator-visible state can contain non-standard JSON tokens | Rejected |
 | Coerce non-finite loads back to `0.0` | Keeps a state file loadable | Silently hides corrupt weights/history | Rejected |
 | Null non-finite values on write and cold-start on reload | Strict JSON plus fail-safe recovery | Discards the local sidecar after pathological state | Chosen |

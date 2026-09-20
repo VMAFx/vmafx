@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0848](0848-per-surface-doc-compliance-audit.md) | Per-Surface Documentation Compliance Audit — Session 2026-05-29 | Accepted | `docs`, `compliance`, `process`, `per-surface-bar`, `fork-local` |

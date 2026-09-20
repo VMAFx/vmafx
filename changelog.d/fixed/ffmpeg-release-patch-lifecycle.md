@@ -1,1 +1,5 @@
-- Refresh and verify the complete FFmpeg patch stack in local hooks and required CI; discover stable upstream releases daily, centralize the release configuration, and preserve existing checkouts on failure.
+# Changelog fragment
+
+- Refresh and verify the complete FFmpeg patch stack in local hooks and required
+  CI; discover stable upstream releases daily, centralize the release
+  configuration, and preserve existing checkouts on failure.

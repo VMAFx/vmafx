@@ -78,11 +78,7 @@
 
 #include <inttypes.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -276,7 +272,7 @@ static char *check_pipeline_16(unsigned bpc,
                "fixture (srlv_epi64 logical-shift bug);"
                " see docs/rebase-notes.md §0038 follow-up.";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_neg_diff_bpc10(void)
@@ -415,7 +411,7 @@ static char *check_neon_pipeline_16(unsigned bpc,
                       (unsigned long long)sad_neon);
         return "motion_v2 NEON 16-bit pipeline diverges from scalar";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_neon_neg_diff_bpc10(void)
@@ -441,7 +437,7 @@ char *run_tests(void)
 {
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_run_test(test_neg_diff_bpc10);
     mu_run_test(test_neg_diff_bpc12);
@@ -455,7 +451,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: non-x86/non-arm64 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

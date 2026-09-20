@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0135 — VIF CPU Performance: Workspace Hoist + Fast Log2 Audit
 
 **Date**: 2026-05-16
@@ -45,7 +44,7 @@ on the float VIF path is now **zero**.
 ### Measured speedup (vmaf_bench, threads=1, src01_hrc00 576x324 identity pair)
 
 | Metric | Before | After | Delta |
-|--------|--------|-------|-------|
+| -------- | -------- | ------- | ------- |
 | float_vif extract wall-clock (ms/frame) | ~1.82 | ~1.71 | -6.0% |
 | Peak RSS (kB) | 18 244 | 18 244 | 0 |
 | Score delta vs golden | — | 0.000000 | bit-exact |
@@ -89,7 +88,7 @@ which accumulates ~16 million log2 evaluations per frame at 1080p.
 ### Decision matrix: Option A vs Option B
 
 | Option | Description | Impact on Netflix golden (places=4) | Recommendation |
-|--------|-------------|--------------------------------------|----------------|
+| -------- | ------------- | -------------------------------------- | ---------------- |
 | Option A | Expose `VIF_OPT_FAST_LOG2` as an opt-in build flag (default OFF) | Zero — OFF by default | Redundant: it is already ON unconditionally |
 | Option B | Leave as-is and document | None | Chosen |
 | Option C | Remove the define (restore libm log2f) | Zero score change; ~12% slowdown on log2-heavy paths | Rejected — would be a regression |

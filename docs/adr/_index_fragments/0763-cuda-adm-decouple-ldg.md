@@ -1,1 +1,5 @@
-| [ADR-0763](0763-cuda-adm-decouple-ldg.md) | CUDA `adm_decouple` kernels: `__ldg()` F3 fix | Accepted |  |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0763](0763-cuda-adm-decouple-ldg.md) | CUDA `adm_decouple` kernels: `__ldg()` F3 fix | Accepted | cuda, performance, adm, fork-local |

@@ -1,1 +1,5 @@
-| [ADR-1135](1135-ci-twin-drift-gate.md) | Blocking required CI gate that fails when either side of a same-directory .c/.cpp twin pair is compiled by no build file, or when a meson.build / setup.py / *.pyx names a source path that does not exist; known dead twins are allowlisted with a mandatory reason each and stale rows fail. | Accepted | 2026-09-02 | ci, build, process, fork-local, claude-rule |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1135](1135-ci-twin-drift-gate.md) | CI twin-drift + stale-source-reference gate | Accepted | ci, build, process, fork-local, claude-rule |

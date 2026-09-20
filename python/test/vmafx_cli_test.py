@@ -6,15 +6,30 @@ import json
 import os
 import pty
 import re
-import subprocess
 import tempfile
 import unittest
+from pathlib import Path
+
+from vmaf import run_process
 
 
 def _run_pty(cmd):
-    master, slave = pty.openpty()
-    proc = subprocess.Popen(cmd, stdout=slave, stderr=slave, close_fds=True)
-    os.close(slave)
+    argv = [os.fspath(arg) for arg in cmd]
+    executable = Path(argv[0])
+    if not executable.is_absolute() or not executable.is_file():
+        raise ValueError(f"PTY executable must be an absolute file: {executable}")
+    if any("\0" in arg for arg in argv):
+        raise ValueError("PTY arguments must be NUL-free")
+
+    pid, master = pty.fork()
+    if pid == 0:
+        try:
+            child_status = pty.spawn(argv)
+        except OSError as error:
+            os.write(2, f"{error}\n".encode())
+            os._exit(127)
+        os._exit(os.waitstatus_to_exitcode(child_status))
+
     out = b""
     while True:
         try:
@@ -25,51 +40,53 @@ def _run_pty(cmd):
         except OSError:
             break
     os.close(master)
-    proc.wait()
-    return proc.returncode, out.decode(errors="replace")
+    _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
 
 
 class VmafxCliTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        cls.repo_root = Path(__file__).resolve().parents[2]
         candidates_vmafx = [
-            os.path.join(cls.repo_root, "build", "tools", "vmafx"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmafx"),
-            os.path.join(cls.repo_root, "build", "tools", "vmafx.exe"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmafx.exe"),
+            cls.repo_root / "build" / "tools" / "vmafx",
+            cls.repo_root / "core" / "build" / "tools" / "vmafx",
+            cls.repo_root / "build" / "tools" / "vmafx.exe",
+            cls.repo_root / "core" / "build" / "tools" / "vmafx.exe",
         ]
         candidates_vmaf = [
-            os.path.join(cls.repo_root, "build", "tools", "vmaf"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmaf"),
-            os.path.join(cls.repo_root, "build", "tools", "vmaf.exe"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmaf.exe"),
+            cls.repo_root / "build" / "tools" / "vmaf",
+            cls.repo_root / "core" / "build" / "tools" / "vmaf",
+            cls.repo_root / "build" / "tools" / "vmaf.exe",
+            cls.repo_root / "core" / "build" / "tools" / "vmaf.exe",
         ]
-        cls.vmafx_bin = next((p for p in candidates_vmafx if os.path.exists(p)), None)
-        cls.vmaf_bin = next((p for p in candidates_vmaf if os.path.exists(p)), None)
+        cls.vmafx_bin = next((str(p) for p in candidates_vmafx if p.exists()), None)
+        cls.vmaf_bin = next((str(p) for p in candidates_vmaf if p.exists()), None)
         assert cls.vmafx_bin is not None, f"vmafx binary not found in {candidates_vmafx}"
         assert cls.vmaf_bin is not None, f"vmaf binary not found in {candidates_vmaf}"
 
-        cls.ref_yuv = os.path.join(
-            cls.repo_root, "python", "test", "resource", "yuv", "src01_hrc00_576x324.yuv"
+        cls.ref_yuv = str(
+            cls.repo_root / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
         )
-        cls.dis_yuv = os.path.join(
-            cls.repo_root, "python", "test", "resource", "yuv", "src01_hrc01_576x324.yuv"
+        cls.dis_yuv = str(
+            cls.repo_root / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
         )
-        assert os.path.exists(cls.ref_yuv), f"ref_yuv not found: {cls.ref_yuv}"
-        assert os.path.exists(cls.dis_yuv), f"dis_yuv not found: {cls.dis_yuv}"
+        assert Path(cls.ref_yuv).exists(), f"ref_yuv not found: {cls.ref_yuv}"
+        assert Path(cls.dis_yuv).exists(), f"dis_yuv not found: {cls.dis_yuv}"
 
     def test_vmafx_version(self):
-        res = subprocess.run([self.vmafx_bin, "-v"], capture_output=True, text=True, check=True)
+        return_code, output = _run_pty([self.vmafx_bin, "-v"])
+        self.assertEqual(return_code, 0)
         # vmaf -v writes to stderr
-        combined = (res.stdout + res.stderr).strip()
+        combined = output.strip()
         self.assertTrue(combined.startswith("VMAFX "))
         self.assertIn("(auto-backend, precision=max)", combined)
 
     def test_vmaf_version_unaffected(self):
-        res = subprocess.run([self.vmaf_bin, "-v"], capture_output=True, text=True, check=True)
-        combined = (res.stdout + res.stderr).strip()
+        return_code, output = _run_pty([self.vmaf_bin, "-v"])
+        self.assertEqual(return_code, 0)
+        combined = output.strip()
         self.assertTrue(combined.startswith("v"))
         self.assertNotIn("VMAFX", combined)
         self.assertNotIn("precision=max", combined)
@@ -193,7 +210,7 @@ class VmafxCliTest(unittest.TestCase):
 
     def test_vmafx_json_output_lossless_vs_compat(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_vmafx = os.path.join(tmpdir, "vmafx.json")
+            out_vmafx = Path(tmpdir) / "vmafx.json"
             cmd_vmafx = [
                 self.vmafx_bin,
                 "-r",
@@ -214,8 +231,8 @@ class VmafxCliTest(unittest.TestCase):
                 "-o",
                 out_vmafx,
             ]
-            subprocess.run(cmd_vmafx, check=True, capture_output=True)
-            with open(out_vmafx, encoding="utf-8") as f:
+            run_process(cmd_vmafx)
+            with out_vmafx.open(encoding="utf-8") as f:
                 content_vmafx = f.read()
             vmafx_data = json.loads(content_vmafx)
             # Default vmafx model emits v1.0.16_3d0h features like cambi and integer_aim
@@ -223,7 +240,7 @@ class VmafxCliTest(unittest.TestCase):
             self.assertTrue(any("cambi" in k for k in frame0_metrics))
 
             # Compat mode writes 6 decimals for metrics
-            out_compat = os.path.join(tmpdir, "compat.json")
+            out_compat = Path(tmpdir) / "compat.json"
             cmd_compat = [
                 self.vmafx_bin,
                 "-r",
@@ -245,8 +262,8 @@ class VmafxCliTest(unittest.TestCase):
                 "-o",
                 out_compat,
             ]
-            subprocess.run(cmd_compat, check=True, capture_output=True)
-            with open(out_compat, encoding="utf-8") as f:
+            run_process(cmd_compat)
+            with out_compat.open(encoding="utf-8") as f:
                 content_compat = f.read()
             compat_data = json.loads(content_compat)
             compat_metrics = compat_data["frames"][0]["metrics"]

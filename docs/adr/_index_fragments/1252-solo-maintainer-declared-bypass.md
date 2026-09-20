@@ -1,1 +1,5 @@
-| [ADR-1252](1252-solo-maintainer-declared-bypass.md) | A single-maintainer repository declares its bypass actor instead of pretending to have a reviewer. ADR-1248's ruleset required one independent approval with no bypass actor, but `VMAFx` has exactly one collaborator who authors every PR and GitHub forbids self-approval, so nothing merged between 2026-09-08 and 2026-09-15 — including a green #1396 and two security bumps. The ruleset keeps every other control and gains exactly one `User` bypass actor, declared in `.github/repository-security-policy.json` and verified by the drift checker, which now fails on any undeclared actor rather than on any actor at all. | Accepted | security, ci, governance, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1252](1252-solo-maintainer-declared-bypass.md) | Declare the single maintainer's bypass actor | Accepted, Supersedes [ADR-1248](1248-repository-security-enforcement.md) | security, ci, governance, adr, fork-local |

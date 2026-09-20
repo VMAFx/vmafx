@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <stddef.h>
 #include <immintrin.h>
@@ -24,8 +26,8 @@
 
 double float_psnr_noise_line_avx2(const float *ref, const float *dis, int w)
 {
-    assert(ref != NULL);
-    assert(dis != NULL);
+    assert(ref != VMAF_NULLPTR);
+    assert(dis != VMAF_NULLPTR);
     assert(w > 0);
     double result = 0.0;
     int j = 0;

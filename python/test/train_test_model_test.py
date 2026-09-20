@@ -1,5 +1,5 @@
-import os
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -88,7 +88,7 @@ class TrainTestModelTest(MyTestCase):
         self.model.train(xys)
 
         self.model.to_file(self.model_filename)
-        self.assertTrue(os.path.exists(self.model_filename))
+        self.assertTrue(Path(self.model_filename).exists())
 
         loaded_model = SklearnRandomForestTrainTestModel.from_file(self.model_filename, None)
 
@@ -105,8 +105,8 @@ class TrainTestModelTest(MyTestCase):
         self.model.train(xys)
 
         self.model.to_file(self.model_filename)
-        self.assertTrue(os.path.exists(self.model_filename))
-        self.assertTrue(os.path.exists(self.model_filename + ".model"))
+        self.assertTrue(Path(self.model_filename).exists())
+        self.assertTrue(Path(f"{self.model_filename}.model").exists())
 
         loaded_model = LibsvmNusvrTrainTestModel.from_file(self.model_filename, None)
 
@@ -427,10 +427,10 @@ class TrainTestModelWithDisYRawVideoExtractorTest(MyTestCase):
     def tearDown(self):
         if hasattr(self, "h5py_file"):
             DisYUVRawVideoExtractor.close_h5py_file(self.h5py_file)
-        if os.path.exists(self.h5py_filepath):
-            os.remove(self.h5py_filepath)
-        if os.path.exists(self.model_filename):
-            os.remove(self.model_filename)
+        if Path(self.h5py_filepath).exists():
+            Path(self.h5py_filepath).unlink()
+        if Path(self.model_filename).exists():
+            Path(self.model_filename).unlink()
         super().tearDown()
 
     def test_extracted_features(self):
@@ -529,7 +529,7 @@ class TrainTestModelWithDisYRawVideoExtractorTest(MyTestCase):
         model.train(xys)
 
         model.to_file(self.model_filename)
-        self.assertTrue(os.path.exists(self.model_filename))
+        self.assertTrue(Path(self.model_filename).exists())
 
         loaded_model = TrainTestModel.from_file(self.model_filename)
 
@@ -587,8 +587,8 @@ class TrainTestModelTestJson(MyTestCase):
         self.model.train(xys)
 
         self.model.to_file(self.model_filename_json, format="json")
-        self.assertTrue(os.path.exists(self.model_filename_json))
-        self.assertFalse(os.path.exists(self.model_filename_json + ".model"))
+        self.assertTrue(Path(self.model_filename_json).exists())
+        self.assertFalse(Path(f"{self.model_filename_json}.model").exists())
 
         loaded_model = LibsvmNusvrTrainTestModel.from_file(
             self.model_filename_json, logger=None, format="json"

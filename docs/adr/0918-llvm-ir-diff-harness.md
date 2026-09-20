@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0918: LLVM IR diff harness for bit-exact SIMD paths
 
 - **Status**: Accepted
@@ -51,7 +50,7 @@ for score JSONs.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Snapshot LLVM IR per function (this ADR)** | Cheap to run; points directly at the function and intrinsic that drifted; tractable to read in code review; works without YUV fixtures | Snapshot updates needed on intentional changes; needs clang on PATH | Picked |
 | Pin `-ffp-contract=off` repo-wide in meson | Globally suppresses the failure class | Lobotomises perf for SIMD paths that *want* `_mm256_fmadd_ps`; not a check, just a workaround; doesn't catch other compiler-induced drifts | Punishes the 95 % to defend the 5 %; doesn't generalise to non-FMA semantic shifts |
 | Grep the `.s` (assembly) output instead of IR | Works without LLVM tooling | Assembly is target- and microarch-specific and noisy; instruction scheduling differs across clang minor versions even at fixed `-march` | Higher false-positive rate than IR; harder to normalise |

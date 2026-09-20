@@ -35,13 +35,15 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 VIDEOS_URL = "https://datasets.vqa.mmsp-kn.de/archives/KoNViD_1k_videos.zip"
 METADATA_URL = "https://datasets.vqa.mmsp-kn.de/archives/KoNViD_1k_metadata.zip"
@@ -97,10 +99,7 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
         bytes_so_far = 0
         last_print = time.monotonic()
         with dst.open("wb") as out:
-            while True:
-                chunk = resp.read(1 << 20)  # 1 MiB
-                if not chunk:
-                    break
+            for chunk in iter(lambda: resp.read(1 << 20), b""):
                 out.write(chunk)
                 bytes_so_far += len(chunk)
                 now = time.monotonic()
@@ -122,7 +121,7 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
     final_sz = dst.stat().st_size
     if final_sz < min_bytes:
         raise RuntimeError(
-            f"Download truncated: {dst} is only {final_sz} bytes " f"(expected >= {min_bytes})"
+            f"Download truncated: {dst} is only {final_sz} bytes (expected >= {min_bytes})"
         )
     print(f"[konvid] {dst.name} done — {_humanize(final_sz)}")
     return dst

@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Restored automatic pip dependency-graph generation by keeping the tool-only
   root Python requirement at 3.14-series granularity and preventing Renovate
   from raising it past Dependabot's bundled interpreter patch.

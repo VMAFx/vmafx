@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0274](0274-hip-eighth-consumer-float-ssim.md) | HIP eighth kernel-template consumer — `float_ssim_hip` | Accepted | `hip`, `gpu`, `feature-extractor`, `kernel-template`, `multi-dispatch`, `fork-local` |

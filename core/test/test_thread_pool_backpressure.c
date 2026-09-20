@@ -17,7 +17,7 @@
 #include "test.h"
 
 /* MSVC C23 has no nullptr; preserve the portable C spelling (ADR-1138/1166). */
-// NOLINTBEGIN(modernize-use-nullptr)
+
 
 static unsigned create_calls, fail_create_at;
 static unsigned init_calls, fail_init_at, destroy_calls;
@@ -46,10 +46,9 @@ static int observed_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
     return pthread_cond_init(cond, attr);
 }
 
-static int observed_destroy(pthread_cond_t *cond)
+static void observe_destroy_call(void)
 {
     destroy_calls++;
-    return pthread_cond_destroy(cond);
 }
 
 static int observed_signal(pthread_cond_t *cond)
@@ -98,10 +97,10 @@ static int observed_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 
 #define pthread_create observed_create
 #define pthread_cond_init observed_init
-#define pthread_cond_destroy observed_destroy
+#define pthread_cond_destroy(cond) (observe_destroy_call(), pthread_cond_destroy(cond))
 #define pthread_cond_wait observed_wait
 #define pthread_cond_signal observed_signal
-// NOLINTNEXTLINE(bugprone-suspicious-include) -- ADR-0141: deterministic pthread injection; docs/research/2041-thread-pool-backpressure.md
+
 #include "../src/thread_pool.c"
 #undef pthread_create
 #undef pthread_cond_init
@@ -166,7 +165,7 @@ static void *submit_job(void *data)
     run->submitted = true;
     (void)pthread_cond_broadcast(&observer_changed);
     (void)pthread_mutex_unlock(&observer_lock);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static void *destroy_pool(void *data)
@@ -180,7 +179,7 @@ static void *destroy_pool(void *data)
     destroy_phase_ready = true;
     (void)pthread_cond_broadcast(&observer_changed);
     (void)pthread_mutex_unlock(&observer_lock);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static int fill_queue(BlockedRun *run)
@@ -212,16 +211,16 @@ static int finish_blocked_run(BlockedRun *run, const pthread_t *submitter,
     (void)pthread_cond_broadcast(&observer_changed);
     (void)pthread_mutex_unlock(&observer_lock);
     if (submitter)
-        (void)pthread_join(*submitter, NULL);
+        (void)pthread_join(*submitter, VMAF_NULLPTR);
     int err = 0;
     if (destroyer) {
-        (void)pthread_join(*destroyer, NULL);
+        (void)pthread_join(*destroyer, VMAF_NULLPTR);
     } else if (run->pool) {
         err = vmaf_thread_pool_wait(run->pool);
         err |= vmaf_thread_pool_destroy(run->pool);
     }
-    run->pool = NULL;
-    worker_stop_cond = NULL;
+    run->pool = VMAF_NULLPTR;
+    worker_stop_cond = VMAF_NULLPTR;
     delay_wake = false;
     return err;
 }
@@ -231,17 +230,17 @@ static char *test_capacity_and_worker_creation_fallback(void)
     /* Only one of three requested workers starts, so capacity must be one. */
     create_calls = 0;
     fail_create_at = 2;
-    BlockedRun run = {0};
+    BlockedRun run = {VMAF_NULLPTR};
     int err = fill_queue(&run);
     fail_create_at = 0;
     if (err) {
-        (void)finish_blocked_run(&run, NULL, NULL);
+        (void)finish_blocked_run(&run, VMAF_NULLPTR, VMAF_NULLPTR);
         return "could not prepare the saturated queue";
     }
     pthread_t submitter;
-    err = pthread_create(&submitter, NULL, submit_job, &run);
+    err = pthread_create(&submitter, VMAF_NULLPTR, submit_job, &run);
     if (err) {
-        (void)finish_blocked_run(&run, NULL, NULL);
+        (void)finish_blocked_run(&run, VMAF_NULLPTR, VMAF_NULLPTR);
         return "could not create producer";
     }
     (void)pthread_mutex_lock(&observer_lock);
@@ -250,11 +249,11 @@ static char *test_capacity_and_worker_creation_fallback(void)
     run.release_worker = true;
     (void)pthread_cond_broadcast(&observer_changed);
     (void)pthread_mutex_unlock(&observer_lock);
-    err = finish_blocked_run(&run, &submitter, NULL);
+    err = finish_blocked_run(&run, &submitter, VMAF_NULLPTR);
     mu_assert("full queue must block before accepting another job", blocked);
     mu_assert("dequeue must wake producer and execute every job",
               !err && !run.enqueue_result && run.completed == 3);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_destroy_with_coordinated_capacity_waiter(void)
@@ -262,11 +261,11 @@ static char *test_destroy_with_coordinated_capacity_waiter(void)
     create_calls = 0;
     fail_create_at = 2;
     delay_wake = true;
-    BlockedRun run = {0};
+    BlockedRun run = {VMAF_NULLPTR};
     int err = fill_queue(&run);
     fail_create_at = 0;
     if (err) {
-        (void)finish_blocked_run(&run, NULL, NULL);
+        (void)finish_blocked_run(&run, VMAF_NULLPTR, VMAF_NULLPTR);
         return "could not prepare shutdown test";
     }
     workers_exited = false;
@@ -274,23 +273,23 @@ static char *test_destroy_with_coordinated_capacity_waiter(void)
     worker_stop_cond = &run.pool->working;
     pthread_t submitter;
     pthread_t destroyer;
-    err = pthread_create(&submitter, NULL, submit_job, &run);
+    err = pthread_create(&submitter, VMAF_NULLPTR, submit_job, &run);
     if (err) {
-        (void)finish_blocked_run(&run, NULL, NULL);
+        (void)finish_blocked_run(&run, VMAF_NULLPTR, VMAF_NULLPTR);
         return "could not create shutdown producer";
     }
     (void)pthread_mutex_lock(&observer_lock);
     err = await_flag(&producer_waiting);
     (void)pthread_mutex_unlock(&observer_lock);
     if (err) {
-        (void)finish_blocked_run(&run, &submitter, NULL);
+        (void)finish_blocked_run(&run, &submitter, VMAF_NULLPTR);
         return "producer did not reach the capacity wait";
     }
     /* The observed cond-wait is the external admission barrier. A mere
      * "producer started" flag would not prove it had acquired queue.lock. */
-    err = pthread_create(&destroyer, NULL, destroy_pool, &run);
+    err = pthread_create(&destroyer, VMAF_NULLPTR, destroy_pool, &run);
     if (err) {
-        (void)finish_blocked_run(&run, &submitter, NULL);
+        (void)finish_blocked_run(&run, &submitter, VMAF_NULLPTR);
         return "could not create destroyer";
     }
     (void)pthread_mutex_lock(&observer_lock);
@@ -311,7 +310,7 @@ static char *test_destroy_with_coordinated_capacity_waiter(void)
     mu_assert("shutdown must cancel queued admission", run.enqueue_result == -ECANCELED);
     mu_assert("shutdown must discard queued work and finish active work",
               !run.destroy_result && run.completed == 1);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 typedef struct StressRun {
@@ -371,13 +370,13 @@ static void *submit_stress(void *data)
         const size_t size = job.large ? sizeof(job) : offsetof(StressJob, padding);
         input->error = vmaf_thread_pool_enqueue(input->pool, count_job, &job, size);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_recycling_and_batch_errors(void)
 {
     StressRun run = {.lock = PTHREAD_MUTEX_INITIALIZER};
-    VmafThreadPool *pool = NULL;
+    VmafThreadPool *pool = VMAF_NULLPTR;
     int err = vmaf_thread_pool_create(
         &pool, (VmafThreadPoolConfig){.n_threads = 3, .thread_data_free = free_worker});
     if (err) {
@@ -389,13 +388,13 @@ static char *test_recycling_and_batch_errors(void)
     pthread_t submitters[2];
     unsigned started = 0;
     for (unsigned i = 0; i < 2 && !err; i++) {
-        err = pthread_create(&submitters[i], NULL, submit_stress, &inputs[i]);
+        err = pthread_create(&submitters[i], VMAF_NULLPTR, submit_stress, &inputs[i]);
         if (!err)
             started++;
     }
     /* Normal owner contract: join all API entrants before pool teardown. */
     for (unsigned i = 0; i < started; i++) {
-        (void)pthread_join(submitters[i], NULL);
+        (void)pthread_join(submitters[i], VMAF_NULLPTR);
         err |= inputs[i].error;
     }
     const int batch_error = vmaf_thread_pool_wait(pool);
@@ -409,7 +408,7 @@ static char *test_recycling_and_batch_errors(void)
     mu_assert("worker errors must survive backpressure and reset per batch",
               batch_error == (-EIO | -EINVAL) && !clean_error);
     mu_assert("per-worker data must be destroyed", run.freed > 0 && run.freed <= 3);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_primitive_and_total_worker_failures(void)
@@ -417,7 +416,7 @@ static char *test_primitive_and_total_worker_failures(void)
     for (unsigned i = 1; i <= 3; i++) {
         init_calls = destroy_calls = 0;
         fail_init_at = i;
-        VmafThreadPool *pool = NULL;
+        VmafThreadPool *pool = VMAF_NULLPTR;
         const int err = vmaf_thread_pool_create(&pool, (VmafThreadPoolConfig){.n_threads = 1});
         const bool clean = err == -ENOMEM && !pool && destroy_calls == i - 1;
         if (pool)
@@ -427,14 +426,14 @@ static char *test_primitive_and_total_worker_failures(void)
     }
     create_calls = destroy_calls = 0;
     fail_create_at = 1;
-    VmafThreadPool *pool = NULL;
+    VmafThreadPool *pool = VMAF_NULLPTR;
     const int err = vmaf_thread_pool_create(&pool, (VmafThreadPoolConfig){.n_threads = 1});
     fail_create_at = 0;
     const bool clean = err == -EAGAIN && !pool && destroy_calls == 3;
     if (pool)
         (void)vmaf_thread_pool_destroy(pool);
     mu_assert("total worker creation failure must release every condition", clean);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -443,7 +442,5 @@ char *run_tests(void)
     mu_run_test(test_destroy_with_coordinated_capacity_waiter);
     mu_run_test(test_recycling_and_batch_errors);
     mu_run_test(test_primitive_and_total_worker_failures);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr)

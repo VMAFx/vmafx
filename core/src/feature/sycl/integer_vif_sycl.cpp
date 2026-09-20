@@ -40,6 +40,7 @@
 
 #include "sycl_compat.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -53,12 +54,6 @@
 #include "feature_name.h"
 #include "sycl/common.h"
 #include "log.h"
-
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): see
-// integer_motion_sycl.cpp for the rationale — C-style `static` is required
-// because the entry-point function addresses are consumed via the
-// `extern "C" VmafFeatureExtractor` struct at the bottom of this TU; the
-// C-API boundary is the load-bearing invariant per CLAUDE.md §12 r12.
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -129,9 +124,6 @@ struct VifStateSycl {
     // Host-side accumulator download buffer
     int64_t *h_accum;
 
-    // Subgroup size selection (auto-detected at init)
-    bool use_simd16;
-
     // Fused V+H kernel mode: uses SLM intermediates, skips tmp buffers.
     // Saves ~70 MB VRAM at 4K but may be slower on some GPUs due to
     // SLM pressure and reduced occupancy.
@@ -156,9 +148,9 @@ static const VmafOption options[] = {
     },
     {
         .name = "vif_enhn_gain_limit",
-        .alias = "egl",
         .help = "enhancement gain imposed on VIF, must be >= 1.0, "
                 "where 1.0 means the gain is unrestricted",
+        .alias = "egl",
         .offset = offsetof(VifStateSycl, vif_enhn_gain_limit),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 100.0},
@@ -176,9 +168,9 @@ static const VmafOption options[] = {
     },
     {
         .name = "vif_skip_scale0",
-        .alias = "ssclz",
         .help = "skip scale 0 (finest scale) VIF computation; "
                 "score0 is forced to 0.0 (parity with CPU option)",
+        .alias = "ssclz",
         .offset = offsetof(VifStateSycl, vif_skip_scale0),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -292,197 +284,180 @@ static inline void sycl_profile_event(VmafSyclState *state, const char *name, sy
  * Interior workgroups (no mirror padding needed) use an optimized fast path
  * that skips boundary checks during tile load.
  */
+template <int SCALE> struct VifVertParams {
+    const void *ref_data;
+    const void *dis_data;
+    unsigned width;
+    unsigned height;
+    unsigned src_stride;
+    unsigned bpc;
+    unsigned shift;
+    unsigned round;
+    unsigned square_shift;
+    unsigned square_round;
+    uint32_t coeff[VIF_FILTER_MAX_WIDTH];
+    uint32_t reduction_coeff[VIF_FILTER_MAX_WIDTH];
+    uint32_t *output[7];
+};
+
+struct VifVertSums {
+    uint32_t mu1;
+    uint32_t mu2;
+    uint64_t ref;
+    uint64_t dis;
+    uint64_t ref_dis;
+    uint32_t ref_reduction;
+    uint32_t dis_reduction;
+};
+
 template <int SCALE>
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static inline uint32_t vif_vert_read(const VifVertParams<SCALE> &p, const void *src, int y, int x)
+{
+    if constexpr (SCALE == 0) {
+        if (p.bpc <= 8)
+            return static_cast<const uint8_t *>(src)[y * p.src_stride + x];
+        return static_cast<const uint16_t *>(src)[y * (p.src_stride / 2) + x];
+    }
+    return static_cast<const uint32_t *>(src)[y * p.src_stride + x] & 0xFFFF;
+}
+
+template <int SCALE, typename Tile>
+static inline void vif_vert_load_tile(const VifVertParams<SCALE> &p, sycl::nd_item<2> item,
+                                      const Tile &ref_tile, const Tile &dis_tile)
+{
+    constexpr int fw = vif_fwidth[SCALE];
+    constexpr int tile_height = 16 + fw - 1;
+    constexpr unsigned tile_elements = tile_height * 16;
+    unsigned const lane = item.get_local_linear_id();
+    int const origin_y = (int)(item.get_group(0) * 16) - fw / 2;
+    int const origin_x = (int)(item.get_group(1) * 16);
+    bool const interior =
+        origin_y >= 0 && origin_y + tile_height <= (int)p.height && origin_x + 16 <= (int)p.width;
+    for (unsigned i = lane; i < tile_elements; i += 256) {
+        unsigned const row = i / 16;
+        unsigned const col = i % 16;
+        int y = origin_y + (int)row;
+        int x = origin_x + (int)col;
+        if (!interior) {
+            y = dev_mirror(y, (int)p.height);
+            if (std::cmp_greater_equal(x, p.width)) {
+                ref_tile[row][col] = 0;
+                dis_tile[row][col] = 0;
+                continue;
+            }
+            x = dev_mirror(x, (int)p.width);
+        }
+        ref_tile[row][col] = vif_vert_read(p, p.ref_data, y, x);
+        dis_tile[row][col] = vif_vert_read(p, p.dis_data, y, x);
+    }
+}
+
+template <int SCALE, typename Tile>
+static inline VifVertSums vif_vert_accumulate(const VifVertParams<SCALE> &p, const Tile &ref_tile,
+                                              const Tile &dis_tile, unsigned row, unsigned col)
+{
+    constexpr int fw = vif_fwidth[SCALE];
+    constexpr int reduction_width = vif_fwidth_rd[SCALE];
+    constexpr int reduction_start = (fw - reduction_width) / 2;
+    VifVertSums sums = {};
+#pragma unroll
+    for (int tap = 0; tap < fw; tap++) {
+        uint32_t const ref = ref_tile[row + tap][col];
+        uint32_t const dis = dis_tile[row + tap][col];
+        uint32_t const weighted_ref = p.coeff[tap] * ref;
+        uint32_t const weighted_dis = p.coeff[tap] * dis;
+        sums.mu1 += weighted_ref;
+        sums.mu2 += weighted_dis;
+        sums.ref += (uint64_t)weighted_ref * ref;
+        sums.dis += (uint64_t)weighted_dis * dis;
+        sums.ref_dis += (uint64_t)weighted_ref * dis;
+        if constexpr (reduction_width > 0) {
+            if (tap >= reduction_start && tap < reduction_start + reduction_width) {
+                uint32_t const coeff = p.reduction_coeff[tap - reduction_start];
+                sums.ref_reduction += coeff * ref;
+                sums.dis_reduction += coeff * dis;
+            }
+        }
+    }
+    return sums;
+}
+
+template <int SCALE>
+static inline void vif_vert_store(const VifVertParams<SCALE> &p, const VifVertSums &sums,
+                                  unsigned index)
+{
+    uint32_t ref = (uint32_t)((sums.ref + p.square_round) >> p.square_shift);
+    uint32_t dis = (uint32_t)((sums.dis + p.square_round) >> p.square_shift);
+    uint32_t ref_dis = (uint32_t)((sums.ref_dis + p.square_round) >> p.square_shift);
+    uint32_t ref_reduction = 0;
+    uint32_t dis_reduction = 0;
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        ref_reduction = (sums.ref_reduction + p.round) >> p.shift;
+        dis_reduction = (sums.dis_reduction + p.round) >> p.shift;
+    }
+    p.output[0][index] = (sums.mu1 + p.round) >> p.shift;
+    p.output[1][index] = (sums.mu2 + p.round) >> p.shift;
+    p.output[2][index] = ref;
+    p.output[3][index] = dis;
+    p.output[4][index] = ref_dis;
+    p.output[5][index] = ref_reduction;
+    p.output[6][index] = dis_reduction;
+}
+
+template <int SCALE>
+static VifVertParams<SCALE> vif_vert_params(const void *ref_data, const void *dis_data,
+                                            unsigned width, unsigned height, unsigned src_stride,
+                                            unsigned bpc, uint32_t *const output[7])
+{
+    VifVertParams<SCALE> p = {};
+    p.ref_data = ref_data;
+    p.dis_data = dis_data;
+    p.width = width;
+    p.height = height;
+    p.src_stride = src_stride;
+    p.bpc = bpc;
+    p.shift = SCALE == 0 ? bpc : 16;
+    p.round = SCALE == 0 ? 1u << (bpc - 1) : 32768;
+    p.square_shift = SCALE == 0 ? (bpc - 8) * 2 : 16;
+    p.square_round = p.square_shift == 0 ? 0 : 1u << (p.square_shift - 1);
+    for (int tap = 0; tap < vif_fwidth[SCALE]; tap++)
+        p.coeff[tap] = vif_filter1d_table[SCALE][tap];
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        for (int tap = 0; tap < vif_fwidth_rd[SCALE]; tap++)
+            p.reduction_coeff[tap] = vif_filter1d_table[SCALE + 1][tap];
+    }
+    for (int i = 0; i < 7; i++)
+        p.output[i] = output[i];
+    return p;
+}
+
+template <int SCALE>
 static sycl::event launch_vif_vert_impl(sycl::queue &q, const void *ref_data, const void *dis_data,
                                         unsigned width, unsigned height, unsigned src_stride,
                                         unsigned bpc, uint32_t *tmp_mu1, uint32_t *tmp_mu2,
                                         uint32_t *tmp_ref, uint32_t *tmp_dis, uint32_t *tmp_ref_dis,
                                         uint32_t *tmp_ref_convol, uint32_t *tmp_dis_convol)
 {
-    constexpr int FW = vif_fwidth[SCALE];
-    constexpr int FW_RD = vif_fwidth_rd[SCALE];
-    constexpr int HALF_FW = FW / 2;
-    constexpr int RD_START = (FW - FW_RD) / 2;
-    constexpr int TILE_H = 16 + FW - 1;
-    const unsigned stride_tmp = width;
-
-    unsigned shift_vp;
-    unsigned add_shift_round_vp;
-    unsigned shift_vp_sq;
-    unsigned add_shift_round_vp_sq;
-    if constexpr (SCALE == 0) {
-        shift_vp = bpc;
-        add_shift_round_vp = 1u << (bpc - 1);
-        shift_vp_sq = (bpc - 8) * 2;
-        add_shift_round_vp_sq = (bpc == 8) ? 0 : (1u << (shift_vp_sq - 1));
-    } else {
-        shift_vp = 16;
-        add_shift_round_vp = 32768;
-        shift_vp_sq = 16;
-        add_shift_round_vp_sq = 32768;
-    }
-
-    uint32_t fcoeff[VIF_FILTER_MAX_WIDTH];
-    for (int i = 0; i < FW; i++)
-        fcoeff[i] = vif_filter1d_table[SCALE][i];
-
-    uint32_t fcoeff_rd[VIF_FILTER_MAX_WIDTH] = {};
-    if constexpr (FW_RD > 0) {
-        for (int i = 0; i < FW_RD; i++)
-            fcoeff_rd[i] = vif_filter1d_table[SCALE + 1][i];
-    }
-
-    constexpr int WG_X = 16;
-    constexpr int WG_Y = 16;
-    sycl::range<2> global(((height + WG_Y - 1) / WG_Y) * WG_Y, ((width + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<2> local(WG_Y, WG_X);
-
-    auto p_ref = ref_data;
-    auto p_dis = dis_data;
-    auto e_bpc = bpc;
-    auto e_w = width;
-    auto e_h = height;
-    auto e_src_stride = src_stride;
-
+    uint32_t *output[7] = {tmp_mu1,     tmp_mu2,        tmp_ref,       tmp_dis,
+                           tmp_ref_dis, tmp_ref_convol, tmp_dis_convol};
+    VifVertParams<SCALE> const p =
+        vif_vert_params<SCALE>(ref_data, dis_data, width, height, src_stride, bpc, output);
+    constexpr int tile_height = 16 + vif_fwidth[SCALE] - 1;
+    sycl::range<2> const global(((height + 15) / 16) * 16, ((width + 15) / 16) * 16);
+    sycl::range<2> const local(16, 16);
     return q.submit([&](sycl::handler &cgh) {
-        // SLM for ref and dis tiles
-        sycl::local_accessor<uint32_t, 2> s_ref(sycl::range<2>(TILE_H, WG_X), cgh);
-        sycl::local_accessor<uint32_t, 2> s_dis(sycl::range<2>(TILE_H, WG_X), cgh);
-
+        sycl::local_accessor<uint32_t, 2> const ref_tile(sycl::range<2>(tile_height, 16), cgh);
+        sycl::local_accessor<uint32_t, 2> const dis_tile(sycl::range<2>(tile_height, 16), cgh);
         cgh.parallel_for(sycl::nd_range<2>(global, local), [=](sycl::nd_item<2> item) {
-            const int gx = item.get_global_id(1);
-            const int gy = item.get_global_id(0);
-            const unsigned lid = item.get_local_linear_id();
-            const unsigned lx = item.get_local_id(1);
-            const unsigned ly = item.get_local_id(0);
-
-            // --- Phase 1: Cooperative tile load into SLM ---
-            int tile_origin_y = (int)(item.get_group(0) * WG_Y) - HALF_FW;
-            int tile_col_x = (int)(item.get_group(1) * WG_X);
-
-            constexpr unsigned tile_elems = TILE_H * WG_X;
-            constexpr unsigned wg_size = WG_X * WG_Y;
-
-            // Read a pixel from global memory
-            auto read_global = [&](const void *src, int y, int x) -> uint32_t {
-                if constexpr (SCALE == 0) {
-                    if (e_bpc <= 8) {
-                        return static_cast<const uint8_t *>(src)[y * e_src_stride + x];
-                    } else {
-                        return static_cast<const uint16_t *>(src)[y * (e_src_stride / 2) + x];
-                    }
-                } else {
-                    return static_cast<const uint32_t *>(src)[y * e_src_stride + x] & 0xFFFF;
-                }
-            };
-
-            // Interior workgroups: skip mirror() (~97% of WGs at 4K)
-            bool interior_wg = (tile_origin_y >= 0) && (tile_origin_y + TILE_H <= (int)e_h) &&
-                               (tile_col_x + WG_X <= (int)e_w);
-
-            if (interior_wg) {
-                for (unsigned i = lid; i < tile_elems; i += wg_size) {
-                    unsigned const tr = i / WG_X;
-                    unsigned const tc = i % WG_X;
-                    int const px = tile_col_x + (int)tc;
-                    int const py = tile_origin_y + (int)tr;
-                    s_ref[tr][tc] = read_global(p_ref, py, px);
-                    s_dis[tr][tc] = read_global(p_dis, py, px);
-                }
-            } else {
-                for (unsigned i = lid; i < tile_elems; i += wg_size) {
-                    unsigned const tr = i / WG_X;
-                    unsigned const tc = i % WG_X;
-                    int px = tile_col_x + (int)tc;
-                    int const py = dev_mirror(tile_origin_y + (int)tr, (int)e_h);
-                    if (std::cmp_less(px, e_w)) {
-                        px = dev_mirror(px, (int)e_w);
-                        s_ref[tr][tc] = read_global(p_ref, py, px);
-                        s_dis[tr][tc] = read_global(p_dis, py, px);
-                    } else {
-                        s_ref[tr][tc] = 0;
-                        s_dis[tr][tc] = 0;
-                    }
-                }
-            }
-
+            vif_vert_load_tile(p, item, ref_tile, dis_tile);
             item.barrier(sycl::access::fence_space::local_space);
-
-            // --- Phase 2: Vertical convolution from SLM ---
-            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, e_h))
+            unsigned const x = item.get_global_id(1);
+            unsigned const y = item.get_global_id(0);
+            if (x >= p.width || y >= p.height)
                 return;
-
-            // mu and rd accumulators fit uint32 (filter sums to 65536,
-            // max pixel 65535 → 65536*65535 < 2^32).
-            uint32_t acc_mu1 = 0;
-            uint32_t acc_mu2 = 0;
-            uint64_t acc_ref = 0;
-            uint64_t acc_dis = 0;
-            uint64_t acc_ref_dis = 0;
-            // NOLINTNEXTLINE(readability-isolate-declaration): SYCL chained zero-init; splitting hides the symmetry of the parallel reduction state.
-            uint32_t acc_ref_rd = 0, acc_dis_rd = 0;
-
-#pragma unroll
-            for (int fi = 0; fi < FW; fi++) {
-                // Thread's local Y + fi maps to the correct tile row
-                uint32_t rv = s_ref[ly + fi][lx];
-                uint32_t dv = s_dis[ly + fi][lx];
-                uint32_t const fc = fcoeff[fi];
-
-                // Keep intermediate as uint32 — widen only for squared terms
-                uint32_t const img_coeff_ref = fc * rv;
-                uint32_t const img_coeff_dis = fc * dv;
-
-                acc_mu1 += img_coeff_ref;
-                acc_mu2 += img_coeff_dis;
-                acc_ref += (uint64_t)img_coeff_ref * rv;
-                acc_dis += (uint64_t)img_coeff_dis * dv;
-                acc_ref_dis += (uint64_t)img_coeff_ref * dv;
-
-                if constexpr (FW_RD > 0) {
-                    if (fi >= RD_START && fi < RD_START + FW_RD) {
-                        uint32_t fc_rd = fcoeff_rd[fi - RD_START];
-                        acc_ref_rd += fc_rd * rv;
-                        acc_dis_rd += fc_rd * dv;
-                    }
-                }
-            }
-
-            // Quantize mu
-            uint32_t const mu1_out = (uint32_t)((acc_mu1 + add_shift_round_vp) >> shift_vp);
-            uint32_t const mu2_out = (uint32_t)((acc_mu2 + add_shift_round_vp) >> shift_vp);
-
-            // Quantize squared terms
-            uint32_t ref_out;
-            uint32_t dis_out;
-            uint32_t ref_dis_out;
-            if (shift_vp_sq > 0) {
-                ref_out = (uint32_t)((acc_ref + add_shift_round_vp_sq) >> shift_vp_sq);
-                dis_out = (uint32_t)((acc_dis + add_shift_round_vp_sq) >> shift_vp_sq);
-                ref_dis_out = (uint32_t)((acc_ref_dis + add_shift_round_vp_sq) >> shift_vp_sq);
-            } else {
-                ref_out = (uint32_t)acc_ref;
-                dis_out = (uint32_t)acc_dis;
-                ref_dis_out = (uint32_t)acc_ref_dis;
-            }
-
-            // Reduction filter output
-            uint32_t ref_rd_out = 0;
-            uint32_t dis_rd_out = 0;
-            if constexpr (FW_RD > 0) {
-                ref_rd_out = (uint32_t)((acc_ref_rd + add_shift_round_vp) >> shift_vp);
-                dis_rd_out = (uint32_t)((acc_dis_rd + add_shift_round_vp) >> shift_vp);
-            }
-
-            unsigned idx = gy * stride_tmp + gx;
-            tmp_mu1[idx] = mu1_out;
-            tmp_mu2[idx] = mu2_out;
-            tmp_ref[idx] = ref_out;
-            tmp_dis[idx] = dis_out;
-            tmp_ref_dis[idx] = ref_dis_out;
-            tmp_ref_convol[idx] = ref_rd_out;
-            tmp_dis_convol[idx] = dis_rd_out;
+            VifVertSums const sums = vif_vert_accumulate(
+                p, ref_tile, dis_tile, item.get_local_id(0), item.get_local_id(1));
+            vif_vert_store(p, sums, y * p.width + x);
         });
     });
 }
@@ -522,379 +497,311 @@ static sycl::event launch_vif_vert(sycl::queue &q, const void *ref_data, const v
  *   Phase 1: Subgroup shuffle reduction (hardware-level, no barriers)
  *   Phase 2: Small local-memory tree across subgroup leaders
  *
- * With SIMD-32 subgroups (Arc Xe-HPG), a 256-thread WG has 8 subgroups.
- * Phase 1 reduces 32→1 per subgroup (5 shuffle steps, no barriers).
- * Phase 2 reduces 8→1 across leaders (3 barrier steps, only 8 threads active).
+ * With SIMD-16 subgroups, a 256-thread WG has 16 subgroups.
+ * Phase 1 reduces 16→1 per subgroup (4 shuffle steps, no barriers).
+ * Phase 2 reduces 16→1 across leaders (only 16 threads active).
  * Total barriers: 3 (vs 8 in the original tree reduction).
  *
- * Additional optimization: uses reqd_sub_group_size(32) on Xe-HPG
- * to ensure SIMD-32 allocation, maximizing EU utilization.
+ * SIMD-16 is required across the Intel target matrix. The previous SIMD-32
+ * specialisations exhausted all 128 registers and spilled on Lunar Lake and
+ * Battlemage; compiling only the spill-free SIMD-16 form also keeps the AOT
+ * image honest with the runtime path selected on those devices.
  */
-template <int SCALE, int SG_SIZE>
+struct VifAccumTerms {
+    int64_t value[ACCUM_FIELDS];
+};
+
+struct VifHorizontalSums {
+    uint32_t mu1;
+    uint32_t mu2;
+    uint64_t ref;
+    uint64_t dis;
+    uint64_t ref_dis;
+    uint32_t ref_reduction;
+    uint32_t dis_reduction;
+};
+
+static inline VifAccumTerms vif_log_terms(int32_t sigma1, int32_t sigma2, int32_t sigma12,
+                                          float gain_limit, const uint32_t *log2_lut)
+{
+    VifAccumTerms terms = {};
+    float gain = 0.0f;
+    float residual = 0.0f;
+    float gain_energy = 0.0f;
+    if (sigma12 > 0 && sigma1 != 0 && sigma2 != 0) {
+        gain = (float)sigma12 / (float)sigma1;
+        residual = (float)sigma2 - gain * (float)sigma12;
+        if (residual < 0.0f)
+            residual = 0.0f;
+        gain = sycl::fmin(gain, gain_limit);
+        gain_energy = gain * gain * (float)sigma1;
+    }
+    uint32_t const denominator_stage = (uint32_t)((int64_t)SIGMA_NSQ + sigma1);
+    int denominator_exp = 0;
+    uint32_t const denominator = dev_get_best16_from32(denominator_stage, denominator_exp);
+    terms.value[0] = denominator_exp;
+    terms.value[2] = 1;
+    terms.value[4] = log2_lut[denominator - 32768];
+    if (sigma12 >= 0) {
+        uint32_t const residual_noise = (uint32_t)residual + (uint32_t)SIGMA_NSQ;
+        uint64_t const numerator_stage = (uint64_t)(int64_t)gain_energy + (uint64_t)residual_noise;
+        int numerator_exp = 0;
+        int residual_exp = 0;
+        uint32_t const numerator = dev_get_best16_from64(numerator_stage, numerator_exp);
+        uint32_t const residual_denominator =
+            dev_get_best16_from64((uint64_t)residual_noise, residual_exp);
+        terms.value[1] = residual_exp - numerator_exp;
+        terms.value[3] =
+            (int32_t)log2_lut[numerator - 32768] - (int32_t)log2_lut[residual_denominator - 32768];
+    }
+    return terms;
+}
+
+static inline VifAccumTerms vif_pixel_terms(int32_t sigma1, int32_t sigma2, int32_t sigma12,
+                                            float gain_limit, const uint32_t *log2_lut)
+{
+    if (sigma1 >= (int32_t)SIGMA_NSQ)
+        return vif_log_terms(sigma1, sigma2, sigma12, gain_limit, log2_lut);
+    VifAccumTerms terms = {};
+    terms.value[5] = sigma2;
+    terms.value[6] = 1;
+    return terms;
+}
+
+template <int MAX_SUBGROUPS, typename LocalMemory>
+static inline void vif_reduce_terms(sycl::nd_item<2> item, const LocalMemory &lmem, int64_t *accum,
+                                    const VifAccumTerms &terms)
+{
+    sycl::sub_group const subgroup = item.get_sub_group();
+    int64_t subgroup_values[ACCUM_FIELDS];
+    for (int field = 0; field < ACCUM_FIELDS; field++) {
+        subgroup_values[field] =
+            sycl::reduce_over_group(subgroup, terms.value[field], sycl::plus<int64_t>());
+    }
+    uint32_t const subgroup_id = subgroup.get_group_linear_id();
+    if (subgroup.get_local_linear_id() == 0) {
+        for (int field = 0; field < ACCUM_FIELDS; field++)
+            lmem[field * MAX_SUBGROUPS + subgroup_id] = subgroup_values[field];
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    if (item.get_local_linear_id() != 0)
+        return;
+    int64_t final_values[ACCUM_FIELDS] = {};
+    uint32_t const subgroup_count = subgroup.get_group_linear_range();
+    for (uint32_t subgroup_idx = 0; subgroup_idx < subgroup_count; subgroup_idx++) {
+        for (int field = 0; field < ACCUM_FIELDS; field++)
+            final_values[field] += lmem[field * MAX_SUBGROUPS + subgroup_idx];
+    }
+    for (int field = 0; field < ACCUM_FIELDS; field++) {
+        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                         sycl::access::address_space::global_space> const output(accum[field]);
+        output.fetch_add(final_values[field]);
+    }
+}
+
+template <int SCALE> struct VifHorizontalParams {
+    unsigned width;
+    unsigned height;
+    float gain_limit;
+    const uint32_t *input[7];
+    int64_t *accum;
+    uint32_t *reduced_ref;
+    uint32_t *reduced_dis;
+    const uint32_t *log2_lut;
+    uint32_t coeff[VIF_FILTER_MAX_WIDTH];
+    uint32_t reduction_coeff[VIF_FILTER_MAX_WIDTH];
+};
+
+template <int SCALE>
+static inline void vif_hori_interior(const VifHorizontalParams<SCALE> &p, unsigned base,
+                                     VifHorizontalSums &sums)
+{
+    constexpr int width = vif_fwidth[SCALE];
+    constexpr int half = width / 2;
+    constexpr int reduction_width = vif_fwidth_rd[SCALE];
+    constexpr int reduction_start = (width - reduction_width) / 2;
+    unsigned const center = base + half;
+    uint32_t const center_coeff = p.coeff[half];
+    sums.mu1 += center_coeff * p.input[0][center];
+    sums.mu2 += center_coeff * p.input[1][center];
+    sums.ref += (uint64_t)center_coeff * p.input[2][center];
+    sums.dis += (uint64_t)center_coeff * p.input[3][center];
+    sums.ref_dis += (uint64_t)center_coeff * p.input[4][center];
+    if constexpr (reduction_width > 0) {
+        uint32_t const reduction_coeff = p.reduction_coeff[reduction_width / 2];
+        sums.ref_reduction += reduction_coeff * p.input[5][center];
+        sums.dis_reduction += reduction_coeff * p.input[6][center];
+    }
+#pragma unroll
+    for (int tap = 0; tap < half; tap++) {
+        unsigned const low = base + tap;
+        unsigned const high = base + width - 1 - tap;
+        uint32_t const coeff = p.coeff[tap];
+        sums.mu1 += coeff * (p.input[0][low] + p.input[0][high]);
+        sums.mu2 += coeff * (p.input[1][low] + p.input[1][high]);
+        sums.ref += (uint64_t)coeff * ((uint64_t)p.input[2][low] + p.input[2][high]);
+        sums.dis += (uint64_t)coeff * ((uint64_t)p.input[3][low] + p.input[3][high]);
+        sums.ref_dis += (uint64_t)coeff * ((uint64_t)p.input[4][low] + p.input[4][high]);
+        if constexpr (reduction_width > 0) {
+            if (tap >= reduction_start && tap < reduction_start + reduction_width / 2) {
+                uint32_t const reduction_coeff = p.reduction_coeff[tap - reduction_start];
+                sums.ref_reduction += reduction_coeff * (p.input[5][low] + p.input[5][high]);
+                sums.dis_reduction += reduction_coeff * (p.input[6][low] + p.input[6][high]);
+            }
+        }
+    }
+}
+
+template <int SCALE>
+static inline void vif_hori_border(const VifHorizontalParams<SCALE> &p, int x, unsigned row,
+                                   VifHorizontalSums &sums)
+{
+    constexpr int width = vif_fwidth[SCALE];
+    constexpr int half = width / 2;
+    constexpr int reduction_width = vif_fwidth_rd[SCALE];
+    constexpr int reduction_start = (width - reduction_width) / 2;
+#pragma unroll
+    for (int tap = 0; tap < width; tap++) {
+        int const sample_x = dev_mirror(x - half + tap, (int)p.width);
+        unsigned const index = row + sample_x;
+        uint32_t const coeff = p.coeff[tap];
+        sums.mu1 += coeff * p.input[0][index];
+        sums.mu2 += coeff * p.input[1][index];
+        sums.ref += (uint64_t)coeff * p.input[2][index];
+        sums.dis += (uint64_t)coeff * p.input[3][index];
+        sums.ref_dis += (uint64_t)coeff * p.input[4][index];
+        if constexpr (reduction_width > 0) {
+            if (tap >= reduction_start && tap < reduction_start + reduction_width) {
+                uint32_t const reduction_coeff = p.reduction_coeff[tap - reduction_start];
+                sums.ref_reduction += reduction_coeff * p.input[5][index];
+                sums.dis_reduction += reduction_coeff * p.input[6][index];
+            }
+        }
+    }
+}
+
+static inline VifAccumTerms vif_terms_from_sums(const VifHorizontalSums &sums, float gain_limit,
+                                                const uint32_t *log2_lut)
+{
+    uint32_t const filtered_ref = (sums.ref + 32768) >> 16;
+    uint32_t const filtered_dis = (sums.dis + 32768) >> 16;
+    uint32_t const filtered_ref_dis = (sums.ref_dis + 32768) >> 16;
+    uint32_t const mu1_sq = ((uint64_t)sums.mu1 * sums.mu1 + 2147483648ULL) >> 32;
+    uint32_t const mu2_sq = ((uint64_t)sums.mu2 * sums.mu2 + 2147483648ULL) >> 32;
+    uint32_t const mu1_mu2 = ((uint64_t)sums.mu1 * sums.mu2 + 2147483648ULL) >> 32;
+    int32_t sigma1 = (int32_t)(filtered_ref - mu1_sq);
+    int32_t sigma2 = (int32_t)(filtered_dis - mu2_sq);
+    int32_t const sigma12 = (int32_t)(filtered_ref_dis - mu1_mu2);
+    if (sigma1 < 0)
+        sigma1 = 0;
+    if (sigma2 < 0)
+        sigma2 = 0;
+    return vif_pixel_terms(sigma1, sigma2, sigma12, gain_limit, log2_lut);
+}
+
+template <int SCALE>
+static inline void vif_hori_downsample(const VifHorizontalParams<SCALE> &p,
+                                       const VifHorizontalSums &sums, unsigned x, unsigned y)
+{
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        if ((x % 2 == 0) && (y % 2 == 0)) {
+            unsigned const stride = (p.width + 1U) / 2U;
+            unsigned const index = (y / 2) * stride + x / 2;
+            p.reduced_ref[index] = ((sums.ref_reduction + 32768) >> 16) & 0xFFFF;
+            p.reduced_dis[index] = ((sums.dis_reduction + 32768) >> 16) & 0xFFFF;
+        }
+    }
+}
+
+template <int SCALE>
+static VifHorizontalParams<SCALE> vif_hori_params(unsigned width, unsigned height, float gain_limit,
+                                                  const uint32_t *const input[7], int64_t *accum,
+                                                  uint32_t *reduced_ref, uint32_t *reduced_dis,
+                                                  const uint32_t *log2_lut)
+{
+    VifHorizontalParams<SCALE> p = {};
+    p.width = width;
+    p.height = height;
+    p.gain_limit = gain_limit;
+    p.accum = accum;
+    p.reduced_ref = reduced_ref;
+    p.reduced_dis = reduced_dis;
+    p.log2_lut = log2_lut;
+    for (int i = 0; i < 7; i++)
+        p.input[i] = input[i];
+    for (int tap = 0; tap < vif_fwidth[SCALE]; tap++)
+        p.coeff[tap] = vif_filter1d_table[SCALE][tap];
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        for (int tap = 0; tap < vif_fwidth_rd[SCALE]; tap++)
+            p.reduction_coeff[tap] = vif_filter1d_table[SCALE + 1][tap];
+    }
+    return p;
+}
+
+template <int SCALE>
 static sycl::event
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch lambda body, see comment block above (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278)
 launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_enhn_gain_limit,
                      const uint32_t *tmp_mu1, const uint32_t *tmp_mu2, const uint32_t *tmp_ref,
                      const uint32_t *tmp_dis, const uint32_t *tmp_ref_dis,
                      const uint32_t *tmp_ref_convol, const uint32_t *tmp_dis_convol, int64_t *accum,
                      uint32_t *rd_ref, uint32_t *rd_dis, const uint32_t *log2_lut)
 {
-    constexpr int FW = vif_fwidth[SCALE];
-    constexpr int FW_RD = vif_fwidth_rd[SCALE];
-    constexpr int HALF_FW = FW / 2;
-    constexpr int RD_START = (FW - FW_RD) / 2;
-    const unsigned stride_tmp = width;
-
-    uint32_t fcoeff[VIF_FILTER_MAX_WIDTH];
-    for (int i = 0; i < FW; i++)
-        fcoeff[i] = vif_filter1d_table[SCALE][i];
-
-    uint32_t fcoeff_rd[VIF_FILTER_MAX_WIDTH] = {};
-    if constexpr (FW_RD > 0) {
-        for (int i = 0; i < FW_RD; i++)
-            fcoeff_rd[i] = vif_filter1d_table[SCALE + 1][i];
-    }
-
-    constexpr int WG_X = 16;
-    constexpr int WG_Y = 16;
-    // Max subgroups: 256 / min_sg_size(8) = 32
-    constexpr int MAX_SUBGROUPS = 32;
-    sycl::range<2> global(((height + WG_Y - 1) / WG_Y) * WG_Y, ((width + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<2> local(WG_Y, WG_X);
-
-    auto e_w = width;
-    auto e_h = height;
-
+    const uint32_t *input[7] = {tmp_mu1,     tmp_mu2,        tmp_ref,       tmp_dis,
+                                tmp_ref_dis, tmp_ref_convol, tmp_dis_convol};
+    VifHorizontalParams<SCALE> const p = vif_hori_params<SCALE>(
+        width, height, vif_enhn_gain_limit, input, accum, rd_ref, rd_dis, log2_lut);
+    sycl::range<2> const global(((height + 15) / 16) * 16, ((width + 15) / 16) * 16);
+    sycl::range<2> const local(16, 16);
     return q.submit([&](sycl::handler &cgh) {
-        // Local memory only for subgroup leader partial sums
-        sycl::local_accessor<int64_t, 1> lmem(sycl::range<1>(ACCUM_FIELDS * MAX_SUBGROUPS), cgh);
-
-        cgh.parallel_for(
-            sycl::nd_range<2>(global, local),
-            [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(SG_SIZE) {
-                const int gx = item.get_global_id(1);
-                const int gy = item.get_global_id(0);
-                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
-
-                sycl::sub_group sg = item.get_sub_group();
-                const uint32_t sg_id = sg.get_group_linear_id();
-                const uint32_t sg_lid = sg.get_local_linear_id();
-                const uint32_t n_subgroups = sg.get_group_linear_range();
-
-                // Accumulators (0 for out-of-bounds threads)
-                int64_t t_x = 0;
-                int64_t t_x2 = 0;
-                int64_t t_num_x = 0;
-                int64_t t_num_log = 0;
-                int64_t t_den_log = 0;
-                int64_t t_num_non_log = 0;
-                int64_t t_den_non_log = 0;
-                // rd accumulators: uint32 safe (max = 65536 * 65535 < 2^32)
-                uint32_t h_ref_rd = 0;
-                uint32_t h_dis_rd = 0;
-
-                if (valid) {
-
-                    auto mx = [&](int x) -> int {
-                        if (x < 0)
-                            return -x;
-                        if (std::cmp_greater_equal(x, e_w))
-                            return 2 * ((int)e_w - 1) - x;
-                        return x;
-                    };
-
-                    // Horizontal convolution with symmetric filter optimization.
-                    // All VIF filter kernels are symmetric: fcoeff[i] == fcoeff[fw-1-i].
-                    // Sum symmetric tap pairs before multiplying, halving the
-                    // multiply count (17→9 muls at scale 0, 9→5, 5→3, 3→2).
-                    //
-                    // mu accumulators: uint32 safe because max = 65536 * 65535 < 2^32
-                    // (vert output ≤ 65535 regardless of bpc; filter sums to 65536).
-                    // rd accumulators: uint32 safe, same analysis as mu.
-                    // ref/dis/ref_dis: need uint64 (vert output can be up to 2^32-1).
-                    uint32_t h_mu1 = 0;
-                    uint32_t h_mu2 = 0;
-                    uint64_t h_ref = 0;
-                    uint64_t h_dis = 0;
-                    uint64_t h_ref_dis = 0;
-                    constexpr bool DO_RD = (FW_RD > 0);
-                    unsigned buf_row = gy * stride_tmp;
-
-                    // Interior fast path: no mirror needed (~97% of pixels at 4K)
-                    if (gx >= HALF_FW && gx < (int)e_w - HALF_FW) {
-                        unsigned buf_base = buf_row + (unsigned)(gx - HALF_FW);
-
-                        // Center tap (unpaired)
-                        unsigned ci = buf_base + (unsigned)HALF_FW;
-                        uint32_t fcc = fcoeff[HALF_FW];
-                        h_mu1 += fcc * tmp_mu1[ci];
-                        h_mu2 += fcc * tmp_mu2[ci];
-                        h_ref += (uint64_t)fcc * tmp_ref[ci];
-                        h_dis += (uint64_t)fcc * tmp_dis[ci];
-                        h_ref_dis += (uint64_t)fcc * tmp_ref_dis[ci];
-                        if constexpr (DO_RD) {
-                            constexpr int RD_HALF = FW_RD / 2;
-                            uint32_t fcc_rd = fcoeff_rd[RD_HALF];
-                            h_ref_rd += fcc_rd * tmp_ref_convol[ci];
-                            h_dis_rd += fcc_rd * tmp_dis_convol[ci];
-                        }
-
-// Symmetric pairs
-#pragma unroll
-                        for (int fj = 0; fj < HALF_FW; fj++) {
-                            unsigned const idx_lo = buf_base + (unsigned)fj;
-                            unsigned idx_hi = buf_base + (unsigned)(FW - 1 - fj);
-                            uint32_t const fc = fcoeff[fj];
-
-                            uint32_t const sum_mu1 = tmp_mu1[idx_lo] + tmp_mu1[idx_hi];
-                            uint32_t const sum_mu2 = tmp_mu2[idx_lo] + tmp_mu2[idx_hi];
-                            h_mu1 += fc * sum_mu1;
-                            h_mu2 += fc * sum_mu2;
-
-                            // uint64 for pair sum: each tmp value can reach ~4.26e9
-                            uint64_t const sum_ref = (uint64_t)tmp_ref[idx_lo] + tmp_ref[idx_hi];
-                            uint64_t const sum_dis = (uint64_t)tmp_dis[idx_lo] + tmp_dis[idx_hi];
-                            uint64_t const sum_rd =
-                                (uint64_t)tmp_ref_dis[idx_lo] + tmp_ref_dis[idx_hi];
-                            h_ref += (uint64_t)fc * sum_ref;
-                            h_dis += (uint64_t)fc * sum_dis;
-                            h_ref_dis += (uint64_t)fc * sum_rd;
-
-                            if constexpr (DO_RD) {
-                                if (fj >= RD_START && (int)fj < RD_START + FW_RD / 2) {
-                                    uint32_t fc_rd = fcoeff_rd[fj - RD_START];
-                                    h_ref_rd +=
-                                        fc_rd * (tmp_ref_convol[idx_lo] + tmp_ref_convol[idx_hi]);
-                                    h_dis_rd +=
-                                        fc_rd * (tmp_dis_convol[idx_lo] + tmp_dis_convol[idx_hi]);
-                                }
-                            }
-                        }
-                    } else {
-// Border path: mirror needed
-#pragma unroll
-                        for (int fi = 0; fi < FW; fi++) {
-                            int sx = mx(gx - HALF_FW + fi);
-                            unsigned const sidx = buf_row + sx;
-                            uint32_t const fc = fcoeff[fi];
-
-                            h_mu1 += fc * tmp_mu1[sidx];
-                            h_mu2 += fc * tmp_mu2[sidx];
-                            h_ref += (uint64_t)fc * tmp_ref[sidx];
-                            h_dis += (uint64_t)fc * tmp_dis[sidx];
-                            h_ref_dis += (uint64_t)fc * tmp_ref_dis[sidx];
-
-                            if constexpr (DO_RD) {
-                                if (fi >= RD_START && fi < RD_START + FW_RD) {
-                                    uint32_t fc_rd = fcoeff_rd[fi - RD_START];
-                                    h_ref_rd += fc_rd * tmp_ref_convol[sidx];
-                                    h_dis_rd += fc_rd * tmp_dis_convol[sidx];
-                                }
-                            }
-                        }
-                    }
-
-                    // Horizontal quantization (shift by 16)
-                    uint32_t const mu1_val = (uint32_t)h_mu1;
-                    uint32_t const mu2_val = (uint32_t)h_mu2;
-                    uint32_t const xx_filt = (uint32_t)((h_ref + 32768) >> 16);
-                    uint32_t const yy_filt = (uint32_t)((h_dis + 32768) >> 16);
-                    uint32_t const xy_filt = (uint32_t)((h_ref_dis + 32768) >> 16);
-
-                    uint32_t const mu1_sq =
-                        (uint32_t)(((uint64_t)mu1_val * mu1_val + 2147483648ULL) >> 32);
-                    uint32_t const mu2_sq =
-                        (uint32_t)(((uint64_t)mu2_val * mu2_val + 2147483648ULL) >> 32);
-                    uint32_t const mu1_mu2 =
-                        (uint32_t)(((uint64_t)mu1_val * mu2_val + 2147483648ULL) >> 32);
-
-                    int32_t sigma1_sq = (int32_t)(xx_filt - mu1_sq);
-                    int32_t sigma2_sq = (int32_t)(yy_filt - mu2_sq);
-                    int32_t const sigma12 = (int32_t)(xy_filt - mu1_mu2);
-                    if (sigma1_sq < 0)
-                        sigma1_sq = 0;
-                    if (sigma2_sq < 0)
-                        sigma2_sq = 0;
-
-                    if (sigma1_sq >= (int32_t)SIGMA_NSQ) {
-                        float g = 0.0f;
-                        float sv_sq = 0.0f;
-                        float gg_sigma_f = 0.0f;
-
-                        if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0) {
-                            g = (float)sigma12 / (float)sigma1_sq;
-                            sv_sq = (float)sigma2_sq - g * (float)sigma12;
-                            if (sv_sq < 0.0f)
-                                sv_sq = 0.0f;
-                            g = sycl::fmin(g, vif_enhn_gain_limit);
-                            gg_sigma_f = g * g * (float)sigma1_sq;
-                        }
-
-                        uint32_t const log_den_stage1 = (uint32_t)((int64_t)SIGMA_NSQ + sigma1_sq);
-                        int x_exp = 0;
-                        uint32_t const log_den1 = dev_get_best16_from32(log_den_stage1, x_exp);
-
-                        t_num_x += 1;
-                        t_x += x_exp;
-
-                        uint32_t const den_val = log2_lut[log_den1 - 32768];
-
-                        if (sigma12 >= 0) {
-                            uint32_t const numer1 = (uint32_t)(sv_sq) + (uint32_t)SIGMA_NSQ;
-                            uint64_t const numer1_tmp =
-                                (uint64_t)(int64_t)(gg_sigma_f) + (uint64_t)numer1;
-
-                            int x1 = 0;
-                            int x2_val = 0;
-                            uint32_t const numlog = dev_get_best16_from64(numer1_tmp, x1);
-                            uint32_t const denlog = dev_get_best16_from64((uint64_t)numer1, x2_val);
-
-                            t_x2 += (x2_val - x1);
-
-                            int32_t const num_val = (int32_t)log2_lut[numlog - 32768] -
-                                                    (int32_t)log2_lut[denlog - 32768];
-                            t_num_log += (int64_t)num_val;
-                        }
-
-                        t_den_log += (int64_t)den_val;
-                    } else {
-                        t_num_non_log += sigma2_sq;
-                        t_den_non_log += 1;
-                    }
-
-                } // end if (valid)
-
-                // ---- Phase 1: Subgroup shuffle reduction ----
-                // Uses hardware shuffle instructions (no barriers, no local mem)
-                int64_t sg_x = sycl::reduce_over_group(sg, t_x, sycl::plus<int64_t>());
-                int64_t sg_x2 = sycl::reduce_over_group(sg, t_x2, sycl::plus<int64_t>());
-                int64_t sg_num_x = sycl::reduce_over_group(sg, t_num_x, sycl::plus<int64_t>());
-                int64_t sg_num_log = sycl::reduce_over_group(sg, t_num_log, sycl::plus<int64_t>());
-                int64_t sg_den_log = sycl::reduce_over_group(sg, t_den_log, sycl::plus<int64_t>());
-                int64_t sg_num_nlog =
-                    sycl::reduce_over_group(sg, t_num_non_log, sycl::plus<int64_t>());
-                int64_t sg_den_nlog =
-                    sycl::reduce_over_group(sg, t_den_non_log, sycl::plus<int64_t>());
-
-                // ---- Phase 2: Cross-subgroup reduction via local memory ----
-                // Only subgroup leaders write and participate
-                if (sg_lid == 0) {
-                    lmem[0 * MAX_SUBGROUPS + sg_id] = sg_x;
-                    lmem[1 * MAX_SUBGROUPS + sg_id] = sg_x2;
-                    lmem[2 * MAX_SUBGROUPS + sg_id] = sg_num_x;
-                    lmem[3 * MAX_SUBGROUPS + sg_id] = sg_num_log;
-                    lmem[4 * MAX_SUBGROUPS + sg_id] = sg_den_log;
-                    lmem[5 * MAX_SUBGROUPS + sg_id] = sg_num_nlog;
-                    lmem[6 * MAX_SUBGROUPS + sg_id] = sg_den_nlog;
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-                // Thread 0 of the entire workgroup does final reduction
-                // Only n_subgroups entries to sum (typically 8 for SIMD-32)
-                const int lid = item.get_local_linear_id();
-                if (lid == 0) {
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
-                    int64_t final_vals[ACCUM_FIELDS] = {};
-                    for (uint32_t s = 0; s < n_subgroups; s++) {
-                        final_vals[0] += lmem[0 * MAX_SUBGROUPS + s];
-                        final_vals[1] += lmem[1 * MAX_SUBGROUPS + s];
-                        final_vals[2] += lmem[2 * MAX_SUBGROUPS + s];
-                        final_vals[3] += lmem[3 * MAX_SUBGROUPS + s];
-                        final_vals[4] += lmem[4 * MAX_SUBGROUPS + s];
-                        final_vals[5] += lmem[5 * MAX_SUBGROUPS + s];
-                        final_vals[6] += lmem[6 * MAX_SUBGROUPS + s];
-                    }
-                    for (int f = 0; f < ACCUM_FIELDS; f++) {
-                        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
-                                         sycl::memory_scope::device,
-                                         sycl::access::address_space::global_space>
-                            ref(accum[f]);
-                        ref.fetch_add(final_vals[f]);
-                    }
-                }
-
-                // Downsample for next scale (even coords, valid threads only)
-                if constexpr (FW_RD > 0) {
-                    if (valid && (gx % 2 == 0) && (gy % 2 == 0)) {
-                        uint32_t const ref_rd_val = (uint32_t)((h_ref_rd + 32768) >> 16);
-                        uint32_t const dis_rd_val = (uint32_t)((h_dis_rd + 32768) >> 16);
-                        unsigned rd_x = gx / 2;
-                        unsigned rd_y = gy / 2;
-                        // Use ceiling division for rd_stride to match the rounded-up
-                        // allocation size (w+1)/2 — fixes OOB write when e_w is odd
-                        // (e.g. width=5: last even gx=4 maps to rd_x=2, which is in
-                        // bounds for stride=3 but not for stride=2). Bug: r6-sycl.
-                        unsigned const rd_stride = (e_w + 1U) / 2U;
-                        rd_ref[rd_y * rd_stride + rd_x] = ref_rd_val & 0xFFFF;
-                        rd_dis[rd_y * rd_stride + rd_x] = dis_rd_val & 0xFFFF;
-                    }
-                } // if constexpr (FW_RD > 0)
-            });
+        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(ACCUM_FIELDS * 16), cgh);
+        cgh.parallel_for(sycl::nd_range<2>(global, local),
+                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(16) {
+                             unsigned const x = item.get_global_id(1);
+                             unsigned const y = item.get_global_id(0);
+                             bool const valid = x < p.width && y < p.height;
+                             VifHorizontalSums sums = {};
+                             VifAccumTerms terms = {};
+                             if (valid) {
+                                 unsigned const row = y * p.width;
+                                 int const signed_x = (int)x;
+                                 if (signed_x >= vif_fwidth[SCALE] / 2 &&
+                                     signed_x < (int)p.width - vif_fwidth[SCALE] / 2)
+                                     vif_hori_interior(p, row + x - vif_fwidth[SCALE] / 2, sums);
+                                 else
+                                     vif_hori_border(p, (int)x, row, sums);
+                                 terms = vif_terms_from_sums(sums, p.gain_limit, p.log2_lut);
+                             }
+                             vif_reduce_terms<16>(item, lmem, p.accum, terms);
+                             if (valid)
+                                 vif_hori_downsample(p, sums, x, y);
+                         });
     });
 }
 
-static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width, unsigned height,
-                                      float vif_enhn_gain_limit, uint32_t *tmp_mu1,
-                                      uint32_t *tmp_mu2, uint32_t *tmp_ref, uint32_t *tmp_dis,
-                                      uint32_t *tmp_ref_dis, uint32_t *tmp_ref_convol,
-                                      uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref,
-                                      uint32_t *rd_dis, const uint32_t *log2_lut)
+static sycl::event launch_vif_hori(sycl::queue &q, int scale, unsigned width, unsigned height,
+                                   float vif_enhn_gain_limit, uint32_t *tmp_mu1,
+                                   uint32_t *tmp_mu2, uint32_t *tmp_ref, uint32_t *tmp_dis,
+                                   uint32_t *tmp_ref_dis, uint32_t *tmp_ref_convol,
+                                   uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref,
+                                   uint32_t *rd_dis, const uint32_t *log2_lut)
 {
     switch (scale) {
     case 0:
-        return launch_vif_hori_impl<0, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<0>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 1:
-        return launch_vif_hori_impl<1, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<1>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 2:
-        return launch_vif_hori_impl<2, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<2>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     default:
-        return launch_vif_hori_impl<3, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/* SYCL Kernel: Horizontal Pass + VIF (subgroup-optimized, SIMD-16)   */
-/* ------------------------------------------------------------------ */
-
-/**
- * Same as launch_vif_hori_v2 but with reqd_sub_group_size(16).
- * On Xe-LP (UHD 770), SIMD-16 may be optimal.
- * On Xe-HPG (Arc), SIMD-32 is typically better.
- */
-static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned width,
-                                           unsigned height, float vif_enhn_gain_limit,
-                                           uint32_t *tmp_mu1, uint32_t *tmp_mu2, uint32_t *tmp_ref,
-                                           uint32_t *tmp_dis, uint32_t *tmp_ref_dis,
-                                           uint32_t *tmp_ref_convol, uint32_t *tmp_dis_convol,
-                                           int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis,
-                                           const uint32_t *log2_lut)
-{
-    switch (scale) {
-    case 0:
-        return launch_vif_hori_impl<0, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 1:
-        return launch_vif_hori_impl<1, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 2:
-        return launch_vif_hori_impl<2, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    default:
-        return launch_vif_hori_impl<3, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<3>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     }
 }
 
@@ -922,455 +829,322 @@ static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned w
  *   lmem:   7 × 16 × 8            =    896 B
  *   Total:                         ≈ 14.2 KB → 4 WGs/DSS
  */
-template <int SCALE, int SG_SIZE>
+template <int SCALE> struct VifFusedParams {
+    const void *ref_data;
+    const void *dis_data;
+    unsigned width;
+    unsigned height;
+    unsigned src_stride;
+    unsigned bpc;
+    unsigned shift;
+    unsigned round;
+    unsigned square_shift;
+    unsigned square_round;
+    float gain_limit;
+    int64_t *accum;
+    uint32_t *reduced_ref;
+    uint32_t *reduced_dis;
+    const uint32_t *log2_lut;
+    uint32_t coeff[VIF_FILTER_MAX_WIDTH];
+    uint32_t reduction_coeff[VIF_FILTER_MAX_WIDTH];
+};
+
+template <int SCALE>
+static inline uint32_t vif_fused_read(const VifFusedParams<SCALE> &p, const void *src, int y, int x)
+{
+    if constexpr (SCALE == 0) {
+        if (p.bpc <= 8)
+            return static_cast<const uint8_t *>(src)[y * p.src_stride + x];
+        return static_cast<const uint16_t *>(src)[y * (p.src_stride / 2) + x];
+    }
+    return static_cast<const uint32_t *>(src)[y * p.src_stride + x] & 0xFFFF;
+}
+
+template <int SCALE, typename Tile>
+static inline void vif_fused_load_tile(const VifFusedParams<SCALE> &p, sycl::nd_item<2> item,
+                                       const Tile &ref_tile, const Tile &dis_tile)
+{
+    constexpr int width = vif_fwidth[SCALE];
+    constexpr int tile_height = 8 + width - 1;
+    constexpr int tile_width = 16 + width - 1;
+    constexpr unsigned tile_elements = tile_height * tile_width;
+    unsigned const lane = item.get_local_linear_id();
+    int const origin_y = (int)(item.get_group(0) * 8) - width / 2;
+    int const origin_x = (int)(item.get_group(1) * 16) - width / 2;
+    bool const interior = origin_y >= 0 && origin_y + tile_height <= (int)p.height &&
+                          origin_x >= 0 && origin_x + tile_width <= (int)p.width;
+    for (unsigned i = lane; i < tile_elements; i += 128) {
+        unsigned const row = i / tile_width;
+        unsigned const col = i % tile_width;
+        int y = origin_y + (int)row;
+        int x = origin_x + (int)col;
+        if (!interior) {
+            y = dev_mirror(y, (int)p.height);
+            x = dev_mirror(x, (int)p.width);
+        }
+        ref_tile[i] = vif_fused_read(p, p.ref_data, y, x);
+        dis_tile[i] = vif_fused_read(p, p.dis_data, y, x);
+    }
+}
+
+template <int SCALE, typename Tile>
+static inline VifVertSums vif_fused_vertical_sums(const VifFusedParams<SCALE> &p,
+                                                  const Tile &ref_tile, const Tile &dis_tile,
+                                                  unsigned row, unsigned col)
+{
+    constexpr int width = vif_fwidth[SCALE];
+    constexpr int tile_width = 16 + width - 1;
+    constexpr int reduction_width = vif_fwidth_rd[SCALE];
+    constexpr int reduction_start = (width - reduction_width) / 2;
+    VifVertSums sums = {};
+#pragma unroll
+    for (int tap = 0; tap < width; tap++) {
+        unsigned const index = (row + (unsigned)tap) * tile_width + col;
+        uint32_t const ref = ref_tile[index];
+        uint32_t const dis = dis_tile[index];
+        uint32_t const weighted_ref = p.coeff[tap] * ref;
+        uint32_t const weighted_dis = p.coeff[tap] * dis;
+        sums.mu1 += weighted_ref;
+        sums.mu2 += weighted_dis;
+        sums.ref += (uint64_t)weighted_ref * ref;
+        sums.dis += (uint64_t)weighted_dis * dis;
+        sums.ref_dis += (uint64_t)weighted_ref * dis;
+        if constexpr (reduction_width > 0) {
+            if (tap >= reduction_start && tap < reduction_start + reduction_width) {
+                uint32_t const coeff = p.reduction_coeff[tap - reduction_start];
+                sums.ref_reduction += coeff * ref;
+                sums.dis_reduction += coeff * dis;
+            }
+        }
+    }
+    return sums;
+}
+
+template <int SCALE, typename Tile>
+static inline void vif_fused_store_vertical(const VifFusedParams<SCALE> &p, const Tile &vertical,
+                                            const VifVertSums &sums, unsigned index)
+{
+    constexpr unsigned total = 8 * (16 + vif_fwidth[SCALE] - 1);
+    vertical[0 * total + index] = (sums.mu1 + p.round) >> p.shift;
+    vertical[1 * total + index] = (sums.mu2 + p.round) >> p.shift;
+    vertical[2 * total + index] = (sums.ref + p.square_round) >> p.square_shift;
+    vertical[3 * total + index] = (sums.dis + p.square_round) >> p.square_shift;
+    vertical[4 * total + index] = (sums.ref_dis + p.square_round) >> p.square_shift;
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        vertical[5 * total + index] = (sums.ref_reduction + p.round) >> p.shift;
+        vertical[6 * total + index] = (sums.dis_reduction + p.round) >> p.shift;
+    }
+}
+
+template <int SCALE, typename InputTile, typename VerticalTile>
+static inline void vif_fused_vertical(const VifFusedParams<SCALE> &p, sycl::nd_item<2> item,
+                                      const InputTile &ref_tile, const InputTile &dis_tile,
+                                      const VerticalTile &vertical)
+{
+    constexpr unsigned tile_width = 16 + vif_fwidth[SCALE] - 1;
+    constexpr unsigned total = 8 * tile_width;
+    for (unsigned i = item.get_local_linear_id(); i < total; i += 128) {
+        unsigned const row = i / tile_width;
+        unsigned const col = i % tile_width;
+        VifVertSums const sums = vif_fused_vertical_sums(p, ref_tile, dis_tile, row, col);
+        vif_fused_store_vertical(p, vertical, sums, i);
+    }
+}
+
+template <int SCALE, typename VerticalTile>
+static inline uint32_t vif_fused_value(const VerticalTile &vertical, unsigned channel, unsigned row,
+                                       unsigned col)
+{
+    constexpr unsigned tile_width = 16 + vif_fwidth[SCALE] - 1;
+    constexpr unsigned total = 8 * tile_width;
+    return vertical[channel * total + row * tile_width + col];
+}
+
+template <int SCALE, typename VerticalTile>
+static inline void vif_fused_horizontal_center(const VifFusedParams<SCALE> &p,
+                                               const VerticalTile &vertical, unsigned row,
+                                               unsigned col, VifHorizontalSums &sums,
+                                               uint32_t &ref_reduction, uint32_t &dis_reduction)
+{
+    constexpr int half = vif_fwidth[SCALE] / 2;
+    constexpr int reduction_width = vif_fwidth_rd[SCALE];
+    unsigned const center = col + (unsigned)half;
+    uint32_t const coeff = p.coeff[half];
+    sums.mu1 += coeff * vif_fused_value<SCALE>(vertical, 0, row, center);
+    sums.mu2 += coeff * vif_fused_value<SCALE>(vertical, 1, row, center);
+    sums.ref += (uint64_t)coeff * vif_fused_value<SCALE>(vertical, 2, row, center);
+    sums.dis += (uint64_t)coeff * vif_fused_value<SCALE>(vertical, 3, row, center);
+    sums.ref_dis += (uint64_t)coeff * vif_fused_value<SCALE>(vertical, 4, row, center);
+    if constexpr (reduction_width > 0) {
+        uint32_t const reduction_coeff = p.reduction_coeff[reduction_width / 2];
+        ref_reduction += reduction_coeff * vif_fused_value<SCALE>(vertical, 5, row, center);
+        dis_reduction += reduction_coeff * vif_fused_value<SCALE>(vertical, 6, row, center);
+    }
+}
+
+template <int SCALE, typename VerticalTile>
+static inline void vif_fused_horizontal_pairs(const VifFusedParams<SCALE> &p,
+                                              const VerticalTile &vertical, unsigned row,
+                                              unsigned col, VifHorizontalSums &sums,
+                                              uint32_t &ref_reduction, uint32_t &dis_reduction)
+{
+    constexpr int width = vif_fwidth[SCALE];
+    constexpr int half = width / 2;
+    constexpr int reduction_width = vif_fwidth_rd[SCALE];
+    constexpr int reduction_start = (width - reduction_width) / 2;
+#pragma unroll
+    for (int tap = 0; tap < half; tap++) {
+        unsigned const low = col + (unsigned)tap;
+        unsigned const high = col + (unsigned)(width - 1 - tap);
+        uint32_t const coeff = p.coeff[tap];
+        sums.mu1 += coeff * (vif_fused_value<SCALE>(vertical, 0, row, low) +
+                             vif_fused_value<SCALE>(vertical, 0, row, high));
+        sums.mu2 += coeff * (vif_fused_value<SCALE>(vertical, 1, row, low) +
+                             vif_fused_value<SCALE>(vertical, 1, row, high));
+        sums.ref += (uint64_t)coeff * ((uint64_t)vif_fused_value<SCALE>(vertical, 2, row, low) +
+                                       vif_fused_value<SCALE>(vertical, 2, row, high));
+        sums.dis += (uint64_t)coeff * ((uint64_t)vif_fused_value<SCALE>(vertical, 3, row, low) +
+                                       vif_fused_value<SCALE>(vertical, 3, row, high));
+        sums.ref_dis += (uint64_t)coeff * ((uint64_t)vif_fused_value<SCALE>(vertical, 4, row, low) +
+                                           vif_fused_value<SCALE>(vertical, 4, row, high));
+        if constexpr (reduction_width > 0) {
+            if (tap >= reduction_start && tap < reduction_start + reduction_width / 2) {
+                uint32_t const reduction_coeff = p.reduction_coeff[tap - reduction_start];
+                ref_reduction += reduction_coeff * (vif_fused_value<SCALE>(vertical, 5, row, low) +
+                                                    vif_fused_value<SCALE>(vertical, 5, row, high));
+                dis_reduction += reduction_coeff * (vif_fused_value<SCALE>(vertical, 6, row, low) +
+                                                    vif_fused_value<SCALE>(vertical, 6, row, high));
+            }
+        }
+    }
+}
+
+template <int SCALE, typename VerticalTile>
+static inline VifHorizontalSums vif_fused_horizontal(const VifFusedParams<SCALE> &p,
+                                                     const VerticalTile &vertical, unsigned row,
+                                                     unsigned col)
+{
+    VifHorizontalSums sums = {};
+    // DO_RD=false folds these writes away, but scale 0-2 mutate both accumulators. ADR-1266.
+    uint32_t ref_reduction = 0;
+    // The paired accumulator has the same scale-dependent mutation. ADR-1266.
+    uint32_t dis_reduction = 0;
+    vif_fused_horizontal_center(p, vertical, row, col, sums, ref_reduction, dis_reduction);
+    vif_fused_horizontal_pairs(p, vertical, row, col, sums, ref_reduction, dis_reduction);
+    sums.ref_reduction = ref_reduction;
+    sums.dis_reduction = dis_reduction;
+    return sums;
+}
+
+template <int SCALE>
+static inline void vif_fused_downsample(const VifFusedParams<SCALE> &p,
+                                        const VifHorizontalSums &sums, unsigned x, unsigned y)
+{
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        if ((x % 2 == 0) && (y % 2 == 0)) {
+            unsigned const stride = (p.width + 1U) / 2U;
+            unsigned const index = (y / 2) * stride + x / 2;
+            p.reduced_ref[index] = ((sums.ref_reduction + 32768) >> 16) & 0xFFFF;
+            p.reduced_dis[index] = ((sums.dis_reduction + 32768) >> 16) & 0xFFFF;
+        }
+    }
+}
+
+template <int SCALE>
+static VifFusedParams<SCALE>
+vif_fused_params(const void *ref_data, const void *dis_data, unsigned width, unsigned height,
+                 unsigned src_stride, unsigned bpc, float gain_limit, int64_t *accum,
+                 uint32_t *reduced_ref, uint32_t *reduced_dis, const uint32_t *log2_lut)
+{
+    VifFusedParams<SCALE> p = {};
+    p.ref_data = ref_data;
+    p.dis_data = dis_data;
+    p.width = width;
+    p.height = height;
+    p.src_stride = src_stride;
+    p.bpc = bpc;
+    p.shift = SCALE == 0 ? bpc : 16;
+    p.round = SCALE == 0 ? 1u << (bpc - 1) : 32768;
+    p.square_shift = SCALE == 0 ? (bpc - 8) * 2 : 16;
+    p.square_round = p.square_shift == 0 ? 0 : 1u << (p.square_shift - 1);
+    p.gain_limit = gain_limit;
+    p.accum = accum;
+    p.reduced_ref = reduced_ref;
+    p.reduced_dis = reduced_dis;
+    p.log2_lut = log2_lut;
+    for (int tap = 0; tap < vif_fwidth[SCALE]; tap++)
+        p.coeff[tap] = vif_filter1d_table[SCALE][tap];
+    if constexpr (vif_fwidth_rd[SCALE] > 0) {
+        for (int tap = 0; tap < vif_fwidth_rd[SCALE]; tap++)
+            p.reduction_coeff[tap] = vif_filter1d_table[SCALE + 1][tap];
+    }
+    return p;
+}
+
+template <int SCALE>
 static sycl::event
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch lambda body, see comment block above (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278)
 launch_vif_fused_impl(sycl::queue &q, const void *ref_data, const void *dis_data, unsigned width,
                       unsigned height, unsigned src_stride, unsigned bpc, float vif_enhn_gain_limit,
                       int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis, const uint32_t *log2_lut)
 {
-    constexpr int FW_V = vif_fwidth[SCALE];
-    constexpr int HALF_FW_V = FW_V / 2;
-    constexpr int FW_H = FW_V;
-    constexpr int HALF_FW_H = FW_H / 2;
-    constexpr int FW_RD = vif_fwidth_rd[SCALE];
-    constexpr int RD_START = (FW_V - FW_RD) / 2;
-    constexpr bool DO_RD = (FW_RD > 0);
-
-    // WG_Y=8 keeps s_vert small enough for good occupancy
-    constexpr int WG_X = 16;
-    constexpr int WG_Y = 8;
-    constexpr int WG_SIZE = WG_X * WG_Y; // 128
-    constexpr int MAX_SUBGROUPS = 16;    // ≥ WG_SIZE/min_sg_size
-
-    constexpr int TILE_H = WG_Y + FW_V - 1;        // input rows (V halo)
-    constexpr int TILE_W = WG_X + FW_H - 1;        // input cols (H halo)
-    constexpr unsigned VERT_TOTAL = WG_Y * TILE_W; // vert outputs per ch
-    constexpr int N_CH = DO_RD ? 7 : 5;            // channels in s_vert
-
-    uint32_t fcoeff[VIF_FILTER_MAX_WIDTH];
-    for (int i = 0; i < FW_V; i++)
-        fcoeff[i] = vif_filter1d_table[SCALE][i];
-
-    uint32_t fcoeff_rd[VIF_FILTER_MAX_WIDTH] = {};
-    if constexpr (FW_RD > 0) {
-        for (int i = 0; i < FW_RD; i++)
-            fcoeff_rd[i] = vif_filter1d_table[SCALE + 1][i];
-    }
-
-    unsigned shift_vp;
-    unsigned add_shift_round_vp;
-    unsigned shift_vp_sq;
-    unsigned add_shift_round_vp_sq;
-    if constexpr (SCALE == 0) {
-        shift_vp = bpc;
-        add_shift_round_vp = 1u << (bpc - 1);
-        shift_vp_sq = (bpc - 8) * 2;
-        add_shift_round_vp_sq = (bpc == 8) ? 0 : (1u << (shift_vp_sq - 1));
-    } else {
-        shift_vp = 16;
-        add_shift_round_vp = 32768;
-        shift_vp_sq = 16;
-        add_shift_round_vp_sq = 32768;
-    }
-
-    sycl::range<2> global(((height + WG_Y - 1) / WG_Y) * WG_Y, ((width + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<2> local(WG_Y, WG_X);
-
-    auto p_ref = ref_data;
-    auto p_dis = dis_data;
-    auto e_bpc = bpc;
-    auto e_w = width;
-    auto e_h = height;
-    auto e_src_stride = src_stride;
-
+    constexpr int tile_height = 8 + vif_fwidth[SCALE] - 1;
+    constexpr int tile_width = 16 + vif_fwidth[SCALE] - 1;
+    constexpr int channel_count = vif_fwidth_rd[SCALE] > 0 ? 7 : 5;
+    constexpr unsigned vertical_total = 8 * tile_width;
+    VifFusedParams<SCALE> const p =
+        vif_fused_params<SCALE>(ref_data, dis_data, width, height, src_stride, bpc,
+                                vif_enhn_gain_limit, accum, rd_ref, rd_dis, log2_lut);
+    sycl::range<2> const global(((height + 7) / 8) * 8, ((width + 15) / 16) * 16);
+    sycl::range<2> const local(8, 16);
     return q.submit([&](sycl::handler &cgh) {
-        // SLM: input tiles
-        sycl::local_accessor<uint32_t, 1> s_ref(sycl::range<1>(TILE_H * TILE_W), cgh);
-        sycl::local_accessor<uint32_t, 1> s_dis(sycl::range<1>(TILE_H * TILE_W), cgh);
-        // SLM: intermediate vertical convolution results
-        sycl::local_accessor<uint32_t, 1> s_vert(sycl::range<1>(N_CH * VERT_TOTAL), cgh);
-        // SLM: reduction across subgroups
-        sycl::local_accessor<int64_t, 1> lmem(sycl::range<1>(ACCUM_FIELDS * MAX_SUBGROUPS), cgh);
-
-        cgh.parallel_for(
-            sycl::nd_range<2>(global, local),
-            [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(SG_SIZE) {
-                const int gx = item.get_global_id(1);
-                const int gy = item.get_global_id(0);
-                const unsigned lid = item.get_local_linear_id();
-                const unsigned lx = item.get_local_id(1);
-                const unsigned ly = item.get_local_id(0);
-                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
-
-                // ============================================================
-                // Phase 1: Cooperative load of input tile into SLM
-                // ============================================================
-                int tile_origin_y = (int)(item.get_group(0) * WG_Y) - HALF_FW_V;
-                int tile_origin_x = (int)(item.get_group(1) * WG_X) - HALF_FW_H;
-
-                constexpr unsigned tile_elems = TILE_H * TILE_W;
-
-                auto read_global = [&](const void *src, int y, int x) -> uint32_t {
-                    if constexpr (SCALE == 0) {
-                        if (e_bpc <= 8) {
-                            return static_cast<const uint8_t *>(src)[y * e_src_stride + x];
-                        } else {
-                            return static_cast<const uint16_t *>(src)[y * (e_src_stride / 2) + x];
-                        }
-                    } else {
-                        return static_cast<const uint32_t *>(src)[y * e_src_stride + x] & 0xFFFF;
-                    }
-                };
-
-                bool interior_wg = (tile_origin_y >= 0) && (tile_origin_y + TILE_H <= (int)e_h) &&
-                                   (tile_origin_x >= 0) && (tile_origin_x + TILE_W <= (int)e_w);
-
-                if (interior_wg) {
-                    for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
-                        unsigned tr = i / TILE_W;
-                        unsigned tc = i % TILE_W;
-                        int const py = tile_origin_y + (int)tr;
-                        int const px = tile_origin_x + (int)tc;
-                        s_ref[tr * TILE_W + tc] = read_global(p_ref, py, px);
-                        s_dis[tr * TILE_W + tc] = read_global(p_dis, py, px);
-                    }
-                } else {
-                    for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
-                        unsigned tr = i / TILE_W;
-                        unsigned tc = i % TILE_W;
-                        int const py = dev_mirror(tile_origin_y + (int)tr, (int)e_h);
-                        int const px = dev_mirror(tile_origin_x + (int)tc, (int)e_w);
-                        s_ref[tr * TILE_W + tc] = read_global(p_ref, py, px);
-                        s_dis[tr * TILE_W + tc] = read_global(p_dis, py, px);
-                    }
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-                // ============================================================
-                // Phase 2: Cooperative vertical convolution → s_vert
-                // Each thread processes VERT_TOTAL/WG_SIZE output positions,
-                // computing all 5-7 channels per position from shared input.
-                // ============================================================
-                for (unsigned i = lid; i < VERT_TOTAL; i += WG_SIZE) {
-                    unsigned r = i / TILE_W;
-                    unsigned c = i % TILE_W;
-
-                    uint32_t a_mu1 = 0;
-                    uint32_t a_mu2 = 0;
-                    uint64_t a_ref = 0;
-                    uint64_t a_dis = 0;
-                    uint64_t a_ref_dis = 0;
-                    // NOLINTNEXTLINE(readability-isolate-declaration): SYCL chained zero-init; splitting hides the symmetry of the parallel reduction state.
-                    uint32_t a_ref_rd = 0, a_dis_rd = 0;
-
-#pragma unroll
-                    for (int fi = 0; fi < FW_V; fi++) {
-                        unsigned sidx = (r + (unsigned)fi) * TILE_W + c;
-                        uint32_t rv = s_ref[sidx];
-                        uint32_t dv = s_dis[sidx];
-                        uint32_t const fc = fcoeff[fi];
-
-                        uint32_t const icr = fc * rv;
-                        uint32_t const icd = fc * dv;
-                        a_mu1 += icr;
-                        a_mu2 += icd;
-                        a_ref += (uint64_t)icr * rv;
-                        a_dis += (uint64_t)icd * dv;
-                        a_ref_dis += (uint64_t)icr * dv;
-
-                        if constexpr (FW_RD > 0) {
-                            if (fi >= RD_START && fi < RD_START + FW_RD) {
-                                uint32_t fc_rd = fcoeff_rd[fi - RD_START];
-                                a_ref_rd += fc_rd * rv;
-                                a_dis_rd += fc_rd * dv;
-                            }
-                        }
-                    }
-
-                    // Quantize (identical to separate vert kernel)
-                    unsigned base = r * TILE_W + c;
-                    s_vert[0 * VERT_TOTAL + base] =
-                        (uint32_t)((a_mu1 + add_shift_round_vp) >> shift_vp);
-                    s_vert[1 * VERT_TOTAL + base] =
-                        (uint32_t)((a_mu2 + add_shift_round_vp) >> shift_vp);
-                    // NOLINTNEXTLINE(bugprone-branch-clone): SYCL template specialization branch — both arms reach the same code today but the conditional pins the bit-exactness contract for future SCALE / SG_SIZE divergence.
-                    if (shift_vp_sq > 0) {
-                        s_vert[2 * VERT_TOTAL + base] =
-                            (uint32_t)((a_ref + add_shift_round_vp_sq) >> shift_vp_sq);
-                        s_vert[3 * VERT_TOTAL + base] =
-                            (uint32_t)((a_dis + add_shift_round_vp_sq) >> shift_vp_sq);
-                        s_vert[4 * VERT_TOTAL + base] =
-                            (uint32_t)((a_ref_dis + add_shift_round_vp_sq) >> shift_vp_sq);
-                    } else {
-                        s_vert[2 * VERT_TOTAL + base] = (uint32_t)a_ref;
-                        s_vert[3 * VERT_TOTAL + base] = (uint32_t)a_dis;
-                        s_vert[4 * VERT_TOTAL + base] = (uint32_t)a_ref_dis;
-                    }
-                    if constexpr (FW_RD > 0) {
-                        s_vert[5 * VERT_TOTAL + base] =
-                            (uint32_t)((a_ref_rd + add_shift_round_vp) >> shift_vp);
-                        s_vert[6 * VERT_TOTAL + base] =
-                            (uint32_t)((a_dis_rd + add_shift_round_vp) >> shift_vp);
-                    }
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-// ============================================================
-// Phase 3: Horizontal conv from s_vert + VIF stats + downsample
-// No border handling needed — SLM tile already has mirrored halos.
-// ============================================================
-// Helper macro: read s_vert channel ch at (row, col)
-#define SV(ch, r, c) s_vert[(ch) * VERT_TOTAL + (r) * TILE_W + (c)]
-
-                int64_t t_x = 0;
-                int64_t t_x2 = 0;
-                int64_t t_num_x = 0;
-                int64_t t_num_log = 0;
-                int64_t t_den_log = 0;
-                int64_t t_num_non_log = 0;
-                int64_t t_den_non_log = 0;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                uint32_t h_ref_rd = 0;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                uint32_t h_dis_rd = 0;
-
-                if (valid) {
-                    // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                    uint32_t h_mu1 = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                    uint32_t h_mu2 = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                    uint64_t h_ref = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                    uint64_t h_dis = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                    uint64_t h_ref_dis = 0;
-
-                    // Center tap (unpaired)
-                    {
-                        uint32_t fcc = fcoeff[HALF_FW_H];
-                        unsigned cc = lx + (unsigned)HALF_FW_H;
-                        h_mu1 += fcc * SV(0, ly, cc);
-                        h_mu2 += fcc * SV(1, ly, cc);
-                        h_ref += (uint64_t)fcc * SV(2, ly, cc);
-                        h_dis += (uint64_t)fcc * SV(3, ly, cc);
-                        h_ref_dis += (uint64_t)fcc * SV(4, ly, cc);
-                        if constexpr (DO_RD) {
-                            constexpr int RD_HALF = FW_RD / 2;
-                            h_ref_rd += fcoeff_rd[RD_HALF] * SV(5, ly, cc);
-                            h_dis_rd += fcoeff_rd[RD_HALF] * SV(6, ly, cc);
-                        }
-                    }
-
-// Symmetric pairs
-#pragma unroll
-                    for (int fj = 0; fj < HALF_FW_H; fj++) {
-                        uint32_t const fc = fcoeff[fj];
-                        unsigned lo_c = lx + (unsigned)fj;
-                        unsigned hi_c = lx + (unsigned)(FW_H - 1 - fj);
-
-                        h_mu1 += fc * (SV(0, ly, lo_c) + SV(0, ly, hi_c));
-                        h_mu2 += fc * (SV(1, ly, lo_c) + SV(1, ly, hi_c));
-                        h_ref += (uint64_t)fc * ((uint64_t)SV(2, ly, lo_c) + SV(2, ly, hi_c));
-                        h_dis += (uint64_t)fc * ((uint64_t)SV(3, ly, lo_c) + SV(3, ly, hi_c));
-                        h_ref_dis += (uint64_t)fc * ((uint64_t)SV(4, ly, lo_c) + SV(4, ly, hi_c));
-
-                        if constexpr (DO_RD) {
-                            if (fj >= RD_START && (int)fj < RD_START + FW_RD / 2) {
-                                uint32_t fc_rd = fcoeff_rd[fj - RD_START];
-                                h_ref_rd += fc_rd * (SV(5, ly, lo_c) + SV(5, ly, hi_c));
-                                h_dis_rd += fc_rd * (SV(6, ly, lo_c) + SV(6, ly, hi_c));
-                            }
-                        }
-                    }
-
-#undef SV
-
-                    // Horizontal quantization (shift by 16)
-                    uint32_t const mu1_val = (uint32_t)h_mu1;
-                    uint32_t const mu2_val = (uint32_t)h_mu2;
-                    uint32_t const xx_filt = (uint32_t)((h_ref + 32768) >> 16);
-                    uint32_t const yy_filt = (uint32_t)((h_dis + 32768) >> 16);
-                    uint32_t const xy_filt = (uint32_t)((h_ref_dis + 32768) >> 16);
-
-                    uint32_t const mu1_sq =
-                        (uint32_t)(((uint64_t)mu1_val * mu1_val + 2147483648ULL) >> 32);
-                    uint32_t const mu2_sq =
-                        (uint32_t)(((uint64_t)mu2_val * mu2_val + 2147483648ULL) >> 32);
-                    uint32_t const mu1_mu2 =
-                        (uint32_t)(((uint64_t)mu1_val * mu2_val + 2147483648ULL) >> 32);
-
-                    int32_t sigma1_sq = (int32_t)(xx_filt - mu1_sq);
-                    int32_t sigma2_sq = (int32_t)(yy_filt - mu2_sq);
-                    int32_t const sigma12 = (int32_t)(xy_filt - mu1_mu2);
-                    if (sigma1_sq < 0)
-                        sigma1_sq = 0;
-                    if (sigma2_sq < 0)
-                        sigma2_sq = 0;
-
-                    if (sigma1_sq >= (int32_t)SIGMA_NSQ) {
-                        float g = 0.0f;
-                        float sv_sq = 0.0f;
-                        float gg_sigma_f = 0.0f;
-
-                        if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0) {
-                            g = (float)sigma12 / (float)sigma1_sq;
-                            sv_sq = (float)sigma2_sq - g * (float)sigma12;
-                            if (sv_sq < 0.0f)
-                                sv_sq = 0.0f;
-                            g = sycl::fmin(g, vif_enhn_gain_limit);
-                            gg_sigma_f = g * g * (float)sigma1_sq;
-                        }
-
-                        uint32_t const log_den_stage1 = (uint32_t)((int64_t)SIGMA_NSQ + sigma1_sq);
-                        int x_exp = 0;
-                        uint32_t const log_den1 = dev_get_best16_from32(log_den_stage1, x_exp);
-
-                        t_num_x += 1;
-                        t_x += x_exp;
-
-                        uint32_t const den_val = log2_lut[log_den1 - 32768];
-
-                        if (sigma12 >= 0) {
-                            uint32_t const numer1 = (uint32_t)(sv_sq) + (uint32_t)SIGMA_NSQ;
-                            uint64_t const numer1_tmp =
-                                (uint64_t)(int64_t)(gg_sigma_f) + (uint64_t)numer1;
-
-                            int x1 = 0;
-                            int x2_val = 0;
-                            uint32_t const numlog = dev_get_best16_from64(numer1_tmp, x1);
-                            uint32_t const denlog = dev_get_best16_from64((uint64_t)numer1, x2_val);
-
-                            t_x2 += (x2_val - x1);
-
-                            int32_t const num_val = (int32_t)log2_lut[numlog - 32768] -
-                                                    (int32_t)log2_lut[denlog - 32768];
-                            t_num_log += (int64_t)num_val;
-                        }
-
-                        t_den_log += (int64_t)den_val;
-                    } else {
-                        t_num_non_log += sigma2_sq;
-                        t_den_non_log += 1;
-                    }
-                } // end if (valid)
-
-                // ============================================================
-                // Phase 4: Subgroup + cross-subgroup reduction
-                // ============================================================
-                sycl::sub_group sg = item.get_sub_group();
-                const uint32_t sg_id = sg.get_group_linear_id();
-                const uint32_t sg_lid = sg.get_local_linear_id();
-                const uint32_t n_subgroups = sg.get_group_linear_range();
-
-                int64_t sg_x = sycl::reduce_over_group(sg, t_x, sycl::plus<int64_t>());
-                int64_t sg_x2 = sycl::reduce_over_group(sg, t_x2, sycl::plus<int64_t>());
-                int64_t sg_num_x = sycl::reduce_over_group(sg, t_num_x, sycl::plus<int64_t>());
-                int64_t sg_num_log = sycl::reduce_over_group(sg, t_num_log, sycl::plus<int64_t>());
-                int64_t sg_den_log = sycl::reduce_over_group(sg, t_den_log, sycl::plus<int64_t>());
-                int64_t sg_num_nlog =
-                    sycl::reduce_over_group(sg, t_num_non_log, sycl::plus<int64_t>());
-                int64_t sg_den_nlog =
-                    sycl::reduce_over_group(sg, t_den_non_log, sycl::plus<int64_t>());
-
-                if (sg_lid == 0) {
-                    lmem[0 * MAX_SUBGROUPS + sg_id] = sg_x;
-                    lmem[1 * MAX_SUBGROUPS + sg_id] = sg_x2;
-                    lmem[2 * MAX_SUBGROUPS + sg_id] = sg_num_x;
-                    lmem[3 * MAX_SUBGROUPS + sg_id] = sg_num_log;
-                    lmem[4 * MAX_SUBGROUPS + sg_id] = sg_den_log;
-                    lmem[5 * MAX_SUBGROUPS + sg_id] = sg_num_nlog;
-                    lmem[6 * MAX_SUBGROUPS + sg_id] = sg_den_nlog;
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-                if (lid == 0) {
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
-                    int64_t final_vals[ACCUM_FIELDS] = {};
-                    for (uint32_t s = 0; s < n_subgroups; s++) {
-                        final_vals[0] += lmem[0 * MAX_SUBGROUPS + s];
-                        final_vals[1] += lmem[1 * MAX_SUBGROUPS + s];
-                        final_vals[2] += lmem[2 * MAX_SUBGROUPS + s];
-                        final_vals[3] += lmem[3 * MAX_SUBGROUPS + s];
-                        final_vals[4] += lmem[4 * MAX_SUBGROUPS + s];
-                        final_vals[5] += lmem[5 * MAX_SUBGROUPS + s];
-                        final_vals[6] += lmem[6 * MAX_SUBGROUPS + s];
-                    }
-                    for (int f = 0; f < ACCUM_FIELDS; f++) {
-                        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
-                                         sycl::memory_scope::device,
-                                         sycl::access::address_space::global_space>
-                            ref(accum[f]);
-                        ref.fetch_add(final_vals[f]);
-                    }
-                }
-
-                // Downsample for next scale
-                if constexpr (FW_RD > 0) {
-                    if (valid && (gx % 2 == 0) && (gy % 2 == 0)) {
-                        uint32_t const ref_rd_val = (uint32_t)((h_ref_rd + 32768) >> 16);
-                        uint32_t const dis_rd_val = (uint32_t)((h_dis_rd + 32768) >> 16);
-                        unsigned rd_x = gx / 2;
-                        unsigned rd_y = gy / 2;
-                        // Ceiling division for rd_stride — same fix as scalar variant
-                        // (SIMD-16 path). Prevents OOB write for odd e_w. Bug: r6-sycl.
-                        unsigned const rd_stride = (e_w + 1U) / 2U;
-                        rd_ref[rd_y * rd_stride + rd_x] = ref_rd_val & 0xFFFF;
-                        rd_dis[rd_y * rd_stride + rd_x] = dis_rd_val & 0xFFFF;
-                    }
-                }
-            });
+        sycl::local_accessor<uint32_t, 1> const ref_tile(sycl::range<1>(tile_height * tile_width),
+                                                         cgh);
+        sycl::local_accessor<uint32_t, 1> const dis_tile(sycl::range<1>(tile_height * tile_width),
+                                                         cgh);
+        sycl::local_accessor<uint32_t, 1> const vertical(
+            sycl::range<1>(channel_count * vertical_total), cgh);
+        sycl::local_accessor<int64_t, 1> const reduction(sycl::range<1>(ACCUM_FIELDS * 16), cgh);
+        cgh.parallel_for(sycl::nd_range<2>(global, local),
+                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(16) {
+                             vif_fused_load_tile(p, item, ref_tile, dis_tile);
+                             item.barrier(sycl::access::fence_space::local_space);
+                             vif_fused_vertical(p, item, ref_tile, dis_tile, vertical);
+                             item.barrier(sycl::access::fence_space::local_space);
+                             unsigned const x = item.get_global_id(1);
+                             unsigned const y = item.get_global_id(0);
+                             bool const valid = x < p.width && y < p.height;
+                             VifHorizontalSums sums = {};
+                             VifAccumTerms terms = {};
+                             if (valid) {
+                                 sums = vif_fused_horizontal(p, vertical, item.get_local_id(0),
+                                                             item.get_local_id(1));
+                                 terms = vif_terms_from_sums(sums, p.gain_limit, p.log2_lut);
+                             }
+                             vif_reduce_terms<16>(item, reduction, p.accum, terms);
+                             if (valid)
+                                 vif_fused_downsample(p, sums, x, y);
+                         });
     });
 }
 
 static sycl::event launch_vif_fused(sycl::queue &q, const void *ref_data, const void *dis_data,
                                     int scale, unsigned width, unsigned height, unsigned src_stride,
-                                    unsigned bpc, bool use_simd16, float vif_enhn_gain_limit,
-                                    int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis,
-                                    const uint32_t *log2_lut)
+                                    unsigned bpc, float vif_enhn_gain_limit, int64_t *accum,
+                                    uint32_t *rd_ref, uint32_t *rd_dis, const uint32_t *log2_lut)
 {
-    if (use_simd16) {
-        switch (scale) {
-        case 0:
-            return launch_vif_fused_impl<0, 16>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        case 1:
-            return launch_vif_fused_impl<1, 16>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        case 2:
-            return launch_vif_fused_impl<2, 16>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        default:
-            return launch_vif_fused_impl<3, 16>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        }
-    } else {
-        switch (scale) {
-        case 0:
-            return launch_vif_fused_impl<0, 32>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        case 1:
-            return launch_vif_fused_impl<1, 32>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        case 2:
-            return launch_vif_fused_impl<2, 32>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        default:
-            return launch_vif_fused_impl<3, 32>(q, ref_data, dis_data, width, height, src_stride,
-                                                bpc, vif_enhn_gain_limit, accum, rd_ref, rd_dis,
-                                                log2_lut);
-        }
+    switch (scale) {
+    case 0:
+        return launch_vif_fused_impl<0>(q, ref_data, dis_data, width, height, src_stride, bpc,
+                                        vif_enhn_gain_limit, accum, rd_ref, rd_dis, log2_lut);
+    case 1:
+        return launch_vif_fused_impl<1>(q, ref_data, dis_data, width, height, src_stride, bpc,
+                                        vif_enhn_gain_limit, accum, rd_ref, rd_dis, log2_lut);
+    case 2:
+        return launch_vif_fused_impl<2>(q, ref_data, dis_data, width, height, src_stride, bpc,
+                                        vif_enhn_gain_limit, accum, rd_ref, rd_dis, log2_lut);
+    default:
+        return launch_vif_fused_impl<3>(q, ref_data, dis_data, width, height, src_stride, bpc,
+                                        vif_enhn_gain_limit, accum, rd_ref, rd_dis, log2_lut);
     }
 }
 
@@ -1387,38 +1161,33 @@ static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init e
 static int
 close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int vif_init_runtime(VmafFeatureExtractor *fex, VifStateSycl *s, unsigned bpc, unsigned w,
+                            unsigned h, VmafSyclState *&state, sycl::queue *&queue)
 {
-    (void)pix_fmt;
-    auto *s = static_cast<VifStateSycl *>(fex->priv);
-
     s->width = w;
     s->height = h;
     s->bpc = bpc;
     s->has_pending = false;
-
-    if (!fex->sycl_state) {
+    state = fex->sycl_state;
+    if (!state) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: no SYCL state\n");
         return -EINVAL;
     }
-
-    VmafSyclState *state = fex->sycl_state;
-
-    auto *q_ptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
-    if (!q_ptr)
+    queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
+    if (!queue)
         return -EINVAL;
-    sycl::queue &q = *q_ptr;
+    return vmaf_sycl_shared_frame_init(state, w, h, bpc);
+}
 
-    // Initialize shared frame buffers (idempotent, first extractor wins)
-    int err = vmaf_sycl_shared_frame_init(state, w, h, bpc);
-    if (err)
-        return err;
+static bool vif_tmp_buffers_ready(const VifStateSycl *s)
+{
+    return s->d_tmp_mu1 && s->d_tmp_mu2 && s->d_tmp_ref && s->d_tmp_dis && s->d_tmp_ref_dis &&
+           s->d_tmp_ref_convol && s->d_tmp_dis_convol;
+}
 
-    // Intermediate buffers: only needed for separate V+H pipeline
+static int vif_allocate_buffers(VmafSyclState *state, VifStateSycl *s, unsigned w, unsigned h)
+{
     size_t const tmp_size = (size_t)w * h * sizeof(uint32_t);
-
     if (!s->use_fused) {
         s->d_tmp_mu1 = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, tmp_size));
         s->d_tmp_mu2 = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, tmp_size));
@@ -1428,159 +1197,144 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->d_tmp_ref_convol = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, tmp_size));
         s->d_tmp_dis_convol = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, tmp_size));
     }
-    // Downsampled buffers: ceiling-division so odd frame dimensions don't
-    // underallocate. For even w/h the result is identical to (w/2)*(h/2).
-    // Matches the rd_stride fix in launch_vif_hori_impl / launch_vif_fused_impl.
     size_t const rd_size = (size_t)((w + 1U) / 2U) * ((h + 1U) / 2U) * sizeof(uint32_t);
     s->d_rd_ref = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
     s->d_rd_dis = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
-
-    // Accumulators: 4 scales x 7 fields x 8 bytes = 224 bytes
     size_t const accum_size = (ptrdiff_t)VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
     s->d_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
     s->h_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
-
-    // Log2 LUT: 32768 entries of uint32
     size_t const lut_size = LOG2_LUT_SIZE * sizeof(uint32_t);
     s->d_log2_lut = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, lut_size));
-
-    if (!s->use_fused && (!s->d_tmp_mu1 || !s->d_tmp_mu2 || !s->d_tmp_ref || !s->d_tmp_dis ||
-                          !s->d_tmp_ref_dis || !s->d_tmp_ref_convol || !s->d_tmp_dis_convol)) {
+    if (!s->use_fused && !vif_tmp_buffers_ready(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: tmp buffer allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
     if (!s->d_rd_ref || !s->d_rd_dis || !s->d_accum || !s->h_accum || !s->d_log2_lut) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
+    return 0;
+}
 
-    // Generate and upload log2 LUT
-    {
-        uint32_t *lut_host = static_cast<uint32_t *>(std::malloc(lut_size));
-        if (!lut_host) {
-            close_fex_sycl(fex);
-            return -ENOMEM;
-        }
-        for (int j = 0; j < LOG2_LUT_SIZE; j++) {
-            lut_host[j] = (uint32_t)std::roundf(std::log2f((float)(j + 32768)) * 2048.0f);
-        }
-        int const cpy_err = vmaf_sycl_memcpy_h2d(state, s->d_log2_lut, lut_host, lut_size);
-        std::free(lut_host);
-        if (cpy_err) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: log2 LUT upload failed\n");
-            close_fex_sycl(fex);
-            return cpy_err;
-        }
+static int vif_upload_log2_lut(VmafSyclState *state, VifStateSycl *s)
+{
+    size_t const lut_size = LOG2_LUT_SIZE * sizeof(uint32_t);
+    uint32_t *lut_host = static_cast<uint32_t *>(std::malloc(lut_size));
+    if (!lut_host)
+        return -ENOMEM;
+    for (int j = 0; j < LOG2_LUT_SIZE; j++)
+        lut_host[j] = (uint32_t)std::roundf(std::log2f((float)(j + 32768)) * 2048.0f);
+    int const err = vmaf_sycl_memcpy_h2d(state, s->d_log2_lut, lut_host, lut_size);
+    std::free(lut_host);
+    if (err)
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: log2 LUT upload failed\n");
+    return err;
+}
+
+static int vif_validate_subgroup(const sycl::queue &queue)
+{
+    auto const device = queue.get_device();
+    auto const subgroup_sizes = device.get_info<sycl::info::device::sub_group_sizes>();
+    if (std::find(subgroup_sizes.cbegin(), subgroup_sizes.cend(), size_t{16}) ==
+        subgroup_sizes.cend()) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "vif_sycl: device does not support the required SIMD-16 subgroup size\n");
+        return -ENOTSUP;
     }
+    return 0;
+}
 
-    // Auto-detect optimal subgroup size for VIF hori kernel.
-    // SIMD-16 is faster on Xe-HPG (Arc) and Xe-LP due to lower per-thread
-    // latency; SIMD-32 only benefits Xe-HPC (Data Center GPU Max).
-    {
-        auto dev = q.get_device();
-        auto sg_sizes = dev.get_info<sycl::info::device::sub_group_sizes>();
-        // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-        bool has_sg16 = false;
-        for (auto sz : sg_sizes) {
-            if (sz == 16) {
-                has_sg16 = true;
-                break;
-            }
-        }
-        s->use_simd16 = has_sg16;
-        vmaf_log(VMAF_LOG_LEVEL_DEBUG, "vif_sycl: auto-selected SIMD-%d subgroup size\n",
-                 s->use_simd16 ? 16 : 32);
-        vmaf_log(VMAF_LOG_LEVEL_DEBUG, "vif_sycl: kernel mode = %s\n",
-                 s->use_fused ? "fused V+H (saves VRAM)" : "separate V+H");
-    }
-
+static int vif_register_graph(VmafFeatureExtractor *fex, VmafSyclState *state, VifStateSycl *s)
+{
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
+    return vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph, nullptr,
+                                    s, "VIF");
+}
 
-    // Register with combined command graph
-    err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph, nullptr,
-                                   s, "VIF");
-    if (err) {
-        close_fex_sycl(fex);
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    auto *s = static_cast<VifStateSycl *>(fex->priv);
+    VmafSyclState *state = nullptr;
+    sycl::queue *queue = nullptr;
+    int err = vif_init_runtime(fex, s, bpc, w, h, state, queue);
+    if (err)
         return err;
+    err = vif_allocate_buffers(state, s, w, h);
+    if (!err)
+        err = vif_upload_log2_lut(state, s);
+    if (!err) {
+        err = vif_validate_subgroup(*queue);
     }
-
-    return 0;
+    if (!err) {
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG, "vif_sycl: SIMD-16 kernel mode = %s\n",
+                 s->use_fused ? "fused V+H (saves VRAM)" : "separate V+H");
+        err = vif_register_graph(fex, state, s);
+    }
+    if (err)
+        close_fex_sycl(fex);
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
 /* Enqueue all VIF compute work (used for both recording and direct)    */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct VifScaleInput {
+    const void *ref;
+    const void *dis;
+    unsigned stride;
+};
+
+static VifScaleInput vif_scale_input(const VifStateSycl *s, const void *shared_ref,
+                                     const void *shared_dis, int scale, unsigned width)
+{
+    if (scale == 0) {
+        unsigned const stride = s->bpc <= 8 ? width : width * 2;
+        return {shared_ref, shared_dis, stride};
+    }
+    return {s->d_rd_ref, s->d_rd_dis, width};
+}
+
+static void vif_enqueue_separate(sycl::queue &q, VifStateSycl *s, const VifScaleInput &input,
+                                 int scale, unsigned width, unsigned height, int64_t *accum)
+{
+    launch_vif_vert(q, input.ref, input.dis, scale, width, height, input.stride, s->bpc,
+                    s->d_tmp_mu1, s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
+                    s->d_tmp_ref_convol, s->d_tmp_dis_convol);
+    launch_vif_hori(q, scale, width, height, (float)s->vif_enhn_gain_limit, s->d_tmp_mu1,
+                    s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
+                    s->d_tmp_ref_convol, s->d_tmp_dis_convol, accum, s->d_rd_ref, s->d_rd_dis,
+                    s->d_log2_lut);
+}
+
+static void vif_enqueue_scale(sycl::queue &q, VifStateSycl *s, const VifScaleInput &input,
+                              int scale, unsigned width, unsigned height)
+{
+    int64_t *const accum = s->d_accum + (ptrdiff_t)scale * ACCUM_FIELDS;
+    if (s->use_fused) {
+        launch_vif_fused(q, input.ref, input.dis, scale, width, height, input.stride, s->bpc,
+                         (float)s->vif_enhn_gain_limit, accum, s->d_rd_ref, s->d_rd_dis,
+                         s->d_log2_lut);
+        return;
+    }
+    vif_enqueue_separate(q, s, input, scale, width, height, accum);
+}
+
 static void enqueue_vif_work_impl(sycl::queue &q, VifStateSycl *s, void *shared_ref,
                                   void *shared_dis)
 {
-    unsigned cur_w = s->width;
-    unsigned cur_h = s->height;
-
+    unsigned width = s->width;
+    unsigned height = s->height;
     for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
-        const void *ref_src;
-        const void *dis_src;
-        unsigned src_stride;
-
-        if (scale == 0) {
-            ref_src = shared_ref;
-            dis_src = shared_dis;
-            if (s->bpc <= 8) {
-                src_stride = cur_w;
-            } else {
-                src_stride = cur_w * 2;
-            }
-        } else {
-            ref_src = s->d_rd_ref;
-            dis_src = s->d_rd_dis;
-            src_stride = cur_w;
-        }
-
-        int64_t *scale_accum = s->d_accum + (ptrdiff_t)scale * ACCUM_FIELDS;
-
-        if (s->use_fused) {
-            // Fused V+H: single dispatch per scale, no tmp buffers needed.
-            // Uses SLM intermediates. Saves ~70 MB VRAM at 4K.
-            launch_vif_fused(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc,
-                             s->use_simd16, (float)s->vif_enhn_gain_limit, scale_accum, s->d_rd_ref,
-                             s->d_rd_dis, s->d_log2_lut);
-        } else {
-            // Separate vert + hori pipeline (8 kernels = 4 vert + 4 hori).
-            // Profiled faster than fused V+H on Arc A380 with graph mode:
-            //   separate = 34.8 FPS, fused = 31.8 FPS at 4K
-            // because graph mode already amortizes launch overhead, and the
-            // fused kernel's extra SLM barrier + lower occupancy hurts.
-
-            // Vertical pass: writes to tmp buffers
-            launch_vif_vert(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc,
-                            s->d_tmp_mu1, s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis,
-                            s->d_tmp_ref_dis, s->d_tmp_ref_convol, s->d_tmp_dis_convol);
-
-            // Horizontal pass: reads from tmp buffers, computes VIF stats
-            if (s->use_simd16) {
-                launch_vif_hori_v2_sg16(q, scale, cur_w, cur_h, (float)s->vif_enhn_gain_limit,
-                                        s->d_tmp_mu1, s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis,
-                                        s->d_tmp_ref_dis, s->d_tmp_ref_convol, s->d_tmp_dis_convol,
-                                        scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
-            } else {
-                launch_vif_hori_v2(q, scale, cur_w, cur_h, (float)s->vif_enhn_gain_limit,
-                                   s->d_tmp_mu1, s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis,
-                                   s->d_tmp_ref_dis, s->d_tmp_ref_convol, s->d_tmp_dis_convol,
-                                   scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
-            }
-        }
-
-        // Next scale: half dimensions
-        cur_w /= 2;
-        cur_h /= 2;
+        VifScaleInput const input = vif_scale_input(s, shared_ref, shared_dis, scale, width);
+        vif_enqueue_scale(q, s, input, scale, width, height);
+        width /= 2;
+        height /= 2;
     }
 }
 
@@ -1622,8 +1376,8 @@ static void vif_post_graph(void *queue_ptr, void *priv)
 /* Submit / Collect / Extract                                          */
 /* ------------------------------------------------------------------ */
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
@@ -1644,109 +1398,110 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct VifScores {
+    double numerator[VIF_NUM_SCALES];
+    double denominator[VIF_NUM_SCALES];
+    double total_numerator;
+    double total_denominator;
+};
+
+static VifScores vif_compute_scores(const VifStateSycl *s, const vif_accums *accums)
+{
+    VifScores scores = {};
+    for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
+        double const numerator =
+            accums[scale].num_log / 2048.0 + accums[scale].x2 +
+            (accums[scale].den_non_log - (accums[scale].num_non_log / 16384.0) / 65025.0);
+        double const denominator = accums[scale].den_log / 2048.0 -
+                                   (accums[scale].x + accums[scale].num_x * 17) +
+                                   accums[scale].den_non_log;
+        scores.numerator[scale] = numerator;
+        scores.denominator[scale] = denominator;
+        if (!s->vif_skip_scale0 || scale > 0) {
+            scores.total_numerator += numerator;
+            scores.total_denominator += denominator;
+        }
+    }
+    return scores;
+}
+
+static int vif_append_scale_scores(VmafFeatureCollector *collector, const VifStateSycl *s,
+                                   const VifScores &scores, unsigned index)
+{
+    static const char *const key_names[] = {
+        "VMAF_integer_feature_vif_scale0_score",
+        "VMAF_integer_feature_vif_scale1_score",
+        "VMAF_integer_feature_vif_scale2_score",
+        "VMAF_integer_feature_vif_scale3_score",
+    };
+    for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
+        double const score = (scale == 0 && s->vif_skip_scale0) ?
+                                 0.0 :
+                                 ((scores.denominator[scale] > 0.0) ?
+                                      scores.numerator[scale] / scores.denominator[scale] :
+                                      1.0);
+        int const err = vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                                key_names[scale], score, index);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+static void vif_append_debug_scale(VmafFeatureCollector *collector, const VifStateSycl *s,
+                                   const VifScores &scores, int scale, unsigned index)
+{
+    char name[64];
+    if (scale == 0 && s->vif_skip_scale0) {
+        (void)std::snprintf(name, sizeof(name), "integer_vif_num_scale0");
+        vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name, 0.0, index);
+        (void)std::snprintf(name, sizeof(name), "integer_vif_den_scale0");
+        vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name, -1.0, index);
+        return;
+    }
+    (void)std::snprintf(name, sizeof(name), "integer_vif_num_scale%d", scale);
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name,
+                                            scores.numerator[scale], index);
+    (void)std::snprintf(name, sizeof(name), "integer_vif_den_scale%d", scale);
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name,
+                                            scores.denominator[scale], index);
+}
+
+static void vif_append_debug_scores(VmafFeatureCollector *collector, const VifStateSycl *s,
+                                    const VifScores &scores, unsigned index)
+{
+    double const vif =
+        scores.total_denominator > 0.0 ? scores.total_numerator / scores.total_denominator : 1.0;
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, "integer_vif", vif,
+                                            index);
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, "integer_vif_num",
+                                            scores.total_numerator, index);
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, "integer_vif_den",
+                                            scores.total_denominator, index);
+    for (int scale = 0; scale < VIF_NUM_SCALES; scale++)
+        vif_append_debug_scale(collector, s, scores, scale, index);
+}
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<VifStateSycl *>(fex->priv);
-    VmafSyclState *state = fex->sycl_state;
-
-    // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
-
-    // Read back per-scale accumulators
-    struct vif_accums accums[VIF_NUM_SCALES];
+    vmaf_sycl_graph_wait(fex->sycl_state);
+    vif_accums accums[VIF_NUM_SCALES];
     std::memcpy(accums, s->h_accum, sizeof(accums));
-
-    // Compute VIF scores per scale (CPU)
-    double score_num = 0.0;
-    double score_den = 0.0;
-    double vif_scale_num[VIF_NUM_SCALES];
-    double vif_scale_den[VIF_NUM_SCALES];
-
-    for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
-        double const num =
-            accums[scale].num_log / 2048.0 + accums[scale].x2 +
-            (accums[scale].den_non_log - (accums[scale].num_non_log / 16384.0) / 65025.0);
-
-        double const den = accums[scale].den_log / 2048.0 -
-                           (accums[scale].x + accums[scale].num_x * 17) + accums[scale].den_non_log;
-
-        vif_scale_num[scale] = num;
-        vif_scale_den[scale] = den;
-        /* vif_skip_scale0: exclude scale 0 from the aggregate (parity with
-         * integer_vif.c CPU path, lines 725-733). */
-        if (!s->vif_skip_scale0 || scale > 0) {
-            score_num += num;
-            score_den += den;
-        }
-    }
-
-    // Write primary per-scale features
-    for (int i = 0; i < VIF_NUM_SCALES; i++) {
-        /* vif_skip_scale0: the CPU never computes scale 0 in this mode and
-         * publishes 0.0 for its score (integer_vif.c::write_scale_scores,
-         * which is NOT debug-gated). This kernel computes all four scales
-         * regardless -- the flag only excludes scale 0 from the aggregate
-         * above -- so the skip has to be applied at the emission site, exactly
-         * as the CUDA, HIP and Metal twins do. Without it SYCL publishes a
-         * real scale-0 ratio under a key every other backend reports as 0. */
-        double const score =
-            (i == 0 && s->vif_skip_scale0) ?
-                0.0 :
-                ((vif_scale_den[i] > 0.0) ? vif_scale_num[i] / vif_scale_den[i] : 1.0);
-
-        static const char *const key_names[] = {
-            "VMAF_integer_feature_vif_scale0_score",
-            "VMAF_integer_feature_vif_scale1_score",
-            "VMAF_integer_feature_vif_scale2_score",
-            "VMAF_integer_feature_vif_scale3_score",
-        };
-
-        int const err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, key_names[i], score, index);
-        if (err)
-            return err;
-    }
-
-    // Debug features
-    if (s->debug) {
-        double const vif = (score_den > 0.0) ? score_num / score_den : 1.0;
-
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif", vif, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num", score_num, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den", score_den, index);
-
-        for (int i = 0; i < VIF_NUM_SCALES; i++) {
-            char name[64];
-            if (i == 0 && s->vif_skip_scale0) {
-                (void)std::snprintf(name, sizeof(name), "integer_vif_num_scale0");
-                vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                        name, 0.0, index);
-                (void)std::snprintf(name, sizeof(name), "integer_vif_den_scale0");
-                vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                        name, -1.0, index);
-            } else {
-                (void)std::snprintf(name, sizeof(name), "integer_vif_num_scale%d", i);
-                vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                        name, vif_scale_num[i], index);
-                (void)std::snprintf(name, sizeof(name), "integer_vif_den_scale%d", i);
-                vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                        name, vif_scale_den[i], index);
-            }
-        }
-    }
-
+    VifScores const scores = vif_compute_scores(s, accums);
+    int const err = vif_append_scale_scores(feature_collector, s, scores, index);
+    if (err)
+        return err;
+    if (s->debug)
+        vif_append_debug_scores(feature_collector, s, scores, index);
     s->has_pending = false;
     return 0;
 }
 
-static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index,
+static int extract_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     int const err = submit_fex_sycl(fex, ref_pic, ref_pic_90, dist_pic, dist_pic_90, index);
@@ -1836,8 +1591,6 @@ static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score
                                           "integer_vif_num_scale3",
                                           "integer_vif_den_scale3",
                                           nullptr};
-
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_vif_sycl = {
     .name = "vif_sycl",

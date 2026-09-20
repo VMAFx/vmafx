@@ -1,12 +1,13 @@
 import numpy as np
 import scipy.io
-import scipy.misc
 import scipy.ndimage
 import scipy.stats
 from PIL import Image
 
 from vmaf.config import VmafConfig
 from vmaf.tools.misc import index_and_value_of_min
+
+_COMPARISON_VALUE_2 = 2
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -80,7 +81,7 @@ def midrank(x):
     # Z=[Z Z(end)+1];
     # N=length(x);
     # T=zeros(1,N);
-    J, Z = zip(*sorted(enumerate(x), key=lambda x: x[1]))
+    J, Z = zip(*sorted(enumerate(x), key=lambda x: x[1]), strict=False)
     J = list(J)
     Z = list(Z)
     Z.append(Z[-1] + 1)
@@ -123,12 +124,11 @@ def calpvalue(aucs, sigma):
     # l = [1, -1];
     # z = abs(diff(aucs)) / sqrt(l * sigma * l');
     # pvalue = 2 * (1 - normcdf(z, 0, 1));
-    l = np.array([[1, -1]])
-    z = np.abs(np.diff(aucs)) / np.sqrt(np.dot(np.dot(l, sigma), l.T))
+    contrast = np.array([[1, -1]])
+    z = np.abs(np.diff(aucs)) / np.sqrt(np.dot(np.dot(contrast, sigma), contrast.T))
     # numpy returns a 2-dimensional array with shape (1, 1), extract the element
     z_val = z[0, 0]
-    pvalue = 2 * (1 - scipy.stats.norm.cdf(z_val, loc=0, scale=1))
-    return pvalue
+    return 2 * (1 - scipy.stats.norm.cdf(z_val, loc=0, scale=1))
 
 
 def _cov_kendall(x):
@@ -136,7 +136,7 @@ def _cov_kendall(x):
     x: rows - observation vector 0, 1, 2, ...
     return a covariance matrix based on kendall correlation
     """
-    m, n = x.shape
+    m, _n = x.shape
     cov_ = np.zeros([m, m])
     for i in range(m):
         for j in range(i, m):
@@ -199,42 +199,11 @@ def AUC_CI(n_D, n_I, Area):
 
 
 def significanceHM(A, B, AUCs):
-    # function [pHM,CI] = significanceHM(A,B,AUCs)
-    # % By Lukas Krasula
-
+    """Calculate Hanley-McNeil pairwise AUC significance and confidence intervals."""
     assert A.shape[0] == B.shape[0] == AUCs.shape[0]
-
-    # n_met = size(A,1);
     n_met = A.shape[0]
-
-    # CorrA = corr(A','type','Kendall');
-    # CorrB = corr(B','type','Kendall');
     CorrA = _cov_kendall(A)
     CorrB = _cov_kendall(B)
-
-    # pHM = ones(n_met);
-    # CI = ones(n_met,1);
-    # for i=1:n_met-1
-    #
-    #     [CI(i),SE1] = AUC_CI(size(A,2),size(B,2),AUCs(i));
-    #
-    #     for j=i+1:n_met
-    #         [CI(j),SE2] = AUC_CI(size(A,2),size(B,2),AUCs(j));
-    #
-    #         load('Hanley_McNeil.mat');
-    #
-    #         rA = (CorrA(i,j) + CorrB(i,j))/2;
-    #         AA = (AUCs(i) + AUCs(j))/2;
-    #
-    #         [~,rr] = min(abs(rA-rA_vec));
-    #         [~,aa] = min(abs(AA-AA_vec));
-    #         r = Table_HM(rr,aa);
-    #
-    #         z = abs(AUCs(i) - AUCs(j)) / sqrt( SE1^2 + SE2^2 + 2*r*SE1*SE2 );
-    #         pHM(i,j) = 1-normcdf(z);
-    #         pHM(j,i) = pHM(i,j);
-    #     end
-    # end
     hm_filepath = VmafConfig.tools_resource_path("Hanley_McNeil.mat")
     hm_dict = scipy.io.loadmat(hm_filepath)
     pHM = np.ones([n_met, n_met])
@@ -265,53 +234,19 @@ def significanceHM(A, B, AUCs):
 
 
 def fastDeLong(samples):
-    # %FASTDELONGCOV
-    # %The fast version of DeLong's method for computing the covariance of
-    # %unadjusted AUC.
-    # %% Reference:
-    # % @article{sun2014fast,
-    # %   title={Fast Implementation of DeLong's Algorithm for Comparing the Areas Under Correlated Receiver Operating Characteristic Curves},
-    # %   author={Xu Sun and Weichao Xu},
-    # %   journal={IEEE Signal Processing Letters},
-    # %   volume={21},
-    # %   number={11},
-    # %   pages={1389--1393},
-    # %   year={2014},
-    # %   publisher={IEEE}
-    # % }
-    # %% [aucs, delongcov] = fastDeLong(samples)
-    # %%
-    # % Edited by Xu Sun.
-    # % Homepage: https://pamixsun.github.io
-    # % Version: 2014/12
-    # %%
+    """Compute unadjusted AUC covariance with the fast DeLong algorithm."""
+    if (
+        np.sum(samples.spsizes) != samples.ratings.shape[1]
+        or len(samples.spsizes) != _COMPARISON_VALUE_2
+    ):
+        raise AssertionError("Argument mismatch error")
 
-    # if sum(samples.spsizes) ~= size(samples.ratings, 2) || numel(samples.spsizes) ~= 2
-    #     error('Argument mismatch error');
-    # end
-    if np.sum(samples.spsizes) != samples.ratings.shape[1] or len(samples.spsizes) != 2:
-        assert False, "Argument mismatch error"
-
-    # z = samples.ratings;
-    # m = samples.spsizes(1);
-    # n = samples.spsizes(2);
-    # x = z(:, 1 : m);
-    # y = z(:, m + 1 : end);
-    # k = size(z, 1);
     z = samples.ratings
     m, n = samples.spsizes
     x = z[:, :m]
     y = z[:, m:]
     k = z.shape[0]
 
-    # tx = zeros(k, m);
-    # ty = zeros(k, n);
-    # tz = zeros(k, m + n);
-    # for r = 1 : k
-    #     tx(r, :) = midrank(x(r, :));
-    #     ty(r, :) = midrank(y(r, :));
-    #     tz(r, :) = midrank(z(r, :));
-    # end
     tx = np.zeros([k, m])
     ty = np.zeros([k, n])
     tz = np.zeros([k, m + n])
@@ -320,13 +255,6 @@ def fastDeLong(samples):
         ty[r, :] = midrank(y[r, :])
         tz[r, :] = midrank(z[r, :])
 
-    # % tz
-    # aucs = sum(tz(:, 1 : m), 2) / m / n - (m + 1) / 2 / n;
-    # v01 = (tz(:, 1 : m) - tx(:, :)) / n;
-    # v10 = 1 - (tz(:, m + 1 : end) - ty(:, :)) / m;
-    # sx = cov(v01')';
-    # sy = cov(v10')';
-    # delongcov = sx / m + sy / n;
     aucs = np.sum(tz[:, :m], axis=1) / m / n - float(m + 1.0) / 2.0 / n
     v01 = (tz[:, :m] - tx[:, :]) / n
     v10 = 1.0 - (tz[:, m:] - ty[:, :]) / m
@@ -346,6 +274,4 @@ def significanceBinomial(p1, p2, N):
     p = (p1 + p2) / 2.0
     sigmaP1P2 = np.sqrt(p * (1.0 - p) * 2.0 / N)
     z = abs(p1 - p2) / sigmaP1P2
-    pValue = 2.0 * (1.0 - scipy.stats.norm.cdf(z, 0.0, 1.0))
-
-    return pValue
+    return 2.0 * (1.0 - scipy.stats.norm.cdf(z, 0.0, 1.0))

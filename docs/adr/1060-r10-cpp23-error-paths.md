@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1060: Round 10 C++23 wave error-path cleanup
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ Fix all five defects in-place with minimal, targeted changes:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | RAII wrappers for the pool slot | Would prevent entire class of partial-init leaks | Requires broader C++23 refactor of pool struct | Deferred to a future wave; this PR targets minimal, safe fixes |
 | `(void)`-cast discards for pthread | Matches pre-existing pattern for some C functions | Hides real failures on resource-constrained hosts | Not acceptable per SEI CERT ERR33-C |
 | `std::expected` for `model_parse` | Type-safe, composable | Requires touching many more call sites | Out of scope for a bug-fix PR |

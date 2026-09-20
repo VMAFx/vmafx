@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +32,7 @@
 #include "iqa/decimate.h"
 #include "iqa/ssim_tools.h"
 #include "ms_ssim_decimate.h"
+#include "ms_ssim.h"
 
 /*
  * MS-SSIM 9-tap 9/7 biorthogonal wavelet LPF coefficients moved to
@@ -219,7 +222,7 @@ static int ms_ssim_build_pyramids(float **ref_imgs, float **cmp_imgs, int w, int
 /* Run a single scale of the SSIM reduction, selecting the Wang vs Rouse/Hemami
  * variant as upstream does. Fills the per-component scores (l, c, s). */
 static void ms_ssim_run_scale(float *ref_img, float *cmp_img, int cur_w, int cur_h,
-                              struct iqa_kernel *window, struct iqa_map_reduce *mr,
+                              const struct iqa_kernel *window, struct iqa_map_reduce *mr,
                               struct ms_ssim_context *ms_ctx, int wang, float *l, float *c,
                               float *s)
 {
@@ -236,8 +239,8 @@ static void ms_ssim_run_scale(float *ref_img, float *cmp_img, int cur_w, int cur
         mr->context = ms_ctx;
         iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, mr, &s_args, l, c, s);
     } else {
-        /* MS-SSIM (Wang) — default parameters (args=NULL) per upstream. */
-        iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, NULL, NULL, l, c, s);
+        /* MS-SSIM (Wang) — default parameters (args=VMAF_NULLPTR) per upstream. */
+        iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, VMAF_NULLPTR, VMAF_NULLPTR, l, c, s);
     }
 }
 
@@ -246,7 +249,7 @@ static void ms_ssim_run_scale(float *ref_img, float *cmp_img, int cur_w, int cur
  * msssim_out untouched) if the product reaches INFINITY mid-loop. */
 static int ms_ssim_score_scales(float **ref_imgs, float **cmp_imgs, int w, int h, int scales,
                                 int wang, const float *alphas, const float *betas,
-                                const float *gammas, struct iqa_kernel *window,
+                                const float *gammas, const struct iqa_kernel *window,
                                 struct iqa_map_reduce *mr, double *l_scores, double *c_scores,
                                 double *s_scores, double *msssim_out)
 {
@@ -294,7 +297,6 @@ static int ms_ssim_score_scales(float **ref_imgs, float **cmp_imgs, int w, int h
 /* Cross-TU: declared in ms_ssim.h, called from float_ms_ssim.c.
  * clang-tidy misc-use-internal-linkage runs per-TU and can't see the
  * header bridge. Suppression is a rebase-invariant per ADR-0278. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_stride,
                     int cmp_stride, double *score, double *l_scores, double *c_scores,
                     double *s_scores)
@@ -323,8 +325,8 @@ int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_st
     mr.map = ms_ssim_map_fn;
     mr.reduce = ms_ssim_reduce_fn;
 
-    float **ref_imgs = NULL;
-    float **cmp_imgs = NULL;
+    float **ref_imgs = VMAF_NULLPTR;
+    float **cmp_imgs = VMAF_NULLPTR;
     if (ms_ssim_alloc_pyramids(&ref_imgs, &cmp_imgs, w, h, scales))
         return 1;
 

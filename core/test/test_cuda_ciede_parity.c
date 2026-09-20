@@ -81,43 +81,43 @@ static int feed_frame(VmafContext *vmaf)
 static char *run_cpu_ciede(double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "ciede", NULL);
+    err = vmaf_use_feature(vmaf, "ciede", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(ciede) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "ciede2000", score, 0u);
     mu_assert("CPU: vmaf_feature_score_at_index(ciede2000) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda_ciede(double *score)
 {
     *score = NAN;
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "ciede_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "ciede_cuda", VMAF_NULLPTR);
     mu_assert("CUDA: vmaf_use_feature(ciede_cuda) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CUDA: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "ciede2000", score, 0u);
     mu_assert("CUDA: vmaf_feature_score_at_index(ciede2000) failed", !err);
@@ -125,15 +125,15 @@ static char *run_cuda_ciede(double *score)
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede_cuda_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ciede_cuda");
-    mu_assert("ciede_cuda extractor must be registered", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ciede_cuda");
+    mu_assert("ciede_cuda extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("ciede_cuda name matches", !strcmp(fex->name, "ciede_cuda"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede_cpu_cuda_parity(void)
@@ -147,7 +147,7 @@ static char *test_ciede_cpu_cuda_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\nciede2000 parity FAIL: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
@@ -155,12 +155,12 @@ static char *test_ciede_cpu_cuda_parity(void)
     }
     mu_assert("ciede2000 CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_ciede_cuda_registered);
     mu_run_test(test_ciede_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

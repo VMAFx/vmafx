@@ -13,11 +13,11 @@
 # New code should add compat/ to PYTHONPATH directly.
 
 import importlib
-import os
 import sys
+from pathlib import Path
 
-_repo_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
-_compat_dir = os.path.join(_repo_root, "compat")
+_repo_root = Path(__file__).resolve().parents[2]
+_compat_dir = str(_repo_root / "compat")
 if _compat_dir not in sys.path:
     sys.path.insert(0, _compat_dir)
 

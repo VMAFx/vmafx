@@ -21,6 +21,8 @@
  * so older GCC keeps quiet), compiled with `-ffp-contract=off`.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <arm_neon.h>
 #include <assert.h>
 #include <math.h>
@@ -63,12 +65,11 @@ static inline float32x4_t cbrtf_lane4(float32x4_t v)
  * reference.  The citation lives here rather than on the directive line
  * below because that directive applies to the single line following it — a
  * wrapped justification would suppress the comment, not the function. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
 void ssimulacra2_host_linear_rgb_to_xyb_neon(const float *lin, float *xyb, unsigned w, unsigned h,
                                              size_t plane_stride)
 {
-    assert(lin != NULL);
-    assert(xyb != NULL);
+    assert(lin != VMAF_NULLPTR);
+    assert(xyb != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
     assert(plane_stride >= (size_t)w * (size_t)h);
 
@@ -171,8 +172,8 @@ void ssimulacra2_host_linear_rgb_to_xyb_neon(const float *lin, float *xyb, unsig
 void ssimulacra2_host_downsample_2x2_neon(const float *in, unsigned iw, unsigned ih, float *out,
                                           unsigned ow, unsigned oh, size_t plane_stride)
 {
-    assert(in != NULL);
-    assert(out != NULL);
+    assert(in != VMAF_NULLPTR);
+    assert(out != VMAF_NULLPTR);
     assert(iw > 0 && ih > 0);
     assert(plane_stride >= (size_t)iw * (size_t)ih);
 

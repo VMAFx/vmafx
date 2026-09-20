@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0724 — AI strict JSON stdout helper
 
 ## Problem
@@ -24,7 +23,7 @@ registry wrapper and manifest writer share one strict JSON boundary.
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave stdout paths alone | Smallest diff | File output and stdout disagree on non-finite values | Rejected |
 | Call `write_manifest_json()` into a temporary file and print it | Avoids a new helper | Wasteful, more error paths, awkward for stdout-only CLIs | Rejected |
 | Add `dumps_manifest_json()` beside `write_manifest_json()` | One shared serializer for file and stdout surfaces | Small public helper to document/test | Chosen |

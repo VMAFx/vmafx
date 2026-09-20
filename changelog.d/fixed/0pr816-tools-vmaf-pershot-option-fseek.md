@@ -1,1 +1,5 @@
-- Fixed: `vmaf-perShot` no longer conflates unknown CLI options with the default case; `fseek` calls now use the correct truncation logic, preventing silent data corruption on large YUV inputs. (PR #816)
+# Changelog fragment
+
+- Fixed: `vmaf-perShot` no longer conflates unknown CLI options with the default
+  case; `fseek` calls now use the correct truncation logic, preventing silent
+  data corruption on large YUV inputs. (PR #816)

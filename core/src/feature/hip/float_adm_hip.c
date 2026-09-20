@@ -31,6 +31,8 @@
  *    at FADM_WARPS_PER_BLOCK = 4.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -53,9 +55,9 @@
 
 #include "../../hip/hip_handle.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -265,7 +267,7 @@ typedef struct FadmHipKernelSlot {
 } FadmHipKernelSlot;
 
 /* Load the kernel blob and resolve the six kernels by name. On failure the
- * module is unloaded again and `s->module` is NULL. */
+ * module is unloaded again and `s->module` is VMAF_NULLPTR. */
 static int fadm_hip_module_load(FloatAdmStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, float_adm_score_hsaco);
@@ -285,7 +287,7 @@ static int fadm_hip_module_load(FloatAdmStateHip *s)
         rc = hipModuleGetFunction(kernels[i].slot, s->module, kernels[i].name);
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return fadm_hip_rc(rc);
 }
@@ -353,8 +355,8 @@ static int fadm_launch_dwt_vert(FloatAdmStateHip *s, FadmScaleGeom *g, hipStream
     const bool has_parent = (g->scale > 0);
     const uint8_t *ref_raw_d = (const uint8_t *)s->src_ref;
     const uint8_t *dis_raw_d = (const uint8_t *)s->src_dis;
-    const float *parent_ref = has_parent ? (const float *)s->ref_band[g->scale - 1] : NULL;
-    const float *parent_dis = has_parent ? (const float *)s->dis_band[g->scale - 1] : NULL;
+    const float *parent_ref = has_parent ? (const float *)s->ref_band[g->scale - 1] : VMAF_NULLPTR;
+    const float *parent_dis = has_parent ? (const float *)s->dis_band[g->scale - 1] : VMAF_NULLPTR;
     int par_w = has_parent ? g->cur_w : 0;
     int par_h = has_parent ? g->cur_h : 0;
     int par_half_h = has_parent ? (int)s->scale_half_h[g->scale - 1] : 0;
@@ -371,7 +373,7 @@ static int fadm_launch_dwt_vert(FloatAdmStateHip *s, FadmScaleGeom *g, hipStream
                     (void *)&g->cur_w,      (void *)&g->cur_h,   (void *)&g->half_h,
                     (void *)&bpc,           (void *)&scaler,     (void *)&pixel_offset};
     return fadm_hip_rc(hipModuleLaunchKernel(s->func_dwt_vert, gx, gy, 2u, FADM_BX, FADM_BY, 1u, 0u,
-                                             pstr, args, NULL));
+                                             pstr, args, VMAF_NULLPTR));
 }
 
 /* Stage 1 — DWT horizontal. */
@@ -385,7 +387,7 @@ static int fadm_launch_dwt_hori(FloatAdmStateHip *s, FadmScaleGeom *g, hipStream
                     (void *)&g->ref_band, (void *)&g->dis_band, (void *)&g->cur_w,
                     (void *)&g->half_w,   (void *)&g->half_h,   (void *)&g->buf_stride};
     return fadm_hip_rc(hipModuleLaunchKernel(s->func_dwt_hori, gx, gy, 2u, FADM_BX, FADM_BY, 1u, 0u,
-                                             pstr, args, NULL));
+                                             pstr, args, VMAF_NULLPTR));
 }
 
 /* Stages 2 and 2b — decouple + CSF into `csf_a` / `csf_f`. Stage 2 is
@@ -403,7 +405,7 @@ static int fadm_launch_csf(hipFunction_t func, FadmScaleGeom *g, void *csf_a, vo
                     (void *)&g->buf_stride, (void *)&g->rfh,       (void *)&g->rfv,
                     (void *)&g->rfd,        (void *)&g->gain_limit};
     return fadm_hip_rc(
-        hipModuleLaunchKernel(func, gx, gy, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, NULL));
+        hipModuleLaunchKernel(func, gx, gy, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, VMAF_NULLPTR));
 }
 
 /* Stages 3 and 3b — contrast masking, 1D over 3 bands x active rows, into the
@@ -426,7 +428,7 @@ static int fadm_launch_cm(FloatAdmStateHip *s, hipFunction_t func, FadmScaleGeom
                     (void *)&g->rfh,        (void *)&g->rfv,        (void *)&g->rfd,
                     (void *)&g->gain_limit, (void *)&g->pnorm};
     return fadm_hip_rc(
-        hipModuleLaunchKernel(func, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, NULL));
+        hipModuleLaunchKernel(func, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, VMAF_NULLPTR));
 }
 
 /* The six stages of one scale, in the CUDA twin's order. */
@@ -527,28 +529,28 @@ static int fadm_hip_bufs_alloc(FloatAdmStateHip *s)
 static int fadm_hip_bufs_free(FloatAdmStateHip *s)
 {
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        if (s->accum_host[scale] != NULL)
+        if (s->accum_host[scale] != VMAF_NULLPTR)
             (void)hipHostFree(s->accum_host[scale]);
-        s->accum_host[scale] = NULL;
+        s->accum_host[scale] = VMAF_NULLPTR;
         void **per_scale[] = {&s->accum[scale], &s->dis_band[scale], &s->ref_band[scale]};
         for (unsigned i = 0; i < 3u; i++) {
-            if (*per_scale[i] != NULL)
+            if (*per_scale[i] != VMAF_NULLPTR)
                 (void)hipFree(*per_scale[i]);
-            *per_scale[i] = NULL;
+            *per_scale[i] = VMAF_NULLPTR;
         }
     }
     void **flat[] = {&s->csf_f_aim,   &s->csf_a_aim,   &s->csf_f,   &s->csf_a,
                      &s->dwt_tmp_dis, &s->dwt_tmp_ref, &s->src_dis, &s->src_ref};
     for (unsigned i = 0; i < 8u; i++) {
-        if (*flat[i] != NULL)
+        if (*flat[i] != VMAF_NULLPTR)
             (void)hipFree(*flat[i]);
-        *flat[i] = NULL;
+        *flat[i] = VMAF_NULLPTR;
     }
     int rc = 0;
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         if (hipModuleUnload(s->module) != hipSuccess)
             rc = -EIO;
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return rc;
 }
@@ -599,13 +601,13 @@ static int fadm_hip_release(FloatAdmStateHip *s)
     if (e != 0 && rc == 0)
         rc = e;
 #endif /* HAVE_HIPCC */
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         const int err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -637,7 +639,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -645,8 +647,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return err;
 }
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -874,13 +876,12 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "adm_den_scale2",
                                           "adm_num_scale3",
                                           "adm_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 /* Load-bearing: registered via `extern VmafFeatureExtractor vmaf_fex_float_adm_hip;`
  * in `libvmaf/src/feature/feature_extractor.c`'s `feature_extractor_list[]`.
  * Ninth HIP kernel-template consumer (ADR-0468). Same pattern as
  * every CUDA / SYCL / Vulkan / HIP feature extractor. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): ADR-0468 — registration symbol must have external linkage
 VmafFeatureExtractor vmaf_fex_float_adm_hip = {
     .name = "float_adm_hip",
     .init = init_fex_hip,
@@ -899,5 +900,3 @@ VmafFeatureExtractor vmaf_fex_float_adm_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -673,8 +673,8 @@ func registerTools(srv *mcp.Server) {
 			"over the built-in synthetic fixtures, or (validate=true) a GPU-vs-CPU " +
 			"correctness comparison. Distinct from run_benchmark, which runs the " +
 			"end-to-end bench_all.sh harness over real YUV fixtures. In validate " +
-			"mode a non-zero exit is reported as validation_failed=true rather " +
-			"than as a tool error.",
+			"mode exit 1 is reported as validation_failed=true; an aborted " +
+			"validation remains a tool error.",
 		InputSchema: mustSchema(schemaObj{
 			"type": "object",
 			"properties": schemaObj{

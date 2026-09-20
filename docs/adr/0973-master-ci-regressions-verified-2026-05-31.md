@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0973: Master CI fixes — Metal MS-SSIM fixture dim + ssimulacra2 icpx XYB bit-exactness
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ the production scalar extractor are unchanged — there is no score drift.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Bump fixture to 256x192 in metal test** (chosen) | Trivial, mechanical, makes the test do what it always claimed to do (a 5-scale pyramid fixture) | None | Chosen |
 | Lower `min_dim` enforcement in `float_ms_ssim.c` | None for the test | Breaks the Netflix#1414 invariant — small inputs would silently corrupt mid-pyramid | Rejected: load-bearing invariant |
 | Use a different feature with no min-dim | None | Breaks the test's purpose (validates `float_ms_ssim_metal` specifically) | Rejected |

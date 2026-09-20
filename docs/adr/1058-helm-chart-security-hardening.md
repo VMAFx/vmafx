@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-1058: Helm chart security hardening — PDB, RBAC split, metrics NetworkPolicy, schema tightening
+# ADR-1058: helm chart security hardening
+
+**Decision:** Helm chart security hardening — PDB, RBAC split, metrics
+NetworkPolicy, schema tightening
 
 - **Status**: Accepted
 - **Date**: 2026-06-06
@@ -21,42 +23,42 @@ A focused audit of `deploy/helm/vmafx/` identified six actionable gaps:
    cluster-wide, violating the principle of least privilege on multi-tenant
    clusters.
 
-3. **VmafxTenant missing from operator RBAC** — the operator reconciler
-   watches `VmafxTenant` CRs to enforce per-tenant auth policy (ADR-0794), but
-   the `vmafxtenants` resource was absent from the RBAC rules, causing the
+3. **VmafxTenant missing from operator RBAC** — the operator reconciler watches
+   `VmafxTenant` CRs to enforce per-tenant auth policy (ADR-0794), but the
+   `vmafxtenants` resource was absent from the RBAC rules, causing the
    controller-runtime watch setup to silently fail at startup.
 
-4. **NetworkPolicy Prometheus gap** — the `allow-http-ingress` policy opens
-   only `service.targetPort` (8080). The vmafx-node metrics port (9090) had no
+4. **NetworkPolicy Prometheus gap** — the `allow-http-ingress` policy opens only
+   `service.targetPort` (8080). The vmafx-node metrics port (9090) had no
    allow-rule, so Prometheus scraping was silently blocked under
    `networkPolicy.enabled=true`.
 
-5. **`values.schema.json` `networkPolicy.allow` uses `additionalProperties: true`**
-   — typos in sub-keys (e.g. `enable` instead of `enabled`,
-   `controllerToNodes` instead of `controllerToNode`) were silently accepted,
-   defeating the purpose of the schema gate.
+5. **`values.schema.json` `networkPolicy.allow` uses
+   `additionalProperties: true`** — typos in sub-keys (e.g. `enable` instead of
+   `enabled`, `controllerToNodes` instead of `controllerToNode`) were silently
+   accepted, defeating the purpose of the schema gate.
 
-6. **No `podDisruptionBudget` in schema** — after adding the PDB values key,
-   the schema must be updated to validate it.
+6. **No `podDisruptionBudget` in schema** — after adding the PDB values key, the
+   schema must be updated to validate it.
 
 ## Decision
 
 Fix all six gaps in a single PR:
 
-1. Add `deploy/helm/vmafx/templates/pdb.yaml` with `policy/v1
-   PodDisruptionBudget` resources for the controller, node pool, and operator.
-   Add `podDisruptionBudget.enabled/minAvailable/maxUnavailable` to
+1. Add `deploy/helm/vmafx/templates/pdb.yaml` with
+   `policy/v1 PodDisruptionBudget` resources for the controller, node pool, and
+   operator. Add `podDisruptionBudget.enabled/minAvailable/maxUnavailable` to
    `values.yaml` (disabled by default for single-replica dev deployments).
 
 2. Split the operator `ClusterRole` into:
-   - `ClusterRole` + `ClusterRoleBinding` for CRD access only
-     (`vmafxjobs`, `vmafxnodes`, `vmafxmodeltrainings`, `vmafxtenants`).
-   - `Role` + `RoleBinding` (namespace-scoped) for pods, events, and
-     leader-election leases in the release namespace.
+    - `ClusterRole` + `ClusterRoleBinding` for CRD access only (`vmafxjobs`,
+      `vmafxnodes`, `vmafxmodeltrainings`, `vmafxtenants`).
+    - `Role` + `RoleBinding` (namespace-scoped) for pods, events, and
+      leader-election leases in the release namespace.
 
-3. Add `vmafxtenants: [get, list, watch]` + `vmafxtenants/status:
-   [get, update, patch]` to the CRD ClusterRole (fixing the silent watch
-   failure).
+3. Add `vmafxtenants: [get, list, watch]` +
+   `vmafxtenants/status: [get, update, patch]` to the CRD ClusterRole (fixing
+   the silent watch failure).
 
 4. Add `allow-node-metrics-ingress` NetworkPolicy with an ingress rule on port
    9090 for vmafx-node pods, guarded by
@@ -74,11 +76,11 @@ Fix all six gaps in a single PR:
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Keep single ClusterRole, add namespace filter in rules | Simpler manifest | Kubernetes RBAC has no namespace filter on ClusterRole rules — the filter is only on RoleBindings | Not valid; only a Role scoped to a namespace achieves the required restriction |
-| `maxUnavailable: 1` as PDB default | More permissive, survives single pod loss | On a 2-replica deployment `minAvailable: 1` and `maxUnavailable: 1` are equivalent; `minAvailable` is more intuitive | Chose `minAvailable: 1` as default; operators can switch via values |
-| Leave `networkPolicy.allow` as `additionalProperties: true` | Lower maintenance burden | Silently swallows typos — undermines the schema gate | Rejected; the exhaustive enumeration is already small and stable |
+| Option                                                      | Pros                                      | Cons                                                                                                                 | Why not chosen                                                                 |
+| ----------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Keep single ClusterRole, add namespace filter in rules      | Simpler manifest                          | Kubernetes RBAC has no namespace filter on ClusterRole rules — the filter is only on RoleBindings                    | Not valid; only a Role scoped to a namespace achieves the required restriction |
+| `maxUnavailable: 1` as PDB default                          | More permissive, survives single pod loss | On a 2-replica deployment `minAvailable: 1` and `maxUnavailable: 1` are equivalent; `minAvailable` is more intuitive | Chose `minAvailable: 1` as default; operators can switch via values            |
+| Leave `networkPolicy.allow` as `additionalProperties: true` | Lower maintenance burden                  | Silently swallows typos — undermines the schema gate                                                                 | Rejected; the exhaustive enumeration is already small and stable               |
 
 ## Consequences
 
@@ -87,8 +89,8 @@ Fix all six gaps in a single PR:
   default-deny NetworkPolicy. Schema catches `networkPolicy.allow` typos.
 - **Negative**: The RBAC split introduces a second binding object per
   `operator.enabled=true` install; `helm diff` will show the rename from
-  `*-operator-role` to `*-operator-crds` / `*-operator-ns`. Operators must
-  run `helm upgrade` (not in-place patch) to pick up the new ClusterRole name.
+  `*-operator-role` to `*-operator-crds` / `*-operator-ns`. Operators must run
+  `helm upgrade` (not in-place patch) to pick up the new ClusterRole name.
 - **Neutral / follow-ups**: `podDisruptionBudget.enabled` defaults to `false`,
   so existing single-replica installs are unaffected. Follow-up: document the
   recommended PDB settings for HA deployments in

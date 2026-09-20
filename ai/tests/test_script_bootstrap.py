@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
 
+import _script_bootstrap
 from _script_bootstrap import bootstrap_ai_script
 
 
@@ -44,3 +46,19 @@ def test_bootstrap_does_not_duplicate_paths(monkeypatch) -> None:
     bootstrap_ai_script(script)
 
     assert sys.path.count(str(ai_src)) == 1
+
+
+def test_import_installs_all_static_import_roots(monkeypatch) -> None:
+    scripts_dir = Path(_script_bootstrap.__file__).resolve().parent
+    monkeypatch.setattr(sys, "path", [str(scripts_dir)])
+
+    reloaded = importlib.reload(_script_bootstrap)
+
+    paths = reloaded._IMPORT_PATHS
+    assert paths.script_path == scripts_dir / "_script_bootstrap.py"
+    assert sys.path[:4] == [
+        str(paths.vmaf_tune_src),
+        str(paths.ai_scripts),
+        str(paths.ai_src),
+        str(paths.repo_root),
+    ]

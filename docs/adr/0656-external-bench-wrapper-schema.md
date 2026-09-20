@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0656: External-bench wrappers emit registry competitor keys
 
 - **Status**: Accepted
@@ -32,7 +31,7 @@ contract is pinned without installing external competitors.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fix wrapper output to registry keys | Keeps the documented schema strict; makes table grouping deterministic; minimal user-visible change | Descriptive version labels are no longer shown in the identity column | Chosen. The identity field is a machine contract, not a display label. |
 | Relax `validate_wrapper_output()` to accept aliases | Preserves the current descriptive labels | Reopens schema ambiguity and needs alias tables everywhere aggregation compares keys | Rejected. It makes the validator weaker immediately after adding it. |
 | Change `WRAPPERS` keys to the descriptive labels | Keeps wrapper output unchanged | Breaks existing `--competitors fork-fr-regressor fork-nr-metric` usage and docs | Rejected. The public CLI keys are already documented. |

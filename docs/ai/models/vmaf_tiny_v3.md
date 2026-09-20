@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # vmaf_tiny_v3 — wider/deeper VMAF feature-fusion estimator
 
 `vmaf_tiny_v3` is a tiny multi-layer perceptron that predicts a VMAF
@@ -82,7 +81,7 @@ exported ONNX as Constant nodes.
 ## Validation
 
 | Methodology | v2 (mlp_small, 257 params) | v3 (mlp_medium, 769 params) | Δ |
-| --- | ---:| ---:| ---:|
+| --- | ---: | ---: | ---: |
 | Netflix LOSO (9 folds, seed=0) mean PLCC | 0.9978 ± 0.0021 | **0.9986 ± 0.0015** | +0.0008 |
 | Netflix LOSO mean SROCC | 0.9959 ± 0.0027 | **0.9977 ± 0.0017** | +0.0018 |
 | Netflix LOSO mean RMSE | — | 1.256 ± 0.604 | — |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 <!--
 SPDX-License-Identifier: BSD-2-Clause-Patent
 Copyright 2026 Lusoris
@@ -44,7 +43,7 @@ grep -rn '__mul24\|__umul24\|__mul24hi' \
 ## Classification breakdown
 
 | Classification | Count |
-|---|---|
+| --- | --- |
 | (a) Both args runtime-variable — SAFE | 0 |
 | (b) One arg compile-time constant — BUG IMPACTED | 0 |
 | (c) Both args compile-time constant — constexpr-foldable | 0 |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0375: HIP batch-3 — `float_moment_hip` and `float_ssim_hip` real kernels
 
 - **Status**: Accepted
@@ -79,7 +78,7 @@ HIP real-kernel count: **6 of 11 extractors**.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Also promote `integer_motion_v2_hip` | One more extractor done | Algorithm (convolution linearity trick) requires a different kernel shape — needs a separate `.hip` file and host wiring distinct from `motion/motion_score.hip` | Deferred to batch-4 for focused review |
 | Promote `ciede_hip` instead of `float_ssim_hip` | Simpler reduction (per-block float partials, single pass) | Less user-visible than SSIM; SSIM closes the more prominent quality metric gap | `float_ssim_hip` chosen for higher impact |
 | Use `vmaf_hip_kernel_submit_pre_launch` to zero partials for SSIM | Uniform pre-launch contract | SSIM uses per-block writes, not atomics — no zero needed; the helper is for atomic accumulator consumers | Not used for SSIM, used correctly for moment |

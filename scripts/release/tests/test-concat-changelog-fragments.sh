@@ -17,23 +17,23 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONCAT_SCRIPT="$SCRIPT_DIR/../concat-changelog-fragments.sh"
 
 if [[ ! -f "$CONCAT_SCRIPT" ]]; then
-  printf 'ERROR: %s not found\n' "$CONCAT_SCRIPT" >&2
-  exit 1
+    printf 'ERROR: %s not found\n' "$CONCAT_SCRIPT" >&2
+    exit 1
 fi
 
 pass=0
 fail=0
 
 check() {
-  local desc="$1"
-  local result="$2" # "pass" or "fail"
-  if [[ "$result" == "pass" ]]; then
-    printf 'PASS: %s\n' "$desc"
-    pass=$((pass + 1))
-  else
-    printf 'FAIL: %s\n' "$desc" >&2
-    fail=$((fail + 1))
-  fi
+    local desc="$1"
+    local result="$2" # "pass" or "fail"
+    if [[ "$result" == "pass" ]]; then
+        printf 'PASS: %s\n' "$desc"
+        pass=$((pass + 1))
+    else
+        printf 'FAIL: %s\n' "$desc" >&2
+        fail=$((fail + 1))
+    fi
 }
 
 printf '\n=== D.2 concat-changelog-fragments tempfile trap tests ===\n\n'
@@ -42,9 +42,9 @@ printf '\n=== D.2 concat-changelog-fragments tempfile trap tests ===\n\n'
 # T1: Verify the script contains the EXIT trap (static analysis)
 # ---------------------------------------------------------------------------
 if grep -q "trap 'rm -f.*tmp_body.*tmp_out.*' EXIT" "$CONCAT_SCRIPT"; then
-  check "EXIT trap present in script source" pass
+    check "EXIT trap present in script source" pass
 else
-  check "EXIT trap present in script source" fail
+    check "EXIT trap present in script source" fail
 fi
 
 # ---------------------------------------------------------------------------
@@ -54,9 +54,9 @@ fi
 # We check there is exactly ONE rm invocation mentioning tmp_body — the trap.
 rm_count=$(grep -c 'rm -f.*tmp_body' "$CONCAT_SCRIPT" || true)
 if [[ "$rm_count" -eq 1 ]]; then
-  check "only one rm -f tmp_body reference (trap only, no duplicate)" pass
+    check "only one rm -f tmp_body reference (trap only, no duplicate)" pass
 else
-  check "only one rm -f tmp_body reference (trap only, no duplicate) — found $rm_count" fail
+    check "only one rm -f tmp_body reference (trap only, no duplicate) — found $rm_count" fail
 fi
 
 # ---------------------------------------------------------------------------
@@ -88,6 +88,8 @@ cat >"$TMPDIR_D2/CHANGELOG.md" <<'EOF'
 EOF
 
 cat >"$TMPDIR_D2/changelog.d/fixed/test-frag.md" <<'EOF'
+# Changelog fragment
+
 - test fragment entry
 EOF
 
@@ -107,23 +109,23 @@ chmod +x "$fake_awk_dir/awk"
 # Run the script with the faked awk; expect non-zero exit.
 exit_code=0
 PATH="$fake_awk_dir:$PATH" \
-  bash "$CONCAT_SCRIPT" --write \
-  2>/dev/null || exit_code=$?
+    bash "$CONCAT_SCRIPT" --write \
+    2>/dev/null || exit_code=$?
 
 # After the script exits (any code), count new tmp files.
 after_count=$(find /tmp -maxdepth 1 -name 'tmp.*' -newer "$TMPDIR_D2" 2>/dev/null | wc -l)
 
 if [[ "$exit_code" -ne 0 ]]; then
-  check "script exits non-zero when awk fails" pass
+    check "script exits non-zero when awk fails" pass
 else
-  check "script exits non-zero when awk fails (exit code was 0)" fail
+    check "script exits non-zero when awk fails (exit code was 0)" fail
 fi
 
 if [[ "$after_count" -le "$before_count" ]]; then
-  check "no new tmp files leaked after awk failure" pass
+    check "no new tmp files leaked after awk failure" pass
 else
-  leaked=$((after_count - before_count))
-  check "no new tmp files leaked after awk failure (found $leaked new files)" fail
+    leaked=$((after_count - before_count))
+    check "no new tmp files leaked after awk failure (found $leaked new files)" fail
 fi
 
 # ---------------------------------------------------------------------------
@@ -151,23 +153,25 @@ cat >"$TMPDIR_HAPPY/CHANGELOG.md" <<'EOF'
 EOF
 
 cat >"$TMPDIR_HAPPY/changelog.d/fixed/d2-test.md" <<'EOF'
+# Changelog fragment
+
 - D.2 test: concat-changelog-fragments tempfile trap
 EOF
 
 (
-  cd "$TMPDIR_HAPPY"
-  # Override REPO_ROOT by running from the fake dir; the script uses
-  # SCRIPT_DIR to derive REPO_ROOT, so we must override those vars.
-  # Easiest: copy the script locally and patch REPO_ROOT.
-  patched_script="$TMPDIR_HAPPY/concat-patched.sh"
-  sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_HAPPY\"|" "$CONCAT_SCRIPT" >"$patched_script"
-  bash "$patched_script" --write 2>/dev/null
+    cd "$TMPDIR_HAPPY"
+    # Override REPO_ROOT by running from the fake dir; the script uses
+    # SCRIPT_DIR to derive REPO_ROOT, so we must override those vars.
+    # Easiest: copy the script locally and patch REPO_ROOT.
+    patched_script="$TMPDIR_HAPPY/concat-patched.sh"
+    sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_HAPPY\"|" "$CONCAT_SCRIPT" >"$patched_script"
+    bash "$patched_script" --write 2>/dev/null
 )
 
 if grep -q "D.2 test: concat-changelog-fragments tempfile trap" "$TMPDIR_HAPPY/CHANGELOG.md"; then
-  check "--write happy path produces correct CHANGELOG.md output" pass
+    check "--write happy path produces correct CHANGELOG.md output" pass
 else
-  check "--write happy path produces correct CHANGELOG.md output" fail
+    check "--write happy path produces correct CHANGELOG.md output" fail
 fi
 
 # ---------------------------------------------------------------------------
@@ -182,8 +186,10 @@ TMPDIR_UNKNOWN="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_HAPPY" "$TMPDIR_UNKNOWN"' EXIT
 
 mkdir -p "$TMPDIR_UNKNOWN/changelog.d/added" "$TMPDIR_UNKNOWN/changelog.d/docs"
-printf -- '- a real entry\n' >"$TMPDIR_UNKNOWN/changelog.d/added/ok.md"
-printf -- '- an entry that would be silently lost\n' >"$TMPDIR_UNKNOWN/changelog.d/docs/lost.md"
+printf '%s\n' '# Changelog fragment' '' '- a real entry' \
+    >"$TMPDIR_UNKNOWN/changelog.d/added/ok.md"
+printf '%s\n' '# Changelog fragment' '' '- an entry that would be silently lost' \
+    >"$TMPDIR_UNKNOWN/changelog.d/docs/lost.md"
 cat >"$TMPDIR_UNKNOWN/CHANGELOG.md" <<'EOF'
 # Changelog
 
@@ -198,21 +204,21 @@ EOF
 
 unknown_rc=0
 (
-  cd "$TMPDIR_UNKNOWN"
-  patched_unknown="$TMPDIR_UNKNOWN/concat-patched.sh"
-  sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_UNKNOWN\"|" "$CONCAT_SCRIPT" >"$patched_unknown"
-  bash "$patched_unknown" --check >/dev/null 2>"$TMPDIR_UNKNOWN/err.txt"
+    cd "$TMPDIR_UNKNOWN"
+    patched_unknown="$TMPDIR_UNKNOWN/concat-patched.sh"
+    sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_UNKNOWN\"|" "$CONCAT_SCRIPT" >"$patched_unknown"
+    bash "$patched_unknown" --check >/dev/null 2>"$TMPDIR_UNKNOWN/err.txt"
 ) || unknown_rc=$?
 
 if [[ "$unknown_rc" -eq 0 ]]; then
-  check "an unknown changelog.d subdirectory fails the run" fail
+    check "an unknown changelog.d subdirectory fails the run" fail
 elif ! grep -q "not a Keep-a-Changelog section" "$TMPDIR_UNKNOWN/err.txt"; then
-  check "an unknown changelog.d subdirectory fails the run" fail
+    check "an unknown changelog.d subdirectory fails the run" fail
 elif ! grep -q "lost.md" "$TMPDIR_UNKNOWN/err.txt"; then
-  check "the failure lists the fragments that would be lost" fail
+    check "the failure lists the fragments that would be lost" fail
 else
-  check "an unknown changelog.d subdirectory fails the run" pass
-  check "the failure lists the fragments that would be lost" pass
+    check "an unknown changelog.d subdirectory fails the run" pass
+    check "the failure lists the fragments that would be lost" pass
 fi
 
 # ---------------------------------------------------------------------------
@@ -220,5 +226,5 @@ fi
 # ---------------------------------------------------------------------------
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"
 if [[ "$fail" -gt 0 ]]; then
-  exit 1
+    exit 1
 fi

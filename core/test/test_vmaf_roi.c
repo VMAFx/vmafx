@@ -18,11 +18,7 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stddef.h>
 
 #include "test.h"
@@ -80,7 +76,7 @@ static char *test_reduce_full_ctu(void)
     mu_assert("top-right mean wrong", fabsf(grid[1] - 0.75F) < 1e-6F);
     mu_assert("bot-left mean wrong", fabsf(grid[2] - 1.0F) < 1e-6F);
     mu_assert("bot-right mean wrong", fabsf(grid[3] - 0.0F) < 1e-6F);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_reduce_partial_ctu(void)
@@ -98,7 +94,7 @@ static char *test_reduce_partial_ctu(void)
     for (int i = 0; i < 4; ++i) {
         mu_assert("partial-CTU mean wrong", fabsf(grid[i] - 0.5F) < 1e-6F);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_qp_signs(void)
@@ -111,7 +107,7 @@ static char *test_qp_signs(void)
     int hi = vmaf_roi_saliency_to_qp(1.0F, 6.0);
     int lo = vmaf_roi_saliency_to_qp(0.0F, 6.0);
     mu_assert("sign symmetry broken", hi == -lo);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_qp_clamp(void)
@@ -121,7 +117,7 @@ static char *test_qp_clamp(void)
     int q_lo = vmaf_roi_saliency_to_qp(0.0F, 100.0);
     mu_assert("upper clamp", q_hi == -VMAF_ROI_CORE_QP_OFFSET_MAX);
     mu_assert("lower clamp", q_lo == VMAF_ROI_CORE_QP_OFFSET_MAX);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_qp_monotonic(void)
@@ -135,7 +131,7 @@ static char *test_qp_monotonic(void)
         mu_assert("monotonicity broken", cur <= prev);
         prev = cur;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression test for the frame_bytes() chroma ceiling-division fix.
@@ -156,7 +152,7 @@ static char *test_frame_bytes_even(void)
     mu_assert("422 even", test_frame_samples(1920, 1080, 1) == 4147200U);
     /* 4:4:4 1920x1080: 3*Y=6220800 */
     mu_assert("444 even", test_frame_samples(1920, 1080, 2) == 6220800U);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_frame_bytes_odd_420(void)
@@ -171,7 +167,7 @@ static char *test_frame_bytes_odd_420(void)
     /* w=1 h=1: Y=1, cw=1 ch=1, chroma=2 => total=3.
      * Pre-fix: 1 + 0 = 1 (wrong). */
     mu_assert("420 1x1", test_frame_samples(1, 1, 0) == 3U);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_frame_bytes_odd_422(void)
@@ -186,7 +182,7 @@ static char *test_frame_bytes_odd_422(void)
     /* w=1 h=1: Y=1, cw=1, chroma=2*1*1=2 => total=3.
      * Pre-fix: 2 (wrong). */
     mu_assert("422 1x1", test_frame_samples(1, 1, 1) == 3U);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_frame_bytes_444(void)
@@ -194,7 +190,7 @@ static char *test_frame_bytes_444(void)
     /* 4:4:4 has no subsampling; formula was always correct. */
     mu_assert("444 5x5", test_frame_samples(5, 5, 2) == 75U);
     mu_assert("444 1x1", test_frame_samples(1, 1, 2) == 3U);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -212,5 +208,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

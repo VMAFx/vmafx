@@ -30,18 +30,31 @@
 #include "cuda_helper.cuh"
 
 typedef struct VmafCudaBuffer {
+#ifdef __cplusplus
+    size_t size{};
+    CUdeviceptr data{};
+#else
     size_t size;
     CUdeviceptr data;
+#endif
 } VmafCudaBuffer;
 
 typedef struct CudaFunctions CudaFunctions;
 
 typedef struct VmafCudaState {
+#ifdef __cplusplus
+    CUcontext ctx{};
+    CUstream str{};
+    CUdevice dev{};
+    CudaFunctions *f{};
+    int release_ctx{};
+#else
     CUcontext ctx;
     CUstream str;
     CUdevice dev;
     CudaFunctions *f;
     int release_ctx;
+#endif
 } VmafCudaState;
 
 #define VMAF_CUDA_THREADS_PER_WARP 32
@@ -68,14 +81,6 @@ typedef struct VmafCudaState {
  * @return true when the device is supported.
  */
 bool vmaf_cuda_arch_supported(int major, int minor);
-
-/**
- * Synchronize a CUcontext from a VmafCudaState object.
- *
- * @param cu_state VmafCudaState to get its context and synchronize.
- * @return CUDA_SUCCESS on success, or < 0 (a negative errno code) on error.
- */
-int vmaf_cuda_sync(VmafCudaState *cu_state);
 
 /**
  * Destroys a VmafCudaState object by destroying all of its members.
@@ -115,37 +120,6 @@ int vmaf_cuda_buffer_alloc(VmafCudaState *cu_state, VmafCudaBuffer **buf, size_t
 int vmaf_cuda_buffer_free(VmafCudaState *cu_state, VmafCudaBuffer *buf);
 
 /**
- * Uploads data in the size of the VmafCudaBuffer from src pointer (Host/CPU)
- * to the Device/GPU asynchronously.
- *
- * @param cu_state  Initialized VmafCudaState object.
- *
- * @param buf       Destination buffer on the Device/GPU.
- *
- * @param src       Source Host/CPU buffer.
- *
- * @param c_stream  stream on which the upload will happen.
- *
- * @return CUDA_SUCCESS on success, or < 0 (a negative errno code) on error.
- */
-int vmaf_cuda_buffer_upload_async(VmafCudaState *cu_state, VmafCudaBuffer *buf, const void *src,
-                                  CUstream c_stream);
-/**
- * Downloads data in the size of the VmafCudaBuffer from the GPU asynchronously.
- *
- * @param cu_state  Initialized VmafCudaState object.
- *
- * @param buf       Destination buffer on the Device/GPU.
- *
- * @param src       Source Host/CPU buffer.
- *
- * @param c_stream  stream on which the upload will happen.
- *
- * @return CUDA_SUCCESS on success, or < 0 (a negative errno code) on error.
- */
-int vmaf_cuda_buffer_download_async(VmafCudaState *cu_state, VmafCudaBuffer *buf, void *dst,
-                                    CUstream c_stream);
-/**
  * Device pointer getter for VmafCudaBuffer
  *
  * @param buf   Initialized VmafCudaBuffer.
@@ -154,7 +128,7 @@ int vmaf_cuda_buffer_download_async(VmafCudaState *cu_state, VmafCudaBuffer *buf
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-int vmaf_cuda_buffer_get_dptr(VmafCudaBuffer *buf, CUdeviceptr *ptr);
+int vmaf_cuda_buffer_get_dptr(const VmafCudaBuffer *buf, CUdeviceptr *ptr);
 
 /**
  * Frees up pinned host (CPU) memory.

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1226: Size the CUDA AIM CM launch by SM count, not by a fixed rows-per-thread
 
 - **Status**: Accepted

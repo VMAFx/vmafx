@@ -50,10 +50,10 @@ __constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
 #define MV2_RADIUS 2
 #define MV2_BLOCK_X 16
 #define MV2_BLOCK_Y 16
-#define MV2_TILE_W (MV2_BLOCK_X + 2 * MV2_RADIUS)     /* 20 */
-#define MV2_TILE_H (MV2_BLOCK_Y + 2 * MV2_RADIUS)     /* 20 */
+#define MV2_TILE_W (MV2_BLOCK_X + 2 * MV2_RADIUS) /* 20 */
+#define MV2_TILE_H (MV2_BLOCK_Y + 2 * MV2_RADIUS) /* 20 */
 /* Pad inner stride to break shared-memory bank conflicts (same as CUDA twin). */
-#define MV2_TILE_PITCH (MV2_TILE_W + 1)                /* 21 */
+#define MV2_TILE_PITCH (MV2_TILE_W + 1) /* 21 */
 
 /* Runtime `warpSize` is used in all reduction loops and lane-detection
  * expressions below so the same binary runs on wave64 (GCN/RDNA1) and
@@ -69,23 +69,62 @@ __device__ __forceinline__ int mv2_mirror(int idx, int sup)
     return idx;
 }
 
-extern "C" {
+__device__ __forceinline__ int64_t mv2_blur_8bpc(const int32_t *diff, unsigned lx, unsigned ly)
+{
+    int64_t blurred = 0;
+#pragma unroll
+    for (int xf = 0; xf < 5; ++xf) {
+        int32_t blurred_y = 0;
+#pragma unroll
+        for (int yf = 0; yf < 5; ++yf) {
+            const unsigned row = ly - MV2_RADIUS + (unsigned)yf;
+            const unsigned col = lx - MV2_RADIUS + (unsigned)xf;
+            blurred_y += mv2_filter_d[yf] * diff[row * MV2_TILE_PITCH + col];
+        }
+        const int32_t vertical = (blurred_y + (1 << 7)) >> 8;
+        blurred += (int64_t)mv2_filter_d[xf] * (int64_t)vertical;
+    }
+    return (blurred + (1 << 15)) >> 16;
+}
 
-__launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
-    void motion_v2_kernel_8bpc(const uint8_t *__restrict__ prev, const uint8_t *__restrict__ cur,
-                               ptrdiff_t prev_stride, ptrdiff_t cur_stride,
-                               uint64_t *__restrict__ sad,
-                               unsigned width, unsigned height)
+__device__ __forceinline__ int64_t mv2_blur_16bpc(const int32_t *diff, unsigned lx, unsigned ly,
+                                                  unsigned bpc)
+{
+    int64_t blurred = 0;
+#pragma unroll
+    for (int xf = 0; xf < 5; ++xf) {
+        int64_t blurred_y = 0;
+#pragma unroll
+        for (int yf = 0; yf < 5; ++yf) {
+            const unsigned row = ly - MV2_RADIUS + (unsigned)yf;
+            const unsigned col = lx - MV2_RADIUS + (unsigned)xf;
+            blurred_y += (int64_t)mv2_filter_d[yf] * (int64_t)diff[row * MV2_TILE_PITCH + col];
+        }
+        const int32_t vertical =
+            (int32_t)((blurred_y + (int64_t)(1 << ((int)bpc - 1))) >> (int)bpc);
+        blurred += (int64_t)mv2_filter_d[xf] * (int64_t)vertical;
+    }
+    return (blurred + (int64_t)(1 << 15)) >> 16;
+}
+
+__device__ __forceinline__ void mv2_accumulate_sad(int64_t abs_h, unsigned lid, uint64_t *sad)
+{
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
+        abs_h += __shfl_down(abs_h, off);
+    if (lid % (unsigned)warpSize == 0u) {
+        atomicAdd(reinterpret_cast<unsigned long long *>(sad),
+                  static_cast<unsigned long long>(abs_h));
+    }
+}
+
+extern "C" __global__ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) void motion_v2_kernel_8bpc(
+    const uint8_t *__restrict__ prev, const uint8_t *__restrict__ cur, ptrdiff_t prev_stride,
+    ptrdiff_t cur_stride, uint64_t *__restrict__ sad, unsigned width, unsigned height)
 {
     /* Shared tile holds the signed diff (prev - cur) so the nested
      * separable filter operates on a single dataset. Inner dim is
      * MV2_TILE_PITCH (= MV2_TILE_W + 1) for bank-conflict padding. */
     __shared__ int32_t s_diff[MV2_TILE_H][MV2_TILE_PITCH];
-
-    constexpr int shift_y = 8;
-    constexpr int round_y = 1 << 7;
-    constexpr int shift_x = 16;
-    constexpr int round_x = 1 << 15;
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -112,48 +151,20 @@ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
         const unsigned lx = threadIdx.x + MV2_RADIUS;
         const unsigned ly = threadIdx.y + MV2_RADIUS;
 
-        int64_t blurred = 0;
-#pragma unroll
-        for (int xf = 0; xf < 5; ++xf) {
-            int32_t blurred_y = 0;
-#pragma unroll
-            for (int yf = 0; yf < 5; ++yf) {
-                blurred_y +=
-                    mv2_filter_d[yf] * s_diff[ly - MV2_RADIUS + yf][lx - MV2_RADIUS + xf];
-            }
-            /* Arithmetic right shift on int32 matches CPU and CUDA twin.
-             * ADR-0138/0139: this is the load-bearing shift correctness
-             * invariant; logical shift would diverge from scalar. */
-            const int32_t v = (blurred_y + round_y) >> shift_y;
-            blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
-        }
-        const int64_t h = (blurred + round_x) >> shift_x;
+        const int64_t h = mv2_blur_8bpc(&s_diff[0][0], lx, ly);
         abs_h = h < 0 ? -h : h;
     }
 
     /* Warp reduction — uses runtime warpSize to handle wave64 (GCN/RDNA1)
      * and wave32 (RDNA2+). Lane 0 carries the warp partial. */
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
-        abs_h += __shfl_down(abs_h, off);
-    const unsigned lane = lid % (unsigned)warpSize;
-    if (lane == 0) {
-        atomicAdd(reinterpret_cast<unsigned long long *>(sad),
-                  static_cast<unsigned long long>(abs_h));
-    }
+    mv2_accumulate_sad(abs_h, lid, sad);
 }
 
-__launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
-    void motion_v2_kernel_16bpc(const uint8_t *__restrict__ prev, const uint8_t *__restrict__ cur,
-                                ptrdiff_t prev_stride, ptrdiff_t cur_stride,
-                                uint64_t *__restrict__ sad,
-                                unsigned width, unsigned height, unsigned bpc)
+extern "C" __global__ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) void motion_v2_kernel_16bpc(
+    const uint8_t *__restrict__ prev, const uint8_t *__restrict__ cur, ptrdiff_t prev_stride,
+    ptrdiff_t cur_stride, uint64_t *__restrict__ sad, unsigned width, unsigned height, unsigned bpc)
 {
     __shared__ int32_t s_diff[MV2_TILE_H][MV2_TILE_PITCH];
-
-    const int shift_y = (int)bpc;
-    const int round_y = 1 << ((int)bpc - 1);
-    constexpr int shift_x = 16;
-    constexpr int round_x = 1 << 15;
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -180,39 +191,11 @@ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
         const unsigned lx = threadIdx.x + MV2_RADIUS;
         const unsigned ly = threadIdx.y + MV2_RADIUS;
 
-        int64_t blurred = 0;
-#pragma unroll
-        for (int xf = 0; xf < 5; ++xf) {
-            /* For bpc=16 the per-tap product can reach 26386 * 65535
-             * ~1.7e9 and the 5-tap sum overflows int32 -- int64 in
-             * the inner accumulator (matches CUDA twin). */
-            int64_t blurred_y = 0;
-#pragma unroll
-            for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += (int64_t)mv2_filter_d[yf] *
-                             (int64_t)s_diff[ly - MV2_RADIUS + yf][lx - MV2_RADIUS + xf];
-            }
-            /* Arithmetic right shift on int64 -- CRITICAL: must NOT use
-             * logical (unsigned) shift here. Logical shift on the
-             * blurred_y intermediate would diverge from scalar for
-             * negative values. ADR-0138/0139 / motion_v2 CUDA PR #587
-             * correctness note. */
-            const int32_t v = (int32_t)((blurred_y + (int64_t)round_y) >> shift_y);
-            blurred += (int64_t)mv2_filter_d[xf] * (int64_t)v;
-        }
-        const int64_t h = (blurred + (int64_t)round_x) >> shift_x;
+        const int64_t h = mv2_blur_16bpc(&s_diff[0][0], lx, ly, bpc);
         abs_h = h < 0 ? -h : h;
     }
 
     /* Warp reduction — uses runtime warpSize to handle wave64 (GCN/RDNA1)
      * and wave32 (RDNA2+). */
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
-        abs_h += __shfl_down(abs_h, off);
-    const unsigned lane = lid % (unsigned)warpSize;
-    if (lane == 0) {
-        atomicAdd(reinterpret_cast<unsigned long long *>(sad),
-                  static_cast<unsigned long long>(abs_h));
-    }
+    mv2_accumulate_sad(abs_h, lid, sad);
 }
-
-} /* extern "C" */

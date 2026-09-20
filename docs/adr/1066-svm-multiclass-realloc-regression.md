@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # ADR-1066: Regression tests for the sequential-realloc double-free in libsvm
 
 - **Status**: Accepted
@@ -44,13 +43,11 @@ wired into `dev-container-build.yml` as a pre-build lint step.
 
 ## Alternatives considered
 
-<!-- markdownlint-disable MD055 MD056 -->
 | Option | Pros | Cons | Why not chosen |
 | --- | --- | --- | --- |
 | Extend `test_svm_api.c` with 17-class fixture | Fewer files | File becomes oversized; regression harder to bisect by name | Rejected — separate focused file is easier to audit |
 | `meson.test()` `should_fail` + OOM injection | Directly tests failure path | Needs custom allocator or LD_PRELOAD — portability risk | Rejected — ASan in sanitizers CI job is sufficient |
 | YAML parser in compose lint | More robust parse | Adds Python/Go dep to a shell-only script | Rejected — state-machine is sufficient for one-field invariant |
-<!-- markdownlint-enable MD055 MD056 -->
 
 ## Consequences
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1072: Fix PREV_REF refcount leak in threaded batch and serial dispatch paths
 
 - **Status**: Accepted
@@ -76,7 +75,7 @@ Fix the test-design bugs:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Use `vmaf_picture_ref` instead of struct copy at dispatch (match serial path) | Eliminates shared-pointer aliasing; simpler ownership | Adds one ref/unref per frame per PREV_REF extractor; requires zeroing fex->prev_ref after extract separately | The fix is correct with the minimal unref-before-memset change; converting to full ref would be a larger refactor with no observable correctness advantage |
 | Disable PREV_REF flag on integer_motion in the batch path | Avoids the code path entirely | Breaks temporal correctness of motion scores when threaded | Not an option; motion requires the previous frame |
 | Disable the 4 failing sub-tests | Avoids touching libvmaf.c | Hides a real memory-safety bug; pool exhaustion will reappear in other tests | The root cause is a one-line fix per path |

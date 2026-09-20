@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1081: vmaf_bench correctness — unchecked alloc returns and wall-clock timer
 
 - **Status**: Accepted

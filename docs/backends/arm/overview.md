@@ -1,24 +1,20 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ARM NEON / SVE2 backend
 
-libvmaf's aarch64 path uses ARMv8-A NEON intrinsics by default and
-upgrades to ARMv9-A SVE2 at runtime when the host CPU advertises
-`HWCAP2_SVE2`. Unlike the GPU backends, NEON is **always built**
-when the host (or cross) compiler targets aarch64 — there is no
-`-Denable_neon` toggle. Kernels live under
-[`core/src/feature/arm64/`](../../../core/src/feature/arm64/)
-and are dispatched at runtime via `vmaf_get_cpu_flags()`.
+libvmaf's aarch64 path uses ARMv8-A NEON intrinsics by default and upgrades to
+ARMv9-A SVE2 at runtime when the host CPU advertises `HWCAP2_SVE2`. Unlike the
+GPU backends, NEON is **always built** when the host (or cross) compiler targets
+aarch64 — there is no `-Denable_neon` toggle. Kernels live under
+[`core/src/feature/arm64/`](../../../core/src/feature/arm64/) and are dispatched
+at runtime via `vmaf_get_cpu_flags()`.
 
 The SVE2 path is purely additive: when the build-time probe
-(`cc.compiles(... -march=armv9-a+sve2)`) succeeds, the SVE2 sister
-TUs compile alongside the NEON ones and the dispatch table picks
-SVE2 if the runtime probe (`getauxval(AT_HWCAP2) & HWCAP2_SVE2`)
-fires. Otherwise the binary keeps the NEON dispatch entries
-unchanged. SVE2 today covers SSIMULACRA 2 and `float_moment` — see
-[ADR-0213](../../adr/0213-ssimulacra2-sve2.md) and
-[ADR-0584](../../adr/0584-moment-sve2-port.md). Adding more SVE2
-ports follows the same pattern; per-extractor coverage is in the
-table below.
+(`cc.compiles(... -march=armv9-a+sve2)`) succeeds, the SVE2 sister TUs compile
+alongside the NEON ones and the dispatch table picks SVE2 if the runtime probe
+(`getauxval(AT_HWCAP2) & HWCAP2_SVE2`) fires. Otherwise the binary keeps the
+NEON dispatch entries unchanged. SVE2 today covers SSIMULACRA 2 and
+`float_moment` — see [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) and
+[ADR-0584](../../adr/0584-moment-sve2-port.md). Adding more SVE2 ports follows
+the same pattern; per-extractor coverage is in the table below.
 
 ## Build
 
@@ -27,111 +23,105 @@ meson setup build           # NEON sources compile automatically on aarch64
 ninja -C build
 ```
 
-The only switch that affects NEON code generation is the global
-`enable_asm` flag — `-Denable_asm=false` disables every SIMD path
-(NEON included) and falls back to scalar C. See
+The only switch that affects NEON code generation is the global `enable_asm`
+flag — `-Denable_asm=false` disables every SIMD path (NEON included) and falls
+back to scalar C. See
 [../../development/build-flags.md](../../development/build-flags.md).
 
 ## Runtime control
 
-NEON dispatch is per-extractor. To force scalar fallback (debugging,
-A/B against the reference) mask out the NEON ISA bit at the CLI:
+NEON dispatch is per-extractor. To force scalar fallback (debugging, A/B against
+the reference) mask out the NEON ISA bit at the CLI:
 
 ```bash
 vmaf --cpumask 0 ...        # disable every CPU SIMD ISA, scalar only
 ```
 
 `--cpumask` accepts a 64-bit hex value matching the bits returned by
-`vmaf_get_cpu_flags()`; passing `0` is the simplest "scalar only"
-override.
+`vmaf_get_cpu_flags()`; passing `0` is the simplest "scalar only" override.
 
-There is no per-feature NEON disable flag — extractors that have a
-NEON kernel will pick it whenever `--cpumask` allows it.
+There is no per-feature NEON disable flag — extractors that have a NEON kernel
+will pick it whenever `--cpumask` allows it.
 
 ## Per-feature coverage
 
-The table below tracks which extractors have a NEON kernel. Coverage
-matches the `Backends` column in
-[../../metrics/features.md](../../metrics/features.md).
+The table below tracks which extractors have a NEON kernel. Coverage matches the
+`Backends` column in [../../metrics/features.md](../../metrics/features.md).
 
-| Feature        | NEON kernel | SVE2 kernel | Notes                                                         |
-|----------------|-------------|-------------|---------------------------------------------------------------|
-| `vif`          | yes         | no          | matches AVX2 path bit-for-bit                                 |
-| `adm`          | yes         | no          | matches AVX2 path bit-for-bit                                 |
-| `motion`       | yes         | no          | fixed-point legacy `motion`                                   |
-| `motion_v2`    | yes         | no          | pipelined fused-blur variant                                  |
-| `float_moment` | yes         | yes         | 1st/2nd moment reduction; SVE2 VLA f32→f64 path (ADR-0584)   |
-| `float_motion` | yes         | no          | float-pipeline twin                                           |
-| `float_adm`    | yes         | no          | float-pipeline twin                                           |
-| `float_psnr`   | yes         | no          | per-plane float PSNR                                          |
-| `ciede`        | yes         | no          | YUV → CIELAB ΔE                                               |
-| `psnr`         | yes         | no          | fixed-point per-plane                                         |
-| `psnr_hvs`     | yes         | no          | bit-identical to scalar — see [ADR-0160](../../adr/0160-psnr-hvs-neon-bitexact.md) |
-| `ssim` / `float_ssim` | yes  | no          | shared decimate kernel                                        |
-| `float_ms_ssim`| yes         | no          | 9-tap 9/7 wavelet decimate via `ms_ssim_decimate_neon`        |
-| `ssimulacra2`  | yes         | yes         | bit-identical to scalar (NEON and SVE2 produce byte-equal output); see [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md), [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md), [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md), [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) |
-| `cambi`        | yes         | no          | every stage except the mask row and mode filter, which the compilers already vectorise; see [CAMBI CPU SIMD paths](../../metrics/cambi.md#cpu-simd-paths) |
+| Feature               | NEON kernel | SVE2 kernel | Notes                                                                                                                                                                                                                                                                                        |
+| --------------------- | ----------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vif`                 | yes         | no          | matches AVX2 path bit-for-bit                                                                                                                                                                                                                                                                |
+| `adm`                 | yes         | no          | matches AVX2 path bit-for-bit                                                                                                                                                                                                                                                                |
+| `motion`              | yes         | no          | fixed-point legacy `motion`                                                                                                                                                                                                                                                                  |
+| `motion_v2`           | yes         | no          | pipelined fused-blur variant                                                                                                                                                                                                                                                                 |
+| `float_moment`        | yes         | yes         | 1st/2nd moment reduction; SVE2 VLA f32→f64 path (ADR-0584)                                                                                                                                                                                                                                   |
+| `float_motion`        | yes         | no          | float-pipeline twin                                                                                                                                                                                                                                                                          |
+| `float_adm`           | yes         | no          | float-pipeline twin                                                                                                                                                                                                                                                                          |
+| `float_psnr`          | yes         | no          | per-plane float PSNR                                                                                                                                                                                                                                                                         |
+| `ciede`               | yes         | no          | YUV → CIELAB ΔE                                                                                                                                                                                                                                                                              |
+| `psnr`                | yes         | no          | fixed-point per-plane                                                                                                                                                                                                                                                                        |
+| `psnr_hvs`            | yes         | no          | bit-identical to scalar — see [ADR-0160](../../adr/0160-psnr-hvs-neon-bitexact.md)                                                                                                                                                                                                           |
+| `ssim` / `float_ssim` | yes         | no          | shared decimate kernel                                                                                                                                                                                                                                                                       |
+| `float_ms_ssim`       | yes         | no          | 9-tap 9/7 wavelet decimate via `ms_ssim_decimate_neon`                                                                                                                                                                                                                                       |
+| `ssimulacra2`         | yes         | yes         | bit-identical to scalar (NEON and SVE2 produce byte-equal output); see [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md), [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md), [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md), [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) |
+| `cambi`               | yes         | no          | every stage except the mask row and mode filter, which the compilers already vectorise; see [CAMBI CPU SIMD paths](../../metrics/cambi.md#cpu-simd-paths)                                                                                                                                    |
 
 ## Bit-exactness
 
-NEON outputs are byte-identical to the scalar C reference for the
-features that ship a determinism contract:
+NEON outputs are byte-identical to the scalar C reference for the features that
+ship a determinism contract:
 
-- `psnr_hvs` — pinned by ADR-0160; verified across all three Netflix
-  golden pairs.
+- `psnr_hvs` — pinned by ADR-0160; verified across all three Netflix golden
+  pairs.
 - `ssimulacra2` — pinned by ADR-0161 / ADR-0162 / ADR-0163 / ADR-0213;
-  cross-host determinism via `vmaf_ss2_cbrtf` and the sRGB-EOTF LUT.
-  The SVE2 sister TU is locked to a fixed 4-lane predicate
-  (`svwhilelt_b32(0, 4)`) so its arithmetic order matches the NEON
-  output regardless of the host's runtime vector length — wider
-  lanes simply stay false in the predicate. Validated under
-  `qemu-aarch64-static -cpu max` via the cross-file
+  cross-host determinism via `vmaf_ss2_cbrtf` and the sRGB-EOTF LUT. The SVE2
+  sister TU is locked to a fixed 4-lane predicate (`svwhilelt_b32(0, 4)`) so its
+  arithmetic order matches the NEON output regardless of the host's runtime
+  vector length — wider lanes simply stay false in the predicate. Validated
+  under `qemu-aarch64-static -cpu max` via the cross-file
   [`build-aux/aarch64-linux-gnu-sve2.ini`](../../../build-aux/aarch64-linux-gnu-sve2.ini).
-- `ms_ssim_decimate` — pinned by ADR-0125; per-lane `vfmaq_n_f32`
-  with broadcast coefficients matches the scalar
-  `fmaf` chain exactly.
+- `ms_ssim_decimate` — pinned by ADR-0125; per-lane `vfmaq_n_f32` with broadcast
+  coefficients matches the scalar `fmaf` chain exactly.
 
-Other extractors are numerically equivalent to their scalar twins
-within `places=4` of the snapshot tolerance but do not carry an
-explicit byte-identity contract. The Netflix golden CPU gate
-(`make test-netflix-golden`) is the cross-arch correctness check.
+Other extractors are numerically equivalent to their scalar twins within
+`places=4` of the snapshot tolerance but do not carry an explicit byte-identity
+contract. The Netflix golden CPU gate (`make test-netflix-golden`) is the
+cross-arch correctness check.
 
 ## Build / CI matrix
 
 The `Ubuntu ARM clang` job in the libvmaf build matrix
-([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) runs on
-`ubuntu-24.04-arm` against clang and exercises the full unit-test + tox
-suite on real aarch64 hardware (not qemu).
+([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) runs on `ubuntu-24.04-arm`
+against clang and exercises the full unit-test + tox suite on real aarch64
+hardware (not qemu).
 
 [libvmaf-build-matrix]: ../../../.github/workflows/libvmaf-build-matrix.yml
 
-The `Windows ARM64 MSVC` job in the same workflow builds the NEON tree
-natively with the ARM64-hosted MSVC toolset on `windows-11-vs2026-arm` and
-runs the meson `fast` suite there
-([ADR-1260](../../adr/1260-windows-arm64-cpu-lane.md)). It is advisory.
-MSVC gets `/fp:precise` where GCC and clang get `-ffp-contract=off`
-(`arm64_strict_fp_args` in `core/src/meson.build`); the SVE2 sister TUs are
-not built by MSVC, which has no `<arm_sve.h>`, and the SVE2 runtime probe is
+The `Windows ARM64 MSVC` job in the same workflow builds the NEON tree natively
+with the ARM64-hosted MSVC toolset on `windows-11-vs2026-arm` and runs the meson
+`fast` suite there ([ADR-1260](../../adr/1260-windows-arm64-cpu-lane.md)). It is
+advisory. MSVC gets `/fp:precise` where GCC and clang get `-ffp-contract=off`
+(`arm64_strict_fp_args` in `core/src/meson.build`); the SVE2 sister TUs are not
+built by MSVC, which has no `<arm_sve.h>`, and the SVE2 runtime probe is
 Linux-only, so a Windows build dispatches NEON.
 
-`make test-netflix-golden` runs on aarch64 in the same matrix and
-must remain green — see [`docs/principles.md`](../../principles.md)
-§ 8 (Netflix golden gate).
+`make test-netflix-golden` runs on aarch64 in the same matrix and must remain
+green — see [`docs/principles.md`](../../principles.md) § 8 (Netflix golden
+gate).
 
 ## Limitations
 
-- No per-feature override: every NEON kernel runs whenever
-  `--cpumask` permits. To bisect a suspected NEON regression use
-  `--cpumask 0` to drop to scalar across all extractors at once,
-  then re-enable per-extractor by running individual `--feature`
-  invocations.
-- Windows on ARM64 is NEON-only: SVE2 is neither built by MSVC nor
-  probed outside Linux. Building there is described in
+- No per-feature override: every NEON kernel runs whenever `--cpumask` permits.
+  To bisect a suspected NEON regression use `--cpumask 0` to drop to scalar
+  across all extractors at once, then re-enable per-extractor by running
+  individual `--feature` invocations.
+- Windows on ARM64 is NEON-only: SVE2 is neither built by MSVC nor probed
+  outside Linux. Building there is described in
   [Building libvmaf on Windows](../../getting-started/building-on-windows.md#native-msvc-on-windows-arm64).
-- No discrete GPU path on aarch64 yet. The CUDA / SYCL / HIP backends
-  compile for x86_64 only in the current matrix; on Apple Silicon the
-  Metal backend ([metal/index.md](../metal/index.md)) is the aarch64 GPU
-  surface. (The Vulkan backend was removed in ADR-0726.)
+- No discrete GPU path on aarch64 yet. The CUDA / SYCL / HIP backends compile
+  for x86_64 only in the current matrix; on Apple Silicon the Metal backend
+  ([metal/index.md](../metal/index.md)) is the aarch64 GPU surface. (The Vulkan
+  backend was removed in ADR-0726.)
 
 ## Related
 
@@ -141,13 +131,13 @@ must remain green — see [`docs/principles.md`](../../principles.md)
   Backends column.
 - [ADR-0125](../../adr/0125-ms-ssim-decimate-simd.md) — MS-SSIM decimate
   bit-exactness contract.
-- [ADR-0160](../../adr/0160-psnr-hvs-neon-bitexact.md) — `psnr_hvs`
-  NEON bit-exactness.
+- [ADR-0160](../../adr/0160-psnr-hvs-neon-bitexact.md) — `psnr_hvs` NEON
+  bit-exactness.
 - [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md),
   [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md),
   [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md),
-  [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) — SSIMULACRA 2
-  SIMD ports including NEON and SVE2.
-- [`build-aux/aarch64-linux-gnu-sve2.ini`](../../../build-aux/aarch64-linux-gnu-sve2.ini) —
-  qemu cross-file driving `qemu-aarch64-static -cpu max` for SVE2
-  validation runs in the absence of native ARMv9 hardware.
+  [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) — SSIMULACRA 2 SIMD ports
+  including NEON and SVE2.
+- [`build-aux/aarch64-linux-gnu-sve2.ini`](../../../build-aux/aarch64-linux-gnu-sve2.ini)
+  — qemu cross-file driving `qemu-aarch64-static -cpu max` for SVE2 validation
+  runs in the absence of native ARMv9 hardware.

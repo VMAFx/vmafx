@@ -22,12 +22,13 @@ from typing import Any
 import pandas as pd
 from _script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 KEY_CANDIDATES: tuple[str, ...] = (
     "clip_id",
@@ -231,8 +232,7 @@ def _infer_feature_key_column(df: pd.DataFrame, requested: str | None) -> str:
         if found is not None:
             return found
     raise ValueError(
-        "could not infer feature key column; pass --key-column. "
-        f"Tried: {', '.join(KEY_CANDIDATES)}"
+        f"could not infer feature key column; pass --key-column. Tried: {', '.join(KEY_CANDIDATES)}"
     )
 
 

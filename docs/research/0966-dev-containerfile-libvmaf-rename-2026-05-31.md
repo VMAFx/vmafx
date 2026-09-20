@@ -1,10 +1,7 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0966 — dev/Containerfile libvmaf → core rename (Round 26 audit C.1)
 
-**Date**: 2026-05-31
-**Author**: lusoris
-**Branch**: fix/dev-containerfile-libvmaf-rename
-**Status**: Resolved (see ADR-0966)
+**Date**: 2026-05-31 **Author**: lusoris **Branch**:
+fix/dev-containerfile-libvmaf-rename **Status**: Resolved (see ADR-0966)
 
 ---
 
@@ -13,11 +10,11 @@
 Round 26 audit identified three stale `libvmaf/` path references in
 `dev/Containerfile` that survived the ADR-0700 directory rename:
 
-| Line | Stale text | Effect |
-|------|-----------|--------|
-| 452  | `COPY --chown=vmaf:vmaf libvmaf/ /build/vmaf/libvmaf/` | Docker COPY fails: `file not found: /libvmaf` |
-| 515  | `RUN cd libvmaf && CC=icx CXX=icpx meson setup build …` | `cd` fails if COPY had succeeded |
-| 533  | `RUN cd libvmaf && ninja -C build install` | `cd` fails if prior RUN had succeeded |
+| Line | Stale text                                              | Effect                                        |
+| ---- | ------------------------------------------------------- | --------------------------------------------- |
+| 452  | `COPY --chown=vmaf:vmaf libvmaf/ /build/vmaf/libvmaf/`  | Docker COPY fails: `file not found: /libvmaf` |
+| 515  | `RUN cd libvmaf && CC=icx CXX=icpx meson setup build …` | `cd` fails if COPY had succeeded              |
+| 533  | `RUN cd libvmaf && ninja -C build install`              | `cd` fails if prior RUN had succeeded         |
 
 All three were introduced when ADR-0700 renamed the C source root `libvmaf/` →
 `core/` but the Containerfile grep was either not run or did not cover these
@@ -42,15 +39,16 @@ Containerfile:452
 
 **Post-fix behaviour**: running the same command against the worktree
 `/tmp/wt-c1-containerfile` (with `--project-directory /tmp/wt-c1-containerfile`)
-confirmed the build progressed past the COPY layer and into subsequent SDK layers
-(all cached), verifying the fix is correct.
+confirmed the build progressed past the COPY layer and into subsequent SDK
+layers (all cached), verifying the fix is correct.
 
 ## Root cause
 
 Rename greps after ADR-0700 did not cover `dev/Containerfile`. The memory rule
-`feedback_fix_preexisting_bugs_too` (corollary: "Rename greps must be exhaustive")
-specifically calls out this pattern from a prior incident where 9 stale `libvmaf/`
-references survived in `ai/` tests. The same miss recurred in the Containerfile.
+`feedback_fix_preexisting_bugs_too` (corollary: "Rename greps must be
+exhaustive") specifically calls out this pattern from a prior incident where 9
+stale `libvmaf/` references survived in `ai/` tests. The same miss recurred in
+the Containerfile.
 
 ## Fix
 
@@ -63,9 +61,9 @@ Three textual substitutions in `dev/Containerfile`:
 Additionally, the directory-list comment at line 434 was updated to reference
 `core/` with an inline ADR-0700 citation.
 
-The library install name (`libvmaf.so.3`), install prefix (`/usr/local`), and the
-stage name `libvmaf-build` (which refers to the *library* not the directory) are
-unaffected.
+The library install name (`libvmaf.so.3`), install prefix (`/usr/local`), and
+the stage name `libvmaf-build` (which refers to the _library_ not the directory)
+are unaffected.
 
 ## Scope
 

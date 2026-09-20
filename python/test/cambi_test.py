@@ -1,6 +1,8 @@
-import os
 import shutil
 import unittest
+from pathlib import Path
+from unittest.mock import patch
+
 from test.testutil import (
     set_default_576_324_videos_for_testing,
     set_default_576_324_videos_for_testing_scaled,
@@ -8,8 +10,6 @@ from test.testutil import (
     set_default_cambi_video_for_testing_10b,
     set_default_cambi_video_for_testing_b,
 )
-from unittest.mock import patch
-
 from vmaf.core.cambi_feature_extractor import (
     CambiFeatureExtractor,
     CambiFullReferenceFeatureExtractor,
@@ -329,7 +329,7 @@ class CambiResultsCachingTest(MyTestCase):
         self.results_store_dir = FileSystemResultStore()
 
     def tearDown(self):
-        if os.path.exists(self.store_dir):
+        if Path(self.store_dir).exists():
             shutil.rmtree(self.store_dir)
 
     def test_run_cambi_runner(self):
@@ -344,19 +344,19 @@ class CambiResultsCachingTest(MyTestCase):
 
         # make sure the caching directory needs to be created by running the feature extractor
         fextractor = self.qrunner._get_feature_extractor_class()
-        self.store_dir = os.path.join(
-            self.results_store_dir.result_store_dir,
-            f"{fextractor.TYPE}_V{fextractor.VERSION}",
-            "test",
+        self.store_dir = str(
+            Path(self.results_store_dir.result_store_dir)
+            / f"{fextractor.TYPE}_V{fextractor.VERSION}"
+            / "test"
         )
-        if os.path.exists(self.store_dir):
+        if Path(self.store_dir).exists():
             shutil.rmtree(self.store_dir)
 
         self.qrunner.run(parallelize=False)
         results = self.qrunner.results
 
         # check if the correct directory was created
-        self.assertTrue(os.path.exists(self.store_dir))
+        self.assertTrue(Path(self.store_dir).exists())
 
         # score: arithmetic mean score over all frames
         self.assertAlmostEqual(results[0]["Cambi_score"], 0.17871631249999997, places=4)

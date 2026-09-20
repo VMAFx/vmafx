@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Second-opinion feature materializer
 
 `ai/scripts/materialize_second_opinion_features.py` joins externally generated
@@ -11,7 +10,7 @@ The script does not run, vendor, or link any external scorer. It only reads
 score JSON/JSONL files and appends namespaced columns:
 
 | Column | Meaning |
-|---|---|
+| --- | --- |
 | `second_opinion_<scorer>_score` | Clip-level MOS/VQA score from the scorer. |
 | `second_opinion_<scorer>_status` | `ok`, `missing`, or `bad`. |
 | `second_opinion_<scorer>_runtime_ms` | Runtime reported by the scorer, when available. |

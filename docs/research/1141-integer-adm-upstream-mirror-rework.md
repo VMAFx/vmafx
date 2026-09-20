@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # Research digest: integer ADM upstream-mirror rework (ADR-1141)
 

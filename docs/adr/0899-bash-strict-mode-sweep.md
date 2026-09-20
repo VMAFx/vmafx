@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0899: Bash strict-mode + trap-cleanup sweep across in-tree shell scripts
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ self-test (`test-next-free.sh`, `test_check_agent_worktree_drift.sh`,
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Top-of-script `set -euo pipefail` enforced via shellcheck CI gate | Mechanical; no per-file judgement needed | Existing PR #318 already partially landed it; conflicts with sourced files (`_platform_detect.sh`) where strict mode would mutate caller state | Picked targeted fixes for the 9 actual offenders + an inline rationale on the sourced exception; a blanket shellcheck SC2148/SC2154 promotion can follow in a separate PR |
 | Wait until shellcheck is installed in CI and let it flag every file in one mass-rewrite | Single PR | Shellcheck isn't currently in CI (`which shellcheck` returns not-found); blocking on tool install delays a tractable cleanup | Ship the surgical fixes now and queue the shellcheck-in-CI follow-up as a separate ADR |
 | Rewrite sourced helpers to define functions only and assume callers handle strict mode | Already the case | No behavioural change | This is the actual decision for `_platform_detect.sh`; the new comment makes it explicit |

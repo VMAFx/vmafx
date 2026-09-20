@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import pytest
 
 from vmaf.core.feature_extractor import (
@@ -270,7 +272,7 @@ class TestFindSubclass:
         assert cls is SpeedTemporalFeatureExtractor
 
     def test_find_unknown_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(AssertionError):
             FeatureExtractor.find_subclass("NONEXISTENT_feature")
 
     def test_get_subclasses_recursively_includes_concrete_classes(self):
@@ -292,7 +294,7 @@ class TestDiscoverFeatureExact:
 
     def _make_frame(self, attribs: dict):
         """Minimal XML-frame-like mock."""
-        from unittest.mock import MagicMock
+        MagicMock = import_module("unittest.mock").MagicMock
 
         frame = MagicMock()
         frame.attrib = attribs
@@ -332,7 +334,7 @@ class TestDiscoverFeatureExact:
 
 class TestDiscoverFeatureWildcard:
     def _make_frame(self, attribs: dict):
-        from unittest.mock import MagicMock
+        MagicMock = import_module("unittest.mock").MagicMock
 
         frame = MagicMock()
         frame.attrib = attribs

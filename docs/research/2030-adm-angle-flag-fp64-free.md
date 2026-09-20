@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # Research-2030: an fp64-free, bit-identical integer-ADM `angle_flag`
 

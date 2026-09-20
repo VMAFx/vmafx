@@ -20,7 +20,7 @@
 #include "feature/common/convolution_internal.h"
 #include "x86/cpu.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): ADR-1138 preserves C NULL for MSVC. */
+
 
 typedef struct {
     float *src1;
@@ -115,7 +115,7 @@ static int check_plane(const ConvolutionFixture *f, const float *filter, int tap
 
 static int check_case(int width, int height, int taps, int step, int mode)
 {
-    ConvolutionFixture f = {0};
+    ConvolutionFixture f = {VMAF_NULLPTR};
     float filter[MAX_FWIDTH_AVX_CONV];
     for (int k = 0; k < taps; k++) {
         const int mirror = k < taps / 2 ? k : taps - k - 1;
@@ -164,7 +164,7 @@ static char *check_isa(int step)
                       check_heights(width, taps, step));
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_avx2_horizontal_bounds(void)
@@ -194,7 +194,5 @@ char *run_tests(void)
         (void)fprintf(stderr, "skipping: CPU lacks AVX512\n");
     }
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

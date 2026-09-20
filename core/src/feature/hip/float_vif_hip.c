@@ -33,6 +33,8 @@
  *    mirroring the CUDA twin's vmaf_cuda_buffer_host_alloc pattern.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -58,9 +60,9 @@
 #include "../../hip/hip_handle.h"
 #include "float_vif_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
@@ -203,7 +205,7 @@ static int fvif_hip_module_load(FloatVifStateHip *s)
         rc = hipModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return fvif_hip_rc(rc);
 }
@@ -249,48 +251,48 @@ static int fvif_hip_bufs_alloc(FloatVifStateHip *s)
 }
 
 /* Release all device buffers + pinned host slabs + HSACO module.
- * Safe to call with NULL handles. */
+ * Safe to call with VMAF_NULLPTR handles. */
 static void fvif_hip_bufs_free(FloatVifStateHip *s)
 {
     for (int i = 3; i >= 0; i--) {
-        if (s->den_host[i] != NULL) {
+        if (s->den_host[i] != VMAF_NULLPTR) {
             (void)hipHostFree(s->den_host[i]);
-            s->den_host[i] = NULL;
+            s->den_host[i] = VMAF_NULLPTR;
         }
-        if (s->num_host[i] != NULL) {
+        if (s->num_host[i] != VMAF_NULLPTR) {
             (void)hipHostFree(s->num_host[i]);
-            s->num_host[i] = NULL;
+            s->num_host[i] = VMAF_NULLPTR;
         }
-        if (s->den_partials[i] != NULL) {
+        if (s->den_partials[i] != VMAF_NULLPTR) {
             (void)hipFree(s->den_partials[i]);
-            s->den_partials[i] = NULL;
+            s->den_partials[i] = VMAF_NULLPTR;
         }
-        if (s->num_partials[i] != NULL) {
+        if (s->num_partials[i] != VMAF_NULLPTR) {
             (void)hipFree(s->num_partials[i]);
-            s->num_partials[i] = NULL;
+            s->num_partials[i] = VMAF_NULLPTR;
         }
     }
     for (int i = 1; i >= 0; i--) {
-        if (s->dis_buf[i] != NULL) {
+        if (s->dis_buf[i] != VMAF_NULLPTR) {
             (void)hipFree(s->dis_buf[i]);
-            s->dis_buf[i] = NULL;
+            s->dis_buf[i] = VMAF_NULLPTR;
         }
-        if (s->ref_buf[i] != NULL) {
+        if (s->ref_buf[i] != VMAF_NULLPTR) {
             (void)hipFree(s->ref_buf[i]);
-            s->ref_buf[i] = NULL;
+            s->ref_buf[i] = VMAF_NULLPTR;
         }
     }
-    if (s->dis_raw != NULL) {
+    if (s->dis_raw != VMAF_NULLPTR) {
         (void)hipFree(s->dis_raw);
-        s->dis_raw = NULL;
+        s->dis_raw = VMAF_NULLPTR;
     }
-    if (s->ref_raw != NULL) {
+    if (s->ref_raw != VMAF_NULLPTR) {
         (void)hipFree(s->ref_raw);
-        s->ref_raw = NULL;
+        s->ref_raw = VMAF_NULLPTR;
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
 }
 
@@ -315,8 +317,8 @@ static int fvif_launch_compute(FloatVifStateHip *s, hipStream_t str, int scale, 
     void *num_d = s->num_partials[scale];
     void *den_d = s->den_partials[scale];
     const bool is_raw = (scale == 0);
-    const float *ref_fp = is_raw ? NULL : (const float *)ref_f_d;
-    const float *dis_fp = is_raw ? NULL : (const float *)dis_f_d;
+    const float *ref_fp = is_raw ? VMAF_NULLPTR : (const float *)ref_f_d;
+    const float *dis_fp = is_raw ? VMAF_NULLPTR : (const float *)dis_f_d;
     ptrdiff_t used_stride = is_raw ? nf_stride : f_stride;
 
     /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
@@ -334,7 +336,7 @@ static int fvif_launch_compute(FloatVifStateHip *s, hipStream_t str, int scale, 
         (void *)&den_d,  (void *)&w,         (void *)&h,           (void *)&s->bpc,
         (void *)&gx,     (void *)&vif_nsq_f, (void *)&vif_egl_f,   (void *)&sigma_max_inv,
     };
-    rc = hipModuleLaunchKernel(s->func_compute, gx, gy, 1, FVIF_BX, FVIF_BY, 1, 0, str, args, NULL);
+    rc = hipModuleLaunchKernel(s->func_compute, gx, gy, 1, FVIF_BX, FVIF_BY, 1, 0, str, args, VMAF_NULLPTR);
     return fvif_hip_rc(rc);
 }
 
@@ -365,7 +367,7 @@ static int fvif_launch_decimate_and_compute(FloatVifStateHip *s, hipStream_t str
         (void *)&in_w,       (void *)&in_h,      (void *)&s->bpc,
     };
     hipError_t rc = hipModuleLaunchKernel(s->func_decimate, dgx, dgy, 1, FVIF_BX, FVIF_BY, 1, 0,
-                                          str, dargs, NULL);
+                                          str, dargs, VMAF_NULLPTR);
     if (rc != hipSuccess)
         return fvif_hip_rc(rc);
 
@@ -410,13 +412,13 @@ static int fvif_hip_release(FloatVifStateHip *s)
 #ifdef HAVE_HIPCC
     fvif_hip_bufs_free(s);
 #endif /* HAVE_HIPCC */
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         const int err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -453,7 +455,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -492,17 +494,17 @@ static int fvif_hip_readback(FloatVifStateHip *s, hipStream_t pic_stream)
  * every HIP parity test skips on (ADR-1264).
  *
  * The scaffold branch used to call `vmaf_hip_kernel_submit_pre_launch(&s->lc,
- * s->ctx, NULL, 0, 0)` first and return its result on error. That call passes
- * `rb == NULL`, which the helper rejects outright, so it ALWAYS returned
+ * s->ctx, VMAF_NULLPTR, 0, 0)` first and return its result on error. That call passes
+ * `rb == VMAF_NULLPTR`, which the helper rejects outright, so it ALWAYS returned
  * -EINVAL and the `-ENOSYS` after it was unreachable. The extractor therefore
  * failed instead of skipping on every default-configured HIP build, and
  * `test_hip_float_vif_parity` failed with it. The call did nothing else: the
- * NULL check is the helper's first statement, ahead of any work.
+ * VMAF_NULLPTR check is the helper's first statement, ahead of any work.
  *
  * This explanation sits here rather than in the branch it describes so the
  * function body stays inside the 60-line limit. */
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -542,7 +544,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
         return err;
 
     /* Launch: compute at scale 0, then decimate + compute for scales 1-3. */
-    err = fvif_launch_compute(s, pic_stream, 0, s->ref_raw, s->dis_raw, raw_stride, NULL, NULL);
+    err = fvif_launch_compute(s, pic_stream, 0, s->ref_raw, s->dis_raw, raw_stride, VMAF_NULLPTR, VMAF_NULLPTR);
     for (int ns = 1; ns < 4 && err == 0; ns++) {
         err =
             fvif_launch_decimate_and_compute(s, pic_stream, ns, s->ref_raw, s->dis_raw, raw_stride);
@@ -663,14 +665,13 @@ static const char *provided_features[] = {
     "vif_den_scale2",
     "vif_num_scale3",
     "vif_den_scale3",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 /* Load-bearing: registered via extern in feature_extractor.c's
  * feature_extractor_list[].  Making this static would unlink the
  * extractor from the registry — same rule as every other HIP consumer
  * (e.g. vmaf_fex_float_motion_hip). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_vif_hip = {
     .name = "float_vif_hip",
     .init = init_fex_hip,
@@ -698,5 +699,3 @@ VmafFeatureExtractor vmaf_fex_float_vif_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

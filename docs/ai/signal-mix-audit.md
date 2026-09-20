@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Signal-mix audit
 
 `ai/scripts/signal_mix_audit.py` audits already-extracted feature tables and
@@ -55,7 +54,7 @@ The audit maps columns into broad signal families, not individual model
 contracts. A column can count for more than one family when names overlap.
 
 | Family | Examples |
-|---|---|
+| --- | --- |
 | FR detail and motion baseline | `adm2`, `vif_scale0..3`, `motion2`, VMAF teacher columns |
 | Error energy and HVS-weighted PSNR | `psnr_y`, `psnr_hvs`, `mse`, `rmse` |
 | Local structural similarity | `float_ssim`, `float_ms_ssim`, `iw_ssim` |

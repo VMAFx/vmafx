@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2060 — Three gates that only fail in combination
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0730: Cross-backend numerical parity — Intel Arc A380 (2026-05-27)
 
 **Date:** 2026-05-27
@@ -26,7 +25,7 @@ readiness").
 ### 2.1 Hardware
 
 | Item | Value |
-|---|---|
+| --- | --- |
 | GPU | Intel Arc A380 Graphics (DG2-G10, PCI 03:00.0) |
 | Kernel driver | i915 (CachyOS kernel 7.0.10-1-cachyos) |
 | Vulkan driver | Mesa Intel ANV 26.1.1-arch2.1 |
@@ -38,7 +37,7 @@ readiness").
 ### 2.2 Firmware / software
 
 | Component | Version |
-|---|---|
+| --- | --- |
 | vmaf git SHA | `d4458190a9a8ad14da8f3eabc6be4b422f9af49c` |
 | Build dir | `libvmaf/build-sycl-vulkan` |
 | Build flags | `enable_sycl=true`, `enable_vulkan=enabled`, `enable_cuda=false` |
@@ -49,7 +48,7 @@ readiness").
 ### 2.3 Test fixture
 
 | Item | Value |
-|---|---|
+| --- | --- |
 | Reference | `testdata/ref_576x324_48f.yuv` |
 | Distorted | `testdata/dis_576x324_48f.yuv` |
 | Resolution | 576 × 324 |
@@ -98,7 +97,7 @@ uses the options-qualified alias (`cambi_encbd_8_ench_324_encw_576` for SYCL,
 ### 3.1 SYCL backend — cpu vs sycl (Intel Arc A380, Level Zero)
 
 | Feature | Max abs diff | Tolerance | Status | Notes |
-|---|---:|---:|---|---|
+| --- | ---: | ---: | --- | --- |
 | `vif` | 1.000e-06 | 5.0e-05 | **OK** | All 4 scales within places=4 |
 | `adm` | 2.000e-06 | 5.0e-05 | **OK** | All 5 metrics within places=4 |
 | `motion` | 3.000e-06 | 5.0e-05 | **OK** | 3-frame window mode |
@@ -122,7 +121,7 @@ uses the options-qualified alias (`cambi_encbd_8_ench_324_encw_576` for SYCL,
 ### 3.2 Vulkan backend — cpu vs vulkan (Intel Arc A380, Mesa ANV)
 
 | Feature | Max abs diff | Tolerance | Status | Notes |
-|---|---:|---:|---|---|
+| --- | ---: | ---: | --- | --- |
 | `vif` | 1.000e-06 | 5.0e-05 | **OK** | |
 | `adm` | 2.000e-06 | 5.0e-05 | **OK** | |
 | `motion` | 3.000e-06 | 5.0e-05 | **OK** | |

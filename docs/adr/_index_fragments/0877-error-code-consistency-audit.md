@@ -1,1 +1,5 @@
-| [ADR-0877](0877-error-code-consistency-audit.md) | Fork-added MS-SSIM decimate dispatcher — convert `return -1` (malloc-failure) to `-ENOMEM` | Accepted | 2026-05-30 | c, simd, error-handling, api-contract |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0877](0877-error-code-consistency-audit.md) | Error-code consistency audit — fork-added MS-SSIM decimate dispatcher | Accepted | c, simd, error-handling, api-contract |

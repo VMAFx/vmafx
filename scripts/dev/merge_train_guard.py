@@ -19,13 +19,18 @@ import re
 import secrets
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 REPO = "VMAFx/vmafx"
 RELEASE_PR = 1213
@@ -63,11 +68,25 @@ def environment() -> dict[str, str]:
 
 def execute(argv: list[str], cwd: Path) -> str:
     """Run fixed argument vectors; failures never become success-shaped output."""
-    binary = shutil.which(argv[0])
-    if binary is None:
+    if not argv:
+        raise Refused("execution boundary requires an executable")
+    requested = Path(argv[0]).expanduser()
+    if requested.is_absolute():
+        binary = str(requested.resolve(strict=False))
+    elif len(requested.parts) == 1:
+        binary = shutil.which(argv[0], path=environment().get("PATH"))
+    else:
+        binary = str((cwd / requested).resolve(strict=False))
+    if binary is None or not Path(binary).is_file():
         raise Refused(f"required executable is unavailable: {argv[0]}")
-    result = subprocess.run(  # noqa: S603 -- argument vector, no shell
-        [binary, *argv[1:]], cwd=cwd, env=environment(), capture_output=True, text=True
+    result = run_command(
+        [binary, *argv[1:]],
+        allowed_executables=(binary,),
+        cwd=cwd,
+        env=environment(),
+        capture_output=True,
+        text=True,
+        timeout_seconds=120,
     )
     if result.returncode:
         raise Refused(f"{' '.join(argv[:2])} failed ({result.returncode}): {result.stderr.strip()}")
@@ -229,12 +248,14 @@ class Train:
             self.clean_head(checkout, head)
             log = logs / f"{command[1]}.log"
             with log.open("wb") as output:
-                result = subprocess.run(  # noqa: S603 -- fixed full-gate command
+                result = run_command(
                     [make, command[1]],
+                    allowed_executables=(make,),
                     cwd=checkout,
                     env=environment(),
                     stdout=output,
-                    stderr=subprocess.STDOUT,
+                    stderr_to_stdout=True,
+                    timeout_seconds=7200,
                 )
             if result.returncode:
                 raise Refused(f"{' '.join(command)} failed ({result.returncode}); evidence: {log}")

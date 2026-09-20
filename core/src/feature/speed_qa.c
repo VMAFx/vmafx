@@ -41,13 +41,15 @@
  * VMAF_FEATURE_EXTRACTOR_TEMPORAL set for in-order frame delivery.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <math.h>
 #include <stddef.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #include <stdint.h>
@@ -330,8 +332,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic;
@@ -357,14 +360,13 @@ static int close_fex(VmafFeatureExtractor *fex)
     SpeedQaState *s = fex->priv;
     if (s->prev_dist) {
         aligned_free(s->prev_dist);
-        s->prev_dist = NULL;
+        s->prev_dist = VMAF_NULLPTR;
     }
     return 0;
 }
 
-static const char *provided_features[] = {"speed_qa", NULL};
+static const char *provided_features[] = {"speed_qa", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_speed_qa = {
     .name = "speed_qa",
     .init = init,
@@ -377,5 +379,3 @@ VmafFeatureExtractor vmaf_fex_speed_qa = {
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

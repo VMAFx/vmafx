@@ -35,8 +35,10 @@
 #include "picture.h"
 #include "sycl/common.h"
 
-namespace
-{
+/*
+ * lint rationale: ADR-1266 keeps
+ * file-local SYCL helpers static because Praetor misclassifies namespace scopes as functions.
+ */
 
 struct MomentStateSycl {
     /* Frame geometry. */
@@ -124,20 +126,6 @@ static void config_moment_slot(void *priv, int slot)
     (void)slot;
 }
 
-} /* anonymous namespace */
-
-extern "C" {
-
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points and the `provided_features_*` table use C-style `static` rather
-// than an anonymous namespace because their addresses are stored in the
-// `extern "C" VmafFeatureExtractor` struct at the bottom of this file, which
-// the C ABI consumes through the function-pointer types in
-// `feature_extractor.h`. A namespace cannot appear inside this linkage
-// specification at all. Same band, same reason, as integer_motion_sycl.cpp and
-// integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these are load-bearing
-// invariants of the SYCL <-> libvmaf C-API ABI.
 static const VmafOption options_moment_sycl[] = {{.name = nullptr}};
 
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -184,8 +172,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
@@ -279,7 +267,10 @@ static const char *provided_features_moment_sycl[] = {
     nullptr,
 };
 
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
+/*
+ * lint rationale: ADR-1266 ends the
+ * file-local helper band before the exported C-linkage descriptor.
+ */
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_moment_sycl = {
     .name = "float_moment_sycl",
@@ -301,5 +292,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_moment_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-} /* extern "C" */

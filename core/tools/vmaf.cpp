@@ -166,11 +166,7 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
     const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
     if (!fp && raw_fd >= 0) {
-        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
-        /* cppcheck-suppress doubleFree ; see the note above */
+        /* POSIX leaves the descriptor open when fdopen() fails. */
         (void)close(raw_fd);
     }
 #endif
@@ -269,94 +265,6 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
     return err_cnt;
 }
 
-/* Copy video input data to picture buffer. The four bit-depth × component
- * branches (8-bit Y/U/V, 10-bit Y/U/V, 16-bit packed) duplicate the per-row
- * loop with different per-sample casts; folding them through a function
- * pointer would cost a per-row indirect call on every frame, so the
- * branches stay inline. The nesting-level warning is structural to YUV
- * (plane × row × column) — splitting wouldn't reduce it
- * (ADR-0141 §2 load-bearing invariant: per-frame indirect-call cost;
- * T7-5 sweep closeout — ADR-0278).
- */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: per-frame pixel unpacking loop
-void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_info *info, int depth)
-{
-    if (info->depth == depth) {
-        if (info->depth == 8) {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint8_t *ycbcr_data =
-                    ycbcr[i].data + static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
-                    (info->pic_x >> xdec);
-                uint8_t *pic_data = static_cast<uint8_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    memcpy(pic_data, ycbcr_data, sizeof(*pic_data) * pic->w[i]);
-                    pic_data += pic->stride[i];
-                    ycbcr_data += ycbcr[i].stride;
-                }
-            }
-        } else {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint16_t *ycbcr_data =
-                    reinterpret_cast<const uint16_t *>(ycbcr[i].data) +
-                    static_cast<size_t>(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
-                    (info->pic_x >> xdec);
-                uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    memcpy(pic_data, ycbcr_data, sizeof(*pic_data) * pic->w[i]);
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride / 2;
-                }
-            }
-        }
-    } else if (depth > 8) {
-        // unequal bit-depth
-        // therefore depth must be > 8 since we do not support depth < 8
-        const int left_shift = depth - info->depth;
-        if (info->depth == 8) {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint8_t *ycbcr_data =
-                    ycbcr[i].data + static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
-                    (info->pic_x >> xdec);
-                uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    for (unsigned k = 0; k < pic->w[i]; k++) {
-                        pic_data[k] = static_cast<uint16_t>(ycbcr_data[k] << left_shift);
-                    }
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride;
-                }
-            }
-        } else {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint16_t *ycbcr_data =
-                    reinterpret_cast<const uint16_t *>(ycbcr[i].data) +
-                    static_cast<size_t>(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
-                    (info->pic_x >> xdec);
-                uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    for (unsigned k = 0; k < pic->w[i]; k++) {
-                        pic_data[k] = static_cast<uint16_t>(ycbcr_data[k] << left_shift);
-                    }
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride / 2;
-                }
-            }
-        }
-    }
-}
-
 [[nodiscard]] int finish_unread_picture(VmafPicture *pic, int fetch_ret)
 {
     const int err_unref = vmaf_picture_unref(pic);
@@ -365,31 +273,17 @@ void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_in
     return fetch_ret == 0 ? 1 : -1;
 }
 
-[[nodiscard]] int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth)
+[[nodiscard]] int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic)
 {
-    int ret;
-    video_input_info info;
-
-    video_input_get_info(vid, &info);
-
-    ret = vmaf_fetch_preallocated_picture(vmaf, pic);
+    int ret = vmaf_fetch_preallocated_picture(vmaf, pic);
     if (ret) {
         (void)fprintf(stderr, "problem fetching picture from pool.\n");
         return -1;
     }
 
-#ifdef USE_DIRECT_READ
-    (void)depth;
     ret = video_input_fetch_into_vmaf_picture(vid, pic);
     if (ret < 1)
         return finish_unread_picture(pic, ret);
-#else
-    video_input_ycbcr ycbcr;
-    ret = video_input_fetch_frame(vid, ycbcr, nullptr);
-    if (ret < 1)
-        return finish_unread_picture(pic, ret);
-    copy_picture_data(pic, ycbcr, &info, depth);
-#endif
     return 0;
 }
 
@@ -442,14 +336,6 @@ class ModelArrays
     [[nodiscard]] const char *const *collection_label() const noexcept
     {
         return m_collection_label;
-    }
-    [[nodiscard]] unsigned &model_cnt() noexcept
-    {
-        return m_model_cnt;
-    }
-    [[nodiscard]] unsigned model_cnt() const noexcept
-    {
-        return m_model_cnt;
     }
     [[nodiscard]] unsigned &collection_cnt() noexcept
     {
@@ -634,8 +520,8 @@ const char *model_label(const CLISettings *c, unsigned i)
  * video_input_open). On success transfers FILE* ownership from *file_ref/dist
  * to the corresponding video_input and zeros the pointers so the cleanup
  * fclose() doesn't double-close. Sets *vid_ref_open / *vid_dist_open to true
- * for cleanup unwinding. Returns 0 on success, -1 on any failure (caller
- * should treat as fatal and `goto cleanup`).
+ * for cleanup unwinding. Returns 0 on success, 2 for a raw-input geometry/file
+ * size mismatch, and -1 for other failures.
  */
 [[nodiscard]] int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_dist,
                                     video_input *vid_ref, video_input *vid_dist, bool *vid_ref_open,
@@ -653,7 +539,7 @@ const char *model_label(const CLISettings *c, unsigned i)
          * "ref" slot; surface the actually-opened path on failure. */
         const char *const opened_path = c->no_reference ? c->path_dist : c->path_ref;
         (void)fprintf(stderr, "problem with reference file: %s\n", opened_path);
-        return -1;
+        return err == 2 ? 2 : -1;
     }
     *vid_ref_open = true;
     *file_ref = nullptr; /* ownership transferred to vid_ref */
@@ -665,7 +551,7 @@ const char *model_label(const CLISettings *c, unsigned i)
     }
     if (err) {
         (void)fprintf(stderr, "problem with distorted file: %s\n", c->path_dist);
-        return -1;
+        return err == 2 ? 2 : -1;
     }
     *vid_dist_open = true;
     *file_dist = nullptr; /* ownership transferred to vid_dist */
@@ -697,7 +583,6 @@ const char *model_label(const CLISettings *c, unsigned i)
  * (ADR-0141 §2 load-bearing invariant: backend-priority chain
  * readability + #ifdef discipline; T7-5 sweep closeout — ADR-0278).
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: backend priority chain and context init
 [[nodiscard]] int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #ifdef HAVE_SYCL
                                     ,
@@ -1098,20 +983,20 @@ const char *model_label(const CLISettings *c, unsigned i)
  * after N skips and the next fetch blocks indefinitely.
  */
 void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
-                         const CLISettings *c, int common_bitdepth)
+                         const CLISettings *c)
 {
     VmafPicture pic_ref_skip;
     VmafPicture pic_dist_skip;
 
     for (unsigned i = 0; i < c->frame_skip_ref; i++) {
-        if (fetch_picture(vmaf, vid_ref, &pic_ref_skip, common_bitdepth))
+        if (fetch_picture(vmaf, vid_ref, &pic_ref_skip))
             break;
         if (vmaf_picture_unref(&pic_ref_skip))
             (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (skip ref)\n");
     }
 
     for (unsigned i = 0; i < c->frame_skip_dist; i++) {
-        if (fetch_picture(vmaf, vid_dist, &pic_dist_skip, common_bitdepth))
+        if (fetch_picture(vmaf, vid_dist, &pic_dist_skip))
             break;
         if (vmaf_picture_unref(&pic_dist_skip))
             (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (skip dist)\n");
@@ -1332,7 +1217,7 @@ struct FrameLoopResult {
  * the caller tells those apart.
  */
 FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
-                               const CLISettings *c, int common_bitdepth, int istty)
+                               const CLISettings *c, int istty)
 {
     float fps = 0.;
     const double t0 = wall_time_s();
@@ -1346,8 +1231,8 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 
         VmafPicture pic_ref;
         VmafPicture pic_dist;
-        const int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref, common_bitdepth);
-        const int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist, common_bitdepth);
+        const int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref);
+        const int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist);
 
         if (ret1 || ret2) {
             if (!ret1) {
@@ -1402,12 +1287,10 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 [[nodiscard]] int report_pooled_scores(VmafContext *vmaf, const CLISettings *c,
                                        const ModelArrays &arrays, unsigned picture_index, int istty)
 {
-    int err = 0;
-
     for (unsigned i = 0; i < c->model_cnt; i++) {
         double vmaf_score;
-        err = vmaf_score_pooled(vmaf, arrays.model()[i], VMAF_POOL_METHOD_MEAN, &vmaf_score, 0,
-                                picture_index - 1);
+        const int err = vmaf_score_pooled(vmaf, arrays.model()[i], VMAF_POOL_METHOD_MEAN,
+                                          &vmaf_score, 0, picture_index - 1);
         if (err) {
             (void)fprintf(stderr, "problem generating pooled VMAF score\n");
             return -1;
@@ -1425,7 +1308,7 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
     for (unsigned i = 0; i < arrays.collection_cnt(); i++) {
         VmafModelCollectionScore score = {.type = static_cast<VmafModelCollectionScoreType>(0),
                                           .bootstrap = {}};
-        err = vmaf_score_pooled_model_collection(
+        const int err = vmaf_score_pooled_model_collection(
             vmaf, arrays.collection()[i], VMAF_POOL_METHOD_MEAN, &score, 0, picture_index - 1);
         if (err) {
             (void)fprintf(stderr, "problem generating pooled VMAF score\n");
@@ -1526,10 +1409,9 @@ void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat
  */
 } // namespace
 
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: top-level CLI main entry point
 int main(int argc, char *argv[])
 {
-    int err = 0;
+    int err;
     int ret = 0;
     const int istty = isatty(fileno(stderr));
 
@@ -1625,9 +1507,10 @@ int main(int argc, char *argv[])
         goto cleanup;
     }
 
-    if (open_input_videos(&c, &file_ref, &file_dist, &vid_ref, &vid_dist, &vid_ref_open,
-                          &vid_dist_open)) {
-        ret = -1;
+    err = open_input_videos(&c, &file_ref, &file_dist, &vid_ref, &vid_dist, &vid_ref_open,
+                            &vid_dist_open);
+    if (err) {
+        ret = err;
         goto cleanup;
     }
 
@@ -1811,10 +1694,9 @@ int main(int argc, char *argv[])
             goto cleanup;
         }
 
-        skip_initial_frames(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth);
+        skip_initial_frames(vmaf, &vid_ref, &vid_dist, &c);
 
-        const FrameLoopResult loop =
-            run_frame_loop(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth, istty);
+        const FrameLoopResult loop = run_frame_loop(vmaf, &vid_ref, &vid_dist, &c, istty);
         const unsigned picture_index = loop.frames;
 
         /* Two ways the loop can fail, sharing one exit so this does not add a

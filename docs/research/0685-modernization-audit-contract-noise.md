@@ -1,16 +1,14 @@
-<!-- markdownlint-disable MD013 -->
 # Research-0685: Modernization Audit Contract-Noise Follow-Up
 
 ## Question
 
 How should the modernization audit keep finding real implementation gaps after
-the latest backlog refresh without putting documented optional-runtime
-contracts at the top of the queue?
+the latest backlog refresh without putting documented optional-runtime contracts
+at the top of the queue?
 
 ## Evidence
 
-- Fresh local run:
-  `.workingdir2/modernization/audit-20260521.{md,json}`.
+- Fresh local run: `.workingdir2/modernization/audit-20260521.{md,json}`.
 - The report produced 1242 total findings, 901 actionable rows, and 341
   blocked/deferred rows.
 - The top actionable rows were dominated by documented optional-backend
@@ -30,16 +28,15 @@ contracts at the top of the queue?
   documentation.
 - HIP/ROCm source files use dual-path contracts: `enable_hipcc=true` compiles
   real kernels, while `enable_hipcc=false` intentionally keeps `-ENOSYS`
-  fallback branches. Those branches must not be ranked as "HIP not
-  implemented."
+  fallback branches. Those branches must not be ranked as "HIP not implemented."
 - Runtime error translators that map native "not supported" codes to POSIX
   `-ENOSYS` are not missing implementations.
 
 ## Decision
 
 Extend the existing ADR-0659 context filters rather than adding file-level
-allowlists. The audit remains read-only and still reports bare `return
--ENOSYS;` rows outside a recognized contract.
+allowlists. The audit remains read-only and still reports bare `return -ENOSYS;`
+rows outside a recognized contract.
 
 ## Validation
 
@@ -55,4 +52,5 @@ allowlists. The audit remains read-only and still reports bare `return
 
 - [ADR-0658](../adr/0658-project-modernization-audit.md)
 - [ADR-0659](../adr/0659-modernization-audit-false-positive-filter.md)
-- `req`: "and? we should have multiple backlogs now?? or where are the results of all the audits i wanted"
+- `req`: "and? we should have multiple backlogs now?? or where are the results
+  of all the audits i wanted"

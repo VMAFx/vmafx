@@ -19,11 +19,11 @@
 #include "metadata_handler.h"
 #include "test.h"
 
-/* Must match VmafCallbackItem::callback — void (*)(void *, VmafMetadata *).
+/* Must match VmafCallbackItem::callback — void (*)(void *, const VmafMetadata *).
  * Under C23 an empty parameter list means (void), so the previous
  * `void set_meta()` spelling is a genuine type mismatch rather than the
  * C11 unprototyped-function tolerance it relied on (ADR-0692). */
-void set_meta(void *data, VmafMetadata *metadata)
+static void set_meta(void *data, const VmafMetadata *metadata)
 {
     (void)data;
     (void)metadata;
@@ -39,7 +39,7 @@ static char *test_propagate_metadata_init()
     vmaf_metadata_destroy(propagate_metadata);
     mu_assert("problem during vmaf_propagate_metadata_destroy", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_propagate_metadata_destroy()
@@ -52,7 +52,7 @@ static char *test_propagate_metadata_destroy()
     err = vmaf_metadata_destroy(propagate_metadata);
     mu_assert("problem during vmaf_propagate_metadata_destroy", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_propagate_metadata_append()
@@ -61,10 +61,10 @@ static char *test_propagate_metadata_append()
     int err = vmaf_metadata_init(&propagate_metadata);
     mu_assert("problem during vmaf_propagate_metadata_init", !err);
 
-    VmafMetadataConfiguration metadata_config = {0};
-    metadata_config.feature_name = NULL;
+    VmafMetadataConfiguration metadata_config = {VMAF_NULLPTR};
+    metadata_config.feature_name = VMAF_NULLPTR;
     metadata_config.callback = set_meta;
-    metadata_config.data = NULL;
+    metadata_config.data = VMAF_NULLPTR;
 
     err = vmaf_metadata_append(propagate_metadata, metadata_config);
     mu_assert("problem during vmaf_propagate_metadata_append", !err);
@@ -81,7 +81,7 @@ static char *test_propagate_metadata_append()
     err = vmaf_metadata_destroy(propagate_metadata);
     mu_assert("problem during vmaf_propagate_metadata_destroy", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -89,5 +89,5 @@ char *run_tests()
     mu_run_test(test_propagate_metadata_init);
     mu_run_test(test_propagate_metadata_destroy);
     mu_run_test(test_propagate_metadata_append);
-    return NULL;
+    return VMAF_NULLPTR;
 }

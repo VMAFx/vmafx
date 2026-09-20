@@ -51,6 +51,11 @@ extern "C" {
  *                  was unset. The returned pointer is stable for the
  *                  process lifetime.
  */
+#if defined(__cplusplus)
+[[nodiscard]]
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((warn_unused_result))
+#endif
 const char *vmaf_gpu_dispatch_env_get(const char *var_name);
 
 #ifdef __cplusplus

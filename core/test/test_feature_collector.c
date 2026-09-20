@@ -28,11 +28,11 @@ static char *test_model_mount_with_use_features()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 
-    VmafModelConfig model_cfg = {0};
+    VmafModelConfig model_cfg = {VMAF_NULLPTR};
     VmafModel *model;
     vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
     mu_assert("problem during vmaf_model_load", model);
@@ -46,7 +46,7 @@ static char *test_model_mount_with_use_features()
     err = vmaf_close(vmaf);
     mu_assert("problem During vmaf_close", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static int load_three_test_models(VmafModel *models[3], const char *const names[3])
@@ -85,7 +85,7 @@ static char *test_model_mount()
         mu_assert("problem during vmaf_model_mount", !err);
     }
 
-    VmafPredictModel *it = feature_collector->models;
+    const VmafPredictModel *it = feature_collector->models;
     for (unsigned i = 0; it; i++, it = it->next) {
         mu_assert("model name does not match mount order",
                   !strcmp(it->model->name, model_names[i]));
@@ -93,7 +93,7 @@ static char *test_model_mount()
 
     destroy_three_test_models(models);
     vmaf_feature_collector_destroy(feature_collector);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_model_unmount()
@@ -120,72 +120,82 @@ static char *test_model_unmount()
 
     destroy_three_test_models(models);
     vmaf_feature_collector_destroy(feature_collector);
-    return NULL;
+    return VMAF_NULLPTR;
+}
+
+static char *check_aggregate_vector_append(AggregateVector *aggregate_vector)
+{
+    int err = 0;
+    mu_assert("aggregate_vector is not initialized properly",
+              aggregate_vector->cnt == 0 && aggregate_vector->capacity == 8);
+
+    err = aggregate_vector_append(aggregate_vector, "A", 1);
+    mu_assert("problem during aggregate_vector_append", !err);
+    mu_assert("name and value were incorrectly set",
+              !strcmp("A", aggregate_vector->metric[0].name) &&
+                  aggregate_vector->metric[0].value == 1);
+
+    err |= aggregate_vector_append(aggregate_vector, "B", 2);
+    err |= aggregate_vector_append(aggregate_vector, "C", 3);
+    err |= aggregate_vector_append(aggregate_vector, "D", 4);
+    err |= aggregate_vector_append(aggregate_vector, "E", 5);
+    err |= aggregate_vector_append(aggregate_vector, "F", 6);
+    err |= aggregate_vector_append(aggregate_vector, "G", 7);
+    err |= aggregate_vector_append(aggregate_vector, "H", 8);
+    mu_assert("problem during aggregate_vector_append", !err);
+    mu_assert("aggregate_vector is not sized properly",
+              aggregate_vector->cnt == 8 && aggregate_vector->capacity == 8);
+
+    err = aggregate_vector_append(aggregate_vector, "I", 9);
+    mu_assert("problem during aggregate_vector_append", !err);
+    mu_assert("aggregate_vector has not realloc'd properly",
+              aggregate_vector->cnt == 9 && aggregate_vector->capacity == 16);
+    mu_assert("name and value were incorrectly set",
+              !strcmp("I", aggregate_vector->metric[8].name) &&
+                  aggregate_vector->metric[8].value == 9);
+
+    return VMAF_NULLPTR;
 }
 
 static char *test_aggregate_vector_init_append_and_destroy()
 {
-    int err = 0;
-
     AggregateVector aggregate_vector;
-    err = aggregate_vector_init(&aggregate_vector);
-    mu_assert("problem during aggregate_vector_init", !err);
-    mu_assert("aggregate_vector is not initialized properly",
-              (aggregate_vector.cnt == 0) && (aggregate_vector.capacity == 8));
+    if (aggregate_vector_init(&aggregate_vector))
+        return "problem during aggregate_vector_init";
 
-    err = aggregate_vector_append(&aggregate_vector, "A", 1);
-    mu_assert("problem during aggregate_vector_append", !err);
-    mu_assert(
-        "name and value were incorrectly set",
-        (!strcmp("A", aggregate_vector.metric[0].name) && aggregate_vector.metric[0].value == 1));
-
-    err |= aggregate_vector_append(&aggregate_vector, "B", 2);
-    err |= aggregate_vector_append(&aggregate_vector, "C", 3);
-    err |= aggregate_vector_append(&aggregate_vector, "D", 4);
-    err |= aggregate_vector_append(&aggregate_vector, "E", 5);
-    err |= aggregate_vector_append(&aggregate_vector, "F", 6);
-    err |= aggregate_vector_append(&aggregate_vector, "G", 7);
-    err |= aggregate_vector_append(&aggregate_vector, "H", 8);
-    mu_assert("problem during aggregate_vector_append", !err);
-    mu_assert("aggregate_vector is not sized properly",
-              (aggregate_vector.cnt == 8) && (aggregate_vector.capacity == 8));
-
-    err = aggregate_vector_append(&aggregate_vector, "I", 9);
-    mu_assert("problem during aggregate_vector_append", !err);
-    mu_assert("aggregate_vector has not realloc'd properly",
-              (aggregate_vector.cnt == 9) && (aggregate_vector.capacity == 16));
-    mu_assert(
-        "name and value were incorrectly set",
-        (!strcmp("I", aggregate_vector.metric[8].name) && aggregate_vector.metric[8].value == 9));
-
+    char *const message = check_aggregate_vector_append(&aggregate_vector);
     aggregate_vector_destroy(&aggregate_vector);
-    return NULL;
+    return message;
 }
 
-static char *test_feature_vector_init_append_and_destroy()
+static char *check_feature_vector_append(FeatureVector *feature_vector)
 {
-    int err;
-
-    FeatureVector *feature_vector;
-    err = feature_vector_init(&feature_vector, "psnr_y");
-    mu_assert("problem during feature_vector_init", !err);
-
-    unsigned initial_capacity = feature_vector->capacity;
+    const unsigned initial_capacity = feature_vector->capacity;
     for (int j = initial_capacity - 1; j >= 0; j--) {
-        err = feature_vector_append(feature_vector, j, 60.);
+        const int err = feature_vector_append(feature_vector, (unsigned)j, 60.);
         mu_assert("problem during feature_vector_append", !err);
     }
     mu_assert("feature_vector->capacity should not have changed",
               feature_vector->capacity == initial_capacity);
-    err = feature_vector_append(feature_vector, initial_capacity, 60.);
+    int err = feature_vector_append(feature_vector, initial_capacity, 60.);
     mu_assert("problem during feature_vector_append", !err);
     mu_assert("feature_vector->capacity did not double its allocation",
-              feature_vector->capacity == initial_capacity * 2);
+              feature_vector->capacity == initial_capacity * 2u);
     err = feature_vector_append(feature_vector, initial_capacity, 60.);
     mu_assert("feature_vector_append should not overwrite", err);
 
+    return VMAF_NULLPTR;
+}
+
+static char *test_feature_vector_init_append_and_destroy()
+{
+    FeatureVector *feature_vector;
+    if (feature_vector_init(&feature_vector, "psnr_y"))
+        return "problem during feature_vector_init";
+
+    char *const message = check_feature_vector_append(feature_vector);
     feature_vector_destroy(feature_vector);
-    return NULL;
+    return message;
 }
 
 /* Finding R2-5: feature_vector_append() must reject a pathological,
@@ -196,17 +206,11 @@ static char *test_feature_vector_init_append_and_destroy()
  * before that it tries multi-gigabyte allocations).  This test passes a huge
  * index and asserts a clean error return; without the guard it would hang or
  * OOM rather than return. */
-static char *test_feature_vector_append_rejects_huge_index()
+static char *check_feature_vector_huge_index(FeatureVector *feature_vector)
 {
-    int err;
-
-    FeatureVector *feature_vector;
-    err = feature_vector_init(&feature_vector, "psnr_y");
-    mu_assert("problem during feature_vector_init", !err);
-
     const unsigned capacity_before = feature_vector->capacity;
 
-    err = feature_vector_append(feature_vector, FEATURE_VECTOR_MAX_INDEX, 60.);
+    int err = feature_vector_append(feature_vector, FEATURE_VECTOR_MAX_INDEX, 60.);
     mu_assert("feature_vector_append must reject index == FEATURE_VECTOR_MAX_INDEX", err);
 
     err = feature_vector_append(feature_vector, UINT_MAX, 60.);
@@ -221,8 +225,18 @@ static char *test_feature_vector_append_rejects_huge_index()
     mu_assert("feature_vector_append must accept a legitimate index", !err);
     mu_assert("legitimate index must grow capacity past it", feature_vector->capacity > 1000u);
 
+    return VMAF_NULLPTR;
+}
+
+static char *test_feature_vector_append_rejects_huge_index()
+{
+    FeatureVector *feature_vector;
+    if (feature_vector_init(&feature_vector, "psnr_y"))
+        return "problem during feature_vector_init";
+
+    char *const message = check_feature_vector_huge_index(feature_vector);
     feature_vector_destroy(feature_vector);
-    return NULL;
+    return message;
 }
 
 static char *test_feature_collector_init_append_get_and_destroy()
@@ -277,7 +291,7 @@ static char *test_feature_collector_init_append_get_and_destroy()
     mu_assert("unexpected aggreggate_score", score == 109.);
 
     vmaf_feature_collector_destroy(feature_collector);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -289,5 +303,5 @@ char *run_tests()
     mu_run_test(test_model_mount);
     mu_run_test(test_model_unmount);
     mu_run_test(test_model_mount_with_use_features);
-    return NULL;
+    return VMAF_NULLPTR;
 }

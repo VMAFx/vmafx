@@ -36,6 +36,7 @@
  */
 #include "gpu_dispatch_env.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdlib> /* std::getenv */
@@ -69,6 +70,11 @@ struct EnvRow {
 std::mutex g_lock;
 constinit std::array<EnvRow, kTableCap> g_rows{};
 
+} /* anonymous namespace */
+
+namespace
+{
+
 /* Slow path: snapshot @key into @slot under the caller-held mutex and
  * publish it. Returns the cached value (or nullptr when the variable was
  * unset OR when the value-string copy ran out of memory).
@@ -82,7 +88,7 @@ constinit std::array<EnvRow, kTableCap> g_rows{};
  * ADR-0858 / ADR-1068 invariant that var_name/value are published only with
  * the release store of ready set LAST — @slot's fields are touched only
  * after the throwing region completes successfully. */
-const char *snapshot_into_slot(EnvRow *slot, std::string_view key, const char *var_name)
+const char *snapshot_into_slot(EnvRow &slot, std::string_view key, const char *var_name)
 {
     /* ADR-0488 caller-contract: no other thread calls setenv("VMAF_*")
      * concurrently with getenv here; the lock serialises only multiple
@@ -101,19 +107,17 @@ const char *snapshot_into_slot(EnvRow *slot, std::string_view key, const char *v
     }
     /* var_name (string_view copy) and value (move of the already-built local)
      * cannot throw, so ready is the last field set — invariant preserved. */
-    slot->var_name = key;
-    slot->value = std::move(snapshot);
-    slot->ready.store(true, std::memory_order_release);
-    return slot->value ? slot->value->c_str() : nullptr;
+    slot.var_name = key;
+    slot.value = std::move(snapshot);
+    slot.ready.store(true, std::memory_order_release);
+    return slot.value ? slot.value->c_str() : nullptr;
 }
 
 } /* anonymous namespace */
 
 extern "C" {
 
-/* NOLINTNEXTLINE(readability-redundant-declaration) — required: public C header
- * forward-declares this without [[nodiscard]]; the attribute is additive here (ADR-0141 / ADR-0278). */
-[[nodiscard]] const char *vmaf_gpu_dispatch_env_get(const char *var_name)
+const char *vmaf_gpu_dispatch_env_get(const char *var_name)
 {
     if (!var_name)
         return nullptr;
@@ -127,12 +131,11 @@ extern "C" {
      * outcome of a false-negative (seeing ready==false for a slot that is
      * concurrently being published) is a harmless fall-through to the slow
      * path, which re-checks under the mutex. */
-    for (const auto &row : g_rows) {
-        if (!row.ready.load(std::memory_order_acquire))
-            continue;
-        if (row.var_name == key)
-            return row.value ? row.value->c_str() : nullptr;
-    }
+    const auto fast_hit = std::find_if(g_rows.cbegin(), g_rows.cend(), [&](const EnvRow &row) {
+        return row.ready.load(std::memory_order_acquire) && row.var_name == key;
+    });
+    if (fast_hit != g_rows.cend())
+        return fast_hit->value ? fast_hit->value->c_str() : nullptr;
 
     /* Slow path: snapshot the variable under the lock. */
     const std::scoped_lock<std::mutex> guard{g_lock};
@@ -140,28 +143,24 @@ extern "C" {
     /* Re-check under lock to guard against a concurrent insert.  The mutex
      * provides the necessary happens-before so plain (non-atomic) reads of
      * var_name/value are safe here. */
-    for (const auto &row : g_rows) {
-        if (row.ready.load(std::memory_order_relaxed) && row.var_name == key)
-            return row.value ? row.value->c_str() : nullptr;
-    }
+    const auto locked_hit = std::find_if(g_rows.cbegin(), g_rows.cend(), [&](const EnvRow &row) {
+        return row.ready.load(std::memory_order_relaxed) && row.var_name == key;
+    });
+    if (locked_hit != g_rows.cend())
+        return locked_hit->value ? locked_hit->value->c_str() : nullptr;
 
     /* Find a free slot. */
-    EnvRow *slot = nullptr;
-    for (auto &row : g_rows) {
-        if (!row.ready.load(std::memory_order_relaxed)) {
-            slot = &row;
-            break;
-        }
-    }
-
-    if (!slot) {
+    const auto free_slot = std::find_if(g_rows.begin(), g_rows.end(), [](const EnvRow &row) {
+        return !row.ready.load(std::memory_order_relaxed);
+    });
+    if (free_slot == g_rows.end()) {
         /* Table exhausted — fall back to a raw getenv.  Should never
          * happen in production (8 slots, at most 4 backends).
          * NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
         return std::getenv(var_name);
     }
 
-    return snapshot_into_slot(slot, key, var_name);
+    return snapshot_into_slot(*free_slot, key, var_name);
 }
 
 } /* extern "C" */

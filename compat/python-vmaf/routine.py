@@ -1,4 +1,5 @@
-import os
+from importlib import import_module
+from pathlib import Path
 
 import numpy as np
 import pandas
@@ -25,272 +26,196 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
+_DATASET_OPTION_NAMES = (
+    "width",
+    "height",
+    "yuv_fmt",
+    "quality_width",
+    "quality_height",
+    "resampling_type",
+    "crop_cmd",
+    "pad_cmd",
+    "workfile_yuv_type",
+    "duration_sec",
+    "fps",
+    "start_frame",
+    "end_frame",
+)
+
+
+def _dataset_options(dataset):
+    return {name: getattr(dataset, name, None) for name in _DATASET_OPTION_NAMES}
+
+
+def _groundtruth(dis_video, groundtruth_key):
+    if groundtruth_key is not None:
+        return dis_video[groundtruth_key]
+    for key in ("dmos", "mos", "groundtruth"):
+        if key in dis_video:
+            return dis_video[key]
+    return None
+
+
+def _shared_dimension(default, ref_video, dis_video, name):
+    if default is not None:
+        return default
+    ref_value = ref_video.get(name)
+    dis_value = dis_video.get(name)
+    if ref_value is not None and dis_value is not None:
+        assert ref_value == dis_value
+        return ref_value
+    return ref_value if ref_value is not None else dis_value
+
+
+def _dataset_or_video_option(dataset_options, video, name):
+    value = dataset_options[name]
+    return value if value is not None else video.get(name)
+
+
+def _optional_asset_values(dataset_options, ref_video, dis_video, groundtruth):
+    crop_cmd = dataset_options["crop_cmd"]
+    pad_cmd = dataset_options["pad_cmd"]
+    return {
+        "groundtruth": groundtruth,
+        "raw_groundtruth": dis_video.get("os"),
+        "groundtruth_std": dis_video.get("groundtruth_std"),
+        "quality_width": _dataset_or_video_option(dataset_options, dis_video, "quality_width"),
+        "quality_height": _dataset_or_video_option(dataset_options, dis_video, "quality_height"),
+        "resampling_type": _dataset_or_video_option(dataset_options, dis_video, "resampling_type"),
+        "ref_crop_cmd": crop_cmd if crop_cmd is not None else ref_video.get("crop_cmd"),
+        "dis_crop_cmd": crop_cmd if crop_cmd is not None else dis_video.get("crop_cmd"),
+        "ref_pad_cmd": pad_cmd if pad_cmd is not None else ref_video.get("pad_cmd"),
+        "dis_pad_cmd": pad_cmd if pad_cmd is not None else dis_video.get("pad_cmd"),
+        "duration_sec": _dataset_or_video_option(dataset_options, dis_video, "duration_sec"),
+        "workfile_yuv_type": dataset_options["workfile_yuv_type"],
+        "rebuf_indices": dis_video.get("rebuf_indices"),
+        "fps": _dataset_or_video_option(dataset_options, dis_video, "fps"),
+        "start_frame": _dataset_or_video_option(dataset_options, dis_video, "start_frame"),
+        "end_frame": _dataset_or_video_option(dataset_options, dis_video, "end_frame"),
+        "ref_start_frame": ref_video.get("ref_start_frame"),
+        "dis_start_frame": dis_video.get("dis_start_frame"),
+        "ref_end_frame": ref_video.get("ref_end_frame"),
+        "dis_end_frame": dis_video.get("dis_end_frame"),
+        "dis_enc_width": dis_video.get("enc_width"),
+        "dis_enc_height": dis_video.get("enc_height"),
+        "dis_enc_bitdepth": dis_video.get("enc_bitdepth"),
+    }
+
+
+def _asset_dict(dataset_options, ref_video, dis_video, groundtruth):
+    ref_yuv_type = dataset_options["yuv_fmt"]
+    if ref_yuv_type is None:
+        ref_yuv_type = ref_video["yuv_fmt"]
+    dis_yuv_type = dis_video.get("yuv_fmt", ref_yuv_type)
+    width = _shared_dimension(dataset_options["width"], ref_video, dis_video, "width")
+    height = _shared_dimension(dataset_options["height"], ref_video, dis_video, "height")
+    asset_dict = {"ref_yuv_type": ref_yuv_type, "dis_yuv_type": dis_yuv_type}
+    if width is not None and ref_yuv_type != "notyuv":
+        asset_dict["ref_width"] = width
+    if width is not None and dis_yuv_type != "notyuv":
+        asset_dict["dis_width"] = width
+    if height is not None and ref_yuv_type != "notyuv":
+        asset_dict["ref_height"] = height
+    if height is not None and dis_yuv_type != "notyuv":
+        asset_dict["dis_height"] = height
+
+    values = _optional_asset_values(dataset_options, ref_video, dis_video, groundtruth)
+    asset_dict.update({key: value for key, value in values.items() if value is not None})
+    return asset_dict
+
+
 def read_dataset(dataset, **kwargs):
-
-    groundtruth_key = kwargs["groundtruth_key"] if "groundtruth_key" in kwargs else None
-    skip_asset_with_none_groundtruth = (
-        kwargs["skip_asset_with_none_groundtruth"]
-        if "skip_asset_with_none_groundtruth" in kwargs
-        else False
-    )
-    content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
-    asset_ids = kwargs["asset_ids"] if "asset_ids" in kwargs else None
-    workdir_root = kwargs["workdir_root"] if "workdir_root" in kwargs else VmafConfig.workdir_path()
-
-    # asserts, can add more to the list...
+    groundtruth_key = kwargs.get("groundtruth_key")
+    skip_missing = kwargs.get("skip_asset_with_none_groundtruth", False)
+    content_ids = kwargs.get("content_ids")
+    asset_ids = kwargs.get("asset_ids")
+    workdir_root = kwargs.get("workdir_root", VmafConfig.workdir_path())
     assert hasattr(dataset, "dataset_name")
     assert hasattr(dataset, "ref_videos")
     assert hasattr(dataset, "dis_videos")
-
     assert hasattr(dataset, "yuv_fmt") or all(
-        ["yuv_fmt" in ref_video for ref_video in dataset.ref_videos]
+        "yuv_fmt" in ref_video for ref_video in dataset.ref_videos
     )
-
-    data_set_name = dataset.dataset_name
-    ref_videos = dataset.ref_videos
-    dis_videos = dataset.dis_videos
-
-    width = dataset.width if hasattr(dataset, "width") else None
-    height = dataset.height if hasattr(dataset, "height") else None
-    yuv_fmt = dataset.yuv_fmt if hasattr(dataset, "yuv_fmt") else None
-
-    quality_width = dataset.quality_width if hasattr(dataset, "quality_width") else None
-    quality_height = dataset.quality_height if hasattr(dataset, "quality_height") else None
-    resampling_type = dataset.resampling_type if hasattr(dataset, "resampling_type") else None
-    crop_cmd = dataset.crop_cmd if hasattr(dataset, "crop_cmd") else None
-    pad_cmd = dataset.pad_cmd if hasattr(dataset, "pad_cmd") else None
-    workfile_yuv_type = dataset.workfile_yuv_type if hasattr(dataset, "workfile_yuv_type") else None
-    duration_sec = dataset.duration_sec if hasattr(dataset, "duration_sec") else None
-    fps = dataset.fps if hasattr(dataset, "fps") else None
-    start_frame = dataset.start_frame if hasattr(dataset, "start_frame") else None
-    end_frame = dataset.end_frame if hasattr(dataset, "end_frame") else None
-
-    ref_dict = {}  # dictionary of content_id -> path for ref videos
-    for ref_video in ref_videos:
-        ref_dict[ref_video["content_id"]] = ref_video
-
+    ref_videos = {video["content_id"]: video for video in dataset.ref_videos}
+    options = _dataset_options(dataset)
     assets = []
-    for dis_video in dis_videos:
-
+    for dis_video in dataset.dis_videos:
         if content_ids is not None and dis_video["content_id"] not in content_ids:
             continue
-
         if asset_ids is not None and dis_video["asset_id"] not in asset_ids:
             continue
-
-        if groundtruth_key is not None:
-            groundtruth = dis_video[groundtruth_key]
-        else:
-            if "dmos" in dis_video:
-                groundtruth = dis_video["dmos"]
-            elif "mos" in dis_video:
-                groundtruth = dis_video["mos"]
-            elif "groundtruth" in dis_video:
-                groundtruth = dis_video["groundtruth"]
-            else:
-                groundtruth = None
-
-        if "os" in dis_video:
-            raw_groundtruth = dis_video["os"]
-        else:
-            raw_groundtruth = None
-
-        if "groundtruth_std" in dis_video:
-            groundtruth_std = dis_video["groundtruth_std"]
-        else:
-            groundtruth_std = None
-
-        if "rebuf_indices" in dis_video:
-            rebuf_indices = dis_video["rebuf_indices"]
-        else:
-            rebuf_indices = None
-
-        ref_video = ref_dict[dis_video["content_id"]]
-
-        ref_path = ref_video["path"]
-
-        ref_yuv_fmt_ = (
-            yuv_fmt if yuv_fmt is not None else ref_dict[dis_video["content_id"]]["yuv_fmt"]
-        )
-        dis_yuv_fmt_ = dis_video["yuv_fmt"] if "yuv_fmt" in dis_video else ref_yuv_fmt_
-
-        if width is not None:
-            width_ = width
-        elif "width" in ref_video and "width" not in dis_video:
-            width_ = ref_video["width"]
-        elif "width" in dis_video and "width" not in ref_video:
-            width_ = dis_video["width"]
-        elif "width" in ref_video and "width" in dis_video:
-            assert ref_video["width"] == dis_video["width"]
-            width_ = ref_video["width"]
-        else:
-            width_ = None
-
-        if height is not None:
-            height_ = height
-        elif "height" in ref_video and "height" not in dis_video:
-            height_ = ref_video["height"]
-        elif "height" in dis_video and "height" not in ref_video:
-            height_ = dis_video["height"]
-        elif "height" in ref_video and "height" in dis_video:
-            assert ref_video["height"] == dis_video["height"]
-            height_ = ref_video["height"]
-        else:
-            height_ = None
-
-        if quality_width is not None:
-            quality_width_ = quality_width
-        elif "quality_width" in dis_video:
-            quality_width_ = dis_video["quality_width"]
-        else:
-            quality_width_ = None
-
-        if quality_height is not None:
-            quality_height_ = quality_height
-        elif "quality_height" in dis_video:
-            quality_height_ = dis_video["quality_height"]
-        else:
-            quality_height_ = None
-
-        if resampling_type is not None:
-            resampling_type_ = resampling_type
-        elif "resampling_type" in dis_video:
-            resampling_type_ = dis_video["resampling_type"]
-        else:
-            resampling_type_ = None
-
-        if crop_cmd is not None:
-            ref_crop_cmd_ = crop_cmd
-            dis_crop_cmd_ = crop_cmd
-        else:
-            if "crop_cmd" in ref_video:
-                ref_crop_cmd_ = ref_video["crop_cmd"]
-            else:
-                ref_crop_cmd_ = None
-            if "crop_cmd" in dis_video:
-                dis_crop_cmd_ = dis_video["crop_cmd"]
-            else:
-                dis_crop_cmd_ = None
-
-        if pad_cmd is not None:
-            ref_pad_cmd_ = pad_cmd
-            dis_pad_cmd_ = pad_cmd
-        else:
-            if "pad_cmd" in ref_video:
-                ref_pad_cmd_ = ref_video["pad_cmd"]
-            else:
-                ref_pad_cmd_ = None
-            if "pad_cmd" in dis_video:
-                dis_pad_cmd_ = dis_video["pad_cmd"]
-            else:
-                dis_pad_cmd_ = None
-
-        if duration_sec is not None:
-            duration_sec_ = duration_sec
-        elif "duration_sec" in dis_video:
-            duration_sec_ = dis_video["duration_sec"]
-        else:
-            duration_sec_ = None
-
-        if fps is not None:
-            fps_ = fps
-        elif "fps" in dis_video:
-            fps_ = dis_video["fps"]
-        else:
-            fps_ = None
-
-        if start_frame is not None:
-            start_frame_ = start_frame
-        elif "start_frame" in dis_video:
-            start_frame_ = dis_video["start_frame"]
-        else:
-            start_frame_ = None
-
-        if end_frame is not None:
-            end_frame_ = end_frame
-        elif "end_frame" in dis_video:
-            end_frame_ = dis_video["end_frame"]
-        else:
-            end_frame_ = None
-
-        asset_dict = {"ref_yuv_type": ref_yuv_fmt_, "dis_yuv_type": dis_yuv_fmt_}
-        if width_ is not None:
-            if asset_dict["ref_yuv_type"] != "notyuv":
-                asset_dict["ref_width"] = width_
-            if asset_dict["dis_yuv_type"] != "notyuv":
-                asset_dict["dis_width"] = width_
-        if height_ is not None:
-            if asset_dict["ref_yuv_type"] != "notyuv":
-                asset_dict["ref_height"] = height_
-            if asset_dict["dis_yuv_type"] != "notyuv":
-                asset_dict["dis_height"] = height_
-        if groundtruth is not None:
-            asset_dict["groundtruth"] = groundtruth
-        if raw_groundtruth is not None:
-            asset_dict["raw_groundtruth"] = raw_groundtruth
-        if groundtruth_std is not None:
-            asset_dict["groundtruth_std"] = groundtruth_std
-        if quality_width_ is not None:
-            asset_dict["quality_width"] = quality_width_
-        if quality_height_ is not None:
-            asset_dict["quality_height"] = quality_height_
-        if resampling_type_ is not None:
-            asset_dict["resampling_type"] = resampling_type_
-
-        if ref_crop_cmd_ is not None:
-            asset_dict["ref_crop_cmd"] = ref_crop_cmd_
-        if dis_crop_cmd_ is not None:
-            asset_dict["dis_crop_cmd"] = dis_crop_cmd_
-
-        if ref_pad_cmd_ is not None:
-            asset_dict["ref_pad_cmd"] = ref_pad_cmd_
-        if dis_pad_cmd_ is not None:
-            asset_dict["dis_pad_cmd"] = dis_pad_cmd_
-
-        if duration_sec_ is not None:
-            asset_dict["duration_sec"] = duration_sec_
-        if workfile_yuv_type is not None:
-            asset_dict["workfile_yuv_type"] = workfile_yuv_type
-        if rebuf_indices is not None:
-            asset_dict["rebuf_indices"] = rebuf_indices
-        if fps_ is not None:
-            asset_dict["fps"] = fps_
-        if start_frame_ is not None:
-            asset_dict["start_frame"] = start_frame_
-        if end_frame_ is not None:
-            asset_dict["end_frame"] = end_frame_
-
-        if "ref_start_frame" in ref_video:
-            asset_dict["ref_start_frame"] = ref_video["ref_start_frame"]
-        if "dis_start_frame" in dis_video:
-            asset_dict["dis_start_frame"] = dis_video["dis_start_frame"]
-        if "ref_end_frame" in ref_video:
-            asset_dict["ref_end_frame"] = ref_video["ref_end_frame"]
-        if "dis_end_frame" in dis_video:
-            asset_dict["dis_end_frame"] = dis_video["dis_end_frame"]
-
-        if "enc_width" in dis_video:
-            asset_dict["dis_enc_width"] = dis_video["enc_width"]
-        if "enc_height" in dis_video:
-            asset_dict["dis_enc_height"] = dis_video["enc_height"]
-        if "enc_bitdepth" in dis_video:
-            asset_dict["dis_enc_bitdepth"] = dis_video["enc_bitdepth"]
-
-        if groundtruth is None and skip_asset_with_none_groundtruth:
-            pass
-        else:
-            asset = Asset(
-                dataset=data_set_name,
+        groundtruth = _groundtruth(dis_video, groundtruth_key)
+        ref_video = ref_videos[dis_video["content_id"]]
+        asset_dict = _asset_dict(options, ref_video, dis_video, groundtruth)
+        if groundtruth is None and skip_missing:
+            continue
+        assets.append(
+            Asset(
+                dataset=dataset.dataset_name,
                 content_id=dis_video["content_id"],
                 asset_id=dis_video["asset_id"],
                 workdir_root=workdir_root,
-                ref_path=ref_path,
+                ref_path=ref_video["path"],
                 dis_path=dis_video["path"],
                 asset_dict=asset_dict,
             )
-            assets.append(asset)
-
+        )
     return assets
+
+
+def _correlation_stats(dataframe, prediction_column):
+    groundtruth = dataframe["groundtruth"]
+    prediction = dataframe[prediction_column]
+    return prediction.corr(groundtruth, method="pearson"), prediction.corr(
+        groundtruth, method="spearman"
+    )
+
+
+def _bootstrap_correlations(dataframe, num_resample, seed_resample):
+    np.random.seed(seed_resample)
+    plcc_first = []
+    plcc_second = []
+    srocc_first = []
+    srocc_second = []
+    for _ in range(num_resample):
+        sample = dataframe.sample(n=dataframe.shape[0], replace=True)
+        first_plcc, first_srocc = _correlation_stats(sample, "first_prediction")
+        second_plcc, second_srocc = _correlation_stats(sample, "second_prediction")
+        plcc_first.append(first_plcc)
+        plcc_second.append(second_plcc)
+        srocc_first.append(first_srocc)
+        srocc_second.append(second_srocc)
+    return plcc_first, plcc_second, srocc_first, srocc_second
+
+
+def _ci95(values):
+    return [np.percentile(values, 2.5), np.percentile(values, 97.5)]
+
+
+def _plot_correlation_resampling(
+    ax, first_values, second_values, first_runner_class, second_runner_class, label
+):
+    first_ci = _ci95(first_values)
+    second_ci = _ci95(second_values)
+    diff_ci = _ci95(np.array(second_values) - np.array(first_values))
+    if ax is not None:
+        ax.scatter(first_values, second_values, alpha=0.2, label=f"{label} with resampling")
+        ax.plot(
+            [min(first_values), max(first_values)],
+            [min(first_values), max(first_values)],
+            "-r",
+        )
+        ax.set_xlabel(f"{first_runner_class.TYPE} 95%-CI: [{first_ci[0]:.4f}, {first_ci[1]:.4f}]")
+        ax.set_ylabel(
+            f"{second_runner_class.TYPE} 95%-CI: [{second_ci[0]:.4f}, {second_ci[1]:.4f}]"
+        )
+        ax.set_title(
+            f"({second_runner_class.TYPE} - {first_runner_class.TYPE}) 95%-CI: "
+            f"[{diff_ci[0]:.4f}, {diff_ci[1]:.4f}]"
+        )
+        ax.grid()
+        ax.legend()
+    return first_ci, second_ci, diff_ci
 
 
 def compare_two_quality_runners_on_dataset(
@@ -308,16 +233,6 @@ def compare_two_quality_runners_on_dataset(
     ax_srocc=None,
     **kwargs,
 ):
-
-    def _get_stat(
-        df: pandas.DataFrame,
-        xcol: str,
-        ycol: str,
-    ) -> dict:
-        plcc = df[ycol].corr(df[xcol], method="pearson")
-        srocc = df[ycol].corr(df[xcol], method="spearman")
-        return {"plcc": plcc, "srocc": srocc}
-
     first_test_assets, first_results = run_test_on_dataset(
         test_dataset,
         first_runner_class,
@@ -345,7 +260,7 @@ def compare_two_quality_runners_on_dataset(
     )
 
     # collect data to list of dictionaries
-    ds = list()
+    ds = []
     assert (
         len(first_test_assets)
         == len(second_test_assets)
@@ -353,7 +268,7 @@ def compare_two_quality_runners_on_dataset(
         == len(second_results)
     )
     for first_test_asset, first_result, second_test_asset, second_result in zip(
-        first_test_assets, first_results, second_test_assets, second_results
+        first_test_assets, first_results, second_test_assets, second_results, strict=False
     ):
         assert first_test_asset.groundtruth is not None
         assert second_test_asset.groundtruth is not None
@@ -366,66 +281,17 @@ def compare_two_quality_runners_on_dataset(
         ds.append(d)
     df = pandas.DataFrame(ds)
 
-    # bootstrapping
-    np.random.seed(seed_resample)
-    xs = list()
-    ys = list()
-    xs2 = list()
-    ys2 = list()
-    for _ in range(num_resample):
-        dfb = df.sample(n=df.shape[0], replace=True)
-        d_stat_first = _get_stat(dfb, "groundtruth", "first_prediction")
-        d_stat_second = _get_stat(dfb, "groundtruth", "second_prediction")
-        x = d_stat_first["plcc"]
-        y = d_stat_second["plcc"]
-        x2 = d_stat_first["srocc"]
-        y2 = d_stat_second["srocc"]
-        xs.append(x)
-        ys.append(y)
-        xs2.append(x2)
-        ys2.append(y2)
-
-    ci95_xs = [np.percentile(xs, 2.5), np.percentile(xs, 97.5)]
-    ci95_ys = [np.percentile(ys, 2.5), np.percentile(ys, 97.5)]
-    diffs = np.array(ys) - np.array(xs)
-    ci95_diffs = [np.percentile(diffs, 2.5), np.percentile(diffs, 97.5)]
-    if ax_plcc is not None:
-        ax_plcc.scatter(xs, ys, alpha=0.2, label="PLCC with resampling")
-        ax_plcc.plot([min(xs), max(xs)], [min(xs), max(xs)], "-r")
-        ax_plcc.set_xlabel(
-            f"{first_runner_class.TYPE} 95%-CI: [{ci95_xs[0]:.4f}, {ci95_xs[1]:.4f}]"
-        )
-        ax_plcc.set_ylabel(
-            f"{second_runner_class.TYPE} 95%-CI: [{ci95_ys[0]:.4f}, {ci95_ys[1]:.4f}]"
-        )
-        ax_plcc.set_title(
-            f"({second_runner_class.TYPE} - {first_runner_class.TYPE}) 95%-CI: [{ci95_diffs[0]:.4f}, {ci95_diffs[1]:.4f}]"
-        )
-        ax_plcc.grid()
-        ax_plcc.legend()
-
-    ci95_xs2 = [np.percentile(xs2, 2.5), np.percentile(xs2, 97.5)]
-    ci95_ys2 = [np.percentile(ys2, 2.5), np.percentile(ys2, 97.5)]
-    diffs2 = np.array(ys2) - np.array(xs2)
-    ci95_diffs2 = [np.percentile(diffs2, 2.5), np.percentile(diffs2, 97.5)]
-    if ax_srocc is not None:
-        ax_srocc.scatter(xs2, ys2, alpha=0.2, label="SROCC with resampling")
-        ax_srocc.plot([min(xs2), max(xs2)], [min(xs2), max(xs2)], "-r")
-        ax_srocc.set_xlabel(
-            f"{first_runner_class.TYPE} 95%-CI: [{ci95_xs2[0]:.4f}, {ci95_xs2[1]:.4f}]"
-        )
-        ax_srocc.set_ylabel(
-            f"{second_runner_class.TYPE} 95%-CI: [{ci95_ys2[0]:.4f}, {ci95_ys2[1]:.4f}]"
-        )
-        ax_srocc.set_title(
-            f"({second_runner_class.TYPE} - {first_runner_class.TYPE})  95%-CI: [{ci95_diffs2[0]:.4f}, {ci95_diffs2[1]:.4f}]"
-        )
-        ax_srocc.grid()
-        ax_srocc.legend()
+    xs, ys, xs2, ys2 = _bootstrap_correlations(df, num_resample, seed_resample)
+    ci95_xs, ci95_ys, ci95_diffs = _plot_correlation_resampling(
+        ax_plcc, xs, ys, first_runner_class, second_runner_class, "PLCC"
+    )
+    ci95_xs2, ci95_ys2, ci95_diffs2 = _plot_correlation_resampling(
+        ax_srocc, xs2, ys2, first_runner_class, second_runner_class, "SROCC"
+    )
 
     return {
-        "plcc": list(zip(xs, ys)),
-        "srocc": list(zip(xs2, ys2)),
+        "plcc": list(zip(xs, ys, strict=False)),
+        "srocc": list(zip(xs2, ys2, strict=False)),
         "plcc_ci95_first": ci95_xs,
         "plcc_ci95_second": ci95_ys,
         "plcc_ci95_diff": ci95_diffs,
@@ -433,6 +299,192 @@ def compare_two_quality_runners_on_dataset(
         "srocc_ci95_second": ci95_ys2,
         "srocc_ci95_diff": ci95_diffs2,
     }
+
+
+def _read_dataset_with_subjective_model(dataset, kwargs):
+    assets = read_dataset(dataset, **kwargs)
+    if all(asset.groundtruth is not None for asset in assets):
+        return assets, None
+    raw_dataset_reader = import_module("sureal.dataset_reader").RawDatasetReader
+    dmos_model = import_module("sureal.subjective_model").DmosModel
+    subjective_model_class = kwargs.get("subj_model_class") or dmos_model
+    dataset_reader_class = kwargs.get("dataset_reader_class", raw_dataset_reader)
+    subjective_model = subjective_model_class(dataset_reader_class(dataset))
+    subjective_model.run_modeling(**kwargs)
+    aggregate_dataset = subjective_model.to_aggregated_dataset(**kwargs)
+    return read_dataset(aggregate_dataset, **kwargs), assets
+
+
+def _test_runner_options(model_filepath, kwargs):
+    options = kwargs.get("optional_dict")
+    updates = {}
+    if model_filepath is not None:
+        updates["model_filepath"] = model_filepath
+        model_paths = {
+            "model_720_filepath": "720model_filepath",
+            "model_480_filepath": "480model_filepath",
+            "model_2160_filepath": "2160model_filepath",
+        }
+        updates.update(
+            {
+                option_name: kwargs[argument_name]
+                for argument_name, option_name in model_paths.items()
+                if kwargs.get(argument_name) is not None
+            }
+        )
+    for name in ("enable_transform_score", "disable_clip_score", "subsample"):
+        if kwargs.get(name) is not None:
+            updates[name] = kwargs[name]
+    additional = kwargs.get("additional_optional_dict")
+    if additional is not None:
+        assert isinstance(additional, dict)
+        updates.update(additional)
+    if updates:
+        options = options or {}
+        options.update(updates)
+    return options
+
+
+def _runner_model_type(runner, model_kind):
+    try:
+        return runner.get_train_test_model_class()
+    except (AttributeError, NotImplementedError):
+        if model_kind == "regressor":
+            return RegressorMixin
+        if model_kind == "classifier":
+            return ClassifierMixin
+        raise AssertionError() from None
+
+
+def _bootstrap_prediction_stats(runner_class, results):
+    key_getters = (
+        "get_bagging_score_key",
+        "get_stddev_score_key",
+        "get_ci95_low_score_key",
+        "get_ci95_high_score_key",
+        "get_all_models_score_key",
+    )
+    if not all(hasattr(runner_class, key_getter) for key_getter in key_getters):
+        return {}, 1
+    all_models = [result[runner_class.get_all_models_score_key()] for result in results]
+    all_models = np.array(all_models).T.tolist()
+    return {
+        "ys_label_pred_bagging": [
+            result[runner_class.get_bagging_score_key()] for result in results
+        ],
+        "ys_label_pred_stddev": [result[runner_class.get_stddev_score_key()] for result in results],
+        "ys_label_pred_ci95_low": [
+            result[runner_class.get_ci95_low_score_key()] for result in results
+        ],
+        "ys_label_pred_ci95_high": [
+            result[runner_class.get_ci95_high_score_key()] for result in results
+        ],
+        "ys_label_pred_all_models": all_models,
+    }, np.shape(all_models)[0]
+
+
+def _model_stats(model_type, labels, predictions, stats_kwargs):
+    if model_type is ClassifierMixin:
+        return model_type.get_stats(labels, predictions)
+    return model_type.get_stats(labels, predictions, **stats_kwargs)
+
+
+def _calculate_test_stats(
+    model_type,
+    runner_class,
+    results,
+    groundtruths,
+    predictions,
+    raw_groundtruths,
+    groundtruths_std,
+    split_test_indices_for_perf_ci,
+    allow_uncalibrated,
+):
+    stats_kwargs = {
+        "ys_label_raw": raw_groundtruths,
+        "ys_label_stddev": groundtruths_std,
+        "split_test_indices_for_perf_ci": split_test_indices_for_perf_ci,
+    }
+    bootstrap_stats, num_models = _bootstrap_prediction_stats(runner_class, results)
+    stats_kwargs.update(bootstrap_stats)
+    try:
+        return _model_stats(model_type, groundtruths, predictions, stats_kwargs), num_models
+    except Exception as exc:
+        if not allow_uncalibrated:
+            raise CalibrationError(
+                "Stats calculation failed and allow_uncalibrated=False. "
+                "Pass allow_uncalibrated=True to fall back to default "
+                "(uncalibrated) normalisation stats. "
+                f"Original error: {exc}"
+            ) from exc
+        print(
+            "Warning: stats calculation failed, falling back to default "
+            "(uncalibrated) normalisation stats. "
+            "Pass allow_uncalibrated=True to suppress this check. "
+            f"Original error: {exc}"
+        )
+        fallback_kwargs = {
+            key: stats_kwargs[key]
+            for key in (
+                "ys_label_raw",
+                "ys_label_stddev",
+                "split_test_indices_for_perf_ci",
+            )
+        }
+        return _model_stats(model_type, groundtruths, predictions, fallback_kwargs), num_models
+
+
+def _print_test_stats(model_type, stats, split_test_indices_for_perf_ci):
+    print("Stats on testing data: {}".format(model_type.format_stats_for_print(stats)))
+    distribution_keys = (
+        "SRCC_across_model_distribution",
+        "PCC_across_model_distribution",
+        "RMSE_across_model_distribution",
+    )
+    if all(key in stats for key in distribution_keys):
+        print(
+            "Stats on testing data (across multiple models, using all test indices): {}".format(
+                model_type.format_across_model_stats_for_print(
+                    model_type.extract_across_model_stats(stats)
+                )
+            )
+        )
+    if split_test_indices_for_perf_ci:
+        print(
+            "Stats on testing data (single model, multiple test sets): {}".format(
+                model_type.format_stats_across_test_splits_for_print(
+                    model_type.extract_across_test_splits_stats(stats)
+                )
+            )
+        )
+
+
+def _point_labels(test_assets, point_label):
+    if point_label is None:
+        return None
+    if point_label == "asset_id":
+        return [asset.asset_id for asset in test_assets]
+    if point_label == "dis_path":
+        return [get_file_name_without_extension(asset.dis_path) for asset in test_assets]
+    raise AssertionError(f"Unknown point_label {point_label}")
+
+
+def _plot_test_stats(ax, model_type, runner_class, test_assets, stats, num_models, kwargs):
+    if ax is None:
+        return
+    content_ids = [asset.content_id for asset in test_assets]
+    point_labels = _point_labels(test_assets, kwargs.get("point_label"))
+    model_type.plot_scatter(ax, stats, content_ids=content_ids, point_labels=point_labels, **kwargs)
+    ax.set_xlabel("True Score")
+    ax.set_ylabel("Predicted Score")
+    ax.grid()
+    ax.set_title(
+        "{runner}{num_models}\n{stats}".format(
+            runner=runner_class.TYPE,
+            stats=model_type.format_stats_for_plot(stats),
+            num_models=f", {num_models} models" if num_models > 1 else "",
+        )
+    )
 
 
 def run_test_on_dataset(
@@ -448,70 +500,11 @@ def run_test_on_dataset(
     allow_uncalibrated=False,
     **kwargs,
 ):
-
-    test_assets = read_dataset(test_dataset, **kwargs)
-    test_raw_assets = None
-    try:
-        for test_asset in test_assets:
-            assert test_asset.groundtruth is not None
-    except AssertionError:
-        # no groundtruth, try to do subjective modeling
-        from sureal.dataset_reader import RawDatasetReader
-        from sureal.subjective_model import DmosModel
-
-        subj_model_class = (
-            kwargs["subj_model_class"]
-            if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
-            else DmosModel
-        )
-        dataset_reader_class = (
-            kwargs["dataset_reader_class"] if "dataset_reader_class" in kwargs else RawDatasetReader
-        )
-        subjective_model = subj_model_class(dataset_reader_class(test_dataset))
-        subjective_model.run_modeling(**kwargs)
-        test_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
-        test_raw_assets = test_assets
-        test_assets = read_dataset(test_dataset_aggregate, **kwargs)
-
-    optional_dict = kwargs["optional_dict"] if "optional_dict" in kwargs else None
-
-    if model_filepath is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["model_filepath"] = model_filepath
-        if "model_720_filepath" in kwargs and kwargs["model_720_filepath"] is not None:
-            optional_dict["720model_filepath"] = kwargs["model_720_filepath"]
-        if "model_480_filepath" in kwargs and kwargs["model_480_filepath"] is not None:
-            optional_dict["480model_filepath"] = kwargs["model_480_filepath"]
-        if "model_2160_filepath" in kwargs and kwargs["model_2160_filepath"] is not None:
-            optional_dict["2160model_filepath"] = kwargs["model_2160_filepath"]
-
-    if "enable_transform_score" in kwargs and kwargs["enable_transform_score"] is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["enable_transform_score"] = kwargs["enable_transform_score"]
-
-    if "disable_clip_score" in kwargs and kwargs["disable_clip_score"] is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["disable_clip_score"] = kwargs["disable_clip_score"]
-
-    if "subsample" in kwargs and kwargs["subsample"] is not None:
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict["subsample"] = kwargs["subsample"]
-
-    if "additional_optional_dict" in kwargs and kwargs["additional_optional_dict"] is not None:
-        assert isinstance(kwargs["additional_optional_dict"], dict)
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict.update(kwargs["additional_optional_dict"])
-
-    if "processes" in kwargs and kwargs["processes"] is not None:
-        assert isinstance(kwargs["processes"], int)
-        processes = kwargs["processes"]
-    else:
-        processes = None
+    test_assets, test_raw_assets = _read_dataset_with_subjective_model(test_dataset, kwargs)
+    optional_dict = _test_runner_options(model_filepath, kwargs)
+    processes = kwargs.get("processes")
+    if processes is not None:
+        assert isinstance(processes, int)
     if processes is not None:
         assert parallelize is True, "if processes is not None, parallelize must be True"
 
@@ -531,172 +524,31 @@ def run_test_on_dataset(
     for result in results:
         result.set_score_aggregate_method(aggregate_method)
 
-    try:
-        model_type = runner.get_train_test_model_class()
-    except (AttributeError, NotImplementedError):
-        # AttributeError: runner subclass does not expose
-        # get_train_test_model_class. NotImplementedError: subclass marks the
-        # method as abstract. Narrowed from bare 'except' so KeyboardInterrupt /
-        # SystemExit propagate. (CodeQL py/catch-base-exception)
-        if type == "regressor":
-            model_type = RegressorMixin
-        elif type == "classifier":
-            model_type = ClassifierMixin
-        else:
-            assert False
-
-    split_test_indices_for_perf_ci = (
-        kwargs["split_test_indices_for_perf_ci"]
-        if "split_test_indices_for_perf_ci" in kwargs
-        else False
-    )
+    model_type = _runner_model_type(runner, type)
+    split_test_indices_for_perf_ci = kwargs.get("split_test_indices_for_perf_ci", False)
 
     # plot
-    groundtruths = list(map(lambda asset: asset.groundtruth, test_assets))
-    predictions = list(map(lambda result: result[runner_class.get_score_key()], results))
+    groundtruths = [asset.groundtruth for asset in test_assets]
+    predictions = [result[runner_class.get_score_key()] for result in results]
     raw_grountruths = (
-        None
-        if test_raw_assets is None
-        else list(map(lambda asset: asset.raw_groundtruth, test_raw_assets))
+        None if test_raw_assets is None else [asset.raw_groundtruth for asset in test_raw_assets]
     )
     groundtruths_std = (
-        None if test_assets is None else list(map(lambda asset: asset.groundtruth_std, test_assets))
+        None if test_assets is None else [asset.groundtruth_std for asset in test_assets]
     )
-    try:
-        stats_kwargs = {
-            "ys_label_raw": raw_grountruths,
-            "ys_label_stddev": groundtruths_std,
-            "split_test_indices_for_perf_ci": split_test_indices_for_perf_ci,
-        }
-        num_models = 1
-        has_bootstrap_predictions = all(
-            hasattr(runner_class, key_getter)
-            for key_getter in (
-                "get_bagging_score_key",
-                "get_stddev_score_key",
-                "get_ci95_low_score_key",
-                "get_ci95_high_score_key",
-                "get_all_models_score_key",
-            )
-        )
-        if has_bootstrap_predictions:
-            predictions_bagging = list(
-                map(lambda result: result[runner_class.get_bagging_score_key()], results)
-            )
-            predictions_stddev = list(
-                map(lambda result: result[runner_class.get_stddev_score_key()], results)
-            )
-            predictions_ci95_low = list(
-                map(lambda result: result[runner_class.get_ci95_low_score_key()], results)
-            )
-            predictions_ci95_high = list(
-                map(lambda result: result[runner_class.get_ci95_high_score_key()], results)
-            )
-            predictions_all_models = list(
-                map(lambda result: result[runner_class.get_all_models_score_key()], results)
-            )
-
-            # need to revert the list of lists, so that the outer list has the predictions for each model separately
-            predictions_all_models = np.array(predictions_all_models).T.tolist()
-            num_models = np.shape(predictions_all_models)[0]
-            stats_kwargs.update(
-                {
-                    "ys_label_pred_bagging": predictions_bagging,
-                    "ys_label_pred_stddev": predictions_stddev,
-                    "ys_label_pred_ci95_low": predictions_ci95_low,
-                    "ys_label_pred_ci95_high": predictions_ci95_high,
-                    "ys_label_pred_all_models": predictions_all_models,
-                }
-            )
-
-        # ClassifierMixin.get_stats only accepts positional (ys_label,
-        # ys_label_pred); the regressor-specific kwargs below are
-        # invalid for it (CodeQL py/call/wrong-named-argument). Branch
-        # explicitly so the classifier path doesn't unconditionally raise
-        # TypeError into the broad fallback handler.
-        if model_type is ClassifierMixin:
-            stats = model_type.get_stats(groundtruths, predictions)
-        else:
-            stats = model_type.get_stats(groundtruths, predictions, **stats_kwargs)
-    except Exception as exc:
-        if not allow_uncalibrated:
-            raise CalibrationError(
-                "Stats calculation failed and allow_uncalibrated=False. "
-                "Pass allow_uncalibrated=True to fall back to default "
-                "(uncalibrated) normalisation stats. "
-                "Original error: {}".format(exc)
-            ) from exc
-        print(
-            "Warning: stats calculation failed, falling back to default "
-            "(uncalibrated) normalisation stats. "
-            "Pass allow_uncalibrated=True to suppress this check. "
-            "Original error: {}".format(exc)
-        )
-        # Fallback stats: same classifier/regressor split as above.
-        if model_type is ClassifierMixin:
-            stats = model_type.get_stats(groundtruths, predictions)
-        else:
-            stats = model_type.get_stats(
-                groundtruths,
-                predictions,
-                ys_label_raw=raw_grountruths,
-                ys_label_stddev=groundtruths_std,
-                split_test_indices_for_perf_ci=split_test_indices_for_perf_ci,
-            )
-
-    print("Stats on testing data: {}".format(model_type.format_stats_for_print(stats)))
-
-    # printing stats if multiple models are present
-    if (
-        "SRCC_across_model_distribution" in stats
-        and "PCC_across_model_distribution" in stats
-        and "RMSE_across_model_distribution" in stats
-    ):
-        print(
-            "Stats on testing data (across multiple models, using all test indices): {}".format(
-                model_type.format_across_model_stats_for_print(
-                    model_type.extract_across_model_stats(stats)
-                )
-            )
-        )
-
-    if split_test_indices_for_perf_ci:
-        print(
-            "Stats on testing data (single model, multiple test sets): {}".format(
-                model_type.format_stats_across_test_splits_for_print(
-                    model_type.extract_across_test_splits_stats(stats)
-                )
-            )
-        )
-
-    if ax is not None:
-        content_ids = list(map(lambda asset: asset.content_id, test_assets))
-
-        if "point_label" in kwargs and kwargs["point_label"] is not None:
-            if kwargs["point_label"] == "asset_id":
-                point_labels = list(map(lambda asset: asset.asset_id, test_assets))
-            elif kwargs["point_label"] == "dis_path":
-                point_labels = list(
-                    map(lambda asset: get_file_name_without_extension(asset.dis_path), test_assets)
-                )
-            else:
-                raise AssertionError("Unknown point_label {}".format(kwargs["point_label"]))
-        else:
-            point_labels = None
-
-        model_type.plot_scatter(
-            ax, stats, content_ids=content_ids, point_labels=point_labels, **kwargs
-        )
-        ax.set_xlabel("True Score")
-        ax.set_ylabel("Predicted Score")
-        ax.grid()
-        ax.set_title(
-            "{runner}{num_models}\n{stats}".format(
-                runner=runner_class.TYPE,
-                stats=model_type.format_stats_for_plot(stats),
-                num_models=", {} models".format(num_models) if num_models > 1 else "",
-            )
-        )
+    stats, num_models = _calculate_test_stats(
+        model_type,
+        runner_class,
+        results,
+        groundtruths,
+        predictions,
+        raw_grountruths,
+        groundtruths_std,
+        split_test_indices_for_perf_ci,
+        allow_uncalibrated,
+    )
+    _print_test_stats(model_type, stats, split_test_indices_for_perf_ci)
+    _plot_test_stats(ax, model_type, runner_class, test_assets, stats, num_models, kwargs)
 
     return test_assets, results
 
@@ -709,6 +561,121 @@ def print_matplotlib_warning():
         "sudo pip install python-dateutil==2.2 \n"
         "Refer to: https://stackoverflow.com/questions/27630114/matplotlib-issue-on-os-x-importerror-cannot-import-name-thread"
     )
+
+
+def _assemble_features(
+    assets,
+    feature_dict,
+    feature_option_dict,
+    logger,
+    fifo_mode,
+    result_store,
+    parallelize,
+    aggregate_method,
+    processes=None,
+):
+    assembler = FeatureAssembler(
+        feature_dict=feature_dict,
+        feature_option_dict=feature_option_dict,
+        assets=assets,
+        logger=logger,
+        fifo_mode=fifo_mode,
+        delete_workdir=True,
+        result_store=result_store,
+        optional_dict=None,
+        optional_dict2=None,
+        parallelize=parallelize,
+        processes=processes,
+    )
+    assembler.run()
+    for result in assembler.results:
+        result.set_score_aggregate_method(aggregate_method)
+    return assembler, assembler.results
+
+
+def _raw_groundtruths(raw_assets):
+    if raw_assets is None:
+        return None
+    return [asset.raw_groundtruth for asset in raw_assets]
+
+
+def _log_model_stats(prefix, formatter, stats, logger):
+    message = f"Stats on {prefix} data: {formatter(stats)}"
+    if logger:
+        logger.info(message)
+    else:
+        print(message)
+
+
+def _save_trained_model(model, output_model_filepath):
+    if output_model_filepath is None:
+        return
+    suffix = Path(output_model_filepath).suffix
+    supported_formats = [".pkl", ".json"]
+    VmafQualityRunnerModelMixin._assert_extension_format(supported_formats, suffix)
+    if suffix == ".pkl":
+        model.to_file(output_model_filepath, format="pkl")
+        return
+    if suffix == ".json":
+        model.to_file(output_model_filepath, format="json", combined=True)
+        return
+    raise AssertionError()
+
+
+def _plot_model_stats(ax, dataset, assets, model, model_class, stats):
+    if ax is None:
+        return
+    model_class.plot_scatter(ax, stats, content_ids=[asset.content_id for asset in assets])
+    ax.set_xlabel("True Score")
+    ax.set_ylabel("Predicted Score")
+    ax.grid()
+    ax.set_title(
+        "Dataset: {dataset}, Model: {model}\n{stats}".format(
+            dataset=dataset.dataset_name,
+            model=model.model_id,
+            stats=model_class.format_stats_for_plot(stats),
+        )
+    )
+
+
+def _test_trained_model(
+    test_dataset,
+    model,
+    model_class,
+    feature_dict,
+    feature_option_dict,
+    test_ax,
+    result_store,
+    logger,
+    fifo_mode,
+    parallelize,
+    aggregate_method,
+    kwargs,
+):
+    if test_dataset is None:
+        return None, None, None
+    test_assets, test_raw_assets = _read_dataset_with_subjective_model(test_dataset, kwargs)
+    test_assembler, test_features = _assemble_features(
+        test_assets,
+        feature_dict,
+        feature_option_dict,
+        logger,
+        fifo_mode,
+        result_store,
+        parallelize,
+        aggregate_method,
+    )
+    test_xs = model_class.get_xs_from_results(test_features)
+    test_ys = model_class.get_ys_from_results(test_features)
+    test_predictions = VmafQualityRunner.predict_with_model(model, test_xs, **kwargs)["ys_pred"]
+    test_stats = model.get_stats(
+        test_ys["label"],
+        test_predictions,
+        ys_label_raw=_raw_groundtruths(test_raw_assets),
+    )
+    _log_model_stats("testing", model_class.format_stats_for_print, test_stats, logger)
+    _plot_model_stats(test_ax, test_dataset, test_assets, model, model_class, test_stats)
+    return test_assembler, test_assets, test_stats
 
 
 def train_test_vmaf_on_dataset(
@@ -725,40 +692,13 @@ def train_test_vmaf_on_dataset(
     aggregate_method=np.mean,
     **kwargs,
 ):
-
-    train_assets = read_dataset(train_dataset, **kwargs)
-    train_raw_assets = None
-    try:
-        for train_asset in train_assets:
-            assert train_asset.groundtruth is not None
-    except AssertionError:
-        # no groundtruth, try to do subjective modeling
-        from sureal.dataset_reader import RawDatasetReader
-        from sureal.subjective_model import DmosModel
-
-        subj_model_class = (
-            kwargs["subj_model_class"]
-            if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
-            else DmosModel
-        )
-        dataset_reader_class = (
-            kwargs["dataset_reader_class"] if "dataset_reader_class" in kwargs else RawDatasetReader
-        )
-        subjective_model = subj_model_class(dataset_reader_class(train_dataset))
-        subjective_model.run_modeling(**kwargs)
-        train_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
-        train_raw_assets = train_assets
-        train_assets = read_dataset(train_dataset_aggregate, **kwargs)
-
-    parallelize = kwargs["parallelize"] if "parallelize" in kwargs else True
-    isinstance(parallelize, bool)
-
-    processes = kwargs["processes"] if "processes" in kwargs else None
+    train_assets, train_raw_assets = _read_dataset_with_subjective_model(train_dataset, kwargs)
+    parallelize = kwargs.get("parallelize", True)
+    assert isinstance(parallelize, bool)
+    processes = kwargs.get("processes")
     if processes is not None:
         assert isinstance(processes, int) and processes > 0
-    if processes is not None:
         assert parallelize is True, "if processes is not None, parallelize must be True"
-
     assert hasattr(feature_param, "feature_dict")
     feature_dict = feature_param.feature_dict
     feature_option_dict = (
@@ -767,25 +707,17 @@ def train_test_vmaf_on_dataset(
         else None
     )
 
-    train_fassembler = FeatureAssembler(
-        feature_dict=feature_dict,
-        feature_option_dict=feature_option_dict,
-        assets=train_assets,
-        logger=logger,
-        fifo_mode=fifo_mode,
-        delete_workdir=True,
-        result_store=result_store,
-        optional_dict=None,  # WARNING: feature param not passed
-        optional_dict2=None,
-        parallelize=parallelize,
-        processes=processes,
+    train_fassembler, train_features = _assemble_features(
+        train_assets,
+        feature_dict,
+        feature_option_dict,
+        logger,
+        fifo_mode,
+        result_store,
+        parallelize,
+        aggregate_method,
+        processes,
     )
-    train_fassembler.run()
-    train_features = train_fassembler.results
-
-    for result in train_features:
-        result.set_score_aggregate_method(aggregate_method)
-
     model_type = model_param.model_type
     model_param_dict = model_param.model_param_dict
 
@@ -799,11 +731,7 @@ def train_test_vmaf_on_dataset(
 
     model.train(train_xys, feature_option_dict=feature_option_dict, **kwargs)
 
-    # append additional information to model before saving, so that
-    # VmafQualityRunner can read and process
-    model.append_info(
-        "feature_dict", feature_param.feature_dict
-    )  # need feature_dict so that VmafQualityRunner knows how to call FeatureAssembler
+    model.append_info("feature_dict", feature_param.feature_dict)
     if "score_clip" in model_param_dict:
         VmafQualityRunner.set_clip_score(model, model_param_dict["score_clip"])
     if "score_transform" in model_param_dict:
@@ -811,130 +739,28 @@ def train_test_vmaf_on_dataset(
 
     train_ys_pred = VmafQualityRunner.predict_with_model(model, train_xs, **kwargs)["ys_pred"]
 
-    raw_groundtruths = (
-        None
-        if train_raw_assets is None
-        else list(map(lambda asset: asset.raw_groundtruth, train_raw_assets))
+    train_stats = model.get_stats(
+        train_ys["label"],
+        train_ys_pred,
+        ys_label_raw=_raw_groundtruths(train_raw_assets),
     )
-
-    train_stats = model.get_stats(train_ys["label"], train_ys_pred, ys_label_raw=raw_groundtruths)
-
-    log = "Stats on training data: {}".format(model.format_stats_for_print(train_stats))
-    if logger:
-        logger.info(log)
-    else:
-        print(log)
-
-    # save model
-    if output_model_filepath is not None:
-        format = os.path.splitext(output_model_filepath)[1]
-        supported_formats = [".pkl", ".json"]
-        VmafQualityRunnerModelMixin._assert_extension_format(supported_formats, format)
-        if ".pkl" in format:
-            model.to_file(output_model_filepath, format="pkl")
-        elif ".json" in format:
-            model.to_file(output_model_filepath, format="json", combined=True)
-        else:
-            assert False
-
-    if train_ax is not None:
-        train_content_ids = list(map(lambda asset: asset.content_id, train_assets))
-        model_class.plot_scatter(train_ax, train_stats, content_ids=train_content_ids)
-
-        train_ax.set_xlabel("True Score")
-        train_ax.set_ylabel("Predicted Score")
-        train_ax.grid()
-        train_ax.set_title(
-            "Dataset: {dataset}, Model: {model}\n{stats}".format(
-                dataset=train_dataset.dataset_name,
-                model=model.model_id,
-                stats=model_class.format_stats_for_plot(train_stats),
-            )
-        )
-
-    # === test model on test dataset ===
-
-    if test_dataset is None:
-        test_assets = None
-        test_stats = None
-        test_fassembler = None
-    else:
-        test_assets = read_dataset(test_dataset, **kwargs)
-        test_raw_assets = None
-        try:
-            for test_asset in test_assets:
-                assert test_asset.groundtruth is not None
-        except AssertionError:
-            # no groundtruth, try to do subjective modeling
-            from sureal.dataset_reader import RawDatasetReader
-            from sureal.subjective_model import DmosModel
-
-            subj_model_class = (
-                kwargs["subj_model_class"]
-                if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
-                else DmosModel
-            )
-            dataset_reader_class = (
-                kwargs["dataset_reader_class"]
-                if "dataset_reader_class" in kwargs
-                else RawDatasetReader
-            )
-            subjective_model = subj_model_class(dataset_reader_class(test_dataset))
-            subjective_model.run_modeling(**kwargs)
-            test_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
-            test_raw_assets = test_assets
-            test_assets = read_dataset(test_dataset_aggregate, **kwargs)
-
-        test_fassembler = FeatureAssembler(
-            feature_dict=feature_dict,
-            feature_option_dict=feature_option_dict,
-            assets=test_assets,
-            logger=logger,
-            fifo_mode=fifo_mode,
-            delete_workdir=True,
-            result_store=result_store,
-            optional_dict=None,  # WARNING: feature param not passed
-            optional_dict2=None,
-            parallelize=parallelize,
-        )
-        test_fassembler.run()
-        test_features = test_fassembler.results
-
-        for result in test_features:
-            result.set_score_aggregate_method(aggregate_method)
-
-        test_xs = model_class.get_xs_from_results(test_features)
-        test_ys = model_class.get_ys_from_results(test_features)
-
-        test_ys_pred = VmafQualityRunner.predict_with_model(model, test_xs, **kwargs)["ys_pred"]
-
-        raw_groundtruths = (
-            None
-            if test_raw_assets is None
-            else list(map(lambda asset: asset.raw_groundtruth, test_raw_assets))
-        )
-
-        test_stats = model.get_stats(test_ys["label"], test_ys_pred, ys_label_raw=raw_groundtruths)
-
-        log = "Stats on testing data: {}".format(model_class.format_stats_for_print(test_stats))
-        if logger:
-            logger.info(log)
-        else:
-            print(log)
-
-        if test_ax is not None:
-            test_content_ids = list(map(lambda asset: asset.content_id, test_assets))
-            model_class.plot_scatter(test_ax, test_stats, content_ids=test_content_ids)
-            test_ax.set_xlabel("True Score")
-            test_ax.set_ylabel("Predicted Score")
-            test_ax.grid()
-            test_ax.set_title(
-                "Dataset: {dataset}, Model: {model}\n{stats}".format(
-                    dataset=test_dataset.dataset_name,
-                    model=model.model_id,
-                    stats=model_class.format_stats_for_plot(test_stats),
-                )
-            )
+    _log_model_stats("training", model.format_stats_for_print, train_stats, logger)
+    _save_trained_model(model, output_model_filepath)
+    _plot_model_stats(train_ax, train_dataset, train_assets, model, model_class, train_stats)
+    test_fassembler, test_assets, test_stats = _test_trained_model(
+        test_dataset,
+        model,
+        model_class,
+        feature_dict,
+        feature_option_dict,
+        test_ax,
+        result_store,
+        logger,
+        fifo_mode,
+        parallelize,
+        aggregate_method,
+        kwargs,
+    )
 
     return (
         train_fassembler,
@@ -949,10 +775,10 @@ def train_test_vmaf_on_dataset(
 
 def construct_kfold_list(assets, contentid_groups):
     # construct cross validation kfold input list
-    content_ids = list(map(lambda asset: asset.content_id, assets))
+    content_ids = [asset.content_id for asset in assets]
     kfold = []
     for curr_content_group in contentid_groups:
-        curr_indices = indices(content_ids, lambda x: x in curr_content_group)
+        curr_indices = indices(content_ids, lambda x, group=curr_content_group: x in group)
         kfold.append(curr_indices)
     return kfold
 
@@ -1051,7 +877,7 @@ def run_vmaf_cv(
         else VmafConfig.file_result_store_path()
     )
 
-    parallelize = kwargs["parallelize"] if "parallelize" in kwargs else True
+    parallelize = kwargs.get("parallelize", True)
     isinstance(parallelize, bool)
 
     logger = get_stdout_logger()
@@ -1068,7 +894,7 @@ def run_vmaf_cv(
 
     nrows = 1
     ncols = 2
-    fig, axs = plt.subplots(figsize=(5 * ncols, 5 * nrows), nrows=nrows, ncols=ncols)
+    _fig, axs = plt.subplots(figsize=(5 * ncols, 5 * nrows), nrows=nrows, ncols=ncols)
 
     train_test_vmaf_on_dataset(
         train_dataset,
@@ -1106,15 +932,17 @@ def run_vmaf_kfold_cv(
     contentid_groups,
     param_filepath,
     aggregate_method,
-    result_store_dir=VmafConfig.file_result_store_path(),
+    result_store_dir=None,
 ):
 
+    if result_store_dir is None:
+        result_store_dir = VmafConfig.file_result_store_path()
     logger = get_stdout_logger()
     result_store = FileSystemResultStore(result_store_dir)
     dataset = import_python_file(dataset_filepath)
     param = import_python_file(param_filepath)
 
-    fig, ax = plt.subplots(figsize=(5, 5), nrows=1, ncols=1)
+    _fig, ax = plt.subplots(figsize=(5, 5), nrows=1, ncols=1)
 
     cv_on_dataset(
         dataset, param, param, ax, result_store, contentid_groups, logger, aggregate_method
@@ -1132,17 +960,20 @@ def explain_model_on_dataset(
     model,
     test_assets_selected_indexs,
     test_dataset_filepath,
-    result_store_dir=VmafConfig.file_result_store_path(),
+    result_store_dir=None,
 ):
+
+    if result_store_dir is None:
+        result_store_dir = VmafConfig.file_result_store_path()
 
     def print_assets(test_assets):
         print(
             "\n".join(
-                map(
-                    lambda tasset: "Asset {i}: {name}".format(
+                (
+                    "Asset {i}: {name}".format(
                         i=tasset[0], name=get_file_name_without_extension(tasset[1].dis_path)
-                    ),
-                    enumerate(test_assets),
+                    )
+                    for tasset in enumerate(test_assets)
                 )
             )
         )
@@ -1184,11 +1015,11 @@ def explain_model_on_dataset(
 
 def generate_dataset_from_raw(raw_dataset_filepath, output_dataset_filepath, **kwargs):
     if raw_dataset_filepath:
-        from sureal.subjective_model import DmosModel
+        DmosModel = import_module("sureal.subjective_model").DmosModel
 
-        subj_model_class = kwargs["subj_model_class"] if "subj_model_class" in kwargs else DmosModel
-        content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
-        asset_ids = kwargs["asset_ids"] if "asset_ids" in kwargs else None
+        subj_model_class = kwargs.get("subj_model_class", DmosModel)
+        content_ids = kwargs.get("content_ids")
+        asset_ids = kwargs.get("asset_ids")
         subjective_model = subj_model_class.from_dataset_file(
             raw_dataset_filepath, content_ids=content_ids, asset_ids=asset_ids
         )
@@ -1204,13 +1035,13 @@ def generate_dataset_from_raw(raw_dataset_filepath, output_dataset_filepath, **k
         # generated file without locale-/version-dependent surprises.
         # See ADR-0494.
         try:
-            with open(output_dataset_filepath, "r") as f:
+            with Path(output_dataset_filepath).open("r") as f:
                 body = f.read()
         except OSError:
             return
         if "np.float64(" in body or "np.int64(" in body:
             if not body.lstrip().startswith("import numpy"):
-                with open(output_dataset_filepath, "w") as f:
+                with Path(output_dataset_filepath).open("w") as f:
                     f.write("import numpy as np  # injected by routine.generate_dataset_from_raw\n")
                     f.write(body)
 
@@ -1248,7 +1079,9 @@ def run_vmaf_cv_from_raw(
         kwargs["workspace_path"] if "workspace_path" in kwargs else VmafConfig.workspace_path()
     )
 
-    train_output_dataset_filepath = os.path.join(workspace_path, "dataset", "train_dataset.py")
+    train_output_dataset_filepath = str(
+        Path(workspace_path).joinpath("dataset", "train_dataset.py")
+    )
     generate_dataset_from_raw(
         raw_dataset_filepath=train_dataset_raw_filepath,
         output_dataset_filepath=train_output_dataset_filepath,
@@ -1259,7 +1092,7 @@ def run_vmaf_cv_from_raw(
     )
 
     test_output_dataset_filepath = (
-        os.path.join(workspace_path, "dataset", "test_dataset.py")
+        str(Path(workspace_path).joinpath("dataset", "test_dataset.py"))
         if test_dataset_raw_filepath is not None
         else None
     )

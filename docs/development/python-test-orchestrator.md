@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Python test orchestrator (nox)
 
 The fork ships eight Python distributions, each with its own
@@ -27,7 +26,7 @@ re-runs of the same session skip the install step.
 ## Sessions
 
 | Session | Target | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `ai` | `ai/tests/` | Tiny-AI training scripts. Heavy: pulls `torch`, `lightning`. |
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | MCP JSON-RPC server. |
 | `vmaf_tune` | `tools/vmaf-tune/tests/` | Encode-tuning harness. |

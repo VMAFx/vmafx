@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0320](0320-fr-regressor-v2-ensemble-seed-flip.md) | `fr_regressor_v2` ensemble seeds — production flip (smoke → false) | Accepted | ai, fr-regressor, ensemble, registry, prod-flip, fork-local |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0380: FFmpeg libvmaf filter — HIP backend selector patch (0011)
 
 - **Status**: Accepted
@@ -12,10 +11,10 @@ The fork ships FFmpeg integration patches for every GPU backend on the
 regular `libvmaf` filter:
 
 | Backend | Selector patch | Dedicated-filter patch |
-|---------|---------------|------------------------|
-| SYCL    | 0003 (`sycl_device` option) | 0005 (`libvmaf_sycl`) |
-| Vulkan  | 0004 (`vulkan_device` option) | 0006 (`libvmaf_vulkan`) |
-| CUDA    | 0010 (`cuda` boolean) | — (upstream `libvmaf_cuda` filter) |
+| --------- | --------------- | ------------------------ |
+| SYCL | 0003 (`sycl_device` option) | 0005 (`libvmaf_sycl`) |
+| Vulkan | 0004 (`vulkan_device` option) | 0006 (`libvmaf_vulkan`) |
+| CUDA | 0010 (`cuda` boolean) | — (upstream `libvmaf_cuda` filter) |
 | **HIP** | **missing** | **missing** |
 
 The HIP backend is real: `core/include/libvmaf/libvmaf_hip.h` is a
@@ -68,7 +67,7 @@ documented in `docs/state.md` and `docs/rebase-notes.md`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | Bundle HIP into an updated `libvmaf_cuda` filter rather than a separate `hip_device` option | Fewer patches, single filter | Conflicts with the SYCL/Vulkan precedent where each backend has its own selector; also the dedicated `libvmaf_cuda` filter already owns the `cuda` boolean and splitting the two options across filters confuses users | Each backend gets its own named option, matching the established pattern |
 | Use a `hip` boolean (like the `cuda` boolean in 0010) instead of a `hip_device` integer | Closer analogy to 0010 | The HIP C-API `VmafHipConfiguration` already has a `device_index` field (-1 = first device); exposing it as an integer is more useful and matches SYCL/Vulkan | Integer option chosen to expose `device_index` directly |
 | Ship both 0011 (selector) and 0012 (filter) now | Complete HIP surface | The dedicated filter requires an FFmpeg hwdec path that does not yet exist; shipping an empty shell would be misleading | Deferred to avoid premature scaffolding without a real consumer |

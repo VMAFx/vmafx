@@ -13,11 +13,7 @@
 
 #include <stdlib.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #include "test.h"
 
@@ -25,11 +21,11 @@
 
 static char *test_float_ms_ssim_is_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ms_ssim");
-    mu_assert("float_ms_ssim extractor missing", fex != NULL);
-    mu_assert("float_ms_ssim.init must be set", fex->init != NULL);
-    mu_assert("float_ms_ssim.close must be set", fex->close != NULL);
-    return NULL;
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ms_ssim");
+    mu_assert("float_ms_ssim extractor missing", fex != VMAF_NULLPTR);
+    mu_assert("float_ms_ssim.init must be set", fex->init != VMAF_NULLPTR);
+    mu_assert("float_ms_ssim.close must be set", fex->close != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* Helper: call init with the given dimensions and return the result,
@@ -47,14 +43,14 @@ static int invoke_init(VmafFeatureExtractor *fex, unsigned w, unsigned h)
      * init — the close contract tolerates partial state. */
     (void)fex->close(fex);
     free(priv);
-    fex->priv = NULL;
+    fex->priv = VMAF_NULLPTR;
     return rc;
 }
 
 static char *test_float_ms_ssim_init_rejects_below_min_dim(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ms_ssim");
-    mu_assert("float_ms_ssim extractor missing", fex != NULL);
+    mu_assert("float_ms_ssim extractor missing", fex != VMAF_NULLPTR);
 
     /* Below the pyramid floor in both dimensions. */
     mu_assert("init must reject 160x144 (< 176x176)", invoke_init(fex, 160u, 144u) < 0);
@@ -69,13 +65,13 @@ static char *test_float_ms_ssim_init_rejects_below_min_dim(void)
     mu_assert("init must reject 175x176 (w just below)", invoke_init(fex, 175u, 176u) < 0);
     mu_assert("init must reject 176x175 (h just below)", invoke_init(fex, 176u, 175u) < 0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ms_ssim_init_accepts_min_dim(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ms_ssim");
-    mu_assert("float_ms_ssim extractor missing", fex != NULL);
+    mu_assert("float_ms_ssim extractor missing", fex != VMAF_NULLPTR);
 
     /* Exact boundary — allocation must succeed. */
     int rc = invoke_init(fex, 176u, 176u);
@@ -85,7 +81,7 @@ static char *test_float_ms_ssim_init_accepts_min_dim(void)
     rc = invoke_init(fex, 576u, 324u);
     mu_assert("init must accept 576x324 (well above minimum)", rc == 0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -93,7 +89,5 @@ char *run_tests(void)
     mu_run_test(test_float_ms_ssim_is_registered);
     mu_run_test(test_float_ms_ssim_init_rejects_below_min_dim);
     mu_run_test(test_float_ms_ssim_init_accepts_min_dim);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

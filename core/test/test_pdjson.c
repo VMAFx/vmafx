@@ -1,8 +1,7 @@
 /* Copyright 2026 Lusoris */
 /* SPDX-License-Identifier: EUPL-1.2 */
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain C/upstream NULL
- * compatibility and the required Windows MSVC C build. */
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,9 +23,9 @@ static char *test_event_sequence(void)
         if (type == JSON_NUMBER)
             mu_assert("numeric value", json_get_number(&stream) == -125.0);
     }
-    mu_assert("valid document has no error", json_get_error(&stream) == NULL);
+    mu_assert("valid document has no error", json_get_error(&stream) == VMAF_NULLPTR);
     json_close(&stream);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_context_and_skip(void)
@@ -44,7 +43,7 @@ static char *test_context_and_skip(void)
     mu_assert("skip nested array", json_skip(&stream) == JSON_ARRAY);
     mu_assert("skip until number", json_skip_until(&stream, JSON_NUMBER) == JSON_NUMBER);
     json_close(&stream);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_streaming_peek_reset(void)
@@ -68,7 +67,7 @@ static char *test_streaming_peek_reset(void)
     json_reset(&stream);
     mu_assert("stream exhausted", json_next(&stream) == JSON_DONE);
     json_close(&stream);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_unicode_and_embedded_nul(void)
@@ -88,7 +87,7 @@ static char *test_unicode_and_embedded_nul(void)
     value = json_get_string(&stream, &length);
     mu_assert("raw UTF-8 preserved", length == 3 && memcmp(value, raw + 1, 2) == 0);
     json_close(&stream);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_invalid_documents(void)
@@ -132,12 +131,12 @@ static char *test_invalid_documents(void)
         }
         mu_assert("malformed document rejected", type == JSON_ERROR);
         const char *error = json_get_error(&stream);
-        mu_assert("error is sticky", error != NULL && error[0] != '\0' &&
+        mu_assert("error is sticky", error != VMAF_NULLPTR && error[0] != '\0' &&
                                          json_next(&stream) == JSON_ERROR &&
                                          json_get_error(&stream) == error);
         json_close(&stream);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 struct input_cursor {
@@ -175,13 +174,13 @@ static char *test_user_source(void)
     mu_assert("user source completion", end == JSON_ARRAY_END && done == JSON_DONE &&
                                             cursor.position == 7 && cursor.peek_calls >= 7);
     json_close(&stream);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_file_source(void)
 {
     FILE *file = tmpfile();
-    mu_assert("temporary input", file != NULL);
+    mu_assert("temporary input", file != VMAF_NULLPTR);
     mu_assert("write temporary input", fputs("[true]", file) >= 0 && fseek(file, 0, SEEK_SET) == 0);
     json_stream stream;
     json_open_stream(&stream, file);
@@ -194,7 +193,7 @@ static char *test_file_source(void)
     mu_assert("file source completion", end == JSON_ARRAY_END && done == JSON_DONE);
     json_close(&stream);
     mu_assert("close temporary input", fclose(file) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static size_t allocation_calls;
@@ -202,12 +201,12 @@ static size_t fail_at;
 
 static void *controlled_malloc(size_t size)
 {
-    return ++allocation_calls == fail_at ? NULL : malloc(size);
+    return ++allocation_calls == fail_at ? VMAF_NULLPTR : malloc(size);
 }
 
 static void *controlled_realloc(void *pointer, size_t size)
 {
-    return ++allocation_calls == fail_at ? NULL : realloc(pointer, size);
+    return ++allocation_calls == fail_at ? VMAF_NULLPTR : realloc(pointer, size);
 }
 
 static char *test_allocation_failures(void)
@@ -235,10 +234,10 @@ static char *test_allocation_failures(void)
         mu_assert("each allocator failure is reported",
                   failure == 5 ? type == JSON_DONE :
                                  type == JSON_ERROR &&
-                                     strstr(json_get_error(&stream), "out of memory") != NULL);
+                                     strstr(json_get_error(&stream), "out of memory") != VMAF_NULLPTR);
         json_close(&stream);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_nesting_boundary(void)
@@ -268,7 +267,7 @@ static char *test_nesting_boundary(void)
             mu_assert("nesting diagnostic", nesting_error);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_input_tests(void)
@@ -279,7 +278,7 @@ static char *run_input_tests(void)
     mu_run_test(test_file_source);
     mu_run_test(test_allocation_failures);
     mu_run_test(test_nesting_boundary);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -289,4 +288,3 @@ char *run_tests(void)
     mu_run_test(test_streaming_peek_reset);
     return run_input_tests();
 }
-/* NOLINTEND(modernize-use-nullptr) */

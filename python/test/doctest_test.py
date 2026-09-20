@@ -1,15 +1,13 @@
-__copyright__ = "Copyright 2016-2020, Netflix, Inc."
-__license__ = "BSD+Patent"
-
-"""
-Run embedded doctests
-"""
+"""Run embedded doctests."""
 
 import doctest
 
 # from vmaf.tools import stats
 from vmaf.core import quality_runner, train_test_model
 from vmaf.tools import misc
+
+__copyright__ = "Copyright 2016-2020, Netflix, Inc."
+__license__ = "BSD+Patent"
 
 
 def load_tests(loader, tests, ignore):

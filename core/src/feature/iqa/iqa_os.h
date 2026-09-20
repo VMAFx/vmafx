@@ -31,8 +31,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _OS_H_
-#define _OS_H_
+#ifndef OS_H_
+#define OS_H_
 
 /* Microsoft tends to implement features early, but they have a high legacy
  * cost because they won't break existing implementations. As such, certain
@@ -63,4 +63,4 @@ static const unsigned long __nan[2] = {0xffffffff, 0x7fffffff};
 
 #endif
 
-#endif /* _OS_H_ */
+#endif /* OS_H_ */

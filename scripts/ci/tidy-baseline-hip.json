@@ -351,8 +351,8 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1250,
-  "total_nolint_uncited": 1,
+  "total_warnings": 1249,
+  "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
     "core/include/libvmaf/feature.h": 1,
@@ -472,7 +472,7 @@
     "core/test/test_hip_float_motion_parity.c": 21,
     "core/test/test_hip_float_psnr_parity.c": 21,
     "core/test/test_hip_float_ssim_parity.c": 22,
-    "core/test/test_hip_float_vif_parity.c": 22,
+    "core/test/test_hip_float_vif_parity.c": 21,
     "core/test/test_hip_motion3_parity.c": 26,
     "core/test/test_hip_motion_parity.c": 18,
     "core/test/test_hip_motion_v2_parity.c": 21,
@@ -502,7 +502,26 @@
     "core/tools/vidinput.h": 12,
     "core/tools/vmaf.cpp": 1
   },
-  "nolint_uncited": {
-    "core/test/test_hip_float_vif_parity.c": 1
-  }
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/test/test_hip_float_vif_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_float_vif_parity.c": {
+          "warnings": [
+            22,
+            21
+          ],
+          "nolint_uncited": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "4320252172985b155c700cb9a8114c19c59f6e0e526a339d8640f8ba07658e24"
+    }
+  ]
 }

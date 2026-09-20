@@ -13,7 +13,7 @@ import pytest
 from conftest import _PYTORCH_LIGHTNING_ERROR
 from typer.testing import CliRunner
 
-from ai.src.vmaf_train import cli
+from vmaf_train import cli
 
 requires_lightning = pytest.mark.skipif(
     _PYTORCH_LIGHTNING_ERROR is not None,
@@ -86,7 +86,7 @@ def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setitem(
         sys.modules,
-        "ai.src.vmaf_train.tune",
+        "vmaf_train.tune",
         SimpleNamespace(sweep=fake_sweep),
     )
 
@@ -136,7 +136,7 @@ def test_validate_norm_json_records_run_provenance(monkeypatch, tmp_path: Path) 
 
     monkeypatch.setitem(
         sys.modules,
-        "ai.src.vmaf_train.validate_norm",
+        "vmaf_train.validate_norm",
         SimpleNamespace(
             validate_norm=lambda _model, _features: Report(),
             render_table=lambda _report: "norm-ok",

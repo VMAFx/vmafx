@@ -1,10 +1,9 @@
-<!-- markdownlint-disable MD060 -->
 # GPU Backend Context-API Contract
 
 This document records the three-function API surface that every GPU backend in
-libvmaf must expose.  Following a consistent shape prevents per-backend API
-drift and lets higher-level integration code (CLI, feature-extractor glue,
-ffmpeg filter) stay uniform across backends.
+libvmaf must expose. Following a consistent shape prevents per-backend API drift
+and lets higher-level integration code (CLI, feature-extractor glue, ffmpeg
+filter) stay uniform across backends.
 
 See [ADR-0486](../adr/0486-context-api-contract-doc.md) for the rationale and
 decision record.
@@ -13,10 +12,9 @@ decision record.
 
 ## Required functions
 
-Every backend named `<backend>` (e.g., `hip`, `metal`) **must** expose
-exactly these three functions in its public header
-`core/src/<backend>/common.h`. (The `vulkan` backend previously followed this
-contract; it was removed in ADR-0726.)
+Every backend named `<backend>` (e.g., `hip`, `metal`) **must** expose exactly
+these three functions in its public header `core/src/<backend>/common.h`. (The
+`vulkan` backend previously followed this contract; it was removed in ADR-0726.)
 
 ```c
 /* Allocate and initialise a new context bound to device_index.
@@ -49,27 +47,26 @@ int vmaf_<backend>_device_count(void);
 
 ## Error-return contract
 
-| Condition                         | Return value |
-|-----------------------------------|--------------|
-| Success                           | `0`          |
-| `ctx` or required pointer is NULL | `-EINVAL`    |
-| Device index out of range         | `-EINVAL`    |
-| No device found                   | `-ENODEV`    |
-| Allocation failure                | `-ENOMEM`    |
+| Condition                         | Return value                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------- |
+| Success                           | `0`                                                                                       |
+| `ctx` or required pointer is NULL | `-EINVAL`                                                                                 |
+| Device index out of range         | `-EINVAL`                                                                                 |
+| No device found                   | `-ENODEV`                                                                                 |
+| Allocation failure                | `-ENOMEM`                                                                                 |
 | Runtime / driver error            | `-EIO` (fallback; prefer a more specific errno where the underlying runtime maps cleanly) |
 
-`context_destroy` never returns an error — it is `void`.  Any cleanup error
-that cannot be handled silently should be logged via `vmaf_log` before
-discarding it.
+`context_destroy` never returns an error — it is `void`. Any cleanup error that
+cannot be handled silently should be logged via `vmaf_log` before discarding it.
 
 ---
 
 ## CUDA deviation
 
 The legacy CUDA backend pre-dates this contract (inherited from Netflix
-upstream) and uses `vmaf_cuda_state_init` / `vmaf_cuda_release` with a
-different signature.  It is exempt from the naming rule; **do not rename it**
-without a dedicated ADR and a matching update to `ffmpeg-patches/`.
+upstream) and uses `vmaf_cuda_state_init` / `vmaf_cuda_release` with a different
+signature. It is exempt from the naming rule; **do not rename it** without a
+dedicated ADR and a matching update to `ffmpeg-patches/`.
 
 ---
 

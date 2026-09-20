@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <stddef.h>
 #include <immintrin.h>
@@ -30,8 +32,8 @@ static inline __m512 avx512_abs_ps(__m512 x)
 
 float float_sad_line_avx512(const float *img1, const float *img2, int w)
 {
-    assert(img1 != NULL);
-    assert(img2 != NULL);
+    assert(img1 != VMAF_NULLPTR);
+    assert(img2 != VMAF_NULLPTR);
     assert(w > 0);
     float accum = 0.0f;
     int j = 0;

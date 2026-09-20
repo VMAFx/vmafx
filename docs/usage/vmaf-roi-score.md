@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # vmaf-roi-score — saliency-weighted VMAF scoring
 
 `vmaf-roi-score` is a fork-local Python tool that produces a
@@ -15,7 +14,7 @@ important.
 > output.
 >
 > | Tool | Output | Surface |
-> |---|---|---|
+> | --- | --- | --- |
 > | `vmaf-roi` (ADR-0247) | per-CTU QP offsets (encoder steering) | C binary |
 > | `vmaf-roi-score` (ADR-0296) | saliency-weighted VMAF score | Python tool |
 
@@ -130,7 +129,7 @@ the interval between them is blended.
 ## Flags
 
 | Flag | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--reference PATH` | (required) | raw reference YUV |
 | `--distorted PATH` | (required) | raw distorted YUV |
 | `--width N`, `--height N` | (required) | YUV dimensions |
@@ -147,7 +146,7 @@ the interval between them is blended.
 ## Exit codes
 
 | Code | Meaning |
-|---|---|
+| --- | --- |
 | 0 | success |
 | 64 | saliency-mask materialisation failed (missing runtime deps, unsupported pix_fmt, bad mask shape) |
 | 65 | `vmaf` ran but produced JSON missing the pooled scalar |

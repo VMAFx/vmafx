@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **The last three CI lanes moved to `ubuntu-26.04` as well.** The runner bump
   rewrote every `runs-on:` value, which left behind two matrix rows that spell
   the label as `os:` (the Intel compiler lane and the Ubuntu ARM clang lane) and
@@ -9,8 +11,8 @@
   documentation build was already taking over nine minutes against a ten-minute
   ceiling, and on the newer runner image it crosses it, so the job died
   mid-build and the required-checks aggregator reported a failure that had
-  nothing to do with the documentation. The ceiling is twenty minutes now.
-  The `Cppcheck` lane stays on the older image for the moment: its analyser
-  comes from the image, and the newer one reports ninety findings in the
-  vendored libsvm predictor which are real, in scope, and deserve a fix with a
+  nothing to do with the documentation. The ceiling is twenty minutes now. The
+  `Cppcheck` lane stays on the older image for the moment: its analyser comes
+  from the image, and the newer one reports ninety findings in the vendored
+  libsvm predictor which are real, in scope, and deserve a fix with a
   golden-data run rather than a suppression.

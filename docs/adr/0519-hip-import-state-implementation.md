@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0519: Implement vmaf_hip_import_state to unblock --backend hip
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ covers the `vmaf_init` → `vmaf_hip_import_state` → `vmaf_close` →
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Mirror the CUDA by-value copy (`vmaf->hip.state = *state;`) | Closest field-for-field parallel to the CUDA twin; obvious diff for future readers | Requires exposing the full `VmafHipState` struct definition to `libvmaf.c`, breaking the header-purity invariant the HIP backend pinned in ADR-0212 (`<hip/hip_runtime.h>` types stay on the implementation side); also adds an ownership-transfer ambiguity the SYCL / Vulkan / Metal twins deliberately avoid | Caller-owned pointer model matches the rest of the GPU backends; ADR-0212 header-purity invariant survives |
 | Implement the function in `core/src/hip/common.c` and forward-declare a setter on `VmafContext` | Keeps every HIP-backend entry point in one TU | Inverts the existing pattern (CUDA / SYCL / Vulkan / Metal all live in `libvmaf.c`); future maintainers would not find the HIP variant where they expect it | Convention beats novelty for a 1-line wrapper |
 | Wire `VMAF_FEATURE_EXTRACTOR_HIP` on the HIP-flagged extractors as part of the same PR | Unlocks the device-resident dispatch path simultaneously | Out of scope; the dispatch flip requires the picture buffer-type plumbing (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`) per the AGENTS.md invariant — a separate, larger PR | Keep PR scope tight; the import-state fix alone unblocks `--backend hip` end-to-end |

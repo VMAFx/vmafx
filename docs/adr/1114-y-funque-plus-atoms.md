@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1114: Y-FUNQUE+ wavelet-domain atom features (atoms-only, fused SVR deferred)
 
@@ -61,7 +60,7 @@ same cross-host-determinism rationale as `ssimulacra2`).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Atoms-only, fused SVR deferred (chosen)** | RC-feasible pure C; no model asset; no license-on-weights risk; the atoms are fully reproducible from published constants; lets users fuse externally or wait for a fork-trained SVR | No single Y-FUNQUE+ MOS score yet; consumers must combine the three atoms themselves | — |
 | Train + freeze a fork SVR now and ship a fused score | A single deployable Y-FUNQUE+ number out of the box | Requires a licensed subjective dataset (CC-HDDO / LIVE have their own usage terms), a model card, and the fused number would be fork-originated with no upstream reference to validate against; expands PR scope and license surface materially | Deferred — the maintainer chose atoms-first for RC; the SVR is a separate, dataset-gated PR |
 | Clean-room from papers only (ignore the MIT reference) | Zero dependency on the upstream repo | Unnecessary: the reference is MIT (BSD-2-Clause-Patent-compatible), so it is a legitimate algorithmic cross-check; discarding it would only weaken constant verification | Not needed once the MIT license was confirmed |

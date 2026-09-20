@@ -114,19 +114,165 @@ __device__ static __forceinline__ float fvif_read_raw(const uint8_t *plane, int 
     return (float)v / scaler - 128.0f;
 }
 
-extern "C" {
+struct FvifVerticalBuffers {
+    float *mu1;
+    float *mu2;
+    float *xx;
+    float *yy;
+    float *xy;
+};
+
+struct FvifMoments {
+    float mu1;
+    float mu2;
+    float xx;
+    float yy;
+    float xy;
+};
+
+__device__ static void fvif_load_tile(float *tile_ref, float *tile_dis, int scale,
+                                      const uint8_t *ref_raw, const uint8_t *dis_raw,
+                                      ptrdiff_t raw_stride, const float *ref_f, const float *dis_f,
+                                      ptrdiff_t float_stride, unsigned width, unsigned height,
+                                      unsigned bpc, int half_width, int tile_width, int tile_height,
+                                      unsigned lid)
+{
+    constexpr int max_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    const int origin_y = blockIdx.y * FVIF_BY - half_width;
+    const int origin_x = blockIdx.x * FVIF_BX - half_width;
+    for (int i = lid; i < tile_height * tile_width; i += FVIF_BX * FVIF_BY) {
+        const int row = i / tile_width;
+        const int column = i - row * tile_width;
+        const int source_y = fvif_mirror_v(origin_y + row, (int)height);
+        const int source_x = fvif_mirror_h(origin_x + column, (int)width);
+        if (scale == 0) {
+            tile_ref[row * max_tile_width + column] =
+                fvif_read_raw(ref_raw, raw_stride, source_y, source_x, bpc);
+            tile_dis[row * max_tile_width + column] =
+                fvif_read_raw(dis_raw, raw_stride, source_y, source_x, bpc);
+        } else {
+            tile_ref[row * max_tile_width + column] = ref_f[source_y * float_stride + source_x];
+            tile_dis[row * max_tile_width + column] = dis_f[source_y * float_stride + source_x];
+        }
+    }
+}
+
+__device__ static void fvif_vertical_filter(const float *tile_ref, const float *tile_dis,
+                                            FvifVerticalBuffers output, const float *coeff,
+                                            int filter_width, int tile_width, unsigned lid)
+{
+    constexpr int max_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    for (int i = lid; i < FVIF_BY * tile_width; i += FVIF_BX * FVIF_BY) {
+        const int row = i / tile_width;
+        const int column = i - row * tile_width;
+        FvifMoments sum = {};
+        for (int k = 0; k < filter_width; k++) {
+            const float weight = coeff[k];
+            const float ref = tile_ref[(row + k) * max_tile_width + column];
+            const float dis = tile_dis[(row + k) * max_tile_width + column];
+            sum.mu1 += weight * ref;
+            sum.mu2 += weight * dis;
+            sum.xx += weight * (ref * ref);
+            sum.yy += weight * (dis * dis);
+            sum.xy += weight * (ref * dis);
+        }
+        output.mu1[row * max_tile_width + column] = sum.mu1;
+        output.mu2[row * max_tile_width + column] = sum.mu2;
+        output.xx[row * max_tile_width + column] = sum.xx;
+        output.yy[row * max_tile_width + column] = sum.yy;
+        output.xy[row * max_tile_width + column] = sum.xy;
+    }
+}
+
+__device__ static FvifMoments fvif_horizontal_filter(const FvifVerticalBuffers input,
+                                                     const float *coeff, int filter_width, int x,
+                                                     int y)
+{
+    constexpr int max_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    FvifMoments sum = {};
+    for (int k = 0; k < filter_width; k++) {
+        const float weight = coeff[k];
+        const int index = y * max_tile_width + x + k;
+        sum.mu1 += weight * input.mu1[index];
+        sum.mu2 += weight * input.mu2[index];
+        sum.xx += weight * input.xx[index];
+        sum.yy += weight * input.yy[index];
+        sum.xy += weight * input.xy[index];
+    }
+    return sum;
+}
+
+__device__ static void fvif_statistic(FvifMoments moments, float vif_sigma_nsq, float vif_egl,
+                                      float sigma_max_inv, float *num, float *den)
+{
+    const float eps = 1.0e-10f;
+    float sigma1_sq = fmaxf(moments.xx - moments.mu1 * moments.mu1, 0.0f);
+    const float sigma2_sq = fmaxf(moments.yy - moments.mu2 * moments.mu2, 0.0f);
+    const float sigma12 = moments.xy - moments.mu1 * moments.mu2;
+    float gain = sigma12 / (sigma1_sq + eps);
+    float residual = sigma2_sq - gain * sigma12;
+    if (sigma1_sq < eps) {
+        gain = 0.0f;
+        residual = sigma2_sq;
+        sigma1_sq = 0.0f;
+    }
+    if (sigma2_sq < eps) {
+        gain = 0.0f;
+        residual = 0.0f;
+    }
+    if (gain < 0.0f) {
+        residual = sigma2_sq;
+        gain = 0.0f;
+    }
+    residual = fmaxf(residual, eps);
+    gain = fminf(gain, vif_egl);
+    *num = log2f(1.0f + (gain * gain * sigma1_sq) / (residual + vif_sigma_nsq));
+    *den = log2f(1.0f + sigma1_sq / vif_sigma_nsq);
+    if (sigma12 < 0.0f)
+        *num = 0.0f;
+    if (sigma1_sq < vif_sigma_nsq) {
+        *num = 1.0f - sigma2_sq * sigma_max_inv;
+        *den = 1.0f;
+    }
+}
+
+__device__ static void fvif_reduce_partials(float num, float den, float *num_warps,
+                                            float *den_warps, float *num_partials,
+                                            float *den_partials, unsigned grid_x_count,
+                                            unsigned lid)
+{
+    const float warp_num = fvif_warp_reduce(num);
+    const float warp_den = fvif_warp_reduce(den);
+    const int lane = lid % 32;
+    const int warp_id = lid / 32;
+    if (lane == 0) {
+        num_warps[warp_id] = warp_num;
+        den_warps[warp_id] = warp_den;
+    }
+    __syncthreads();
+    if (lid != 0)
+        return;
+    float total_num = 0.0f, total_den = 0.0f;
+    for (int i = 0; i < FVIF_BX * FVIF_BY / 32; i++) {
+        total_num += num_warps[i];
+        total_den += den_warps[i];
+    }
+    const unsigned workgroup = blockIdx.y * grid_x_count + blockIdx.x;
+    num_partials[workgroup] = total_num;
+    den_partials[workgroup] = total_den;
+}
 
 /* Compute kernel — SCALE selects the filter and tile halo. The shader
  * expects `ref_in` / `dis_in` to be float buffers at this scale's
  * dimensions, EXCEPT at SCALE=0 where they're raw (uint plane) and
  * the kernel converts inline. We pass a `bpc` arg + `is_raw` bool
  * to handle that. The caller binds the appropriate buffer. */
-__global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw,
-                                  ptrdiff_t raw_stride, const float *ref_f, const float *dis_f,
-                                  ptrdiff_t f_stride_floats, float *num_partials,
-                                  float *den_partials, unsigned width, unsigned height,
-                                  unsigned bpc, unsigned grid_x_count, float vif_sigma_nsq,
-                                  float vif_egl, float sigma_max_inv)
+extern "C" __global__ void
+float_vif_compute(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw, ptrdiff_t raw_stride,
+                  const float *ref_f, const float *dis_f, ptrdiff_t f_stride_floats,
+                  float *num_partials, float *den_partials, unsigned width, unsigned height,
+                  unsigned bpc, unsigned grid_x_count, float vif_sigma_nsq, float vif_egl,
+                  float sigma_max_inv)
 {
     const int fw = fvif_fw(scale);
     const int hfw = fw / 2;
@@ -146,6 +292,8 @@ __global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8
     __shared__ float s_v_xx[FVIF_BY * MAX_TILE_W];
     __shared__ float s_v_yy[FVIF_BY * MAX_TILE_W];
     __shared__ float s_v_xy[FVIF_BY * MAX_TILE_W];
+    __shared__ float s_num_warps[FVIF_BX * FVIF_BY / 32];
+    __shared__ float s_den_warps[FVIF_BX * FVIF_BY / 32];
 
     const int gx = blockIdx.x * blockDim.x + threadIdx.x;
     const int gy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -153,142 +301,30 @@ __global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8
     const int ly = threadIdx.y;
     const unsigned lid = ly * FVIF_BX + lx;
     const bool valid = (gx < (int)width && gy < (int)height);
-
-    const int tile_oy = blockIdx.y * FVIF_BY - hfw;
-    const int tile_ox = blockIdx.x * FVIF_BX - hfw;
-    const int tile_elems = tile_h * tile_w;
-    const bool is_raw = (scale == 0);
-
-    /* Phase 1: tile load with mirror padding. */
-    for (int i = lid; i < tile_elems; i += FVIF_BX * FVIF_BY) {
-        const int tr = i / tile_w;
-        const int tc = i - tr * tile_w;
-        const int py = fvif_mirror_v(tile_oy + tr, (int)height);
-        const int px = fvif_mirror_h(tile_ox + tc, (int)width);
-        float r, d;
-        if (is_raw) {
-            r = fvif_read_raw(ref_raw, raw_stride, py, px, bpc);
-            d = fvif_read_raw(dis_raw, raw_stride, py, px, bpc);
-        } else {
-            r = ref_f[py * f_stride_floats + px];
-            d = dis_f[py * f_stride_floats + px];
-        }
-        s_ref[tr * MAX_TILE_W + tc] = r;
-        s_dis[tr * MAX_TILE_W + tc] = d;
-    }
+    FvifVerticalBuffers vertical = {s_v_mu1, s_v_mu2, s_v_xx, s_v_yy, s_v_xy};
+    fvif_load_tile(s_ref, s_dis, scale, ref_raw, dis_raw, raw_stride, ref_f, dis_f, f_stride_floats,
+                   width, height, bpc, hfw, tile_w, tile_h, lid);
     __syncthreads();
-
-    /* Phase 2: vertical filter for WG_Y output rows × tile_w cols. */
-    const int vert_total = FVIF_BY * tile_w;
-    for (int i = lid; i < vert_total; i += FVIF_BX * FVIF_BY) {
-        const int r = i / tile_w;
-        const int c = i - r * tile_w;
-        float a_mu1 = 0.0f, a_mu2 = 0.0f, a_xx = 0.0f, a_yy = 0.0f, a_xy = 0.0f;
-        for (int k = 0; k < fw; k++) {
-            const float c_k = coeff[k];
-            const float ref_v = s_ref[(r + k) * MAX_TILE_W + c];
-            const float dis_v = s_dis[(r + k) * MAX_TILE_W + c];
-            a_mu1 += c_k * ref_v;
-            a_mu2 += c_k * dis_v;
-            a_xx += c_k * (ref_v * ref_v);
-            a_yy += c_k * (dis_v * dis_v);
-            a_xy += c_k * (ref_v * dis_v);
-        }
-        s_v_mu1[r * MAX_TILE_W + c] = a_mu1;
-        s_v_mu2[r * MAX_TILE_W + c] = a_mu2;
-        s_v_xx[r * MAX_TILE_W + c] = a_xx;
-        s_v_yy[r * MAX_TILE_W + c] = a_yy;
-        s_v_xy[r * MAX_TILE_W + c] = a_xy;
-    }
+    fvif_vertical_filter(s_ref, s_dis, vertical, coeff, fw, tile_w, lid);
     __syncthreads();
-
-    /* Phase 3: per-thread horizontal filter + vif_stat. */
     float my_num = 0.0f, my_den = 0.0f;
     if (valid) {
-        float mu1 = 0.0f, mu2 = 0.0f, xx = 0.0f, yy = 0.0f, xy = 0.0f;
-        for (int k = 0; k < fw; k++) {
-            const float c_k = coeff[k];
-            mu1 += c_k * s_v_mu1[ly * MAX_TILE_W + (lx + k)];
-            mu2 += c_k * s_v_mu2[ly * MAX_TILE_W + (lx + k)];
-            xx += c_k * s_v_xx[ly * MAX_TILE_W + (lx + k)];
-            yy += c_k * s_v_yy[ly * MAX_TILE_W + (lx + k)];
-            xy += c_k * s_v_xy[ly * MAX_TILE_W + (lx + k)];
-        }
-        /* vif_sigma_nsq / vif_egl / sigma_max_inv arrive as kernel arguments;
-         * they used to be hardcoded to the option defaults here, which silently
-         * ignored every non-default value — including the
-         * `vif_enhn_gain_limit = 1.0` that model/vmaf_float_v0.6.1neg.json sets
-         * on all four VIF scales.  ADR-1217. */
-        const float eps = 1.0e-10f;
-
-        float sigma1_sq = xx - mu1 * mu1;
-        float sigma2_sq = yy - mu2 * mu2;
-        float sigma12 = xy - mu1 * mu2;
-        sigma1_sq = fmaxf(sigma1_sq, 0.0f);
-        sigma2_sq = fmaxf(sigma2_sq, 0.0f);
-        float g = sigma12 / (sigma1_sq + eps);
-        float sv_sq = sigma2_sq - g * sigma12;
-        if (sigma1_sq < eps) {
-            g = 0.0f;
-            sv_sq = sigma2_sq;
-            sigma1_sq = 0.0f;
-        }
-        if (sigma2_sq < eps) {
-            g = 0.0f;
-            sv_sq = 0.0f;
-        }
-        if (g < 0.0f) {
-            sv_sq = sigma2_sq;
-            g = 0.0f;
-        }
-        sv_sq = fmaxf(sv_sq, eps);
-        g = fminf(g, vif_egl);
-
-        float num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + vif_sigma_nsq));
-        float den_val = log2f(1.0f + sigma1_sq / vif_sigma_nsq);
-        if (sigma12 < 0.0f)
-            num_val = 0.0f;
-        if (sigma1_sq < vif_sigma_nsq) {
-            num_val = 1.0f - sigma2_sq * sigma_max_inv;
-            den_val = 1.0f;
-        }
-        my_num = num_val;
-        my_den = den_val;
+        const FvifMoments moments = fvif_horizontal_filter(vertical, coeff, fw, lx, ly);
+        fvif_statistic(moments, vif_sigma_nsq, vif_egl, sigma_max_inv, &my_num, &my_den);
     }
-
-    /* Phase 4: warp + cross-warp reduction. */
-    __shared__ float s_num_warps[FVIF_BX * FVIF_BY / 32];
-    __shared__ float s_den_warps[FVIF_BX * FVIF_BY / 32];
-    const float wn = fvif_warp_reduce(my_num);
-    const float wd = fvif_warp_reduce(my_den);
-    const int lane = lid % 32;
-    const int warp_id = lid / 32;
-    if (lane == 0) {
-        s_num_warps[warp_id] = wn;
-        s_den_warps[warp_id] = wd;
-    }
-    __syncthreads();
-    if (lid == 0) {
-        float total_num = 0.0f, total_den = 0.0f;
-        for (int i = 0; i < FVIF_BX * FVIF_BY / 32; i++) {
-            total_num += s_num_warps[i];
-            total_den += s_den_warps[i];
-        }
-        const unsigned wg_idx = blockIdx.y * grid_x_count + blockIdx.x;
-        num_partials[wg_idx] = total_num;
-        den_partials[wg_idx] = total_den;
-    }
+    fvif_reduce_partials(my_num, my_den, s_num_warps, s_den_warps, num_partials, den_partials,
+                         grid_x_count, lid);
 }
 
 /* Decimate kernel — applies SCALE's filter at PREVIOUS scale's
  * dimensions, samples at (2*gx, 2*gy) for output. CPU's
  * VIF_OPT_HANDLE_BORDERS branch — mirror padding handles taps near
  * the edge. Output dimensions: in_w / 2, in_h / 2. */
-__global__ void float_vif_decimate(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw,
-                                   ptrdiff_t raw_stride, const float *ref_f, const float *dis_f,
-                                   ptrdiff_t f_stride_floats, float *ref_out, float *dis_out,
-                                   ptrdiff_t out_stride_floats, unsigned out_w, unsigned out_h,
-                                   unsigned in_w, unsigned in_h, unsigned bpc)
+extern "C" __global__ void
+float_vif_decimate(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw, ptrdiff_t raw_stride,
+                   const float *ref_f, const float *dis_f, ptrdiff_t f_stride_floats,
+                   float *ref_out, float *dis_out, ptrdiff_t out_stride_floats, unsigned out_w,
+                   unsigned out_h, unsigned in_w, unsigned in_h, unsigned bpc)
 {
     const int gx = blockIdx.x * blockDim.x + threadIdx.x;
     const int gy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -329,5 +365,3 @@ __global__ void float_vif_decimate(int scale, const uint8_t *ref_raw, const uint
     ref_out[gy * out_stride_floats + gx] = acc_ref;
     dis_out[gy * out_stride_floats + gx] = acc_dis;
 }
-
-} /* extern "C" */

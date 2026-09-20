@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0041: GPU-generation ULP calibration corpus design
 
 - **Status**: Active
@@ -55,7 +54,7 @@ representative per family before the calibration head can claim
 generalisation:
 
 | Family | Backend(s) | Detection key | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | NVIDIA Ada Lovelace | CUDA, Vulkan | CUDA `major=8, minor=9` / Vulkan `deviceID` 0x2684 (RTX 4090) family | Most likely target hardware |
 | NVIDIA Hopper | CUDA | CUDA `major=9, minor=0` | Data-centre; HBM3 |
 | NVIDIA Ampere | CUDA, Vulkan | CUDA `major=8, minor=0` (A100) / `8, 6` (RTX 30) | Most-common installed base |
@@ -112,7 +111,7 @@ calibration head.
 Counting:
 
 | Axis | Cardinality |
-|---|---|
+| --- | --- |
 | Features (registered with at least one GPU twin per `FEATURE_METRICS`) | 17 |
 | GPU backends per feature | 1–4 (varies; Vulkan has fewest twins today, CUDA has the most) |
 | GPU architectures per backend | 1–3 (per the table above; lavapipe is one Vulkan arch) |

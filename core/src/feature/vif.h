@@ -19,17 +19,19 @@
 #ifndef VMAF_FEATURE_VIF_H
 #define VMAF_FEATURE_VIF_H
 
+#include "vmaf_nullptr.h"
+
 #include <stddef.h>
 
 /*
  * compute_vif: main float VIF computation over 4 scales.
  *
  * precomputed_filters: optional array of 4 pre-computed Gaussian filters
- *   (one per scale, each up to 128 floats).  Passing non-NULL skips the
+ *   (one per scale, each up to 128 floats).  Passing non-VMAF_NULLPTR skips the
  *   per-scale transcendental call to vif_get_filter() — Win #3 of ADR-0500.
- *   precomputed_filter_widths: corresponding filter widths.  Must be non-NULL
- *   if precomputed_filters is non-NULL.
- *   Passing NULL for both restores the original per-call vif_get_filter() path.
+ *   precomputed_filter_widths: corresponding filter widths.  Must be non-VMAF_NULLPTR
+ *   if precomputed_filters is non-VMAF_NULLPTR.
+ *   Passing VMAF_NULLPTR for both restores the original per-call vif_get_filter() path.
  */
 int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride, int dis_stride,
                 double *score, double *score_num, double *score_den, double *scores,

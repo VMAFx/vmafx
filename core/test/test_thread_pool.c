@@ -48,12 +48,15 @@ static int fn_c(void *data, void **thread_data)
 
 typedef struct Fps {
     unsigned num, den;
+    unsigned uses;
 } Fps;
 
 static int fn_d(void *data, void **thread_data)
 {
     (void)thread_data;
     Fps *fps = data;
+    if (fps->uses++ != 0)
+        return -EALREADY;
     (void)printf("FPS: %u/%u ", fps->num, fps->den);
     return 0;
 }
@@ -67,13 +70,13 @@ static char *test_thread_pool_create_enqueue_wait_and_destroy()
 
     err = vmaf_thread_pool_create(&pool, cfg);
     mu_assert("problem during vmaf_thread_pool_init", !err);
-    err = vmaf_thread_pool_enqueue(pool, fn_a, NULL, 0);
+    err = vmaf_thread_pool_enqueue(pool, fn_a, VMAF_NULLPTR, 0);
     mu_assert("problem during vmaf_thread_pool_enqueue", !err);
-    err = vmaf_thread_pool_enqueue(pool, fn_b, NULL, 0);
+    err = vmaf_thread_pool_enqueue(pool, fn_b, VMAF_NULLPTR, 0);
     mu_assert("problem during vmaf_thread_pool_enqueue", !err);
-    err = vmaf_thread_pool_enqueue(pool, fn_c, NULL, 0);
+    err = vmaf_thread_pool_enqueue(pool, fn_c, VMAF_NULLPTR, 0);
     mu_assert("problem during vmaf_thread_pool_enqueue", !err);
-    Fps fps = {24, 1};
+    Fps fps = {.num = 24, .den = 1};
     err = vmaf_thread_pool_enqueue(pool, fn_d, &fps, sizeof(fps));
     mu_assert("problem during vmaf_thread_pool_enqueue with data", !err);
     err = vmaf_thread_pool_wait(pool);
@@ -83,7 +86,7 @@ static char *test_thread_pool_create_enqueue_wait_and_destroy()
 
     (void)printf("\n");
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -106,28 +109,28 @@ static char *test_thread_pool_create_guards()
     int err;
 
     /* NULL pool pointer. */
-    err = vmaf_thread_pool_create(NULL, (VmafThreadPoolConfig){.n_threads = 1});
+    err = vmaf_thread_pool_create(VMAF_NULLPTR, (VmafThreadPoolConfig){.n_threads = 1});
     mu_assert("NULL pool arg must return -EINVAL", err == -EINVAL);
 
     /* Zero thread count. */
-    VmafThreadPool *pool = NULL;
+    VmafThreadPool *pool = VMAF_NULLPTR;
     err = vmaf_thread_pool_create(&pool, (VmafThreadPoolConfig){.n_threads = 0});
     mu_assert("zero n_threads must return -EINVAL", err == -EINVAL);
-    mu_assert("pool must remain NULL on error", pool == NULL);
+    mu_assert("pool must remain NULL on error", pool == VMAF_NULLPTR);
 
     /* Happy path: single thread, create and destroy. */
     err = vmaf_thread_pool_create(&pool, (VmafThreadPoolConfig){.n_threads = 1});
     mu_assert("single-thread create must succeed", !err);
-    mu_assert("pool must be non-NULL on success", pool != NULL);
+    mu_assert("pool must be non-NULL on success", pool != VMAF_NULLPTR);
     err = vmaf_thread_pool_destroy(pool);
     mu_assert("destroy must succeed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_thread_pool_create_enqueue_wait_and_destroy);
     mu_run_test(test_thread_pool_create_guards);
-    return NULL;
+    return VMAF_NULLPTR;
 }

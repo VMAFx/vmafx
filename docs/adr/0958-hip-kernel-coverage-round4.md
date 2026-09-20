@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0958: HIP kernel parity-test coverage round 4
 
 - **Status**: Accepted
@@ -102,7 +101,7 @@ per-window rounding comparable to MS-SSIM (round-2 places=3 precedent).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Ship 4 tests as originally planned (include `speed_chroma_hip` + `speed_temporal_hip`) | Closes the round in one batch | Tests can't link — `speed_internal_init_dimensions` / `speed_internal_float_stride` undefined; CI would red on first build | Rejected; verified via container build (vmaf-dev-mcp `enable_hip=true enable_hipcc=false`). The link defect must be fixed in a separate PR that adds `core/src/feature/speed_internal.c` |
 | Stub out the missing helpers in this PR | Single-PR closeout | Requires extracting algorithm-defining logic from `speed.c`; landing untested helpers behind a coverage PR violates touched-file lint rule (no functional change without ADR + tests) | Rejected; the helpers are non-trivial (resolution math + alignment) and need their own design review |
 | Include `float_moment_hip` in round 4 | Closes the very last gap | CPU and HIP `provided_features` arrays do not match — parity gate has no shared LHS/RHS channel | Rejected; needs an API-shape decision (split CPU or collapse HIP) before any parity gate is meaningful |

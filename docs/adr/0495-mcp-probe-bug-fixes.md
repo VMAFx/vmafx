@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0495: MCP server probe-driven bug-fix cluster (2026-05-17)
 
 - **Status**: Accepted
@@ -74,7 +73,7 @@ We will:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Use `--backend $name` exclusive selector instead of the `--no_*` flag set | Single canonical CLI surface, matches `bench_all.sh` documentation | Doesn't work on older fork builds that predate the selector (2026-04-28); breaks `vmaf-dev-mcp-stdio` containers built against older snapshots | Probe-and-refuse via `--no_*` works on every fork build that ever shipped |
 | Clamp `vmaf_v0.6.1` scores `>100 → 100`, `<0 → 0` at the MCP layer (Bug #4) | Caller intuition "identical YUV ⇒ 100" satisfied | Would diverge MCP scores from the libvmaf CLI and the Netflix golden gate — exactly the assertion class CLAUDE.md §8 forbids modifying | Documented as a model artefact; agents and humans who need a 100-on-identical pair should pick the `vmaf_v0.6.1neg` model (which clips) |
 | Hard-fail on 4K-model + SD-source instead of warning (Bug #5) | Loud, unmissable | Breaks legitimate use cases (smoke-testing the 4K model on tiny fixtures during dev); too rigid a policy for a per-call tool | Warning is the right register — surfaces the foot-gun without removing capability |

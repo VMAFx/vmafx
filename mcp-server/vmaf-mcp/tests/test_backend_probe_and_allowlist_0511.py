@@ -26,6 +26,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -103,7 +104,7 @@ def test_probe_backends_is_cached_per_binary_path(
     third = srv._probe_backends(fake)
     assert first == second == third
     assert call_count["n"] == 1, (
-        f"_probe_backends forked {call_count['n']} subprocesses; " "must cache after the first call"
+        f"_probe_backends forked {call_count['n']} subprocesses; must cache after the first call"
     )
 
 

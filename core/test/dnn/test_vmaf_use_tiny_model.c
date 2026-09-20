@@ -35,15 +35,17 @@
 
 #include "mu_table.h"
 #include "test.h"
-
 #include "libvmaf/dnn.h"
 #include "libvmaf/libvmaf.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+static VmafDnnResizeMode invalid_resize_mode(void)
+{
+    _Static_assert(sizeof(VmafDnnResizeMode) == sizeof(int), "enum ABI must match int");
+    const int raw = 99;
+    VmafDnnResizeMode value;
+    (void)memcpy(&value, &raw, sizeof(value));
+    return value;
+}
 
 /* Path is relative to workdir = project root (set in meson.build). */
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
@@ -128,10 +130,10 @@ static VmafContext *alloc_ctx(void)
         .cpumask = 0,
         .gpumask = 0,
     };
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     int rc = vmaf_init(&ctx, cfg);
     if (rc < 0)
-        return NULL;
+        return VMAF_NULLPTR;
     return ctx;
 }
 
@@ -148,11 +150,11 @@ static void fill_luma(VmafPicture *pic, uint8_t value)
 static char *test_returns_enosys_when_disabled(void)
 {
     if (vmaf_dnn_available())
-        return NULL; /* real ORT — skip this test */
+        return VMAF_NULLPTR; /* real ORT — skip this test */
 
-    int rc = vmaf_use_tiny_model(NULL, SMOKE_FP32_MODEL, NULL);
+    int rc = vmaf_use_tiny_model(VMAF_NULLPTR, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     mu_assert("disabled build: must return -ENOSYS regardless of args", rc == -ENOSYS);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* --- null-arg rejection (enabled build only) ------------------------------ */
@@ -160,26 +162,26 @@ static char *test_returns_enosys_when_disabled(void)
 static char *test_rejects_null_ctx(void)
 {
     if (!vmaf_dnn_available())
-        return NULL; /* stub build — skip */
+        return VMAF_NULLPTR; /* stub build — skip */
 
-    int rc = vmaf_use_tiny_model(NULL, SMOKE_FP32_MODEL, NULL);
+    int rc = vmaf_use_tiny_model(VMAF_NULLPTR, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     mu_assert("null ctx must return -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_rejects_null_path(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
 
-    int rc = vmaf_use_tiny_model(ctx, NULL, NULL);
+    int rc = vmaf_use_tiny_model(ctx, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("null path must return -EINVAL", rc == -EINVAL);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* --- non-existent path (enabled build only) ------------------------------- */
@@ -187,47 +189,47 @@ static char *test_rejects_null_path(void)
 static char *test_rejects_nonexistent_path(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
 
-    int rc = vmaf_use_tiny_model(ctx, "/nonexistent/__no_such_file__.onnx", NULL);
+    int rc = vmaf_use_tiny_model(ctx, "/nonexistent/__no_such_file__.onnx", VMAF_NULLPTR);
     mu_assert("non-existent path must return < 0", rc < 0);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_codec_context_and_resize_reject_bad_args(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
-    int rc = vmaf_dnn_set_codec_context(NULL, "libx264", "medium", 23);
+        return VMAF_NULLPTR;
+    int rc = vmaf_dnn_set_codec_context(VMAF_NULLPTR, "libx264", "medium", 23);
     mu_assert("codec context NULL ctx rejected", rc == -EINVAL);
-    rc = vmaf_dnn_set_resize_mode(NULL, VMAF_DNN_RESIZE_BILINEAR);
+    rc = vmaf_dnn_set_resize_mode(VMAF_NULLPTR, VMAF_DNN_RESIZE_BILINEAR);
     mu_assert("resize mode NULL ctx rejected", rc == -EINVAL);
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range resize mode (ADR-0141) */
-    rc = vmaf_dnn_set_resize_mode(ctx, (VmafDnnResizeMode)99);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
+
+    rc = vmaf_dnn_set_resize_mode(ctx, invalid_resize_mode());
     mu_assert("invalid resize mode rejected", rc == -EINVAL);
     rc = vmaf_dnn_set_codec_context(ctx, "libx264", "medium", 23);
     mu_assert("codec context without attached codec-aware model rejected", rc < 0);
     rc = vmaf_dnn_set_resize_mode(ctx, VMAF_DNN_RESIZE_BILINEAR);
     mu_assert("resize mode accepted on live ctx", rc == 0);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
 static char *test_rejects_oversized_sidecar_before_ort_open(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     if (access(SMOKE_FP32_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
     char tmpl[] = "/tmp/vmaf-use-tiny-sidecar-XXXXXX";
     int fd = mkstemp(tmpl);
     mu_assert("mkstemp failed", fd >= 0);
@@ -250,21 +252,21 @@ static char *test_rejects_oversized_sidecar_before_ort_open(void)
     (void)close(fd);
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
-    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
+    int rc = vmaf_use_tiny_model(ctx, onnx, VMAF_NULLPTR);
     mu_assert("oversized sidecar rejected before ORT open", rc == -EFBIG);
     (void)vmaf_close(ctx);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_valid_scanner_invalid_ort_model_closes_session(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char tmpl[] = "/tmp/vmaf-use-tiny-invalid-XXXXXX";
     int fd = mkstemp(tmpl);
     mu_assert("mkstemp failed", fd >= 0);
@@ -275,20 +277,20 @@ static char *test_valid_scanner_invalid_ort_model_closes_session(void)
     mu_assert("write onnx failed", write_file_600(onnx, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
-    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
+    int rc = vmaf_use_tiny_model(ctx, onnx, VMAF_NULLPTR);
     mu_assert("protobuf-shaped but invalid ORT model rejected", rc < 0);
     (void)vmaf_close(ctx);
 
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_invalid_ort_model_frees_loaded_sidecar(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     char tmpl[] = "/tmp/vmaf-use-tiny-sidecar-cleanup-XXXXXX";
     int fd = mkstemp(tmpl);
     mu_assert("mkstemp failed", fd >= 0);
@@ -303,15 +305,15 @@ static char *test_invalid_ort_model_frees_loaded_sidecar(void)
     mu_assert("write sidecar failed", write_file_600(sidecar, json, sizeof(json) - 1u) == 0);
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
-    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
+    int rc = vmaf_use_tiny_model(ctx, onnx, VMAF_NULLPTR);
     mu_assert("invalid ORT model with sidecar rejected", rc < 0);
     (void)vmaf_close(ctx);
 
     (void)remove(sidecar);
     (void)remove(onnx);
     (void)remove(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -320,26 +322,26 @@ static char *test_invalid_ort_model_frees_loaded_sidecar(void)
 static char *test_happy_path_smoke_model(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
     /* smoke_v0.onnx may not be present in every CI leg that runs the dnn
      * suite (e.g. MSVC build-only, cross builds without model fixtures). */
 #ifndef _WIN32
     if (access(SMOKE_FP32_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 #endif
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
 
-    int rc = vmaf_use_tiny_model(ctx, SMOKE_FP32_MODEL, NULL);
+    int rc = vmaf_use_tiny_model(ctx, SMOKE_FP32_MODEL, VMAF_NULLPTR);
     mu_assert("smoke model attach must return 0", rc == 0);
 
     /* vmaf_close tears down the DNN session via vmaf_ctx_dnn_attach's
      * ownership transfer — this exercises the teardown path as well. */
     rc = vmaf_close(ctx);
     mu_assert("vmaf_close after tiny model must return 0", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Runs one YUV400P frame through an already-attached multi-output model and
@@ -371,23 +373,23 @@ static char *check_multi_output_frame_scores(VmafContext *ctx)
     mu_assert("peak_score output must be recorded", rc == 0);
     mu_assert("mean_score must be positive", mean_score > 0.0);
     mu_assert("peak_score must be positive", peak_score > 0.0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_attached_multi_output_model_records_named_scores(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
 #ifndef _WIN32
     if (access(SMOKE_MULTI_OUTPUT_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 #endif
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
 
-    int rc = vmaf_use_tiny_model(ctx, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+    int rc = vmaf_use_tiny_model(ctx, SMOKE_MULTI_OUTPUT_MODEL, VMAF_NULLPTR);
     mu_assert("multi-output smoke model attach must return 0", rc == 0);
 
     char *msg = check_multi_output_frame_scores(ctx);
@@ -396,7 +398,7 @@ static char *test_attached_multi_output_model_records_named_scores(void)
 
     rc = vmaf_close(ctx);
     mu_assert("vmaf_close after multi-output tiny model must return 0", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* --- ADR-0524: symbolic batch dim acceptance ------------------------------ */
@@ -414,51 +416,46 @@ static char *test_attached_multi_output_model_records_named_scores(void)
 static char *test_attach_accepts_symbolic_batch_rank4(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
 #ifndef _WIN32
     if (access(SMOKE_SYMBATCH_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 #endif
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
 
-    int rc = vmaf_use_tiny_model(ctx, SMOKE_SYMBATCH_MODEL, NULL);
+    int rc = vmaf_use_tiny_model(ctx, SMOKE_SYMBATCH_MODEL, VMAF_NULLPTR);
     mu_assert("ADR-0524: symbolic-batch rank-4 model must attach (folded to batch=1)", rc == 0);
 
     rc = vmaf_close(ctx);
     mu_assert("vmaf_close after symbolic-batch attach must return 0", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_rank5_model_closes_session_after_shape_reject(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
 
 #ifndef _WIN32
     if (access(RANK5_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 #endif
 
     VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_init must succeed", ctx != VMAF_NULLPTR);
 
-    int rc = vmaf_use_tiny_model(ctx, RANK5_MODEL, NULL);
+    int rc = vmaf_use_tiny_model(ctx, RANK5_MODEL, VMAF_NULLPTR);
     mu_assert("rank-5 model rejected at tiny attach", rc < 0);
 
     rc = vmaf_close(ctx);
     mu_assert("vmaf_close after rank-5 reject must return 0", rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #ifndef _WIN32
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 /* Stage a `<stem>.onnx` / `<stem>.int8.onnx` / `<stem>.json` triple in /tmp.
  *
@@ -485,7 +482,7 @@ static char *stage_redirect_triple(char *tmpl, char *onnx, char *int8_onnx, char
         "{\"kind\":\"fr\",\"quant_mode\":\"dynamic\",\"name\":\"redir_test\"}\n";
     mu_assert("write sidecar failed",
               write_file_600(sidecar, json_dyn, sizeof(json_dyn) - 1u) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Attach @p path to a fresh context and assert the outcome, then close.
@@ -497,19 +494,19 @@ static char *stage_redirect_triple(char *tmpl, char *onnx, char *int8_onnx, char
 static char *expect_tiny_attach(const char *path, int expect_ok, char *message)
 {
     VmafContext *ctx = alloc_ctx();
-    mu_assert("alloc_ctx failed", ctx != NULL);
-    const int rc = vmaf_use_tiny_model(ctx, path, NULL);
+    mu_assert("alloc_ctx failed", ctx != VMAF_NULLPTR);
+    const int rc = vmaf_use_tiny_model(ctx, path, VMAF_NULLPTR);
     mu_assert(message, expect_ok ? (rc == 0) : (rc < 0));
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_use_tiny_model_int8_redirect_and_fallback(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     if (access(SMOKE_FP32_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 
     char tmpl[] = "/tmp/vmaf-tiny-redir-XXXXXX";
     char onnx[1024];
@@ -538,15 +535,15 @@ static char *test_use_tiny_model_int8_redirect_and_fallback(void)
 
     (void)unlink(sidecar);
     (void)unlink(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_use_tiny_model_missing_external_data_returns_error_not_abort(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     if (access(TINY_V1_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 
     char tmpl[] = "/tmp/vmaf-tiny-ext-XXXXXX";
     const int fd = mkstemp(tmpl);
@@ -573,15 +570,15 @@ static char *test_use_tiny_model_missing_external_data_returns_error_not_abort(v
     (void)unlink(sidecar);
     (void)unlink(onnx);
     (void)unlink(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_use_tiny_model_int8_session_fail_falls_back_to_fp32(void)
 {
     if (!vmaf_dnn_available())
-        return NULL;
+        return VMAF_NULLPTR;
     if (access(SMOKE_FP32_MODEL, R_OK) != 0 || access(TINY_V1_MODEL, R_OK) != 0)
-        return NULL;
+        return VMAF_NULLPTR;
 
     char tmpl[] = "/tmp/vmaf-tiny-retry-XXXXXX";
     const int fd = mkstemp(tmpl);
@@ -611,10 +608,9 @@ static char *test_use_tiny_model_int8_session_fail_falls_back_to_fp32(void)
     (void)unlink(int8_onnx);
     (void)unlink(onnx);
     (void)unlink(tmpl);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-/* NOLINTEND(modernize-use-nullptr) */
 #endif
 
 /* -------------------------------------------------------------------------- */
@@ -642,5 +638,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

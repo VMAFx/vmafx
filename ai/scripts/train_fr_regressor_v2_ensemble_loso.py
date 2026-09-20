@@ -54,12 +54,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # 9 Netflix Public Dataset sources — the LOSO folds. Mirrors the order
 # baked into ai/scripts/eval_loso_vmaf_tiny_v3.py /
@@ -141,21 +145,12 @@ def _parse_seed_list(raw: str) -> list[int]:
         out.append(int(token))
     if not out:
         raise argparse.ArgumentTypeError(
-            "--seeds must be a non-empty comma-separated list of ints " "(e.g. --seeds 0,1,2,3,4)"
+            "--seeds must be a non-empty comma-separated list of ints (e.g. --seeds 0,1,2,3,4)"
         )
     return out
 
 
-def build_argparser() -> argparse.ArgumentParser:
-    """Build the CLI argparser. Exposed as a function so tests can import it."""
-    p = argparse.ArgumentParser(
-        prog="train_fr_regressor_v2_ensemble_loso",
-        description=(
-            "9-fold LOSO trainer for fr_regressor_v2 deep ensemble seeds "
-            "(ADR-0303 / ADR-0319). Emits loso_seed{N}.json per seed; the "
-            "CI gate scripts/ci/ensemble_prod_gate.py consumes the JSONs."
-        ),
-    )
+def _add_data_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--seeds",
         type=_parse_seed_list,
@@ -181,6 +176,9 @@ def build_argparser() -> argparse.ArgumentParser:
         default=Path("runs/ensemble_loso"),
         help="Output directory for loso_seed{N}.json artefacts.",
     )
+
+
+def _add_training_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--epochs",
         type=int,
@@ -224,40 +222,26 @@ def build_argparser() -> argparse.ArgumentParser:
             "Useful for CI smoke."
         ),
     )
-    return p
 
 
-def _load_corpus(corpus_path: Path) -> dict[str, Any]:
-    """Load the Phase A canonical-6 JSONL corpus into a structured dict.
+def build_argparser() -> argparse.ArgumentParser:
+    """Build the CLI argparser. Exposed as a function so tests can import it."""
+    parser = argparse.ArgumentParser(
+        prog="train_fr_regressor_v2_ensemble_loso",
+        description=(
+            "9-fold LOSO trainer for fr_regressor_v2 deep ensemble seeds "
+            "(ADR-0303 / ADR-0319). Emits loso_seed{N}.json per seed; the "
+            "CI gate scripts/ci/ensemble_prod_gate.py consumes the JSONs."
+        ),
+    )
+    _add_data_arguments(parser)
+    _add_training_arguments(parser)
+    return parser
 
-    Mirrors the pandas-based loader pattern from
-    ``ai/scripts/eval_loso_vmaf_tiny_v3.py``. Validates the canonical-6
-    columns + ``vmaf``/``src``/``encoder``/``cq``/``frame_index`` are
-    present, fits a corpus-wide StandardScaler over the canonical-6
-    block (mirrors ADR-0291), and pre-computes the codec-block columns
-    (12-slot one-hot + preset_norm + crf_norm).
 
-    The codec-block layout is load-bearing per the ai/AGENTS.md
-    "Ensemble registry invariant" section — column 0..11 = encoder
-    one-hot in ENCODER_VOCAB order, column 12 = preset_norm
-    (default 0.5 since hw_encoder_corpus.py does not record preset),
-    column 13 = crf_norm = (cq - cq.min()) / (cq.max() - cq.min()).
-    """
-    import numpy as np
-    import pandas as pd
-
-    if not corpus_path.is_file():
-        raise FileNotFoundError(
-            f"Corpus JSONL not found at {corpus_path}. Generate it via "
-            f"scripts/dev/hw_encoder_corpus.py over the 9 Netflix ref "
-            f"YUVs (see docs/ai/ensemble-v2-real-corpus-retrain-runbook.md "
-            f"§Step 0)."
-        )
-
-    df = pd.read_json(corpus_path, lines=True)
-
+def _validate_corpus_frame(df, corpus_path: Path) -> None:
     required = [*CANONICAL_6, "vmaf", "src", "encoder", "cq", "frame_index"]
-    missing = [c for c in required if c not in df.columns]
+    missing = [column for column in required if column not in df.columns]
     if missing:
         raise ValueError(
             f"Corpus {corpus_path} is missing required columns: {missing}. "
@@ -267,62 +251,65 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
     if len(df) == 0:
         raise ValueError(f"Corpus {corpus_path} has zero rows.")
 
-    # Fit corpus-wide StandardScaler on canonical-6 (ADR-0291 recipe).
-    feat = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    feat_mean = feat.mean(axis=0)
-    feat_std = feat.std(axis=0, ddof=0)
-    feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)
 
-    # Build codec one-hot via ENCODER_VOCAB lookup; rows with an
-    # encoder string outside the vocab fall back to the "unknown" slot.
+def _codec_block(df):
+    import numpy as np
+
     def _enc_idx(enc: str) -> int:
         try:
             return ENCODER_VOCAB.index(enc)
         except ValueError:
             return UNKNOWN_ENCODER_INDEX
 
-    codec_idx = np.array([_enc_idx(str(e)) for e in df["encoder"].tolist()], dtype=np.int64)
+    codec_idx = np.array([_enc_idx(str(value)) for value in df["encoder"]], dtype=np.int64)
     codec_onehot = np.eye(N_ENCODERS, dtype=np.float32)[codec_idx]
-
-    # preset_norm — hw_encoder_corpus.py rows do not record preset, so
-    # we materialise 0.5 (median of the 0..9 ordinal range). Documented
-    # in the sidecar; revisit if a future corpus emits explicit preset.
     preset_norm = np.full((len(df),), 0.5, dtype=np.float32)
-
-    # crf_norm — normalise the cq column to [0, 1] over the corpus's
-    # observed cq range. Falls back to 0.5 for a degenerate single-cq
-    # corpus to avoid a div-by-zero (the column then carries no signal,
-    # which is still a valid pass-through).
     cqs = df["cq"].to_numpy(dtype=np.float32)
     cq_min, cq_max = float(cqs.min()), float(cqs.max())
-    if cq_max - cq_min < 1e-6:
-        crf_norm = np.full_like(cqs, 0.5)
-    else:
-        crf_norm = (cqs - cq_min) / (cq_max - cq_min)
-
-    codec_block = np.concatenate(
+    crf_norm = (
+        np.full_like(cqs, 0.5) if cq_max - cq_min < 1e-6 else (cqs - cq_min) / (cq_max - cq_min)
+    )
+    block = np.concatenate(
         [codec_onehot, preset_norm[:, None], crf_norm[:, None]],
         axis=1,
     ).astype(np.float32)
-
-    codec_block_cols = [f"encoder_onehot[{e}]" for e in ENCODER_VOCAB] + [
+    columns = [f"encoder_onehot[{encoder}]" for encoder in ENCODER_VOCAB] + [
         "preset_norm",
         "crf_norm",
     ]
+    return block, columns, cq_min, cq_max
+
+
+def _load_corpus(corpus_path: Path) -> dict[str, Any]:
+    """Load and validate the Phase A canonical-6 JSONL corpus."""
+    import numpy as np
+    import pandas as pd
+
+    if not corpus_path.is_file():
+        raise FileNotFoundError(
+            f"Corpus JSONL not found at {corpus_path}. Generate it via "
+            "scripts/dev/hw_encoder_corpus.py over the 9 Netflix ref YUVs."
+        )
+    df = pd.read_json(corpus_path, lines=True)
+    _validate_corpus_frame(df, corpus_path)
+    features = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    feature_mean = features.mean(axis=0)
+    feature_std = np.where(features.std(axis=0, ddof=0) < 1e-8, 1.0, features.std(axis=0, ddof=0))
+    codec_block, codec_columns, cq_min, cq_max = _codec_block(df)
 
     return {
         "df": df,
         "feature_cols": list(CANONICAL_6),
-        "codec_block_cols": codec_block_cols,
+        "codec_block_cols": codec_columns,
         "target_col": "vmaf",
         "source_col": "src",
         "scaler_params": {
-            "feature_mean": feat_mean.tolist(),
-            "feature_std": feat_std.tolist(),
+            "feature_mean": feature_mean.tolist(),
+            "feature_std": feature_std.tolist(),
         },
         "codec_block": codec_block,  # (N, CODEC_BLOCK_DIM)
-        "feature_mean": feat_mean,
-        "feature_std": feat_std,
+        "feature_mean": feature_mean,
+        "feature_std": feature_std,
         "cq_min": cq_min,
         "cq_max": cq_max,
         "n_rows": len(df),
@@ -385,9 +372,6 @@ def _train_one_fold(
     import torch
     from torch.utils.data import DataLoader, TensorDataset
 
-    REPO_ROOT = Path(__file__).resolve().parents[2]
-    if str(REPO_ROOT / "ai" / "src") not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
     from vmaf_train.models import FRRegressor
 
     _set_seed_all(seed)
@@ -434,125 +418,98 @@ def _predict_fold(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
     return out.cpu().numpy().reshape(-1)
 
 
-def _train_one_seed(
-    seed: int,
+def _run_fold(
+    held_out: str,
     corpus: dict[str, Any],
     args: argparse.Namespace,
+    seed: int,
+    epochs: int,
 ) -> dict[str, Any]:
-    """Run 9-fold LOSO for a single seed; return the per-seed summary dict.
-
-    The returned schema matches what ``scripts/ci/ensemble_prod_gate.py``
-    consumes — it requires ``mean_plcc`` at minimum; we add ``folds``
-    + per-fold PLCC/SROCC/RMSE for traceability per Research-0075.
-
-    Per-fold protocol:
-
-    * Held-out: rows where ``df[source_col] == held_out_source``.
-    * Train: every other row.
-    * StandardScaler is fit on the training fold (NOT the corpus-wide
-      one) so the held-out source's distribution doesn't leak into the
-      scaler — mirrors ``eval_loso_vmaf_tiny_v3.py`` behaviour.
-    * FRRegressor(num_codecs=12), Adam(lr, weight_decay), MSE loss,
-      ``args.epochs`` epochs.
-
-    ``args.dry_run`` overrides epochs to 1 and writes ``note: "dry-run"``
-    in the returned dict; the PLCC values are technically real but
-    untrained — callers must not consume them.
-    """
     import numpy as np
 
-    _set_seed_all(seed)
     df = corpus["df"]
     feat_cols = corpus["feature_cols"]
     target_col = corpus["target_col"]
     source_col = corpus["source_col"]
     codec_block = corpus["codec_block"]
+    train_mask = (df[source_col] != held_out).to_numpy()
+    val_mask = (df[source_col] == held_out).to_numpy()
+    x_train = df.loc[train_mask, feat_cols].to_numpy(dtype=np.float64)
+    y_train = df.loc[train_mask, target_col].to_numpy(dtype=np.float64)
+    x_val = df.loc[val_mask, feat_cols].to_numpy(dtype=np.float64)
+    y_val = df.loc[val_mask, target_col].to_numpy(dtype=np.float64)
+    mean = x_train.mean(axis=0)
+    std = np.where(x_train.std(axis=0, ddof=0) < 1e-8, 1.0, x_train.std(axis=0, ddof=0))
+    model = _train_one_fold(
+        (x_train - mean) / std,
+        codec_block[train_mask],
+        y_train,
+        epochs=epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=seed,
+        num_codecs=args.num_codecs,
+    )
+    prediction = _predict_fold(model, (x_val - mean) / std, codec_block[val_mask])
+    return {
+        "held_out": held_out,
+        "n_train": int(train_mask.sum()),
+        "n_val": int(val_mask.sum()),
+        "plcc": _plcc(prediction, y_val),
+        "srocc": _srocc(prediction, y_val),
+        "rmse": float(np.sqrt(np.mean((prediction - y_val) ** 2))) if len(y_val) else float("nan"),
+    }
 
-    epochs = 1 if args.dry_run else args.epochs
 
-    sources = sorted(df[source_col].unique().tolist())
-    folds: list[dict[str, Any]] = []
-    plccs: list[float] = []
-    sroccs: list[float] = []
-    rmses: list[float] = []
+def _seed_summary(
+    seed: int,
+    folds: list[dict[str, Any]],
+    args: argparse.Namespace,
+    epochs: int,
+    wall_time: float,
+) -> dict[str, Any]:
+    import numpy as np
 
-    t_start = time.monotonic()
-    for held_out in sources:
-        train_mask = (df[source_col] != held_out).to_numpy()
-        val_mask = (df[source_col] == held_out).to_numpy()
-
-        x_feat_tr = df.loc[train_mask, feat_cols].to_numpy(dtype=np.float64)
-        y_tr = df.loc[train_mask, target_col].to_numpy(dtype=np.float64)
-        x_codec_tr = codec_block[train_mask]
-
-        x_feat_va = df.loc[val_mask, feat_cols].to_numpy(dtype=np.float64)
-        y_va = df.loc[val_mask, target_col].to_numpy(dtype=np.float64)
-        x_codec_va = codec_block[val_mask]
-
-        # Fit fold-local scaler on training fold only.
-        mean = x_feat_tr.mean(axis=0)
-        std = x_feat_tr.std(axis=0, ddof=0)
-        std = np.where(std < 1e-8, 1.0, std)
-        x_feat_tr_norm = (x_feat_tr - mean) / std
-        x_feat_va_norm = (x_feat_va - mean) / std
-
-        model = _train_one_fold(
-            x_feat_tr_norm,
-            x_codec_tr,
-            y_tr,
-            epochs=epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            seed=seed,
-            num_codecs=args.num_codecs,
-        )
-        pred_va = _predict_fold(model, x_feat_va_norm, x_codec_va)
-
-        plcc = _plcc(pred_va, y_va)
-        srocc = _srocc(pred_va, y_va)
-        rmse = float(np.sqrt(np.mean((pred_va - y_va) ** 2))) if len(y_va) else float("nan")
-
-        folds.append(
-            {
-                "held_out": held_out,
-                "n_train": int(train_mask.sum()),
-                "n_val": int(val_mask.sum()),
-                "plcc": plcc,
-                "srocc": srocc,
-                "rmse": rmse,
-            }
-        )
-        plccs.append(plcc)
-        sroccs.append(srocc)
-        rmses.append(rmse)
-
-    plccs_arr = np.asarray([p for p in plccs if not np.isnan(p)], dtype=np.float64)
-    mean_plcc = float(plccs_arr.mean()) if plccs_arr.size > 0 else float("nan")
-    std_plcc = float(plccs_arr.std(ddof=1)) if plccs_arr.size >= 2 else float("nan")
-
-    summary: dict[str, Any] = {
+    plccs = [fold["plcc"] for fold in folds]
+    valid_plccs = np.asarray([value for value in plccs if not np.isnan(value)], dtype=np.float64)
+    summary = {
         "seed": seed,
         "corpus": str(args.corpus),
         "n_folds": len(folds),
         "folds": folds,
-        "mean_plcc": mean_plcc,
-        "std_plcc": std_plcc,
+        "mean_plcc": float(valid_plccs.mean()) if valid_plccs.size else float("nan"),
+        "std_plcc": float(valid_plccs.std(ddof=1)) if valid_plccs.size >= 2 else float("nan"),
         "min_plcc": float(min(plccs)) if plccs else float("nan"),
         "max_plcc": float(max(plccs)) if plccs else float("nan"),
-        "mean_srocc": float(np.nanmean(sroccs)) if sroccs else float("nan"),
-        "mean_rmse": float(np.nanmean(rmses)) if rmses else float("nan"),
+        "mean_srocc": float(np.nanmean([fold["srocc"] for fold in folds])),
+        "mean_rmse": float(np.nanmean([fold["rmse"] for fold in folds])),
         "epochs": epochs,
         "batch_size": args.batch_size,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
         "num_codecs": args.num_codecs,
         "encoder_vocab_version": ENCODER_VOCAB_VERSION,
-        "wall_time_s": float(time.monotonic() - t_start),
+        "wall_time_s": wall_time,
     }
     if args.dry_run:
         summary["note"] = "dry-run"
     return summary
+
+
+def _train_one_seed(
+    seed: int,
+    corpus: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Run source-held-out folds for one ensemble seed."""
+    _set_seed_all(seed)
+    source_col = corpus["source_col"]
+    sources = sorted(corpus["df"][source_col].unique().tolist())
+    epochs = 1 if args.dry_run else args.epochs
+    started = time.monotonic()
+    folds = [_run_fold(source, corpus, args, seed, epochs) for source in sources]
+    return _seed_summary(seed, folds, args, epochs, time.monotonic() - started)
 
 
 def main(argv: list[str] | None = None) -> int:

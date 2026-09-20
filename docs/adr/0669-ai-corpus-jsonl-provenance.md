@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0669: AI Corpus JSONL Provenance
 
 - **Status**: Proposed
@@ -37,7 +36,7 @@ different sidecar path. Existing JSONL row schemas remain unchanged.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Default sibling manifests | Replayable corpus artifacts; no row-schema churn; reuses ADR-0661 helper | Adds one small JSON file per run | Chosen; this closes the durable-input evidence gap with low blast radius. |
 | Add provenance fields to every JSONL row | Self-contained rows | Bloats large corpora and repeats identical run metadata thousands of times | Rejected; sidecars are clearer for run-level facts. |
 | Only stamp trainer manifests | No corpus-script changes | A trainer manifest can identify a merged JSONL path but not prove how that JSONL was produced | Rejected; the input artifact itself must be replayable. |

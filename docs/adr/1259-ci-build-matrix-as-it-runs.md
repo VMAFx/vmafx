@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-1259: Record the CI build matrix as it actually runs
 
 - **Status**: Accepted, Supersedes

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1206: Every CUDA parity test also runs against a second, larger fixture
 
@@ -48,7 +47,7 @@ comparing two different metrics.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Second fixture size per test via `-D` and a meson `foreach` (chosen) | No duplicated test source; one obvious knob; catches the whole class | 16 extra small test binaries to build and run | — |
 | Change the existing fixture to 960x540 instead of adding a variant | No new targets | Loses coverage of the small-band paths, which is where the ADM defect actually lives | Rejected — would trade one blind spot for another |
 | Randomise the fixture size per run | Broadest coverage over time | Non-deterministic CI; a failure may not reproduce | Rejected — parity gates must be reproducible |

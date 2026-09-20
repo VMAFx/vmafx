@@ -1,5 +1,7 @@
-- **VCQ-223**: `VmafQualityRunnerWithLocalExplainer` no longer times out CI.
-  The runner's fallback `LocalExplainer` now defaults to `neighbor_samples=100`
+# Changelog fragment
+
+- **VCQ-223**: `VmafQualityRunnerWithLocalExplainer` no longer times out CI. The
+  runner's fallback `LocalExplainer` now defaults to `neighbor_samples=100`
   (previously the upstream default of 5 000 produced ~480 000 libsvm
   `svm_predict_values` calls per run, causing a 4-8 min wall-time hang).
   Production callers that need higher fidelity can pass

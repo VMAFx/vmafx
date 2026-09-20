@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1129: Align release containers with the published tag and runtime ABI
 
 - **Status**: Accepted
@@ -19,11 +18,10 @@ shipping an unsigned, unstartable, or differently-versioned image.
 The image definitions also crossed unsupported runtime boundaries. Debian 13
 builders fed Debian 12 runtimes, a Python virtualenv was copied without its
 matching interpreter, GPU backends were built outside their vendors' complete
-runtime families, and the node image copied x86-specific FFmpeg libraries into
-a nominally multi-architecture target. Operator and node builds injected a
+runtime families, and the node image copied x86-specific FFmpeg libraries into a
+nominally multi-architecture target. Operator and node builds injected a
 nonexistent `main.buildVersion` symbol and then started long-running processes
-for their smoke probes, so neither image exposed reliable release-version
-truth.
+for their smoke probes, so neither image exposed reliable release-version truth.
 
 The Python server had a second release blocker: its declared MCP 2.1 dependency
 removed the decorator and request-context interfaces used by the implementation.
@@ -40,32 +38,31 @@ Docker workflows will run on `release.published`, check out
 same value. CPU, Go server, and node builds will use a Debian 13 ABI through
 their Debian 13 distroless runtime; the Python server will retain the exact
 pinned Python 3.14 base used to build its virtualenv; and CUDA 13.3.1, ROCm
-7.2.4, and oneAPI 2025.3.1
-images will use digest-pinned, version-matched vendor build/runtime families.
-Every final image will run as UID/GID 65532. Go server, operator, and node builds
-will inject the release tag into `pkg/version.version` and expose a non-blocking
-`--version` path. The operator image and Helm chart will share the env-only
-ADR-1119 contract, with metrics on `:8080` and health/readiness on `:8081`; the
-chart will not pass the removed pre-fx CLI flags, and its default Go server,
-operator, and node image references will match the canonical `vX.Y.Z` tags
-published by the release workflows. The MCP server will use the
-typed MCP 2.x constructor
-handlers, preserve tool-error and progress-session semantics, install
-`[eval,http]`, and opt only the container into all-interface HTTP binding while
-keeping bearer authentication fail closed. Each of the eight pushed image
-digests must receive a cosign signature, GitHub-native build provenance, a Syft
-CycloneDX SBOM and cosign SBOM attestation; a dependent smoke job must verify
-the signature before pulling and exercising the published runtime.
+7.2.4, and oneAPI 2025.3.1 images will use digest-pinned, version-matched vendor
+build/runtime families. Every final image will run as UID/GID 65532. Go server,
+operator, and node builds will inject the release tag into `pkg/version.version`
+and expose a non-blocking `--version` path. The operator image and Helm chart
+will share the env-only ADR-1119 contract, with metrics on `:8080` and
+health/readiness on `:8081`; the chart will not pass the removed pre-fx CLI
+flags, and its default Go server, operator, and node image references will match
+the canonical `vX.Y.Z` tags published by the release workflows. The MCP server
+will use the typed MCP 2.x constructor handlers, preserve tool-error and
+progress-session semantics, install `[eval,http]`, and opt only the container
+into all-interface HTTP binding while keeping bearer authentication fail closed.
+Each of the eight pushed image digests must receive a cosign signature,
+GitHub-native build provenance, a Syft CycloneDX SBOM and cosign SBOM
+attestation; a dependent smoke job must verify the signature before pulling and
+exercising the published runtime.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Patch only the first failing Docker command | Small diff and short build | Leaves source/tag ambiguity, ABI crossings, missing signatures, and success-masked smokes | A partial repair can still publish a green but unusable release |
-| Keep one distroless base and copy selected Python/GPU libraries into it | Small final images and one runtime policy | Virtualenv interpreters and accelerator runtimes are not self-contained library bundles; missing transitive ABI dependencies surface only at startup | The prior design already demonstrated these unsupported boundaries |
-| Build every variant in one universal SDK image | One Dockerfile path and fewer stages | Very large images, conflicting vendor stacks, larger CVE surface, and unnecessary toolchains at runtime | Runtime images should contain one coherent backend family |
-| Pin MCP below 2.x | Avoids the registration migration | Contradicts the declared dependency and postpones an unavoidable public SDK migration | The typed MCP 2.x constructor API is available and directly testable |
-| Match each artifact to its release tag and runtime family, then verify the pushed digest | Immutable source identity, complete runtime dependencies, auditable provenance, meaningful smokes | More build time, larger vendor images, and more release jobs | Chosen; release correctness and recoverability outweigh the additional CI cost |
+| Option                                                                                   | Pros                                                                                              | Cons                                                                                                                                                 | Why not chosen                                                                 |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Patch only the first failing Docker command                                              | Small diff and short build                                                                        | Leaves source/tag ambiguity, ABI crossings, missing signatures, and success-masked smokes                                                            | A partial repair can still publish a green but unusable release                |
+| Keep one distroless base and copy selected Python/GPU libraries into it                  | Small final images and one runtime policy                                                         | Virtualenv interpreters and accelerator runtimes are not self-contained library bundles; missing transitive ABI dependencies surface only at startup | The prior design already demonstrated these unsupported boundaries             |
+| Build every variant in one universal SDK image                                           | One Dockerfile path and fewer stages                                                              | Very large images, conflicting vendor stacks, larger CVE surface, and unnecessary toolchains at runtime                                              | Runtime images should contain one coherent backend family                      |
+| Pin MCP below 2.x                                                                        | Avoids the registration migration                                                                 | Contradicts the declared dependency and postpones an unavoidable public SDK migration                                                                | The typed MCP 2.x constructor API is available and directly testable           |
+| Match each artifact to its release tag and runtime family, then verify the pushed digest | Immutable source identity, complete runtime dependencies, auditable provenance, meaningful smokes | More build time, larger vendor images, and more release jobs                                                                                         | Chosen; release correctness and recoverability outweigh the additional CI cost |
 
 ## Consequences
 
@@ -74,22 +71,22 @@ the signature before pulling and exercising the published runtime.
   source checkout, image tag, Go version output, signatures, attestations, and
   smoke inputs share one release identity.
 - **Positive**: publication jobs are bound to selected-tag deployment
-  environments outside their mutable shell validation. SLSA reusable jobs
-  cannot declare an environment, so they no longer write release assets;
-  their provenance flows through the protected attachment job instead.
+  environments outside their mutable shell validation. SLSA reusable jobs cannot
+  declare an environment, so they no longer write release assets; their
+  provenance flows through the protected attachment job instead.
 - **Positive**: local builds proved the CPU CLI, Python server, all three GPU
-  production variants, Go server, operator, and node start as UID/GID 65532
-  with their intended entrypoints and runtime dependencies.
+  production variants, Go server, operator, and node start as UID/GID 65532 with
+  their intended entrypoints and runtime dependencies.
 - **Positive**: the Helm operator Deployment now configures the release binary
   through supported environment variables and probes the ports on which the
-  process actually listens. Both Helm validation workflows install their
-  pinned binary only after checking Helm's published archive SHA-256; no
-  network response is executed as shell input. Kubernetes E2E diagnostics can
-  still upload after a kuttl failure, but the final assertion now consumes the
-  raw step outcome so the workflow cannot convert that failure into success.
-- **Positive**: MCP tool registration now follows the installed 2.1 API,
-  returns typed `CallToolResult(isError=True)` failures, translates wire-format
-  progress tokens, and restores the documented authenticated HTTP surface.
+  process actually listens. Both Helm validation workflows install their pinned
+  binary only after checking Helm's published archive SHA-256; no network
+  response is executed as shell input. Kubernetes E2E diagnostics can still
+  upload after a kuttl failure, but the final assertion now consumes the raw
+  step outcome so the workflow cannot convert that failure into success.
+- **Positive**: MCP tool registration now follows the installed 2.1 API, returns
+  typed `CallToolResult(isError=True)` failures, translates wire-format progress
+  tokens, and restores the documented authenticated HTTP surface.
 - **Negative**: ROCm and the other vendor-complete runtime images are larger
   than copying a few shared libraries into distroless, and QEMU arm64 node
   builds remain expensive.
@@ -113,8 +110,8 @@ the signature before pulling and exercising the published runtime.
 - **Deployment authority**: GHCR, GitHub Release, and release-blob signing jobs
   use `release-publish`; PyPI uses its trusted-publisher identity
   `pypi-publish`. Both environments are selected-tag-only and reviewer-gated.
-  Container consumers verify the exact release-tag workflow certificate
-  identity rather than accepting the same workflow path at an arbitrary ref.
+  Container consumers verify the exact release-tag workflow certificate identity
+  rather than accepting the same workflow path at an arbitrary ref.
 - **New runtime dependencies**: the server installs the existing optional
   `vmaf-mcp[http]` surface (`aiohttp>=3.9.0`, Apache-2.0; and
   `prometheus-client>=0.20.0`, Apache-2.0) in addition to `[eval]`. These enable
@@ -136,15 +133,15 @@ the signature before pulling and exercising the published runtime.
   relative to selective library copies but remove unknown missing-dependency
   behavior. Every final process drops root. The server deliberately binds
   `0.0.0.0:8080` only in the container and retains mandatory bearer
-  authentication unless an operator explicitly selects the documented
-  no-auth escape hatch.
+  authentication unless an operator explicitly selects the documented no-auth
+  escape hatch.
 
 ## SBOM delta
 
-The old path generated useful CPU/operator/node inventories but allowed GPU
-SBOM generation to fail without failing the release and did not cover the
-published server uniformly. The accepted workflow produces one CycloneDX JSON
-document for each of these digest subjects:
+The old path generated useful CPU/operator/node inventories but allowed GPU SBOM
+generation to fail without failing the release and did not cover the published
+server uniformly. The accepted workflow produces one CycloneDX JSON document for
+each of these digest subjects:
 
 1. CPU CLI;
 2. CUDA 13.3.1;
@@ -157,14 +154,14 @@ document for each of these digest subjects:
 
 Each document is uploaded as workflow evidence and attached to the image via a
 cosign CycloneDX attestation; generation and attachment are hard failures. The
-server inventory gains its resolved `aiohttp` and `prometheus-client`
-dependency closure. GPU inventories now contain their complete vendor runtime
-families. The node inventory becomes architecture-correct because FFmpeg's
-non-glibc dependency closure is collected by native `ldd` output rather than
-hard-coded `/usr/lib/x86_64-linux-gnu` paths. The separate
-`supply-chain.yml` continues to own signed SPDX/CycloneDX inventories for native
-release files and `vmaf-mcp` distributions, so container and downloadable
-artifacts have complementary rather than duplicated SBOM authorities.
+server inventory gains its resolved `aiohttp` and `prometheus-client` dependency
+closure. GPU inventories now contain their complete vendor runtime families. The
+node inventory becomes architecture-correct because FFmpeg's non-glibc
+dependency closure is collected by native `ldd` output rather than hard-coded
+`/usr/lib/x86_64-linux-gnu` paths. The separate `supply-chain.yml` continues to
+own signed SPDX/CycloneDX inventories for native release files and `vmaf-mcp`
+distributions, so container and downloadable artifacts have complementary rather
+than duplicated SBOM authorities.
 
 ## References
 
@@ -174,5 +171,6 @@ artifacts have complementary rather than duplicated SBOM authorities.
 - [GitHub Actions release event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release)
 - [MCP Python SDK v2.1.1](https://github.com/modelcontextprotocol/python-sdk/tree/v2.1.1)
 - [SLSA and Sigstore release guidance](../development/release.md)
-- Source: `req` — "get everything open merged (the pr's), then fix ci so that it is green, fix the tags and then bump a release"
+- Source: `req` — "get everything open merged (the pr's), then fix ci so that it
+  is green, fix the tags and then bump a release"
 - Source: `req` — "all this will be a .x patch of course, not a minor version"

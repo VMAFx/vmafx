@@ -10,18 +10,20 @@ exercise the schema-merge + aggregation + rendering paths.
 
 from __future__ import annotations
 
+import importlib.util
 import json
-import os
 import pathlib
 import subprocess
 import sys
 
 import pytest
 
-HERE = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-
-import compare  # noqa: E402
+COMPARE_PATH = pathlib.Path(__file__).resolve().parents[1] / "compare.py"
+COMPARE_SPEC = importlib.util.spec_from_file_location("external_bench_compare", COMPARE_PATH)
+assert COMPARE_SPEC is not None and COMPARE_SPEC.loader is not None
+compare = importlib.util.module_from_spec(COMPARE_SPEC)
+sys.modules[COMPARE_SPEC.name] = compare
+COMPARE_SPEC.loader.exec_module(compare)
 
 # --- test fixture constants -------------------------------------------------
 
@@ -33,6 +35,8 @@ EXPECTED_MISSING_CORPUS_RC = 4
 FIXTURE_WIDTH = 576
 FIXTURE_HEIGHT = 324
 FIXTURE_DIS_COUNT = 2
+BVI_FIXTURE_WIDTH = 1920
+BVI_FIXTURE_HEIGHT = 1080
 
 # --- helpers ---------------------------------------------------------------
 
@@ -111,7 +115,9 @@ out.write_text(json.dumps({
     return fake
 
 
-def _run_fork_shell_wrapper(tmp_path: pathlib.Path, competitor: str) -> dict:
+def _run_fork_shell_wrapper(
+    tmp_path: pathlib.Path, competitor: str, monkeypatch: pytest.MonkeyPatch
+) -> dict:
     fake_vmaf_tune = _write_fake_vmaf_tune(tmp_path)
     model_dir = tmp_path / "models"
     model_dir.mkdir()
@@ -124,37 +130,18 @@ def _run_fork_shell_wrapper(tmp_path: pathlib.Path, competitor: str) -> dict:
     dis.write_bytes(b"\x00" * 16)
     out = tmp_path / f"{competitor}.json"
 
-    cmd = [
-        "bash",
-        str(compare.WRAPPERS[competitor]),
-        "--dis",
-        str(dis),
-        "--width",
-        "16",
-        "--height",
-        "16",
-        "--pixfmt",
-        "yuv420p",
-        "--fps",
-        "24",
-        "--out",
-        str(out),
-    ]
-    if competitor == "fork-fr-regressor":
-        cmd.extend(["--ref", str(ref)])
-
-    env = os.environ.copy()
-    env["EXTERNAL_BENCH_VMAF_TUNE"] = str(fake_vmaf_tune)
-    env["EXTERNAL_BENCH_MODEL_DIR"] = str(model_dir)
-    proc = subprocess.run(  # noqa: S603 - fixed argv runs repo wrapper with temp fixtures
-        cmd,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
+    monkeypatch.setenv("EXTERNAL_BENCH_VMAF_TUNE", str(fake_vmaf_tune))
+    monkeypatch.setenv("EXTERNAL_BENCH_MODEL_DIR", str(model_dir))
+    item = compare.CorpusItem(
+        name=f"fixture/{competitor}",
+        ref=ref if competitor == "fork-fr-regressor" else None,
+        dis=dis,
+        width=16,
+        height=16,
+        fps=24.0,
+        pixfmt="yuv420p",
     )
-    assert proc.returncode == 0, proc.stderr
-    return json.loads(out.read_text(encoding="utf-8"))
+    return compare.run_wrapper(competitor, item, out)
 
 
 # --- tests -----------------------------------------------------------------
@@ -178,15 +165,19 @@ def test_run_wrapper_parses_canned_output(tmp_path: pathlib.Path) -> None:
     assert result["summary"]["plcc"] == EXPECTED_PLCC_CANNED
 
 
-def test_fork_nr_shell_wrapper_emits_registry_competitor_key(tmp_path: pathlib.Path) -> None:
-    payload = _run_fork_shell_wrapper(tmp_path, "fork-nr-metric")
+def test_fork_nr_shell_wrapper_emits_registry_competitor_key(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = _run_fork_shell_wrapper(tmp_path, "fork-nr-metric", monkeypatch)
 
     assert payload["summary"]["competitor"] == "fork-nr-metric"
     assert compare.validate_wrapper_output("fork-nr-metric", payload) is payload
 
 
-def test_fork_fr_shell_wrapper_emits_registry_competitor_key(tmp_path: pathlib.Path) -> None:
-    payload = _run_fork_shell_wrapper(tmp_path, "fork-fr-regressor")
+def test_fork_fr_shell_wrapper_emits_registry_competitor_key(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = _run_fork_shell_wrapper(tmp_path, "fork-fr-regressor", monkeypatch)
 
     assert payload["summary"]["competitor"] == "fork-fr-regressor"
     assert compare.validate_wrapper_output("fork-fr-regressor", payload) is payload
@@ -435,7 +426,7 @@ def test_bvi_dvc_discovers_ref_dis_pairs(tmp_path: pathlib.Path) -> None:
         netflix_root=tmp_path / "no-nf",
     )
     assert len(items) == FIXTURE_DIS_COUNT
-    assert all(i.width == 1920 and i.height == 1080 for i in items)  # noqa: PLR2004
+    assert all(i.width == BVI_FIXTURE_WIDTH and i.height == BVI_FIXTURE_HEIGHT for i in items)
     assert all(i.name.startswith("bvi-dvc/") for i in items)
     assert {i.dis.name for i in items} == {f"{stem}__dis1.yuv", f"{stem}__dis2.yuv"}
 

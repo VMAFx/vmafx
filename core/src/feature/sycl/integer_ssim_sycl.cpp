@@ -291,7 +291,6 @@ static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const flo
 
 extern "C" {
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -323,7 +322,7 @@ static const VmafOption options_ssim_sycl[] = {
                 "v1: GPU path requires scale=1; auto-detect rejects scale>1 with -EINVAL.",
         .offset = offsetof(SsimStateSycl, scale_override),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
+        .default_val = {.i = 0},
         .min = 0,
         .max = 10,
     },
@@ -402,8 +401,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -848,9 +847,9 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     return 0;
 }
 
-static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                                 VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                                 VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                                 const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                                 const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -1007,4 +1006,3 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

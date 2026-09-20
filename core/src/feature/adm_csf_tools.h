@@ -20,7 +20,7 @@
  * `M_PI_2`, etc. POSIX libcs export these unconditionally; MSVC gates
  * them on the macro. Must precede the <math.h> include below. */
 #ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
+#define USE_MATH_DEFINES
 #endif
 #include <math.h>
 #include "common/macros.h"
@@ -33,7 +33,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#pragma once
 
 #ifndef ADM_CSF_TOOLS_H_
 #define ADM_CSF_TOOLS_H_

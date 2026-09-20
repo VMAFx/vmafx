@@ -89,19 +89,19 @@ static char *feed_stream(VmafContext *vmaf)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("vmaf_read_pictures failed", !err);
     }
-    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    int err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion_v2", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(motion_v2) failed", !err);
 
     char *msg = feed_stream(vmaf);
@@ -114,7 +114,7 @@ static char *run_cpu(double scores_out[NUM_MOTION_V2_FEATURES])
     }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(double scores_out[NUM_MOTION_V2_FEATURES])
@@ -122,23 +122,23 @@ static char *run_cuda(double scores_out[NUM_MOTION_V2_FEATURES])
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++)
         scores_out[k] = NAN;
 
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion_v2_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2_cuda", VMAF_NULLPTR);
     mu_assert("CUDA: vmaf_use_feature(motion_v2_cuda) failed", !err);
 
     char *msg = feed_stream(vmaf);
@@ -153,15 +153,15 @@ static char *run_cuda(double scores_out[NUM_MOTION_V2_FEATURES])
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_cuda_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2_cuda");
-    mu_assert("motion_v2_cuda extractor must be registered", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2_cuda");
+    mu_assert("motion_v2_cuda extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("motion_v2_cuda name matches", !strcmp(fex->name, "motion_v2_cuda"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_cpu_cuda_parity(void)
@@ -176,7 +176,7 @@ static char *test_motion_v2_cpu_cuda_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu[0]))
-        return NULL;
+        return VMAF_NULLPTR;
 
     /* motion3_v2 (index 2) must be a real, finite score on the CUDA
      * path — guards against the pre-ADR-1108 gap where the CUDA twin
@@ -194,12 +194,12 @@ static char *test_motion_v2_cpu_cuda_parity(void)
         mu_assert("motion_v2 CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion_v2_cuda_registered);
     mu_run_test(test_motion_v2_cpu_cuda_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

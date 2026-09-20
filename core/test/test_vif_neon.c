@@ -67,11 +67,7 @@
 #if ARCH_AARCH64
 #include "feature/arm64/vif_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* ---------------------------------------------------------------------- */
 /* Buffer plumbing — a byte-for-byte replica of the allocation `init()` in
@@ -96,8 +92,8 @@ static void vif_ctx_free(VifTestCtx *ctx)
 {
     free(ctx->data);
     free(ctx->s);
-    ctx->data = NULL;
-    ctx->s = NULL;
+    ctx->data = VMAF_NULLPTR;
+    ctx->s = VMAF_NULLPTR;
 }
 
 /* Mirrors log_generate() in integer_vif.c (static there).  The `(double)` cast
@@ -168,7 +164,7 @@ static bool vif_ctx_alloc(VifTestCtx *ctx, unsigned w, unsigned h, bool hbd)
     ctx->data = calloc(vif_ctx_data_size(buf, h), 1);
     if (!ctx->data) {
         free(ctx->s);
-        ctx->s = NULL;
+        ctx->s = VMAF_NULLPTR;
         return false;
     }
 
@@ -680,7 +676,7 @@ static const int bpcs_statistic[] = {10, 12};
 static char *test_vif_subsample_rd_8_neon(void)
 {
 #if !ARCH_AARCH64
-    return NULL; /* NEON kernels are aarch64-only. */
+    return VMAF_NULLPTR; /* NEON kernels are aarch64-only. */
 #else
     for (size_t t = 0; t < sizeof(geoms) / sizeof(geoms[0]); ++t) {
         for (int pattern = 0; pattern <= PATTERN_LOW_CONTRAST; ++pattern) {
@@ -689,7 +685,7 @@ static char *test_vif_subsample_rd_8_neon(void)
             mu_assert("vif_subsample_rd_8_neon diverges from the scalar reference", bad == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -704,14 +700,14 @@ static char *check_subsample_16_geom(const Geom *g, int scale)
             mu_assert("vif_subsample_rd_16_neon diverges from the scalar reference", bad == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
 static char *test_vif_subsample_rd_16_neon(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     for (size_t t = 0; t < sizeof(geoms) / sizeof(geoms[0]); ++t) {
         for (int scale = 0; scale < 3; ++scale) {
@@ -721,14 +717,14 @@ static char *test_vif_subsample_rd_16_neon(void)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
 static char *test_vif_statistic_8_neon(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     for (size_t t = 0; t < sizeof(geoms) / sizeof(geoms[0]); ++t) {
         for (int pattern = 0; pattern <= PATTERN_LOW_CONTRAST; ++pattern) {
@@ -737,7 +733,7 @@ static char *test_vif_statistic_8_neon(void)
             mu_assert("vif_statistic_8_neon diverges from the scalar reference", bad == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -752,14 +748,14 @@ static char *check_statistic_16_geom(const Geom *g, int scale)
             mu_assert("vif_statistic_16_neon diverges from the scalar reference", bad == 0);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
 static char *test_vif_statistic_16_neon(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     for (size_t t = 0; t < sizeof(geoms) / sizeof(geoms[0]); ++t) {
         for (int scale = 0; scale < 4; ++scale) {
@@ -769,7 +765,7 @@ static char *test_vif_statistic_16_neon(void)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -785,7 +781,7 @@ static char *check_small_geometry(unsigned w, unsigned h)
     mu_assert("allocation failed", sub8 >= 0 && sub16 >= 0 && stat8 >= 0 && stat16 >= 0);
     mu_assert("a VIF NEON kernel diverges from the scalar reference on a small geometry",
               sub8 + sub16 + stat8 + stat16 == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif
 
@@ -794,7 +790,7 @@ static char *check_small_geometry(unsigned w, unsigned h)
 static char *test_vif_neon_small_sweep(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     static const unsigned heights[] = {17, 18, 20, 24};
 
@@ -806,7 +802,7 @@ static char *test_vif_neon_small_sweep(void)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -826,7 +822,5 @@ char *run_tests(void)
     (void)test_vif_statistic_16_neon;
     (void)test_vif_neon_small_sweep;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

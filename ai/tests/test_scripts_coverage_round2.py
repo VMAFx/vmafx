@@ -280,12 +280,20 @@ class TestAggregateFrames:
         import warnings
 
         frames = [{"psnr_hvs": None}, {"psnr_hvs": None}]
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             result = k150k._aggregate_frames(frames)
-        runtime_warnings = [x for x in w if issubclass(x.category, RuntimeWarning)]
-        assert not runtime_warnings, "All-NaN RuntimeWarning must be suppressed"
         assert math.isnan(result["psnr_hvs_mean"])
+
+    def test_infinite_column_has_explicit_warning_free_result(self, k150k) -> None:
+        import warnings
+
+        frames = [{"psnr_hvs": float("inf")}, {"psnr_hvs": float("inf")}]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = k150k._aggregate_frames(frames)
+        assert result["psnr_hvs_mean"] == float("inf")
+        assert math.isnan(result["psnr_hvs_std"])
 
 
 class TestStagingRoundtrip:
@@ -618,7 +626,7 @@ class TestCalibrateMainArgValidation:
         # Corpus is absent, fallback dir also empty → no YUV files → rc 1.
         empty_fallback = tmp_path / "empty_yuv"
         empty_fallback.mkdir()
-        import unittest.mock as mock
+        from unittest import mock
 
         with mock.patch.object(type(calibrate._FALLBACK_YUV_DIR), "glob", return_value=iter([])):
             pass  # don't patch — just ensure the call path works

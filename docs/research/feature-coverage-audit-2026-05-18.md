@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research: Feature Coverage Audit — 2026-05-18
 
 **Status**: Complete
@@ -16,7 +15,7 @@ All SVM models in `model/` consume the same canonical-6 feature set via
 `VMAF_integer_feature_*` or `VMAF_feature_*` keys:
 
 | Model file | Type | Feature set |
-|---|---|---|
+| --- | --- | --- |
 | `vmaf_v0.6.1.json` | FR SVM (integer) | adm2, motion2, vif_scale0–3 |
 | `vmaf_v0.6.1neg.json` | FR SVM (integer) | adm2, motion2, vif_scale0–3 |
 | `vmaf_4k_v0.6.1.json` | FR SVM (integer, 4K) | adm2, motion2, vif_scale0–3 |
@@ -39,7 +38,7 @@ All SVM models in `model/` consume the same canonical-6 feature set via
 ### Tiny-AI ONNX models (fork-added, `model/tiny/`)
 
 | Model | Type | Input features | Model card |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `vmaf_tiny_v2.onnx` | FR MLP VMAF surrogate | canonical-6 (adm2, vif_scale0–3, motion2) | `docs/ai/models/vmaf_tiny_v2.md` |
 | `vmaf_tiny_v3.onnx` / `.int8` | FR MLP VMAF surrogate | canonical-6 | `docs/ai/models/vmaf_tiny_v3.md` |
 | `vmaf_tiny_v4.onnx` / `.int8` | FR MLP VMAF surrogate | canonical-6 | `docs/ai/models/vmaf_tiny_v4.md` |
@@ -70,7 +69,7 @@ Source: `core/src/feature/feature_extractor.c` (as of 2026-05-18).
 ### Float-mode extractors (require `VMAF_FLOAT_FEATURES=1`)
 
 | Extractor | CPU | CUDA | SYCL | Vulkan | HIP | Metal | Notes |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `float_psnr` | Y | Y | Y | Y | Y | Y | |
 | `float_ansnr` | Y | Y | Y | Y | Y | Y | |
 | `float_adm` | Y | Y | Y | Y | Y | — | |
@@ -83,7 +82,7 @@ Source: `core/src/feature/feature_extractor.c` (as of 2026-05-18).
 ### Integer-mode extractors (default production path)
 
 | Extractor | CPU | CUDA | SYCL | Vulkan | HIP | Metal | Notes |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `integer_adm` | Y | Y | Y | Y | Y | — | |
 | `integer_vif` | Y | Y | Y | Y | Y | — | |
 | `integer_motion` | Y | Y | Y | Y | Y | Y | |
@@ -100,7 +99,7 @@ Source: `core/src/feature/feature_extractor.c` (as of 2026-05-18).
 ### Fork-added special extractors (CPU-only)
 
 | Extractor | CPU | GPU | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `speed_qa` | Y | N | SpEED-QA NR metric scaffold (ADR-0253) |
 | `lpips` | Y | N | DNN-based, via ONNX Runtime |
 | `dists_sq` | Y | N | DNN-based, via ONNX Runtime |
@@ -172,7 +171,7 @@ that produced the corpus predates or skipped the speed-feature addition, or
 ### Model × Feature coverage
 
 | Model | adm2 | vif_scale0–3 | motion2 | motion/motion3 | PSNR | SSIM | cambi | ciede | psnr_hvs | ssimulacra2 | **speed_temporal** | **speed_chroma** |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SVM (vmaf_v0.6.1 family) | Y | Y | Y | — | — | — | — | — | — | — | — | — |
 | vmaf_tiny_v2–v4 | Y | Y | Y | — | — | — | — | — | — | — | — | — |
 | fr_regressor_v1–v3 | Y | Y | Y | — | — | — | — | — | — | — | — | — |
@@ -188,7 +187,7 @@ set will be needed.
 ### Corpus × Script coverage of speed features
 
 | Corpus | Script | speed_temporal | speed_chroma |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `.corpus/chug/training/chug_features_partial.jsonl` | `chug_extract_features.py` | **N** (column absent) | **N** |
 | `.corpus/chug/training/_reextract_2026-05-17/full_features_chug.rows.jsonl` | `extract_k150k_features.py`-family | column present, **all NaN** | column present, **all NaN** |
 | `.corpus/konvid-150k/konvid_150k.jsonl` | `konvid_150k_to_corpus_jsonl.py` | **N** (column absent) | **N** |
@@ -211,7 +210,7 @@ set will be needed.
 ### Script coverage before this PR
 
 | Script | speed_chroma | speed_temporal |
-|---|---|---|
+| --- | --- | --- |
 | `chug_extract_features.py` | **NO** | **NO** |
 | `extract_full_features.py` | **NO** | **NO** |
 | `bvi_dvc_to_full_features.py` | **NO** | **NO** |
@@ -284,7 +283,7 @@ released?") was CLOSED 2025-07-25 per research-0089.
 ## G. Model Card Audit
 
 | Model | Card location | Feature contract documented? | Stale? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | vmaf_tiny_v2 | `docs/ai/models/vmaf_tiny_v2.md` | Yes (canonical-6) | No |
 | vmaf_tiny_v3 | `docs/ai/models/vmaf_tiny_v3.md` | Yes (canonical-6) | No |
 | vmaf_tiny_v4 | `docs/ai/models/vmaf_tiny_v4.md` | Yes (canonical-6, N=6) | No |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0413: YouTube UGC corpus ingestion for `nr_metric_v1`
 
 - **Status**: Accepted
@@ -75,7 +74,7 @@ manifest's MOS column contains, without rescaling (matching LSVQ
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | KonViD-150k + LSVQ only (skip UGC) | Smallest surface; two ingestion adapters; two licence reviews. | Misses the genuine YouTube content distribution; under-represents gaming / animation / HDR; the contributor-pack digest #465 specifically flags UGC as the under-weighted axis. | Leaves measurable signal on the table; UGC is the third leg of the public-corpus tripod every modern NR-VQA paper trains on. |
 | Add YouTube UGC alongside LSVQ + KonViD-150k | Adds the canonical UGC distribution; CC-BY is permissively redistributable for derived weights; adapter shape is a verbatim port of ADR-0333. | Working set ~2 TB; per-clip MOS is split across a 2019 originals release and a 2020 transcoded follow-up so operators must understand which release they have; partial-corpus runs need explicit operator opt-in. | **Chosen.** The marginal infra (one adapter mirroring ADR-0333 + 18 tests + a `--max-rows` / `--full` CLI knob + a `--bucket-prefix` knob for synthesised URLs) is small. |
 | Scrape YouTube directly via `yt-dlp` | No 2 TB GCS pull; can target newer / longer-tail content. | Violates YouTube ToS; per-clip MOS values do not exist outside Google's curated release; reproducibility nil; licence posture indeterminate per clip. | Hard rejected. The Google YouTube UGC release is the only legal-and-MOS-bearing source for this content. |

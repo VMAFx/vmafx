@@ -9,15 +9,23 @@ import os
 import re
 import runpy
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import run as run_command
+
 ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MODEL = ROOT / "scripts/ci/cppcheck-public-entrypoints.cfg"
+CJSON_MODEL = ROOT / "scripts/ci/cppcheck-cjson-entrypoints.cfg"
+LINKED_MODEL = ROOT / "scripts/ci/cppcheck-linked-entrypoints.cfg"
 COMMAND = cast(
     Callable[[str, Path, Path], list[str]],
     runpy.run_path(str(ROOT / "scripts/ci/lint-configured.py"))["cppcheck_arguments"],
@@ -27,10 +35,7 @@ HEADERS_CONTROL = """#include "feature/feature_collector.h"
 int main(void) {
     const VmafModel model = {0};
     const VmafFeatureCollector collector = {0};
-    FeatureVector vector = {0};
-    double score = 0.0;
-    return (int)model.n_features + (int)collector.cnt +
-        vmaf_feature_vector_get_score(&vector, &score, 0);
+    return (int)model.n_features + (int)collector.cnt;
 }
 """
 
@@ -52,6 +57,8 @@ class CppcheckPosixModelTests(unittest.TestCase):
         language: str = "c++",
         extra: tuple[str, ...] = (),
         public_model: Path | None = PUBLIC_MODEL,
+        cjson_model: Path | None = CJSON_MODEL,
+        linked_model: Path | None = LINKED_MODEL,
     ) -> tuple[int, list[tuple[str, str]], str]:
         """Use production argv and a real one-TU database, without Git or a build."""
         source = self.directory / ("control.c" if language == "c" else "control.cpp")
@@ -82,12 +89,23 @@ class CppcheckPosixModelTests(unittest.TestCase):
             command.remove(f"--library={PUBLIC_MODEL}")
             if public_model is not None:
                 command.append(f"--library={public_model}")
-        result = subprocess.run(  # noqa: S603 -- resolved tool, fixture argv, no shell
+        if cjson_model != CJSON_MODEL:
+            command.remove(f"--library={CJSON_MODEL}")
+            if cjson_model is not None:
+                command.append(f"--library={cjson_model}")
+        if linked_model != LINKED_MODEL:
+            command.remove(f"--library={LINKED_MODEL}")
+            if linked_model is not None:
+                command.append(f"--library={linked_model}")
+        result = run_command(
             [*command, "--template={severity}:{id}:{message}", *extra],
+            allowed_executables=(self.binary,),
             cwd=self.directory,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=300,
+            max_output_bytes=16 * 1_048_576,
         )
         self.assertEqual(database.read_bytes(), before)
         diagnostics = re.findall(
@@ -140,6 +158,47 @@ class CppcheckPosixModelTests(unittest.TestCase):
         self.assertIn(("error", "uninitvar"), diagnostics, output)
         self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
 
+    def test_cjson_external_roots_preserve_private_unused_findings(self) -> None:
+        root = "int cJSON_CreateArrayReference(void) { return 0; }\n"
+        private = "static int private_dead(void) { return 2; }\n"
+        code, diagnostics, output = self.analyze(root, language="c", cjson_model=None)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(("style", "unusedFunction"), diagnostics, output)
+        self.assertIn("'cJSON_CreateArrayReference' is never used", output)
+
+        code, diagnostics, output = self.analyze(root, language="c")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
+
+        code, diagnostics, output = self.analyze(root + private, language="c")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(("style", "unusedFunction"), diagnostics, output)
+        self.assertIn("'private_dead' is never used", output)
+        self.assertNotIn("'cJSON_CreateArrayReference' is never used", output)
+
+    def test_external_roots_preserve_private_unused_findings(self) -> None:
+        private = "static int private_dead(void) { return 2; }\n"
+        for root in (
+            "int run_tests(void) { return 0; }\n",
+            "const void *OrtGetApiBase(void) { return 0; }\n",
+            "int adm_dwt2_d(void) { return 0; }\n",
+            "void speed_internal_compute_means(void) {}\n",
+            "int vmaf_cambi_init_tvi_and_vlt(void) { return 0; }\n",
+        ):
+            with self.subTest(root=root.split("(", 1)[0]):
+                code, diagnostics, output = self.analyze(root, language="c", linked_model=None)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(("style", "unusedFunction"), diagnostics, output)
+
+                code, diagnostics, output = self.analyze(root, language="c")
+                self.assertEqual(code, 0, output)
+                self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
+
+                code, diagnostics, output = self.analyze(root + private, language="c")
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(("style", "unusedFunction"), diagnostics, output)
+                self.assertIn("'private_dead' is never used", output)
+
     def test_public_model_name_only_static_collision_limit(self) -> None:
         # ADR-1246: Cppcheck does not use linkage or scope in this comparison.
         source = "static int vmaf_hip_available(void) { return 0; }\n"
@@ -158,6 +217,18 @@ class CppcheckPosixModelTests(unittest.TestCase):
                     model.write_text(contents, encoding="utf-8")
                 code, _diagnostics, output = self.analyze(
                     "int main(void) { return 0; }\n", language="c", public_model=model
+                )
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("Failed to load library configuration file", output)
+
+    def test_missing_or_invalid_linked_model_fails(self) -> None:
+        model = self.directory / "linked.cfg"
+        for contents in (None, '<def format="2"><entrypoint/></def>', "not XML"):
+            with self.subTest(contents=contents):
+                if contents is not None:
+                    model.write_text(contents, encoding="utf-8")
+                code, _diagnostics, output = self.analyze(
+                    "int main(void) { return 0; }\n", language="c", linked_model=model
                 )
                 self.assertNotEqual(code, 0, output)
                 self.assertIn("Failed to load library configuration file", output)
@@ -182,8 +253,13 @@ class CppcheckPosixModelTests(unittest.TestCase):
         code, diagnostics, output = self.analyze(
             source, language="c", extra=("--check-level=normal",)
         )
-        version = subprocess.run(  # noqa: S603 -- resolved analyzer, fixed argv
-            [self.binary, "--version"], capture_output=True, text=True, check=True
+        version = run_command(
+            [self.binary, "--version"],
+            allowed_executables=(self.binary,),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
         ).stdout
         match = re.search(r"Cppcheck (\d+)\.(\d+)", version)
         self.assertIsNotNone(match, version)
@@ -243,8 +319,13 @@ int main(void) {
         self.assertIn("uninitvar", ids, output)
         # Older distro tools do not implement this newer diagnostic; when the
         # installed analyzer supports it, the model must leave it enabled.
-        listed = subprocess.run(  # noqa: S603 -- resolved tool, fixed argv
-            [self.binary, "--errorlist"], capture_output=True, text=True, check=True
+        listed = run_command(
+            [self.binary, "--errorlist"],
+            allowed_executables=(self.binary,),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
         )
         supported = set(re.findall(r'<error id="([A-Za-z0-9_]+)"', listed.stdout + listed.stderr))
         if "uninitMemberVarNoCtor" in supported:

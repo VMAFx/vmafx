@@ -26,12 +26,12 @@ def test_all_prompts_present() -> None:
 
 
 def test_guess_prompt() -> None:
-    assert _guess_prompt_for_file(Path("foo.c"))      == "review_c.md"
-    assert _guess_prompt_for_file(Path("foo.cpp"))    == "review_c.md"
-    assert _guess_prompt_for_file(Path("foo.cu"))     == "review_cuda.md"
-    assert _guess_prompt_for_file(Path("foo.cuh"))    == "review_cuda.md"
+    assert _guess_prompt_for_file(Path("foo.c")) == "review_c.md"
+    assert _guess_prompt_for_file(Path("foo.cpp")) == "review_c.md"
+    assert _guess_prompt_for_file(Path("foo.cu")) == "review_cuda.md"
+    assert _guess_prompt_for_file(Path("foo.cuh")) == "review_cuda.md"
     assert _guess_prompt_for_file(Path("sycl/foo.cpp")) == "review_sycl.md"
-    assert _guess_prompt_for_file(Path("foo.rs"))     == "review_c.md"  # fallback
+    assert _guess_prompt_for_file(Path("foo.rs")) == "review_c.md"  # fallback
 
 
 def test_review_c_has_required_placeholders() -> None:

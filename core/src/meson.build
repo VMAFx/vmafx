@@ -978,8 +978,8 @@ if is_asm_enabled
       # pass uses mul+add chains; with `-mfma` the compiler may auto-fuse
       # these into FMAs, diverging from the scalar reference which uses plain
       # C mul+add.  Disabling FP contraction keeps both paths bit-identical.
-      # The scalar `adm_sum_cube_s` / `adm_csf_den_scale_s` references
-      # compile without -mfma so they never see auto-fusion.
+      # The scalar `adm_csf_den_scale_s` reference compiles without -mfma so
+      # it never sees auto-fusion.
       x86_float_adm_avx2_lib = static_library(
           'x86_float_adm_avx2',
           feature_src_dir + 'x86/float_adm_avx2.c',
@@ -1516,10 +1516,12 @@ if is_sycl_enabled
     #          When `sycl_icpx_aot_targets` is non-empty (the default),
     #          we additionally pass `-fsycl-targets=spir64_gen,spir64` to
     #          request AOT compilation into native GPU ISA, and
-    #          `-Xs '-device <list>'` to specify target micro-architectures.
-    #          This eliminates the JIT cold-start cost paid on every first
-    #          kernel launch. The binary embeds native ISA blobs for each
-    #          listed target plus a SPIR-V fallback for unlisted devices.
+    #          `-Xsycl-target-backend=spir64_gen '-device <list>'` to scope the
+    #          architecture list to IGC. Because each custom target compiles
+    #          with `-c`, `-fno-sycl-rdc` is required to materialize final AOT
+    #          images in the fat object rather than retain relocatable bitcode.
+    #          The binary embeds native ISA blobs for each listed target plus a
+    #          SPIR-V fallback for unlisted devices.
     #          Set `sycl_icpx_aot_targets=''` to revert to SPIR-V JIT only
     #          (smaller binary, mandatory JIT on first launch). ADR-0567.
     #   acpp:  `--acpp-targets=<targets>` selects backend(s); the
@@ -1531,12 +1533,15 @@ if is_sycl_enabled
         icpx_aot_targets = get_option('sycl_icpx_aot_targets')
         if icpx_aot_targets != ''
             # AOT path: emit spir64_gen (IGC) ISA blobs for the listed targets.
-            # `-Xs '-device <list>'` is forwarded to IGC via clang-offload-wrapper.
-            # `spir64` fallback embeds portable SPIR-V for any unlisted device.
+            # Scope `-device` to spir64_gen: unqualified `-Xs` is unused in a
+            # multi-target compile. `-fno-sycl-rdc` makes AOT happen during
+            # these compile-only custom targets; no source uses SYCL_EXTERNAL.
+            # The `spir64` sibling remains a portable fallback image.
             sycl_toolchain_args = [
                 '-fsycl',
                 '-fsycl-targets=spir64_gen,spir64',
-                '-Xs', '-device ' + icpx_aot_targets,
+                '-fno-sycl-rdc',
+                '-Xsycl-target-backend=spir64_gen', '-device ' + icpx_aot_targets,
             ]
             message('SYCL AOT targets (icpx): ' + icpx_aot_targets)
         else
@@ -1826,10 +1831,8 @@ if float_enabled
         feature_src_dir + 'vif.c',
         feature_src_dir + 'vif_tools.c',
         feature_src_dir + 'motion.c',
-        feature_src_dir + 'psnr.c',
         feature_src_dir + 'psnr_tools.cpp',
         feature_src_dir + 'moment.c',
-        feature_src_dir + 'common/blur_array.c',
     ]
 endif
 
@@ -1939,13 +1942,19 @@ endif
 # optimizer's relaxed FP-model defaults. Scalar reference TUs
 # inside `libvmaf_feature_static_lib` (e.g. `ms_ssim_decimate_scalar`)
 # end up with non-strict floating-point semantics, while the SIMD
-# carve-out libs already gained `-fp-model=precise` in #339. The
+# carve-out libs already gained an Intel value-safe FP model in #339. The
 # resulting asymmetry caused `test_ms_ssim_decimate` to diverge
 # from the SIMD path. Mirror the same flag onto every static-lib
 # that owns scalar references the SIMD tests compare against.
 _libvmaf_feature_icx_args = []
+_libvmaf_feature_strict_fp_args = ['-ffp-contract=off']
 if cc.get_id() == 'intel-llvm' or cc.get_id() == 'intel-llvm-cl'
+    # Intel documents `strict` as value-safe with contraction disabled. It is
+    # the single-option equivalent of precise + ffp-contract=off and therefore
+    # avoids icx's -Woverriding-option diagnostic without weakening the bit-exact
+    # scalar-reference contract.
     _libvmaf_feature_icx_args = ['-fp-model=precise']
+    _libvmaf_feature_strict_fp_args = ['-fp-model=strict']
 endif
 
 # ssimulacra2.c scalar extractor compiles in its own static lib with
@@ -1971,7 +1980,7 @@ libvmaf_psnr_hvs_scalar_static_lib = static_library(
     feature_src_dir + 'third_party/xiph/psnr_hvs.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + _libvmaf_feature_strict_fp_args,
 )
 
 libvmaf_ssimulacra2_static_lib = static_library(
@@ -1979,7 +1988,7 @@ libvmaf_ssimulacra2_static_lib = static_library(
     feature_src_dir + 'ssimulacra2.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + _libvmaf_feature_strict_fp_args,
 )
 
 # Y-FUNQUE+ atoms-only extractor (ADR-1114) compiles with `-ffp-contract=off`
@@ -1993,7 +2002,7 @@ libvmaf_y_funque_plus_static_lib = static_library(
     feature_src_dir + 'y_funque_plus.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + _libvmaf_feature_strict_fp_args,
 )
 
 # ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib

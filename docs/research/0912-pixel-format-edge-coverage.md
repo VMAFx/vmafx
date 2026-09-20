@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0912: Pixel-format edge coverage audit
 
 - **Date**: 2026-05-31
@@ -33,17 +32,17 @@ unit-test layer — regressions there are only caught downstream
 
 ### Coverage matrix before this PR (CPU extractor surface)
 
-| extractor   | 420p8 | 420p10 | 420p12 | 420p16 | 422p8 | 422p10/12/16 | 444p8 | 444p10/12/16 |
-|-------------|-------|--------|--------|--------|-------|--------------|-------|--------------|
-| `psnr`      | ✓ many | (test_picture only) | — | ✓ `test_16b_large_diff` (2×2) | — | — | (full-model only) | — |
-| `ssim`      | ✓ smoke | — | — | — | — | — | (full-model only) | — |
-| `ms_ssim`   | ✓ smoke | — | — | — | — | — | (full-model only) | — |
-| `ciede`     | (math only) | — | — | — | — | — | (full-model only) | — |
-| `cambi`     | ✓ smoke + 10-bit YUV400 cases | ✓ via YUV400P 10 | — | — | — | — | — | — |
-| `psnr_hvs`  | ✓ SIMD bit-exact | — | — | — | — | — | — | — |
-| `adm`       | ✓ smoke | — | — | — | — | — | (full-model only) | — |
-| `vif`       | ✓ smoke | — | — | — | — | — | (full-model only) | — |
-| `motion`    | ✓ smoke | — | — | — | — | — | (full-model only) | — |
+| extractor | 420p8 | 420p10 | 420p12 | 420p16 | 422p8 | 422p10/12/16 | 444p8 | 444p10/12/16 |
+| ------------- | ------- | -------- | -------- | -------- | ------- | -------------- | ------- | -------------- |
+| `psnr` | ✓ many | (test_picture only) | — | ✓ `test_16b_large_diff` (2×2) | — | — | (full-model only) | — |
+| `ssim` | ✓ smoke | — | — | — | — | — | (full-model only) | — |
+| `ms_ssim` | ✓ smoke | — | — | — | — | — | (full-model only) | — |
+| `ciede` | (math only) | — | — | — | — | — | (full-model only) | — |
+| `cambi` | ✓ smoke + 10-bit YUV400 cases | ✓ via YUV400P 10 | — | — | — | — | — | — |
+| `psnr_hvs` | ✓ SIMD bit-exact | — | — | — | — | — | — | — |
+| `adm` | ✓ smoke | — | — | — | — | — | (full-model only) | — |
+| `vif` | ✓ smoke | — | — | — | — | — | (full-model only) | — |
+| `motion` | ✓ smoke | — | — | — | — | — | (full-model only) | — |
 
 Notes:
 

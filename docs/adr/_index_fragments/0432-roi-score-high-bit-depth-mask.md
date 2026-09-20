@@ -1,1 +1,5 @@
-| [ADR-0432](0432-roi-score-high-bit-depth-mask.md) | Extend `vmaf-roi-score` saliency-mask materialisation to little-endian planar 8/10/12/16-bit YUV so HDR/CHUG-style inputs preserve native sample depth while saliency inference still consumes 8-bit RGB. | Accepted | roi, tiny-ai, hdr, tooling, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0432](0432-roi-score-high-bit-depth-mask.md) | High-Bit-Depth ROI-Score Mask Materialisation | Accepted | roi, tiny-ai, hdr, tooling, fork-local |

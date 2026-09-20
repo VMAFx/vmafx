@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # ADR-1239: Preserve work during agent-state cleanup
 
 - **Status**: Accepted

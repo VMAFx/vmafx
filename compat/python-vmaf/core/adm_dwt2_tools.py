@@ -13,10 +13,7 @@ def ALIGN_CEIL(x):
     64
 
     """
-    if x % MAX_ALIGN != 0:
-        y = MAX_ALIGN - x % MAX_ALIGN
-    else:
-        y = 0
+    y = MAX_ALIGN - x % MAX_ALIGN if x % MAX_ALIGN != 0 else 0
     return x + y
 
 

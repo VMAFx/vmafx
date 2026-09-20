@@ -43,11 +43,7 @@
 
 #include "libvmaf/libvmaf_metal.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* The 8 Metal extractor names registered at link time on a build with
  * `-Denable_metal=enabled`. Listed in T8-1c → T8-1d order. */
@@ -64,10 +60,10 @@ static char *test_metal_extractors_all_registered(void)
     for (size_t i = 0; i < kRegisteredMetalCount; ++i) {
         const char *const name = kRegisteredMetalExtractors[i];
         VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(name);
-        mu_assert("Metal extractor must be registered", fex != NULL);
+        mu_assert("Metal extractor must be registered", fex != VMAF_NULLPTR);
         mu_assert("Metal extractor name field matches lookup key", strcmp(fex->name, name) == 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The motion extractors must carry the TEMPORAL flag because they keep
@@ -82,11 +78,11 @@ static char *test_metal_temporal_flag_present(void)
     };
     for (size_t i = 0; i < sizeof(kTemporal) / sizeof(kTemporal[0]); ++i) {
         VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(kTemporal[i]);
-        mu_assert("Metal temporal extractor must be registered", fex != NULL);
+        mu_assert("Metal temporal extractor must be registered", fex != VMAF_NULLPTR);
         mu_assert("Metal temporal extractor must carry the TEMPORAL flag",
                   (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) != 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Negative case — a deliberately-misspelled name must return NULL so
@@ -95,8 +91,8 @@ static char *test_metal_temporal_flag_present(void)
 static char *test_metal_unknown_extractor_returns_null(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("definitely_not_metal_kernel");
-    mu_assert("unknown Metal extractor name must return NULL", fex == NULL);
-    return NULL;
+    mu_assert("unknown Metal extractor name must return NULL", fex == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -104,7 +100,7 @@ char *run_tests(void)
     mu_run_test(test_metal_extractors_all_registered);
     mu_run_test(test_metal_temporal_flag_present);
     mu_run_test(test_metal_unknown_extractor_returns_null);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #else /* !HAVE_METAL */
@@ -116,9 +112,7 @@ char *run_tests(void)
 char *run_tests(void)
 {
     (void)fprintf(stderr, "Metal not enabled, skipping extractor-registration tests\n");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* HAVE_METAL */
-
-/* NOLINTEND(modernize-use-nullptr) */

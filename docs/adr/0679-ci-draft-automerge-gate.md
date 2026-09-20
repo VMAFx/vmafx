@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0679: CI Draft Auto-Merge Gate
 
 - **Status**: Accepted
@@ -45,7 +44,7 @@ collision target and avoids post-merge self-collision noise.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fail the required aggregator on drafts and ignore stale draft-era check runs | Blocks auto-merge until ready CI genuinely runs; preserves draft runner savings for expensive jobs | Draft PRs show one red required check by design | Chosen: it fixes the unsafe branch-protection signal directly |
 | Keep the workflow unchanged and only wait manually before enabling auto-merge | No code change | Human discipline can drift and does not protect future agents or UI auto-merge | Rejected: the required check itself must be unambiguous |
 | Remove `skipped` from accepted sibling conclusions | Stronger gate | Breaks legitimate path-filter/doc-only semantics from ADR-0313 | Rejected: this would revive the doc/Python-only deadlock |

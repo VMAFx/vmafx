@@ -48,14 +48,14 @@
  * the next two are no-ops. */
 static char *test_stop_thrice_with_stdio(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration vcfg = {0};
     vcfg.log_level = VMAF_LOG_LEVEL_NONE;
     vcfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     /* A pipe pair feeds the stdio worker. Closing the read end's
      * write side after start_stdio drives the worker to EOF so the
@@ -87,7 +87,7 @@ static char *test_stop_thrice_with_stdio(void)
     /* close() invokes stop() internally — must also be safe after
      * three prior explicit stops. */
     vmaf_mcp_close(&server);
-    mu_assert("close NULLs handle", server == NULL);
+    mu_assert("close NULLs handle", server == VMAF_NULLPTR);
 
     if (req_pipe[0] >= 0)
         (void)close(req_pipe[0]);
@@ -96,7 +96,7 @@ static char *test_stop_thrice_with_stdio(void)
     if (resp_pipe[1] >= 0)
         (void)close(resp_pipe[1]);
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Same shape but on a freshly-initialised server with NO transport
@@ -106,14 +106,14 @@ static char *test_stop_thrice_with_stdio(void)
  * pthread_join() of a default-initialised pthread_t. */
 static char *test_stop_thrice_without_start(void)
 {
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration vcfg = {0};
     vcfg.log_level = VMAF_LOG_LEVEL_NONE;
     vcfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     int rc1 = vmaf_mcp_stop(server);
     mu_assert("stop #1 (no start) returns 0", rc1 == 0);
@@ -123,25 +123,25 @@ static char *test_stop_thrice_without_start(void)
     mu_assert("stop #3 (no start) returns 0", rc3 == 0);
 
     vmaf_mcp_close(&server);
-    mu_assert("close NULLs handle", server == NULL);
+    mu_assert("close NULLs handle", server == VMAF_NULLPTR);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_stop_thrice_with_uds(void)
 {
     if (!vmaf_mcp_transport_available(VMAF_MCP_TRANSPORT_UDS))
-        return NULL;
+        return VMAF_NULLPTR;
 
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     VmafConfiguration vcfg = {0};
     vcfg.log_level = VMAF_LOG_LEVEL_NONE;
     vcfg.n_threads = 1u;
     mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
 
-    VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    VmafMcpServer *server = VMAF_NULLPTR;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, VMAF_NULLPTR) == 0);
 
     char path[80];
     int n = snprintf(path, sizeof(path), "/tmp/vmaf-mcp-stop-uds-%d.sock", (int)getpid());
@@ -158,10 +158,10 @@ static char *test_stop_thrice_with_uds(void)
     mu_assert("stop #3 returns 0", rc3 == 0);
 
     vmaf_mcp_close(&server);
-    mu_assert("close NULLs handle", server == NULL);
+    mu_assert("close NULLs handle", server == VMAF_NULLPTR);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 typedef char *(*test_fn)(void);
@@ -179,5 +179,5 @@ char *run_tests(void)
     for (size_t i = 0u; i < k_test_table_len; ++i) {
         mu_run_test(k_test_table[i]);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }

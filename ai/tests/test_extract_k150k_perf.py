@@ -161,9 +161,9 @@ class TestStagingIO:
 
         assert list(legacy_df.columns) == list(new_df.columns), "Column order must match"
         assert len(legacy_df) == len(new_df) == n, "Row count must match"
-        assert list(legacy_df["clip_name"]) == list(
-            new_df["clip_name"]
-        ), "clip_name order must match"
+        assert list(legacy_df["clip_name"]) == list(new_df["clip_name"]), (
+            "clip_name order must match"
+        )
         # MOS values (non-NaN) must be numerically identical.
         pd.testing.assert_series_equal(legacy_df["mos"], new_df["mos"], check_names=True)
 

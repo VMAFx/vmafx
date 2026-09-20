@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `VmafPicture` v2 — consumer migration guide
 
 > **Status:** Implemented (cycle N+1). v2 is declared in
@@ -36,7 +35,7 @@ cast (`CUstream s = (CUstream)pic.backend_handle;`).
 ## Timeline (4 cycles)
 
 | Cycle | Window | What ships | SONAME | v1 status |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **N** | 2026-05-31 | `picture_v2.h` declared; ADR-0928; this doc; changelog fragment | 3 | live default |
 | **N+1** (this RC) | 2026-06-13 | `picture_v2.c` implemented; header installed; unit tests; `picture_v2.h` wired into meson | 3 (additive) | live default |
 | **N+2** | ≈ 6 months | In-tree backends + tools + `ffmpeg-patches/0002-0006` switched to v2 | 3 | callable but unused in-tree |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # SYCL kernel coverage round 2 — gap audit (2026-05-30)
 
 Companion research digest for [ADR-0884](../adr/0884-sycl-kernel-coverage-round2.md).
@@ -8,7 +7,7 @@ Companion research digest for [ADR-0884](../adr/0884-sycl-kernel-coverage-round2
 The SYCL backend ships 18 kernel TUs under `core/src/feature/sycl/`:
 
 | TU | Extractor name | Round-1 (PR #351) | Round-2 (this PR) | Round-3 candidate |
-|---|---|:---:|:---:|:---:|
+| --- | --- | :---: | :---: | :---: |
 | `integer_psnr_sycl.cpp` | `psnr_sycl` | yes | | |
 | `integer_vif_sycl.cpp` | `integer_vif_sycl` | yes | | |
 | `integer_adm_sycl.cpp` | `adm_sycl` | | yes | |
@@ -96,7 +95,7 @@ its own.
 ## Fixture sizing
 
 | Kernel | Fixture | Constraint |
-|---|---|---|
+| --- | --- | --- |
 | `adm_sycl` | 256x144 YUV420P 8-bpc | 4-scale dyadic pyramid → min 32x18 after scale-3 decimation; 256x144 is comfortable. |
 | `ciede_sycl` | 256x144 YUV420P 8-bpc | No scale constraint; chroma planes filled with non-uniform pattern so ΔE != 0. |
 | `integer_ssim_sycl` | 256x144 YUV420P 8-bpc | `compute_scale(256, 144, 0)` = round(144/256) = 1. SYCL scale=1 required; CPU integer_ssim is unconditional scale=1. |

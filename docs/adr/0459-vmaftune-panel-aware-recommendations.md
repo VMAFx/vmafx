@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0459: vmaf-tune panel/display-aware recommendation workstream
 
 - **Status**: Proposed
@@ -45,7 +44,7 @@ dedicated workstream tracked under this ADR. Concrete scope:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Stand up the workstream (this ADR)** | Closes the only public dataset class the fork can't currently consume; differentiates the fork on a real-world axis | Small training corpus (31 clips); gate threshold is uncertain | Chosen — the differentiation value is high, and the dataset is the only public source for this signal |
 | **Skip panel-awareness; rely on display-agnostic VMAF** | Smallest implementation surface | Loses the only dataset axis we have for panel variance; defers to client-side calibration which we have no control over | Rejected — leaves a measurable accuracy gap on real-world consumer displays |
 | **Fold panel-class into the existing fr_regressor_v3 head** | No new ONNX | fr_regressor_v3 predicts VMAF, not CRF deltas; conflating the two would muddy both heads | Rejected — separate concerns, separate heads |

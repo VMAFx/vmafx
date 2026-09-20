@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0432: High-Bit-Depth ROI-Score Mask Materialisation
 
 - **Status**: Accepted
@@ -34,7 +33,7 @@ formats (`yuv420p10le`, `yuv422p10le`, `yuv444p10le`, etc.).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep 8-bit-only materialisation | Smallest surface | Blocks ROI-score smoke/use on CHUG/HDR-style 10-bit planar sources | Rejected because the documented limitation is now an active local workflow blocker |
 | Down-convert high-bit-depth YUV to 8-bit output | Simple blending math | The masked file no longer matches the caller's requested `--bitdepth`, and the VMAF invocation would score the wrong sample geometry | Rejected because it corrupts the scoring input contract |
 | Support both little-endian and big-endian high-bit-depth YUV | Most complete pix_fmt coverage | Adds untested byte-order paths that are not used by the current FFmpeg/libvmaf workflows | Deferred until a real big-endian source appears |

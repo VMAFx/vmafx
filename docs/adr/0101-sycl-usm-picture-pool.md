@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0101: SYCL USM-backed picture pre-allocation pool
 
 - **Status**: Accepted
@@ -77,7 +76,7 @@ host source (transparent D2D or H2D depending on allocator kind).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the no-op stubs | Zero code change; no blast radius | Silent API lie: DEVICE/HOST modes return a host picture. Breaks zero-copy decoder interop. Issue #26 stays open indefinitely. | Rejected: the public API contract requires real USM buffers on these modes. |
 | Unify with CUDA `VmafRingBuffer` | Single implementation, single refcount model | Would require shimming cuStream semantics onto a sycl::queue; ring_buffer.c pulls in CUDA headers unconditionally. High churn for no functional gain. | Rejected: blast radius touches CUDA code paths that are already stable. |
 | Extend generic `picture_pool.c` (the reusable byte-pool from ADR-0029) | One pool for all backends | `picture_pool.c` is host-byte oriented; adding USM support means injecting a backend-dispatch layer into code that currently has zero GPU awareness. Leaks SYCL types into a generic path. | Rejected: keeps the generic pool focused on host byte buffers. |

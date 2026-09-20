@@ -1,4 +1,5 @@
 import unittest
+
 from test.testutil import (
     set_default_576_324_10bit_videos_for_testing,
     set_default_576_324_12bit_videos_for_testing,
@@ -6,7 +7,6 @@ from test.testutil import (
     set_default_576_324_videos_for_testing,
     set_default_576_324_videos_for_testing_5frames,
 )
-
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
 from vmaf.core.vmafexec_feature_extractor import (
@@ -30,7 +30,7 @@ class FeatureExtractorTest(MyTestCase):
         super().tearDown()
 
     def test_run_float_motion_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -59,10 +59,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_score"], 3.894366229166667, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_score"]
+            results[0]["float_motion_feature_motion_score"]
 
     def test_run_float_motion_fextractor_motion_fps_weight_2d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -93,10 +93,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mfw_2.5_score"], 9.735915666666665, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mfw_2.5_score"]
+            results[0]["float_motion_feature_motion_mfw_2.5_score"]
 
     def test_run_float_motion_fextractor_add_scale1(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -127,10 +127,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mdc_score"], 7.472933979166666, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mdc_score"]
+            results[0]["float_motion_feature_motion_mdc_score"]
 
     def test_run_float_motion_fextractor_with_debug(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -166,7 +166,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_motion_fextractor_forcing_zero(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -203,7 +203,7 @@ class FeatureExtractorTest(MyTestCase):
         self.assertEqual(len(results[1]["float_motion_feature_motion3_force_0_scores"]), 48)
 
     def test_run_float_motion_fextractor_with_blending(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -248,7 +248,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_motion_fextractor_no_filter(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -279,10 +279,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mfs_1_score"], 8.1035535, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mfs_1_score"]
+            results[0]["float_motion_feature_motion_mfs_1_score"]
 
     def test_run_float_motion_fextractor_add_uv(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -313,10 +313,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mau_score"], 5.0747014791666665, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mau_score"]
+            results[0]["float_motion_feature_motion_mau_score"]
 
     def test_run_float_motion_fextractor_no_filter_add_uv(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -347,10 +347,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mau_mfs_1_score"], 10.760497729166666, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mau_mfs_1_score"]
+            results[0]["float_motion_feature_motion_mau_mfs_1_score"]
 
     def test_run_float_motion_fextractor_yuv42210ple_no_filter_add_uv(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -381,10 +381,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mau_mfs_1_score"], 10.746016395833331, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mau_mfs_1_score"]
+            results[0]["float_motion_feature_motion_mau_mfs_1_score"]
 
     def test_run_float_motion_fextractor_three_tap_gaussian(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -415,10 +415,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mfs_3_score"], 5.481617229166667, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mfs_3_score"]
+            results[0]["float_motion_feature_motion_mfs_3_score"]
 
     def test_run_float_motion_fextractor_three_tap_gaussian_add_uv(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -449,10 +449,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["float_motion_feature_motion2_mau_mfs_3_score"], 7.235332708333332, places=6
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_motion_feature_motion_mau_mfs_2_score"]
+            results[0]["float_motion_feature_motion_mau_mfs_2_score"]
 
     def test_run_integer_motion_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -489,10 +489,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["integer_motion_feature_motion3_score"], 3.9897647708333337, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["integer_motion_feature_motion_score"]
+            results[0]["integer_motion_feature_motion_score"]
 
     def test_run_integer_motion_fextractor_motion_fps_weight(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -529,10 +529,10 @@ class FeatureExtractorTest(MyTestCase):
             results[1]["integer_motion_feature_motion3_mfw_2.5_score"], 9.974411604166667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["integer_motion_feature_motion_mfw_2.5_score"]
+            results[0]["integer_motion_feature_motion_mfw_2.5_score"]
 
     def test_run_integer_motion_fextractor_with_debug(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -576,7 +576,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_motion_fextractor_with_blend(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -627,7 +627,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_motion_fextractor_forcing_zero(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerMotionFeatureExtractor(
             [asset, asset_original],
             None,
@@ -657,7 +657,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_motion_fextractor_12bit(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
         self.fextractor = IntegerMotionFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -695,7 +695,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -718,10 +718,12 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["float_VIF_feature_vif_scale2_score"], 1.0, places=5)
         self.assertAlmostEqual(results[1]["float_VIF_feature_vif_scale3_score"], 1.0, places=5)
         with self.assertRaises(KeyError):
-            s = results[0]["float_VIF_feature_vif_num_score"]
+            results[0]["float_VIF_feature_vif_num_score"]
 
     def test_run_float_vif_fextractor_prescale_nearest_0d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -757,7 +759,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_ks1o2d25(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -797,7 +801,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_nearest_2(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -825,7 +831,9 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["float_VIF_feature_vif_scale3_ps_2_score"], 1.0, places=5)
 
     def test_run_float_vif_fextractor_prescale_nearest_0d3333(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -861,7 +869,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_bicubic_0d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -897,7 +907,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_bicubic_0d3333(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -941,7 +953,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_bicubic_2(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -977,7 +991,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_lanczos_0d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1013,7 +1029,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_lanczos_0d3333(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1057,7 +1075,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_lanczos_2(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1093,7 +1113,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_bilinear_2(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1129,7 +1151,9 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_prescale_bilinear_0d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_5frames()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_videos_for_testing_5frames()
+        )
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1165,7 +1189,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_with_debug(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1227,7 +1251,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_with_vif_skip_scale0(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1259,7 +1283,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_with_vif_sigma_nsq(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1293,7 +1317,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_with_vif_scale1_min_val(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1333,7 +1357,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_with_vif_scale2_min_val(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1374,7 +1398,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_vif_fextractor_with_vif_scale3_min_val(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1415,7 +1439,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_vif_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerVifFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -1438,10 +1462,10 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["integer_VIF_feature_vif_scale2_score"], 1.0, places=5)
         self.assertAlmostEqual(results[1]["integer_VIF_feature_vif_scale3_score"], 1.0, places=5)
         with self.assertRaises(KeyError):
-            s = results[0]["integer_VIF_feature_vif_num_score"]
+            results[0]["integer_VIF_feature_vif_num_score"]
 
     def test_run_integer_vif_fextractor_with_vif_skip_scale0(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1473,7 +1497,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_vif_fextractor_with_debug(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerVifFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1535,7 +1559,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_vif_fextractor_12bit(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
         self.fextractor = IntegerVifFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -1559,7 +1583,9 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["integer_VIF_feature_vif_scale3_score"], 1.0, places=5)
 
     def test_run_integer_vif_fextractor_debug1_yuv422p10le(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_10bit_videos_for_testing()
+        )
         self.fextractor = IntegerVifFeatureExtractor(
             [asset], None, fifo_mode=True, result_store=None
         )
@@ -1621,7 +1647,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1653,10 +1679,10 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["float_ADM_feature_adm_scale3_score"], 0.9649663541666667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_ADM_feature_adm_num_score"]
+            results[0]["float_ADM_feature_adm_num_score"]
 
     def test_run_float_adm_fextractor_apply_hm_adm3(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1691,10 +1717,10 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["float_ADM_feature_adm_scale3_aah_score"], 0.9649663541666667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_ADM_feature_adm_num_score"]
+            results[0]["float_ADM_feature_adm_num_score"]
 
     def test_run_float_adm_fextractor_skip_aim_scale_0(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1729,10 +1755,10 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["float_ADM_feature_adm_scale3_sasc_0_score"], 0.9649663541666667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_ADM_feature_adm_num_sasc_0_score"]
+            results[0]["float_ADM_feature_adm_num_sasc_0_score"]
 
     def test_run_float_adm_fextractor_dlm_weight_0d2(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1767,10 +1793,10 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["float_ADM_feature_adm_scale3_dlmw_0.2_score"], 0.9649663541666667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_ADM_feature_adm_num_dlmw_0.2_score"]
+            results[0]["float_ADM_feature_adm_num_dlmw_0.2_score"]
 
     def test_run_float_adm_fextractor_dlm_weight_0d8(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1805,10 +1831,10 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["float_ADM_feature_adm_scale3_dlmw_0.8_score"], 0.9649663541666667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["float_ADM_feature_adm_num_dlmw_0.8_score"]
+            results[0]["float_ADM_feature_adm_num_dlmw_0.8_score"]
 
     def test_run_float_adm_fextractor_adm_fs_1080_3h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1871,7 +1897,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_adm_fs_1080_5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1934,7 +1960,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_adm_fs_2160_3h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -1997,7 +2023,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_adm_fs_2160_5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2060,7 +2086,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2102,7 +2128,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2178,7 +2204,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_vhd_anw(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2267,7 +2293,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_vhd_anw_0d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2352,7 +2378,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs_1d5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2422,7 +2448,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs_1d5h_rdh_2160(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2524,7 +2550,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs_4d5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2609,7 +2635,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs_4d5h_rdh_2160(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2690,7 +2716,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs_1d5h_rdh_1080(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2761,7 +2787,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_coeffs_2_3h_rdh_1080(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2820,7 +2846,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2866,7 +2892,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_scale_diag(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2912,7 +2938,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_noise_weight(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -2966,7 +2992,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_barten_csf_nvd_1d5(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3016,7 +3042,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_adm_csf(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3057,7 +3083,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_adm_bypass_cm(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3091,7 +3117,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_adm_p_norm(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3132,7 +3158,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_with_default_adm_csf_mode(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3162,7 +3188,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_with_debug(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3226,7 +3252,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_psnr_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -3246,7 +3272,7 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["integer_PSNR_feature_psnr_cr_score"], 60.0, places=4)
 
     def test_run_integer_psnr_fextractor_12bit(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
         self.fextractor = IntegerPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -3264,7 +3290,7 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["integer_PSNR_feature_psnr_cr_score"], 84.0, places=4)
 
     def test_run_integer_psnr_fextractor_16bit(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
         self.fextractor = IntegerPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -3604,7 +3630,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -3635,10 +3661,10 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["integer_ADM_feature_adm_scale3_score"], 0.9649663541666667, places=4
         )
         with self.assertRaises(KeyError):
-            s = results[0]["integer_adm_num_score"]
+            results[0]["integer_adm_num_score"]
 
     def test_run_integer_adm_fextractor_skip_aim(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3658,7 +3684,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_barten_watson_blend_1080_3h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3686,7 +3712,7 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["integer_ADM_feature_adm3_csf_2_score"], 1.0, places=4)
 
     def test_run_integer_adm_fextractor_barten_watson_blend_1080_5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3720,7 +3746,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_barten_watson_blend_2160_3h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3760,7 +3786,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_barten_watson_blend_2160_5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3802,7 +3828,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_barten_csf_scale_coeffs(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3873,7 +3899,7 @@ class FeatureExtractorTest(MyTestCase):
         )  # float 0.9651669583333334
 
     def test_run_integer_adm_fextractor_barten_csf_scale_coeffs_change_adm_nw(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -3955,7 +3981,7 @@ class FeatureExtractorTest(MyTestCase):
         )  # float 0.9667059166666666
 
     def test_run_integer_adm_fextractor_barten_csf_scale_coeffs_4d5h(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4039,7 +4065,7 @@ class FeatureExtractorTest(MyTestCase):
         )  # float 0.9655332291666667
 
     def test_run_integer_adm_fextractor_barten_csf_scale_coeffs_1d5h_rdh_2160(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4134,7 +4160,7 @@ class FeatureExtractorTest(MyTestCase):
         )  # float 0.9651669583333334
 
     def test_run_integer_adm_fextractor_dlmw(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4182,7 +4208,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_with_debug(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4247,7 +4273,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_12bit(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -4374,7 +4400,7 @@ class FeatureExtractorTest(MyTestCase):
         )  # float 1.052512
 
     def test_run_ciede2000_fextractor(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = CIEDE2000FeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
         )
@@ -4388,7 +4414,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_v1017_csf_basic(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4430,7 +4456,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_v1017_csf_3d0h_1080(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4503,7 +4529,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_float_adm_fextractor_v1017_csf_3d0h_2160(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = FloatAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4590,7 +4616,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_v1017_csf_basic(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4632,7 +4658,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_v1017_csf_3d0h_1080(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,
@@ -4711,7 +4737,7 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_integer_adm_fextractor_v1017_csf_3d0h_2160(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
         self.fextractor = IntegerAdmFeatureExtractor(
             [asset, asset_original],
             None,

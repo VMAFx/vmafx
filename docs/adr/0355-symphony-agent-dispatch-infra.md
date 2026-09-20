@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0355: Symphony-inspired agent-dispatch infrastructure
 
 - **Status**: Accepted
@@ -70,7 +69,7 @@ runtime dependencies (stdlib only — no PyYAML, no Linear SDK).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **(a)** Adopt Symphony wholesale (Elixir runtime, Codex daemon, Linear tracker) | Battle-tested upstream design; `Reconciliation` semantics out of the box; first-class observability. | New runtime (Elixir/OTP) + new SaaS dependency (Linear); BACKLOG.md migration would need a Linear-side mirror; team is already Claude-Code-native. Multi-week investment for a fork that ships ~100 PRs/week with two contributors. | Cost out of proportion to the failure mode. We need the *shapes* (typed brief, normalised tracker, pre-dispatch hook) — not the engine. |
 | **(b)** Bash + Python skill set, BACKLOG.md as truth (chosen) | Stdlib-only; one PR; reuses existing `.workingdir2/` + `gh` plumbing; precheck callable from any wrapper script today and from a future harness hook tomorrow. | Three checks aren't a true Reconciliation loop — they fire once, before dispatch, and don't watch for state changes mid-run. Manual call point until the harness exposes a pre-Agent hook. | Symphony's mid-flight `Reconciliation` is overkill when our agent runs are minutes-long and fail fast on the first lint pass. Pre-dispatch covers ~95 % of the wasted work; we add the watch loop later if data shows we need it. |
 | **(c)** Status quo (free-prose briefs, manual NO-OP triage) | Zero new infrastructure; nothing to maintain. | Documented in this ADR's *Context*: 2 confirmed NO-OP dispatches this session burning ~60 KB of context; many more close calls. The cost compounds across sessions. | Already losing more time than the build-out costs. Rejected. |

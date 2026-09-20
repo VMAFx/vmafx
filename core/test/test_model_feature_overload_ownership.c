@@ -46,18 +46,14 @@
 #include "model.h" /* internal: VmafModel layout, for the override assertion */
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/src/feature/float_motion.c. ADR-1138. */
+
 
 /* Build a single-entry options dictionary. */
 static VmafFeatureDictionary *make_dict(void)
 {
-    VmafFeatureDictionary *dict = NULL;
+    VmafFeatureDictionary *dict = VMAF_NULLPTR;
     if (vmaf_feature_dictionary_set(&dict, "adm_enhancement_gain_limit", "1.1"))
-        return NULL;
+        return VMAF_NULLPTR;
     return dict;
 }
 
@@ -68,39 +64,39 @@ static VmafFeatureDictionary *make_dict(void)
 static char *test_overload_guards_do_not_consume(void)
 {
     VmafFeatureDictionary *dict = make_dict();
-    mu_assert("vmaf_feature_dictionary_set failed", dict != NULL);
+    mu_assert("vmaf_feature_dictionary_set failed", dict != VMAF_NULLPTR);
 
     mu_assert("overload(NULL model) must return -EINVAL",
-              vmaf_model_feature_overload(NULL, "adm", dict) == -EINVAL);
+              vmaf_model_feature_overload(VMAF_NULLPTR, "adm", dict) == -EINVAL);
 
     /* The dictionary must still be intact and owned by us. */
-    VmafDictionaryEntry *e =
+    const VmafDictionaryEntry *e =
         vmaf_dictionary_get((VmafDictionary **)&dict, "adm_enhancement_gain_limit", 0);
-    mu_assert("guard path must leave the dictionary intact", e != NULL);
+    mu_assert("guard path must leave the dictionary intact", e != VMAF_NULLPTR);
     mu_assert("guard path must leave the value intact", strcmp(e->val, "1.1") == 0);
 
     /* ... and releasing it here must be well-defined (not a double free). */
     mu_assert("caller must be able to free after a guard rejection",
               vmaf_feature_dictionary_free(&dict) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_overload_null_feature_name_guard(void)
 {
     VmafFeatureDictionary *dict = make_dict();
-    mu_assert("vmaf_feature_dictionary_set failed", dict != NULL);
+    mu_assert("vmaf_feature_dictionary_set failed", dict != VMAF_NULLPTR);
 
-    VmafModel *model = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     mu_assert("vmaf_model_load failed", vmaf_model_load(&model, &cfg, "vmaf_v0.6.1") == 0);
 
     mu_assert("overload(NULL feature_name) must return -EINVAL",
-              vmaf_model_feature_overload(model, NULL, dict) == -EINVAL);
+              vmaf_model_feature_overload(model, VMAF_NULLPTR, dict) == -EINVAL);
     mu_assert("caller must be able to free after a guard rejection",
               vmaf_feature_dictionary_free(&dict) == 0);
 
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -111,39 +107,39 @@ static char *test_overload_null_feature_name_guard(void)
 static char *test_collection_overload_rejects_null_collection_handle(void)
 {
     VmafFeatureDictionary *dict = make_dict();
-    mu_assert("vmaf_feature_dictionary_set failed", dict != NULL);
+    mu_assert("vmaf_feature_dictionary_set failed", dict != VMAF_NULLPTR);
 
-    VmafModel *model = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     mu_assert("vmaf_model_load failed", vmaf_model_load(&model, &cfg, "vmaf_v0.6.1") == 0);
 
     /* Pre-fix this reached `mc->cnt` with mc == NULL: undefined behaviour that
      * the optimiser is free to (and, under LTO, does) delete, leaving the
      * function returning garbage.  UBSan/ASan trap on it; post-fix it is a
      * defined -EINVAL on every build. */
-    VmafModelCollection *mc = NULL;
+    VmafModelCollection *mc = VMAF_NULLPTR;
     mu_assert("collection overload(*model_collection == NULL) must return -EINVAL",
               vmaf_model_collection_feature_overload(model, &mc, "adm", dict) == -EINVAL);
     mu_assert("caller must be able to free after a guard rejection",
               vmaf_feature_dictionary_free(&dict) == 0);
 
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_collection_overload_null_lead_model_guard(void)
 {
     VmafFeatureDictionary *dict = make_dict();
-    mu_assert("vmaf_feature_dictionary_set failed", dict != NULL);
+    mu_assert("vmaf_feature_dictionary_set failed", dict != VMAF_NULLPTR);
 
-    VmafModelCollection *mc = NULL;
+    VmafModelCollection *mc = VMAF_NULLPTR;
     mu_assert("collection overload(NULL model) must return -EINVAL",
-              vmaf_model_collection_feature_overload(NULL, &mc, "adm", dict) == -EINVAL);
+              vmaf_model_collection_feature_overload(VMAF_NULLPTR, &mc, "adm", dict) == -EINVAL);
     mu_assert("collection overload(NULL handle) must return -EINVAL",
-              vmaf_model_collection_feature_overload(NULL, NULL, "adm", dict) == -EINVAL);
+              vmaf_model_collection_feature_overload(VMAF_NULLPTR, VMAF_NULLPTR, "adm", dict) == -EINVAL);
     mu_assert("caller must be able to free after a guard rejection",
               vmaf_feature_dictionary_free(&dict) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -155,21 +151,21 @@ static char *test_collection_overload_null_lead_model_guard(void)
 static char *test_overload_success_consumes_dict(void)
 {
     VmafFeatureDictionary *dict = make_dict();
-    mu_assert("vmaf_feature_dictionary_set failed", dict != NULL);
+    mu_assert("vmaf_feature_dictionary_set failed", dict != VMAF_NULLPTR);
 
-    VmafModel *model = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     mu_assert("vmaf_model_load failed", vmaf_model_load(&model, &cfg, "vmaf_v0.6.1") == 0);
 
     mu_assert("overload must succeed", vmaf_model_feature_overload(model, "adm", dict) == 0);
 
-    VmafDictionaryEntry *e =
+    const VmafDictionaryEntry *e =
         vmaf_dictionary_get(&model->feature[0].opts_dict, "adm_enhancement_gain_limit", 0);
-    mu_assert("override must land on the model's feature", e != NULL);
+    mu_assert("override must land on the model's feature", e != VMAF_NULLPTR);
     mu_assert("override value must be the one supplied", strcmp(e->val, "1.1") == 0);
 
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,18 +184,18 @@ static char *test_overload_success_consumes_dict(void)
 
 static char *test_overload_merge_failure_consumes_dict(void)
 {
-    VmafModel *model = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     mu_assert("vmaf_model_load failed", vmaf_model_load(&model, &cfg, "vmaf_v0.6.1") == 0);
 
     VmafDictionary *empty = calloc(1, sizeof(*empty));
-    mu_assert("calloc failed", empty != NULL);
+    mu_assert("calloc failed", empty != VMAF_NULLPTR);
 
     mu_assert("overload must report -ENOMEM when the merge yields nothing",
               vmaf_model_feature_overload(model, "adm", (VmafFeatureDictionary *)empty) == -ENOMEM);
 
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The asymmetry adversarial review found in the headers: a feature_name that
@@ -213,12 +209,12 @@ static char *test_overload_merge_failure_consumes_dict(void)
  * contract violation, because the test frees only what it is told it owns. */
 static char *test_overload_unknown_feature_name_returns_zero_and_consumes(void)
 {
-    VmafFeatureDictionary *dict = NULL;
+    VmafFeatureDictionary *dict = VMAF_NULLPTR;
     mu_assert("dictionary_set failed",
               vmaf_feature_dictionary_set(&dict, "some_key", "some_value") == 0);
 
-    VmafModel *model = NULL;
-    VmafModelConfig cfg = {0};
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelConfig cfg = {VMAF_NULLPTR};
     mu_assert("vmaf_model_load failed", vmaf_model_load(&model, &cfg, "vmaf_v0.6.1") == 0);
 
     /* No model carries a feature named like this, so the match loop never fires. */
@@ -228,19 +224,19 @@ static char *test_overload_unknown_feature_name_returns_zero_and_consumes(void)
      * be the double free the old header wording invited. */
 
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* vmaf_use_feature is the one that does hand the dictionary back, because it
  * resolves the name against the global registry before touching it. */
 static char *test_use_feature_unknown_name_does_not_consume(void)
 {
-    VmafFeatureDictionary *dict = NULL;
+    VmafFeatureDictionary *dict = VMAF_NULLPTR;
     mu_assert("dictionary_set failed",
               vmaf_feature_dictionary_set(&dict, "some_key", "some_value") == 0);
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *ctx = NULL;
+    VmafContext *ctx = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&ctx, cfg) == 0);
 
     mu_assert("use_feature(unknown name) must return -EINVAL",
@@ -250,7 +246,7 @@ static char *test_use_feature_unknown_name_does_not_consume(void)
               vmaf_feature_dictionary_free(&dict) == 0);
 
     (void)vmaf_close(ctx);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Grouped the way core/test/test_iqa_helpers.c and test_cli_parse.c group
@@ -267,7 +263,7 @@ static char *run_guard_tests(void)
     mu_run_test(test_overload_null_feature_name_guard);
     mu_run_test(test_collection_overload_rejects_null_collection_handle);
     mu_run_test(test_collection_overload_null_lead_model_guard);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Ownership transfer: which paths consume the dictionary and which do not. */
@@ -277,7 +273,7 @@ static char *run_consumption_tests(void)
     mu_run_test(test_overload_unknown_feature_name_returns_zero_and_consumes);
     mu_run_test(test_use_feature_unknown_name_does_not_consume);
     mu_run_test(test_overload_merge_failure_consumes_dict);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -287,5 +283,3 @@ char *run_tests(void)
         return msg;
     return run_consumption_tests();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

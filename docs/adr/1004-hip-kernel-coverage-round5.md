@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-1004: HIP kernel parity-test coverage round 5
 
 - **Status**: Accepted
@@ -69,7 +68,7 @@ this round.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Ship round-5 tests as part of the ADR-0964 / speed_internal.c PR | Single PR closes both the implementation gap and the parity tests | ADR-0964 is a library-implementation PR; bundling test infrastructure complicates review scope | Rejected; ADR-0108 deliverables rule discourages mixing implementation and coverage PRs unless they are trivially related |
 | Use places=3 tolerance | Matches the ADR-0958 ssimulacra2 precedent | SpEED's QR / eigensolver runs on CPU for both backends; only per-pixel stats run on GPU; the float arithmetic is identical so places=4 is achievable | Rejected; places=4 is the correct budget per ADR-0214; places=3 would mask regressions |
 | One combined test executable for both speed variants | Less meson churn | One skip blocks the other; granularity loss; harder to diagnose regressions per-variant | Rejected; per-kernel split mirrors all prior rounds |

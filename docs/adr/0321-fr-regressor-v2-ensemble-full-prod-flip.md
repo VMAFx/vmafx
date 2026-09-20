@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0321: `fr_regressor_v2_ensemble_v1` — full production flip (real ONNX + sidecars)
 
 - **Status**: Accepted
@@ -71,7 +70,7 @@ fresh artefacts.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Full flip with real weights + sidecars (chosen)** | Sidecars satisfy `test_registry.sh`; ONNX bytes match the gate-validated training recipe; sidecars carry per-seed provenance for future audits. | Requires ~2 min of full-corpus training per seed at PR-time; introduces a new driver script. | n/a — this is the chosen option. |
 | Metadata-only flip (PR #423 approach) | One-line diff per row; no training compute. | Fails `test_registry.sh` (no sidecars); ONNX bytes are scaffold-era synthetic weights, not the LOSO-validated artefacts PROMOTE.json describes. | Rejected: PR #423 was closed precisely because of this. |
 | Wait for the BVI-DVC corpus | Bigger, multi-codec corpus would yield stronger production weights. | BVI-DVC ingestion is not started; PROMOTE.json's gate already passed on the Phase A corpus by a wide margin (mean PLCC 0.997, threshold 0.95); blocking the flip on BVI-DVC indefinitely defeats the purpose of having the gate. | Rejected: the gate is what governs ship/no-ship, not corpus aspiration. |

@@ -10,13 +10,12 @@ from pathlib import Path
 
 import pytest
 
-np = pytest.importorskip("numpy")
+try:
+    import numpy as np
+except ImportError:
+    pytest.skip("numpy is not installed", allow_module_level=True)
 
-_HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parent.parent
-sys.path.insert(0, str(_REPO))
-
-from ai.scripts.eval_saliency_per_mb import (  # noqa: E402
+from ai.scripts.eval_saliency_per_mb import (
     block_iou,
     evaluate_dirs,
     evaluate_pair,

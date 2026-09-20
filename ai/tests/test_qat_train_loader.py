@@ -222,7 +222,7 @@ def test_image_loader_batches_feed_the_learned_filter_model(tmp_path: Path) -> N
     for extra in (_REPO_ROOT, _REPO_ROOT / "ai" / "src"):
         if str(extra) not in _sys.path:
             _sys.path.insert(0, str(extra))
-    from ai.src.vmaf_train.models import LearnedFilter
+    from vmaf_train.models import LearnedFilter
 
     cache = _write_npz(tmp_path / "imgs.npz", n=4, c=1, h=32, w=32)
     loader = QT._build_image_loader_factory({"batch_size": 2}, cache)()

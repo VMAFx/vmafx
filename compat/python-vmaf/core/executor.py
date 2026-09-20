@@ -4,6 +4,8 @@ import os
 import shlex
 import shutil
 from abc import ABCMeta, abstractmethod
+from functools import partial
+from pathlib import Path
 
 from vmaf.config import VmafExternalConfig
 from vmaf.core.asset import Asset
@@ -19,6 +21,8 @@ from vmaf.tools.misc import (
 )
 from vmaf.tools.reader import YuvReader
 from vmaf.tools.writer import YuvWriter
+
+_COMPARISON_VALUE_140 = 140
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -112,33 +116,33 @@ class Executor(TypeVersionEnabled):
                 s = str(v)
                 assert s[0] == "<" and s[-1] == ">"
                 s = s[1:-1]
-                l = s.split(" ")
-                assert "function" in l
-                for idx, e in enumerate(l):
+                parts = s.split(" ")
+                assert "function" in parts
+                for idx, e in enumerate(parts):
                     if e == "function":
-                        assert idx < len(l) - 1
-                        return l[idx + 1]
-                # Unreachable: the `assert "function" in l` above guarantees
+                        assert idx < len(parts) - 1
+                        return parts[idx + 1]
+                # Unreachable: the `assert "function" in parts` above guarantees
                 # the loop hits the `function` branch and returns. Keep an
                 # explicit AssertionError so the function has a single,
                 # consistent never-None return type.
                 # (CodeQL py/mixed-returns)
                 raise AssertionError("unreachable: 'function' missing from callable repr")
-            else:
-                return v
+            return v
 
         normalized_str = "_".join(
-            map(lambda k: "{k}_{v}".format(k=k, v=_slugify(d[k])), sorted(d.keys()))
+            ("{k}_{v}".format(k=k, v=_slugify(d[k])) for k in sorted(d.keys()))
         )
 
         if (
-            len(normalized_str) > 140
+            len(normalized_str) > _COMPARISON_VALUE_140
         ):  # upper limit of filename is 256 but leave some space for prefix/suffix
             # SHA-1 used as a cache-filename shortener (not security). Input
             # is the harness's own normalized config string. See
-            # Research-0090, F4–F12.
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            normalized_str = hashlib.sha1(normalized_str.encode("utf-8")).hexdigest()
+            # Research-0090, F4-F12.
+            normalized_str = hashlib.sha1(
+                normalized_str.encode("utf-8"), usedforsecurity=False
+            ).hexdigest()
 
         return normalized_str
 
@@ -166,10 +170,7 @@ class Executor(TypeVersionEnabled):
                 "and generate {type} result...".format(type=self.executor_id)
             )
 
-        if "parallelize" in kwargs:
-            parallelize = kwargs["parallelize"]
-        else:
-            parallelize = False
+        parallelize = kwargs.get("parallelize", False)
         assert isinstance(parallelize, bool)
 
         if "processes" in kwargs and kwargs["processes"] is not None:
@@ -191,15 +192,13 @@ class Executor(TypeVersionEnabled):
 
             # pack key arguments to be used as inputs to map function
             list_args = []
-            for asset, lock in zip(self.assets, locks):
+            for asset, lock in zip(self.assets, locks, strict=False):
                 list_args.append([asset, lock])
 
             def _run(asset_lock):
                 asset, lock = asset_lock
-                lock.acquire()
-                result = self._run_on_asset(asset)
-                lock.release()
-                return result
+                with lock:
+                    return self._run_on_asset(asset)
 
             self.results = parallel_map(_run, list_args, processes=processes)
         else:
@@ -243,10 +242,12 @@ class Executor(TypeVersionEnabled):
             or asset.dis_yuv_type == "notyuv"
             or asset.ref_start_end_frame is not None
             or asset.dis_start_end_frame is not None
-            or "workfile_yuv_type" in asset.asset_dict
-            and (
-                asset.workfile_yuv_type != asset.ref_yuv_type
-                or asset.workfile_yuv_type != asset.dis_yuv_type
+            or (
+                "workfile_yuv_type" in asset.asset_dict
+                and (
+                    asset.workfile_yuv_type != asset.ref_yuv_type
+                    or asset.workfile_yuv_type != asset.dis_yuv_type
+                )
             )
         )
         for key in Asset.ORDERED_FILTER_LIST:
@@ -303,15 +304,13 @@ class Executor(TypeVersionEnabled):
 
         if asset.ref_yuv_type == "notyuv" and asset.dis_yuv_type == "notyuv":
             return asset.workfile_yuv_type
-        elif asset.ref_yuv_type == "notyuv" and asset.dis_yuv_type != "notyuv":
+        if asset.ref_yuv_type == "notyuv" and asset.dis_yuv_type != "notyuv":
             return asset.dis_yuv_type
-        elif asset.ref_yuv_type != "notyuv" and asset.dis_yuv_type == "notyuv":
+        if asset.ref_yuv_type != "notyuv" and asset.dis_yuv_type == "notyuv":
             return asset.ref_yuv_type
-        else:  # neither notyuv
-            assert (
-                asset.ref_yuv_type == asset.dis_yuv_type
-            ), "YUV types for ref and dis do not match."
-            return asset.ref_yuv_type
+        # neither notyuv
+        assert asset.ref_yuv_type == asset.dis_yuv_type, "YUV types for ref and dis do not match."
+        return asset.ref_yuv_type
 
     def _prepare_log_file(self, asset):
 
@@ -321,7 +320,7 @@ class Executor(TypeVersionEnabled):
         make_parent_dirs_if_nonexist(log_file_path)
 
         # add runner type and version
-        with open(log_file_path, "wt") as log_file:
+        with Path(log_file_path).open("wt") as log_file:
             log_file.write(
                 "{type_version_str}\n\n".format(
                     type_version_str=self.get_cozy_type_version_string()
@@ -329,33 +328,71 @@ class Executor(TypeVersionEnabled):
             )
 
     def _assert_paths(self, asset):
-        assert os.path.exists(asset.ref_path) or match_any_files(
+        assert Path(asset.ref_path).exists() or match_any_files(
             asset.ref_path
         ), "Reference path {} does not exist.".format(asset.ref_path)
-        assert os.path.exists(asset.dis_path) or match_any_files(
+        assert Path(asset.dis_path).exists() or match_any_files(
             asset.dis_path
         ), "Distorted path {} does not exist.".format(asset.dis_path)
+
+    def _load_cached_result(self, asset):
+        if not self.result_store:
+            return None
+        result = self.result_store.load(asset, self.executor_id)
+        quality_width, quality_height = asset.quality_width_height
+        workfile_name = (
+            f"_dis.{quality_width}x{quality_height}." f"{self._get_workfile_yuv_type(asset)}.yuv"
+        )
+        if (
+            result is not None
+            and self.save_workfiles
+            and not self.result_store.has_workfile(asset, self.executor_id, workfile_name)
+        ):
+            return None
+        return result
+
+    def _prepare_asset_files(self, asset):
+        self._assert_paths(asset)
+        self._set_asset_use_path_as_workpath(asset)
+        self._set_asset_use_workpath_as_procpath(asset)
+        if not asset.use_path_as_workpath:
+            self._close_workfiles(asset)
+        if not asset.use_workpath_as_procpath:
+            self._close_procfiles(asset)
+        make_parent_dirs_if_nonexist(self._get_log_file_path(asset))
+
+        if not asset.use_path_as_workpath:
+            opener = self._open_workfiles_in_fifo_mode if self.fifo_mode else self._open_workfiles
+            opener(asset)
+        if not asset.use_workpath_as_procpath:
+            opener = self._open_procfiles_in_fifo_mode if self.fifo_mode else self._open_procfiles
+            opener(asset)
+
+    def _calculate_result(self, asset):
+        self._prepare_log_file(asset)
+        self._generate_result(asset)
+        if self.logger:
+            self.logger.info("Read {id} log file, get scores...".format(id=self.executor_id))
+        result = self._read_result(asset)
+        return self._save_result(result) if self.result_store else result
+
+    def _cleanup_asset_files(self, asset):
+        if not self.delete_workdir:
+            return
+        if not asset.use_path_as_workpath:
+            self._close_workfiles(asset)
+        if not asset.use_workpath_as_procpath:
+            self._close_procfiles(asset)
+        self._remove_log(asset)
+        log_dir = get_dir_without_last_slash(self._get_log_file_path(asset))
+        shutil.rmtree(log_dir)
 
     def _run_on_asset(self, asset):
         # Wraper around the essential function _generate_result, to
         # do housekeeping work including 1) asserts of asset, 2) skip run if
         # log already exist, 3) creating fifo, 4) delete work file and dir
 
-        if self.result_store:
-            result = self.result_store.load(asset, self.executor_id)
-            qw, qh = asset.quality_width_height
-            if (
-                result is not None
-                and self.save_workfiles is True
-                and not self.result_store.has_workfile(
-                    asset,
-                    self.executor_id,
-                    f"_dis.{qw}x{qh}.{self._get_workfile_yuv_type(asset)}.yuv",
-                )
-            ):
-                result = None  # if save_workfiles is True and has_workfile is False, invalidate result and rerun
-        else:
-            result = None
+        result = self._load_cached_result(asset)
 
         # if result can be retrieved from result_store, skip log file
         # generation and reading result from log file, but directly
@@ -364,105 +401,17 @@ class Executor(TypeVersionEnabled):
             if self.logger:
                 self.logger.info("{id} result exists. Skip {id} run.".format(id=self.executor_id))
         else:
-
             if self.logger:
                 self.logger.info(
-                    "{id} result does't exist. Perform {id} "
-                    "calculation.".format(id=self.executor_id)
+                    "{id} result does't exist. Perform {id} calculation.".format(
+                        id=self.executor_id
+                    )
                 )
+            self._prepare_asset_files(asset)
+            result = self._calculate_result(asset)
+            self._cleanup_asset_files(asset)
 
-            # at this stage, it is certain that asset.ref_path and
-            # asset.dis_path will be used. must early determine that
-            # they exists
-            self._assert_paths(asset)
-
-            # if no FFmpeg is involved, directly work on ref_path/dis_path,
-            # instead of opening workfiles
-            self._set_asset_use_path_as_workpath(asset)
-
-            # if no ref/dis_proc_callback is involved, directly work on ref/dis_workfile_path,
-            # instead of opening procfiles
-            self._set_asset_use_workpath_as_procpath(asset)
-
-            # remove workfiles if exist (do early here to avoid race condition
-            # when ref path and dis path have some overlap)
-            if asset.use_path_as_workpath:
-                # do nothing
-                pass
-            else:
-                self._close_workfiles(asset)
-
-            # remove procfiles if exist (do early here to avoid race condition
-            # when ref path and dis path have some overlap)
-            if asset.use_workpath_as_procpath:
-                # do nothing
-                pass
-            else:
-                self._close_procfiles(asset)
-
-            log_file_path = self._get_log_file_path(asset)
-            make_parent_dirs_if_nonexist(log_file_path)
-
-            if asset.use_path_as_workpath:
-                # do nothing
-                pass
-            else:
-                if self.fifo_mode:
-                    self._open_workfiles_in_fifo_mode(asset)
-                else:
-                    self._open_workfiles(asset)
-
-            if asset.use_workpath_as_procpath:
-                # do nothing
-                pass
-            else:
-                if self.fifo_mode:
-                    self._open_procfiles_in_fifo_mode(asset)
-                else:
-                    self._open_procfiles(asset)
-
-            self._prepare_log_file(asset)
-
-            self._generate_result(asset)
-
-            if self.logger:
-                self.logger.info("Read {id} log file, get scores...".format(id=self.executor_id))
-
-            # collect result from each asset's log file
-            result = self._read_result(asset)
-
-            # save result
-            if self.result_store:
-                result = self._save_result(result)
-
-            # clean up workfiles
-            if self.delete_workdir:
-                if asset.use_path_as_workpath:
-                    # do nothing
-                    pass
-                else:
-                    self._close_workfiles(asset)
-
-                if asset.use_workpath_as_procpath:
-                    # do nothing
-                    pass
-                else:
-                    self._close_procfiles(asset)
-
-            # clean up workdir and log files in it
-            if self.delete_workdir:
-
-                # remove log file
-                self._remove_log(asset)
-
-                # remove dir
-                log_file_path = self._get_log_file_path(asset)
-                log_dir = get_dir_without_last_slash(log_file_path)
-                shutil.rmtree(log_dir)
-
-        result = self._post_process_result(result)
-
-        return result
+        return self._post_process_result(result)
 
     def _open_workfiles(self, asset):
         self._open_ref_workfile(asset, fifo_mode=False)
@@ -569,12 +518,11 @@ class Executor(TypeVersionEnabled):
 
     def _get_log_file_path(self, asset):
         # SHA-1 used as a log-file path component (not security). Input is the
-        # harness's own asset repr. See Research-0090, F4–F12.
+        # harness's own asset repr. See Research-0090, F4-F12.
         return "{workdir}/{executor_id}_{str}".format(
             workdir=asset.workdir,
             executor_id=self.executor_id,
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            str=hashlib.sha1(str(asset).encode("utf-8")).hexdigest(),
+            str=hashlib.sha1(str(asset).encode("utf-8"), usedforsecurity=False).hexdigest(),
         )
 
     # ===== workfile =====
@@ -684,8 +632,16 @@ class Executor(TypeVersionEnabled):
         )
 
     @staticmethod
+    def _start_end_frame(asset, ref_or_dis):
+        if ref_or_dis == "ref":
+            return asset.ref_start_end_frame
+        if ref_or_dis == "dis":
+            return asset.dis_start_end_frame
+        raise AssertionError()
+
+    @staticmethod
     def _open_workfile(
-        cls,
+        executor,
         asset,
         path,
         workfile_path,
@@ -724,38 +680,33 @@ class Executor(TypeVersionEnabled):
         if fifo_mode:
             os.mkfifo(workfile_path)
         else:
-            with open(workfile_path, "wb"):
+            with Path(workfile_path).open("wb"):
                 pass
 
         if open_sem is not None:
             open_sem.release()
 
-        if ref_or_dis == "ref":
-            start_end_frame = asset.ref_start_end_frame
-        elif ref_or_dis == "dis":
-            start_end_frame = asset.dis_start_end_frame
-        else:
-            assert False
+        start_end_frame = executor._start_end_frame(asset, ref_or_dis)
 
         if yuv_type != "notyuv":
             # in this case, for sure has width_height
             assert width_height is not None
             width, height = width_height
-            src_fmt_cmd = cls._get_yuv_src_fmt_cmd(yuv_type, height, width)
+            src_fmt_cmd = executor._get_yuv_src_fmt_cmd(yuv_type, height, width)
         else:
-            src_fmt_cmd = cls._get_notyuv_src_fmt_cmd(path)
+            src_fmt_cmd = executor._get_notyuv_src_fmt_cmd(path)
 
-        vframes_cmd, select_cmd = cls._get_vframes_cmd(start_end_frame)
+        vframes_cmd, select_cmd = executor._get_vframes_cmd(start_end_frame)
 
-        crop_cmd = cls._get_filter_cmd(asset, "crop", ref_or_dis)
-        pad_cmd = cls._get_filter_cmd(asset, "pad", ref_or_dis)
+        crop_cmd = executor._get_filter_cmd(asset, "crop", ref_or_dis)
+        pad_cmd = executor._get_filter_cmd(asset, "pad", ref_or_dis)
         quality_width, quality_height = quality_width_height
         scale_cmd = f"scale={quality_width}x{quality_height}"
         filter_cmds = []
         for key in Asset.ORDERED_FILTER_LIST:
-            if key != "crop" and key != "pad":
-                filter_cmds.append(cls._get_filter_cmd(asset, key, ref_or_dis))
-        vf_cmd = [select_cmd, crop_cmd, pad_cmd, scale_cmd] + filter_cmds
+            if key not in {"crop", "pad"}:
+                filter_cmds.append(executor._get_filter_cmd(asset, key, ref_or_dis))
+        vf_cmd = [select_cmd, crop_cmd, pad_cmd, scale_cmd, *filter_cmds]
         vf_cmd = ",".join(filter(lambda s: s != "", vf_cmd))
 
         # Build the ffmpeg command as an argv list so it can be exec'd
@@ -802,7 +753,7 @@ class Executor(TypeVersionEnabled):
         if fifo_mode:
             os.mkfifo(asset.ref_procfile_path)
         else:
-            with open(asset.ref_procfile_path, "wb"):
+            with Path(asset.ref_procfile_path).open("wb"):
                 pass
 
         if open_sem is not None:
@@ -822,13 +773,10 @@ class Executor(TypeVersionEnabled):
                 height=quality_height,
                 yuv_type=yuv_type,
             ) as ref_yuv_writer:
-                while True:
-                    try:
-                        y, u, v = ref_yuv_reader.next(format="float")
-                        y, u, v = ref_proc_callback(y), u, v
-                        ref_yuv_writer.next(y, u, v, format="float2uint")
-                    except StopIteration:
-                        break
+                frames = iter(partial(ref_yuv_reader.next, format="float"), None)
+                for source_y, u, v in frames:
+                    processed_y = ref_proc_callback(source_y)
+                    ref_yuv_writer.next(processed_y, u, v, format="float2uint")
 
     def _open_dis_procfile(self, asset, fifo_mode, open_sem=None):
 
@@ -845,7 +793,7 @@ class Executor(TypeVersionEnabled):
         if fifo_mode:
             os.mkfifo(asset.dis_procfile_path)
         else:
-            with open(asset.dis_procfile_path, "wb"):
+            with Path(asset.dis_procfile_path).open("wb"):
                 pass
 
         if open_sem is not None:
@@ -865,13 +813,10 @@ class Executor(TypeVersionEnabled):
                 height=quality_height,
                 yuv_type=yuv_type,
             ) as dis_yuv_writer:
-                while True:
-                    try:
-                        y, u, v = dis_yuv_reader.next(format="float")
-                        y, u, v = dis_proc_callback(y), u, v
-                        dis_yuv_writer.next(y, u, v, format="float2uint")
-                    except StopIteration:
-                        break
+                frames = iter(partial(dis_yuv_reader.next, format="float"), None)
+                for source_y, u, v in frames:
+                    processed_y = dis_proc_callback(source_y)
+                    dis_yuv_writer.next(processed_y, u, v, format="float2uint")
 
     def _get_ref_resampling_type(self, asset):
         return asset.ref_resampling_type
@@ -884,22 +829,20 @@ class Executor(TypeVersionEnabled):
 
     @staticmethod
     def _get_yuv_src_fmt_cmd(yuv_type, height, width):
-        yuv_src_fmt_cmd = "-f rawvideo -pix_fmt {yuv_fmt} -s {width}x{height}".format(
+        return "-f rawvideo -pix_fmt {yuv_fmt} -s {width}x{height}".format(
             yuv_fmt=yuv_type, width=width, height=height
         )
-        return yuv_src_fmt_cmd
 
     @staticmethod
     def _get_notyuv_src_fmt_cmd(path):
         if get_file_name_extension(path) in ["j2c", "j2k", "tiff"]:
             # 2147483647 is INT_MAX if int is 4 bytes
             return "-f image2 -start_number_range 2147483647"
-        elif get_file_name_extension(path) in ["icpf"]:
+        if get_file_name_extension(path) in ["icpf"]:
             return "-f image2 -c:v netflixprores -start_number_range 2147483647"
-        elif get_file_name_extension(path) in ["265"]:
+        if get_file_name_extension(path) in ["265"]:
             return "-c:v hevc"
-        else:
-            return ""
+        return ""
 
     @staticmethod
     def _get_filter_cmd(asset, key, target):
@@ -913,13 +856,12 @@ class Executor(TypeVersionEnabled):
     def _get_vframes_cmd(start_end_frame: list | None):
         if start_end_frame is None:
             return "", ""
-        else:
-            start_frame, end_frame = start_end_frame
-            num_frames = end_frame - start_frame + 1
-            return (
-                f"-vframes {num_frames}",
-                f"select='gte(n\\,{start_frame})*gte({end_frame}\\,n)',setpts=PTS-STARTPTS",
-            )
+        start_frame, end_frame = start_end_frame
+        num_frames = end_frame - start_frame + 1
+        return (
+            f"-vframes {num_frames}",
+            f"select='gte(n\\,{start_frame})*gte({end_frame}\\,n)',setpts=PTS-STARTPTS",
+        )
 
     def _close_ref_workfile(self, asset):
 
@@ -957,8 +899,8 @@ class Executor(TypeVersionEnabled):
         # only need to close workfile if the workfile path is different from path
         assert use_path_as_workpath is False and path != workfile_path
 
-        if os.path.exists(workfile_path):
-            os.remove(workfile_path)
+        if Path(workfile_path).exists():
+            Path(workfile_path).unlink()
 
     @staticmethod
     def _close_ref_procfile(asset):
@@ -969,8 +911,8 @@ class Executor(TypeVersionEnabled):
             and asset.ref_workfile_path != asset.ref_procfile_path
         )
 
-        if os.path.exists(asset.ref_procfile_path):
-            os.remove(asset.ref_procfile_path)
+        if Path(asset.ref_procfile_path).exists():
+            Path(asset.ref_procfile_path).unlink()
 
     @staticmethod
     def _close_dis_procfile(asset):
@@ -981,13 +923,13 @@ class Executor(TypeVersionEnabled):
             and asset.dis_workfile_path != asset.dis_procfile_path
         )
 
-        if os.path.exists(asset.dis_procfile_path):
-            os.remove(asset.dis_procfile_path)
+        if Path(asset.dis_procfile_path).exists():
+            Path(asset.dis_procfile_path).unlink()
 
     def _remove_log(self, asset):
         log_file_path = self._get_log_file_path(asset)
-        if os.path.exists(log_file_path):
-            os.remove(log_file_path)
+        if Path(log_file_path).exists():
+            Path(log_file_path).unlink()
 
     def _remove_result(self, asset):
         if self.result_store:
@@ -1039,7 +981,7 @@ def run_executors_in_parallel(
 
     # pack key arguments to be used as inputs to map function
     list_args = []
-    for asset, lock in zip(assets, locks):
+    for asset, lock in zip(assets, locks, strict=False):
         list_args.append(
             [
                 executor_class,
@@ -1064,13 +1006,18 @@ def run_executors_in_parallel(
             optional_dict2,
             lock,
         ) = args
-        lock.acquire()
-        executor = executor_class(
-            [asset], None, fifo_mode, delete_workdir, result_store, optional_dict, optional_dict2
-        )
-        executor.run()
-        lock.release()
-        return executor
+        with lock:
+            executor = executor_class(
+                [asset],
+                None,
+                fifo_mode,
+                delete_workdir,
+                result_store,
+                optional_dict,
+                optional_dict2,
+            )
+            executor.run()
+            return executor
 
     # run
     if parallelize:
@@ -1113,8 +1060,10 @@ class NorefExecutorMixin(object):
             asset.quality_width_height != asset.dis_width_height
             or asset.dis_yuv_type == "notyuv"
             or asset.dis_start_end_frame is not None
-            or "workfile_yuv_type" in asset.asset_dict
-            and asset.workfile_yuv_type != asset.dis_yuv_type
+            or (
+                "workfile_yuv_type" in asset.asset_dict
+                and asset.workfile_yuv_type != asset.dis_yuv_type
+            )
         )
         for key in Asset.ORDERED_FILTER_LIST:
             ret = ret or asset.get_filter_cmd(key, "dis") is not None
@@ -1148,12 +1097,11 @@ class NorefExecutorMixin(object):
 
         if "workfile_yuv_type" in asset.asset_dict or asset.dis_yuv_type == "notyuv":
             return asset.workfile_yuv_type
-        else:
-            return asset.dis_yuv_type
+        return asset.dis_yuv_type
 
     @override(Executor)
     def _assert_paths(self, asset):
-        assert os.path.exists(asset.dis_path) or match_any_files(
+        assert Path(asset.dis_path).exists() or match_any_files(
             asset.dis_path
         ), "Distorted path {} does not exist.".format(asset.dis_path)
 

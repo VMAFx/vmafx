@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Tiny AI — training
 
 Everything happens through `vmaf-train`, the typer CLI in
@@ -113,7 +112,7 @@ argument vector for provenance, and `add_batch_manifest_arguments()` owns the
 standard batch-runner flags:
 
 | Helper | Use |
-|---|---|
+| --- | --- |
 | `make_argument_parser()` | Standard parser construction for AI scripts. |
 | `collect_cli_argv()` | Canonical raw-argv capture before parsing. |
 | `add_batch_manifest_arguments()` | Shared `--manifest`, `--base-dir`, report-output, fail-fast, and optional row-failure flags for batch materializers. |
@@ -129,7 +128,7 @@ copying ad hoc `sys.path.insert(...)` blocks into every script. Enable only the
 roots the script needs:
 
 | Bootstrap option | Use |
-|---|---|
+| --- | --- |
 | default | Import `aiutils` from `ai/src`. |
 | `include_repo_root=True` | Import repo-root packages such as `ai.data`. |
 | `include_ai_scripts=True` | Import sibling materializers or feature extractors from `ai/scripts`. |
@@ -138,7 +137,7 @@ roots the script needs:
 `run_provenance` is intentionally compact:
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `schema` | Provenance schema name, currently `ai-run-provenance-v1`. |
 | `entrypoint` | User-facing script path plus SHA-256 when the script file exists. |
 | `argv` | Original command-line arguments after wrapper normalization. |
@@ -371,7 +370,7 @@ bash ai/scripts/run_training.sh
 ### CLI flags
 
 | Flag | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `--data-root` | `.workingdir2/netflix` | Directory with `ref/` and `dis/`. |
 | `--model-arch` | `mlp_small` | One of `linear`, `mlp_small`, `mlp_medium`. |
 | `--epochs` | 10 | `0` runs the smoke-export path and exits. |
@@ -386,7 +385,7 @@ bash ai/scripts/run_training.sh
 ### Architectures
 
 | Arch | Layers | Params (feature_dim=6) |
-|---|---|---|
+| --- | --- | --- |
 | `linear` | `Linear(6, 1)` | 7 |
 | `mlp_small` | `Linear(6,16) -> ReLU -> Linear(16,8) -> ReLU -> Linear(8,1)` | 257 |
 | `mlp_medium` | `Linear(6,64) -> ReLU -> Linear(64,32) -> ReLU -> Linear(32,1)` | 2 561 |
@@ -394,7 +393,7 @@ bash ai/scripts/run_training.sh
 ### Expected runtime + GPU requirements
 
 | Phase | CPU-only (8-core) | CUDA (RTX 3060) |
-|---|---|---|
+| --- | --- | --- |
 | Cache warm (full corpus, 70 pairs) | 30–60 min (libvmaf-bound) | 5–8 min (libvmaf CUDA backend) |
 | Train 30 epochs `mlp_small` | 1–2 min | <30 s |
 | Train 30 epochs `mlp_medium` | 2–4 min | <60 s |

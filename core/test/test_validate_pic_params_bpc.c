@@ -25,11 +25,7 @@
 
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
@@ -40,9 +36,9 @@
 static VmafContext *init_context(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
-    return err == 0 ? vmaf : NULL;
+    return err == 0 ? vmaf : VMAF_NULLPTR;
 }
 
 /*
@@ -78,13 +74,13 @@ static int submit_frame_bpc(VmafContext *vmaf, unsigned ref_bpc, unsigned dist_b
 static char *test_matched_bpc_accepted(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     int err = submit_frame_bpc(vmaf, 8, 8, 0);
     mu_assert("matched 8bpc ref+dist must be accepted", err == 0);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -99,13 +95,13 @@ static char *test_matched_bpc_accepted(void)
 static char *test_mismatched_bpc_rejected_on_frame_0(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     int err = submit_frame_bpc(vmaf, 8, 10, 0);
     mu_assert("8bpc ref + 10bpc dist must be rejected with -EINVAL on frame 0", err == -EINVAL);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -115,13 +111,13 @@ static char *test_mismatched_bpc_rejected_on_frame_0(void)
 static char *test_mismatched_bpc_reversed_rejected(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     int err = submit_frame_bpc(vmaf, 10, 8, 0);
     mu_assert("10bpc ref + 8bpc dist must be rejected with -EINVAL", err == -EINVAL);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -132,7 +128,7 @@ static char *test_mismatched_bpc_reversed_rejected(void)
 static char *test_consistent_10bpc_across_frames(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     int err = submit_frame_bpc(vmaf, 10, 10, 0);
     mu_assert("10bpc matched pair on frame 0 must be accepted", err == 0);
@@ -140,7 +136,7 @@ static char *test_consistent_10bpc_across_frames(void)
     mu_assert("10bpc matched pair on frame 1 must be accepted", err == 0);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -150,7 +146,7 @@ static char *test_consistent_10bpc_across_frames(void)
 static char *test_bpc_change_mid_stream_rejected(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     int err = submit_frame_bpc(vmaf, 8, 8, 0);
     mu_assert("8bpc matched pair on frame 0 must be accepted", err == 0);
@@ -158,7 +154,7 @@ static char *test_bpc_change_mid_stream_rejected(void)
     mu_assert("bpc change from 8 to 10 on frame 1 must be rejected with -EINVAL", err == -EINVAL);
 
     (void)vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -168,7 +164,5 @@ char *run_tests(void)
     mu_run_test(test_mismatched_bpc_reversed_rejected);
     mu_run_test(test_consistent_10bpc_across_frames);
     mu_run_test(test_bpc_change_mid_stream_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -30,11 +30,7 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stdlib.h>
 
 #include "test.h"
@@ -79,10 +75,10 @@ static char *test_pool_handle_cleared_on_pic_array_alloc_failure(void)
          * exhausts virtual memory on any commodity x86_64/arm64
          * host. Pure C — no GPU dependency. */
         .pic_cnt = 0x7FFFFFFFu,
-        .cookie = NULL,
+        .cookie = VMAF_NULLPTR,
         .alloc_picture_callback = stub_alloc_unreached,
         .free_picture_callback = stub_free_noop,
-        .synchronize_picture_callback = NULL,
+        .synchronize_picture_callback = VMAF_NULLPTR,
     };
 
     /* Seed with a non-NULL sentinel so a regression that fails to
@@ -95,15 +91,15 @@ static char *test_pool_handle_cleared_on_pic_array_alloc_failure(void)
         /* Host gave us 32 GiB. Free the live pool and skip. */
         (void)vmaf_gpu_picture_pool_close(pool);
         (void)fprintf(stderr, "[skip: host fulfilled implausibly large alloc] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     /* The actual UAF gate: the caller's handle must be NULL on the
      * failure path. Otherwise a downstream vmaf_close() would call
      * vmaf_gpu_picture_pool_close() on freed memory. */
-    mu_assert("pool handle must be NULL after init failure (UAF regression)", pool == NULL);
+    mu_assert("pool handle must be NULL after init failure (UAF regression)", pool == VMAF_NULLPTR);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The -EINVAL early-return path runs before malloc(), so *pool is
@@ -113,10 +109,10 @@ static char *test_pool_handle_not_clobbered_on_einval_early_return(void)
 {
     VmafGpuPicturePoolConfig cfg = {
         .pic_cnt = 0, /* triggers the early EINVAL */
-        .cookie = NULL,
+        .cookie = VMAF_NULLPTR,
         .alloc_picture_callback = stub_alloc_unreached,
         .free_picture_callback = stub_free_noop,
-        .synchronize_picture_callback = NULL,
+        .synchronize_picture_callback = VMAF_NULLPTR,
     };
 
     VmafGpuPicturePool *pool = SENTINEL;
@@ -125,14 +121,12 @@ static char *test_pool_handle_not_clobbered_on_einval_early_return(void)
     mu_assert("init must reject pic_cnt=0 with -EINVAL", err == -EINVAL);
     mu_assert("early-return EINVAL must not touch *pool", pool == SENTINEL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_pool_handle_cleared_on_pic_array_alloc_failure);
     mu_run_test(test_pool_handle_not_clobbered_on_einval_early_return);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

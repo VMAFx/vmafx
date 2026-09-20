@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0596: Delete orphan and duplicate HIP/CUDA translation units
 
 - **Status**: Accepted
@@ -71,7 +70,7 @@ re-add the files without understanding the history.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Wire the orphan duplicates into meson.build | They become compiled | Immediate multiple-definition link error; canonical TUs are already correct | Hard build failure |
 | Keep the plumbing stubs; add -ENOSYS to `init` | Consistent scaffold posture | Still zero callers; still not feature-extractor-registered; dead weight in every build | Preserving dead code adds cognitive overhead with zero benefit |
 | Rename stubs to implement real extractors | Would produce real HIP ADM/VIF/motion | Out of scope; real extractors already exist under different names | Wrong fix for an audit-cleanup task |

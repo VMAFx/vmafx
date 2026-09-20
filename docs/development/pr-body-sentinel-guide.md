@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # PR body sentinel guide
 
 The fork's `rule-enforcement.yml` workflow runs a **deep-dive
@@ -41,7 +40,7 @@ Upstream-port PRs (`/port-upstream-commit`) and pure upstream syncs
 are exempt from the entire section.
 
 | Deliverable | Required checkbox label | Opt-out sentinel key | Example opt-out |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Research digest | `Research digest` | `digest` | `no digest needed: trivial change` |
 | Decision matrix | `Decision matrix` | `alternatives` | `no alternatives: only-one-way fix` |
 | `AGENTS.md` invariant note | `AGENTS.md invariant note` | `rebase-sensitive` or `AGENTS` | `no rebase-sensitive invariants` |
@@ -76,7 +75,7 @@ after ticking the box fails the gate even if the checkbox shape
 is correct.
 
 | Ticked item | Required diff entry |
-|---|---|
+| --- | --- |
 | Research digest | `docs/research/NNNN-*.md` (any file matching `^docs/research/[0-9]+-`) |
 | CHANGELOG fragment | `CHANGELOG.md` OR `changelog.d/<section>/<topic>.md` |
 | Rebase note | `docs/rebase-notes.md` |
@@ -98,7 +97,7 @@ The parser requires **checkbox** syntax (`- [x]`). Prose bullets
 and numbered lists are **not** recognised.
 
 | Format | Parser result |
-|---|---|
+| --- | --- |
 | `- [x] **Research digest** — docs/research/0435-foo.md` | PASS |
 | `- [ ] **Research digest** — no digest needed: trivial` | PASS (opt-out) |
 | `- Research digest: docs/research/0435-foo.md` | FAIL — prose bullet |
@@ -127,7 +126,7 @@ make pr-check BODY=.workingdir/pr-batch-0-body.md
 Exit codes:
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | 0 | PR body would pass the deliverables gate |
 | 1 | PR body would fail (same `::error` lines as CI emits) |
 | 2 | Usage error — missing body, unreadable diff file, etc. |

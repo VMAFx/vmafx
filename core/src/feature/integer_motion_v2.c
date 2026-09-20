@@ -28,6 +28,8 @@
 // The framework provides the previous reference frame via fex->prev_ref,
 // making each extract call stateless with respect to pixel data.
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -337,8 +339,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     MotionV2State *s = fex->priv;
@@ -401,7 +404,7 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
      * returning.  When it did (the serial or pool-instance path where extract()
      * already ran) close_fex() will free it as normal.
      */
-    const bool dict_locally_owned = (s->feature_name_dict == NULL);
+    const bool dict_locally_owned = (s->feature_name_dict == VMAF_NULLPTR);
     if (dict_locally_owned) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -489,9 +492,8 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
-                                          "VMAF_integer_feature_motion3_v2_score", NULL};
+                                          "VMAF_integer_feature_motion3_v2_score", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): extern symbol referenced by feature_extractor.c registry — cross-TU rebase invariant (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2 = {
     .name = "motion_v2",
     .options = options,

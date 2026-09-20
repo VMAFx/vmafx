@@ -1,1 +1,5 @@
-| [ADR-0976](0976-dnn-sidecar-dead-norm-fields-removal.md) | dnn sidecar: delete dead `has_norm` / `norm_mean` / `norm_std` / `expected_min` / `expected_max` / `has_range` fields and three consumer branches (per ADR-0114 deferred cleanup); plug partial-allocation leak in `extract_string_array` on every error path | Accepted | 2026-05-31 | dnn, sidecar, cleanup, leak, security, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0976](0976-dnn-sidecar-dead-norm-fields-removal.md) | Remove dead has_norm sidecar fields and fix extract_string_array leak | Accepted | dnn, sidecar, cleanup, leak, security |

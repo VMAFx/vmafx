@@ -12,7 +12,7 @@
  *
  * Specialised for MS-SSIM / SSIM invariants:
  *   - `normalized == 1` (so scalar's `scale == 1.0f`, elided here)
- *   - separable: `kernel_h` and `kernel_v` non-NULL
+ *   - separable: `kernel_h` and `kernel_v` non-VMAF_NULLPTR
  *   - `IQA_CONVOLVE_1D` is set in iqa_options.h
  *   - `kw == kh ∈ { 8 (square), 11 (Gaussian) }`
  *
@@ -49,6 +49,8 @@
  * See docs/adr/0138-iqa-convolve-avx2-bitexact-double.md and
  * docs/research/0011-iqa-convolve-avx2.md.
  */
+
+#include "vmaf_nullptr.h"
 
 #include <immintrin.h>
 #include <stddef.h>
@@ -248,9 +250,9 @@ void iqa_convolve_avx2(float *img, int w, int h, const float *kernel_h, const fl
                        int kw, int kh, int normalized, float *workspace, float *result, int *rw,
                        int *rh)
 {
-    VMAF_ASSERT_DEBUG(img != NULL);
-    VMAF_ASSERT_DEBUG(kernel_h != NULL);
-    VMAF_ASSERT_DEBUG(kernel_v != NULL);
+    VMAF_ASSERT_DEBUG(img != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(kernel_h != VMAF_NULLPTR);
+    VMAF_ASSERT_DEBUG(kernel_v != VMAF_NULLPTR);
     VMAF_ASSERT_DEBUG(normalized == 1);
     VMAF_ASSERT_DEBUG(w >= kw);
     VMAF_ASSERT_DEBUG(h >= kh);
@@ -269,7 +271,7 @@ void iqa_convolve_avx2(float *img, int w, int h, const float *kernel_h, const fl
     }
 
     /* Caller-owned workspace eliminates the per-call calloc (~1200 pairs
-     * per 120-frame run at 1080p). NULL triggers an internal alloc for
+     * per 120-frame run at 1080p). VMAF_NULLPTR triggers an internal alloc for
      * standalone callers (unit tests); the hot path in iqa_ssim
      * allocates once and reuses. */
     float *img_cache = workspace;

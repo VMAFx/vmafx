@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Resolve research-digest filename/header ID collisions for numbers 0033 and 0034:
 rename `0033-hip-applicability.md` → `0432-hip-applicability.md` and
 `0034-ci-pipeline-audit-2026-05.md` → `0433-ci-pipeline-audit-2026-05.md`,

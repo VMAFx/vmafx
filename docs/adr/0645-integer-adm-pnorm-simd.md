@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0645: Thread integer ADM p-norm through SIMD callbacks
 
 - **Status**: Accepted
@@ -32,7 +31,7 @@ non-default p-norm.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave SIMD fixed at `3.0` and document the limitation | No code risk in an old upstream-mirror hot path | User-visible option remains misleading on common x86 builds | This preserves a known correctness gap instead of closing it |
 | Disable SIMD when `adm_p_norm != 3.0` | Simple semantic guarantee | Surprising performance cliff; splits scalar/SIMD behavior by option value | The SIMD callbacks can carry the parameter directly |
 | Add separate p-norm-specific callback variants | Keeps old ABI untouched | More dispatch state and duplicated code for no benefit | The existing callback signature is internal and easier to extend |

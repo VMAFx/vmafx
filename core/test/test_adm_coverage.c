@@ -32,11 +32,7 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #define ADM_W (64u)
 #define ADM_H (64u)
@@ -78,8 +74,8 @@ static int alloc_grey10(VmafPicture *pic, uint16_t v)
 static char *adm_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
                               VmafDictionary *opts, unsigned bpc, char *create_msg, char *init_msg)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
-    mu_assert("adm extractor missing", fex != NULL);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
+    mu_assert("adm extractor missing", fex != VMAF_NULLPTR);
 
     int err = vmaf_feature_extractor_context_create(ctx, fex, opts);
     mu_assert(create_msg, err == 0);
@@ -88,7 +84,7 @@ static char *adm_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureColl
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Common teardown for every test in this file. */
@@ -108,9 +104,9 @@ static void adm_fixture_close(VmafFeatureExtractorContext *ctx, VmafFeatureColle
 
 static char *test_adm_default_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
-    char *msg = adm_fixture_open(&ctx, &fc, NULL, 8u, "context_create", "context_init");
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
+    char *msg = adm_fixture_open(&ctx, &fc, VMAF_NULLPTR, 8u, "context_create", "context_init");
     if (msg)
         return msg;
 
@@ -121,7 +117,7 @@ static char *test_adm_default_extract(void)
     err = alloc_grey8(&dist, 120u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract adm default", err == 0);
 
     double adm2 = NAN;
@@ -131,7 +127,7 @@ static char *test_adm_default_extract(void)
     mu_assert("adm2 in [0,1]", adm2 >= 0.0 && adm2 <= 1.0);
 
     adm_fixture_close(ctx, fc, &ref, &dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -140,9 +136,9 @@ static char *test_adm_default_extract(void)
 
 static char *test_adm_identical_is_one(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
-    char *msg = adm_fixture_open(&ctx, &fc, NULL, 8u, "context_create", "context_init");
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
+    char *msg = adm_fixture_open(&ctx, &fc, VMAF_NULLPTR, 8u, "context_create", "context_init");
     if (msg)
         return msg;
 
@@ -153,7 +149,7 @@ static char *test_adm_identical_is_one(void)
     err = alloc_grey8(&dist, 128u);
     mu_assert("alloc dist identical", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract adm identical", err == 0);
 
     double adm2 = NAN;
@@ -162,7 +158,7 @@ static char *test_adm_identical_is_one(void)
     mu_assert("adm2 identical == 1.0", fabs(adm2 - 1.0) < 1e-6);
 
     adm_fixture_close(ctx, fc, &ref, &dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -171,12 +167,12 @@ static char *test_adm_identical_is_one(void)
 
 static char *test_adm_debug_mode(void)
 {
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "debug", "true", 0);
     mu_assert("set debug", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg =
         adm_fixture_open(&ctx, &fc, opts, 8u, "context_create with debug", "context_init debug");
     if (msg)
@@ -189,7 +185,7 @@ static char *test_adm_debug_mode(void)
     err = alloc_grey8(&dist, 110u);
     mu_assert("alloc dist", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract adm debug", err == 0);
 
     /* debug=true emits extra sub-scores; adm2 is still present. */
@@ -200,7 +196,7 @@ static char *test_adm_debug_mode(void)
 
     adm_fixture_close(ctx, fc, &ref, &dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -209,10 +205,10 @@ static char *test_adm_debug_mode(void)
 
 static char *test_adm_10bit_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg =
-        adm_fixture_open(&ctx, &fc, NULL, 10u, "context_create 10bit", "context_init 10bit");
+        adm_fixture_open(&ctx, &fc, VMAF_NULLPTR, 10u, "context_create 10bit", "context_init 10bit");
     if (msg)
         return msg;
 
@@ -223,7 +219,7 @@ static char *test_adm_10bit_extract(void)
     err = alloc_grey10(&dist, 600u);
     mu_assert("alloc dist 10bit", err == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract adm 10bit", err == 0);
 
     double adm2 = NAN;
@@ -232,7 +228,7 @@ static char *test_adm_10bit_extract(void)
     mu_assert("adm2 10bit finite", isfinite(adm2));
 
     adm_fixture_close(ctx, fc, &ref, &dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -246,12 +242,12 @@ static char *test_adm_invalid_view_dist_returns_einval(void)
      * allowed value (0.75) makes norm_view_dist * ref_display_height =
      * 0.75 * 1080 = 810, which is below the threshold of
      * DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT = 3240. */
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "adm_norm_view_dist", "0.75", 0);
     mu_assert("set adm_norm_view_dist", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *msg =
         adm_fixture_open(&ctx, &fc, opts, 8u, "context_create with norm_view_dist", "context_init");
     if (msg)
@@ -267,12 +263,12 @@ static char *test_adm_invalid_view_dist_returns_einval(void)
     /* With norm_view_dist=0.01 the view_dist * display_height product is
      * below the DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT
      * minimum; extract() must return -EINVAL. */
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract with bad norm_view_dist should return -EINVAL", err == -EINVAL);
 
     adm_fixture_close(ctx, fc, &ref, &dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -282,7 +278,5 @@ char *run_tests(void)
     mu_run_test(test_adm_debug_mode);
     mu_run_test(test_adm_10bit_extract);
     mu_run_test(test_adm_invalid_view_dist_returns_einval);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Research-0764: psnr_hvs CUDA kernel — F3 `__ldg()` + `__launch_bounds__(64)` (2026-05-29)
 
 **Context**: PR #96 candidate #5 — applies the F3 struct-by-value fix to the
@@ -20,7 +19,7 @@ ADR-0757 (PR #96 fix #2) applied the same pattern to `ms_ssim_horiz` and
 ## psnr_hvs kernel specifics
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Block config | 8x8 = 64 threads |
 | Loads per block | 64 reads from `ref_buf` + 64 reads from `dist_buf` = 128 total |
 | Loop structure | Cooperative tile load (all 64 threads load 1 element each) |
@@ -43,7 +42,7 @@ ADR-0757 (PR #96 fix #2) applied the same pattern to `ms_ssim_horiz` and
 Based on ADR-0754 live ncu measurements on RTX 4090 sm_89:
 
 | Resolution | Expected change | Confidence |
-|---|---|---|
+| --- | --- | --- |
 | 576p | noise-dominated (wave-limited regime, < 0.5 waves) | low |
 | 1080p | -3 to -5% kernel duration (DRAM-bound regime) | medium |
 | 4K | -5 to -8% kernel duration (deep DRAM-bound, multi-wave) | medium |

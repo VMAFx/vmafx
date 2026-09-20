@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0923: BuildKit cache mounts + ccache rollout (2026-05-31)
 
 - **Status**: Complete
@@ -21,7 +20,7 @@ Four Dockerfiles cover the bulk of container-build minutes the team
 burns:
 
 | File | Variant count | Cold rebuild (approx.) | apt RUNs | compile RUNs |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `Dockerfile` (top-level, CUDA + FFmpeg + libvmaf) | 1 | ~12 min | 2 | 2 (libvmaf, FFmpeg) |
 | `docker/Dockerfile.production-gpu` | 5 (cpu, cuda12, rocm6, oneapi2026, vulkan) | ~8-25 min per variant | 6 (base + 4 SDK installs + ... ) | 5 (one per variant) |
 | `dev/Containerfile` | 1 | ~45 min | 8 | 4 (libvmaf, vpl-gpu-rt, SVT-AV1, vvenc, FFmpeg) |

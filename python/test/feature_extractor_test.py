@@ -1,7 +1,9 @@
 from __future__ import absolute_import
 
+import hashlib
 import re
 import unittest
+
 from test.testutil import (
     set_default_576_324_10bit_videos_for_testing,
     set_default_576_324_10bit_videos_for_testing_b,
@@ -15,7 +17,6 @@ from test.testutil import (
     set_default_cambi_video_for_testing_b,
     set_default_flat_1920_1080_videos_for_testing,
 )
-
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
 from vmaf.core.feature_extractor import (
@@ -44,6 +45,25 @@ class FeatureExtractorTest(MyTestCase):
         if hasattr(self, "fextractor"):
             self.fextractor.remove_results()
         super().tearDown()
+
+    def _run_default_extractor(
+        self,
+        extractor_class,
+        *,
+        fifo_mode,
+        optional_dict=None,
+        parallelize=True,
+    ):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.fextractor = extractor_class(
+            [asset, asset_original],
+            None,
+            fifo_mode=fifo_mode,
+            result_store=None,
+            optional_dict=optional_dict,
+        )
+        self.fextractor.run(parallelize=parallelize)
+        return self.fextractor.results
 
     def test_executor_id(self):
         asset = Asset(
@@ -78,8 +98,6 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_get_log_file_path(self):
-        import hashlib
-
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -96,10 +114,10 @@ class FeatureExtractorTest(MyTestCase):
         fextractor = VmafFeatureExtractor([asset], None)
         log_file_path = fextractor._get_log_file_path(asset)
         # SHA-1 mirrors `_get_log_file_path()` to assert the path scheme. Same
-        # justification as Research-0090, F4–F12 — non-cryptographic.
-        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+        # justification as Research-0090, F4-F12: this is non-cryptographic.
         h = hashlib.sha1(
-            "test_0_1_refvideo_720x480_vs_disvideo_720x480_q_720x480".encode("utf-8")
+            "test_0_1_refvideo_720x480_vs_disvideo_720x480_q_720x480".encode("utf-8"),
+            usedforsecurity=False,
         ).hexdigest()
         self.assertTrue(
             re.match(
@@ -108,15 +126,10 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_vmaf_fextractor(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafFeatureExtractor(
-            [asset, asset_original], None, fifo_mode=True, result_store=None
+        results = self._run_default_extractor(
+            VmafFeatureExtractor,
+            fifo_mode=True,
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641939583333334, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.0488208125, places=4)
@@ -213,14 +226,9 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["VMAF_feature_adm3_score"], 1.0, places=4)
 
     def test_run_vmaf_fextractor_with_feature_overloads(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafFeatureExtractor,
             fifo_mode=True,
-            result_store=None,
             optional_dict={
                 "adm_csf_mode": 1,
                 "adm_csf_scale": 0.002893,
@@ -229,9 +237,6 @@ class FeatureExtractorTest(MyTestCase):
                 "motion_force_zero": True,
             },
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(
             results[0]["VMAF_feature_vif_ks_0.5_score"], 0.39877570833333326, places=4
@@ -372,19 +377,11 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_vmaf_fextractor_with_adm_dlm_weight(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafFeatureExtractor,
             fifo_mode=True,
-            result_store=None,
             optional_dict={"adm_dlm_weight": 1.0},
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641939583333334, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.0488208125, places=4)
@@ -486,7 +483,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_adm_min_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset], None, fifo_mode=True, result_store=None, optional_dict={"adm_min_val": 0.98}
@@ -552,7 +549,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_adm_f1f2(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -596,7 +593,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_with_vif_skip_scale0(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -626,7 +623,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_with_adm_skip_scale0(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -673,7 +670,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_with_vif_sigma_nsq(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset], None, fifo_mode=True, result_store=None, optional_dict={"vif_sigma_nsq": 1.5}
@@ -697,7 +694,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_with_vif_scale1_min_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -725,7 +722,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_with_vif_scale2_min_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -753,7 +750,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_with_vif_scale3_min_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -780,19 +777,11 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_vmaf_fextractor_motion_blend(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafFeatureExtractor,
             fifo_mode=True,
-            result_store=None,
             optional_dict={"motion_blend_factor": 0.5, "motion_blend_offset": 3.0},
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641939583333334, places=4)
         self.assertAlmostEqual(
@@ -911,19 +900,11 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["VMAF_feature_adm3_score"], 1.0, places=4)
 
     def test_run_vmaf_fextractor_motion_no_filter(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafFeatureExtractor,
             fifo_mode=True,
-            result_store=None,
             optional_dict={"motion_filter_size": 1},
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641939583333334, places=4)
         self.assertAlmostEqual(
@@ -1033,7 +1014,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_motion_fps_w2d5(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -1080,7 +1061,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_motion_max_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafFeatureExtractor(
             [asset],
@@ -1139,7 +1120,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_fextractor_single_frame(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_cambi_video_for_testing_b()
+        _ref_path, _dis_path, asset, asset_original = set_default_cambi_video_for_testing_b()
 
         self.fextractor = VmafFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -1153,15 +1134,10 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[0]["VMAF_feature_motion3_score"], 0.0, places=4)
 
     def test_run_vmaf_integer_fextractor(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafIntegerFeatureExtractor(
-            [asset, asset_original], None, fifo_mode=False, result_store=None
+        results = self._run_default_extractor(
+            VmafIntegerFeatureExtractor,
+            fifo_mode=False,
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_vif_score"], 0.44642331250000006, places=4
@@ -1289,7 +1265,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_dlmw(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original],
@@ -1320,19 +1296,11 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_vmaf_integer_fextractor_with_vif_skip_scale0(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafIntegerFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafIntegerFeatureExtractor,
             fifo_mode=False,
-            result_store=None,
             optional_dict={"vif_skip_scale0": True},
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_vif_ssclz_score"], 0.7908157916666667, places=4
@@ -1470,7 +1438,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_with_adm_skip_scale0(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original],
@@ -1543,24 +1511,17 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["VMAF_integer_feature_adm3_ssz_score"], 1.0, places=4)
 
     def test_run_vmaf_integer_fextractor_with_feature_overloads(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafIntegerFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafIntegerFeatureExtractor,
             fifo_mode=False,
-            result_store=None,
             optional_dict={
                 "adm_csf_mode": 1,
                 "adm_csf_scale": 0.002893,
                 "adm_csf_diag_scale": 0.001586,
                 "motion_force_zero": True,
             },
+            parallelize=False,
         )
-        self.fextractor.run(parallelize=False)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_vif_score"], 0.44642331250000006, places=4
@@ -1742,7 +1703,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_adm_min_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset], None, fifo_mode=False, result_store=None, optional_dict={"adm_min_val": 0.98}
@@ -1859,19 +1820,11 @@ class FeatureExtractorTest(MyTestCase):
         )
 
     def test_run_vmaf_integer_fextractor_motion_blend(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.fextractor = VmafIntegerFeatureExtractor(
-            [asset, asset_original],
-            None,
+        results = self._run_default_extractor(
+            VmafIntegerFeatureExtractor,
             fifo_mode=False,
-            result_store=None,
             optional_dict={"motion_blend_factor": 0.5, "motion_blend_offset": 3.0},
         )
-        self.fextractor.run(parallelize=True)
-
-        results = self.fextractor.results
 
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_vif_score"], 0.44642331250000006, places=4
@@ -2008,7 +1961,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_motion_max_val(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
@@ -2070,7 +2023,7 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
@@ -2144,7 +2097,7 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_moving_avg(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
@@ -2218,7 +2171,9 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_one_frame_input(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_1frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_1frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2246,7 +2201,9 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_one_frame_input_moving_avg(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_1frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_1frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2280,7 +2237,9 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_two_frame_input(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_2frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_2frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2317,7 +2276,9 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_three_frame_input(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_3frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_3frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2371,7 +2332,9 @@ class FeatureExtractorTest(MyTestCase):
         self,
     ):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_3frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_3frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2423,7 +2386,9 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_four_frame_input(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_4frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_4frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2484,7 +2449,9 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_four_frame_input_moving_avg(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_4frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_4frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2544,7 +2511,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_single_frame(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_cambi_video_for_testing_b()
+        _ref_path, _dis_path, asset, asset_original = set_default_cambi_video_for_testing_b()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -2559,7 +2526,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_single_frame_moving_avg(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_cambi_video_for_testing_b()
+        _ref_path, _dis_path, asset, asset_original = set_default_cambi_video_for_testing_b()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original],
@@ -2578,7 +2545,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_motion_two_frame_input(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_2frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_2frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset], None, fifo_mode=False, result_store=None, optional_dict={}
         )
@@ -2606,7 +2575,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_motion_two_frame_input_moving_avg(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_2frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_2frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2648,7 +2619,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_motion_three_frame_input(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_3frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_3frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset], None, fifo_mode=False, result_store=None, optional_dict={}
         )
@@ -2691,7 +2664,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_motion_three_frame_input_moving_avg(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_3frames()
+        _ref_path, _dis_path, asset, _asset_original = (
+            set_default_576_324_videos_for_testing_3frames()
+        )
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
             None,
@@ -2742,7 +2717,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_barten_csf_scale_coeffs_4d5h(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original],
@@ -2778,7 +2753,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_barten_csf_scale_coeffs_4d5h_change_anw(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original],
@@ -2821,7 +2796,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_motion_fps_weight_2d5(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, _asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset],
@@ -2878,7 +2853,7 @@ class FeatureExtractorTest(MyTestCase):
     )
     def test_run_vif_frame_difference_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = VifFrameDifferenceFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -2911,7 +2886,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_moment_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = MomentFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -2960,7 +2935,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_moment_fextractor_10bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
 
         self.fextractor = MomentFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3009,7 +2984,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_moment_fextractor_12bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
 
         self.fextractor = MomentFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3058,7 +3033,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_moment_fextractor_16bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
 
         self.fextractor = MomentFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3107,7 +3082,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_psnr_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = PsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3121,7 +3096,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_ssim_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = SsimFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
@@ -3148,7 +3123,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_ssim_fextractor_flat(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_flat_1920_1080_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_flat_1920_1080_videos_for_testing()
+        )
 
         self.fextractor = SsimFeatureExtractor(
             [asset, asset_original], None, fifo_mode=False, result_store=None
@@ -3171,7 +3148,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_ms_ssim_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = MsSsimFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3351,7 +3328,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_vmaf_integer_fextractor_flat(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_flat_1920_1080_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_flat_1920_1080_videos_for_testing()
+        )
 
         self.fextractor = VmafIntegerFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3376,7 +3355,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_psnr_fextractor_proc(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         callback_dict = {
             "ref_proc_callback": "identity",
@@ -3400,7 +3379,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = PyPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3422,7 +3401,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_deprecated(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.fextractor = PypsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3444,7 +3423,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_10bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
 
         self.fextractor = PyPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3468,7 +3447,9 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_10bit_b(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing_b()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_576_324_10bit_videos_for_testing_b()
+        )
 
         self.fextractor = PyPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3492,7 +3473,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_12bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
 
         self.fextractor = PyPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3516,7 +3497,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_16bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
 
         self.fextractor = PyPsnrFeatureExtractor(
             [asset, asset_original], None, fifo_mode=True, result_store=None
@@ -3540,7 +3521,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_16bit_custom_max_db(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
 
         self.fextractor = PyPsnrFeatureExtractor(
             [asset, asset_original],
@@ -3568,7 +3549,7 @@ class FeatureExtractorTest(MyTestCase):
 
     def test_run_pypsnr_fextractor_maxdb100_16bit(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_16bit_videos_for_testing()
 
         self.fextractor = PyPsnrMaxdb100FeatureExtractor(
             [asset, asset_original],

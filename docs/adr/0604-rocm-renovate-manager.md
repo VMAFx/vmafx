@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0604: Add Renovate customManager for ROCm apt-repo tracking
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ No version change is made to `dev/Containerfile`: 7.2.3 remains correct.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Bump to ROCm 7.13.0 now | Tracks the preview | 7.13.0 has no apt packages; would require switching to the "TheRock" distribution channel, an untested install path, and a breaking KFD ABI risk on older kernels | Not yet production-stable; no apt repo entry |
 | Leave Renovate unconfigured for ROCm | No change needed now | Future stable releases go undetected; manual audits required | Defeats the purpose of having Renovate |
 | Use Renovate `regexManagers` on the apt URL only | Simpler | Only one match string; misses the `ARG ROCM_VER=` line and therefore may not update it consistently | Two match strings ensure both the ARG and the URL stay in sync |

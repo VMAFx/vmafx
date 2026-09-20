@@ -18,7 +18,6 @@
 
 #include "common/macros.h"
 
-#pragma once
 
 #ifndef MOTION_BLEND_TOOLS_H_
 #define MOTION_BLEND_TOOLS_H_

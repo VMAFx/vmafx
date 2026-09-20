@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0539: integer ADM HIP kernels — real implementation replacing weak HSACO stubs
 
 - **Status**: Superseded by [ADR-1167](1167-adm-cm-row-level-rounding.md)
@@ -56,7 +55,7 @@ is not adopted here; migrating the HIP host TU is a follow-up.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Per-thread atomicAdd on uint64 accum (chosen)** | Bit-exact w.r.t. CUDA twin (uint64 add is associative). Trivial to read. Same approach as `vif_statistics.hip` (ADR-0537). Works on every AMD wavefront width without `#ifdef`. | Higher atomic traffic than per-warp reduce. Negligible at 576x324; revisit if profiling shows contention on 4K / HDR ROI. | Selected. |
 | HIP `__shfl_down` with `warpSize` (runtime) | Closer to CUDA twin shape. | `__shfl_down` semantics differ between hipcc 5.x and 6.x; `warpSize` is a compile-time constant on AMD but 32 vs. 64 differ between gfx generations; would need per-arch dispatch. | Complexity / portability cost not justified for a four-kernel port. |
 | `__hip_atomic_compare_exchange` CAS-loop reduction | Avoids 64-bit atomicAdd on older GCN. | atomicAdd-on-uint64 is native on gfx90a / gfx10 / gfx11 (every dev-MCP target); CAS-loop is the implicit fallback for older silicon already. | Manual fallback redundant. |

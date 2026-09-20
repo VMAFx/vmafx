@@ -391,7 +391,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "cmxv",
         .offset = offsetof(CambiStateSycl, cambi_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_MAX_VAL,
+        .default_val = {.d = CAMBI_SYCL_DEFAULT_MAX_VAL},
         .min = 0.0,
         .max = 1000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -402,7 +402,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "encw",
         .offset = offsetof(CambiStateSycl, enc_width),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
+        .default_val = {.i = 0},
         .min = 180,
         .max = 7680,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -413,7 +413,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "ench",
         .offset = offsetof(CambiStateSycl, enc_height),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
+        .default_val = {.i = 0},
         .min = 150,
         .max = 7680,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -424,7 +424,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "encbd",
         .offset = offsetof(CambiStateSycl, enc_bitdepth),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
+        .default_val = {.i = 0},
         .min = 6,
         .max = 16,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -435,7 +435,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "ws",
         .offset = offsetof(CambiStateSycl, window_size),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = CAMBI_SYCL_DEFAULT_WINDOW_SIZE,
+        .default_val = {.i = CAMBI_SYCL_DEFAULT_WINDOW_SIZE},
         .min = 15,
         .max = 127,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -446,7 +446,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = nullptr,
         .offset = offsetof(CambiStateSycl, topk),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
+        .default_val = {.d = CAMBI_SYCL_DEFAULT_TOPK},
         .min = 0.0001,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -457,7 +457,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "ctpk",
         .offset = offsetof(CambiStateSycl, cambi_topk),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
+        .default_val = {.d = CAMBI_SYCL_DEFAULT_TOPK},
         .min = 0.0001,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -468,7 +468,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "tvit",
         .offset = offsetof(CambiStateSycl, tvi_threshold),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_TVI,
+        .default_val = {.d = CAMBI_SYCL_DEFAULT_TVI},
         .min = 0.0001,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -479,7 +479,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "vlt",
         .offset = offsetof(CambiStateSycl, cambi_vis_lum_threshold),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_VLT,
+        .default_val = {.d = CAMBI_SYCL_DEFAULT_VLT},
         .min = 0.0,
         .max = 300.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -490,7 +490,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "mlc",
         .offset = offsetof(CambiStateSycl, max_log_contrast),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST,
+        .default_val = {.i = CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST},
         .min = 0,
         .max = 5,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -501,7 +501,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = nullptr,
         .offset = offsetof(CambiStateSycl, eotf),
         .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
+        .default_val = {.s = CAMBI_SYCL_DEFAULT_EOTF},
         .min = 0.0,
         .max = 0.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -512,7 +512,7 @@ static const VmafOption options_cambi_sycl[] = {
         .alias = "ceot",
         .offset = offsetof(CambiStateSycl, cambi_eotf),
         .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
+        .default_val = {.s = CAMBI_SYCL_DEFAULT_EOTF},
         .min = 0.0,
         .max = 0.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -532,7 +532,6 @@ static const VmafOption options_cambi_sycl[] = {
     {nullptr},
 };
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -748,8 +747,8 @@ free_ref:
 /* Synchronous per-scale loop (matches CUDA v1 posture). GPU work and  */
 /* CPU residual both run in submit(); collect() only emits the score.   */
 /* ------------------------------------------------------------------ */
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
@@ -978,4 +977,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

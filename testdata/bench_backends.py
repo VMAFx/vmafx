@@ -33,10 +33,19 @@ import argparse
 import json
 import os
 import statistics
-import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testdata._command import run_command
+else:
+    try:
+        from testdata._command import run_command
+    except ModuleNotFoundError:
+        from _command import run_command
 
 # --- Fixture table -------------------------------------------------------
 # (tag, ref, dis, width, height, bitdepth, human label)
@@ -91,7 +100,7 @@ MODELS = {
 
 
 def load1() -> float:
-    with open("/proc/loadavg", encoding="ascii") as fh:
+    with Path("/proc/loadavg").open(encoding="ascii") as fh:
         return float(fh.read().split()[0])
 
 
@@ -135,15 +144,15 @@ def run_cell(vmaf_bin, fixture, backend, model_name, runs, threads, verbose):
     load_before = load1()
 
     with tempfile.TemporaryDirectory(prefix="vmaf-bench-") as td:
-        out_path = os.path.join(td, "out.json")
-        cmd = build_cmd(vmaf_bin, fixture, backend, model_path, out_path, threads)
+        out_path = Path(td) / "out.json"
+        cmd = build_cmd(vmaf_bin, fixture, backend, model_path, str(out_path), threads)
         # runs + 1: the first iteration is a discarded warmup (page cache,
         # GPU context creation, JIT of SYCL kernels).
         for i in range(runs + 1):
             start = time.monotonic()
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            proc = run_command(cmd, capture_output=True, text=True, check=False)
             elapsed = time.monotonic() - start
-            if proc.returncode != 0 or not os.path.exists(out_path):
+            if proc.returncode != 0 or not out_path.exists():
                 msg = (proc.stderr or proc.stdout or "").strip().splitlines()
                 return {
                     "status": "unavailable",
@@ -154,7 +163,7 @@ def run_cell(vmaf_bin, fixture, backend, model_name, runs, threads, verbose):
                 continue  # warmup
             times.append(elapsed)
             if pooled is None:
-                with open(out_path, encoding="utf-8") as fh:
+                with out_path.open(encoding="utf-8") as fh:
                     doc = json.load(fh)
                 pooled = doc["pooled_metrics"]["vmaf"]["mean"]
                 nframes = len(doc["frames"])
@@ -216,17 +225,18 @@ def main() -> int:
     backends = args.backends or ["cpu", "cuda", "sycl", "hip"]
     models = args.models or ["v0.6.1", "default"]
 
-    root = subprocess.run(
+    root_text = run_command(
         ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
     ).stdout.strip()
-    if root:
+    root = Path(root_text) if root_text else None
+    if root is not None:
         os.chdir(root)
 
     fixtures = [f for f in FIXTURES if args.fixtures is None or f[0] in args.fixtures]
-    missing = [f[0] for f in fixtures if not (os.path.exists(f[1]) and os.path.exists(f[2]))]
+    missing = [f[0] for f in fixtures if not (Path(f[1]).exists() and Path(f[2]).exists())]
     if missing:
         print(f"note: skipping fixtures with absent files: {', '.join(missing)}", file=sys.stderr)
-    fixtures = [f for f in fixtures if os.path.exists(f[1]) and os.path.exists(f[2])]
+    fixtures = [f for f in fixtures if Path(f[1]).exists() and Path(f[2]).exists()]
     if not fixtures:
         print("error: no fixture files present", file=sys.stderr)
         return 2
@@ -241,7 +251,7 @@ def main() -> int:
                             fx,
                             be,
                             MODELS[mn],
-                            os.path.join(td, "out.json"),
+                            str(Path(td) / "out.json"),
                             args.threads,
                         )
                     print(" ".join(cmd))
@@ -276,7 +286,7 @@ def main() -> int:
                 )
 
     if args.json_out:
-        with open(args.json_out, "w", encoding="utf-8") as fh:
+        with Path(args.json_out).open("w", encoding="utf-8") as fh:
             json.dump(results, fh, indent=2, sort_keys=True)
             fh.write("\n")
         print(f"\nwrote {args.json_out}", flush=True)

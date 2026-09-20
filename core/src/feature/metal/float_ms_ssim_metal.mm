@@ -135,7 +135,7 @@ static int build_pipelines(FloatMsSsimStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -210,7 +210,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_lc; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         /* Pyramid buffers. */
@@ -257,55 +257,55 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
     if (s->pso_vert_lcs) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert_lcs;
-        s->pso_vert_lcs = NULL;
+        s->pso_vert_lcs = nullptr;
     }
     if (s->pso_horiz) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz;
-        s->pso_horiz = NULL;
+        s->pso_horiz = nullptr;
     }
     if (s->pso_decimate) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;
-        s->pso_decimate = NULL;
+        s->pso_decimate = nullptr;
     }
     /* fall through: release any partially-allocated pyramid/partials/hbuf. */
 fail_bufs:
     for (int i = 0; i < MS_SSIM_SCALES; ++i) {
         if (s->s_partials[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->s_partials[i];
-            s->s_partials[i] = NULL;
+            s->s_partials[i] = nullptr;
         }
         if (s->c_partials[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->c_partials[i];
-            s->c_partials[i] = NULL;
+            s->c_partials[i] = nullptr;
         }
         if (s->l_partials[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->l_partials[i];
-            s->l_partials[i] = NULL;
+            s->l_partials[i] = nullptr;
         }
         if (s->pyramid_cmp[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->pyramid_cmp[i];
-            s->pyramid_cmp[i] = NULL;
+            s->pyramid_cmp[i] = nullptr;
         }
         if (s->pyramid_ref[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->pyramid_ref[i];
-            s->pyramid_ref[i] = NULL;
+            s->pyramid_ref[i] = nullptr;
         }
     }
     if (s->hbuf) {
         (void)(__bridge_transfer id<MTLBuffer>)s->hbuf;
-        s->hbuf = NULL;
+        s->hbuf = nullptr;
     }
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -332,9 +332,9 @@ static void fill_float_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, un
     }
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -346,7 +346,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
@@ -530,42 +530,42 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 
     if (s->pso_vert_lcs) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert_lcs;
-        s->pso_vert_lcs = NULL;
+        s->pso_vert_lcs = nullptr;
     }
     if (s->pso_horiz) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz;
-        s->pso_horiz = NULL;
+        s->pso_horiz = nullptr;
     }
     if (s->pso_decimate) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;
-        s->pso_decimate = NULL;
+        s->pso_decimate = nullptr;
     }
 
     for (int i = 0; i < MS_SSIM_SCALES; ++i) {
         if (s->pyramid_ref[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->pyramid_ref[i];
-            s->pyramid_ref[i] = NULL;
+            s->pyramid_ref[i] = nullptr;
         }
         if (s->pyramid_cmp[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->pyramid_cmp[i];
-            s->pyramid_cmp[i] = NULL;
+            s->pyramid_cmp[i] = nullptr;
         }
         if (s->l_partials[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->l_partials[i];
-            s->l_partials[i] = NULL;
+            s->l_partials[i] = nullptr;
         }
         if (s->c_partials[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->c_partials[i];
-            s->c_partials[i] = NULL;
+            s->c_partials[i] = nullptr;
         }
         if (s->s_partials[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->s_partials[i];
-            s->s_partials[i] = NULL;
+            s->s_partials[i] = nullptr;
         }
     }
     if (s->hbuf) {
         (void)(__bridge_transfer id<MTLBuffer>)s->hbuf;
-        s->hbuf = NULL;
+        s->hbuf = nullptr;
     }
 
     if (s->feature_name_dict) {
@@ -574,25 +574,24 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
 
-static const char *provided_features[] = {"float_ms_ssim", NULL};
+static const char *provided_features[] = {"float_ms_ssim", nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend, ADR-0490 ms_ssim port; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0490 / ADR-0278
 VmafFeatureExtractor vmaf_fex_float_ms_ssim_metal = {
     .name              = "float_ms_ssim_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(FloatMsSsimStateMetal),

@@ -1,1 +1,5 @@
-| [ADR-0951](0951-github-actions-custom-audit.md) | GitHub Actions custom-action + reusable-workflow audit (2026-05-31): no `.github/actions/` exists, no `workflow_call:` workflows exist, all 24 workflows already SHA-pinned per ADR-0263; two abstraction candidates (composite `setup-build-deps`, reusable `meson-cpu-build.yml`) deferred. | Accepted | 2026-05-31 | ci, docs, process |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0951](0951-github-actions-custom-audit.md) | GitHub Actions custom-action and reusable-workflow audit | Accepted | `ci`, `docs`, `process` |

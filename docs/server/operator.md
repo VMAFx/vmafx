@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # vmafx-operator — Kubernetes Operator
 
 `vmafx-operator` is a [kubebuilder](https://kubebuilder.io/) v4 /
@@ -28,7 +27,7 @@ Runtime configuration is environment-only. `--version` is the sole process
 switch and exits before the Kubernetes manager starts.
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus metrics endpoint bind address. |
 | `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | Health probe endpoints (`/healthz`, `/readyz`) bind address. |
 | `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Set to `true` for high-availability deployments with multiple replicas. |
@@ -40,7 +39,7 @@ complete cross-surface table.
 ## Health probes
 
 | Path | Port | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `/healthz` | `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | Liveness — returns `200 OK` when the manager is running. |
 | `/readyz` | `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | Readiness — returns `200 OK` when the cache has synced. |
 
@@ -59,7 +58,7 @@ operator's namespace for the lock.
 ## Custom resource definitions
 
 | CRD | Group | Kind |
-|---|---|---|
+| --- | --- | --- |
 | VmafxJob | `vmafx.dev/v1` | Job submission and lifecycle tracking |
 | VmafxNode | `vmafx.dev/v1` | Worker node registration and capability |
 | VmafxModelTraining | `vmafx.dev/v1` | Sidecar training run lifecycle |

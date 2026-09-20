@@ -10,12 +10,10 @@
 # and direct ``pytest compat/python-vmaf/tests/`` invocations.
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
 
-_REPO_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-_PYTHON_DIR = os.path.join(_REPO_ROOT, "python")
+_REPO_ROOT = str(Path(__file__).resolve().parents[3])
+_PYTHON_DIR = str(Path(_REPO_ROOT).joinpath("python"))
 if _PYTHON_DIR not in sys.path:
     sys.path.insert(0, _PYTHON_DIR)

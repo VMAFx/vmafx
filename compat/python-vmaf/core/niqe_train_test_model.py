@@ -8,6 +8,8 @@ import scipy.linalg
 
 from vmaf.core.train_test_model import RegressorMixin, TrainTestModel
 
+_COMPARISON_VALUE_2 = 2
+
 
 class NiqeTrainTestModel(TrainTestModel, RegressorMixin):
 
@@ -63,9 +65,7 @@ class NiqeTrainTestModel(TrainTestModel, RegressorMixin):
 
         xs_2d = []
         for i_sample in range(num_samples):
-            xs_2d_ = np.vstack(
-                list(map(lambda feature_name: xys[feature_name][i_sample], feature_names))
-            ).T
+            xs_2d_ = np.vstack([xys[feature_name][i_sample] for feature_name in feature_names]).T
             xs_2d.append(xs_2d_)
         xs_2d = np.vstack(xs_2d)
 
@@ -91,12 +91,12 @@ class NiqeTrainTestModel(TrainTestModel, RegressorMixin):
         ys_label_pred = []
         for i_sample in range(num_samples):
             xs_2d_ = np.vstack(
-                list(map(lambda feature_name: xs[feature_name][i_sample], self.feature_names))
+                [xs[feature_name][i_sample] for feature_name in self.feature_names]
             ).T
 
             # no normalization for NIQE
 
-            if xs_2d_.shape[0] < 2:
+            if xs_2d_.shape[0] < _COMPARISON_VALUE_2:
                 ys_label_pred_ = None  # NIQE won't work for single patch
             else:
                 ys_label_pred_ = self._predict(self.model, xs_2d_)
@@ -115,5 +115,4 @@ class NiqeTrainTestModel(TrainTestModel, RegressorMixin):
         X = sample_mu - pop_mu
         covmat = (pop_cov + sample_cov) / 2.0
         pinvmat = scipy.linalg.pinv(covmat)
-        d1 = np.sqrt(np.dot(np.dot(X, pinvmat), X))
-        return d1
+        return np.sqrt(np.dot(np.dot(X, pinvmat), X))

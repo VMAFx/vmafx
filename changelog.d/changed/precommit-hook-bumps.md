@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Pre-commit hooks brought current where the bump is behaviour-safe: `isort`
   6.0.1 → **9.0.1** and `markdownlint-cli2` v0.22.1 → **v0.23.2**. The remaining
   pins were already at their latest upstream release (`pre-commit-hooks` v6.0.0,

@@ -10,18 +10,17 @@ Skips unless a 2-frame input on SYCL exits 0.
 from __future__ import absolute_import
 
 import json
-import os
-import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
-from vmaf import ExternalProgram
+from vmaf import ExternalProgram, run_process
 from vmaf.config import VmafConfig
 
 
 def _sycl_two_frame_probe():
     ref_path = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324_2frames.yuv")
-    if not os.path.exists(ref_path):
+    if not Path(ref_path).exists():
         return False
     cmd = [
         ExternalProgram.vmafexec,
@@ -42,9 +41,9 @@ def _sycl_two_frame_probe():
         "--json",
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        return proc.returncode == 0
-    except Exception:
+        run_process(cmd)
+        return True
+    except (AssertionError, FileNotFoundError, OSError):
         return False
 
 
@@ -55,7 +54,7 @@ class SyclDefaultModelTest(unittest.TestCase):
     def test_default_model_under_sycl_backend(self):
         ref_path = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324_2frames.yuv")
         with tempfile.TemporaryDirectory() as tmp:
-            out_json = os.path.join(tmp, "out.json")
+            out_json = Path(tmp) / "out.json"
             cmd = [
                 ExternalProgram.vmafexec,
                 "--backend",
@@ -76,13 +75,8 @@ class SyclDefaultModelTest(unittest.TestCase):
                 "-o",
                 out_json,
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            self.assertEqual(
-                res.returncode,
-                0,
-                f"vmaf --backend sycl failed with returncode {res.returncode}:\n{res.stderr}",
-            )
-            with open(out_json, encoding="utf-8") as fh:
+            run_process(cmd)
+            with out_json.open(encoding="utf-8") as fh:
                 data = json.load(fh)
             self.assertIn("pooled_metrics", data)
             self.assertIn(

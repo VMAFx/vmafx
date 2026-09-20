@@ -5,11 +5,7 @@
 
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #include "dnn/op_allowlist.h"
 
@@ -22,7 +18,7 @@ static char *test_common_ops_allowed(void)
     mu_assert("GlobalAveragePool should be allowed", vmaf_dnn_op_allowed("GlobalAveragePool"));
     mu_assert("QuantizeLinear should be allowed", vmaf_dnn_op_allowed("QuantizeLinear"));
     mu_assert("DequantizeLinear should be allowed", vmaf_dnn_op_allowed("DequantizeLinear"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_control_flow_ops_allowed(void)
@@ -35,15 +31,15 @@ static char *test_control_flow_ops_allowed(void)
     mu_assert("Loop should be allowed", vmaf_dnn_op_allowed("Loop"));
     mu_assert("If should be allowed", vmaf_dnn_op_allowed("If"));
     mu_assert("Scan must remain rejected", !vmaf_dnn_op_allowed("Scan"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_custom_ops_rejected(void)
 {
     mu_assert("unknown should be rejected", !vmaf_dnn_op_allowed("custom_op_xyz"));
-    mu_assert("NULL should be rejected", !vmaf_dnn_op_allowed(NULL));
+    mu_assert("NULL should be rejected", !vmaf_dnn_op_allowed(VMAF_NULLPTR));
     mu_assert("empty string should be rejected", !vmaf_dnn_op_allowed(""));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_op_allowed(void)
@@ -57,7 +53,7 @@ static char *test_resize_op_allowed(void)
      * the ONNX spec spells the op exactly "Resize". */
     mu_assert("resize lowercase must remain rejected", !vmaf_dnn_op_allowed("resize"));
     mu_assert("RESIZE uppercase must remain rejected", !vmaf_dnn_op_allowed("RESIZE"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -66,7 +62,5 @@ char *run_tests(void)
     mu_run_test(test_control_flow_ops_allowed);
     mu_run_test(test_resize_op_allowed);
     mu_run_test(test_custom_ops_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

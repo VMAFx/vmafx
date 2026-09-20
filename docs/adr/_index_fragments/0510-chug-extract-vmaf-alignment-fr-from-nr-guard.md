@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0510](0510-chug-extract-vmaf-alignment-fr-from-nr-guard.md) | CHUG re-extract VMAF-alignment fix — FR-corpus guard on the FR-from-NR extractor | Accepted | ai, corpus, chug, k150k, extractor, training-data, regression-guard |

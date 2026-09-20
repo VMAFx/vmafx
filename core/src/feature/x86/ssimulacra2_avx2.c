@@ -39,9 +39,11 @@
  * the scalar reference compiled without FMA fusion.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -107,11 +109,10 @@ void ssimulacra2_multiply_3plane_avx2(const float *a, const float *b, float *mul
 /* ADR-0141 carve-out: the main body keeps matmul, per-lane cbrtf, and
  * the XYB rescale together for line-for-line diff against the scalar
  * reference. Splitting it would break the bit-exactness audit story. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void ssimulacra2_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsigned w, unsigned h)
 {
-    assert(lin != NULL);
-    assert(xyb != NULL);
+    assert(lin != VMAF_NULLPTR);
+    assert(xyb != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
     const size_t plane_sz = (size_t)w * (size_t)h;
     const float *rp = lin;
@@ -325,7 +326,6 @@ static inline void edge_diff_accum_d(edge_diff_acc_t *acc, double a1, double am1
  * with a per-lane double-accumulator tail for the two reductions; the
  * two parts are semantically coupled and splitting them would force a
  * second SIMD spill/reload per 8-pixel block. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void ssimulacra2_ssim_map_avx2(const float *m1, const float *m2, const float *s11, const float *s22,
                                const float *s12, unsigned w, unsigned h, double plane_averages[6])
 {
@@ -464,7 +464,6 @@ void ssimulacra2_edge_diff_map_avx2(const float *img1, const float *mu1, const f
  * scalar-store kept together for line-for-line scalar diff. Splitting would
  * spill the IIR state across call boundaries and break the bit-exact audit
  * vs the scalar reference in `fast_gaussian_1d`. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 static void hblur_8rows_avx2(const float rg_n2[3], const float rg_d1[3], int rg_radius,
                              const float *in, float *out, unsigned w, unsigned y_base,
                              unsigned row_count)
@@ -547,7 +546,6 @@ static void hblur_8rows_avx2(const float rg_n2[3], const float rg_d1[3], int rg_
 /* ADR-0141 carve-out: SIMD main loop + scalar tail share the same IIR
  * state arrays and must stay in one function to preserve the scalar
  * per-column state-update ordering. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 static void vblur_simd_8cols_avx2(const float rg_n2[3], const float rg_d1[3], int rg_radius,
                                   float *col_state, const float *in, float *out, unsigned w,
                                   unsigned h)
@@ -574,9 +572,9 @@ static void vblur_simd_8cols_avx2(const float rg_n2[3], const float rg_d1[3], in
     for (ptrdiff_t n = -N + 1; n < ysize; n++) {
         const ptrdiff_t left = n - N - 1;
         const ptrdiff_t right = n + N - 1;
-        const float *lrow = (left >= 0) ? (in + (size_t)left * xsize) : NULL;
-        const float *rrow = (right < ysize) ? (in + (size_t)right * xsize) : NULL;
-        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : NULL;
+        const float *lrow = (left >= 0) ? (in + (size_t)left * xsize) : VMAF_NULLPTR;
+        const float *rrow = (right < ysize) ? (in + (size_t)right * xsize) : VMAF_NULLPTR;
+        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : VMAF_NULLPTR;
 
         size_t x = 0;
         for (; x + 8 <= xsize; x += 8) {
@@ -631,10 +629,10 @@ void ssimulacra2_blur_plane_avx2(const float rg_n2[3], const float rg_d1[3], int
                                  float *col_state, const float *in, float *out, float *scratch,
                                  unsigned w, unsigned h)
 {
-    assert(col_state != NULL);
-    assert(in != NULL);
-    assert(out != NULL);
-    assert(scratch != NULL);
+    assert(col_state != VMAF_NULLPTR);
+    assert(in != VMAF_NULLPTR);
+    assert(out != VMAF_NULLPTR);
+    assert(scratch != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
 
     /* Horizontal pass: 8-row batches through `scratch`. */
@@ -758,12 +756,11 @@ static inline void compute_matrix_coefs(int yuv_matrix, float *kr_out, float *kg
 /* ADR-0141 carve-out: the main loop ties scalar pixel reads + SIMD
  * matmul + per-lane scalar sRGB EOTF together for the line-for-line
  * scalar diff. Splitting would force per-iteration spills. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void ssimulacra2_picture_to_linear_rgb_avx2(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
                                             const simd_plane_t planes[3], float *out)
 {
-    assert(planes != NULL);
-    assert(out != NULL);
+    assert(planes != VMAF_NULLPTR);
+    assert(out != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
 
     const size_t plane_sz = (size_t)w * (size_t)h;
@@ -890,5 +887,3 @@ void ssimulacra2_picture_to_linear_rgb_avx2(int yuv_matrix, unsigned bpc, unsign
         }
     }
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

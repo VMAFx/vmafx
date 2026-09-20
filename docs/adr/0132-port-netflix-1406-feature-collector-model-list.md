@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0132: Port Netflix#1406 — `feature_collector` mount/unmount model-list bugfix
 
 - **Status**: Accepted
@@ -48,7 +47,7 @@ size threshold.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Port upstream diff verbatim (with its duplicated test setup) | Smallest semantic divergence from upstream PR | Two test bodies > 60 LoC each — trips clang-tidy readability-function-size. Also carries upstream's multi-decl (`VmafModel *m0, *m1, *m2;`) style that conflicts with SEI CERT DCL04-C. | Fork lint gates would have flagged it |
 | Apply this ADR's version (shared helper + per-test loop over `models[3]`) | Same correctness coverage, half the LoC per test, single-responsibility helper; no clang-tidy warnings | Fork-local reshape of the upstream test | Chosen |
 | Return `-ENOENT` vs keep `-EINVAL` | `-ENOENT` matches POSIX convention for "entry not present" | Callers that previously checked `err == -EINVAL` only on NULL inputs now need to distinguish; no in-tree caller does | Align with upstream convention — any future caller gets clean error semantics |

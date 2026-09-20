@@ -34,9 +34,11 @@
  *  ``docs/ai/extractor-template.md`` for the recipe.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -79,24 +81,24 @@ static void lpips_release(LpipsState *s)
     for (int i = 0; i < 3; ++i) {
         if (s->rgb8_ref[i]) {
             aligned_free(s->rgb8_ref[i]);
-            s->rgb8_ref[i] = NULL;
+            s->rgb8_ref[i] = VMAF_NULLPTR;
         }
         if (s->rgb8_dist[i]) {
             aligned_free(s->rgb8_dist[i]);
-            s->rgb8_dist[i] = NULL;
+            s->rgb8_dist[i] = VMAF_NULLPTR;
         }
     }
     if (s->tensor_ref) {
         aligned_free(s->tensor_ref);
-        s->tensor_ref = NULL;
+        s->tensor_ref = VMAF_NULLPTR;
     }
     if (s->tensor_dist) {
         aligned_free(s->tensor_dist);
-        s->tensor_dist = NULL;
+        s->tensor_dist = VMAF_NULLPTR;
     }
     if (s->sess) {
         (void)vmaf_dnn_session_close(s->sess);
-        s->sess = NULL;
+        s->sess = VMAF_NULLPTR;
     }
 }
 
@@ -124,7 +126,7 @@ static int lpips_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, u
     rc = vmaf_tiny_ai_open_session("lpips", path, &s->sess);
     if (rc < 0)
         return rc;
-    assert(s->sess != NULL);
+    assert(s->sess != VMAF_NULLPTR);
 
     s->w = w;
     s->h = h;
@@ -148,15 +150,16 @@ oom:
     return -ENOMEM;
 }
 
-static int lpips_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                         VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int lpips_extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                         const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                         const VmafPicture *dist_pic_90, unsigned index,
                          VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
     LpipsState *s = fex->priv;
-    assert(s != NULL);
-    assert(s->sess != NULL);
+    assert(s != VMAF_NULLPTR);
+    assert(s->sess != VMAF_NULLPTR);
 
     if (ref_pic->w[0] != s->w || ref_pic->h[0] != s->h)
         return -ERANGE;
@@ -217,9 +220,8 @@ static const VmafOption lpips_options[] = {
     {0},
 };
 
-static const char *lpips_provided_features[] = {"lpips", NULL};
+static const char *lpips_provided_features[] = {"lpips", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_lpips` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_lpips = {
     .name = "lpips",
     .init = lpips_init,
@@ -233,5 +235,3 @@ VmafFeatureExtractor vmaf_fex_lpips = {
      * field landed; see ADR-0181). */
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

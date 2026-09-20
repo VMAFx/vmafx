@@ -40,11 +40,7 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_collector_internal.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* ------------------------------------------------------------------ */
 /* aggregate_vector_append guards                                     */
@@ -52,9 +48,9 @@
 
 static char *test_aggregate_vector_append_null_input(void)
 {
-    int rc = aggregate_vector_append(NULL, "x", 1.0);
+    int rc = aggregate_vector_append(VMAF_NULLPTR, "x", 1.0);
     mu_assert("aggregate_vector_append(NULL) must return -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aggregate_vector_append_duplicate_same_score(void)
@@ -70,7 +66,7 @@ static char *test_aggregate_vector_append_duplicate_same_score(void)
     mu_assert("duplicate-key with equal score must succeed", rc == 0);
 
     aggregate_vector_destroy(&av);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_aggregate_vector_append_duplicate_diff_score(void)
@@ -86,7 +82,7 @@ static char *test_aggregate_vector_append_duplicate_diff_score(void)
     mu_assert("duplicate-key with mismatched score must return -EINVAL", rc == -EINVAL);
 
     aggregate_vector_destroy(&av);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,17 +91,17 @@ static char *test_aggregate_vector_append_duplicate_diff_score(void)
 
 static char *test_feature_vector_append_null_input(void)
 {
-    int rc = feature_vector_append(NULL, 0, 0.0);
+    int rc = feature_vector_append(VMAF_NULLPTR, 0, 0.0);
     mu_assert("feature_vector_append(NULL) must return -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_feature_vector_append_duplicate_index(void)
 {
-    FeatureVector *fv = NULL;
+    FeatureVector *fv = VMAF_NULLPTR;
     int rc = feature_vector_init(&fv, "fv_dup");
     mu_assert("feature_vector_init", rc == 0);
-    mu_assert("feature_vector_init must populate fv", fv != NULL);
+    mu_assert("feature_vector_init must populate fv", fv != VMAF_NULLPTR);
 
     rc = feature_vector_append(fv, 0u, 1.0);
     mu_assert("first index write succeeds", rc == 0);
@@ -114,14 +110,14 @@ static char *test_feature_vector_append_duplicate_index(void)
     mu_assert("rewrite of same index must return -EINVAL", rc == -EINVAL);
 
     feature_vector_destroy(fv);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_feature_vector_destroy_null_no_crash(void)
 {
     /* Branch coverage: the early NULL guard at line 198-199. */
-    feature_vector_destroy(NULL);
-    return NULL;
+    feature_vector_destroy(VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -132,9 +128,9 @@ static char *test_feature_collector_init_null_out(void)
 {
     /* Pass NULL output pointer; must short-circuit to -EINVAL
      * (line 235-236). */
-    int rc = vmaf_feature_collector_init(NULL);
+    int rc = vmaf_feature_collector_init(VMAF_NULLPTR);
     mu_assert("vmaf_feature_collector_init(NULL) must return -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -143,29 +139,29 @@ static char *test_feature_collector_init_null_out(void)
 
 static char *test_feature_collector_append_null_collector(void)
 {
-    int rc = vmaf_feature_collector_append(NULL, "x", 1.0, 0);
+    int rc = vmaf_feature_collector_append(VMAF_NULLPTR, "x", 1.0, 0);
     mu_assert("append(NULL collector) must return -EINVAL", rc == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_feature_collector_append_null_name(void)
 {
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     int rc = vmaf_feature_collector_init(&fc);
-    mu_assert("init succeeds", rc == 0 && fc != NULL);
+    mu_assert("init succeeds", rc == 0 && fc != VMAF_NULLPTR);
 
-    rc = vmaf_feature_collector_append(fc, NULL, 1.0, 0);
+    rc = vmaf_feature_collector_append(fc, VMAF_NULLPTR, 1.0, 0);
     mu_assert("append(NULL name) must return -EINVAL", rc == -EINVAL);
 
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_feature_collector_append_duplicate_index(void)
 {
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     int rc = vmaf_feature_collector_init(&fc);
-    mu_assert("init succeeds", rc == 0 && fc != NULL);
+    mu_assert("init succeeds", rc == 0 && fc != VMAF_NULLPTR);
 
     rc = vmaf_feature_collector_append(fc, "metric_x", 1.0, 0);
     mu_assert("first append must succeed", rc == 0);
@@ -175,7 +171,7 @@ static char *test_feature_collector_append_duplicate_index(void)
     mu_assert("duplicate-index write must propagate -EINVAL", rc == -EINVAL);
 
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -184,27 +180,27 @@ static char *test_feature_collector_append_duplicate_index(void)
 
 static char *test_feature_collector_unmount_null_inputs(void)
 {
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     int rc = vmaf_feature_collector_init(&fc);
-    mu_assert("init succeeds", rc == 0 && fc != NULL);
+    mu_assert("init succeeds", rc == 0 && fc != VMAF_NULLPTR);
 
-    rc = vmaf_feature_collector_unmount_model(NULL, NULL);
+    rc = vmaf_feature_collector_unmount_model(VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("unmount(NULL collector) must return -EINVAL", rc == -EINVAL);
 
-    rc = vmaf_feature_collector_unmount_model(fc, NULL);
+    rc = vmaf_feature_collector_unmount_model(fc, VMAF_NULLPTR);
     mu_assert("unmount(NULL model) must return -EINVAL", rc == -EINVAL);
 
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_feature_collector_unmount_not_found(void)
 {
     /* With no mounted models, the while-loop never enters and the
      * function returns -ENOENT (line 326). */
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     int rc = vmaf_feature_collector_init(&fc);
-    mu_assert("init succeeds", rc == 0 && fc != NULL);
+    mu_assert("init succeeds", rc == 0 && fc != VMAF_NULLPTR);
 
     /* Pretend a non-NULL but unregistered model pointer. */
     VmafModel sentinel;
@@ -214,7 +210,7 @@ static char *test_feature_collector_unmount_not_found(void)
     mu_assert("unmount of never-mounted model must return -ENOENT", rc == -ENOENT);
 
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -223,9 +219,9 @@ static char *test_feature_collector_unmount_not_found(void)
 
 static char *test_feature_collector_aggregate_get_unknown(void)
 {
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     int rc = vmaf_feature_collector_init(&fc);
-    mu_assert("init succeeds", rc == 0 && fc != NULL);
+    mu_assert("init succeeds", rc == 0 && fc != VMAF_NULLPTR);
 
     double score = 0.0;
     /* Aggregate vector starts empty; lookup must miss. */
@@ -240,7 +236,7 @@ static char *test_feature_collector_aggregate_get_unknown(void)
     mu_assert("get_aggregate must return the set value", score == 42.0);
 
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -252,8 +248,8 @@ static char *test_feature_collector_destroy_null_no_crash(void)
     /* vmaf_feature_collector_destroy(NULL) is documented to be a
      * no-op; exercise the guard so the branch coverage gate reflects
      * it. */
-    vmaf_feature_collector_destroy(NULL);
-    return NULL;
+    vmaf_feature_collector_destroy(VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -276,5 +272,3 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

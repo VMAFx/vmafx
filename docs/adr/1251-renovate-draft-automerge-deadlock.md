@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-1251: Renovate opens automerge-eligible and security bumps ready for review
 
 - **Status**: Accepted

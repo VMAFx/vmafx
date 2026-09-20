@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0303](0303-fr-regressor-v2-ensemble-prod-flip.md) | `fr_regressor_v2` ensemble — production flip trainer + CI gate | Accepted | ai, fr-regressor, ensemble, probabilistic, loso, ci-gate, fork-local |

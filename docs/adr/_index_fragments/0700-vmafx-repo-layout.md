@@ -1,1 +1,5 @@
-| [ADR-0700](0700-vmafx-repo-layout.md) | VMAFX repo layout: rename `libvmaf/` → `core/` and `python/vmaf/` → `compat/python-vmaf/`; ABI unchanged | Accepted | build, workspace, meta, vmafx |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0700](0700-vmafx-repo-layout.md) | VMAFX Repo Layout | Accepted | `build`, `workspace`, `meta`, `vmafx` |

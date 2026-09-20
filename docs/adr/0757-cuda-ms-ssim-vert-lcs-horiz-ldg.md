@@ -1,10 +1,12 @@
-<!-- markdownlint-disable MD013 MD060 -->
-# ADR-0757 — CUDA MS-SSIM `ms_ssim_vert_lcs` + `ms_ssim_horiz`: `__ldg()` + `__launch_bounds__` (F3 fix #2)
+# ADR-0757: cuda ms ssim vert lcs horiz ldg
 
-| Field  | Value |
-| ------ | ----- |
-| Status | Accepted |
-| Date   | 2026-05-29 |
+**Decision:** ADR-0757 — CUDA MS-SSIM `ms_ssim_vert_lcs` + `ms_ssim_horiz`:
+`__ldg()` + `__launch_bounds__` (F3 fix #2)
+
+| Field  | Value                                  |
+| ------ | -------------------------------------- |
+| Status | Accepted                               |
+| Date   | 2026-05-29                             |
 | Tags   | cuda, performance, ms_ssim, fork-local |
 
 ## Context
@@ -13,11 +15,12 @@ The PR #96 audit of `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
 identified two kernels as the top candidates for the F3 fix pattern first
 applied in ADR-0754 (`calculate_ssim_vert_combine`):
 
-**`ms_ssim_horiz`** — horizontal 11-tap separable Gaussian over ref / cmp.
-The kernel passes 7 `VmafCudaBuffer` arguments by value; two of them (`ref_in`,
-`cmp_in`) are read-only input planes written exclusively by the upload pass.
-All 2×11 = 22 inner-loop loads used plain dereferencing rather than `__ldg()`,
-preventing the compiler from routing them through the read-only L1 texture cache.
+**`ms_ssim_horiz`** — horizontal 11-tap separable Gaussian over ref / cmp. The
+kernel passes 7 `VmafCudaBuffer` arguments by value; two of them (`ref_in`,
+`cmp_in`) are read-only input planes written exclusively by the upload pass. All
+2×11 = 22 inner-loop loads used plain dereferencing rather than `__ldg()`,
+preventing the compiler from routing them through the read-only L1 texture
+cache.
 
 **`ms_ssim_vert_lcs`** — vertical 11-tap pass on 5 horizontal-pass intermediate
 buffers + per-pixel l/c/s + per-block partial sums. The 5 intermediate buffers
@@ -61,12 +64,12 @@ Apply the F3 fix to both kernels in the same PR:
 
 ## Alternatives considered
 
-| Option | Considered | Outcome |
-| ------ | ---------- | ------- |
-| F3 on `vert_lcs` only | Yes | `ms_ssim_horiz` has the same alias-hiding pattern and is memory-bound at the same resolution. Include both — 6 extra lines, zero added risk. |
-| Shared-memory tiling (ADR-0464 pattern) | Yes | ms_ssim kernels are separable 11-tap Gaussian; spatial overlap is moderate (K/2 = 5 taps). Profiling at 576p shows wave-starvation dominates over memory latency at that resolution. Tiling is a separate investigation item; `__ldg()` is the lower-risk first step per ADR-0754 precedent. |
-| AoS → SoA buffer layout (F1) | Yes | Larger change; deferred pending measurement of F3 impact as in ADR-0754. |
-| Skip `__launch_bounds__` | No | Two characters, zero risk; consistent with ADR-0754 and ADR-0743 precedents. |
+| Option                                  | Considered | Outcome                                                                                                                                                                                                                                                                                      |
+| --------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F3 on `vert_lcs` only                   | Yes        | `ms_ssim_horiz` has the same alias-hiding pattern and is memory-bound at the same resolution. Include both — 6 extra lines, zero added risk.                                                                                                                                                 |
+| Shared-memory tiling (ADR-0464 pattern) | Yes        | ms_ssim kernels are separable 11-tap Gaussian; spatial overlap is moderate (K/2 = 5 taps). Profiling at 576p shows wave-starvation dominates over memory latency at that resolution. Tiling is a separate investigation item; `__ldg()` is the lower-risk first step per ADR-0754 precedent. |
+| AoS → SoA buffer layout (F1)            | Yes        | Larger change; deferred pending measurement of F3 impact as in ADR-0754.                                                                                                                                                                                                                     |
+| Skip `__launch_bounds__`                | No         | Two characters, zero risk; consistent with ADR-0754 and ADR-0743 precedents.                                                                                                                                                                                                                 |
 
 ## Consequences
 
@@ -78,15 +81,15 @@ Apply the F3 fix to both kernels in the same PR:
 - Zero ULP divergence expected (per ADR-0754 precedent; correctness path is
   fully determined by the Gaussian weight table; `__ldg()` does not alter the
   loaded value).
-- `AGENTS.md` invariant note under `__ldg() pattern for pass-2 read-only
-  intermediate buffers (ADR-0754)` updated to note that ms_ssim is the second
-  application of this pattern.
+- `AGENTS.md` invariant note under
+  `__ldg() pattern for pass-2 read-only intermediate buffers (ADR-0754)` updated
+  to note that ms_ssim is the second application of this pattern.
 
 ## References
 
-- req: user direction 2026-05-29: "Apply the F3 fix to the top-2 candidates
-  from PR #96's audit: ms_ssim_vert_lcs and ms_ssim_horiz. Mirror exactly what
-  PR #93 did for calculate_ssim_vert_combine."
+- req: user direction 2026-05-29: "Apply the F3 fix to the top-2 candidates from
+  PR #96's audit: ms_ssim_vert_lcs and ms_ssim_horiz. Mirror exactly what PR #93
+  did for calculate_ssim_vert_combine."
 - ADR-0754: F3 pattern precedent on `calculate_ssim_vert_combine`.
 - ADR-0743: `__ldg()` and `__launch_bounds__` precedent on VIF filter1d.
 - ADR-0214: GPU-parity CI gate (places=4).

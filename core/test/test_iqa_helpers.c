@@ -41,28 +41,22 @@
 #include "feature/iqa/ssim_tools.h"
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
-
 /* ------------------------------------------------------------------ */
 /*  math_utils.c                                                       */
 /* ------------------------------------------------------------------ */
 
 static char *test_math_round_positive_half(void)
 {
-    mu_assert("round(0.5) == 1", _round(0.5f) == 1);
-    mu_assert("round(1.5) == 2", _round(1.5f) == 2);
-    mu_assert("round(0.49) == 0", _round(0.49f) == 0);
-    mu_assert("round(0.0) == 0", _round(0.0f) == 0);
-    return NULL;
+    mu_assert("round(0.5) == 1", iqa_round(0.5f) == 1);
+    mu_assert("round(1.5) == 2", iqa_round(1.5f) == 2);
+    mu_assert("round(0.49) == 0", iqa_round(0.49f) == 0);
+    mu_assert("round(0.0) == 0", iqa_round(0.0f) == 0);
+    return VMAF_NULLPTR;
 }
 
 static char *test_math_round_negative(void)
 {
-    /* The vendored _round() is "truncate toward zero, then add sign
+    /* The vendored iqa_round() is "truncate toward zero, then add sign
      * when |frac| >= 0.5". For negative inputs that means:
      *   -0.5 -> trunc=0, (0 - 0 = 0) < 0.5 -> 0
      *   -1.5 -> trunc=-1, (-1.5 - -1 = -0.5) < 0.5 -> -1
@@ -70,42 +64,42 @@ static char *test_math_round_negative(void)
      * The function is asymmetric — positive .5 rounds up, negative .5
      * rounds toward zero. This test locks the observed behaviour in
      * so any accidental rewrite of the rounding rule surfaces. */
-    mu_assert("round(-0.5) == 0", _round(-0.5f) == 0);
-    mu_assert("round(-1.5) == -1", _round(-1.5f) == -1);
-    mu_assert("round(-0.49) == 0", _round(-0.49f) == 0);
-    mu_assert("round(-1.7) == -1", _round(-1.7f) == -1);
-    return NULL;
+    mu_assert("round(-0.5) == 0", iqa_round(-0.5f) == 0);
+    mu_assert("round(-1.5) == -1", iqa_round(-1.5f) == -1);
+    mu_assert("round(-0.49) == 0", iqa_round(-0.49f) == 0);
+    mu_assert("round(-1.7) == -1", iqa_round(-1.7f) == -1);
+    return VMAF_NULLPTR;
 }
 
 static char *test_math_min_max(void)
 {
-    mu_assert("max(3, 5) == 5", _max(3, 5) == 5);
-    mu_assert("max(5, 3) == 5", _max(5, 3) == 5);
-    mu_assert("max(-1, -2) == -1", _max(-1, -2) == -1);
-    mu_assert("min(3, 5) == 3", _min(3, 5) == 3);
-    mu_assert("min(5, 3) == 3", _min(5, 3) == 3);
-    mu_assert("min(-1, -2) == -2", _min(-1, -2) == -2);
-    return NULL;
+    mu_assert("max(3, 5) == 5", iqa_max(3, 5) == 5);
+    mu_assert("max(5, 3) == 5", iqa_max(5, 3) == 5);
+    mu_assert("max(-1, -2) == -1", iqa_max(-1, -2) == -1);
+    mu_assert("min(3, 5) == 3", iqa_min(3, 5) == 3);
+    mu_assert("min(5, 3) == 3", iqa_min(5, 3) == 3);
+    mu_assert("min(-1, -2) == -2", iqa_min(-1, -2) == -2);
+    return VMAF_NULLPTR;
 }
 
 static char *test_math_cmp_float(void)
 {
-    /* _cmp_float scales by 10^digits, then applies the same
+    /* iqa_cmp_float scales by 10^digits, then applies the same
      * asymmetric "trunc + sign-add when frac>=0.5" rounding as
-     * _round() above — and compares the two integer results. So
+     * iqa_round() above — and compares the two integer results. So
      * 1.2 vs 1.21 at digits=1 -> both scale to 12.x with frac<0.5
      * -> both truncate to 12, equal. */
-    mu_assert("1.2 == 1.21 @ digits=1", _cmp_float(1.2f, 1.21f, 1) == 0);
+    mu_assert("1.2 == 1.21 @ digits=1", iqa_cmp_float(1.2f, 1.21f, 1) == 0);
     /* But 1.2 vs 1.3 at digits=1 -> 12 vs 13, differ. */
-    mu_assert("1.2 != 1.3 @ digits=1", _cmp_float(1.2f, 1.3f, 1) == 1);
+    mu_assert("1.2 != 1.3 @ digits=1", iqa_cmp_float(1.2f, 1.3f, 1) == 1);
     /* And the bumped-by-rounding case: 1.234 vs 1.235 at digits=2
      * -> 123.4 (trunc 123) vs 123.5 (trunc 123 + sign 1 = 124). */
-    mu_assert("1.234 != 1.235 @ digits=2", _cmp_float(1.234f, 1.235f, 2) == 1);
+    mu_assert("1.234 != 1.235 @ digits=2", iqa_cmp_float(1.234f, 1.235f, 2) == 1);
     /* Negative vs positive — small magnitudes collapse to 0. */
-    mu_assert("-0.001 == 0.001 @ digits=1", _cmp_float(-0.001f, 0.001f, 1) == 0);
+    mu_assert("-0.001 == 0.001 @ digits=1", iqa_cmp_float(-0.001f, 0.001f, 1) == 0);
     /* Floating-point matrix equality at zero precision (everything maps to 0). */
-    mu_assert("0.1 == 0.4 @ digits=0", _cmp_float(0.1f, 0.4f, 0) == 0);
-    return NULL;
+    mu_assert("0.1 == 0.4 @ digits=0", iqa_cmp_float(0.1f, 0.4f, 0) == 0);
+    return VMAF_NULLPTR;
 }
 
 static char *test_math_matrix_cmp(void)
@@ -113,9 +107,9 @@ static char *test_math_matrix_cmp(void)
     const float a[6] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
     const float b_same[6] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
     const float b_diff[6] = {1.0f, 2.0f, 3.0f, 4.0f, 5.5f, 6.0f};
-    mu_assert("matrix_cmp identical -> 0", _matrix_cmp(a, b_same, 3, 2, 4) == 0);
-    mu_assert("matrix_cmp differs at idx 4 -> 1", _matrix_cmp(a, b_diff, 3, 2, 1) == 1);
-    return NULL;
+    mu_assert("matrix_cmp identical -> 0", iqa_matrix_cmp(a, b_same, 3, 2, 4) == 0);
+    mu_assert("matrix_cmp differs at idx 4 -> 1", iqa_matrix_cmp(a, b_diff, 3, 2, 1) == 1);
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -135,7 +129,7 @@ static char *test_kbnd_symmetric_in_bounds(void)
     /* In-bounds lookup returns the raw pixel. */
     mu_assert("symm in (2,1)", KBND_SYMMETRIC(kbnd_img, 4, 3, 2, 1, 0.0f) == 12.0f);
     mu_assert("symm in (0,0)", KBND_SYMMETRIC(kbnd_img, 4, 3, 0, 0, 0.0f) == 0.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_symmetric_negative_reflect(void)
@@ -145,7 +139,7 @@ static char *test_kbnd_symmetric_negative_reflect(void)
     mu_assert("symm (-1,-1)", KBND_SYMMETRIC(kbnd_img, 4, 3, -1, -1, 0.0f) == 0.0f);
     /* x=-2 -> 1 (px=8, rx=-2%8 + 8 = 6 -> px-6-1=1).  y=0 -> 0.  So (-2,0)=01=1.0 */
     mu_assert("symm (-2,0)", KBND_SYMMETRIC(kbnd_img, 4, 3, -2, 0, 0.0f) == 1.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_symmetric_positive_reflect(void)
@@ -154,7 +148,7 @@ static char *test_kbnd_symmetric_positive_reflect(void)
     mu_assert("symm (4,0)", KBND_SYMMETRIC(kbnd_img, 4, 3, 4, 0, 0.0f) == 3.0f);
     /* y=h(3): py=6, ry=3%6=3, ry>=h -> ry=6-3-1=2. x=0 -> img[2*4+0]=20 */
     mu_assert("symm (0,3)", KBND_SYMMETRIC(kbnd_img, 4, 3, 0, 3, 0.0f) == 20.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_replicate(void)
@@ -163,7 +157,7 @@ static char *test_kbnd_replicate(void)
     mu_assert("repl (-1,-1) -> (0,0)", KBND_REPLICATE(kbnd_img, 4, 3, -1, -1, 0.0f) == 0.0f);
     mu_assert("repl (5,1) -> (3,1)=13", KBND_REPLICATE(kbnd_img, 4, 3, 5, 1, 0.0f) == 13.0f);
     mu_assert("repl (1,5) -> (1,2)=21", KBND_REPLICATE(kbnd_img, 4, 3, 1, 5, 0.0f) == 21.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_kbnd_constant(void)
@@ -174,7 +168,7 @@ static char *test_kbnd_constant(void)
     /* x>=w returns bnd_const. */
     mu_assert("const (4,1) -> bnd", KBND_CONSTANT(kbnd_img, 4, 3, 4, 1, 99.0f) == 99.0f);
     mu_assert("const (1,3) -> bnd", KBND_CONSTANT(kbnd_img, 4, 3, 1, 3, 99.0f) == 99.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,14 +182,14 @@ static float kernel3x3_data[9] = {1.0f / 9.0f, 1.0f / 9.0f, 1.0f / 9.0f, 1.0f / 
 static char *test_iqa_filter_pixel_null_kernel(void)
 {
     /* A NULL kernel returns the raw pixel value. */
-    float v = iqa_filter_pixel(kbnd_img, 4, 3, 2, 1, NULL, 1.0f);
+    float v = iqa_filter_pixel(kbnd_img, 4, 3, 2, 1, VMAF_NULLPTR, 1.0f);
     mu_assert("null kernel passes pixel through", v == 12.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_filter_pixel_interior(void)
 {
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel = kernel3x3_data;
     k.w = 3;
     k.h = 3;
@@ -207,12 +201,12 @@ static char *test_iqa_filter_pixel_interior(void)
     float v = iqa_filter_pixel(img4x4, 4, 4, 1, 1, &k, 1.0f);
     /* Mean of {1,2,3,5,6,7,9,10,11} = 54/9 = 6.0 */
     mu_assert("interior 3x3 box -> 6.0", fabsf(v - 6.0f) < 1e-5f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_filter_pixel_edge_replicate(void)
 {
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel = kernel3x3_data;
     k.w = 3;
     k.h = 3;
@@ -228,12 +222,12 @@ static char *test_iqa_filter_pixel_edge_replicate(void)
      *   (-1, 1)=(0,1)=5  (0, 1)=5        (1, 1)=6
      * Mean = (1+1+2+1+1+2+5+5+6)/9 = 24/9 ≈ 2.6667 */
     mu_assert("corner replicate -> 24/9", fabsf(v - (24.0f / 9.0f)) < 1e-5f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_img_filter_writes_result(void)
 {
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel = kernel3x3_data;
     k.w = 3;
     k.h = 3;
@@ -246,7 +240,7 @@ static char *test_iqa_img_filter_writes_result(void)
     mu_assert("iqa_img_filter returns 0 on success", rc == 0);
     /* Interior pixel (1,1) -> 6.0 as in test_iqa_filter_pixel_interior. */
     mu_assert("dst(1,1) == 6.0", fabsf(dst[1 * 4 + 1] - 6.0f) < 1e-5f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_img_filter_reject_no_bnd_opt(void)
@@ -254,25 +248,25 @@ static char *test_iqa_img_filter_reject_no_bnd_opt(void)
     /* k->bnd_opt == NULL must be rejected with rc=1 — guards against
      * the NULL-dereference that iqa_filter_pixel would otherwise hit
      * at the first edge pixel. */
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel = kernel3x3_data;
     k.w = 3;
     k.h = 3;
     k.normalized = 1;
-    k.bnd_opt = NULL;
+    k.bnd_opt = VMAF_NULLPTR;
     float img[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     float dst[4] = {0};
     int rc = iqa_img_filter(img, 2, 2, &k, dst);
     mu_assert("no bnd_opt -> rc=1", rc == 1);
     /* And a NULL kernel triggers the same rc=1 path. */
-    mu_assert("NULL kernel -> rc=1", iqa_img_filter(img, 2, 2, NULL, dst) == 1);
-    return NULL;
+    mu_assert("NULL kernel -> rc=1", iqa_img_filter(img, 2, 2, VMAF_NULLPTR, dst) == 1);
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_img_filter_inplace(void)
 {
     /* When result==NULL the result is copied back into `img`. */
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel = kernel3x3_data;
     k.w = 3;
     k.h = 3;
@@ -280,11 +274,11 @@ static char *test_iqa_img_filter_inplace(void)
     k.bnd_opt = KBND_REPLICATE;
     float img[16] = {1.0f, 2.0f,  3.0f,  4.0f,  5.0f,  6.0f,  7.0f,  8.0f,
                      9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
-    int rc = iqa_img_filter(img, 4, 4, &k, NULL);
+    int rc = iqa_img_filter(img, 4, 4, &k, VMAF_NULLPTR);
     mu_assert("inplace returns 0", rc == 0);
     /* Interior pixel (1,1) -> 6.0; verified copied back into img. */
     mu_assert("inplace dst(1,1) == 6.0", fabsf(img[1 * 4 + 1] - 6.0f) < 1e-5f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -300,7 +294,7 @@ static char *test_decimate_factor2_no_kernel(void)
     float dst[4] = {0};
     int rw = 0;
     int rh = 0;
-    int rc = iqa_decimate(img, 4, 4, 2, NULL, dst, &rw, &rh);
+    int rc = iqa_decimate(img, 4, 4, 2, VMAF_NULLPTR, dst, &rw, &rh);
     mu_assert("decimate returns 0", rc == 0);
     mu_assert("rw=2", rw == 2);
     mu_assert("rh=2", rh == 2);
@@ -308,7 +302,7 @@ static char *test_decimate_factor2_no_kernel(void)
     mu_assert("dst[1]=img(2,0)=3", dst[1] == 3.0f);
     mu_assert("dst[2]=img(0,2)=9", dst[2] == 9.0f);
     mu_assert("dst[3]=img(2,2)=11", dst[3] == 11.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_decimate_inplace(void)
@@ -316,11 +310,11 @@ static char *test_decimate_inplace(void)
     /* result==NULL means write back into img. */
     float img[16] = {1.0f, 2.0f,  3.0f,  4.0f,  5.0f,  6.0f,  7.0f,  8.0f,
                      9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
-    int rc = iqa_decimate(img, 4, 4, 2, NULL, NULL, NULL, NULL);
+    int rc = iqa_decimate(img, 4, 4, 2, VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("decimate inplace returns 0", rc == 0);
     mu_assert("img[0] preserved (0,0)=1", img[0] == 1.0f);
     mu_assert("img[1] now img(2,0)=3", img[1] == 3.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_decimate_odd_dimension(void)
@@ -333,7 +327,7 @@ static char *test_decimate_odd_dimension(void)
     float dst[9] = {0};
     int rw = 0;
     int rh = 0;
-    int rc = iqa_decimate(img, 5, 5, 2, NULL, dst, &rw, &rh);
+    int rc = iqa_decimate(img, 5, 5, 2, VMAF_NULLPTR, dst, &rw, &rh);
     mu_assert("decimate odd returns 0", rc == 0);
     mu_assert("rw=3", rw == 3);
     mu_assert("rh=3", rh == 3);
@@ -342,7 +336,7 @@ static char *test_decimate_odd_dimension(void)
     mu_assert("dst[2]=4", dst[2] == 4.0f);
     /* dst(0,2)=img(0,4)=20 */
     mu_assert("dst[6]=20", dst[6] == 20.0f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -354,13 +348,6 @@ static char *test_decimate_odd_dimension(void)
 static float kernel_gauss11[11] = {0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
                                    0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f};
 
-/* NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0138 / ADR-0141 / ADR-0278
- * The malloc-failure mu_assert path returns the error string without
- * freeing the partial allocation. The analyzer can't see that
- * mu_assert-on-fail terminates the test process via the runner's
- * top-level return — the leak is bounded to that exit path. Same
- * pattern as test_iqa_convolve.c (file-level suppression for the same
- * reason). */
 static char *test_iqa_ssim_identical_frames(void)
 {
     /* ref == cmp should give ssim ≈ 1.0. Use a 16x16 deterministic
@@ -370,12 +357,16 @@ static char *test_iqa_ssim_identical_frames(void)
     const int h = 16;
     float *ref = (float *)malloc((size_t)w * (size_t)h * sizeof(float));
     float *cmp = (float *)malloc((size_t)w * (size_t)h * sizeof(float));
-    mu_assert("malloc ok", ref && cmp);
+    if (!ref || !cmp) {
+        free(ref);
+        free(cmp);
+        return "malloc failed";
+    }
     for (int i = 0; i < w * h; ++i) {
         ref[i] = (float)(i % 64);
         cmp[i] = ref[i];
     }
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel_h = kernel_gauss11;
     k.kernel_v = kernel_gauss11;
     k.w = 11;
@@ -384,14 +375,14 @@ static char *test_iqa_ssim_identical_frames(void)
     float l = 0.0f;
     float c = 0.0f;
     float s = 0.0f;
-    float ssim = iqa_ssim(ref, cmp, w, h, &k, NULL, NULL, &l, &c, &s);
+    float ssim = iqa_ssim(ref, cmp, w, h, &k, VMAF_NULLPTR, VMAF_NULLPTR, &l, &c, &s);
     free(ref);
     free(cmp);
     mu_assert("ssim(identical) ~ 1.0", fabsf(ssim - 1.0f) < 1e-3f);
     mu_assert("l ~ 1.0", fabsf(l - 1.0f) < 1e-3f);
     mu_assert("c ~ 1.0", fabsf(c - 1.0f) < 1e-3f);
     mu_assert("s ~ 1.0", fabsf(s - 1.0f) < 1e-3f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_iqa_ssim_different_frames(void)
@@ -403,7 +394,11 @@ static char *test_iqa_ssim_different_frames(void)
     const int h = 16;
     float *ref = (float *)malloc((size_t)w * (size_t)h * sizeof(float));
     float *cmp = (float *)malloc((size_t)w * (size_t)h * sizeof(float));
-    mu_assert("malloc ok", ref && cmp);
+    if (!ref || !cmp) {
+        free(ref);
+        free(cmp);
+        return "malloc failed";
+    }
     uint32_t state = 0xDEADBEEFu;
     for (int i = 0; i < w * h; ++i) {
         state ^= state << 13;
@@ -412,7 +407,7 @@ static char *test_iqa_ssim_different_frames(void)
         ref[i] = (float)((int)state & 0xFF);
         cmp[i] = (float)((int)(state >> 8) & 0xFF);
     }
-    struct iqa_kernel k = {0};
+    struct iqa_kernel k = {VMAF_NULLPTR};
     k.kernel_h = kernel_gauss11;
     k.kernel_v = kernel_gauss11;
     k.w = 11;
@@ -421,7 +416,7 @@ static char *test_iqa_ssim_different_frames(void)
     float l = 0.0f;
     float c = 0.0f;
     float s = 0.0f;
-    float ssim = iqa_ssim(ref, cmp, w, h, &k, NULL, NULL, &l, &c, &s);
+    float ssim = iqa_ssim(ref, cmp, w, h, &k, VMAF_NULLPTR, VMAF_NULLPTR, &l, &c, &s);
     free(ref);
     free(cmp);
     mu_assert("ssim is finite", isfinite(ssim));
@@ -430,9 +425,8 @@ static char *test_iqa_ssim_different_frames(void)
     mu_assert("s is finite", isfinite(s));
     /* Differing random fills should yield ssim well below 1.0. */
     mu_assert("ssim(random) < 0.99", ssim < 0.99f);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-/* NOLINTEND(clang-analyzer-unix.Malloc) */
 
 /* ------------------------------------------------------------------ */
 /*  Runner                                                             */
@@ -445,7 +439,7 @@ static char *run_math_tests(void)
     mu_run_test(test_math_min_max);
     mu_run_test(test_math_cmp_float);
     mu_run_test(test_math_matrix_cmp);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_kbnd_tests(void)
@@ -455,7 +449,7 @@ static char *run_kbnd_tests(void)
     mu_run_test(test_kbnd_symmetric_positive_reflect);
     mu_run_test(test_kbnd_replicate);
     mu_run_test(test_kbnd_constant);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_filter_tests(void)
@@ -466,7 +460,7 @@ static char *run_filter_tests(void)
     mu_run_test(test_iqa_img_filter_writes_result);
     mu_run_test(test_iqa_img_filter_reject_no_bnd_opt);
     mu_run_test(test_iqa_img_filter_inplace);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_decimate_tests(void)
@@ -474,14 +468,14 @@ static char *run_decimate_tests(void)
     mu_run_test(test_decimate_factor2_no_kernel);
     mu_run_test(test_decimate_inplace);
     mu_run_test(test_decimate_odd_dimension);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_ssim_tests(void)
 {
     mu_run_test(test_iqa_ssim_identical_frames);
     mu_run_test(test_iqa_ssim_different_frames);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -500,5 +494,3 @@ char *run_tests(void)
         return msg;
     return run_ssim_tests();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

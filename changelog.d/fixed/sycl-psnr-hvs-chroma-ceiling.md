@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **SYCL `integer_psnr_hvs` chroma plane geometry on odd-dimension frames**:
   `integer_psnr_hvs_sycl.cpp::init_fex_sycl` derived the 4:2:0 / 4:2:2 chroma
   plane width/height with floor division (`w >> 1` / `h >> 1`), but `picture.c`,

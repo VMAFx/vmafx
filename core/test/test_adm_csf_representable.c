@@ -46,11 +46,7 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #define ADM_W (64u)
 #define ADM_H (64u)
@@ -80,15 +76,15 @@ static int alloc_grey8(VmafPicture *pic, uint8_t v)
  * when the harness itself fails. */
 static int adm_extract_status(const AdmOpt *opts, char **err_msg)
 {
-    *err_msg = NULL;
+    *err_msg = VMAF_NULLPTR;
 
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
     if (!fex) {
         *err_msg = "adm extractor missing";
         return 1;
     }
 
-    VmafDictionary *dict = NULL;
+    VmafDictionary *dict = VMAF_NULLPTR;
     for (const AdmOpt *o = opts; o && o->key; ++o) {
         if (vmaf_dictionary_set(&dict, o->key, o->val, 0)) {
             *err_msg = "vmaf_dictionary_set failed";
@@ -97,7 +93,7 @@ static int adm_extract_status(const AdmOpt *opts, char **err_msg)
         }
     }
 
-    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
     /* create() takes ownership of `dict`, and frees it on failure. */
     if (vmaf_feature_extractor_context_create(&ctx, fex, dict)) {
         *err_msg = "context_create failed";
@@ -111,7 +107,7 @@ static int adm_extract_status(const AdmOpt *opts, char **err_msg)
         return 1;
     }
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     VmafPicture ref;
     VmafPicture dist;
     if (vmaf_feature_collector_init(&fc)) {
@@ -128,7 +124,7 @@ static int adm_extract_status(const AdmOpt *opts, char **err_msg)
         return 1;
     }
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
@@ -144,11 +140,11 @@ static int adm_extract_status(const AdmOpt *opts, char **err_msg)
 
 static char *test_adm_default_config_still_scores(void)
 {
-    char *msg = NULL;
-    const int err = adm_extract_status(NULL, &msg);
-    mu_assert("harness failure", msg == NULL);
+    char *msg = VMAF_NULLPTR;
+    const int err = adm_extract_status(VMAF_NULLPTR, &msg);
+    mu_assert("harness failure", msg == VMAF_NULLPTR);
     mu_assert("default adm config must still score", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -162,12 +158,12 @@ static char *test_adm_csf_mode_barten_default_scale_rejected(void)
      * diagonal weight 1.21049666 * 2^23 = 10154382 -- 38x and 155x past the
      * 65535 the uint16_t storage holds. Before ADR-1191 they wrapped to
      * 48227 and 61838 and the extractor scored on. */
-    const AdmOpt opts[] = {{"adm_csf_mode", "1"}, {NULL, NULL}};
-    char *msg = NULL;
+    const AdmOpt opts[] = {{"adm_csf_mode", "1"}, {VMAF_NULLPTR, VMAF_NULLPTR}};
+    char *msg = VMAF_NULLPTR;
     const int err = adm_extract_status(opts, &msg);
-    mu_assert("harness failure", msg == NULL);
+    mu_assert("harness failure", msg == VMAF_NULLPTR);
     mu_assert("adm_csf_mode=1 at default adm_csf_scale must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -183,12 +179,12 @@ static char *test_adm_csf_mode_barten_small_scale_accepted(void)
     const AdmOpt opts[] = {{"adm_csf_mode", "1"},
                            {"adm_csf_scale", "0.002893"},
                            {"adm_csf_diag_scale", "0.001586"},
-                           {NULL, NULL}};
-    char *msg = NULL;
+                           {VMAF_NULLPTR, VMAF_NULLPTR}};
+    char *msg = VMAF_NULLPTR;
     const int err = adm_extract_status(opts, &msg);
-    mu_assert("harness failure", msg == NULL);
+    mu_assert("harness failure", msg == VMAF_NULLPTR);
     mu_assert("adm_csf_mode=1 with small scale coefficients must still score", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -203,12 +199,13 @@ static char *test_adm_csf_mode_blend_untabulated_geometry_rejected(void)
      * pre-existing `nvd * rdh >= 3240` guard (3600), so before ADR-1191 the
      * -22.0f reached `(uint16_t)(-22.0f * 2097152.0)`, which is undefined
      * behaviour. */
-    const AdmOpt opts[] = {{"adm_csf_mode", "2"}, {"adm_ref_display_height", "1200"}, {NULL, NULL}};
-    char *msg = NULL;
+    const AdmOpt opts[] = {
+        {"adm_csf_mode", "2"}, {"adm_ref_display_height", "1200"}, {VMAF_NULLPTR, VMAF_NULLPTR}};
+    char *msg = VMAF_NULLPTR;
     const int err = adm_extract_status(opts, &msg);
-    mu_assert("harness failure", msg == NULL);
+    mu_assert("harness failure", msg == VMAF_NULLPTR);
     mu_assert("adm_csf_mode=2 at an untabulated geometry must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -218,17 +215,17 @@ static char *test_adm_csf_mode_blend_untabulated_geometry_rejected(void)
 static char *test_adm_csf_mode_blend_default_geometry_accepted(void)
 {
     /* Mode 2 is what the fork's default model vmaf_v1.0.16_3d0h requests. */
-    const AdmOpt blend[] = {{"adm_csf_mode", "2"}, {NULL, NULL}};
-    char *msg = NULL;
+    const AdmOpt blend[] = {{"adm_csf_mode", "2"}, {VMAF_NULLPTR, VMAF_NULLPTR}};
+    char *msg = VMAF_NULLPTR;
     int err = adm_extract_status(blend, &msg);
-    mu_assert("harness failure", msg == NULL);
+    mu_assert("harness failure", msg == VMAF_NULLPTR);
     mu_assert("adm_csf_mode=2 at 1080@3H must still score", err == 0);
 
-    const AdmOpt blend_mae[] = {{"adm_csf_mode", "3"}, {NULL, NULL}};
+    const AdmOpt blend_mae[] = {{"adm_csf_mode", "3"}, {VMAF_NULLPTR, VMAF_NULLPTR}};
     err = adm_extract_status(blend_mae, &msg);
-    mu_assert("harness failure", msg == NULL);
+    mu_assert("harness failure", msg == VMAF_NULLPTR);
     mu_assert("adm_csf_mode=3 at 1080@3H must still score", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -238,7 +235,5 @@ char *run_tests(void)
     mu_run_test(test_adm_csf_mode_barten_small_scale_accepted);
     mu_run_test(test_adm_csf_mode_blend_untabulated_geometry_rejected);
     mu_run_test(test_adm_csf_mode_blend_default_geometry_accepted);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

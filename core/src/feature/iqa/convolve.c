@@ -234,7 +234,6 @@ int iqa_img_filter(float *img, int w, int h, const struct iqa_kernel *k, float *
 {
     int x;
     int y;
-    int img_offset;
     float *dst = result;
 
     if (!k || !k->bnd_opt)
@@ -258,7 +257,7 @@ int iqa_img_filter(float *img, int w, int h, const struct iqa_kernel *k, float *
     /* If no result buffer given, copy results to image buffer */
     if (!result) {
         for (y = 0; y < h; ++y) {
-            img_offset = y * w;
+            int img_offset = y * w;
             for (x = 0; x < w; ++x, ++img_offset) {
                 img[img_offset] = dst[img_offset];
             }

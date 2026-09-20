@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - Restored the remaining cross-platform and quality gates after the C23/C++23
   toolchain migration: Windows path creation now accepts both separator styles,
   MSVC receives only compiler-supported warning/visibility flags, Windows oneAPI
@@ -20,9 +22,9 @@
   copied the complete Go module inputs into its six-binary build stage.
 - Preserved C linkage for the shared minunit test counter so C++ tests link on
   MSVC as well as GCC and Clang.
-- Pinned changed-file clang-tidy jobs to LLVM 22 instead of an ambiguous
-  system alternatives link that could keep resolving to LLVM 18 and fail to
-  parse C++26 `std::expected`.
+- Pinned changed-file clang-tidy jobs to LLVM 22 instead of an ambiguous system
+  alternatives link that could keep resolving to LLVM 18 and fail to parse C++26
+  `std::expected`.
 - Removed the stale, unbuilt C++ model-test twin; Meson has always registered
   the actively maintained C test, while the unused copy had no compile-database
   entry and drifted behind later regression coverage.
@@ -36,9 +38,9 @@
   `/usr/local/lib` override; initialize the image paths without undefined
   Dockerfile variables.
 - Identified the all-backend Linux lane as Intel LLVM and stopped running
-  GCC-authored Python numeric snapshots there. Dedicated CPU/GCC jobs retain
-  the complete tox and immutable Netflix golden gates; the Intel lane still
-  runs the native Meson suite and every backend build.
+  GCC-authored Python numeric snapshots there. Dedicated CPU/GCC jobs retain the
+  complete tox and immutable Netflix golden gates; the Intel lane still runs the
+  native Meson suite and every backend build.
 - Made `make lint` regenerate Meson's compilation database through Ninja before
   invoking C analyzers, including on Ninja builds whose vendor-suffixed version
   string prevents Meson from generating that file during setup; missing C lint

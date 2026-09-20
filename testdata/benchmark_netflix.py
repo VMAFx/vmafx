@@ -24,10 +24,19 @@ python/test/quality_runner_test.py):
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testdata._command import run_command
+else:
+    try:
+        from testdata._command import run_command
+    except ModuleNotFoundError:
+        from _command import run_command
 
 # Paths are overridable via env vars so a worktree / CI runner can point at a
 # freshly-built libvmaf instead of the system install. Defaults match the
@@ -40,13 +49,15 @@ import time
 # exists on the bench host — see ADR-0792 for the same fix applied to the YUV
 # fixtures.
 FFMPEG = os.environ.get("VMAF_FFMPEG", "/usr/local/bin/ffmpeg")
-BASEDIR = os.path.dirname(os.path.abspath(__file__))
+BASEDIR = Path(__file__).resolve().parent
 # YUV fixtures live in the upstream-mirror python/test/resource/yuv/ tree.
 # When invoked from a git worktree (where those files aren't checked out),
 # point at the primary checkout via VMAF_YUVDIR.
-YUVDIR = os.environ.get(
-    "VMAF_YUVDIR",
-    os.path.join(os.path.dirname(BASEDIR), "python", "test", "resource", "yuv"),
+YUVDIR = Path(
+    os.environ.get(
+        "VMAF_YUVDIR",
+        BASEDIR.parent / "python" / "test" / "resource" / "yuv",
+    )
 )
 
 # VA-API render node the SYCL/QSV import path uploads through. Node numbering
@@ -69,8 +80,8 @@ EXPECTED = {
 TESTS = [
     {
         "name": "src01_576x324",
-        "ref": os.path.join(YUVDIR, "src01_hrc00_576x324.yuv"),
-        "dis": os.path.join(YUVDIR, "src01_hrc01_576x324.yuv"),
+        "ref": YUVDIR / "src01_hrc00_576x324.yuv",
+        "dis": YUVDIR / "src01_hrc01_576x324.yuv",
         "width": 576,
         "height": 324,
         "pix_fmt": "yuv420p",
@@ -78,8 +89,8 @@ TESTS = [
     },
     {
         "name": "checker_1080p_mild",
-        "ref": os.path.join(YUVDIR, "checkerboard_1920_1080_10_3_0_0.yuv"),
-        "dis": os.path.join(YUVDIR, "checkerboard_1920_1080_10_3_1_0.yuv"),
+        "ref": YUVDIR / "checkerboard_1920_1080_10_3_0_0.yuv",
+        "dis": YUVDIR / "checkerboard_1920_1080_10_3_1_0.yuv",
         "width": 1920,
         "height": 1080,
         "pix_fmt": "yuv420p",
@@ -87,8 +98,8 @@ TESTS = [
     },
     {
         "name": "checker_1080p_heavy",
-        "ref": os.path.join(YUVDIR, "checkerboard_1920_1080_10_3_0_0.yuv"),
-        "dis": os.path.join(YUVDIR, "checkerboard_1920_1080_10_3_10_0.yuv"),
+        "ref": YUVDIR / "checkerboard_1920_1080_10_3_0_0.yuv",
+        "dis": YUVDIR / "checkerboard_1920_1080_10_3_10_0.yuv",
         "width": 1920,
         "height": 1080,
         "pix_fmt": "yuv420p",
@@ -130,6 +141,8 @@ BACKENDS = [
 ]
 
 RUNS = 3  # timing runs per backend
+SCORE_TOLERANCE = 5e-5
+FRAME_DIFF_TOLERANCE = 0.01
 
 
 def run_vmaf(test, backend, log_path):
@@ -176,14 +189,14 @@ def run_vmaf(test, backend, log_path):
         env.update(backend["env_extra"])
 
     t0 = time.time()
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300)
+    result = run_command(cmd, capture_output=True, text=True, env=env, timeout=300)
     elapsed = time.time() - t0
 
     if result.returncode != 0:
         return None, None, elapsed, result.stderr[-500:]
 
     try:
-        with open(log_path) as f:
+        with Path(log_path).open(encoding="utf-8") as f:
             data = json.load(f)
         pooled = data["pooled_metrics"]["vmaf"]["mean"]
         frames = [fr["metrics"]["vmaf"] for fr in data["frames"]]
@@ -192,75 +205,69 @@ def run_vmaf(test, backend, log_path):
         return None, None, elapsed, str(e)
 
 
-def main():
-    print(f"FFmpeg: {FFMPEG}")
-    print(f"Test data: {YUVDIR}")
-    print()
-
-    # Verify files exist
-    for t in TESTS:
-        for k in ("ref", "dis"):
-            if not os.path.exists(t[k]):
-                print(f"MISSING: {t[k]}")
-                sys.exit(1)
-
-    results = {}  # results[test_name][backend] = {pooled, frames, fps, error}
-
+def fixtures_available() -> bool:
+    """Report the first missing input fixture, if any."""
     for test in TESTS:
-        results[test["name"]] = {}
+        for key in ("ref", "dis"):
+            if not Path(test[key]).exists():
+                print(f"MISSING: {test[key]}")
+                return False
+    return True
+
+
+def run_backend(test, backend):
+    """Run one backend, print its timing, and return its result record."""
+    name = backend["name"]
+    print(f"\n  Backend: {name} ({backend['filter']})")
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+        log_path = Path(tmp.name)
+
+    try:
+        pooled, frames, elapsed, error = run_vmaf(test, backend, log_path)
+        if error:
+            print(f"    FAILED: {error[:200]}")
+            return {"error": error[:200]}
+
+        fps = test["frames"] / elapsed
+        print(f"    Pooled VMAF: {pooled:.14f}")
+        print(f"    Time: {elapsed:.3f}s  ({fps:.1f} fps)")
+
+        fps_list = [fps]
+        for _ in range(1, RUNS):
+            _, _, duration, retry_error = run_vmaf(test, backend, log_path)
+            if not retry_error:
+                fps_list.append(test["frames"] / duration)
+
+        best_fps = max(fps_list)
+        avg_fps = sum(fps_list) / len(fps_list)
+        print(f"    Best FPS: {best_fps:.1f}  Avg FPS: {avg_fps:.1f}  ({RUNS} runs)")
+        return {
+            "pooled": pooled,
+            "frames": frames,
+            "best_fps": best_fps,
+            "avg_fps": avg_fps,
+        }
+    finally:
+        log_path.unlink(missing_ok=True)
+
+
+def run_benchmarks():
+    """Run every configured backend for every Netflix fixture."""
+    results = {}
+    for test in TESTS:
         print(f"{'=' * 90}")
         print(f"TEST: {test['name']}  ({test['width']}x{test['height']}, {test['frames']} frames)")
-        print(f"  ref: {os.path.basename(test['ref'])}")
-        print(f"  dis: {os.path.basename(test['dis'])}")
+        print(f"  ref: {Path(test['ref']).name}")
+        print(f"  dis: {Path(test['dis']).name}")
         print(f"{'=' * 90}")
+        results[test["name"]] = {
+            backend["name"]: run_backend(test, backend) for backend in BACKENDS
+        }
+    return results
 
-        for backend in BACKENDS:
-            bname = backend["name"]
-            print(f"\n  Backend: {bname} ({backend['filter']})")
 
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-                log_path = tmp.name
-
-            # Score run (first run, captures scores)
-            pooled, frames, elapsed, err = run_vmaf(test, backend, log_path)
-
-            if err:
-                print(f"    FAILED: {err[:200]}")
-                results[test["name"]][bname] = {"error": err[:200]}
-                try:
-                    os.unlink(log_path)
-                except:
-                    pass
-                continue
-
-            fps = test["frames"] / elapsed
-            print(f"    Pooled VMAF: {pooled:.14f}")
-            print(f"    Time: {elapsed:.3f}s  ({fps:.1f} fps)")
-
-            # Timing runs
-            fps_list = [fps]
-            for run_i in range(1, RUNS):
-                _, _, t, e = run_vmaf(test, backend, log_path)
-                if not e:
-                    fps_list.append(test["frames"] / t)
-
-            best_fps = max(fps_list)
-            avg_fps = sum(fps_list) / len(fps_list)
-            print(f"    Best FPS: {best_fps:.1f}  Avg FPS: {avg_fps:.1f}  ({RUNS} runs)")
-
-            results[test["name"]][bname] = {
-                "pooled": pooled,
-                "frames": frames,
-                "best_fps": best_fps,
-                "avg_fps": avg_fps,
-            }
-
-            try:
-                os.unlink(log_path)
-            except:
-                pass
-
-    # === Summary ===
+def print_score_summary(results):
+    """Print pooled-score agreement against Netflix references."""
     print(f"\n\n{'=' * 119}")
     print("SCORE COMPARISON — Netflix Reference (vmaf_v0.6.1)")
     print(f"{'=' * 119}")
@@ -282,14 +289,16 @@ def main():
 
             delta = r["pooled"] - expected
             # Netflix tests use places=4 tolerance -> 5e-5
-            passed = abs(delta) < 5e-5
+            passed = abs(delta) < SCORE_TOLERANCE
             tag = "OK" if passed else "DIFF"
             print(
                 f"{test['name']:>25} | {bname:>12} | {r['pooled']:>18.14f} | {expected:>18.14f} | {delta:>+16.14f} | {tag:>6} | {r['best_fps']:>10.1f}"
             )
         print(f"{'-' * 119}")
 
-    # === Per-frame cross-backend comparison ===
+
+def print_frame_summary(results):
+    """Print pairwise per-frame agreement across available backends."""
     print(f"\n{'=' * 118}")
     print("PER-FRAME CROSS-BACKEND COMPARISON (max absolute difference)")
     print(f"{'=' * 118}")
@@ -316,17 +325,19 @@ def main():
                     )
                     continue
 
-                diffs = [abs(a - b) for a, b in zip(r_a["frames"], r_b["frames"])]
+                diffs = [abs(a - b) for a, b in zip(r_a["frames"], r_b["frames"], strict=True)]
                 max_d = max(diffs)
                 mean_d = sum(diffs) / len(diffs)
                 exact = max_d == 0.0
-                tag = "EXACT" if exact else ("OK" if max_d < 0.01 else "DIFF")
+                tag = "EXACT" if exact else ("OK" if max_d < FRAME_DIFF_TOLERANCE else "DIFF")
                 print(
                     f"{test['name']:>25} | {name_a:>12} vs {name_b:>12} | {max_d:>16.12f} | {mean_d:>16.12f} | {tag:>8}"
                 )
 
-    # Save results
-    out_path = os.path.join(BASEDIR, "netflix_benchmark_results.json")
+
+def save_results(results):
+    """Write the stable benchmark snapshot schema."""
+    out_path = BASEDIR / "netflix_benchmark_results.json"
     save = {}
     for test in TESTS:
         save[test["name"]] = {}
@@ -343,10 +354,24 @@ def main():
             elif r:
                 save[test["name"]][bname] = {"error": r.get("error", "unknown")}
 
-    with open(out_path, "w") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         json.dump(save, f, indent=2)
     print(f"\nResults saved to {out_path}")
 
 
+def main() -> int:
+    print(f"FFmpeg: {FFMPEG}")
+    print(f"Test data: {YUVDIR}")
+    print()
+    if not fixtures_available():
+        return 1
+
+    results = run_benchmarks()
+    print_score_summary(results)
+    print_frame_summary(results)
+    save_results(results)
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

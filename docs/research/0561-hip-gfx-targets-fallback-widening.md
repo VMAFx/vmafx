@@ -1,20 +1,19 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest: ADR-0561 — HIP gfx_targets fallback widening
 
 ## Problem characterisation
 
 `core/src/meson.build` discovers the AMD GPU ISA targets for `hipcc --genco`
-through a four-step probe chain. When all dynamic probes fail (typical in
-no-GPU build sandboxes), the build fell back to a hardcoded string. That string
-was `gfx90a` — a single CDNA2 server target — which worked for AWS and GCP GPU
+through a four-step probe chain. When all dynamic probes fail (typical in no-GPU
+build sandboxes), the build fell back to a hardcoded string. That string was
+`gfx90a` — a single CDNA2 server target — which worked for AWS and GCP GPU
 instances but not for the consumer AMD GPUs on the fork's primary development
 host.
 
 The dev host has an AMD Raphael APU with an integrated GPU presenting as
 `gfx1036`. ROCm's allowlist gate requires `HSA_OVERRIDE_GFX_VERSION=10.3.0`,
-which maps the iGPU to `gfx1030` for device-code dispatch. At runtime the
-loader looked for an HSACO blob compiled for `gfx1030`; the `gfx90a`-only fat
-binary contained no compatible object and emitted:
+which maps the iGPU to `gfx1030` for device-code dispatch. At runtime the loader
+looked for an HSACO blob compiled for `gfx1030`; the `gfx90a`-only fat binary
+contained no compatible object and emitted:
 
 ```text
 hip_fatbin.cpp: No compatible code objects found for: gfx1030
@@ -29,12 +28,12 @@ feature kernels at runtime.
 
 The widened fallback targets `gfx90a,gfx1030,gfx1036,gfx1100`:
 
-| Target | Architecture | Typical device |
-|--------|-------------|----------------|
-| `gfx90a` | CDNA2 | AMD Instinct MI200 (data-centre GPU) |
-| `gfx1030` | RDNA2 | RX 6000 desktop + Raphael APU override |
+| Target    | Architecture | Typical device                          |
+| --------- | ------------ | --------------------------------------- |
+| `gfx90a`  | CDNA2        | AMD Instinct MI200 (data-centre GPU)    |
+| `gfx1030` | RDNA2        | RX 6000 desktop + Raphael APU override  |
 | `gfx1036` | RDNA2 (iGPU) | AMD Raphael APU (RX 680M / Radeon 680M) |
-| `gfx1100` | RDNA3 | RX 7000 desktop |
+| `gfx1100` | RDNA3        | RX 7000 desktop                         |
 
 `gfx1036` is the native ISA of the Raphael iGPU. Including it in the fat binary
 means the device-code load succeeds even without `HSA_OVERRIDE_GFX_VERSION`
@@ -44,10 +43,10 @@ means the device-code load succeeds even without `HSA_OVERRIDE_GFX_VERSION`
 
 A four-target fat binary is approximately 3× larger than a single-target binary:
 
-| Kernel | gfx90a only | gfx90a + gfx1030 + gfx1036 + gfx1100 |
-|--------|-------------|---------------------------------------|
-| `vif_statistics` | ~180 KB | ~620 KB |
-| All kernels combined | ~1.4 MB | ~4.8 MB |
+| Kernel               | gfx90a only | gfx90a + gfx1030 + gfx1036 + gfx1100 |
+| -------------------- | ----------- | ------------------------------------ |
+| `vif_statistics`     | ~180 KB     | ~620 KB                              |
+| All kernels combined | ~1.4 MB     | ~4.8 MB                              |
 
 Total `libvmaf.so` delta: < 4 MB. Accepted as negligible for a development
 build; production operators who need smaller binaries can pin via

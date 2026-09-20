@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **docs:** Post-ADR-0726 residual scrub — remove stale Vulkan references from
   `docs/ai/datasets/k150k.md` (`--no_vulkan` flag drop), `docs/mcp/tools.md`
   (run_benchmark backend list), `docs/api/index.md` (Vulkan header row), and

@@ -24,7 +24,7 @@
 static char *test_context_init_and_close()
 {
     int err = 0;
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
 
     err = vmaf_init(&vmaf, cfg);
@@ -32,13 +32,13 @@ static char *test_context_init_and_close()
     err = vmaf_close(vmaf);
     mu_assert("problem during vmaf_close", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_get_feature_score()
 {
     int err = 0;
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
 
     err = vmaf_init(&vmaf, cfg);
@@ -67,7 +67,7 @@ static char *test_get_feature_score()
     err = vmaf_close(vmaf);
     mu_assert("problem during vmaf_close", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vmaf_init_double_init_guard()
@@ -75,12 +75,12 @@ static char *test_vmaf_init_double_init_guard()
     /* vmaf_init on an already-initialised (non-NULL) pointer must return
      * -EINVAL without leaking the existing context.  This exercises the
      * double-init guard added in ADR-1032. */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
 
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("first vmaf_init failed unexpectedly", !err);
-    mu_assert("vmaf pointer still NULL after successful init", vmaf != NULL);
+    mu_assert("vmaf pointer still NULL after successful init", vmaf != VMAF_NULLPTR);
 
     /* Second call on the same (non-NULL) pointer must fail. */
     int err2 = vmaf_init(&vmaf, cfg);
@@ -90,14 +90,14 @@ static char *test_vmaf_init_double_init_guard()
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close after rejected double-init failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* vmaf_context_get_backend — CPU-only path: freshly init'd context returns
  * VMAF_BACKEND_UNKNOWN because no GPU import_state was called. */
 static char *test_get_backend_cpu_returns_unknown()
 {
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
 
     int err = vmaf_init(&vmaf, cfg);
@@ -111,7 +111,7 @@ static char *test_get_backend_cpu_returns_unknown()
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed in test_get_backend_cpu_returns_unknown", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* vmaf_context_get_backend — null-pointer guard: both vmaf=NULL and out=NULL
@@ -119,21 +119,21 @@ static char *test_get_backend_cpu_returns_unknown()
 static char *test_get_backend_null_guard()
 {
     enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
-    int err = vmaf_context_get_backend(NULL, &backend);
+    int err = vmaf_context_get_backend(VMAF_NULLPTR, &backend);
     mu_assert("vmaf_context_get_backend(NULL, out) must return -EINVAL", err == -EINVAL);
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     VmafConfiguration cfg = {0};
     err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed in test_get_backend_null_guard", !err);
 
-    err = vmaf_context_get_backend(vmaf, NULL);
+    err = vmaf_context_get_backend(vmaf, VMAF_NULLPTR);
     mu_assert("vmaf_context_get_backend(vmaf, NULL) must return -EINVAL", err == -EINVAL);
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed in test_get_backend_null_guard", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -143,5 +143,5 @@ char *run_tests()
     mu_run_test(test_vmaf_init_double_init_guard);
     mu_run_test(test_get_backend_cpu_returns_unknown);
     mu_run_test(test_get_backend_null_guard);
-    return NULL;
+    return VMAF_NULLPTR;
 }

@@ -41,11 +41,7 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -108,8 +104,8 @@ static int make_vmaf_ctx_with_scores(VmafContext **vmaf_out, VmafModel **model_o
 static char *test_vmaf_score_at_index()
 {
     int err;
-    VmafContext *vmaf = NULL;
-    VmafModel *model = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
+    VmafModel *model = VMAF_NULLPTR;
 
     err = make_vmaf_ctx_with_scores(&vmaf, &model);
     mu_assert("setup for vmaf_score_at_index failed", !err);
@@ -122,15 +118,15 @@ static char *test_vmaf_score_at_index()
     mu_assert("vmaf_score_at_index score above 100", score <= 100.0);
 
     /* NULL-pointer guards — must not crash, must return error. */
-    err = vmaf_score_at_index(NULL, model, &score, 0);
+    err = vmaf_score_at_index(VMAF_NULLPTR, model, &score, 0);
     mu_assert("vmaf_score_at_index(NULL vmaf) should fail", err);
 
-    err = vmaf_score_at_index(vmaf, NULL, &score, 0);
+    err = vmaf_score_at_index(vmaf, VMAF_NULLPTR, &score, 0);
     mu_assert("vmaf_score_at_index(NULL model) should fail", err);
 
     (void)vmaf_close(vmaf);
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -------------------------------------------------------------------------
@@ -140,8 +136,8 @@ static char *test_vmaf_model_collection_load()
 {
     int err;
 
-    VmafModel *model = NULL;
-    VmafModelCollection *collection = NULL;
+    VmafModel *model = VMAF_NULLPTR;
+    VmafModelCollection *collection = VMAF_NULLPTR;
     VmafModelConfig cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
 
     /*
@@ -157,19 +153,19 @@ static char *test_vmaf_model_collection_load()
      */
     err = vmaf_model_collection_load(&model, &collection, &cfg, "vmaf_b_v0.6.3");
     mu_assert("vmaf_model_collection_load returned error", !err);
-    mu_assert("vmaf_model_collection_load returned NULL collection", collection != NULL);
-    mu_assert("vmaf_model_collection_load returned NULL model", model != NULL);
+    mu_assert("vmaf_model_collection_load returned NULL collection", collection != VMAF_NULLPTR);
+    mu_assert("vmaf_model_collection_load returned NULL model", model != VMAF_NULLPTR);
 
     vmaf_model_collection_destroy(collection);
     vmaf_model_destroy(model);
 
     /* Invalid version must return error and leave pointers unchanged. */
-    model = NULL;
-    collection = NULL;
+    model = VMAF_NULLPTR;
+    collection = VMAF_NULLPTR;
     err = vmaf_model_collection_load(&model, &collection, &cfg, "no_such_model_xxxx");
     mu_assert("vmaf_model_collection_load should fail for unknown version", err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -222,8 +218,8 @@ static int make_temp_output_path(char *out, size_t out_len)
 static char *test_vmaf_write_output()
 {
     int err;
-    VmafContext *vmaf = NULL;
-    VmafModel *model = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
+    VmafModel *model = VMAF_NULLPTR;
 
     err = make_vmaf_ctx_with_scores(&vmaf, &model);
     mu_assert("setup for vmaf_write_output failed", !err);
@@ -241,7 +237,7 @@ static char *test_vmaf_write_output()
     mu_assert("vmaf_write_output(JSON) returned error", !err);
 
     FILE *f = fopen(tmp, "r");
-    mu_assert("could not open vmaf_write_output temp file", f != NULL);
+    mu_assert("could not open vmaf_write_output temp file", f != VMAF_NULLPTR);
     (void)fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     (void)fclose(f);
@@ -250,12 +246,12 @@ static char *test_vmaf_write_output()
     mu_assert("vmaf_write_output(JSON) produced empty file", sz > 0);
 
     /* NULL path must return error. */
-    err = vmaf_write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON);
+    err = vmaf_write_output(vmaf, VMAF_NULLPTR, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL path) should fail", err);
 
     (void)vmaf_close(vmaf);
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* -------------------------------------------------------------------------
@@ -266,7 +262,5 @@ char *run_tests()
     mu_run_test(test_vmaf_score_at_index);
     mu_run_test(test_vmaf_model_collection_load);
     mu_run_test(test_vmaf_write_output);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

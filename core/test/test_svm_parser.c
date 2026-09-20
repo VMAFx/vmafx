@@ -22,7 +22,7 @@
  */
 
 // ADR-1138/ADR-1166: preserve NULL for MSVC C builds.
-// NOLINTBEGIN(modernize-use-nullptr)
+
 
 #include <stdio.h>
 #include <string.h>
@@ -53,8 +53,8 @@ static char *test_reject_oversized_nr_class(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject nr_class > VMAF_SVM_MAX_AXIS_COUNT", m == NULL);
-    return NULL;
+    mu_assert("parser must reject nr_class > VMAF_SVM_MAX_AXIS_COUNT", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_oversized_total_sv(void)
@@ -71,8 +71,8 @@ static char *test_reject_oversized_total_sv(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject total_sv > VMAF_SVM_MAX_AXIS_COUNT", m == NULL);
-    return NULL;
+    mu_assert("parser must reject total_sv > VMAF_SVM_MAX_AXIS_COUNT", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_missing_nr_class_before_rho(void)
@@ -90,8 +90,8 @@ static char *test_reject_missing_nr_class_before_rho(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject rho before nr_class", m == NULL);
-    return NULL;
+    mu_assert("parser must reject rho before nr_class", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_missing_nr_class_before_label(void)
@@ -107,8 +107,8 @@ static char *test_reject_missing_nr_class_before_label(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject label before nr_class", m == NULL);
-    return NULL;
+    mu_assert("parser must reject label before nr_class", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_missing_nr_class_before_probA(void)
@@ -125,8 +125,8 @@ static char *test_reject_missing_nr_class_before_probA(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject probA before nr_class", m == NULL);
-    return NULL;
+    mu_assert("parser must reject probA before nr_class", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_missing_nr_class_before_nr_sv(void)
@@ -142,8 +142,8 @@ static char *test_reject_missing_nr_class_before_nr_sv(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject nr_sv before nr_class", m == NULL);
-    return NULL;
+    mu_assert("parser must reject nr_sv before nr_class", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_missing_nr_class_at_sv_parse(void)
@@ -159,8 +159,8 @@ static char *test_reject_missing_nr_class_at_sv_parse(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject missing nr_class at SV parse", m == NULL);
-    return NULL;
+    mu_assert("parser must reject missing nr_class at SV parse", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_empty_sv_section(void)
@@ -178,8 +178,8 @@ static char *test_reject_empty_sv_section(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject zero total_sv", m == NULL);
-    return NULL;
+    mu_assert("parser must reject zero total_sv", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_reject_unknown_svm_type(void)
@@ -194,15 +194,15 @@ static char *test_reject_unknown_svm_type(void)
     svm_set_print_string_function(&silence_svm_log);
     const struct svm_model *const m =
         svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
-    mu_assert("parser must reject unknown svm_type", m == NULL);
-    return NULL;
+    mu_assert("parser must reject unknown svm_type", m == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *run_header_size_tests(void)
 {
     mu_run_test(test_reject_oversized_nr_class);
     mu_run_test(test_reject_oversized_total_sv);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_header_order_tests(void)
@@ -211,7 +211,7 @@ static char *run_header_order_tests(void)
     mu_run_test(test_reject_missing_nr_class_before_label);
     mu_run_test(test_reject_missing_nr_class_before_probA);
     mu_run_test(test_reject_missing_nr_class_before_nr_sv);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -225,7 +225,5 @@ char *run_tests(void)
     mu_run_test(test_reject_missing_nr_class_at_sv_parse);
     mu_run_test(test_reject_empty_sv_section);
     mu_run_test(test_reject_unknown_svm_type);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

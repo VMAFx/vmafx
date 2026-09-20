@@ -43,11 +43,7 @@
 #if ARCH_AARCH64
 #include "feature/arm64/adm_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* One axis of dwt2_src_indices_filt() in integer_adm.c, which is static there.
  * `len` is the source extent, `len_half` the subsampled extent. */
@@ -174,17 +170,17 @@ static void fixture_free(Dwt2Fixture *f)
     for (int k = 0; k < 4; ++k) {
         free(f->iy[k]);
         free(f->ix[k]);
-        f->iy[k] = NULL;
-        f->ix[k] = NULL;
+        f->iy[k] = VMAF_NULLPTR;
+        f->ix[k] = VMAF_NULLPTR;
     }
     for (int k = 0; k < 8; ++k) {
         free(f->bands[k]);
-        f->bands[k] = NULL;
+        f->bands[k] = VMAF_NULLPTR;
     }
     free(f->buf.tmp_ref);
-    f->buf.tmp_ref = NULL;
+    f->buf.tmp_ref = VMAF_NULLPTR;
     free(f->src);
-    f->src = NULL;
+    f->src = VMAF_NULLPTR;
 }
 
 static void fixture_bind(Dwt2Fixture *f)
@@ -219,20 +215,20 @@ static int fixture_alloc(Dwt2Fixture *f, int w, int h)
 
     int ok = 1;
     f->src = malloc((size_t)w * (size_t)h);
-    ok = ok && (f->src != NULL);
+    ok = ok && (f->src != VMAF_NULLPTR);
     for (int k = 0; k < 4; ++k) {
         f->iy[k] = calloc((size_t)f->h_half + 64, sizeof(int));
         f->ix[k] = calloc((size_t)f->w_half + 64, sizeof(int));
-        ok = ok && (f->iy[k] != NULL) && (f->ix[k] != NULL);
+        ok = ok && (f->iy[k] != VMAF_NULLPTR) && (f->ix[k] != VMAF_NULLPTR);
     }
     for (int k = 0; k < 8; ++k) {
         f->bands[k] = calloc(f->band_elems + DWT2_SLACK, sizeof(int16_t));
-        ok = ok && (f->bands[k] != NULL);
+        ok = ok && (f->bands[k] != VMAF_NULLPTR);
         if (ok && k >= 4)
             simd_test_guard_fill(f->bands[k], (f->band_elems + DWT2_SLACK) * sizeof(int16_t));
     }
     f->buf.tmp_ref = calloc(f->tmp_elems, sizeof(int16_t));
-    ok = ok && (f->buf.tmp_ref != NULL);
+    ok = ok && (f->buf.tmp_ref != VMAF_NULLPTR);
 
     if (!ok) {
         fixture_free(f);
@@ -306,14 +302,14 @@ static char *dwt2_geometry_matches_scalar(int w, int h)
         (void)fprintf(stderr, "  %dx%d\n", w, h);
     mu_assert("adm_dwt2_8_neon diverges from the scalar reference", matched);
     SIMD_GUARD_ASSERT_UNTOUCHED(touched, "adm_dwt2_8_neon wrote outside its band");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* ARCH_AARCH64 */
 
 static char *test_adm_dwt2_8_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL; /* NEON kernel is aarch64-only. */
+    return VMAF_NULLPTR; /* NEON kernel is aarch64-only. */
 #else
     /* Only widths the dispatcher routes to NEON: integer_adm.c gates on
      * `!(w % 8)`, so both w % 16 == 0 and w % 16 == 8 are in scope. The heights
@@ -339,7 +335,5 @@ char *run_tests(void)
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
     (void)test_adm_dwt2_8_neon_matches_scalar;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

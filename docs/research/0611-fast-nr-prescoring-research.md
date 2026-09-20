@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0611: Fast NR Pre-Scoring
 
 **Scope**: Use the in-tree `nr_metric_v1` ONNX model as a coarse VMAF proxy
@@ -53,7 +52,7 @@ skip the FR call. If NR is within the uncertainty zone, we pay the FR cost.
 ## In-Tree Assets
 
 | Asset | Path | Notes |
-|-------|------|-------|
+| ------- | ------ | ------- |
 | `nr_metric_v1.onnx` | `model/tiny/nr_metric_v1.onnx` | FP32, ~2 MB |
 | `nr_metric_v1.int8.onnx` | `model/tiny/nr_metric_v1.int8.onnx` | INT8 quant, ~0.5 MB |
 | `fr_from_nr_adapter.py` | `tools/vmaf-tune/src/vmaftune/fr_from_nr_adapter.py` | FR corpus from NR rows |
@@ -118,7 +117,7 @@ engineering effort.
 ## Recommended Decision Matrix
 
 | Option | Speedup | Correctness risk | Implementation cost |
-|--------|---------|-----------------|---------------------|
+| -------- | --------- | ----------------- | --------------------- |
 | A — NR-only + FR confirm | 3–6× | Medium | 2 days |
 | B — NR early elim (recommended) | 2–4× | Low | 2–3 days |
 | C — conformal NR | 2–4× | Very low | 5–7 days |

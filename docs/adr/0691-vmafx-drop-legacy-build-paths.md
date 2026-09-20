@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0691: VMAFX Phase 1C — Drop Legacy Build Paths
 
 - **Status**: Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md)
@@ -48,7 +47,7 @@ Remove the following CI build configurations from `.github/workflows/`:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep MinGW64 leg | Retains GCC Windows build coverage | ~8-10 min per PR for a configuration the fork does not ship; accumulating MinGW-specific workarounds (ccache.exe renaming, locale fixes, MSYS2 PATH surgery) | The fork ships Windows binaries via MSVC; MinGW is not a supported distribution channel |
 | Keep i686 leg | Pins the Netflix#1481 `_mm256_extract_epi64` workaround contract | ~5-6 min per PR; 32-bit is outside the fork's scope; cross-build marks all tests SKIP so correctness is not actually verified | The fork is 64-bit only; the ASM-disable workaround is documented in ADR-0151 for historical record |
 | Keep static+DNN option | Would catch ONNX Runtime static-link symbol collisions | Already absent from the matrix; adding it would create the problem it claims to prevent | Not present; no-op |

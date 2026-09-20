@@ -54,6 +54,41 @@ SHIP_GATE_PLCC_SPREAD_MAX: float = 0.005
 DEFAULT_ENSEMBLE_SIZE: int = 5
 
 
+def _add_threshold_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the three ADR-0303 production thresholds."""
+    parser.add_argument(
+        "--mean-plcc-threshold",
+        type=float,
+        default=SHIP_GATE_MEAN_PLCC,
+        help=(
+            "Override the mean-PLCC ship gate (default "
+            f"{SHIP_GATE_MEAN_PLCC} — DO NOT lower without superseding "
+            "ADR-0303)."
+        ),
+    )
+    parser.add_argument(
+        "--plcc-spread-max",
+        type=float,
+        default=SHIP_GATE_PLCC_SPREAD_MAX,
+        help=(
+            "Override the PLCC spread bound (default "
+            f"{SHIP_GATE_PLCC_SPREAD_MAX} — DO NOT raise without "
+            "superseding ADR-0303; the bound is load-bearing for the "
+            "ensemble's predictive-distribution semantics)."
+        ),
+    )
+    parser.add_argument(
+        "--per-seed-min",
+        type=float,
+        default=SHIP_GATE_MEAN_PLCC,
+        help=(
+            "Per-seed minimum PLCC threshold; defaults to the same "
+            f"{SHIP_GATE_MEAN_PLCC} ship gate. A seed below this "
+            "threshold blocks even an otherwise-passing ensemble."
+        ),
+    )
+
+
 def build_argparser() -> argparse.ArgumentParser:
     """Build the CLI argparser (exposed for test imports)."""
     p = argparse.ArgumentParser(
@@ -79,37 +114,7 @@ def build_argparser() -> argparse.ArgumentParser:
         default="0,1,2,3,4",
         help=("Comma-separated seed list expected to be present " "(default: 0,1,2,3,4)."),
     )
-    p.add_argument(
-        "--mean-plcc-threshold",
-        type=float,
-        default=SHIP_GATE_MEAN_PLCC,
-        help=(
-            "Override the mean-PLCC ship gate (default "
-            f"{SHIP_GATE_MEAN_PLCC} — DO NOT lower without superseding "
-            "ADR-0303)."
-        ),
-    )
-    p.add_argument(
-        "--plcc-spread-max",
-        type=float,
-        default=SHIP_GATE_PLCC_SPREAD_MAX,
-        help=(
-            "Override the PLCC spread bound (default "
-            f"{SHIP_GATE_PLCC_SPREAD_MAX} — DO NOT raise without "
-            "superseding ADR-0303; the bound is load-bearing for the "
-            "ensemble's predictive-distribution semantics)."
-        ),
-    )
-    p.add_argument(
-        "--per-seed-min",
-        type=float,
-        default=SHIP_GATE_MEAN_PLCC,
-        help=(
-            "Per-seed minimum PLCC threshold; defaults to the same "
-            f"{SHIP_GATE_MEAN_PLCC} ship gate. A seed below this "
-            "threshold blocks even an otherwise-passing ensemble."
-        ),
-    )
+    _add_threshold_arguments(p)
     p.add_argument(
         "--json",
         action="store_true",

@@ -19,11 +19,7 @@
 
 #include <errno.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <string.h>
 
 #include "test.h"
@@ -57,11 +53,11 @@ static int submit_frame(VmafContext *vmaf, unsigned i, unsigned w, unsigned h)
 static char *test_score_pooled_returns_eagain_on_pending(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
-    VmafModelConfig mcfg = {0};
-    VmafModel *model = NULL;
+    VmafModelConfig mcfg = {VMAF_NULLPTR};
+    VmafModel *model = VMAF_NULLPTR;
     mu_assert("model load failed", vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0);
     mu_assert("use_features_from_model failed", vmaf_use_features_from_model(vmaf, model) == 0);
 
@@ -77,7 +73,7 @@ static char *test_score_pooled_returns_eagain_on_pending(void)
 
     vmaf_close(vmaf);
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_score_pooled_streaming_pattern(void)
@@ -88,11 +84,11 @@ static char *test_score_pooled_streaming_pattern(void)
      * pattern exercised here is: read N frames, flush, then pool any range
      * inside [0, N-1].  vmaf_score_pooled must return 0 with a finite score. */
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
-    VmafModelConfig mcfg = {0};
-    VmafModel *model = NULL;
+    VmafModelConfig mcfg = {VMAF_NULLPTR};
+    VmafModel *model = VMAF_NULLPTR;
     mu_assert("model load failed", vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0);
     mu_assert("use_features_from_model failed", vmaf_use_features_from_model(vmaf, model) == 0);
 
@@ -117,18 +113,18 @@ static char *test_score_pooled_streaming_pattern(void)
 
     vmaf_close(vmaf);
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_score_pooled_still_rejects_bad_range(void)
 {
     /* Programmer-error cases must remain -EINVAL (not -EAGAIN). */
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
-    VmafModelConfig mcfg = {0};
-    VmafModel *model = NULL;
+    VmafModelConfig mcfg = {VMAF_NULLPTR};
+    VmafModel *model = VMAF_NULLPTR;
     mu_assert("model load failed", vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0);
     mu_assert("use_features_from_model failed", vmaf_use_features_from_model(vmaf, model) == 0);
 
@@ -138,12 +134,12 @@ static char *test_score_pooled_still_rejects_bad_range(void)
     mu_assert("inverted range must return -EINVAL", rc == -EINVAL);
 
     /* NULL score pointer → always -EINVAL. */
-    rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, NULL, 0u, 0u);
+    rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, VMAF_NULLPTR, 0u, 0u);
     mu_assert("NULL score pointer must return -EINVAL", rc == -EINVAL);
 
     vmaf_close(vmaf);
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -152,7 +148,5 @@ char *run_tests(void)
     mu_run_test(test_score_pooled_streaming_pattern);
     /* mu_run_test(test_score_pooled_after_flush_complete); -- disabled: integer_motion flush does not yet write motion2_score for tail index, see TODO in test body */
     mu_run_test(test_score_pooled_still_rejects_bad_range);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

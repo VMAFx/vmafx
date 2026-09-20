@@ -54,11 +54,7 @@
 #include "libvmaf/picture.h"
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* Fill every plane of `pic` with a deterministic, non-trivial 8-bit
  * pattern so the extractor cannot short-circuit on an all-zero input
@@ -127,17 +123,17 @@ static char *check_psnr_ceiling(VmafFeatureCollector *vfc, double expected_max)
               psnr_cb >= expected_max - 1e-9 && psnr_cb <= expected_max + 1e-9);
     mu_assert("psnr_cr must equal psnr_max ceiling for identical pair",
               psnr_cr >= expected_max - 1e-9 && psnr_cr <= expected_max + 1e-9);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_identical_psnr(enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w, unsigned h)
 {
     int err = 0;
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
     mu_assert("psnr extractor must be registered", fex && !strcmp(fex->name, "psnr"));
 
-    VmafFeatureExtractorContext *fex_ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, NULL);
+    VmafFeatureExtractorContext *fex_ctx = VMAF_NULLPTR;
+    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, VMAF_NULLPTR);
     mu_assert("psnr ctx create failed", !err);
 
     VmafPicture ref;
@@ -154,11 +150,11 @@ static char *run_identical_psnr(enum VmafPixelFormat pix_fmt, unsigned bpc, unsi
         fill_pic_pattern_hbd(&dist, bpc);
     }
 
-    VmafFeatureCollector *vfc = NULL;
+    VmafFeatureCollector *vfc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&vfc);
     mu_assert("feature_collector_init failed", !err);
 
-    err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, NULL, &dist, NULL, 0, vfc);
+    err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, vfc);
     mu_assert("extract failed (pix_fmt/bpc combination rejected?)", !err);
 
     /* Default psnr_max for mse=0 is (6 * bpc + 12) per the integer_psnr
@@ -175,7 +171,7 @@ static char *run_identical_psnr(enum VmafPixelFormat pix_fmt, unsigned bpc, unsi
     vmaf_feature_collector_destroy(vfc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_psnr_yuv422p_8bit_identical(void)
@@ -212,17 +208,17 @@ static char *check_ssim_identical_score(VmafFeatureCollector *vfc)
     /* Identical input must score 1.0 within float-rounding tolerance. */
     mu_assert("ssim must be 1.0 for identical YUV422P pair",
               score >= 1.0 - 1e-6 && score <= 1.0 + 1e-6);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_yuv422p_8bit_identical(void)
 {
     int err = 0;
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
     mu_assert("ssim extractor must be registered", fex && !strcmp(fex->name, "ssim"));
 
-    VmafFeatureExtractorContext *fex_ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, NULL);
+    VmafFeatureExtractorContext *fex_ctx = VMAF_NULLPTR;
+    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, VMAF_NULLPTR);
     mu_assert("ssim ctx create failed", !err);
 
     /* 4:2:2 — ss_hor=1, ss_ver=0 chroma geometry not exercised
@@ -237,11 +233,11 @@ static char *test_ssim_yuv422p_8bit_identical(void)
     fill_pic_pattern_8(&ref);
     fill_pic_pattern_8(&dist);
 
-    VmafFeatureCollector *vfc = NULL;
+    VmafFeatureCollector *vfc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&vfc);
     mu_assert("ssim feature_collector_init failed", !err);
 
-    err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, NULL, &dist, NULL, 0, vfc);
+    err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, vfc);
     mu_assert("ssim extract failed on YUV422P 8-bit", !err);
 
     char *msg = check_ssim_identical_score(vfc);
@@ -254,7 +250,7 @@ static char *test_ssim_yuv422p_8bit_identical(void)
     vmaf_feature_collector_destroy(vfc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Fetch the ciede2000 score and assert it is a finite positive value for an
@@ -274,17 +270,17 @@ static char *check_ciede_identical_score(VmafFeatureCollector *vfc)
      * propagate as a negative or NaN score. */
     mu_assert("ciede2000 score must not be NaN", score == score);
     mu_assert("ciede2000 score must be positive for identical pair", score > 0.0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ciede_yuv422p_8bit_identical(void)
 {
     int err = 0;
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ciede");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ciede");
     mu_assert("ciede extractor must be registered", fex && !strcmp(fex->name, "ciede"));
 
-    VmafFeatureExtractorContext *fex_ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, NULL);
+    VmafFeatureExtractorContext *fex_ctx = VMAF_NULLPTR;
+    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, VMAF_NULLPTR);
     mu_assert("ciede ctx create failed", !err);
 
     /* 4:2:2 forces ciede::init() to allocate the YUV444 scratch
@@ -300,11 +296,11 @@ static char *test_ciede_yuv422p_8bit_identical(void)
     fill_pic_pattern_8(&ref);
     fill_pic_pattern_8(&dist);
 
-    VmafFeatureCollector *vfc = NULL;
+    VmafFeatureCollector *vfc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&vfc);
     mu_assert("ciede feature_collector_init failed", !err);
 
-    err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, NULL, &dist, NULL, 0, vfc);
+    err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, vfc);
     mu_assert("ciede extract failed on YUV422P 8-bit", !err);
 
     char *msg = check_ciede_identical_score(vfc);
@@ -317,7 +313,7 @@ static char *test_ciede_yuv422p_8bit_identical(void)
     vmaf_feature_collector_destroy(vfc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -327,7 +323,5 @@ char *run_tests(void)
     mu_run_test(test_psnr_yuv420p_12bit_identical);
     mu_run_test(test_ssim_yuv422p_8bit_identical);
     mu_run_test(test_ciede_yuv422p_8bit_identical);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

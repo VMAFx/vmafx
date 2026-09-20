@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0654: Predictor Saliency Signal Wiring
 
 ## Summary
@@ -18,7 +17,7 @@ slots, but two code paths failed to populate them:
 ## Options
 
 | Option | Result |
-|---|---|
+| --- | --- |
 | Keep zero-filled rows until a new predictor schema exists | No ONNX compatibility risk, but all refreshed corpora still discard saliency. |
 | Introduce a new predictor schema | Clean contract, but invalidates existing 14-column model/card/sidecar expectations. |
 | Preserve the existing 14-column schema and populate the reserved slots | Minimal compatibility risk and immediately unlocks richer corpora. |

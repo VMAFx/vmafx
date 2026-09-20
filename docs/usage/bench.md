@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # `vmaf_bench` — micro-benchmark & validation harness
 
 `vmaf_bench` is a fork-added binary that times individual feature extractors on
@@ -30,7 +29,7 @@ automatically omitted when the respective backend is disabled.
 ## Test data layout
 
 `vmaf_bench` expects a staging directory (default `/tmp/vmaf_test/`, override
-with `--data-dir` or `VMAF_TEST_DATA`):
+with `--data-dir`):
 
 ```text
 /tmp/vmaf_test/
@@ -62,16 +61,16 @@ ffmpeg -i bbb.mp4 -frames:v 48 -vf scale=1920:1080 -pix_fmt yuv420p -c:v rawvide
 vmaf_bench [--resolution WxH] [--frames N] [--bpc N] [--data-dir PATH] [--gpu-only]
 ```
 
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--resolution WxH` | all staged | Restrict to one resolution. |
-| `--frames N` | 10 | Max 48 (staged data cap). |
-| `--bpc N` | 8 | Bits per component: 8, 10, 12, 16. |
-| `--data-dir PATH` | `/tmp/vmaf_test` (or `$VMAF_TEST_DATA`) | Override stage directory. |
-| `--gpu-only` | off | Skip CPU feature runs. |
-| `--gpu-profile` | off (SYCL-only) | Emit per-shader GPU timing breakdown. |
-| `--device N` | auto | Pick GPU device by ordinal (SYCL). |
-| `--list-devices` | — | List detected SYCL devices and exit. |
+| Flag               | Default          | Notes                                 |
+| ------------------ | ---------------- | ------------------------------------- |
+| `--resolution WxH` | all staged       | Restrict to one resolution.           |
+| `--frames N`       | 10               | Max 48 (staged data cap).             |
+| `--bpc N`          | 8                | Bits per component: 8, 10, 12, 16.    |
+| `--data-dir PATH`  | `/tmp/vmaf_test` | Override stage directory.             |
+| `--gpu-only`       | off              | Skip CPU feature runs.                |
+| `--gpu-profile`    | off (SYCL-only)  | Emit per-shader GPU timing breakdown. |
+| `--device N`       | auto             | Pick GPU device by ordinal (SYCL).    |
+| `--list-devices`   | —                | List detected SYCL devices and exit.  |
 
 Output is a per-feature, per-backend table of median ms/frame + throughput FPS.
 
@@ -85,9 +84,15 @@ Runs every feature through every compiled backend on the staged data and prints
 CPU↔GPU ULP deltas per feature. Used by `/cross-backend-diff` and by reviewers
 checking SIMD/GPU PRs.
 
+Exit status `0` means every comparison passed, `1` means at least one numeric
+comparison failed, and `2` means validation could not complete (for example,
+an extractor, allocation, input read, or backend initialization failed). A
+runtime failure is never reported as a skipped comparison.
+
 Target: max absolute difference ≤ 2 ULP for integer features, ≤ 1e-5 relative
-for float features. Larger deltas are a regression and should block merge
-unless justified inline ([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md)
+for float features. Larger deltas are a regression and should block merge unless
+justified inline
+([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md)
 "Cross-backend numerical results").
 
 ## Example — single 1080p benchmark
@@ -131,16 +136,18 @@ psnr             max |Δ| = 1e-9    max |Δ| = 1e-9     OK
 
 - Test data must be pre-staged. `vmaf_bench` does not download anything.
 - Resolution list is hard-coded to `576x324`, `640x480`, `1280x720`,
-  `1920x1080`, `3840x2160` (per `core/tools/vmaf_bench.c:291-293`).
-  Pass `--resolution WxH` to restrict to a single size; adding new
-  resolutions requires source changes.
+  `1920x1080`, `3840x2160` (per `core/tools/vmaf_bench.c:291-293`). Pass
+  `--resolution WxH` to restrict to a single size; adding new resolutions
+  requires source changes.
 - `--gpu-profile` requires a SYCL build (not wired for CUDA).
-- 10 / 12 / 16 bpc (`--bpc`) requires matching test data — staged 8-bit YUVs
-  are not auto-converted.
+- 10 / 12 / 16 bpc (`--bpc`) requires matching test data — staged 8-bit YUVs are
+  not auto-converted.
 
 ## Related
 
 - [cli.md](cli.md) — the scoring CLI (`vmaf`).
 - [../benchmarks.md](../benchmarks.md) — canonical fork benchmark numbers.
-- [../backends/index.md](../backends/index.md) — backend compile-time + runtime rules.
-- `/cross-backend-diff` skill — wraps `vmaf_bench --validate` with PR-ready formatting.
+- [../backends/index.md](../backends/index.md) — backend compile-time + runtime
+  rules.
+- `/cross-backend-diff` skill — wraps `vmaf_bench --validate` with PR-ready
+  formatting.

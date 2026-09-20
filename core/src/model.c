@@ -245,7 +245,7 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
     int err = 0;
 
     for (unsigned i = 0; i < model->n_features; i++) {
-        VmafFeatureExtractor *fex =
+        const VmafFeatureExtractor *fex =
             vmaf_get_feature_extractor_by_feature_name(model->feature[i].name, 0);
         if (!fex)
             continue;

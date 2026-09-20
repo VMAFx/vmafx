@@ -40,6 +40,8 @@
  *   score = sqrt(X^T pinv((cov_pris + sample_cov)/2) X), X = sample_mu - mu_pris.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <float.h>
@@ -57,9 +59,9 @@
 #include "feature/niqe_model.h"
 #include "mem.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -280,7 +282,8 @@ static void niqe_bicubic_resize(const double *src, double *out, unsigned w, unsi
             double acc = 0.0;
             for (int k = 0; k < ymax; k++)
                 acc += resize_tmp[(size_t)(ymin + k) * w2 + x] * ky[k];
-            out[(size_t)o * w2 + x] = (double)(float)acc;
+            const float rounded = (float)acc;
+            out[(size_t)o * w2 + x] = rounded;
         }
     }
 }
@@ -473,7 +476,7 @@ static double niqe_mahalanobis_score(NiqeState *s)
 /* ------------------------------------------------------------------ */
 /* Allocate every working buffer into `s`. Returns 0 on success, -ENOMEM on
  * the first failed allocation. The caller's close() frees whatever was
- * acquired (aligned_free(NULL) is a no-op), so a partial failure unwinds
+ * acquired (aligned_free(VMAF_NULLPTR) is a no-op), so a partial failure unwinds
  * cleanly. Split out of init() to keep both functions under the ADR-0141
  * function-size threshold. */
 static int niqe_alloc_buffers(NiqeState *s, unsigned w, unsigned h)
@@ -521,8 +524,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                 unsigned h)
 {
     (void)pix_fmt;
-    assert(fex != NULL);
-    assert(fex->priv != NULL);
+    assert(fex != VMAF_NULLPTR);
+    assert(fex->priv != VMAF_NULLPTR);
     assert(w > 0 && h > 0);
     NiqeState *s = fex->priv;
 
@@ -554,18 +557,19 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic_90;
-    assert(fex != NULL);
-    assert(fex->priv != NULL);
-    assert(dist_pic != NULL);
+    assert(fex != VMAF_NULLPTR);
+    assert(fex->priv != VMAF_NULLPTR);
+    assert(dist_pic != VMAF_NULLPTR);
     NiqeState *s = fex->priv;
-    assert(feature_collector != NULL);
+    assert(feature_collector != VMAF_NULLPTR);
 
     /* Stage 1: distorted luma -> float64. */
     niqe_read_luma(dist_pic, s->luma, s->w, s->h);
@@ -587,7 +591,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
 static int close(VmafFeatureExtractor *fex)
 {
-    assert(fex != NULL);
+    assert(fex != VMAF_NULLPTR);
     NiqeState *s = fex->priv;
     if (!s)
         return 0;
@@ -616,11 +620,10 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"niqe", NULL};
+static const char *provided_features[] = {"niqe", VMAF_NULLPTR};
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in core/src/feature/feature_extractor.cpp. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_niqe = {
     .name = "niqe",
     .init = init,
@@ -629,5 +632,3 @@ VmafFeatureExtractor vmaf_fex_niqe = {
     .priv_size = sizeof(NiqeState),
     .provided_features = provided_features,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

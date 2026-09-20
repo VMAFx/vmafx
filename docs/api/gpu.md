@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # GPU backends C API — `libvmaf_cuda.h` / `libvmaf_sycl.h` / `libvmaf_hip.h` / `libvmaf_metal.h`
 
 Each GPU backend adds its own small API on top of the core
@@ -70,7 +69,7 @@ typedef struct VmafCudaConfiguration {
 } VmafCudaConfiguration;
 
 int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
-int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
+int vmaf_cuda_import_state(VmafContext *vmaf, const VmafCudaState *cu_state);
 int vmaf_cuda_state_free(VmafCudaState *cu_state);
 ```
 
@@ -82,7 +81,8 @@ int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
 ### Ownership and explicit free
 
-`vmaf_cuda_import_state(vmaf, cu_state)` copies the `VmafCudaState`
+`vmaf_cuda_import_state(vmaf, cu_state)` accepts the state through a const
+pointer and copies the `VmafCudaState`
 **by value** into the `VmafContext` — it does not transfer ownership of
 the original heap allocation. `vmaf_close(vmaf)` tears down the
 **embedded copy** (destroying the CUDA stream and, if libvmaf created

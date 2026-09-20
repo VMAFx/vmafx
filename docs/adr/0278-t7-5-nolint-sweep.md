@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0278: T7-5 NOLINT-sweep closeout — citation normalisation across libvmaf
 
 - **Status**: Accepted
@@ -69,7 +68,7 @@ backlog item **T7-5**.
 The choice of ADR reference per cluster:
 
 | Cluster | Files | Citation appended |
-|---|---|---|
+| --- | --- | --- |
 | Upstream-mirror parity | `integer_adm.c::adm_decouple_s123`, `cuda/ssimulacra2_cuda.c` (3 sites), `vulkan/ssimulacra2_vulkan.c` (3 sites), `vulkan/cambi_vulkan.c` (1 site) | ADR-0141 §2 upstream-parity load-bearing invariant + T7-5 / ADR-0278 |
 | SYCL kernel-launch pattern | `sycl/integer_adm_sycl.cpp` (6), `sycl/integer_motion_sycl.cpp` (2), `sycl/integer_vif_sycl.cpp` (4) | ADR-0141 §2 load-bearing invariant + T7-5 / ADR-0278 |
 | `tools/vmaf.c` structural | `copy_picture_data`, `init_gpu_backends`, `main` | ADR-0141 §2 load-bearing invariant + T7-5 / ADR-0278 (and ADR-0146 prior sweep precedent for `main`) |
@@ -81,7 +80,7 @@ of every `NOLINT(readability-function-size)` site reports
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Cite-only sweep across all 22 sites (chosen)** | Discharges the ADR-0141 §2 letter-of-the-rule audit; no behavioural change; rebase-friendly; closes T7-5 in one mechanical PR | Adds parenthetical text to existing comments; does not reduce function sizes | **Decision** — every site already had prose justification; the gap was citation form, not invariant strength |
 | Refactor the surviving SIMD / upstream-mirror sites | Would drop the NOLINTs entirely | ADR-0146's verification matrix (Netflix golden under `VMAF_CPU_MASK=0/255`, `/cross-backend-diff`) ran for fork-local files; refactoring upstream-mirror IDs (Netflix `966be8d5`) would multiply rebase pain and risk SIMD-vs-scalar drift | Rejected — these are exactly the sites the ADR-0141 carve-out exists for (load-bearing-invariant NOLINTs) |
 | Defer to a future "T7-5b" PR after introducing a CI lint-rule that enforces ADR refs in NOLINT comments | Would automate enforcement going forward | Extra scope, blocks T7-5 closure on CI-rule design; doesn't move the existing 22 sites | Rejected — landing the citations now is independent of the future automation, and unblocks the ADR-0141 §Historical debt language |

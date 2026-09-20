@@ -283,26 +283,51 @@ def render_csv(summaries: Sequence[BenchmarkSummary]) -> str:
     return buf.getvalue()
 
 
+def _markdown_row(cells: Sequence[str]) -> str:
+    """Render one MD060-compliant compact-style Markdown table row."""
+    return "|" + "".join(f" {cell} |" if cell else " |" for cell in cells)
+
+
 def render_markdown(summaries: Sequence[BenchmarkSummary]) -> str:
-    """Render benchmark summaries as a compact markdown table."""
+    """Render benchmark summaries as a titled, compact Markdown table."""
     lines = [
-        "| Encoder | Status | VMAF | kbps | Δ kbps | Preset | CRF | Rows | Encode fps | Score fps |",
-        "| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |",
+        "# VMAF encoder benchmark",
+        "",
+        _markdown_row(
+            [
+                "Encoder",
+                "Status",
+                "VMAF",
+                "kbps",
+                "Δ kbps",
+                "Preset",
+                "CRF",
+                "Rows",
+                "Encode fps",
+                "Score fps",
+            ]
+        ),
+        _markdown_row(
+            ["---", "---", "---:", "---:", "---:", "---", "---:", "---:", "---:", "---:"]
+        ),
     ]
     for item in summaries:
         row = item.best_row
         lines.append(
-            "| "
-            f"{item.encoder} | "
-            f"{item.status} | "
-            f"{float(row['vmaf_score']):.3f} | "
-            f"{item.bitrate_kbps:.1f} | "
-            f"{_format_optional(item.bitrate_delta_pct)} | "
-            f"{row.get('preset', '')} | "
-            f"{row.get('crf', '')} | "
-            f"{item.rows} | "
-            f"{_format_optional(item.encode_fps)} | "
-            f"{_format_optional(item.score_fps)} |"
+            _markdown_row(
+                [
+                    item.encoder,
+                    item.status,
+                    f"{float(row['vmaf_score']):.3f}",
+                    f"{item.bitrate_kbps:.1f}",
+                    _format_optional(item.bitrate_delta_pct),
+                    f"{row.get('preset', '')}",
+                    f"{row.get('crf', '')}",
+                    f"{item.rows}",
+                    _format_optional(item.encode_fps),
+                    _format_optional(item.score_fps),
+                ]
+            )
         )
     return "\n".join(lines) + "\n"
 

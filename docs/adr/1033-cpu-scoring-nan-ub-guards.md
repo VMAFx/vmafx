@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1033: CPU-side scoring NaN/UB guards across PSNR/SSIM/MS-SSIM/ADM/CAMBI/MOTION
 
 - **Status**: Accepted
@@ -64,7 +63,7 @@ Apply surgical fixes to each affected TU:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Clamp NaN/Inf after the fact (post-process all scores) | Single site | Masks bugs, hides root cause, all metrics affected | Does not fix root cause; NASA/JPL R1 prohibits blind workarounds |
 | Leave assert in ssim_tools.c | Documents limitation | Aborts process in production on valid non-default args | Crash is worse than returning INFINITY |
 | Use `UINT16_MAX` as cambi v_band_size cap | Simple | Silently over-allocates, writing OOB | Fail-fast with -EINVAL is safer |

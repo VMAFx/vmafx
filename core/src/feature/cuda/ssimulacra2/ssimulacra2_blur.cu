@@ -63,8 +63,6 @@
 /* Tile dimension for the transpose kernel (must be power-of-two ≤ 32). */
 #define SS2C_TILE 32
 
-extern "C" {
-
 /* ------------------------------------------------------------------ */
 /* Transpose kernel                                                   */
 /* ------------------------------------------------------------------ */
@@ -89,10 +87,9 @@ extern "C" {
  * per block, 1 resident block per SM (Ada Lovelace max 1536 threads/SM;
  * 4 × 1024 > 1536 so minBlocksPerSM = 1 is the safe value).
  */
-__global__ __launch_bounds__(SS2C_TILE *SS2C_TILE,
-                             1) void ssimulacra2_transpose(const float *__restrict__ in,
-                                                           float *__restrict__ out, unsigned width,
-                                                           unsigned height, unsigned plane_stride)
+extern "C" __global__ __launch_bounds__(SS2C_TILE *SS2C_TILE, 1) void ssimulacra2_transpose(
+    const float *__restrict__ in, float *__restrict__ out, unsigned width, unsigned height,
+    unsigned plane_stride)
 {
     /* +1 pad column to avoid bank conflicts on the column-wise store. */
     __shared__ float tile[SS2C_TILE][SS2C_TILE + 1];
@@ -144,7 +141,7 @@ __global__ __launch_bounds__(SS2C_TILE *SS2C_TILE,
  *  per-thread register budget to keep ≥32 resident blocks per SM,
  *  consistent with the host-side launch shape in
  *  `ss2c_launch_blur_pass`. */
-__global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
+extern "C" __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
     const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
     float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
     unsigned in_offset, unsigned out_offset)
@@ -213,12 +210,10 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
  * plane, the caller sets in_offset/out_offset = 0 and the kernel
  * computes the per-plane offset itself from blockIdx.z × plane_stride.
  */
-__global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(const float *__restrict__ in_buf,
-                                                              float *__restrict__ out_buf,
-                                                              unsigned width, unsigned height,
-                                                              float n2_0, float n2_1, float n2_2,
-                                                              float d1_0, float d1_1, float d1_2,
-                                                              int radius, unsigned plane_stride)
+extern "C" __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(
+    const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
+    float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
+    unsigned plane_stride)
 {
     const unsigned c = blockIdx.z;
     const unsigned row = blockIdx.x * blockDim.x + threadIdx.x;
@@ -274,7 +269,7 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(const float *__res
 
 /* V pass: one thread per column.  Same `__launch_bounds__` contract
  * as the H pass — see the H-pass block comment above. */
-__global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
+extern "C" __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
     const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
     float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
     unsigned in_offset, unsigned out_offset)
@@ -353,7 +348,7 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
  * The transposed input delivers the same numerical values to the IIR;
  * only their memory layout has changed.
  */
-__global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
+extern "C" __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
     const float *__restrict__ in_transposed, float *__restrict__ out_buf, unsigned width,
     unsigned height, float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2,
     int radius, unsigned plane_stride)
@@ -408,5 +403,3 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
         }
     }
 }
-
-} /* extern "C" */

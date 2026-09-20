@@ -49,20 +49,8 @@ typedef struct VmafMetadata {
  */
 typedef struct VmafMetadataConfiguration {
     char *feature_name;
-    void (*callback)(void *data, VmafMetadata *metadata);
+    void (*callback)(void *data, const VmafMetadata *metadata);
     void *data;
 } VmafMetadataConfiguration;
-
-/**
- * Register a callback to receive VMAF metadata.
- *
- * @param vmaf The VMAF context allocated with `vmaf_init()`.
- *
- * @param cfg  Metadata configuration.
- *
- *
- * @return 0 on success, or < 0 (a negative errno code) on error.
- */
-int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration cfg);
 
 #endif /* __VMAF_SRC_METADATA_H__ */

@@ -1,26 +1,30 @@
-import errno
 import itertools
 import multiprocessing
 import os
-import re
-import subprocess
+import shlex
+import shutil
 import sys
 import tempfile
 import unittest
 from concurrent.futures import ProcessPoolExecutor
 from fnmatch import fnmatch
+from importlib import import_module
 from pathlib import Path
-from time import (  # noqa: F401  `sleep` re-exported for callers in `vmaf/core/` and tests; codeql sweep dropped it as "unused" but downstream modules import it from here.
+from time import (
     sleep,
     time,
 )
 
 import numpy as np
 
-from vmaf import (  # noqa: F401  re-exported for `vmaf/core/matlab_feature_extractor.py`, `python/test/command_line_test.py`; codeql sweep dropped it as "unused" but downstream `from vmaf.tools.misc import run_process` callers expect it here.
+from vmaf import (
     run_process,
 )
 from vmaf.tools.scanf import FormatError, IncompleteCaptureError, sscanf
+
+__all__ = ["run_process", "sleep"]
+
+_COMPARISON_VALUE_2 = 2
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -34,7 +38,7 @@ except RuntimeError:  # If context has already being set, just ignore
 
 
 def get_stdout_logger():
-    import logging
+    logging = import_module("logging")
 
     logger = logging.getLogger()
     handler = logging.StreamHandler(stream=sys.stdout)
@@ -108,17 +112,22 @@ def get_dir_without_last_slash(path: str) -> str:
     'abc/xyz'
 
     """
-    return os.path.dirname(path)
+    path_text = os.fspath(path)
+    path_object = Path(path_text)
+    if path_text.endswith("/"):
+        return str(path_object)
+    parent = path_object.parent
+    return "" if parent == Path() else str(parent)
 
 
 def make_parent_dirs_if_nonexist(path):
     dst_dir = get_dir_without_last_slash(path)
-    os.makedirs(dst_dir, exist_ok=True)
+    Path(dst_dir).mkdir(parents=True, exist_ok=True)
 
 
 def delete_dir_if_exists(dir_to_delete):
-    if os.path.isdir(dir_to_delete):
-        os.rmdir(dir_to_delete)
+    if Path(dir_to_delete).is_dir():
+        Path(dir_to_delete).rmdir()
 
 
 def get_normalized_string_from_dict(d):
@@ -127,7 +136,7 @@ def get_normalized_string_from_dict(d):
     >>> get_normalized_string_from_dict({"max_buffer_sec": 5.0, "bitrate_kbps": 45, })
     'bitrate_kbps_45_max_buffer_sec_5.0'
     """
-    return "_".join(map(lambda k: "{k}_{v}".format(k=k, v=d[k]), sorted(d.keys())))
+    return "_".join(("{k}_{v}".format(k=k, v=d[k]) for k in sorted(d.keys())))
 
 
 def get_hashable_value_tuple_from_dict(d):
@@ -138,7 +147,7 @@ def get_hashable_value_tuple_from_dict(d):
     >>> get_hashable_value_tuple_from_dict({"max_buffer_sec": 5.0, "bitrate_kbps": 45, "resolutions": [(740, 480), (1920, 1080), ]})
     (45, 5.0, ((740, 480), (1920, 1080)))
     """
-    return tuple(map(lambda k: tuple(d[k]) if isinstance(d[k], list) else d[k], sorted(d.keys())))
+    return tuple((tuple(d[k]) if isinstance(d[k], list) else d[k] for k in sorted(d.keys())))
 
 
 def get_unique_str_from_recursive_dict(d):
@@ -149,22 +158,21 @@ def get_unique_str_from_recursive_dict(d):
     >>> get_unique_str_from_recursive_dict({'a':1, 'c':2, 'b':{'y':'1', 'x':'0', }})
     '{"a": 1, "b": {"x": "0", "y": "1"}, "c": 2}'
     """
-    import json
-    from collections import OrderedDict
+    json = import_module("json")
+    OrderedDict = import_module("collections").OrderedDict
 
     def to_ordered_dict_recursively(d):
         if isinstance(d, dict):
             return OrderedDict(
-                map(
-                    lambda t: (
+                (
+                    (
                         to_ordered_dict_recursively(t[0]),
                         to_ordered_dict_recursively(t[1]),
-                    ),
-                    sorted(d.items()),
+                    )
+                    for t in sorted(d.items())
                 )
             )
-        else:
-            return d
+        return d
 
     return json.dumps(to_ordered_dict_recursively(d))
 
@@ -186,7 +194,7 @@ def indices(a, func):
     return [i for (i, val) in enumerate(a) if func(val)]
 
 
-def import_python_file(filepath: str, override: dict = None):
+def import_python_file(filepath: str, override: dict | None = None):
     """
     Import a python file as a module, allowing overriding some of the variables.
     Assumption: in the original python file, variables to be overridden get assigned once only, in a single line.
@@ -197,49 +205,46 @@ def import_python_file(filepath: str, override: dict = None):
         # scheduled for removal in Python 3.15.  imp.load_source() was
         # removed in Python 3.12.  Use the modern importlib.util path that
         # works on all supported Python versions (3.8+).
-        import importlib.util  # noqa: PLC0415
-        import sys  # noqa: PLC0415
-
-        spec = importlib.util.spec_from_file_location(filename, filepath)
-        ret = importlib.util.module_from_spec(spec)
+        importlib_util = import_module("importlib.util")
+        spec = importlib_util.spec_from_file_location(filename, filepath)
+        ret = importlib_util.module_from_spec(spec)
         sys.modules[filename] = ret
         spec.loader.exec_module(ret)
         return ret
-    else:
-        override_ = override.copy()
-        tmpfile = tempfile.NamedTemporaryFile(delete=False, suffix=".py")
-        with open(filepath, "r") as fin:
-            with open(tmpfile.name, "w") as fout:
-                while True:
-                    line = fin.readline()
-                    if len(override_) > 0:
-                        suffixes = []
-                        for key in list(override_.keys()):
-                            if key in line and "=" in line:
-                                s = (
-                                    f"{key} = '{override_[key]}'"
-                                    if isinstance(override_[key], str)
-                                    else f"{key} = {override_[key]}"
-                                )
-                                suffixes.append(s)
-                                del override_[key]
-                        if len(suffixes) > 0:
-                            line = "\n".join([line.strip()] + suffixes) + "\n"
-                    fout.write(line)
-                    if not line:
-                        break
+    override_ = override.copy()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmpfile:
+        tmp_path = Path(tmpfile.name)
+    with Path(filepath).open("r") as fin:
+        with tmp_path.open("w") as fout:
+            for source_line in fin:
+                line = source_line
                 if len(override_) > 0:
-                    for key in override_:
-                        s = (
-                            f"{key} = '{override_[key]}'"
-                            if isinstance(override_[key], str)
-                            else f"{key} = {override_[key]}"
-                        )
-                        s += "\n"
-                        fout.write(s)
-        ret = import_python_file(tmpfile.name)
-        os.remove(tmpfile.name)
-        return ret
+                    suffixes = []
+                    for key in list(override_.keys()):
+                        if key in line and "=" in line:
+                            s = (
+                                f"{key} = '{override_[key]}'"
+                                if isinstance(override_[key], str)
+                                else f"{key} = {override_[key]}"
+                            )
+                            suffixes.append(s)
+                            del override_[key]
+                    if len(suffixes) > 0:
+                        line = "\n".join([line.strip(), *suffixes]) + "\n"
+                fout.write(line)
+            if len(override_) > 0:
+                for key in override_:
+                    s = (
+                        f"{key} = '{override_[key]}'"
+                        if isinstance(override_[key], str)
+                        else f"{key} = {override_[key]}"
+                    )
+                    s += "\n"
+                    fout.write(s)
+    try:
+        return import_python_file(str(tmp_path))
+    finally:
+        tmp_path.unlink()
 
 
 def make_absolute_path(path: str, current_dir: str) -> str:
@@ -252,8 +257,7 @@ def make_absolute_path(path: str, current_dir: str) -> str:
     assert current_dir.endswith("/"), f"expect current_dir ends with '/', but is: {current_dir}"
     if path[0] == "/":
         return path
-    else:
-        return current_dir + path
+    return current_dir + path
 
 
 def empty_object():
@@ -308,23 +312,24 @@ def cmd_option_exists(argv, begin, end, option):
     return found
 
 
-def index_and_value_of_min(l):
+def index_and_value_of_min(values):
     """
 
     >>> index_and_value_of_min([2, 0, 3])
     (1, 0)
 
     """
-    return min(enumerate(l), key=lambda x: x[1])
+    return min(enumerate(values), key=lambda x: x[1])
 
 
-_pm_return_dict = None
-_pm_func = None
-_pm_list_args = None
+_PARALLEL_MAP_STATE = {}
 
 
 def _parallel_map_rt(idx):
-    _pm_return_dict[idx] = _pm_func(_pm_list_args[idx])
+    return_dict = _PARALLEL_MAP_STATE["return_dict"]
+    func = _PARALLEL_MAP_STATE["func"]
+    list_args = _PARALLEL_MAP_STATE["list_args"]
+    return_dict[idx] = func(list_args[idx])
 
 
 def parallel_map(func, list_args, processes=None):
@@ -347,10 +352,11 @@ def parallel_map(func, list_args, processes=None):
     return_dict = context.Manager().dict()
 
     def pool_init():
-        global _pm_func, _pm_list_args, _pm_return_dict
-        _pm_func = func
-        _pm_list_args = list_args
-        _pm_return_dict = return_dict
+        _PARALLEL_MAP_STATE.update(
+            func=func,
+            list_args=list_args,
+            return_dict=return_dict,
+        )
 
     with ProcessPoolExecutor(processes, mp_context=context, initializer=pool_init) as pool:
         # ProcessPoolExecutor prevents hanging on the slowest processes that get too much work - delegates one at a time
@@ -375,16 +381,8 @@ def check_program_exist(program):
     True
 
     """
-    try:
-        with open(os.devnull, "wb") as devnull_fd:
-            subprocess.call(program.split(), stdout=devnull_fd)
-        return True
-    except OSError as e:
-        if e.errno == errno.ENOENT:
-            return False
-        else:
-            # Something else went wrong while trying to run `wget`
-            raise
+    argv = shlex.split(program)
+    return bool(argv and shutil.which(argv[0]) is not None)
 
 
 def check_scanf_match(string, template):
@@ -427,12 +425,8 @@ def check_scanf_match(string, template):
 
 
 def match_any_files(template):
-    dir_ = os.path.dirname(template)
-    for filename in os.listdir(dir_):
-        filepath = dir_ + "/" + filename
-        if check_scanf_match(filepath, template):
-            return True
-    return False
+    directory = Path(template).parent
+    return any(check_scanf_match(str(filepath), template) for filepath in directory.iterdir())
 
 
 def unroll_dict_of_lists(dict_of_lists):
@@ -479,14 +473,14 @@ def neg_if_even(x):
     return 1 - (x % 2 == 0) * 2
 
 
-def get_unique_sorted_list(l):
+def get_unique_sorted_list(values):
     """
     >>> get_unique_sorted_list([3, 4, 4, 1])
     [1, 3, 4]
     >>> get_unique_sorted_list([])
     []
     """
-    return sorted(list(set(l)))
+    return sorted(set(values))
 
 
 class Timer(object):
@@ -503,13 +497,13 @@ def dedup_value_in_dict(d):
     >>> dedup_value_in_dict({'a': 1, 'b': 1, 'c': 2}) == {'a': 1, 'c': 2}
     True
     """
-    reversed_d = dict()
+    reversed_d = {}
     keys = sorted(d.keys())
     for key in keys:
         value = d[key]
         if value not in reversed_d:
             reversed_d[value] = key
-    d_ = dict()
+    d_ = {}
     for value, key in reversed_d.items():
         d_[key] = value
     return d_
@@ -558,8 +552,7 @@ class QualityRunnerTestMixin(object):
             optional_dict2=optional_dict2,
         )
         runner.run(parallelize=False)
-        result = runner.results[0]
-        return result
+        return runner.results[0]
 
     def run_each(
         self,
@@ -579,7 +572,7 @@ class QualityRunnerTestMixin(object):
 
     def plot_frame_scores(self, ax, *args, **kwargs):
         result = self._run_each_no_assert(*args, **kwargs)
-        runner_class, asset, optional_dict = args
+        runner_class, _asset, _optional_dict = args
         avg_score = result[runner_class.get_score_key()]
         label = [f"avg. {runner_class.TYPE}: {avg_score:.3f}"]
         if "label" in kwargs:
@@ -630,8 +623,8 @@ def find_linear_function_parameters(p1, p2):
     (2.5, -15.0)
 
     """
-    assert len(p1) == 2, "first_point needs to have exactly 2 coordinates"
-    assert len(p2) == 2, "second_point needs to have exactly 2 coordinates"
+    assert len(p1) == _COMPARISON_VALUE_2, "first_point needs to have exactly 2 coordinates"
+    assert len(p2) == _COMPARISON_VALUE_2, "second_point needs to have exactly 2 coordinates"
     assert (
         p1[0] <= p2[0] and p1[1] <= p2[1]
     ), "first_point coordinates need to be smaller or equal to second_point coordinates"
@@ -648,76 +641,7 @@ def find_linear_function_parameters(p1, p2):
 
 
 def piecewise_linear_mapping(x, knots):
-    """
-    A piecewise linear mapping function, defined by the boundary points of each segment. For example,
-    a function consisting of 3 segments is defined by 4 points. The x-coordinate of each point need to be
-    greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-    The function continues with the same slope for the values below the first point and above the last point.
-    INPUT:
-        x_in - np.array of values to be mapped
-        knots - list of (at least 2) lists with x and y coordinates [[x0, y0], [x1, y1], ...]
-
-    >>> x = np.arange(0.0, 110.0)
-    >>> try:
-    ...     piecewise_linear_mapping(x, [[0, 1], [1, 2], [1, 3]])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-    >>> try:
-    ...     piecewise_linear_mapping(x, [[0, 0], []])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    Each point needs to have two coordinates [x, y]
-    >>> try:
-    ...     piecewise_linear_mapping(x, [0, 0])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    knots needs to be list of lists
-    >>> try:
-    ...     piecewise_linear_mapping(x, [[0, 2], [1, 1]])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-
-    >>> knots2160p = [[0.0, -55.0], [95.0, 87.5], [105.0, 105.0], [110.0, 110.0]]
-    >>> knots1080p = [[0.0, -36.66], [90.0, 83.04], [95.0, 95.0], [100.0, 100.0]]
-
-    >>> x0 = np.arange(0.0, 95.0, 0.1)
-    >>> y0_true = 1.5 * x0 - 55.0
-    >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> float(np.sqrt(np.mean((y0 - y0_true)**2)))
-    0.0
-    >>> x1 = np.arange(0.0, 90.0, 0.1)
-    >>> y1_true = 1.33 * x1 - 36.66
-    >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> float(np.sqrt(np.mean((y1 - y1_true) ** 2)))
-    0.0
-
-    >>> x0 = np.arange(95.0, 105.0, 0.1)
-    >>> y0_true = 1.75 * x0 - 78.75
-    >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
-    0.0
-    >>> x1 = np.arange(90.0, 95.0, 0.1)
-    >>> y1_true = 2.392 * x1 - 132.24
-    >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> np.testing.assert_almost_equal(np.sqrt(np.mean((y1 - y1_true) ** 2)), 0.0)
-
-    >>> x0 = np.arange(105.0, 110.0, 0.1)
-    >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> float(np.sqrt(np.mean((y0 - x0) ** 2)))
-    0.0
-    >>> x1 = np.arange(95.0, 100.0, 0.1)
-    >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> float(np.sqrt(np.mean((y1 - x1) ** 2)))
-    0.0
-    >>> knots_single = [[10.0, 10.0], [50.0, 60.0]]
-    >>> x0 = np.arange(0.0, 110.0, 0.1)
-    >>> y0 = piecewise_linear_mapping(x0, knots_single)
-    >>> y0_true = 1.25 * x0 - 2.5
-    >>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
-    0.0
-    """
+    """Map an array through monotonic knots, extrapolating the end slopes."""
     assert len(knots) > 1
     n_seg = len(knots) - 1
 
@@ -729,7 +653,7 @@ def piecewise_linear_mapping(x, knots):
             knots[idx + 1], list
         ), "knots needs to be list of lists"
         assert (
-            len(knots[idx]) == len(knots[idx + 1]) == 2
+            len(knots[idx]) == len(knots[idx + 1]) == _COMPARISON_VALUE_2
         ), "Each point needs to have two coordinates [x, y]"
         assert knots[idx][0] < knots[idx + 1][0] and knots[idx][1] <= knots[idx + 1][1], (
             "The x-coordinate of each point need to be greater that the x-coordinate of the previous point, "
@@ -780,7 +704,7 @@ class NoPrint(object):
 
     def __enter__(self):
         self._original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, "w")
+        sys.stdout = Path(os.devnull).open("w")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout.close()
@@ -803,7 +727,8 @@ def linear_fit(x, y):
     assert len(y) == np.size(y) and len(y) > 0, "y must be one-dimensional with non-zero length"
     assert len(x) == len(y), "x must be the same length as y"
 
-    import scipy.optimize
+    scipy = import_module("scipy")
+    import_module("scipy.optimize")
 
     return scipy.optimize.curve_fit(linear_func, x, y, [1.0, 0.0])
 
@@ -839,14 +764,13 @@ def map_yuv_type_to_bitdepth(yuv_type):
     """
     if yuv_type in ["yuv420p", "yuv422p", "yuv444p"]:
         return 8
-    elif yuv_type in ["yuv420p10le", "yuv422p10le", "yuv444p10le"]:
+    if yuv_type in ["yuv420p10le", "yuv422p10le", "yuv444p10le"]:
         return 10
-    elif yuv_type in ["yuv420p12le", "yuv422p12le", "yuv444p12le"]:
+    if yuv_type in ["yuv420p12le", "yuv422p12le", "yuv444p12le"]:
         return 12
-    elif yuv_type in ["yuv420p16le", "yuv422p16le", "yuv444p16le"]:
+    if yuv_type in ["yuv420p16le", "yuv422p16le", "yuv444p16le"]:
         return 16
-    else:
-        return None
+    return None
 
 
 if __name__ == "__main__":

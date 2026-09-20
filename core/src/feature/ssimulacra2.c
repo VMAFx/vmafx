@@ -30,7 +30,8 @@
  * and ADR-0206 (CUDA + SYCL).
  */
 
-// NOLINTNEXTLINE(misc-include-cleaner) — ENOMEM at line ~979 in init() bailouts (ADR-0141 / ADR-0278).
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -64,9 +65,9 @@
 #if HAVE_SVE2
 #include "feature/arm64/ssimulacra2_sve2.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -282,11 +283,11 @@ typedef struct Ssimu2State {
                     const float *s12, unsigned w, unsigned h, double plane_averages[6]);
     void (*edge_fn)(const float *img1, const float *mu1, const float *img2, const float *mu2,
                     unsigned w, unsigned h, double plane_averages[12]);
-    /* SIMD blur: NULL => scalar fallback via blur_plane; non-NULL replaces
+    /* SIMD blur: VMAF_NULLPTR => scalar fallback via blur_plane; non-VMAF_NULLPTR replaces
      * blur_plane + fast_gaussian_1d with one SIMD entry point (ADR-0162). */
     void (*blur_fn)(const float rg_n2[3], const float rg_d1[3], int rg_radius, float *col_state,
                     const float *in, float *out, float *scratch, unsigned w, unsigned h);
-    /* SIMD YUV → linear RGB (ADR-0163). NULL => scalar fallback. */
+    /* SIMD YUV → linear RGB (ADR-0163). VMAF_NULLPTR => scalar fallback. */
     void (*ptlr_fn)(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
                     const simd_plane_t planes[3], float *out);
 } Ssimu2State;
@@ -339,7 +340,6 @@ static inline float srgb_to_linear(float v)
  * and radius into the state; the full IIR pass uses symmetric-sum
  * recurrence `out_k = n2[k]*sum - d1[k]*prev_k - prev2_k`. */
 /* ADR-0130-era scalar, pre-existing pre-touched-file rule. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — paired SIMD ports (avx2/avx512/neon/sve2) bit-exact-match this scalar; splitting would force matching splits in 4 SIMD files (ADR-0141)
 static void create_recursive_gaussian(Ssimu2State *s, double sigma)
 {
     const double radius = round(3.2795 * sigma + 0.2546); /* (57), "N" */
@@ -463,7 +463,6 @@ static inline float read_plane(const VmafPicture *pic, int plane, int x, int y)
  * clamp + per-lane sRGB EOTF is a line-for-line port of the libjxl
  * scalar reference path — splitting would break the scalar-diff
  * audit story. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — paired SIMD ports (avx2/avx512/neon/sve2) bit-exact-match this scalar; splitting would force matching splits in 4 SIMD files (ADR-0141)
 static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->w;
@@ -489,7 +488,7 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
     switch (s->yuv_matrix) {
     case YUV_MATRIX_BT709_FULL:
         limited = 0;
-        /* fall through */
+        [[fallthrough]];
     case YUV_MATRIX_BT709_LIMITED:
         kr = 0.2126f;
         kg = 0.7152f;
@@ -497,7 +496,7 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
         break;
     case YUV_MATRIX_BT601_FULL:
         limited = 0;
-        /* fall through */
+        [[fallthrough]];
     case YUV_MATRIX_BT601_LIMITED:
     default:
         kr = 0.299f;
@@ -642,7 +641,6 @@ static void linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w, unsigned
 /* ADR-0141 carve-out: the 4-deep loop nest (per-plane × per-output-row
  * × per-output-col × 2×2 input sample) matches the libjxl scalar
  * reference one-for-one; splitting would obscure the scalar diff. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — paired SIMD ports (avx2/avx512/neon/sve2) bit-exact-match this scalar; splitting would force matching splits in 4 SIMD files (ADR-0141)
 static void downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out, unsigned *ow_out,
                            unsigned *oh_out)
 {
@@ -761,9 +759,9 @@ static void blur_plane(const Ssimu2State *s, const float *in, float *out, float 
     for (ptrdiff_t n = -N + 1; n < ysize; n++) {
         const ptrdiff_t left = n - N - 1;
         const ptrdiff_t right = n + N - 1;
-        const float *lrow = (left >= 0) ? (scratch + (size_t)left * xsize) : NULL;
-        const float *rrow = (right < ysize) ? (scratch + (size_t)right * xsize) : NULL;
-        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : NULL;
+        const float *lrow = (left >= 0) ? (scratch + (size_t)left * xsize) : VMAF_NULLPTR;
+        const float *rrow = (right < ysize) ? (scratch + (size_t)right * xsize) : VMAF_NULLPTR;
+        float *orow = (n >= 0) ? (out + (size_t)n * xsize) : VMAF_NULLPTR;
 
         for (size_t x = 0; x < xsize; x++) {
             const float lv = lrow ? lrow[x] : 0.f;
@@ -938,8 +936,8 @@ static void init_simd_dispatch(Ssimu2State *s)
     s->down_fn = downsample_2x2;
     s->ssim_fn = ssim_map;
     s->edge_fn = edge_diff_map;
-    s->blur_fn = NULL;
-    s->ptlr_fn = NULL;
+    s->blur_fn = VMAF_NULLPTR;
+    s->ptlr_fn = VMAF_NULLPTR;
 
 #if ARCH_X86 || ARCH_AARCH64
     const unsigned flags = vmaf_get_cpu_flags();
@@ -1035,7 +1033,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
 fail:
     /* Partial OOM: any of the 12 allocations above may have succeeded while a
-     * later one failed. Free every non-NULL buffer (aligned_free(NULL) is a
+     * later one failed. Free every non-VMAF_NULLPTR buffer (aligned_free(VMAF_NULLPTR) is a
      * no-op) so the partially-initialised state does not leak 1-11 buffers. */
     aligned_free(s->ref_lin);
     aligned_free(s->dist_lin);
@@ -1069,8 +1067,9 @@ static void convert_picture_to_linear_rgb(const Ssimu2State *s, const VmafPictur
     }
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
@@ -1154,11 +1153,10 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"ssimulacra2", NULL};
+static const char *provided_features[] = {"ssimulacra2", VMAF_NULLPTR};
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in libvmaf/src/feature/feature_extractor.c. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
     .name = "ssimulacra2",
     .init = init,
@@ -1172,5 +1170,3 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
      * field landed; see ADR-0181). */
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

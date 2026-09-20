@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 MD060 -->
 # Research-0025 — FoxBird outlier resolved via Netflix + KoNViD-1k combined training
 
 _Updated: 2026-04-28._
@@ -52,7 +51,7 @@ Combined model `runs/tiny_combined_canonical/mlp_small_combined_final.onnx`
 scored against each Netflix source independently:
 
 | Clip | PLCC | SROCC | RMSE |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | BigBuckBunny | 0.9991 | 0.9989 | 1.089 |
 | BirdsInCage | 0.9999 | 0.9999 | 0.416 |
 | CrowdRun | 0.9999 | 0.9998 | 0.492 |
@@ -73,7 +72,7 @@ on Netflix-only:
 ### FoxBird specifically
 
 | Model | Trained on | FoxBird PLCC | FoxBird SROCC | FoxBird RMSE |
-|---|---|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: |
 | `vmaf_tiny_v1.onnx` (mlp_small Netflix-only) | Netflix Public | 0.9632 | 0.9745 | 17.296 |
 | `vmaf_tiny_v1_medium.onnx` (mlp_medium Netflix-only) | Netflix Public | 0.9248 | 0.9448 | 13.387 |
 | **Combined (this digest)** | **Netflix + KoNViD-1k** | **0.9936** | **0.9978** | **3.216** |
@@ -108,7 +107,7 @@ python3 /tmp/eval_loso_combined.py
 Per-fold result (each clip is the held-out source for its fold):
 
 | Fold (held-out) | PLCC | SROCC | RMSE |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | BigBuckBunny | 0.9994 | 0.9997 | 0.802 |
 | BirdsInCage | 0.9999 | 0.9994 | 0.598 |
 | CrowdRun | 0.9973 | 0.9970 | 3.805 |
@@ -194,15 +193,15 @@ the FoxBird failure mode:
 - **Validation set is mostly Tennis, not held-out FoxBird.**
   `--val-mode netflix-source-and-konvid-holdout` holds out Tennis
   (Netflix) + 10 % of KoNViD clip keys. FoxBird is in the
-  *training* set. The 0.9936 PLCC reported above is a
+  _training_ set. The 0.9936 PLCC reported above is a
   training-fit metric on FoxBird, not a true held-out
   generalisation number. **A LOSO sweep on the combined corpus
   with FoxBird specifically held out is the proper validation**
   — that's the natural follow-up.
 - **Per-clip numbers are not directly comparable to Research-0023's
   per-fold LOSO numbers.** Research-0023's FoxBird result was
-  *fold-level* — model trained on the other 8 sources, evaluated
-  on FoxBird. This digest's FoxBird result is *training-fit* —
+  _fold-level_ — model trained on the other 8 sources, evaluated
+  on FoxBird. This digest's FoxBird result is _training-fit_ —
   model trained on all 9 + KoNViD, evaluated on FoxBird.
 - **KoNViD-1k synthetic-distortion targets are libx264 CRF=35
   round-trip.** Same recipe as the Netflix dis-pairs, so the
@@ -228,8 +227,8 @@ the FoxBird failure mode:
 
 ## References
 
-- **`req`** (popup, 2026-04-28): user direction *"yes start the
-  trainers and then to the recommendation"*.
+- **`req`** (popup, 2026-04-28): user direction _"yes start the
+  trainers and then to the recommendation"_.
 - [Research-0019](0019-tiny-ai-netflix-training.md) — Netflix corpus
   training methodology.
 - [Research-0022](0022-loso-mlp-small-results.md) — LOSO baseline

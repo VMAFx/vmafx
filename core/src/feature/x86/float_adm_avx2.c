@@ -18,11 +18,27 @@
  */
 
 #include <immintrin.h>
+#include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include "float_adm_avx2.h"
 #include "mem.h"
 
 static const int FLOAT_ABS_MASK_I = 0x7FFFFFFF;
+
+/* adm_csf_s() intentionally evaluates FLOAT_ONE_BY_30 as a double literal
+ * before storing the result in a float.  Widen each lane for that multiply so
+ * the dispatched kernel preserves the scalar fallback's rounding contract. */
+static inline __m256 float_adm_mul_float_by_double_avx2(__m256 value, __m256d factor)
+{
+    const __m128 value_lo = _mm256_castps256_ps128(value);
+    const __m128 value_hi = _mm256_extractf128_ps(value, 1);
+    const __m128 result_lo =
+        _mm256_cvtpd_ps(_mm256_mul_pd(_mm256_cvtps_pd(value_lo), factor));
+    const __m128 result_hi =
+        _mm256_cvtpd_ps(_mm256_mul_pd(_mm256_cvtps_pd(value_hi), factor));
+    return _mm256_insertf128_ps(_mm256_castps128_ps256(result_lo), result_hi, 1);
+}
 
 static const float dwt2_db2_coeffs_lo[4] = {0.482962913144690f, 0.836516303737469f,
                                             0.224143868041857f, -0.129409522550921f};
@@ -30,152 +46,116 @@ static const float dwt2_db2_coeffs_lo[4] = {0.482962913144690f, 0.83651630373746
 static const float dwt2_db2_coeffs_hi[4] = {-0.129409522550921f, -0.224143868041857f,
                                             0.836516303737469f, -0.482962913144690f};
 
-/*
- * Horizontally sum 4 doubles in a __m256d to a scalar double.
- * Uses _mm256_hadd_pd + lane extraction to avoid a store+loop.
- * Tree order: (v[0]+v[1]) + (v[2]+v[3]).
- */
-/* NOLINTNEXTLINE(readability-function-size) — ADR-0139 bit-exactness: inline
- * horizontal double reduction must not be outline-called (register allocation
- * changes rounding order on MSVC /fp:precise). */
-static inline double hadd_pd4(__m256d v)
+static void float_adm_dwt2_vertical_row_avx2(const float *const rows[4], float *tmplo, float *tmphi,
+                                             int w)
 {
-    /* [v0+v1, v2+v3, v0+v1, v2+v3] */
-    __m256d h = _mm256_hadd_pd(v, v);
-    /* Extract upper lane (v2+v3) and add to lower (v0+v1). */
-    return _mm_cvtsd_f64(_mm256_castpd256_pd128(h)) + _mm_cvtsd_f64(_mm256_extractf128_pd(h, 1));
+    const __m256 vlo0 = _mm256_set1_ps(dwt2_db2_coeffs_lo[0]);
+    const __m256 vlo1 = _mm256_set1_ps(dwt2_db2_coeffs_lo[1]);
+    const __m256 vlo2 = _mm256_set1_ps(dwt2_db2_coeffs_lo[2]);
+    const __m256 vlo3 = _mm256_set1_ps(dwt2_db2_coeffs_lo[3]);
+    const __m256 vhi0 = _mm256_set1_ps(dwt2_db2_coeffs_hi[0]);
+    const __m256 vhi1 = _mm256_set1_ps(dwt2_db2_coeffs_hi[1]);
+    const __m256 vhi2 = _mm256_set1_ps(dwt2_db2_coeffs_hi[2]);
+    const __m256 vhi3 = _mm256_set1_ps(dwt2_db2_coeffs_hi[3]);
+
+    int j = 0;
+    for (; j + 8 <= w; j += 8) {
+        const __m256 s0 = _mm256_loadu_ps(rows[0] + j);
+        const __m256 s1 = _mm256_loadu_ps(rows[1] + j);
+        const __m256 s2 = _mm256_loadu_ps(rows[2] + j);
+        const __m256 s3 = _mm256_loadu_ps(rows[3] + j);
+        __m256 lo_acc = _mm256_mul_ps(s0, vlo0);
+        lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s1, vlo1));
+        lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s2, vlo2));
+        lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s3, vlo3));
+        _mm256_storeu_ps(tmplo + j, lo_acc);
+        __m256 hi_acc = _mm256_mul_ps(s0, vhi0);
+        hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s1, vhi1));
+        hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s2, vhi2));
+        hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s3, vhi3));
+        _mm256_storeu_ps(tmphi + j, hi_acc);
+    }
+    for (; j < w; ++j) {
+        const float s0 = rows[0][j];
+        const float s1 = rows[1][j];
+        const float s2 = rows[2][j];
+        const float s3 = rows[3][j];
+        tmplo[j] = dwt2_db2_coeffs_lo[0] * s0 + dwt2_db2_coeffs_lo[1] * s1 +
+                   dwt2_db2_coeffs_lo[2] * s2 + dwt2_db2_coeffs_lo[3] * s3;
+        tmphi[j] = dwt2_db2_coeffs_hi[0] * s0 + dwt2_db2_coeffs_hi[1] * s1 +
+                   dwt2_db2_coeffs_hi[2] * s2 + dwt2_db2_coeffs_hi[3] * s3;
+    }
 }
 
-void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
-                         int w, int h, int src_stride, int dst_stride)
+static void float_adm_dwt2_horizontal_row_avx2(const adm_dwt_band_t_s *dst, int **ind_x, int row,
+                                               int w, int dst_px_stride, const float *tmplo,
+                                               const float *tmphi)
 {
-    const float *filter_lo = dwt2_db2_coeffs_lo;
-    const float *filter_hi = dwt2_db2_coeffs_hi;
+    for (int j = 0; j < (w + 1) / 2; ++j) {
+        const int j0 = ind_x[0][j];
+        const int j1 = ind_x[1][j];
+        const int j2 = ind_x[2][j];
+        const int j3 = ind_x[3][j];
+        const float sl0 = tmplo[j0];
+        const float sl1 = tmplo[j1];
+        const float sl2 = tmplo[j2];
+        const float sl3 = tmplo[j3];
+        dst->band_a[row * dst_px_stride + j] =
+            dwt2_db2_coeffs_lo[0] * sl0 + dwt2_db2_coeffs_lo[1] * sl1 +
+            dwt2_db2_coeffs_lo[2] * sl2 + dwt2_db2_coeffs_lo[3] * sl3;
+        dst->band_v[row * dst_px_stride + j] =
+            dwt2_db2_coeffs_hi[0] * sl0 + dwt2_db2_coeffs_hi[1] * sl1 +
+            dwt2_db2_coeffs_hi[2] * sl2 + dwt2_db2_coeffs_hi[3] * sl3;
+        const float sh0 = tmphi[j0];
+        const float sh1 = tmphi[j1];
+        const float sh2 = tmphi[j2];
+        const float sh3 = tmphi[j3];
+        dst->band_h[row * dst_px_stride + j] =
+            dwt2_db2_coeffs_lo[0] * sh0 + dwt2_db2_coeffs_lo[1] * sh1 +
+            dwt2_db2_coeffs_lo[2] * sh2 + dwt2_db2_coeffs_lo[3] * sh3;
+        dst->band_d[row * dst_px_stride + j] =
+            dwt2_db2_coeffs_hi[0] * sh0 + dwt2_db2_coeffs_hi[1] * sh1 +
+            dwt2_db2_coeffs_hi[2] * sh2 + dwt2_db2_coeffs_hi[3] * sh3;
+    }
+}
 
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+int float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
+                        int w, int h, int src_stride, int dst_stride)
+{
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
-    /* aligned_malloc may return NULL on OOM; the scalar reference
-     * (adm_tools.c::adm_dwt2_s) treats this as -ENOMEM and aborts the
-     * frame.  This function signature is `void` (matched against the
-     * AVX-512 / NEON siblings — wiring tracked in adm.c ADR-0873
-     * follow-up), so we mirror the AVX-512 sibling's behaviour:
-     * release whichever allocation succeeded and silently no-op the
-     * transform.  Without this guard the SIMD stores at the vertical
-     * pass NULL-deref and segfault. */
     float *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
     float *tmphi = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
     if (!tmplo || !tmphi) {
         aligned_free(tmplo);
         aligned_free(tmphi);
-        return;
+        return -ENOMEM;
     }
 
-    /* Broadcast filter coefficients for vertical pass. */
-    __m256 vlo0 = _mm256_set1_ps(filter_lo[0]);
-    __m256 vlo1 = _mm256_set1_ps(filter_lo[1]);
-    __m256 vlo2 = _mm256_set1_ps(filter_lo[2]);
-    __m256 vlo3 = _mm256_set1_ps(filter_lo[3]);
-
-    __m256 vhi0 = _mm256_set1_ps(filter_hi[0]);
-    __m256 vhi1 = _mm256_set1_ps(filter_hi[1]);
-    __m256 vhi2 = _mm256_set1_ps(filter_hi[2]);
-    __m256 vhi3 = _mm256_set1_ps(filter_hi[3]);
-
     for (int i = 0; i < (h + 1) / 2; ++i) {
-
-        const float *row0 = src + ind_y[0][i] * src_px_stride;
-        const float *row1 = src + ind_y[1][i] * src_px_stride;
-        const float *row2 = src + ind_y[2][i] * src_px_stride;
-        const float *row3 = src + ind_y[3][i] * src_px_stride;
-
-        /* Vertical pass: process 8 columns at a time with AVX2.
-         * F3: mul+add chains here match the scalar tail below; with
-         * -ffp-contract=off (enforced by the per-TU meson.build carve-out)
-         * neither path auto-fuses to FMA, keeping both paths bit-identical. */
-        int j = 0;
-        for (; j + 8 <= w; j += 8) {
-            __m256 s0 = _mm256_loadu_ps(row0 + j);
-            __m256 s1 = _mm256_loadu_ps(row1 + j);
-            __m256 s2 = _mm256_loadu_ps(row2 + j);
-            __m256 s3 = _mm256_loadu_ps(row3 + j);
-
-            /* Low-pass vertical. */
-            __m256 lo_acc = _mm256_mul_ps(s0, vlo0);
-            lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s1, vlo1));
-            lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s2, vlo2));
-            lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s3, vlo3));
-            _mm256_storeu_ps(tmplo + j, lo_acc);
-
-            /* High-pass vertical. */
-            __m256 hi_acc = _mm256_mul_ps(s0, vhi0);
-            hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s1, vhi1));
-            hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s2, vhi2));
-            hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s3, vhi3));
-            _mm256_storeu_ps(tmphi + j, hi_acc);
-        }
-
-        /* Scalar tail for vertical pass. */
-        for (; j < w; ++j) {
-            float s0 = row0[j];
-            float s1 = row1[j];
-            float s2 = row2[j];
-            float s3 = row3[j];
-
-            tmplo[j] =
-                filter_lo[0] * s0 + filter_lo[1] * s1 + filter_lo[2] * s2 + filter_lo[3] * s3;
-            tmphi[j] =
-                filter_hi[0] * s0 + filter_hi[1] * s1 + filter_hi[2] * s2 + filter_hi[3] * s3;
-        }
-
-        /* Horizontal pass: scalar, since it uses indirect indexing via ind_x. */
-        for (j = 0; j < (w + 1) / 2; ++j) {
-            int j0 = ind_x[0][j];
-            int j1 = ind_x[1][j];
-            int j2 = ind_x[2][j];
-            int j3 = ind_x[3][j];
-
-            float sl0 = tmplo[j0];
-            float sl1 = tmplo[j1];
-            float sl2 = tmplo[j2];
-            float sl3 = tmplo[j3];
-
-            /* band_a: lo vertical, lo horizontal. */
-            dst->band_a[i * dst_px_stride + j] =
-                filter_lo[0] * sl0 + filter_lo[1] * sl1 + filter_lo[2] * sl2 + filter_lo[3] * sl3;
-
-            /* band_v: lo vertical, hi horizontal. */
-            dst->band_v[i * dst_px_stride + j] =
-                filter_hi[0] * sl0 + filter_hi[1] * sl1 + filter_hi[2] * sl2 + filter_hi[3] * sl3;
-
-            float sh0 = tmphi[j0];
-            float sh1 = tmphi[j1];
-            float sh2 = tmphi[j2];
-            float sh3 = tmphi[j3];
-
-            /* band_h: hi vertical, lo horizontal. */
-            dst->band_h[i * dst_px_stride + j] =
-                filter_lo[0] * sh0 + filter_lo[1] * sh1 + filter_lo[2] * sh2 + filter_lo[3] * sh3;
-
-            /* band_d: hi vertical, hi horizontal. */
-            dst->band_d[i * dst_px_stride + j] =
-                filter_hi[0] * sh0 + filter_hi[1] * sh1 + filter_hi[2] * sh2 + filter_hi[3] * sh3;
-        }
+        const float *rows[4] = {src + (ptrdiff_t)ind_y[0][i] * src_px_stride,
+                                src + (ptrdiff_t)ind_y[1][i] * src_px_stride,
+                                src + (ptrdiff_t)ind_y[2][i] * src_px_stride,
+                                src + (ptrdiff_t)ind_y[3][i] * src_px_stride};
+        float_adm_dwt2_vertical_row_avx2(rows, tmplo, tmphi, w);
+        float_adm_dwt2_horizontal_row_avx2(dst, ind_x, i, w, dst_px_stride, tmplo, tmphi);
     }
 
     aligned_free(tmplo);
     aligned_free(tmphi);
+    return 0;
 }
 
 void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, int src_stride,
-                        int dst_stride, float factor, float one_by_30)
+                        int dst_stride, float factor, double one_by_30)
 {
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
-    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
-    __m256 vfactor = _mm256_set1_ps(factor);
-    __m256 vone_by_30 = _mm256_set1_ps(one_by_30);
+    const __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
+    const __m256 vfactor = _mm256_set1_ps(factor);
+    const __m256d vone_by_30 = _mm256_set1_pd(one_by_30);
 
     for (int i = 0; i < h; ++i) {
         int src_offset = i * src_px_stride;
@@ -184,20 +164,20 @@ void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, 
 
         /* Process 16 floats per iteration (dual accumulators for throughput). */
         for (; j + 16 <= w; j += 16) {
-            __m256 s0 = _mm256_loadu_ps(src + src_offset + j);
-            __m256 s1 = _mm256_loadu_ps(src + src_offset + j + 8);
+            const __m256 s0 = _mm256_loadu_ps(src + src_offset + j);
+            const __m256 s1 = _mm256_loadu_ps(src + src_offset + j + 8);
 
-            __m256 d0 = _mm256_mul_ps(vfactor, s0);
-            __m256 d1 = _mm256_mul_ps(vfactor, s1);
+            const __m256 d0 = _mm256_mul_ps(vfactor, s0);
+            const __m256 d1 = _mm256_mul_ps(vfactor, s1);
 
             _mm256_storeu_ps(dst + dst_offset + j, d0);
             _mm256_storeu_ps(dst + dst_offset + j + 8, d1);
 
-            __m256 a0 = _mm256_and_ps(d0, abs_mask);
-            __m256 a1 = _mm256_and_ps(d1, abs_mask);
+            const __m256 a0 = _mm256_and_ps(d0, abs_mask);
+            const __m256 a1 = _mm256_and_ps(d1, abs_mask);
 
-            __m256 f0 = _mm256_mul_ps(vone_by_30, a0);
-            __m256 f1 = _mm256_mul_ps(vone_by_30, a1);
+            const __m256 f0 = float_adm_mul_float_by_double_avx2(a0, vone_by_30);
+            const __m256 f1 = float_adm_mul_float_by_double_avx2(a1, vone_by_30);
 
             _mm256_storeu_ps(flt + dst_offset + j, f0);
             _mm256_storeu_ps(flt + dst_offset + j + 8, f1);
@@ -205,18 +185,18 @@ void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, 
 
         /* Process 8 floats. */
         for (; j + 8 <= w; j += 8) {
-            __m256 s = _mm256_loadu_ps(src + src_offset + j);
-            __m256 d = _mm256_mul_ps(vfactor, s);
+            const __m256 s = _mm256_loadu_ps(src + src_offset + j);
+            const __m256 d = _mm256_mul_ps(vfactor, s);
             _mm256_storeu_ps(dst + dst_offset + j, d);
 
-            __m256 a = _mm256_and_ps(d, abs_mask);
-            __m256 f = _mm256_mul_ps(vone_by_30, a);
+            const __m256 a = _mm256_and_ps(d, abs_mask);
+            const __m256 f = float_adm_mul_float_by_double_avx2(a, vone_by_30);
             _mm256_storeu_ps(flt + dst_offset + j, f);
         }
 
         /* Scalar tail. */
         for (; j < w; ++j) {
-            float dst_val = factor * src[src_offset + j];
+            const float dst_val = factor * src[src_offset + j];
             dst[dst_offset + j] = dst_val;
             flt[dst_offset + j] = one_by_30 * fabsf(dst_val);
         }
@@ -233,11 +213,11 @@ float float_adm_csf_den_scale_avx2(const float *src, int w, int h, int src_strid
     __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
     __m256 vfactor = _mm256_set1_ps(factor);
 
-    double accum = 0;
+    float accum = 0.0f;
 
     for (int i = top; i < bottom; ++i) {
-        const float *row = src + i * src_px_stride;
-        double row_accum = 0.0;
+        const float *row = src + (ptrdiff_t)i * src_px_stride;
+        float row_accum = 0.0f;
         int j = left;
 
         for (; j + 8 <= right; j += 8) {
@@ -246,62 +226,15 @@ float float_adm_csf_den_scale_avx2(const float *src, int w, int h, int src_strid
             __m256 vsq = _mm256_mul_ps(v, v);
             __m256 vcube = _mm256_mul_ps(vsq, v);
 
-            /*
-             * F2 fix: accumulate via double-precision widening instead of
-             * store-to-tmp + scalar loop.  Widen the low 4 and high 4 float
-             * lanes to double separately, sum each group with hadd_pd4, then
-             * add both halves.  This avoids an intermediate float-precision
-             * store and keeps the entire lane accumulation in double. The
-             * tree reduction order (lo-half sum + hi-half sum) is consistent
-             * across all SIMD paths (AVX2 and AVX-512 twins) — see ADR-0139.
-             */
-            __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(vcube));
-            __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(vcube, 1));
-            row_accum += hadd_pd4(lo) + hadd_pd4(hi);
+            float lanes[8];
+            _mm256_storeu_ps(lanes, vcube);
+            for (int lane = 0; lane < 8; ++lane)
+                row_accum += lanes[lane];
         }
 
         for (; j < right; ++j) {
             float val = fabsf(factor * row[j]);
-            row_accum += (double)(val * val * val);
-        }
-
-        accum += row_accum;
-    }
-
-    return (float)accum;
-}
-
-float float_adm_sum_cube_avx2(const float *x, int w, int h, int stride, int left, int top,
-                              int right, int bottom)
-{
-    (void)w;
-    (void)h;
-    int px_stride = stride / sizeof(float);
-
-    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
-
-    double accum = 0;
-
-    for (int i = top; i < bottom; ++i) {
-        const float *row = x + i * px_stride;
-        double row_accum = 0.0;
-        int j = left;
-
-        for (; j + 8 <= right; j += 8) {
-            __m256 v = _mm256_and_ps(_mm256_loadu_ps(row + j), abs_mask);
-            __m256 vsq = _mm256_mul_ps(v, v);
-            __m256 vcube = _mm256_mul_ps(vsq, v);
-
-            /* F2 fix: widen to double via _mm256_cvtps_pd, avoid store+loop.
-             * See float_adm_csf_den_scale_avx2 for rationale. */
-            __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(vcube));
-            __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(vcube, 1));
-            row_accum += hadd_pd4(lo) + hadd_pd4(hi);
-        }
-
-        for (; j < right; ++j) {
-            float val = fabsf(row[j]);
-            row_accum += (double)(val * val * val);
+            row_accum += val * val * val;
         }
 
         accum += row_accum;

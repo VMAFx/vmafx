@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <stdio.h>
 #include <immintrin.h>
 #include <stddef.h>
@@ -27,9 +29,8 @@
 #include "feature/common/macros.h"
 #include "feature/x86/vif_avx2.h"
 
-/* Preserve Netflix NULL spelling and avoid relying on undocumented MSVC C
+/* Preserve Netflix VMAF_NULLPTR spelling and avoid relying on undocumented MSVC C
  * nullptr support (ADR-1138); the C++ nullptr ratchet remains unchanged. */
-// NOLINTBEGIN(modernize-use-nullptr)
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -448,10 +449,8 @@ static FORCE_INLINE void vif_horizontal8(const VifPublicState *s, const VifBuffe
         vif_accumulate_pixel256(s, totals, xx[b], yy[b], xy[b]);
 }
 
-/* Research-2045: integer_vif.c assigns this function to VifState callbacks
- * taking VifPublicState *, shared with the scalar and other ISA implementations. */
-// cppcheck-suppress constParameterPointer
-void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h)
+void vif_statistic_8_avx2(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                          unsigned h)
 {
     VifResiduals totals = {0};
     assert(vif_filter1d_width[0] == 17);
@@ -747,11 +746,8 @@ static FORCE_INLINE void vif_vertical16_row(const VifBuffer *buf, unsigned w, un
         vif_vertical16_tail(buf, ii, j, p);
 }
 
-/* Research-2045: integer_vif.c assigns this function to VifState callbacks
- * taking VifPublicState *, shared with the scalar and other ISA implementations. */
-// cppcheck-suppress constParameterPointer
-void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
-                           int bpc, int scale)
+void vif_statistic_16_avx2(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                           unsigned h, int bpc, int scale)
 {
     VifResiduals totals = {0};
     const unsigned fwidth = vif_filter1d_width[scale];
@@ -937,7 +933,7 @@ static FORCE_INLINE void vif_subsample8_horizontal_tail(const VifBuffer *buf, un
 /* Preserve the 9-tap center/pair vertical order and left-to-right horizontal order. */
 void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
 {
-    assert(buf != NULL);
+    assert(buf != VMAF_NULLPTR);
     assert(w > 0u);
     assert(h > 0u);
     for (unsigned i = 0; i < h / 2; ++i) {
@@ -1059,7 +1055,7 @@ static FORCE_INLINE void vif_subsample16_copy(const VifBuffer *buf, unsigned w, 
 
 void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
-    assert(buf != NULL);
+    assert(buf != VMAF_NULLPTR);
     assert(w > 0u);
     assert(h > 0u);
     VifVertical16Plan256 plan = vif_vertical16_plan(bpc, scale);
@@ -1083,5 +1079,3 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
     vif_subsample16_copy(buf, w, h);
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
 }
-
-// NOLINTEND(modernize-use-nullptr)

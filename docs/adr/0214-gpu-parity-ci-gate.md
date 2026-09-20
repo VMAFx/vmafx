@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0214: GPU-parity CI gate (T6-8) — cross-device variance matrix
 
 - **Status**: Accepted
@@ -43,7 +42,7 @@ it only verifies.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-feature tolerance table (chosen) | Honest about real precision floors (ciede places=2, psnr_hvs places=3, vif places=4); single source of truth | One Python dict to keep current with kernel changes | Aligns with measure-then-set-the-contract from ADR-0188/9; uniform places=4 would force fake-passing or hide the relaxation in a `--places` flag per CI step |
 | Uniform places=4 across all cells | Simplest mental model | Already false (psnr_hvs has been places=3 since ADR-0191; ciede places=2 since ADR-0187); would need per-step overrides anyway | Hides the relaxation in CI YAML rather than in code; reviewers can't see the contract at a glance |
 | CUDA / SYCL hard-required on every PR | Catches every regression immediately | Needs self-hosted runner; cost + flake risk on every PR | Lane is `if: false` until self-hosted runner with the right hardware exists; advisory-only until then |

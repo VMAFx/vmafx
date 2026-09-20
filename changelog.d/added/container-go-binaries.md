@@ -1,5 +1,7 @@
-- **The dev container now ships the six Go binaries.** `dev/Containerfile` had no
-  Go toolchain at all, so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`,
+# Changelog fragment
+
+- **The dev container now ships the six Go binaries.** `dev/Containerfile` had
+  no Go toolchain at all, so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`,
   `vmafx-controller`, `vmafx-node` and `vmafx-operator` existed only on a
   developer's host — which made CLAUDE.md §15 ("default to the container for
   vmaf / vmaf-tune / ai / MCP-probing work") impossible to satisfy for any Go

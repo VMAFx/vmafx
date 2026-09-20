@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0880: Remove unreferenced testdata debug scripts and orphan snapshot
 
 - **Status**: Accepted
@@ -47,7 +46,7 @@ capable.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Delete the three orphan files (chosen) | Removes 36 KB of dead weight, eliminates duplicated comparator logic, simplifies the audit surface for the next sweep | Loses one frame-by-frame debugger flavour — recoverable from git history if ever needed | Picked because the survivors strictly dominate and the audit gives a clean baseline |
 | Leave the files in place | Zero risk of regret if someone later wants the slim B580 baseline or the older comparator | Continues to clutter the testdata listing; future agents repeat the same audit and arrive at the same conclusion | Rejected — every audit cycle pays the same cost for no gain |
 | Move the files to a `testdata/attic/` directory | Preserves the artifacts without cluttering the active surface | Adds a directory that itself needs a policy (when does an attic file age out?); git history already serves this role | Rejected — `git log --all --follow` recovers any deleted file on demand |

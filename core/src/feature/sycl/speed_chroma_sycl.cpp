@@ -35,8 +35,10 @@
 #include "sycl/common.h"
 #include "feature/speed_internal.h"
 
-namespace
-{
+/*
+ * lint rationale: ADR-1266 keeps
+ * file-local SYCL helpers static because Praetor misclassifies namespace scopes as functions.
+ */
 
 constexpr uint32_t SP_ELEMENTS = 25u;
 constexpr uint32_t SP_BLOCK_SIZE = 5u;
@@ -50,15 +52,53 @@ constexpr uint32_t SOLVE_WG = 32u; /* one warp per column */
 /* SYCL GPU kernels                                                    */
 /* ------------------------------------------------------------------ */
 
-/* Kernel 2: covariance matrix (625 work-groups, one per (x_index, y_index))
- *
- * CPU parity (compute_covariance): one GLOBAL submatrix sweep with the scalar
- * global means, divided by N once. The historic per-tile loop (displaced
- * origins tile_y*5 + xr, per-tile means, per-tile /N) summed num_blocks
- * block-local covariances instead — wrong matrix, ~7x-low scores. The work-
- * group's threads stride over the submatrix_h × submatrix_w pixels at
- * (xr+i, xc+j)/(yr+i, yc+j), reduce in local memory, and divide by N once. */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct SpeedCompensatedSum {
+    float hi;
+    float lo;
+};
+
+static SpeedCompensatedSum speed_add_product(SpeedCompensatedSum sum, float dx, float dy)
+{
+    const float prod = dx * dy;
+    const float perr = sycl::fma(dx, dy, -prod);
+    const float sum_hi = sum.hi + prod;
+    const float bias = sum_hi - sum.hi;
+    const float err = (sum.hi - (sum_hi - bias)) + (prod - bias);
+    const float t = sum.lo + perr + err;
+    const float renorm = sum_hi + t;
+    return {renorm, t - (renorm - sum_hi)};
+}
+
+static SpeedCompensatedSum speed_combine_sums(SpeedCompensatedSum a, SpeedCompensatedSum b)
+{
+    const float sum_hi = a.hi + b.hi;
+    const float bias = sum_hi - a.hi;
+    const float err = (a.hi - (sum_hi - bias)) + (b.hi - bias);
+    const float t = a.lo + b.lo + err;
+    const float renorm = sum_hi + t;
+    return {renorm, t - (renorm - sum_hi)};
+}
+
+static SpeedCompensatedSum speed_cov_partial(const float *plane, uint32_t stride_px,
+                                             uint32_t submatrix_w, uint32_t total, uint32_t xr,
+                                             uint32_t xc, uint32_t yr, uint32_t yc, float mean_x,
+                                             float mean_y, uint32_t tid)
+{
+    SpeedCompensatedSum sum{0.0f, 0.0f};
+    for (uint32_t p = tid; p < total; p += COV_WG) {
+        const uint32_t i = p / submatrix_w;
+        const uint32_t j = p % submatrix_w;
+        const float vx = plane[(xr + i) * stride_px + (xc + j)];
+        const float vy = plane[(yr + i) * stride_px + (yc + j)];
+        sum = speed_add_product(sum, vx - mean_x, vy - mean_y);
+    }
+    const float renorm = sum.hi + sum.lo;
+    return {renorm, sum.lo - (renorm - sum.hi)};
+}
+
+/* One global submatrix sweep matches the CPU covariance. The compensated fp32
+ * pair reproduces the precision of the CPU's double accumulator on fp64-less
+ * Arc devices; keep the operation order in the helpers above unchanged. */
 static void launch_cov(sycl::queue &q, const float *plane, const float *means, float *cov_mat,
                        uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
                        uint32_t submatrix_w, uint32_t submatrix_h)
@@ -68,8 +108,6 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
     const size_t total_wg = (size_t)SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
-        /* Two local arrays, not one: the accumulator is a compensated (hi, lo)
-         * float pair. See the note in the kernel. */
         sycl::local_accessor<float, 1> const s_partial(sycl::range<1>(COV_WG), cgh);
         sycl::local_accessor<float, 1> const s_partial_lo(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
@@ -81,77 +119,21 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
             const uint32_t xc = x_index % SP_BLOCK_SIZE;
             const uint32_t yr = y_index / SP_BLOCK_SIZE;
             const uint32_t yc = y_index % SP_BLOCK_SIZE;
-            const float mean_x = means[x_index];
-            const float mean_y = means[y_index];
-
-            /* CPU-parity accumulation.
-             *
-             * `si_compute_covariance` in speed_internal.c promotes both pixels
-             * and both means to double, so every product is exact (a float
-             * product needs 48 bits, which double holds) and ~45,000 of them
-             * are summed with double rounding. `submatrix_w * submatrix_h` is
-             * nearly the whole plane, so plain fp32 accumulation drifted
-             * 1.37e-4 on the 576x324 fixture — past the places=4 parity
-             * tolerance the test asserts.
-             *
-             * This device has no fp64 (`aspect::fp64` is false on Arc A380, and
-             * a double kernel is rejected outright), so the sum is carried as a
-             * compensated (hi, lo) float pair instead: each product is split
-             * exactly with one FMA, and each addition is a two-sum whose
-             * rounding error is folded into `lo`. That removes both the
-             * per-term product rounding and the O(N * eps) summation drift
-             * using only fp32 arithmetic the device has. */
             const uint32_t total = submatrix_h * submatrix_w;
-            float hi = 0.0f;
-            float lo = 0.0f;
-            for (uint32_t p = tid; p < total; p += COV_WG) {
-                const uint32_t i = p / submatrix_w;
-                const uint32_t j = p % submatrix_w;
-                const float vx = plane[(xr + i) * stride_px + (xc + j)];
-                const float vy = plane[(yr + i) * stride_px + (yc + j)];
-                const float dx = vx - mean_x;
-                const float dy = vy - mean_y;
-                /* two_product: dx * dy == prod + perr, exactly. */
-                const float prod = dx * dy;
-                const float perr = sycl::fma(dx, dy, -prod);
-                /* Add (prod, perr) into the (hi, lo) expansion and RENORMALISE.
-                 * Folding the errors into `lo` without renormalising lets `lo`
-                 * itself lose precision over the ~45,000 terms, which is what
-                 * left the stored covariance one ulp out. */
-                const float sum_hi = hi + prod;
-                const float bias = sum_hi - hi;
-                const float err = (hi - (sum_hi - bias)) + (prod - bias);
-                const float t = lo + perr + err;
-                const float renorm = sum_hi + t;
-                lo = t - (renorm - sum_hi);
-                hi = renorm;
-            }
-            {
-                const float t = hi + lo;
-                lo = lo - (t - hi);
-                hi = t;
-            }
-            s_partial[tid] = hi;
-            s_partial_lo[tid] = lo;
+            const SpeedCompensatedSum partial =
+                speed_cov_partial(plane, stride_px, submatrix_w, total, xr, xc, yr, yc,
+                                  means[x_index], means[y_index], tid);
+            s_partial[tid] = partial.hi;
+            s_partial_lo[tid] = partial.lo;
             it.barrier(sycl::access::fence_space::local_space);
 
             for (uint32_t s = COV_WG / 2u; s > 0u; s >>= 1u) {
                 if (tid < s) {
-                    /* Combine two (hi, lo) expansions and RENORMALISE, the same
-                     * way the per-work-item loop does. Adding the `lo` halves
-                     * without folding the result back into `hi` loses the
-                     * compensation across the eight reduction levels. */
-                    const float a_hi = s_partial[tid];
-                    const float a_lo = s_partial_lo[tid];
-                    const float b_hi = s_partial[tid + s];
-                    const float b_lo = s_partial_lo[tid + s];
-                    const float sum_hi = a_hi + b_hi;
-                    const float bias = sum_hi - a_hi;
-                    const float err = (a_hi - (sum_hi - bias)) + (b_hi - bias);
-                    const float t = a_lo + b_lo + err;
-                    const float renorm = sum_hi + t;
-                    s_partial[tid] = renorm;
-                    s_partial_lo[tid] = t - (renorm - sum_hi);
+                    const SpeedCompensatedSum sum =
+                        speed_combine_sums({s_partial[tid], s_partial_lo[tid]},
+                                           {s_partial[tid + s], s_partial_lo[tid + s]});
+                    s_partial[tid] = sum.hi;
+                    s_partial_lo[tid] = sum.lo;
                 }
                 it.barrier(sycl::access::fence_space::local_space);
             }
@@ -189,7 +171,6 @@ static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, u
 }
 
 /* Kernel 4: backward substitution (one sub-group per column) */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t num_blocks)
 {
     /* Each warp (32 threads) handles one column; threads 25-31 idle. */
@@ -341,7 +322,6 @@ struct SpeedChromaSyclState {
     VmafDictionary *feature_name_dict;
 };
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void free_sycl_state(SpeedChromaSyclState *s)
 {
     sycl::queue const *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
@@ -409,7 +389,74 @@ static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bo
     return (score_u + score_v) * 0.5f;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static void speed_upload_plane(SpeedChromaSyclState *s, sycl::queue &q, float *h_plane,
+                               uint32_t stride_px)
+{
+    const size_t plane_bytes = s->dim.truncated_height * stride_px * sizeof(float);
+    q.memcpy(s->d_plane, h_plane, plane_bytes);
+    q.wait();
+
+    float h_means[SP_ELEMENTS];
+    speed_internal_compute_means(&s->dim, h_plane, h_means, stride_px);
+    q.memcpy(s->d_means, h_means, sizeof(h_means));
+    q.wait();
+}
+
+static void speed_compute_channel_inputs(SpeedChromaSyclState *s, sycl::queue &q, float *h_indterm,
+                                         float *d_indterm, uint32_t stride_px,
+                                         uint32_t num_blocks_h, uint32_t num_blocks)
+{
+    launch_cov(q, s->d_plane, s->d_means, s->d_cov_mat, stride_px, num_blocks_h, num_blocks,
+               (uint32_t)s->dim.submatrix_width, (uint32_t)s->dim.submatrix_height);
+    launch_indterm(q, s->d_plane, d_indterm, stride_px, num_blocks_h, num_blocks);
+    q.wait();
+
+    const size_t indterm_bytes = (size_t)SP_ELEMENTS * num_blocks * sizeof(float);
+    q.memcpy(s->h_cov_mat, s->d_cov_mat, (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float));
+    q.memcpy(h_indterm, d_indterm, indterm_bytes);
+    q.wait();
+}
+
+static void speed_zero_solution(sycl::queue &q, float *d_sol, size_t indterm_bytes)
+{
+    q.memset(d_sol, 0, indterm_bytes);
+    q.wait();
+}
+
+static bool speed_has_singular_pivot(const float *r)
+{
+    for (uint32_t i = 0; i < SP_ELEMENTS; i++) {
+        if (std::fabs(r[i * SP_ELEMENTS + i]) < SPEED_INTERNAL_EIGENVALUE_EPS)
+            return true;
+    }
+    return false;
+}
+
+/* A QR pivot below the CPU threshold follows the same singular path as a
+ * non-regular covariance. Returning false tells the caller to retain the
+ * original early return, before the eigenvalue upload. */
+static bool speed_solve_regular(SpeedChromaSyclState *s, sycl::queue &q, float *h_indterm,
+                                float *d_sol, uint32_t num_blocks, size_t indterm_bytes,
+                                bool *singular_out)
+{
+    const int sz = (int)SP_ELEMENTS;
+    speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
+    if (speed_has_singular_pivot(s->h_R)) {
+        *singular_out = true;
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "speed_chroma_sycl: R pivot below regularity epsilon, zeroing solution\n");
+        speed_zero_solution(q, d_sol, indterm_bytes);
+        return false;
+    }
+    speed_internal_qt_multiply(s->h_Q, h_indterm, sz, (int)num_blocks, s->h_qt_scratch);
+    q.memcpy(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float));
+    q.memcpy(d_sol, h_indterm, indterm_bytes);
+    q.wait();
+    launch_solve(q, s->d_R, d_sol, num_blocks);
+    q.wait();
+    return true;
+}
+
 static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm, float *d_indterm,
                        float *d_sol, bool *singular_out)
 {
@@ -417,101 +464,24 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
     const uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
-    const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
-    const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
-    const size_t plane_bytes = s->dim.truncated_height * stride_px * sizeof(float);
     const size_t indterm_bytes = (size_t)SP_ELEMENTS * num_blocks * sizeof(float);
 
-    /* H2D upload. */
-    q.memcpy(s->d_plane, h_plane, plane_bytes);
-    q.wait();
+    speed_upload_plane(s, q, h_plane, stride_px);
+    speed_compute_channel_inputs(s, q, h_indterm, d_indterm, stride_px, num_blocks_h, num_blocks);
 
-    /* The per-element means are computed on the HOST with the CPU reference's
-     * own routine, then uploaded.
-     *
-     * They are 1/25th of the covariance work — 25 elements against 625 pairs
-     * over the same submatrix — so offloading them buys nothing, and a device
-     * reduction that differs from the CPU's by one ulp propagates that ulp into
-     * every covariance term. This matters here more than the magnitudes suggest:
-     * the covariance is 25x25 estimated from a submatrix that can be as small as
-     * 6x6 (the parity fixture reduces to a 10x10 plane), so the system is badly
-     * under-determined and the downstream eigen/QR/solve amplifies a single ulp
-     * by ~70x on the final score. Using the CPU routine makes the means
-     * bit-identical by construction rather than by coincidence. */
-    float h_means[SP_ELEMENTS];
-    speed_internal_compute_means(&s->dim, h_plane, h_means, stride_px);
-    q.memcpy(s->d_means, h_means, sizeof(h_means));
-    q.wait();
-
-    /* GPU kernels. */
-    launch_cov(q, s->d_plane, s->d_means, s->d_cov_mat, stride_px, num_blocks_h, num_blocks,
-               submatrix_w, submatrix_h);
-    launch_indterm(q, s->d_plane, d_indterm, stride_px, num_blocks_h, num_blocks);
-    q.wait();
-
-    /* D2H: cov_mat and indterm. */
-    q.memcpy(s->h_cov_mat, s->d_cov_mat, (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float));
-    q.memcpy(h_indterm, d_indterm, indterm_bytes);
-    q.wait();
-
-    /* CPU: eigendecomp. */
-    const int sz = (int)SP_ELEMENTS;
-    const int nb = (int)num_blocks;
-    speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
+    speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, (int)SP_ELEMENTS,
+                                       s->h_eig_scratch);
     bool const regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
-
-    /* A singular covariance matrix is NOT a failure: the CPU reference zeroes
-     * the solution and reports it separately so the caller can impute. The
-     * return value stays reserved for hard failures. See ADR-1202. */
     *singular_out = !regular;
     speed_internal_tally_solve(&s->singular_tally, !regular, "speed_chroma_sycl");
     if (!regular) {
-        /* Zero the DEVICE solution, not the host staging buffer. The score
-         * kernel reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm`
-         * at the top of every pipeline run, so zeroing it changed nothing.
-         * `sycl::malloc_device` memory is explicitly uninitialised, so without
-         * this the first singular frame scored against whatever the allocator
-         * handed back. ADR-1218. */
-        q.memset(d_sol, 0, indterm_bytes);
-        q.wait();
-    } else {
-        speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
-        /* CPU parity. `speed_internal_backward_substitution` returns -EINVAL if
-         * any R diagonal pivot is below SPEED_INTERNAL_EIGENVALUE_EPS, and
-         * est_params() folds that into `cannot_invert` — the SAME path a
-         * non-regular covariance takes. The device kernel has no way to report
-         * failure and used to zero just that row and carry on, with a threshold
-         * two orders looser (1e-8f), so a pivot between the two produced a
-         * solution the CPU never computes. The eigenvalue regularity check
-         * above does not cover it: those are eigenvalues of the covariance, not
-         * the diagonal of its QR R factor. `h_R` is already on the host here, so
-         * the check costs 25 comparisons. */
-        bool pivot_singular = false;
-        for (int i = 0; i < sz; i++) {
-            if (std::fabs(s->h_R[i * sz + i]) < SPEED_INTERNAL_EIGENVALUE_EPS) {
-                pivot_singular = true;
-                break;
-            }
-        }
-        if (pivot_singular) {
-            *singular_out = true;
-            vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                     "speed_chroma_sycl: R pivot below regularity epsilon, zeroing solution\n");
-            q.memset(d_sol, 0, indterm_bytes);
-            q.wait();
-            return 0;
-        }
-        speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
-        /* H2D: R and Q^T×indterm. */
-        q.memcpy(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float));
-        q.memcpy(d_sol, h_indterm, indterm_bytes);
-        q.wait();
-        launch_solve(q, s->d_R, d_sol, num_blocks);
-        q.wait();
+        speed_zero_solution(q, d_sol, indterm_bytes);
+    } else if (!speed_solve_regular(s, q, h_indterm, d_sol, num_blocks, indterm_bytes,
+                                    singular_out)) {
+        return 0;
     }
 
-    /* H2D: eigenvalues. */
-    q.memcpy(s->d_eigenvalues, s->h_eigenvalues, (size_t)sz * sizeof(float));
+    q.memcpy(s->d_eigenvalues, s->h_eigenvalues, SP_ELEMENTS * sizeof(float));
     q.wait();
     return 0;
 }
@@ -520,7 +490,36 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
 /* Lifecycle (C wrappers)                                             */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static float speed_score_difference(float re, float de, float rv, float dv, int wvm)
+{
+    float sr = 0.0f;
+    float sd = 0.0f;
+    if (wvm == 0) {
+        sr = re * std::log2f(1.0f + rv);
+        sd = de * std::log2f(1.0f + dv);
+    } else if (wvm == 1) {
+        sr = re * std::log2f(1.0f + rv);
+        sd = de * std::log2f(1.0f + rv);
+    } else if (wvm == 2) {
+        sr = re * std::log2f(1.0f + dv);
+        sd = de * std::log2f(1.0f + dv);
+    } else if (wvm == 3) {
+        float const mv = (rv + dv) * 0.5f;
+        sr = re * std::log2f(1.0f + mv);
+        sd = de * std::log2f(1.0f + mv);
+    } else if (wvm == 4) {
+        sr = re * std::log2f(1.0f + rv);
+        sd = de * std::log2f(1.0f + (rv + dv) * 0.5f);
+    } else if (wvm == 5) {
+        sr = re * std::log2f(1.0f + rv);
+        sd = de * std::log2f(1.0f + 0.75f * rv + 0.25f * dv);
+    } else if (wvm == 6) {
+        sr = re * std::log2f(1.0f + rv);
+        sd = de * std::log2f(1.0f + 0.25f * rv + 0.75f * dv);
+    }
+    return std::fabs(sr - sd);
+}
+
 static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
 {
     sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
@@ -553,158 +552,94 @@ static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
             continue;
         float const rv = s->h_ref_var[i];
         float const dv = s->h_dis_var[i];
-        const int wvm = s->opt.speed_weight_var_mode;
-        float sr = 0.0f;
-        float sd = 0.0f;
-        if (wvm == 0) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + dv);
-        } else if (wvm == 1) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + rv);
-        } else if (wvm == 2) {
-            sr = re * std::log2f(1.0f + dv);
-            sd = de * std::log2f(1.0f + dv);
-        } else if (wvm == 3) {
-            float const mv = (rv + dv) * 0.5f;
-            sr = re * std::log2f(1.0f + mv);
-            sd = de * std::log2f(1.0f + mv);
-        } else if (wvm == 4) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + (rv + dv) * 0.5f);
-        } else if (wvm == 5) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + 0.75f * rv + 0.25f * dv);
-        } else if (wvm == 6) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + 0.25f * rv + 0.75f * dv);
-        }
-        total += std::fabs(sr - sd);
+        total += speed_score_difference(re, de, rv, dv, s->opt.speed_weight_var_mode);
     }
     *score_out = total / (float)num_blocks;
     return 0;
 }
 
-} /* anonymous namespace */
-
-extern "C" {
-
+// clang-format off
 static const VmafOption options_chroma[] = {
     {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the Gaussian kernel",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1.0},
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .name = "speed_kernelscale", .help = "scaling factor for the Gaussian kernel",
         .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1.0},
-        .min = 0.1,
-        .max = 4.0,
+        .offset = offsetof(SpeedChromaSyclState, speed_chroma_kernelscale),
+        .type = VMAF_OPT_TYPE_DOUBLE, .default_val = {.d = 1.0},
+        .min = 0.1, .max = 4.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    }, {
+        .name = "speed_prescale", .help = "scaling factor for the frame",
         .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val = {.s = "nearest"},
+        .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale),
+        .type = VMAF_OPT_TYPE_DOUBLE, .default_val = {.d = 1.0},
+        .min = 0.1, .max = 4.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    }, {
+        .name = "speed_prescale_method", .help = "scaling method",
         .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 0.29},
-        .min = 0.1,
-        .max = 2.0,
+        .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale_method),
+        .type = VMAF_OPT_TYPE_STRING, .default_val = {.s = "nearest"},
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    }, {
+        .name = "speed_sigma_nn", .help = "standard deviation of neural noise",
         .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor fraction",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 0.0},
-        .min = 0.0,
-        .max = 1.0,
+        .offset = offsetof(SpeedChromaSyclState, speed_chroma_sigma_nn),
+        .type = VMAF_OPT_TYPE_DOUBLE, .default_val = {.d = 0.29},
+        .min = 0.1, .max = 2.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    }, {
+        .name = "speed_nn_floor", .help = "neural noise floor fraction",
         .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "clip output to this maximum",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1000.0},
-        .min = 0.0,
-        .max = 1000.0,
+        .offset = offsetof(SpeedChromaSyclState, speed_chroma_nn_floor),
+        .type = VMAF_OPT_TYPE_DOUBLE, .default_val = {.d = 0.0},
+        .min = 0.0, .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    }, {
+        .name = "speed_max_val", .help = "clip output to this maximum",
         .alias = "mxv",
-    },
-    {
-        .name = "speed_weight_var_mode",
-        .help = "variance weighting mode (0-6)",
-        .offset = offsetof(SpeedChromaSyclState, speed_weight_var_mode),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val = {.d = 0},
-        .min = 0,
-        .max = 6,
+        .offset = offsetof(SpeedChromaSyclState, speed_chroma_max_val),
+        .type = VMAF_OPT_TYPE_DOUBLE, .default_val = {.d = 1000.0},
+        .min = 0.0, .max = 1000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    }, {
+        .name = "speed_weight_var_mode", .help = "variance weighting mode (0-6)",
         .alias = "wvm",
+        .offset = offsetof(SpeedChromaSyclState, speed_weight_var_mode),
+        .type = VMAF_OPT_TYPE_INT, .default_val = {.d = 0},
+        .min = 0, .max = 6,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {.name = nullptr},
 };
+// clang-format on
 
 /* forward decl for init failure cleanup — SY-2a */
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_chroma_sycl` / `extract_chroma_sycl` / `close_chroma_sycl` entry points
-// and the `provided_features_chroma` table use C-style `static` rather than an
-// anonymous namespace because their addresses are stored in the
-// `extern "C" VmafFeatureExtractor` struct at the bottom of this file, which the
-// C ABI consumes through the function-pointer types in `feature_extractor.h`.
-// Same band, same reason, as integer_motion_sycl.cpp and integer_adm_sycl.cpp.
-// Per CLAUDE.md section 12 r12 these are load-bearing invariants of the
-// SYCL <-> libvmaf C-API ABI.
 static int close_chroma_sycl(VmafFeatureExtractor *fex);
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                            unsigned w, unsigned h)
+static int speed_chroma_dimensions(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h,
+                                   unsigned *cw, unsigned *ch)
 {
-    (void)bpc;
-    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
-
-    unsigned cw = w;
-    unsigned ch = h;
+    *cw = w;
+    *ch = h;
     switch (pix_fmt) {
     case VMAF_PIX_FMT_UNKNOWN:
     case VMAF_PIX_FMT_YUV400P:
         return -EINVAL;
     case VMAF_PIX_FMT_YUV420P:
-        cw /= 2u;
-        ch /= 2u;
+        *cw /= 2u;
+        *ch /= 2u;
         break;
     case VMAF_PIX_FMT_YUV422P:
-        cw /= 2u;
+        *cw /= 2u;
         break;
     case VMAF_PIX_FMT_YUV444P:
         break;
     }
+    return 0;
+}
 
-    s->sycl_state = fex->sycl_state;
+static void speed_chroma_set_options(SpeedChromaSyclState *s)
+{
     s->opt = SpeedInternalOptions{
         .speed_kernelscale = s->speed_chroma_kernelscale,
         .speed_prescale = s->speed_chroma_prescale,
@@ -713,14 +648,10 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
         .speed_nn_floor = s->speed_chroma_nn_floor,
         .speed_weight_var_mode = s->speed_weight_var_mode,
     };
+}
 
-    int const err =
-        speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
-    if (err)
-        return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
-    sycl::queue const &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+static void speed_chroma_allocate(SpeedChromaSyclState *s, sycl::queue const &q)
+{
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
@@ -765,8 +696,34 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
 #undef ALLOC_D
 #undef ALLOC_H
 #undef ALLOC_A
+}
 
-    if (!s->d_plane || !s->h_plane_ref || !s->h_eigenvalues || !s->h_Q || !s->h_R) {
+static bool speed_chroma_buffers_valid(const SpeedChromaSyclState *s)
+{
+    return s->d_plane && s->h_plane_ref && s->h_eigenvalues && s->h_Q && s->h_R;
+}
+
+static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                            unsigned w, unsigned h)
+{
+    (void)bpc;
+    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
+    unsigned cw = 0;
+    unsigned ch = 0;
+    int err = speed_chroma_dimensions(pix_fmt, w, h, &cw, &ch);
+    if (err)
+        return err;
+
+    s->sycl_state = fex->sycl_state;
+    speed_chroma_set_options(s);
+    err = speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
+    if (err)
+        return err;
+    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+
+    sycl::queue const &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+    speed_chroma_allocate(s, q);
+    if (!speed_chroma_buffers_valid(s)) {
         close_chroma_sycl(fex);
         return -ENOMEM;
     }
@@ -781,102 +738,46 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                               VmafPicture *dist_pic_90, unsigned index,
-                               VmafFeatureCollector *feature_collector)
-{
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
+struct SpeedChromaChannelResult {
+    float score;
+    int err;
+    bool singular;
+};
 
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
-    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
-    if (!tmp_filter)
-        return -ENOMEM;
+static SpeedChromaChannelResult speed_chroma_run_plane(SpeedChromaSyclState *s,
+                                                       const VmafPicture *ref_pic, const VmafPicture *dist_pic,
+                                                       float *tmp_filter, int plane)
+{
+    picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, plane);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
+                                        s->float_stride);
+    picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, plane);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
+                                        s->float_stride);
+
+    bool singular_ref = false;
+    int err = run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
+                          &singular_ref);
+    if (err)
+        return {0.0f, err, false};
 
     sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
-    float score_u = 0.0f;
-    float score_v = 0.0f;
-    int err_u = 0;
-    int err_v = 0;
-    bool singular_u = false;
-    bool singular_v = false;
+    q.memcpy(s->d_eigenvalues_ref, s->d_eigenvalues, SP_ELEMENTS * sizeof(float));
+    q.wait();
 
-    for (int ch = 1; ch <= 2; ++ch) {
-        float const *h_plane = (ch == 1) ? s->h_plane_ref : s->h_plane_dis;
-        float const *h_plane_d = (ch == 1) ? s->h_plane_dis : nullptr;
-        /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
-        picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
-        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
-                                            s->float_stride);
-        picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, ch);
-        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
-                                            s->float_stride);
-        (void)h_plane;
-        (void)h_plane_d;
+    bool singular_dis = false;
+    err = run_channel(s, s->h_plane_dis, s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis,
+                      &singular_dis);
+    float score = 0.0f;
+    if (!err && singular_ref == singular_dis)
+        err = score_aggregate(s, &score);
+    return {score, err, singular_ref || singular_dis};
+}
 
-        /* Reference channel: GPU pipeline + CPU linalg uploads ref eigenvalues
-         * into the shared s->d_eigenvalues buffer. */
-        bool singular_ref = false;
-        int e = run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
-                            &singular_ref);
-        if (e) {
-            if (ch == 1) {
-                err_u = e;
-            } else {
-                err_v = e;
-            }
-            continue;
-        }
-        /* Stash the reference eigenvalues aside before the distorted linalg pass
-         * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
-         * computes SEPARATE ref and dis covariance + eigenvalues; the score
-         * kernel needs both. run_channel q.wait()'d its eigenvalue H2D, so the
-         * DtoD copy is ordered after it. */
-        q.memcpy(s->d_eigenvalues_ref, s->d_eigenvalues, SP_ELEMENTS * sizeof(float));
-        q.wait();
-
-        /* Distorted channel: keeps the DIS covariance in h_cov_mat (no
-         * save/restore of the ref covariance) and uploads dis eigenvalues into
-         * s->d_eigenvalues. */
-        bool singular_dis = false;
-        e = run_channel(s, s->h_plane_dis, s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis,
-                        &singular_dis);
-
-        /* Exactly one side numerically unstable: report 0 rather than the
-         * inflated score a zeroed solution on one side produces. Verbatim the
-         * CPU rule in speed_extract_score() (speed.c), which this twin matches. */
-        float sc = 0.0f;
-        if (!e && singular_ref == singular_dis)
-            e = score_aggregate(s, &sc);
-
-        if (ch == 1) {
-            err_u = e;
-            score_u = sc;
-            singular_u = singular_ref || singular_dis;
-        } else {
-            err_v = e;
-            score_v = sc;
-            singular_v = singular_ref || singular_dis;
-        }
-    }
-
-    aligned_free(tmp_filter);
-
-    /* A hard failure (SYCL error, allocation failure) fails the frame, and is NOT
-     * the singular-matrix condition -- conflating the two is what made ADR-1202's
-     * CUDA launch failure surface as three silent 0.0 scores on an exit-0 run.
-     * Singularity arrives via `singular_u` / `singular_v`. */
-    if (err_u)
-        return err_u;
-    if (err_v)
-        return err_v;
-
-    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
-
+static int speed_chroma_append_scores(SpeedChromaSyclState *s,
+                                      VmafFeatureCollector *feature_collector, unsigned index,
+                                      float score_u, float score_v, float score_uv)
+{
     const double mxv = s->speed_chroma_max_val;
     int err = 0;
     err |= vmaf_feature_collector_append_with_dict(
@@ -889,6 +790,32 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_uv_score",
         (double)score_uv < mxv ? (double)score_uv : mxv, index);
     return err;
+}
+
+static int extract_chroma_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                               const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                               const VmafPicture *dist_pic_90, unsigned index,
+                               VmafFeatureCollector *feature_collector)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
+    const size_t stride_px = s->float_stride / sizeof(float);
+    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
+    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
+    if (!tmp_filter)
+        return -ENOMEM;
+
+    const SpeedChromaChannelResult u = speed_chroma_run_plane(s, ref_pic, dist_pic, tmp_filter, 1);
+    const SpeedChromaChannelResult v = speed_chroma_run_plane(s, ref_pic, dist_pic, tmp_filter, 2);
+    aligned_free(tmp_filter);
+    if (u.err)
+        return u.err;
+    if (v.err)
+        return v.err;
+
+    const float uv = combine_chroma_uv(u.score, v.score, u.singular, v.singular);
+    return speed_chroma_append_scores(s, feature_collector, index, u.score, v.score, uv);
 }
 
 static int close_chroma_sycl(VmafFeatureExtractor *fex)
@@ -910,17 +837,18 @@ static const char *provided_features_chroma[] = {
 };
 
 /* ADR-0567: real SYCL GPU kernels for speed_chroma. */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
+/*
+ * lint rationale: ADR-1266 ends the
+ * file-local helper band before the exported C-linkage descriptor.
+ */
 
-VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
+extern "C" VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
     .name = "speed_chroma_sycl",
     .init = init_chroma_sycl,
     .extract = extract_chroma_sycl,
     .close = close_chroma_sycl,
     .options = options_chroma,
     .priv_size = sizeof(SpeedChromaSyclState),
-    .provided_features = provided_features_chroma,
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
+    .provided_features = provided_features_chroma,
 };
-
-} /* extern "C" */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1229: The MCP server is the Go binary; the Python package is deprecated
 
 - **Status**: Accepted

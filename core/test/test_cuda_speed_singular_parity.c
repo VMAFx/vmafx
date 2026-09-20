@@ -162,7 +162,7 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
     mu_assert("fill_fixture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, index);
     mu_assert("vmaf_read_pictures failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
@@ -174,19 +174,19 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
     *out_score = NAN;
     *skipped = 0;
 
-    VmafCudaState *cu_state = NULL;
+    VmafCudaState *cu_state = VMAF_NULLPTR;
     if (use_gpu) {
-        VmafCudaConfiguration cuda_cfg = {0};
+        VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
         const int rc = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-        if (rc != 0 || cu_state == NULL) {
+        if (rc != 0 || cu_state == VMAF_NULLPTR) {
             (void)fprintf(stderr, "[skip: no CUDA device] ");
             *skipped = 1;
-            return NULL;
+            return VMAF_NULLPTR;
         }
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
@@ -195,7 +195,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         mu_assert("vmaf_cuda_import_state failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
+    err = vmaf_use_feature(vmaf, fex_name, VMAF_NULLPTR);
     mu_assert("vmaf_use_feature failed", !err);
 
     const unsigned frames = (mode == MODE_CHROMA_BOTH_SINGULAR) ? CHROMA_FRAMES : TEMPORAL_FRAMES;
@@ -215,7 +215,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         if (msg)
             return msg;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, read_index);
@@ -227,7 +227,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         err = vmaf_cuda_state_free(cu_state);
         mu_assert("vmaf_cuda_state_free failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Compare one CPU/GPU pair. */
@@ -245,7 +245,7 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
     if (msg)
         return msg;
     if (skipped || isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU SpEED score is non-finite", isfinite(cpu));
     mu_assert("GPU SpEED score is non-finite", isfinite(gpu));
@@ -257,7 +257,7 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
                       label, cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("SpEED singular-covariance score drifts from the CPU reference", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Exactly one side singular: the CPU returns 0 rather than an inflated score.
@@ -294,5 +294,5 @@ char *run_tests(void)
     mu_run_test(test_speed_temporal_one_sided_singular_parity);
     mu_run_test(test_speed_temporal_both_singular_parity);
     mu_run_test(test_speed_chroma_both_singular_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

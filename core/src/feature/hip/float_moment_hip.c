@@ -32,6 +32,8 @@
  *      mean / second-moment metrics.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -50,9 +52,9 @@
 #include "../../hip/picture_hip.h"
 #include "float_moment_hip.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -121,7 +123,7 @@ static const VmafOption options[] = {{0}};
 
 #ifdef HAVE_HIPCC
 /* Load the HSACO fat binary and resolve both kernel function handles. On
- * failure the module is unloaded again and `s->module` is NULL. */
+ * failure the module is unloaded again and `s->module` is VMAF_NULLPTR. */
 static int moment_hip_module_load(MomentStateHip *s)
 {
     hipError_t hip_rc = hipModuleLoadData(&s->module, moment_score_hsaco);
@@ -135,7 +137,7 @@ static int moment_hip_module_load(MomentStateHip *s)
     }
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
     }
     return moment_hip_rc(hip_rc);
 }
@@ -165,14 +167,14 @@ static int moment_hip_launch_kernel(MomentStateHip *s, ptrdiff_t row_w, hipStrea
     };
     hipFunction_t fn = (s->bpc == 8u) ? s->funcbpc8 : s->funcbpc16;
     return moment_hip_rc(hipModuleLaunchKernel(fn, gx, gy, 1u, MOMENT_HIP_BX, MOMENT_HIP_BY, 1u, 0,
-                                               str, args, NULL));
+                                               str, args, VMAF_NULLPTR));
 }
 
 /*
  * Per-frame submit body: zero the four uint64 accumulators, HtoD copies
  * of both luma planes, kernel launch, DtoH readback.
  */
-static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
+static int moment_hip_launch(MomentStateHip *s, const VmafPicture *ref_pic, const VmafPicture *dist_pic)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const ptrdiff_t row_w = (ptrdiff_t)(s->frame_w * bpp);
@@ -219,23 +221,23 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Free the staging buffers and unload the module. Safe with NULL handles.
+/* Free the staging buffers and unload the module. Safe with VMAF_NULLPTR handles.
  * Returns the first error. */
 static int moment_hip_module_free(MomentStateHip *s)
 {
     void **bufs[] = {&s->dis_in, &s->ref_in};
     int rc = 0;
     for (unsigned i = 0u; i < 2u; i++) {
-        if (*bufs[i] == NULL)
+        if (*bufs[i] == VMAF_NULLPTR)
             continue;
         const int e = moment_hip_rc(hipFree(*bufs[i]));
-        *bufs[i] = NULL;
+        *bufs[i] = VMAF_NULLPTR;
         if (rc == 0)
             rc = e;
     }
-    if (s->module != NULL) {
+    if (s->module != VMAF_NULLPTR) {
         const int e = moment_hip_rc(hipModuleUnload(s->module));
-        s->module = NULL;
+        s->module = VMAF_NULLPTR;
         if (rc == 0)
             rc = e;
     }
@@ -263,13 +265,13 @@ static int moment_hip_release(MomentStateHip *s)
     e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (rc == 0)
         rc = e;
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != VMAF_NULLPTR) {
         e = vmaf_dictionary_free(&s->feature_name_dict);
         if (rc == 0)
             rc = e;
     }
     vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = VMAF_NULLPTR;
     return rc;
 }
 
@@ -302,7 +304,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL)
+        if (s->feature_name_dict == VMAF_NULLPTR)
             err = -ENOMEM;
     }
     if (err != 0)
@@ -319,8 +321,8 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* submit / collect                                                    */
 /* ------------------------------------------------------------------ */
 
-static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_hip(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                          const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -411,7 +413,7 @@ static const char *provided_features[] = {
     "float_moment_dis1st",
     "float_moment_ref2nd",
     "float_moment_dis2nd",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 /* Load-bearing: the feature extractor is registered via
@@ -422,7 +424,6 @@ static const char *provided_features[] = {
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_moment_cuda` in
  * `libvmaf/src/feature/cuda/integer_moment_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_moment_hip = {
     .name = "float_moment_hip",
     .init = init_fex_hip,
@@ -443,5 +444,3 @@ VmafFeatureExtractor vmaf_fex_float_moment_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0573: Dev-mcp container — ubuntu:26.04 + CUDA 13.2 + hipcc + ocloc
 
 - **Status**: Superseded by [ADR-0738](0738-bump-cuda-133-r610-local.md)
@@ -102,7 +101,7 @@ v0.2.35 supports 13.2.0 (verified in `src/links/linux-links.ts` and
 ## Alternatives considered
 
 | Option | Verdict |
-|---|---|
+| --- | --- |
 | Stay on ubuntu:24.04 | No Python 3.14; glibc 2.38 mismatch with host 7.x; rsqrt lurks for future CUDA bumps. Host is 26.04; container should match. |
 | Use CUDA 13.1 on 26.04 | rsqrt conflict still present in 13.1. Does not resolve the root cause. |
 | Add `-D__MATH_NO_INLINES` to NVCC flags | Masks the conflict rather than fixing it; invasive to meson.build. CUDA 13.2 is the correct fix. |

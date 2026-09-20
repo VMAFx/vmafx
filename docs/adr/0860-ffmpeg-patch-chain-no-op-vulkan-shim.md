@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0860 — Re-include Vulkan FFmpeg patches as no-op shims for chain coherence
 
 | Status   | Date       | Supersedes | Superseded by |
@@ -44,7 +43,7 @@ context-line continuity so downstream patches `git am --3way` cleanly.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Regenerate 0005, 0007–0015 against post-0003 tree (full surgery) | Cleanest — series ships without Vulkan-referencing context lines | Several hours of patch-by-patch context fix-ups; high risk of introducing semantic diffs; each patch's downstream order matters | Effort vastly disproportionate to the gain; no behavioural change |
 | Disable the SYCL CI leg until the patch series is rebased | Unblocks merge train immediately | "Deactivates a check rather than fixes the root cause" — explicitly forbidden by user direction | Not an acceptable path per session ground rules |
 | Replace `git am --3way` with `patch -p1 --forward -F 3` | Tolerates context drift via fuzz | Patch 0010 hits "Reversed (or previously applied) patch detected" because upstream FFmpeg 8.1 already ships `--enable-libvmaf-cuda`; `--forward` still skips. Not a complete fix. | Doesn't actually resolve the chain |

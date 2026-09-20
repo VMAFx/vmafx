@@ -86,11 +86,11 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     int err = 0;
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (fps_weight) {
         err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
         mu_assert("CPU: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
@@ -102,7 +102,8 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_fixture(&ref, i);
         mu_assert("CPU: fill_fixture(ref) failed", !err);
         err = fill_fixture(&dist, i);
@@ -113,7 +114,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
@@ -121,7 +122,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -134,24 +135,24 @@ static char *run_cuda_motion3(const char *fps_weight, const char *key, double *o
     *out_score = NAN;
     int err = 0;
 
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         /* No CUDA runtime / no device — caller treats NaN as skip. */
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (fps_weight) {
         err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
         mu_assert("CUDA: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
@@ -163,7 +164,8 @@ static char *run_cuda_motion3(const char *fps_weight, const char *key, double *o
     mu_assert("CUDA: vmaf_use_feature(motion_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_fixture(&ref, i);
         mu_assert("CUDA: fill_fixture(ref) failed", !err);
         err = fill_fixture(&dist, i);
@@ -173,7 +175,7 @@ static char *run_cuda_motion3(const char *fps_weight, const char *key, double *o
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
     }
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
@@ -184,7 +186,7 @@ static char *run_cuda_motion3(const char *fps_weight, const char *key, double *o
 
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -195,17 +197,17 @@ static char *test_motion3_cpu_cuda_parity(void)
     double cpu_score = 0.0;
     double cuda_score = NAN;
 
-    char *msg = run_cpu_motion3(NULL, "VMAF_integer_feature_motion3_score", &cpu_score);
+    char *msg = run_cpu_motion3(VMAF_NULLPTR, "VMAF_integer_feature_motion3_score", &cpu_score);
     if (msg)
         return msg;
 
-    msg = run_cuda_motion3(NULL, "VMAF_integer_feature_motion3_score", &cuda_score);
+    msg = run_cuda_motion3(VMAF_NULLPTR, "VMAF_integer_feature_motion3_score", &cuda_score);
     if (msg)
         return msg;
 
     /* If no CUDA device was found, cuda_score is NaN — skip the assertion. */
     if (isnan(cuda_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     double delta = fabs(cpu_score - cuda_score);
     if (delta > PARITY_TOL) {
@@ -213,7 +215,7 @@ static char *test_motion3_cpu_cuda_parity(void)
                       cpu_score, cuda_score, delta, PARITY_TOL);
     }
     mu_assert("motion3 CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -245,7 +247,7 @@ static char *test_motion3_fps_weight_applied_once(void)
         return msg;
 
     if (isnan(gpu_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     const double delta = fabs(cpu_score - gpu_score);
     if (delta > PARITY_TOL) {
@@ -255,12 +257,12 @@ static char *test_motion3_fps_weight_applied_once(void)
     }
     mu_assert("motion3 with motion_fps_weight != 1.0 drifts from the CPU reference",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion3_cpu_cuda_parity);
     mu_run_test(test_motion3_fps_weight_applied_once);
-    return NULL;
+    return VMAF_NULLPTR;
 }

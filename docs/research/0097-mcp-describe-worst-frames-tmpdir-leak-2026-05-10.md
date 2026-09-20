@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0097 — MCP `describe_worst_frames` temporary directory leak
 
 **Date:** 2026-05-10
@@ -53,7 +52,7 @@ tmp_root.mkdir(parents=True)
 ## Alternatives considered
 
 | Option | Why not chosen |
-|---|---|
+| --- | --- |
 | **`atexit` handler** — register `shutil.rmtree(tmp_root)` on process exit | Cleans up on normal exit only; does not help on SIGKILL or crash. Does not prevent accumulation during the session. On restart, the old PID directory is still orphaned (PID key changes). Rejected — does not solve the accumulation problem within a session. |
 | **Per-call `mkdtemp` with explicit cleanup in `finally`** — create a fresh randomly-named temp dir each call, always delete it in `finally` | PNGs would be deleted before the response is returned to the caller. The JSON response includes PNG file paths that callers are expected to open; deleting them in `finally` would break that contract. Rejected — breaks the caller API. |
 | **Purge-before-generate (chosen)** — `rmtree` at start of each call, before new PNGs are written | Bounded disk usage (at most 1 call's worth of PNGs at any time), PNGs available for the duration of the turn, no atexit fragility. Correct. |

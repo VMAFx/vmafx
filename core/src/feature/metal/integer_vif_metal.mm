@@ -176,7 +176,7 @@ static int build_pipelines(IntegerVifStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -210,30 +210,30 @@ static void release_buffers(IntegerVifStateMetal *s)
     for (int i = 0; i < IVIF_SCALES; ++i) {
         if (s->wg_accum[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->wg_accum[i];
-            s->wg_accum[i] = NULL;
+            s->wg_accum[i] = nullptr;
         }
     }
     for (int i = 0; i < 2; ++i) {
         if (s->pyr_ref[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->pyr_ref[i];
-            s->pyr_ref[i] = NULL;
+            s->pyr_ref[i] = nullptr;
         }
         if (s->pyr_dis[i]) {
             (void)(__bridge_transfer id<MTLBuffer>)s->pyr_dis[i];
-            s->pyr_dis[i] = NULL;
+            s->pyr_dis[i] = nullptr;
         }
     }
     if (s->log2_buf) {
         (void)(__bridge_transfer id<MTLBuffer>)s->log2_buf;
-        s->log2_buf = NULL;
+        s->log2_buf = nullptr;
     }
     if (s->raw_ref) {
         (void)(__bridge_transfer id<MTLBuffer>)s->raw_ref;
-        s->raw_ref = NULL;
+        s->raw_ref = nullptr;
     }
     if (s->raw_dis) {
         (void)(__bridge_transfer id<MTLBuffer>)s->raw_dis;
-        s->raw_dis = NULL;
+        s->raw_dis = nullptr;
     }
 }
 
@@ -282,7 +282,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_lc; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         const size_t bpp = (bpc <= 8u) ? 1u : 2u;
@@ -328,25 +328,25 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
     if (s->pso_decimate_16) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_16;
-        s->pso_decimate_16 = NULL;
+        s->pso_decimate_16 = nullptr;
     }
     if (s->pso_decimate_8) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_8;
-        s->pso_decimate_8 = NULL;
+        s->pso_decimate_8 = nullptr;
     }
     if (s->pso_compute_16) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_16;
-        s->pso_compute_16 = NULL;
+        s->pso_compute_16 = nullptr;
     }
     if (s->pso_compute_8) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_8;
-        s->pso_compute_8 = NULL;
+        s->pso_compute_8 = nullptr;
     }
 fail_bufs:
     release_buffers(s);
@@ -354,7 +354,7 @@ fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
@@ -467,9 +467,9 @@ static void encode_decimate_16(id<MTLCommandBuffer> cmd, id<MTLComputePipelineSt
     [enc endEncoding];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -478,7 +478,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
     id<MTLComputePipelineState> pso_c8  = (__bridge id<MTLComputePipelineState>)s->pso_compute_8;
@@ -667,19 +667,19 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 
     if (s->pso_decimate_16) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_16;
-        s->pso_decimate_16 = NULL;
+        s->pso_decimate_16 = nullptr;
     }
     if (s->pso_decimate_8) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate_8;
-        s->pso_decimate_8 = NULL;
+        s->pso_decimate_8 = nullptr;
     }
     if (s->pso_compute_16) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_16;
-        s->pso_compute_16 = NULL;
+        s->pso_compute_16 = nullptr;
     }
     if (s->pso_compute_8) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_compute_8;
-        s->pso_compute_8 = NULL;
+        s->pso_compute_8 = nullptr;
     }
 
     release_buffers(s);
@@ -690,7 +690,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
@@ -710,20 +710,19 @@ static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score
                                           "integer_vif_den_scale2",
                                           "integer_vif_num_scale3",
                                           "integer_vif_den_scale3",
-                                          NULL};
+                                          nullptr};
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL / Metal feature extractor uses (ADR-0361
  * Metal backend; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_vif_metal = {
     .name              = "integer_vif_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerVifStateMetal),

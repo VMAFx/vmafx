@@ -791,8 +791,9 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     return 0;
 }
 
-int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                     VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+int extract_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                     const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                     const VmafPicture *dist_pic_90, unsigned index,
                      VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;

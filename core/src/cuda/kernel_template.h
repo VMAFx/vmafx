@@ -73,10 +73,6 @@
 #include "cuda_helper.cuh"
 #include "picture_cuda.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * Per-frame async lifecycle the CUDA feature kernels share.
  *
@@ -139,7 +135,7 @@ static inline int vmaf_cuda_kernel_lifecycle_init(VmafCudaKernelLifecycle *lc,
                                                   VmafCudaState *cu_state)
 {
     CudaFunctions *cu_f = cu_state->f;
-    int _cuda_err = 0;
+    int _cuda_err;
     int ctx_pushed = 0;
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(cu_state->ctx), fail);
@@ -205,8 +201,7 @@ static inline int vmaf_cuda_kernel_readback_alloc(VmafCudaKernelReadback *rb,
  * (See the migration guide for the post-launch boilerplate
  * helper if/when a second metric adopts this template.)
  */
-static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaKernelLifecycle *lc,
-                                                     VmafCudaState *cu_state,
+static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaState *cu_state,
                                                      VmafCudaKernelReadback *rb,
                                                      CUstream picture_stream,
                                                      CUevent dist_ready_event)
@@ -277,7 +272,11 @@ static inline int vmaf_cuda_kernel_collect_wait(VmafCudaKernelLifecycle *lc,
  * register without touching their collect() paths. Forward declared:
  * the implementation lives in ``drain_batch.c``.
  */
+#ifdef __cplusplus
+extern "C" int vmaf_cuda_drain_batch_register(VmafCudaKernelLifecycle *lc);
+#else
 int vmaf_cuda_drain_batch_register(VmafCudaKernelLifecycle *lc);
+#endif
 
 static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *lc,
                                                       VmafCudaState *cu_state)
@@ -318,7 +317,7 @@ static inline int vmaf_cuda_kernel_lifecycle_close(VmafCudaKernelLifecycle *lc,
     int rc = 0;
     if (lc->str != NULL) {
         const CUresult sync_res = cu_f->cuStreamSynchronize(lc->str);
-        if (sync_res != CUDA_SUCCESS && rc == 0) {
+        if (sync_res != CUDA_SUCCESS) {
             rc = vmaf_cuda_result_to_errno((int)sync_res);
         }
         const CUresult destroy_res = cu_f->cuStreamDestroy(lc->str);
@@ -360,7 +359,7 @@ static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
     int rc = 0;
     if (rb->device != NULL) {
         const int e = vmaf_cuda_buffer_free(cu_state, rb->device);
-        if (e != 0 && rc == 0) {
+        if (e != 0) {
             rc = e;
         }
         /* common.c follows the same free-the-handle-after pattern. */
@@ -380,9 +379,5 @@ static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
     rb->bytes = 0;
     return rc;
 }
-
-#ifdef __cplusplus
-} /* extern "C" */
-#endif
 
 #endif /* LIBVMAF_CUDA_KERNEL_TEMPLATE_H_ */

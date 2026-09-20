@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0105: Copyright handling preserves Netflix and adds Lusoris/Claude
 
 - **Status**: Accepted
@@ -34,7 +33,7 @@ notice on mixed files (e.g. fork-modified Netflix sources).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep Netflix-only headers everywhere | Zero divergence from upstream | Misattributes wholly-new fork code authored entirely by Lusoris/Claude | Rejected per user direction |
 | Replace Netflix with Lusoris everywhere | Single template | Erases original ownership — factually wrong and legally indefensible | Unacceptable |
 | Dual policy per file (chosen) | Notice matches actual authorship per file | Contributors must select the correct header template | Matches reality |

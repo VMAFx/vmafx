@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 -->
 # Research-0089: `vmaf-tune` Phase F.5 — recipe calibration on K150K (2026-05-09)
 
 - **Date**: 2026-05-09
@@ -144,8 +143,8 @@ class-labelled corpus.
 | Class | Source | `tight` | `force_single` | `saliency` | `offset` |
 | ----- | ------ | ------- | -------------- | ---------- | -------- |
 | `animation` | proxy | `1.75` | `true` | `aggressive` | `+2.0` |
-| `screen_content` | proxy | _(unset)_ | _(unset)_ | `very_aggressive` | `+1.0` |
-| `live_action_hdr` | proxy | `1.4` | _(unset)_ | _(default)_ | `0.0` |
+| `screen_content` | proxy | *(unset)* | *(unset)* | `very_aggressive` | `+1.0` |
+| `live_action_hdr` | proxy | `1.4` | *(unset)* | *(default)* | `0.0` |
 | `ugc` | corpus | `3.5` | `false` | `default` | `+1.5` |
 
 ## Follow-ups

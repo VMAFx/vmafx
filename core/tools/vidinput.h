@@ -22,24 +22,8 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
-/* NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp):
- * this header is Daala/Theora-derived (see the copyright above). The leading
- * underscore parameter names (_fin, _ctx, _ti, ...) and the _vidinput_H guard
- * are the upstream spellings; renaming them would break parity with the code
- * this was ported from and churn every caller. _LARGEFILE_SOURCE and
- * _LARGEFILE64_SOURCE are the standard feature-test macros, reserved by
- * definition. ADR-0141 §2 / ADR-0278. */
-#if !defined(_vidinput_H)
-#define _vidinput_H (1)
-#if !defined(_LARGEFILE_SOURCE)
-#define _LARGEFILE_SOURCE
-#endif
-#if !defined(_LARGEFILE64_SOURCE)
-#define _LARGEFILE64_SOURCE
-#endif
-#if !defined(_FILE_OFFSET_BITS)
-#define _FILE_OFFSET_BITS 64
-#endif
+#ifndef LIBVMAF_TOOLS_VIDINPUT_H_
+#define LIBVMAF_TOOLS_VIDINPUT_H_
 #include <stdio.h>
 #include <stdint.h>
 #include "libvmaf/picture.h"
@@ -59,15 +43,16 @@ struct video_input_plane {
 };
 typedef struct video_input_plane video_input_ycbcr[3];
 
-typedef void *(*video_input_open_func)(FILE *_fin);
-typedef void (*video_input_get_info_func)(void *_ctx, video_input_info *_ti);
-typedef int (*video_input_fetch_frame_func)(void *_ctx, FILE *_fin, video_input_ycbcr _ycbcr,
-                                            char _tag[5]);
-typedef void (*video_input_close_func)(void *_ctx);
-typedef void *(*raw_input_open_func)(FILE *_fin, unsigned width, unsigned height, int pix_fmt,
+typedef void *(*video_input_open_func)(FILE *input);
+typedef void (*video_input_get_info_func)(void *context, video_input_info *info);
+typedef int (*video_input_fetch_frame_func)(void *context, FILE *input, video_input_ycbcr planes,
+                                            char tag[5]);
+typedef void (*video_input_close_func)(void *context);
+typedef void *(*raw_input_open_func)(FILE *input, unsigned width, unsigned height, int pix_fmt,
                                      unsigned bitdepth);
 
-typedef int (*video_input_fetch_into_vmaf_picture_func)(void *_ctx, FILE *_fin, VmafPicture *pic);
+typedef int (*video_input_fetch_into_vmaf_picture_func)(void *context, FILE *input,
+                                                        VmafPicture *pic);
 
 /**Pluggable method table for accessing different formats.*/
 struct video_input_vtbl {
@@ -85,15 +70,15 @@ struct video_input {
     FILE *fin;
 };
 
-int raw_input_open(video_input *_vid, FILE *_fin, unsigned width, unsigned height, int pix_fmt,
+int raw_input_open(video_input *video, FILE *input, unsigned width, unsigned height, int pix_fmt,
                    unsigned bitdepth);
 
-int video_input_open(video_input *_vid, FILE *_fin);
-void video_input_close(video_input *_vid);
+int video_input_open(video_input *video, FILE *input);
+void video_input_close(video_input *video);
 
-void video_input_get_info(video_input *_vid, video_input_info *_ti);
-int video_input_fetch_frame(video_input *_vid, video_input_ycbcr _ycbcr, char _tag[5]);
-int video_input_fetch_into_vmaf_picture(video_input *_vid, VmafPicture *pic);
+void video_input_get_info(video_input *video, video_input_info *info);
+int video_input_fetch_frame(video_input *video, video_input_ycbcr planes, char tag[5]);
+int video_input_fetch_into_vmaf_picture(video_input *video, VmafPicture *pic);
 
 typedef enum {
     /** Chroma decimation by 2 in both the X and Y directions (4:2:0).
@@ -143,6 +128,4 @@ extern const video_input_vtbl YUV_INPUT_VTBL;
 } // extern "C"
 #endif
 
-#endif
-
-/* NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp) */
+#endif /* LIBVMAF_TOOLS_VIDINPUT_H_ */

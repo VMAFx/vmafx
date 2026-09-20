@@ -1,3 +1,5 @@
+# Changelog fragment
+
 All public C-API functions in `core/include/libvmaf/*.h` now carry Doxygen
 `@brief`, `@param`, `@return`, and `@thread-safety` blocks. The standard
 thread-safety note is: "Not thread-safe. Use one VmafContext per thread."

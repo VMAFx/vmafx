@@ -1,3 +1,5 @@
+from vmaf.config import VmafConfig
+
 dataset_name = "example"
 
 yuv_fmt = "yuv420p"
@@ -5,8 +7,6 @@ width = 576
 height = 324
 quality_width = 576
 quality_height = 324
-
-from vmaf.config import VmafConfig
 
 ref_videos = [
     {"content_id": 0, "path": VmafConfig.resource_path("yuv", "src01_hrc00_576x324.yuv")},

@@ -25,7 +25,7 @@ extern "C" {
  * own primitive: CUDA graph capture / SYCL graph replay / Vulkan
  * secondary command-buffer reuse / etc.
  */
-typedef enum {
+enum VmafFeatureDispatchHint : int {
     /// No preference; backend picks a sensible default. This is
     /// the conservative choice for new extractors that haven't
     /// been profiled yet — they get current backend behaviour.
@@ -38,13 +38,16 @@ typedef enum {
     /// dispatch-count features (e.g., ADM = 16 dispatches/frame)
     /// and for large frames where per-pixel work dominates.
     VMAF_FEATURE_DISPATCH_BATCHED,
-} VmafFeatureDispatchHint;
+};
+#ifndef __cplusplus
+typedef enum VmafFeatureDispatchHint VmafFeatureDispatchHint;
+#endif
 
 /**
  * Per-feature characteristics. Drives the per-backend
  * dispatch_strategy modules.
  */
-typedef struct VmafFeatureCharacteristics {
+struct VmafFeatureCharacteristics {
     /// Number of distinct kernel dispatches per frame for this
     /// feature. Drives the per-frame fixed-overhead amortisation
     /// calculation. Examples: VIF=4 scales, ADM=16 (scale ×
@@ -68,7 +71,10 @@ typedef struct VmafFeatureCharacteristics {
     /// Backend-agnostic hint. AUTO = use backend default; DIRECT
     /// and BATCHED override.
     VmafFeatureDispatchHint dispatch_hint;
-} VmafFeatureCharacteristics;
+};
+#ifndef __cplusplus
+typedef struct VmafFeatureCharacteristics VmafFeatureCharacteristics;
+#endif
 
 #ifdef __cplusplus
 }

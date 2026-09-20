@@ -1,4 +1,6 @@
-# C++23 Wave 4 — output writers (ADR-0733)
+# Changelog fragment
+
+## C++23 Wave 4 — output writers (ADR-0733)
 
 Converted `core/src/output.c` → `output.cpp` as the Wave 4 instalment of the
 ADR-0708 C++23 internals migration. All four format writers (XML, JSON, CSV,
@@ -8,8 +10,8 @@ MicroDVD subtitle) are now compiled under `-std=c++23` via an isolated
 C++23 idioms applied:
 
 - **`LocaleGuard` RAII**: `vmaf_thread_locale_pop` is now called on destruction,
-  guaranteeing cleanup on all exit paths without requiring explicit `goto cleanup`
-  patterns.
+  guaranteeing cleanup on all exit paths without requiring explicit
+  `goto cleanup` patterns.
 - **`std::string_view`**: score-format string parameter threaded through all
   internal helpers, eliminating repeated implicit `strlen` calls.
 - **`[[nodiscard]]`**: all four public entry points (`vmaf_write_output_xml`,

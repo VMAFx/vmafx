@@ -130,7 +130,7 @@ static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
         libvmaf_metallib_start, blob_size,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
         DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
+    if (data == nullptr) { return -ENOMEM; }
 
     NSError *err = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
@@ -200,7 +200,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     {
         void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rbw; }
+        if (dh == nullptr) { err = -ENODEV; goto fail_rbw; }
         id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
 
         /* hbuf: 6 planes x W x H int64 (mux, muy, x2, xy, y2, w). */
@@ -217,15 +217,15 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
     return 0;
 
 fail_pso:
-    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = NULL; }
-    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = NULL; }
-    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = NULL; }
+    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = nullptr; }
+    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = nullptr; }
+    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = nullptr; }
 fail_hbuf:
-    if (s->hbuf_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf; s->hbuf_buf = NULL; }
+    if (s->hbuf_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf; s->hbuf_buf = nullptr; }
 fail_rbw:
     (void)vmaf_metal_kernel_buffer_free(&s->rbw, s->ctx);
 fail_rb:
@@ -234,13 +234,13 @@ fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 fail_ctx:
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_metal(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90; (void)dist_pic_90; (void)index;
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
@@ -254,7 +254,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     void *dh = vmaf_metal_context_device_handle(s->ctx);
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
     id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
     id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
@@ -342,7 +342,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     const float *partsw = (const float *)s->rbw.host_view;
     double ssim_sum  = 0.0;
     double ssimw_sum = 0.0;
-    if (parts != NULL && partsw != NULL) {
+    if (parts != nullptr && partsw != nullptr) {
         for (size_t i = 0; i < s->partials_count; ++i) {
             ssim_sum  += (double)parts[i];
             ssimw_sum += (double)partsw[i];
@@ -363,22 +363,22 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     IntegerSsimStateMetal *s = (IntegerSsimStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
 
-    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = NULL; }
-    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = NULL; }
-    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = NULL; }
-    if (s->hbuf_buf)     { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                   s->hbuf_buf     = NULL; }
+    if (s->pso_vert)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_vert;     s->pso_vert     = nullptr; }
+    if (s->pso_horiz_16) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_16; s->pso_horiz_16 = nullptr; }
+    if (s->pso_horiz_8)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_horiz_8;  s->pso_horiz_8  = nullptr; }
+    if (s->hbuf_buf)     { (void)(__bridge_transfer id<MTLBuffer>)s->hbuf_buf;                   s->hbuf_buf     = nullptr; }
 
     int err = vmaf_metal_kernel_buffer_free(&s->rbw, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
     if (err != 0 && rc == 0) { rc = err; }
     if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
+    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = nullptr; }
     return rc;
 }
 
 static const char *provided_features[] = {
-    "ssim", NULL
+    "ssim", nullptr
 };
 
 extern "C" {
@@ -386,13 +386,12 @@ extern "C" {
  * making this static would unlink the extractor from the registry — same
  * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
  * backend; ADR-0278 cite form). */
-// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_ssim_metal = {
     .name              = "integer_ssim_metal",
     .init              = init_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
+    .flush             = nullptr,
     .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerSsimStateMetal),

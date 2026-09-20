@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD029 -->
 # Metal (Apple Silicon) compute backend
 
 > **Status: 17 kernels wired, registered, and parity-tested.** The Metal

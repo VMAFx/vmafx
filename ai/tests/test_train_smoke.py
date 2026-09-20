@@ -43,9 +43,9 @@ def test_train_epochs_zero_smoke(mock_corpus: Path, tmp_path: Path) -> None:
         "mlp_small",
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180, cwd=REPO_ROOT)
-    assert (
-        proc.returncode == 0
-    ), f"smoke run exit={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+    assert proc.returncode == 0, (
+        f"smoke run exit={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+    )
     onnx_files = list(out_dir.glob("*.onnx"))
     assert onnx_files, f"no ONNX written; out_dir={list(out_dir.iterdir())}"
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0677 — NR threshold calibration provenance
 
 ## Question
@@ -34,7 +33,7 @@ the same ADR-0661 provenance block as the other durable AI calibration outputs.
 ## Alternatives considered
 
 | Option | Benefit | Risk | Decision |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep only the Markdown report | No JSON schema delta | The runtime sidecar loses the corpus/model/CRF context that produced the threshold | Rejected |
 | Add a custom `calibration_metadata` object | Small local diff | Duplicates ADR-0661 path hashing and argument normalization | Rejected |
 | Use ADR-0661 `run_provenance` | Matches the rest of the AI refresh sidecars | Slightly larger `nr_metric_v1.json` after calibration | Accepted |

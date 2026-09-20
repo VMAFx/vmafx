@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -46,10 +48,10 @@
 #include <arm_neon.h>
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -81,9 +83,9 @@ typedef struct AdmState {
     void (*dwt2_16)(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                     int src_stride, int dst_stride, int inp_size_bits);
     void (*adm_decouple)(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                         int32_t *adm_div_lookup);
+                         const int32_t *adm_div_lookup);
     void (*adm_decouple_s123)(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
-                              int32_t *adm_div_lookup);
+                              const int32_t *adm_div_lookup);
     float (*adm_csf_den_scale)(const adm_dwt_band_t *src, int w, int h, int src_stride,
                                double adm_norm_view_dist, int adm_ref_display_height,
                                int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
@@ -536,15 +538,7 @@ static inline int16_t adm_decouple_band(const int32_t *lut, double gain, int ang
     return rst;
 }
 
-/* Upstream-parity note: `lut` is bound through `AdmState::adm_decouple`
- * next to `adm_decouple_avx2` / `adm_decouple_avx512` (x86/adm_avx2.h,
- * x86/adm_avx512.h), whose prototypes take a mutable `int32_t *`.
- * Constifying only the scalar twin would leave the dispatch assignment
- * ill-typed. ADR-0141 §2 load-bearing invariant (shared SIMD dispatch
- * signature); see ADR-1141. */
-// cppcheck-suppress constParameterCallback
-// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-0141 / ADR-1141
-static void adm_decouple(AdmBuffer *buf, int w, int h, int stride, double gain, int32_t *lut)
+static void adm_decouple(AdmBuffer *buf, int w, int h, int stride, double gain, const int32_t *lut)
 {
     const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
 
@@ -643,12 +637,8 @@ static inline int32_t adm_decouple_band_s123(const int32_t *lut, double gain, in
     return rst;
 }
 
-/* See adm_decouple above: `lut` keeps the mutable `int32_t *` of the shared
- * dispatch signature (`adm_decouple_s123_avx2` / `_avx512`). ADR-0141 §2
- * load-bearing invariant; see ADR-1141. */
-// cppcheck-suppress constParameterCallback
-// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-0141 / ADR-1141
-static void adm_decouple_s123(AdmBuffer *buf, int w, int h, int stride, double gain, int32_t *lut)
+static void adm_decouple_s123(AdmBuffer *buf, int w, int h, int stride, double gain,
+                              const int32_t *lut)
 {
     const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
 
@@ -1578,8 +1568,8 @@ static void adm_dwt2_8_lo(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuff
     int16_t *tmplo = (int16_t *)buf->tmp_ref;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
-        adm_dwt2_vpass_8(src, ind_y, i, src_stride, w, tmplo, NULL);
-        adm_dwt2_hpass(tmplo, NULL, dst, ind_x, i, w, dst_stride);
+        adm_dwt2_vpass_8(src, ind_y, i, src_stride, w, tmplo, VMAF_NULLPTR);
+        adm_dwt2_hpass(tmplo, VMAF_NULLPTR, dst, ind_x, i, w, dst_stride);
     }
 }
 
@@ -1592,8 +1582,8 @@ static void adm_dwt2_16_lo(const uint16_t *src, const adm_dwt_band_t *dst, AdmBu
     int16_t *tmplo = (int16_t *)buf->tmp_ref;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
-        adm_dwt2_vpass_16(src, ind_y, i, src_stride, w, inp_size_bits, tmplo, NULL);
-        adm_dwt2_hpass(tmplo, NULL, dst, ind_x, i, w, dst_stride);
+        adm_dwt2_vpass_16(src, ind_y, i, src_stride, w, inp_size_bits, tmplo, VMAF_NULLPTR);
+        adm_dwt2_hpass(tmplo, VMAF_NULLPTR, dst, ind_x, i, w, dst_stride);
     }
 }
 
@@ -1906,8 +1896,8 @@ static void integer_compute_adm(const AdmState *s, const VmafPicture *ref_pic,
     size_t curr_dis_stride = adm_src_stride(dis_pic, ref_pic->bpc);
     const size_t buf_stride = buf->ind_size_x >> 2;
 
-    const int32_t *i4_curr_ref_scale = NULL;
-    const int32_t *i4_curr_dis_scale = NULL;
+    const int32_t *i4_curr_ref_scale = VMAF_NULLPTR;
+    const int32_t *i4_curr_dis_scale = VMAF_NULLPTR;
 
     double num = 0;
     double den = 0;
@@ -1988,7 +1978,7 @@ static inline void *i4_init_dwt_band(i4_adm_dwt_band_t *band, char *data_top, si
 
 static inline void *init_dwt_band_hvd(adm_dwt_band_t *band, char *data_top, size_t stride)
 {
-    band->band_a = NULL;
+    band->band_a = VMAF_NULLPTR;
     band->band_h = (int16_t *)data_top;
     data_top += stride;
     band->band_v = (int16_t *)data_top;
@@ -2000,7 +1990,7 @@ static inline void *init_dwt_band_hvd(adm_dwt_band_t *band, char *data_top, size
 
 static inline void *i4_init_dwt_band_hvd(i4_adm_dwt_band_t *band, char *data_top, size_t stride)
 {
-    band->band_a = NULL;
+    band->band_a = VMAF_NULLPTR;
     band->band_h = (int32_t *)data_top;
     data_top += stride;
     band->band_v = (int32_t *)data_top;
@@ -2081,19 +2071,19 @@ static void free_buffers(AdmState *s)
 {
     if (s->buf.data_buf) {
         aligned_free(s->buf.data_buf);
-        s->buf.data_buf = NULL;
+        s->buf.data_buf = VMAF_NULLPTR;
     }
     if (s->buf.tmp_ref) {
         aligned_free(s->buf.tmp_ref);
-        s->buf.tmp_ref = NULL;
+        s->buf.tmp_ref = VMAF_NULLPTR;
     }
     if (s->buf.buf_x_orig) {
         aligned_free(s->buf.buf_x_orig);
-        s->buf.buf_x_orig = NULL;
+        s->buf.buf_x_orig = VMAF_NULLPTR;
     }
     if (s->buf.buf_y_orig) {
         aligned_free(s->buf.buf_y_orig);
-        s->buf.buf_y_orig = NULL;
+        s->buf.buf_y_orig = VMAF_NULLPTR;
     }
 }
 
@@ -2226,15 +2216,13 @@ static int extract_debug_features(const AdmState *s, VmafFeatureCollector *featu
     return err;
 }
 
-/* `ref_pic` / `dist_pic` are only read here, but the prototype is
- * `VmafFeatureExtractor::extract` (feature_extractor.h), shared with every
- * extractor including the GPU twins that upload from mutable pictures.
- * ADR-0141 §2 frozen-prototype invariant; see ADR-1141. */
-// cppcheck-suppress-begin constParameterCallback
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+/* The shared extractor callback ABI carries mutable picture pointers for
+ * backends that upload through those pictures. This CPU implementation treats
+ * both inputs as read-only. */
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
-// cppcheck-suppress-end constParameterCallback
 {
     AdmState *s = fex->priv;
     int err = 0;
@@ -2311,11 +2299,10 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "integer_adm_den_scale2",
                                           "integer_adm_num_scale3",
                                           "integer_adm_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 // Registration struct consumed by libvmaf/src/feature/feature_extractor.cpp
 // (via the fex-registry table); must retain external linkage.
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_adm = {
     .name = "adm",
     .init = init,
@@ -2338,5 +2325,3 @@ VmafFeatureExtractor vmaf_fex_integer_adm = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

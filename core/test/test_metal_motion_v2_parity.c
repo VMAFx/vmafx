@@ -54,11 +54,7 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* Fixture geometry — large enough for the Metal threadgroup partial-sum
  * grid (32x8 = 256 threads per group), small enough for a fast CI run. */
@@ -121,7 +117,7 @@ static char *read_feature_scores(VmafContext *vmaf, const char *const *names, un
         if (err)
             return "vmaf_feature_score_at_index failed";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *feed_fixture_pair(VmafContext *vmaf, unsigned frame)
@@ -137,18 +133,18 @@ static char *feed_fixture_pair(VmafContext *vmaf, unsigned frame)
     err = vmaf_read_pictures(vmaf, &ref, &dist, frame);
     if (err)
         return "vmaf_read_pictures failed";
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion_v2", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(motion_v2) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -156,7 +152,7 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
         if (feed_err)
             return feed_err;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err =
@@ -166,7 +162,7 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -181,27 +177,27 @@ static char *run_metal_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     int err = 0;
 
     VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
+    VmafMetalState *mstate = VMAF_NULLPTR;
     err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    if (err != 0 || mstate == VMAF_NULLPTR) {
         /* No Apple-Family-7+ Metal device — skip cleanly. */
         (void)fprintf(stderr, "[skip: no Metal device] ");
         mu_skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     (void)fprintf(stdout, "[metal device active: motion_v2 parity run on device]\n");
     (void)fflush(stdout);
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("Metal: vmaf_init failed", !err);
 
     err = vmaf_metal_import_state(vmaf, mstate);
     mu_assert("Metal: vmaf_metal_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion_v2_metal", NULL);
+    err = vmaf_use_feature(vmaf, "motion_v2_metal", VMAF_NULLPTR);
     mu_assert("Metal: vmaf_use_feature(motion_v2_metal) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -209,7 +205,7 @@ static char *run_metal_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
         if (feed_err)
             return feed_err;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
     char *score_err =
@@ -221,15 +217,15 @@ static char *run_metal_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     mu_assert("Metal: vmaf_close failed", !err);
 
     vmaf_metal_state_free(&mstate);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_metal_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2_metal");
-    mu_assert("motion_v2_metal extractor must be registered", fex != NULL);
+    mu_assert("motion_v2_metal extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("motion_v2_metal name matches", !strcmp(fex->name, "motion_v2_metal"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_cpu_metal_parity(void)
@@ -245,7 +241,7 @@ static char *test_motion_v2_cpu_metal_parity(void)
         return msg;
 
     if (isnan(metal[0]))
-        return NULL; /* No Metal device — clean skip. */
+        return VMAF_NULLPTR; /* No Metal device — clean skip. */
 
     /* motion3_v2 (index 2) must be a real, finite score on the Metal
      * path — guards against the pre-ADR-1108 gap where the Metal twin
@@ -263,14 +259,12 @@ static char *test_motion_v2_cpu_metal_parity(void)
         mu_assert("motion_v2 CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion_v2_metal_registered);
     mu_run_test(test_motion_v2_cpu_metal_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

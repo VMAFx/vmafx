@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0727 — LPIPS exporter helper alignment
 
 ## Problem
@@ -28,7 +27,7 @@ top-level legacy exporters under `ai/*.py`, then update `lpips_export.py` to:
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Only fix the docs | Smallest diff | Leaves LPIPS as helper-drift exception and still no provenance | Rejected |
 | Only add `--sidecar` | Fixes the broken documented flag | Leaves local parser/hash/JSON code in place | Rejected |
 | Move LPIPS into `ai/scripts/` | Stronger layout consistency | Path is already user-facing in docs/model cards | Deferred |

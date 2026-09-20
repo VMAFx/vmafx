@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0404: Keep `nightly.yml` + `fuzz.yml` red until underlying bugs land
 
 - **Status**: Accepted
@@ -56,7 +55,7 @@ this triage PR and will be fixed in dedicated follow-up PRs.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Keep gates running, document the open bugs** (chosen) | Honours `feedback_no_test_weakening`; the gate keeps watching for regressions on the *other* harnesses while the known bug is in flight; reopen is automatic | CI red badge persists until fixes land | Aligned with the user's standing rule that a working detector is never silenced to make CI green |
 | Add `continue-on-error: true` to the failing jobs / matrix legs | CI badge turns green | Silences a working detector; later regressions in the same code path get masked under a "yellow" marker that humans habituate to ignoring | Direct violation of `feedback_no_test_weakening`; the rule explicitly covers "skipping/disabling failing tests" |
 | Disable both workflows entirely | Stops the noise | Loses ~24 h of TSan / fuzz coverage on the *passing* paths every day; the ADM race is a known data race the user explicitly wants surfaced | Throws out the working signal with the failing signal |

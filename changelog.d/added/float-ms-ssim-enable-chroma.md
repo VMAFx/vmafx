@@ -1,3 +1,5 @@
+# Changelog fragment
+
 The `float_ms_ssim` extractor now accepts an `enable_chroma=true` option that
 computes and emits per-plane MS-SSIM for the Cb (`float_ms_ssim_cb`) and Cr
 (`float_ms_ssim_cr`) chroma channels in addition to the existing luma

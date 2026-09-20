@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1117: MCP `vmaf_score` tiny-AI / feature / CTC parameter coverage
 
@@ -46,7 +45,7 @@ optional and is gated on `tiny_model` being present, mirroring the CLI's own
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Optional params on the existing two score tools (chosen) | No new tool surface; one schema for IDE clients; backward-compatible; mirrors the CLI 1:1 | `vmaf_score` schema grows to ~27 properties | Smallest blast radius; existing callers untouched; the params are intrinsically *parameters of a score*, not separate operations |
 | New dedicated `vmaf_score_tiny` / `vmaf_score_nr` tools | Keeps each tool's schema small | Doubles the tool count; duplicates the geometry/path/backend plumbing; an FR+tiny call would need two tools | Splits one operation across tools and inflates the surface the byte-compat invariant must police |
 | Expose a raw `extra_args: string[]` pass-through | Trivially covers every flag, now and future | No schema validation, no enums, no discoverability; an injection/foot-gun surface; un-typed for IDE clients | Defeats the point of a typed MCP schema and the path-allowlist security posture |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0245: SIMD bit-exact test harness shared header
 
 - **Status**: Accepted
@@ -62,7 +61,7 @@ risks shifting input bit patterns and is out of scope for this PR).
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Macros for fixture allocation (e.g. `SIMD_BITEXACT_TEST_FIXTURE(name, w, h, bpc)`) | Cuts the visible test body further; one-line scaffolding | Hides allocation lifetime behind a macro, breaks ASan / UBSan stack traces, fixed structure cannot express `motion_v2`'s 4-buffer adversarial layout, fights Power-of-10 rule 2 (loop bounds visible) | Selected the inline-helper path: explicit `simd_test_aligned_malloc` calls keep lifetime visible and let each test compose its own buffer set. |
 | C-template-style helper functions taking a `(scalar_fn, simd_fn)` pair via function pointers | Maximum dedup; one helper drives every test | Forces every kernel to share a signature; the four target tests have wildly different signatures (`compute_1st_moment` vs `od_bin_fdct8x8` vs `motion_score_pipeline_16`); function pointers also defeat clang-tidy's static-call-graph analysis | Rejected: signature heterogeneity dominates. |
 | Per-feature harness (one helper header per feature family) | Tightest scoping | Multiplies the maintenance surface — six metric families would mean six near-identical headers | Rejected: the centralised harness is the linker-and-include-tree minimum. |

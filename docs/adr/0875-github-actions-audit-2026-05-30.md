@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0875: GitHub Actions hardening audit (2026-05-30)
 
 - **Status**: Accepted
@@ -66,7 +65,7 @@ baseline (`go-ci.yml`, `rust-ci.yml`, `sanitizers.yml`,
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Adopt the rule and fix every drift in one PR (chosen) | Single migration; the rule lands enforced everywhere | One audit PR; need to skip in-flight workflows | Chosen — cheap, immediate, low blast radius |
 | Defer until the next PR happens to touch each workflow | Smallest single PR | Drift persists for weeks; new workflows added in the meantime can ship without the rule | Rejected — the gap remains exploitable in the interim |
 | Enforce in CI via a Scorecard / actionlint policy gate, then backfix | Permanent backstop | Requires a separate ADR + gate wiring; doesn't fix today's gaps | Deferred — desirable as a follow-up, not a substitute for the backfix |

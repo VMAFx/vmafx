@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0123: `vmaf-roi` High-Bit-Depth Input
 
 Date: 2026-05-15
@@ -24,7 +23,7 @@ without changing the saliency model ABI or encoder sidecar schemas.
 ## Alternatives Considered
 
 | Option | Result | Rationale |
-|--------|--------|-----------|
+| -------- | -------- | ----------- |
 | Keep `vmaf-roi` 8-bit only | Rejected | It leaves HDR / CHUG-style raw inputs blocked at the encoder-side ROI tool even though the score-side ROI materialiser already accepts high-bit-depth inputs. |
 | Add a high-bit-depth saliency model ABI | Rejected | No current saliency model consumes luma10/12/16 directly; changing the ABI would create a model-card and runtime migration for no immediate quality gain. |
 | Normalise high-bit-depth luma to luma8 before DNN | Accepted | It removes the input-format limitation while preserving the existing DNN and encoder contracts. |

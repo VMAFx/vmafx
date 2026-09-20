@@ -42,6 +42,7 @@ Production reproducer (held-out Phase A parquet):
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
@@ -55,12 +56,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -242,8 +244,7 @@ def _synthesize_smoke_corpus(
     return features, codec_onehot, target
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(
         prog="eval_probabilistic_proxy.py",
         description=__doc__,
@@ -256,7 +257,71 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--parquet", type=Path, default=None)
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--metrics-out", type=Path, default=None)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(argv)
+
+
+def _codec_dimension(sessions: list[Any]) -> int | None:
+    codec_input = next(
+        (item for item in sessions[0].get_inputs() if item.name == "codec_onehot"), None
+    )
+    if codec_input is None:
+        print("error: ONNX missing codec_onehot input", file=sys.stderr)
+        return None
+    return codec_input.shape[1]
+
+
+def _load_eval_data(args: argparse.Namespace, num_codecs: int):
+    if args.smoke or args.parquet is None:
+        return _synthesize_smoke_corpus(num_codecs=num_codecs)
+    if not args.parquet.is_file():
+        print(f"error: parquet missing at {args.parquet}", file=sys.stderr)
+        return None
+    import pandas as pd
+
+    from vmaf_train.codec import codec_index
+
+    df = pd.read_parquet(args.parquet)
+    missing = [column for column in CANONICAL_6 if column not in df.columns]
+    if missing:
+        print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
+        return None
+    if "vmaf" not in df.columns or "codec" not in df.columns:
+        print("error: parquet missing 'vmaf' or 'codec' column", file=sys.stderr)
+        return None
+    features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
+    target = df["vmaf"].to_numpy(dtype=np.float32)
+    codec_idx = np.array([codec_index(c) for c in df["codec"].astype(str)], dtype=np.int64)
+    return features, np.eye(num_codecs, dtype=np.float32)[codec_idx], target
+
+
+def _evaluate(
+    sessions: list[Any],
+    features: np.ndarray,
+    codec_onehot: np.ndarray,
+    target: np.ndarray,
+    feature_mean: np.ndarray,
+    feature_std: np.ndarray,
+    conformal_q: float | None,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    features_norm = (
+        (features - feature_mean) / np.where(feature_std < 1e-8, 1.0, feature_std)
+    ).astype(np.float32)
+    member_preds = _predict_ensemble(sessions, features_norm, codec_onehot)
+    mean = member_preds.mean(axis=0)
+    sigma = member_preds.std(axis=0, ddof=1) if member_preds.shape[0] >= 2 else np.zeros_like(mean)
+    metrics = {
+        "ensemble_size": int(member_preds.shape[0]),
+        "plcc": float(np.corrcoef(mean, target)[0, 1]) if len(mean) >= 2 else float("nan"),
+        "rmse": float(np.sqrt(np.mean((mean - target) ** 2))),
+        "mean_sigma": float(sigma.mean()),
+        "coverage": _coverage_metrics(mean, sigma, target, conformal_q=conformal_q),
+    }
+    return mean, sigma, metrics
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     if not args.manifest.is_file():
         print(f"error: manifest missing at {args.manifest}", file=sys.stderr)
@@ -276,56 +341,22 @@ def main(argv: list[str] | None = None) -> int:
     # vocab list and the trained model weight dimensions drift (e.g. the
     # manifest records 6 codecs but the ONNX was trained with 14). Deriving
     # the dimension from the live ONNX input shape is authoritative.
-    codec_input = next((i for i in sessions[0].get_inputs() if i.name == "codec_onehot"), None)
-    if codec_input is None:
-        print("error: ONNX missing codec_onehot input", file=sys.stderr)
+    num_codecs = _codec_dimension(sessions)
+    if num_codecs is None:
         return 2
-    num_codecs = codec_input.shape[1]
-
-    if args.smoke or args.parquet is None:
-        features, codec_onehot, target = _synthesize_smoke_corpus(num_codecs=num_codecs)
-    else:
-        if not args.parquet.is_file():
-            print(f"error: parquet missing at {args.parquet}", file=sys.stderr)
-            return 2
-        import pandas as pd
-
-        df = pd.read_parquet(args.parquet)
-        missing = [c for c in CANONICAL_6 if c not in df.columns]
-        if missing:
-            print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
-            return 2
-        if "vmaf" not in df.columns or "codec" not in df.columns:
-            print("error: parquet missing 'vmaf' or 'codec' column", file=sys.stderr)
-            return 2
-
-        from vmaf_train.codec import codec_index
-
-        features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
-        target = df["vmaf"].to_numpy(dtype=np.float32)
-        codec_idx = np.array([codec_index(c) for c in df["codec"].astype(str)], dtype=np.int64)
-        codec_onehot = np.eye(num_codecs, dtype=np.float32)[codec_idx]
-
-    features_norm = (
-        (features - feature_mean) / np.where(feature_std < 1e-8, 1.0, feature_std)
-    ).astype(np.float32)
-
-    member_preds = _predict_ensemble(sessions, features_norm, codec_onehot)
-    mu = member_preds.mean(axis=0)
-    sigma = member_preds.std(axis=0, ddof=1) if member_preds.shape[0] >= 2 else np.zeros_like(mu)
-
-    plcc = float(np.corrcoef(mu, target)[0, 1]) if len(mu) >= 2 else float("nan")
-    rmse = float(np.sqrt(np.mean((mu - target) ** 2)))
-    coverage = _coverage_metrics(mu, sigma, target, conformal_q=conformal_q)
+    data = _load_eval_data(args, num_codecs)
+    if data is None:
+        return 2
+    features, codec_onehot, target = data
+    _, _, metrics = _evaluate(
+        sessions, features, codec_onehot, target, feature_mean, feature_std, conformal_q
+    )
+    coverage = metrics["coverage"]
 
     report: dict[str, Any] = {
         "manifest": str(args.manifest),
-        "ensemble_size": int(member_preds.shape[0]),
         "n_rows": len(target),
-        "plcc": plcc,
-        "rmse": rmse,
-        "mean_sigma": float(sigma.mean()),
-        "coverage": coverage,
+        **metrics,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,

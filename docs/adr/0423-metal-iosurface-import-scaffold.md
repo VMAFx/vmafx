@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0423: Metal IOSurface zero-copy import (T8-IOS)
 
 - **Status**: Accepted
@@ -85,7 +84,7 @@ C-API surface and the working implementation:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Single PR carrying API + filter + runtime + tests | One review, no -ENOSYS dead-code path. | Mixes 3 review domains (C-API, FFmpeg, obj-c++); ADR-0184 precedent shows two-phase reviews catch design issues earlier. | Rejected — Vulkan's two-phase rollout caught the same-device constraint at scaffold time (would have wasted a full impl pass to discover post-hoc). |
 | Skip the dedicated filter, extend the regular `libvmaf` filter to consume IOSurfaces when `metal_device >= -1` and input is VideoToolbox | One filter, fewer config knobs. | Couples the metal_device option to a specific hwaccel input format; breaks pixfmt negotiation for the software path (regular `libvmaf` filter expects `AV_PIX_FMT_YUV420P` etc.); diverges from Vulkan / SYCL precedent which uses dedicated filters per hwdec. | Rejected — uniformity with `libvmaf_sycl` / `libvmaf_vulkan` wins. |
 | Defer the entire surface until FFmpeg ships `AVMetalDeviceContext` | Avoids the "pick default MTLDevice" hack at `config_props_metal`. | Upstream has no public timeline; we'd block the whole IOSurface story on something we don't control. Single-GPU Apple Silicon Macs (the common case) don't need the device-match guarantee anyway. | Rejected — the default-device pick is a documented limitation with a clean upgrade path. |

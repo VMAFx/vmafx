@@ -50,19 +50,44 @@ commands. Safe to run unconditionally in any wrapper.
 from __future__ import annotations
 
 import argparse
-import glob
 import os
 import re
 import shutil
-import subprocess
 import sys
+import tempfile
+from collections.abc import Iterable
+from importlib import import_module
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Protocol
 
 # The script lives at scripts/ci/, the lib package at scripts/lib/.
 _SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_SCRIPTS))
-from lib.backlog_tracker import BacklogTracker, GitHubTracker  # noqa: E402  (sys.path bootstrap)
+_TRACKERS = import_module("lib.backlog_tracker")
+
+
+class BacklogItem(Protocol):
+    """Fields consumed from one tracker item."""
+
+    status: str
+    priority: str
+    title: str
+    pr_refs: list[int]
+
+    def is_closed(self) -> bool: ...
+
+
+class BacklogReader(Protocol):
+    """Read-only backlog surface required by this gate."""
+
+    def get(self, item_id: str) -> BacklogItem | None: ...
+
+
+class PullRequestReader(Protocol):
+    """Read-only pull-request search surface required by this gate."""
+
+    def search_prs(self, query: str, *, state: str, limit: int) -> list[dict[str, Any]]: ...
+
 
 # ---------------------------------------------------------------------------
 # stderr helpers — keep verdicts machine-parseable.
@@ -83,7 +108,7 @@ def _emit_notice(message: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def check_backlog_row_open(backlog_id: str, tracker: BacklogTracker) -> bool:
+def check_backlog_row_open(backlog_id: str, tracker: BacklogReader) -> bool:
     """Return True if the backlog row is OPEN-class, False otherwise."""
     item = tracker.get(backlog_id)
     if item is None:
@@ -116,7 +141,7 @@ def check_backlog_row_open(backlog_id: str, tracker: BacklogTracker) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def check_no_merged_pr(backlog_id: str, tracker: GitHubTracker) -> bool:
+def check_no_merged_pr(backlog_id: str, tracker: PullRequestReader) -> bool:
     """Return True if no merged PR mentions the backlog ID, False otherwise.
 
     Uses ``gh pr list --search "<id> in:title,body"``. If ``gh`` is
@@ -133,7 +158,7 @@ def check_no_merged_pr(backlog_id: str, tracker: GitHubTracker) -> bool:
             state="merged",
             limit=10,
         )
-    except subprocess.CalledProcessError as exc:
+    except RuntimeError as exc:
         _emit_notice(f"gh search failed (rc={exc.returncode}); skipping merged-PR check")
         return True
     except FileNotFoundError:
@@ -172,6 +197,21 @@ def _read_text_safely(path: Path) -> str:
         return ""
 
 
+def _expand_path_glob(pattern: str) -> Iterable[Path]:
+    """Expand an absolute or relative user glob through ``Path.glob``."""
+    path = Path(pattern)
+    parts = path.parts
+    wildcard_at = next(
+        (index for index, part in enumerate(parts) if any(char in part for char in "*?[")),
+        len(parts),
+    )
+    if wildcard_at == len(parts):
+        return (path,) if path.exists() else ()
+    base = Path(*parts[:wildcard_at]) if wildcard_at else Path.cwd()
+    relative_pattern = str(Path(*parts[wildcard_at:]))
+    return base.glob(relative_pattern)
+
+
 def check_no_active_agent(
     scope_token: str,
     *,
@@ -197,15 +237,10 @@ def check_no_active_agent(
     # is configured differently or no agents are active — that's a
     # pass, not an error.
     matching_tasks: list[str] = []
-    # PTH207 noqa: tasks_glob is a user-overridable, fully-arbitrary glob
-    # (default is an absolute multi-wildcard pattern like
-    # ``/tmp/claude-*/tasks/*.output``). ``Path.glob`` would require splitting
-    # into a base directory + relative pattern, which we cannot do without
-    # parsing the user-supplied glob — ``glob.glob`` is the correct primitive.
-    for path_str in glob.glob(tasks_glob):  # noqa: PTH207
-        text = _read_text_safely(Path(path_str))
+    for path in _expand_path_glob(tasks_glob):
+        text = _read_text_safely(path)
         if token.search(text):
-            matching_tasks.append(path_str)
+            matching_tasks.append(str(path))
 
     matching_branches = [b for b in open_branches if scope_token.lower() in b.lower()]
 
@@ -231,7 +266,8 @@ def check_no_active_agent(
 # ---------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the pre-dispatch CLI without performing repository I/O."""
     parser = argparse.ArgumentParser(
         description="Pre-dispatch eligibility gate for Claude Code agent runs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -253,17 +289,11 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("GH_REPO", "VMAFx/vmafx"),
         help="GitHub repository (default: VMAFx/vmafx).",
     )
-    # The Claude Code harness writes per-task metadata under
-    # `/tmp/claude-<uid>/...` — that path is the harness's contract,
-    # not a tempfile we own (we never write to it). The S108 lint
-    # rule fires on the literal `/tmp/` prefix; this default is
-    # **read-only** and overridable via `--harness-tasks-glob`, so
-    # the rule's threat model (an attacker pre-creating a predictable
-    # tempfile) doesn't apply. Cite ADR-0355 for the contract.
+    temporary_root = Path(tempfile.gettempdir())
     default_glob = (
-        f"/tmp/claude-{os.getuid()}/*/tasks/*.output"  # noqa: S108  ADR-0355: harness path, read-only
+        str(temporary_root / f"claude-{os.getuid()}" / "*" / "tasks" / "*.output")
         if hasattr(os, "getuid")
-        else "/tmp/claude-*/tasks/*.output"  # noqa: S108  ADR-0355: harness path, read-only
+        else str(temporary_root / "claude-*" / "tasks" / "*.output")
     )
     parser.add_argument(
         "--harness-tasks-glob",
@@ -285,6 +315,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override path to BACKLOG.md (default: autodetect via scripts/lib).",
     )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if not args.backlog_id and not args.task_tag:
@@ -295,8 +330,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Wire dependencies.
     backlog_path = Path(args.backlog_path) if args.backlog_path else None
-    backlog = BacklogTracker(backlog_path)
-    github = GitHubTracker(repo=args.repo)
+    backlog = _TRACKERS.BacklogTracker(backlog_path)
+    github = _TRACKERS.GitHubTracker(repo=args.repo)
 
     failed = False
 
@@ -320,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         if shutil.which("gh") is not None:
             try:
                 open_branches = github.open_agent_branches()
-            except (subprocess.CalledProcessError, FileNotFoundError):
+            except (RuntimeError, FileNotFoundError):
                 _emit_notice("gh open-branch listing failed; skipping branch portion of check 3")
         if not check_no_active_agent(
             scope_token,

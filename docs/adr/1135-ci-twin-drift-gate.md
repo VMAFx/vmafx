@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # ADR-1135: CI twin-drift + stale-source-reference gate
 
 - **Status**: Accepted

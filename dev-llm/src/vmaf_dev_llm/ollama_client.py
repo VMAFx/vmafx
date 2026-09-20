@@ -53,5 +53,5 @@ class OllamaClient:
             req = urllib.request.Request(f"{self.base_url.rstrip('/')}/api/tags", method="GET")
             with urllib.request.urlopen(req, timeout=5) as r:
                 return r.status == 200
-        except Exception:
+        except (OSError, ValueError):
             return False

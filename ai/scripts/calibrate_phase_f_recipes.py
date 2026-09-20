@@ -80,6 +80,7 @@ constants are kept as a graceful fallback.
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import json
 import logging
@@ -94,12 +95,13 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _LOG = logging.getLogger(__name__)
 
@@ -499,8 +501,7 @@ def calibrate(
     }
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = make_argument_parser(
         prog="calibrate_phase_f_recipes.py",
         description=(
@@ -524,16 +525,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--max-rows",
         type=int,
         default=0,
-        help=(
-            "Cap the number of rows consumed (0 = all). Useful for " "smoke tests on tiny corpora."
-        ),
+        help=("Cap the number of rows consumed (0 = all). Useful for smoke tests on tiny corpora."),
     )
     parser.add_argument(
         "--log-level",
         default="INFO",
         help="Logging level (DEBUG / INFO / WARNING / ERROR).",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(argv)
+
+
+def _load_rows(path: Path, max_rows: int) -> list[CorpusRow]:
+    rows: list[CorpusRow] = []
+    for row in _iter_corpus_rows(path):
+        rows.append(row)
+        if max_rows and len(rows) >= max_rows:
+            break
+    return rows
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -544,11 +557,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _LOG.error("corpus not found: %s", args.corpus)
         return 2
 
-    rows: list[CorpusRow] = []
-    for row in _iter_corpus_rows(args.corpus):
-        rows.append(row)
-        if args.max_rows and len(rows) >= args.max_rows:
-            break
+    rows = _load_rows(args.corpus, args.max_rows)
 
     if not rows:
         _LOG.error("no usable rows in corpus")

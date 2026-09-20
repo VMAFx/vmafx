@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **fix(server,controller)**: `WaitForShutdown` no longer blocks the full
   `GracefulShutdownTimeout` on clean shutdown — drain window now exits early
   when `ctx.Done()` fires (ADR-1009).

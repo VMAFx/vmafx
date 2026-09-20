@@ -1,1 +1,5 @@
-| [ADR-0710](0710-vmafx-ci-slim-down-v2.md) | VMAFX CI Slim-Down v2 — one build per OS (`build.yml`) and a combined ASan+UBSan / TSan / fuzz workflow (`sanitizers.yml`). Both were added, but `libvmaf-build-matrix.yml`, `Cppcheck` and the per-PR sanitizer matrix were never removed and the aggregator never changed. | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | ci, build, sanitizers, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0710](0710-vmafx-ci-slim-down-v2.md) | VMAFX CI Slim-Down v2 — One Build per OS + State-of-the-Art Sanitizers | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | `ci`, `build`, `sanitizers`, `vmafx` |

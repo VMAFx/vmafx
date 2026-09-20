@@ -29,11 +29,7 @@
 #include "picture.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 static const char *const MOTION2_SCORE = "VMAF_integer_feature_motion2_score";
 
@@ -93,16 +89,16 @@ static int fex_fixture_close(FexFixture *fixture)
  * is the minimal sequence that makes both indices retrievable. */
 static int fex_fixture_extract_two_frames_and_flush(FexFixture *fixture)
 {
-    int err = vmaf_feature_extractor_context_extract(fixture->fex_ctx, &fixture->ref, NULL,
-                                                     &fixture->dist, NULL, 0, fixture->vfc);
+    int err = vmaf_feature_extractor_context_extract(fixture->fex_ctx, &fixture->ref, VMAF_NULLPTR,
+                                                     &fixture->dist, VMAF_NULLPTR, 0, fixture->vfc);
     if (err)
         return err;
 
     if (fixture->fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
         fixture->fex_ctx->fex->prev_ref = fixture->ref;
 
-    err = vmaf_feature_extractor_context_extract(fixture->fex_ctx, &fixture->ref, NULL,
-                                                 &fixture->dist, NULL, 1, fixture->vfc);
+    err = vmaf_feature_extractor_context_extract(fixture->fex_ctx, &fixture->ref, VMAF_NULLPTR,
+                                                 &fixture->dist, VMAF_NULLPTR, 1, fixture->vfc);
     if (err)
         return err;
 
@@ -132,7 +128,7 @@ static char *test_get_feature_extractor_by_name_and_feature_name(void)
               fex && !strcmp(fex->name, "adm_cuda"));
 #endif
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression guard for the PR #875 feature_extractor.c -> .cpp split,
@@ -144,7 +140,7 @@ static char *test_get_feature_extractor_by_name_and_feature_name(void)
 static char *test_speed_gpu_twins_resolve_by_name(void)
 {
 #if HAVE_CUDA
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_chroma_cuda");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_chroma_cuda");
     mu_assert("speed_chroma_cuda must resolve by name",
               fex && !strcmp(fex->name, "speed_chroma_cuda"));
     fex = vmaf_get_feature_extractor_by_name("speed_temporal_cuda");
@@ -168,7 +164,7 @@ static char *test_speed_gpu_twins_resolve_by_name(void)
               hip_fex && !strcmp(hip_fex->name, "speed_temporal_hip"));
 #endif
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0544: walk the static `feature_extractor_list[]` and assert that no
@@ -185,7 +181,7 @@ static char *test_feature_extractor_list_no_duplicates(void)
               "(see ADR-0541; check the audit log above for the offending "
               "names/indices)",
               !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Coverage push: NULL-input and unknown-name guards on the public lookup
@@ -196,17 +192,17 @@ static char *test_get_feature_extractor_null_and_unknown(void)
 {
     const VmafFeatureExtractor *fex;
 
-    fex = vmaf_get_feature_extractor_by_name(NULL);
+    fex = vmaf_get_feature_extractor_by_name(VMAF_NULLPTR);
     mu_assert("by_name(NULL) must return NULL", !fex);
     fex = vmaf_get_feature_extractor_by_name("definitely-not-a-real-extractor");
     mu_assert("by_name(unknown) must return NULL", !fex);
 
-    fex = vmaf_get_feature_extractor_by_feature_name(NULL, 0);
+    fex = vmaf_get_feature_extractor_by_feature_name(VMAF_NULLPTR, 0);
     mu_assert("by_feature_name(NULL) must return NULL", !fex);
     fex = vmaf_get_feature_extractor_by_feature_name("VMAF_not_a_provided_feature", 0);
     mu_assert("by_feature_name(unknown) must return NULL", !fex);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Coverage push: ADR-0530 fallback path in
@@ -221,12 +217,12 @@ static char *test_get_feature_extractor_by_name_cuda_fallback(void)
 {
     const VmafFeatureExtractor *fex =
         vmaf_get_feature_extractor_by_feature_name(MOTION2_SCORE, VMAF_FEATURE_EXTRACTOR_CUDA);
-    mu_assert("by_feature_name(CUDA) must fall back to the CPU twin", fex != NULL);
+    mu_assert("by_feature_name(CUDA) must fall back to the CPU twin", fex != VMAF_NULLPTR);
 #if !HAVE_CUDA
     mu_assert("CPU build fallback must resolve to the CPU 'motion' extractor",
               !strcmp(fex->name, "motion"));
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression test for the missing-symbol bug fixed in
@@ -243,14 +239,14 @@ static char *test_ssim_extractor_registered_and_extracts(void)
               fex && !strcmp(fex->name, "ssim"));
 
     VmafFeatureExtractorContext *fex_ctx;
-    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, NULL);
+    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, VMAF_NULLPTR);
     VmafPicture ref;
     VmafPicture dist;
     err |= vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, 16, 16);
     err |= vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, 16, 16);
     VmafFeatureCollector *vfc;
     err |= vmaf_feature_collector_init(&vfc);
-    err |= vmaf_feature_extractor_context_extract(fex_ctx, &ref, NULL, &dist, NULL, 0, vfc);
+    err |= vmaf_feature_extractor_context_extract(fex_ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, vfc);
     mu_assert("problem during ssim setup/extract", !err);
 
     double score = -1.0;
@@ -264,7 +260,7 @@ static char *test_ssim_extractor_registered_and_extracts(void)
     vmaf_feature_collector_destroy(vfc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------------
@@ -287,7 +283,7 @@ static char *test_feature_extractor_context_pool(void)
 
     VmafFeatureExtractorContext *fex_ctx[n_threads];
     for (unsigned i = 0; i < n_threads; i++) {
-        err = vmaf_fex_ctx_pool_aquire(pool, fex, NULL, &fex_ctx[i]);
+        err = vmaf_fex_ctx_pool_aquire(pool, fex, VMAF_NULLPTR, &fex_ctx[i]);
         mu_assert("problem during vmaf_fex_ctx_pool_aquire", !err);
         mu_assert("fex_ctx[i] should be float_ssim feature extractor",
                   !strcmp(fex_ctx[i]->fex->name, "float_ssim"));
@@ -301,7 +297,7 @@ static char *test_feature_extractor_context_pool(void)
     err = vmaf_fex_ctx_pool_destroy(pool);
     mu_assert("problem during vmaf_fex_ctx_pool_destroy", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* A temporal extractor ("motion") withholds the last frame until the context
@@ -310,7 +306,8 @@ static char *test_feature_extractor_context_pool(void)
 static char *test_feature_extractor_flush(void)
 {
     FexFixture fixture;
-    mu_assert("problem during motion fixture setup", !fex_fixture_open(&fixture, "motion", NULL));
+    mu_assert("problem during motion fixture setup",
+              !fex_fixture_open(&fixture, "motion", VMAF_NULLPTR));
     mu_assert("problem vmaf_get_feature_extractor_by_name",
               !strcmp(fixture.fex_ctx->fex->name, "motion"));
     mu_assert("problem during two-frame extract + flush",
@@ -322,7 +319,7 @@ static char *test_feature_extractor_flush(void)
     mu_assert("problem during vmaf_feature_collector_get_score", !err);
 
     mu_assert("problem during motion fixture teardown", !fex_fixture_close(&fixture));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* An option handed to the context constructor must reach the extractor:
@@ -330,7 +327,7 @@ static char *test_feature_extractor_flush(void)
  * "psnr_cb" must be absent from the collector afterwards. */
 static char *test_feature_extractor_initialization_options(void)
 {
-    VmafDictionary *opts_dict = NULL;
+    VmafDictionary *opts_dict = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts_dict, "enable_chroma", "false", 0);
     mu_assert("problem during vmaf_dictionary_set", !err);
 
@@ -339,8 +336,8 @@ static char *test_feature_extractor_initialization_options(void)
     mu_assert("problem vmaf_get_feature_extractor_by_name",
               !strcmp(fixture.fex_ctx->fex->name, "psnr"));
 
-    err = vmaf_feature_extractor_context_extract(fixture.fex_ctx, &fixture.ref, NULL, &fixture.dist,
-                                                 NULL, 0, fixture.vfc);
+    err = vmaf_feature_extractor_context_extract(fixture.fex_ctx, &fixture.ref, VMAF_NULLPTR,
+                                                 &fixture.dist, VMAF_NULLPTR, 0, fixture.vfc);
     mu_assert("problem during vmaf_feature_extractor_context_extract", !err);
 
     double score;
@@ -348,38 +345,38 @@ static char *test_feature_extractor_initialization_options(void)
     mu_assert("chroma PSNR was not disabled via option", err);
 
     mu_assert("problem during psnr fixture teardown", !fex_fixture_close(&fixture));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Coverage push: NULL-input guards on the public extract / submit /
  * collect / flush / close / destroy entry points. */
 static char *test_feature_extractor_context_null_guards(void)
 {
-    VmafPicture pic;
-    VmafFeatureCollector *vfc = NULL;
+    VmafPicture pic = {0};
+    VmafFeatureCollector *vfc = VMAF_NULLPTR;
 
-    int err = vmaf_feature_extractor_context_extract(NULL, &pic, NULL, &pic, NULL, 0, vfc);
+    int err = vmaf_feature_extractor_context_extract(VMAF_NULLPTR, &pic, VMAF_NULLPTR, &pic, VMAF_NULLPTR, 0, vfc);
     mu_assert("extract(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_feature_extractor_context_submit(NULL, &pic, NULL, &pic, NULL, 0);
+    err = vmaf_feature_extractor_context_submit(VMAF_NULLPTR, &pic, VMAF_NULLPTR, &pic, VMAF_NULLPTR, 0);
     mu_assert("submit(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_feature_extractor_context_submit_nocopy(NULL, 0);
+    err = vmaf_feature_extractor_context_submit_nocopy(VMAF_NULLPTR, 0);
     mu_assert("submit_nocopy(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_feature_extractor_context_collect(NULL, 0, vfc);
+    err = vmaf_feature_extractor_context_collect(VMAF_NULLPTR, 0, vfc);
     mu_assert("collect(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_feature_extractor_context_flush(NULL, vfc);
+    err = vmaf_feature_extractor_context_flush(VMAF_NULLPTR, vfc);
     mu_assert("flush(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_feature_extractor_context_close(NULL);
+    err = vmaf_feature_extractor_context_close(VMAF_NULLPTR);
     mu_assert("close(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_feature_extractor_context_destroy(NULL);
+    err = vmaf_feature_extractor_context_destroy(VMAF_NULLPTR);
     mu_assert("destroy(NULL ctx) must return -EINVAL", err == -EINVAL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Coverage push: vmaf_fex_ctx_pool entry-point guards.  Exercises the
@@ -387,26 +384,26 @@ static char *test_feature_extractor_context_null_guards(void)
  * / flush / destroy. */
 static char *test_fex_ctx_pool_null_guards(void)
 {
-    int err = vmaf_fex_ctx_pool_create(NULL, 1);
+    int err = vmaf_fex_ctx_pool_create(VMAF_NULLPTR, 1);
     mu_assert("pool_create(NULL pool) must return -EINVAL", err == -EINVAL);
 
-    VmafFeatureExtractorContextPool *pool = NULL;
+    VmafFeatureExtractorContextPool *pool = VMAF_NULLPTR;
     err = vmaf_fex_ctx_pool_create(&pool, 0);
     mu_assert("pool_create(n_threads=0) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_fex_ctx_pool_aquire(NULL, NULL, NULL, NULL);
+    err = vmaf_fex_ctx_pool_aquire(VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("pool_aquire(NULL pool) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_fex_ctx_pool_release(NULL, NULL);
+    err = vmaf_fex_ctx_pool_release(VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("pool_release(NULL pool) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_fex_ctx_pool_flush(NULL, NULL);
+    err = vmaf_fex_ctx_pool_flush(VMAF_NULLPTR, VMAF_NULLPTR);
     mu_assert("pool_flush(NULL pool) must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_fex_ctx_pool_destroy(NULL);
+    err = vmaf_fex_ctx_pool_destroy(VMAF_NULLPTR);
     mu_assert("pool_destroy(NULL pool) must return -EINVAL", err == -EINVAL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------------
@@ -419,8 +416,8 @@ static char *test_fex_ctx_pool_null_guards(void)
 static int fex_vector_create_and_append(RegisteredFeatureExtractors *rfe,
                                         const VmafFeatureExtractor *fex)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
     if (err)
         return err;
     return feature_extractor_vector_append(rfe, ctx, 0);
@@ -447,8 +444,8 @@ static int fex_vector_create_and_append(RegisteredFeatureExtractors *rfe,
 static char *test_fex_vector_dedup_by_provided_feature_name(void)
 {
     /* Two synthetic provided-feature lists that share "mock_feature_score". */
-    static const char *pf_a[] = {"mock_feature_score", "mock_extra_a", NULL};
-    static const char *pf_b[] = {"mock_feature_score", "mock_extra_b", NULL};
+    static const char *pf_a[] = {"mock_feature_score", "mock_extra_a", VMAF_NULLPTR};
+    static const char *pf_b[] = {"mock_feature_score", "mock_extra_b", VMAF_NULLPTR};
 
     VmafFeatureExtractor fex_a = {
         .name = "mock_cpu",
@@ -478,7 +475,7 @@ static char *test_fex_vector_dedup_by_provided_feature_name(void)
               !strcmp(rfe.fex_ctx[0]->fex->name, "mock_cpu"));
 
     feature_extractor_vector_destroy(&rfe);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* supports_options() with nothing to validate: a NULL dictionary and an
@@ -487,35 +484,35 @@ static char *test_fex_vector_dedup_by_provided_feature_name(void)
 static char *test_supports_options_empty_dict(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
-    mu_assert("psnr extractor missing", fex != NULL);
+    mu_assert("psnr extractor missing", fex != VMAF_NULLPTR);
 
-    const char *missing = NULL;
-    bool ok = vmaf_feature_extractor_supports_options(fex, NULL, &missing);
-    mu_assert("supports_options(NULL dict) must return true", ok && missing == NULL);
+    const char *missing = VMAF_NULLPTR;
+    bool ok = vmaf_feature_extractor_supports_options(fex, VMAF_NULLPTR, &missing);
+    mu_assert("supports_options(NULL dict) must return true", ok && missing == VMAF_NULLPTR);
 
-    const VmafDictionary *opts = NULL;
+    const VmafDictionary *opts = VMAF_NULLPTR;
     ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
-    mu_assert("supports_options(empty dict) must return true", ok && missing == NULL);
+    mu_assert("supports_options(empty dict) must return true", ok && missing == VMAF_NULLPTR);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* A key the extractor declares in its option table is accepted. */
 static char *test_supports_options_known_key(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
-    mu_assert("psnr extractor missing", fex != NULL);
+    mu_assert("psnr extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     mu_assert("dictionary_set enable_chroma",
               vmaf_dictionary_set(&opts, "enable_chroma", "true", 0) == 0);
 
-    const char *missing = NULL;
+    const char *missing = VMAF_NULLPTR;
     bool ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
-    mu_assert("supports_options(enable_chroma) must return true", ok && missing == NULL);
+    mu_assert("supports_options(enable_chroma) must return true", ok && missing == VMAF_NULLPTR);
 
     (void)vmaf_dictionary_free(&opts);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* An undeclared key is rejected and named through the missing-key
@@ -523,20 +520,20 @@ static char *test_supports_options_known_key(void)
 static char *test_supports_options_unknown_key_reports_missing(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
-    mu_assert("psnr extractor missing", fex != NULL);
+    mu_assert("psnr extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     mu_assert("dictionary_set unknown_opt_xyz",
               vmaf_dictionary_set(&opts, "unknown_opt_xyz", "42", 0) == 0);
 
-    const char *missing = NULL;
+    const char *missing = VMAF_NULLPTR;
     bool ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
     mu_assert("supports_options(unknown) must return false", !ok);
     mu_assert("missing key must match unknown_opt_xyz",
               missing && !strcmp(missing, "unknown_opt_xyz"));
 
     (void)vmaf_dictionary_free(&opts);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* An option spelled with its registered alias ("mmxv" for motion's
@@ -544,17 +541,17 @@ static char *test_supports_options_unknown_key_reports_missing(void)
 static char *test_supports_options_alias_key(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
-    mu_assert("motion extractor missing", fex != NULL);
+    mu_assert("motion extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     mu_assert("dictionary_set mmxv alias", vmaf_dictionary_set(&opts, "mmxv", "18", 0) == 0);
 
-    const char *missing = NULL;
+    const char *missing = VMAF_NULLPTR;
     bool ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
-    mu_assert("supports_options(alias mmxv) must return true", ok && missing == NULL);
+    mu_assert("supports_options(alias mmxv) must return true", ok && missing == VMAF_NULLPTR);
 
     (void)vmaf_dictionary_free(&opts);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* With no extractor to consult, every supplied key is unsupported: the
@@ -562,16 +559,16 @@ static char *test_supports_options_alias_key(void)
  * dereference the NULL descriptor. */
 static char *test_supports_options_null_extractor(void)
 {
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     mu_assert("dictionary_set some_key", vmaf_dictionary_set(&opts, "some_key", "1", 0) == 0);
 
-    const char *missing = NULL;
-    bool ok = vmaf_feature_extractor_supports_options(NULL, opts, &missing);
+    const char *missing = VMAF_NULLPTR;
+    bool ok = vmaf_feature_extractor_supports_options(VMAF_NULLPTR, opts, &missing);
     mu_assert("supports_options(NULL fex) must return false", !ok);
     mu_assert("missing key must match some_key", missing && !strcmp(missing, "some_key"));
 
     (void)vmaf_dictionary_free(&opts);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The context constructor rejects an unknown option outright and resets the
@@ -580,19 +577,19 @@ static char *test_supports_options_null_extractor(void)
 static char *test_feature_extractor_unknown_option_rejected(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
-    mu_assert("psnr extractor missing", fex != NULL);
+    mu_assert("psnr extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "bogus_option_name", "123", 0);
     mu_assert("dictionary_set", err == 0);
 
     VmafFeatureExtractorContext *ctx = (VmafFeatureExtractorContext *)0x1234;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create with unknown option must return -EINVAL", err == -EINVAL);
-    mu_assert("context handle must be reset to NULL on failure", ctx == NULL);
+    mu_assert("context handle must be reset to NULL on failure", ctx == VMAF_NULLPTR);
 
     (void)vmaf_dictionary_free(&opts);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---------------------------------------------------------------------------
@@ -612,7 +609,7 @@ static char *run_registry_tests(void)
     mu_run_test(test_get_feature_extractor_null_and_unknown);
     mu_run_test(test_get_feature_extractor_by_name_cuda_fallback);
     mu_run_test(test_ssim_extractor_registered_and_extracts);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_context_tests(void)
@@ -622,7 +619,7 @@ static char *run_context_tests(void)
     mu_run_test(test_feature_extractor_initialization_options);
     mu_run_test(test_feature_extractor_context_null_guards);
     mu_run_test(test_fex_ctx_pool_null_guards);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_option_tests(void)
@@ -634,7 +631,7 @@ static char *run_option_tests(void)
     mu_run_test(test_supports_options_alias_key);
     mu_run_test(test_supports_options_null_extractor);
     mu_run_test(test_feature_extractor_unknown_option_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -647,5 +644,3 @@ char *run_tests(void)
         return result;
     return run_option_tests();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

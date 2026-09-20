@@ -176,9 +176,9 @@ def test_consistency_check_passes_when_counts_match(k150k_module, tmp_path: Path
     accounted = parquet_count if recovered_rows else parquet_count + len(recovered_rows)
 
     # The check is len(done_set) > accounted; with 50 == 50 it should not fire.
-    assert not (
-        len(done_set) > accounted
-    ), f"Negative control failed: done={len(done_set)} accounted={accounted}"
+    assert not (len(done_set) > accounted), (
+        f"Negative control failed: done={len(done_set)} accounted={accounted}"
+    )
 
 
 def test_load_staging_rows_warns_on_malformed_lines(

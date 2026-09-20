@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 MD060 -->
 # Research-0028 — Phase-3 MLP arch sweep on Top-K feature subsets
 
 _Updated: 2026-04-29._
@@ -13,8 +12,8 @@ Phase-3 GO and named three feature subsets to sweep:
   `motion2`, `ssimulacra2`, `psnr_hvs`, `float_ssim`).
 - **Subset C** — full-21 (sanity ceiling).
 
-The stopping rule was: *"If Subset A's mean LOSO PLCC fails to beat
-canonical6 by ≥ 0.005, the hypothesis is dead and canonical-6 stays."*
+The stopping rule was: _"If Subset A's mean LOSO PLCC fails to beat
+canonical6 by ≥ 0.005, the hypothesis is dead and canonical-6 stays."_
 
 This digest reports the empirical result.
 
@@ -51,7 +50,7 @@ Per-fold detail in
 **All three subsets LOSE on PLCC. All three subsets WIN big on RMSE.**
 
 The PLCC stopping rule from Research-0027 fires: Subset A is 0.019
-*below* canonical6, not 0.005 above. By the documented criterion,
+_below_ canonical6, not 0.005 above. By the documented criterion,
 the hypothesis "broader feature set helps a tiny MLP" is killed.
 
 But every subset cuts RMSE by **~40 %**:
@@ -60,7 +59,7 @@ But every subset cuts RMSE by **~40 %**:
 - canonical6 RMSE 15.20 → B 8.91 (−41 %)
 - canonical6 RMSE 15.20 → C 8.50 (−44 %)
 
-That's a *huge* absolute-fit improvement. Mean RMSE is in raw
+That's a _huge_ absolute-fit improvement. Mean RMSE is in raw
 `vmaf_v0.6.1` score units (0–100 range), so canonical6 is averaging
 ~15-point errors per frame; the broader subsets average ~9 points.
 The MLP-with-more-features predicts absolute scores much better but
@@ -73,22 +72,22 @@ If `ssimulacra2`, `adm_scale3`, etc. carry independent signal
 should at minimum match canonical6's PLCC and improve RMSE — not
 trade them off. PLCC measures linear correlation; SROCC measures
 rank order. Both hovering 0.96–0.98 with new features in train
-means the model *knows* the absolute score better but loses
+means the model _knows_ the absolute score better but loses
 relative-ordering precision.
 
 The most likely cause is **feature-scale variance**. The canonical
 6 features are all roughly in `[0, 1]` after the
 `vmaf_v0.6.1` pipeline normalises them. The expanded set is not:
 
-| Feature            | Typical range          |
-|--------------------|------------------------|
+| Feature | Typical range |
+| -------------------- | ------------------------ |
 | `adm2`, `vif_*`, `float_ssim`, `float_ms_ssim` | `[0, 1]` |
-| `motion2`, `motion3`            | `[0, ~30]` |
-| `psnr_y`, `psnr_cb`, `psnr_cr`  | `[0, ~100]` |
-| `cambi`                         | `[0, ~100]` |
-| `ciede2000`                     | `[0, ~100]` |
-| `psnr_hvs`                      | `[0, ~100]` |
-| `ssimulacra2`                   | `[~−1, ~100]` |
+| `motion2`, `motion3` | `[0, ~30]` |
+| `psnr_y`, `psnr_cb`, `psnr_cr` | `[0, ~100]` |
+| `cambi` | `[0, ~100]` |
+| `ciede2000` | `[0, ~100]` |
+| `psnr_hvs` | `[0, ~100]` |
+| `ssimulacra2` | `[~−1, ~100]` |
 
 A 16-unit hidden layer fed unnormalised inputs lets the
 `psnr_*`/`cambi`/`ciede2000` features dominate gradient updates by
@@ -150,9 +149,9 @@ true. The Phase-2 importance metrics (MI, LASSO, RF) are robust to
 feature scaling because they normalise internally. The Phase-3 MLP
 is not.
 
-The honest interpretation: *the canonical 6-feature flow is
-extremely well-tuned for the* `mlp_small` *architecture; you cannot
-trivially expand it without re-tuning everything else*.
+The honest interpretation: _the canonical 6-feature flow is
+extremely well-tuned for the_ `mlp_small` _architecture; you cannot
+trivially expand it without re-tuning everything else_.
 
 ## Reproducer
 
@@ -189,8 +188,8 @@ to the subset result keys.
 
 ## References
 
-- **`req`** (user, 2026-04-29): *"yeah"* in response to "Want me to
-  write up Research-0027" + *"yeah then go on with ai phase 3?"*.
+- **`req`** (user, 2026-04-29): _"yeah"_ in response to "Want me to
+  write up Research-0027" + _"yeah then go on with ai phase 3?"_.
 - [Research-0027](0027-phase2-feature-importance.md) — the
   GO-signal digest this Phase-3 sweep tests.
 - [Research-0026](0026-cross-metric-feature-fusion.md) — 4-phase

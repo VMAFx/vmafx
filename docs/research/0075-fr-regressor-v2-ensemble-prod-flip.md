@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD049 -->
 # Research-0075: `fr_regressor_v2` ensemble — production flip LOSO protocol
 
 - **Date**: 2026-05-05
@@ -130,7 +129,7 @@ ADR-0291 / Research-0067 (prod-loso) reported deterministic v2 LOSO
 PLCC = **0.9681 ± 0.0207** on the same corpus. The expected ensemble
 behaviour:
 
-- **Mean per-seed PLCC ≥ 0.99** *baseline aspiration* — averaging
+- **Mean per-seed PLCC ≥ 0.99** _baseline aspiration_ — averaging
   five independent trainings on the same data should slightly improve
   on the single-network 0.9681 (typical ensemble lift on UCI-style
   regression: +0.005–0.02 PLCC). Calling 0.99 a baseline is

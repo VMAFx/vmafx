@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0937: mkdocs ADR nav — per-hundred bucket layout + auto by-tag indexes
 
 - **Status**: Accepted
@@ -67,7 +66,7 @@ build rather than carved out.
 ## Alternatives considered
 
 | Option | Pros | Cons |
-|--------|------|------|
+| -------- | ------ | ------ |
 | **A. Per-hundred buckets + by-tag (chosen)** | Discoverable in the left rail; lets the existing `Tags:` schema do useful work without retroactive tagging; deterministic round-trip via sentinels; generator scripts have `--check` for CI drift detection. | Slightly slower build (~100 s vs 28 s baseline); 442 tag entries make the `By tag` group long (mitigated by the dedicated index page acting as primary entry point). |
 | B. Keep the existing carve-out (no enumerated nav) | Zero churn; fastest build. | ADRs invisible in the left rail; tag corpus never surfaced; defeats the documentation rule's discoverability intent. |
 | C. Enumerate flat alphabetically | Simpler generator. | 631 ADRs in a single accordion is unusable; loses the project-phase narrative the per-hundred grouping conveys. |
@@ -76,7 +75,7 @@ build rather than carved out.
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - ADRs are discoverable from the material-theme left rail for the first
   time since the corpus grew past ~50 files.
@@ -86,7 +85,7 @@ build rather than carved out.
   `scripts/docs/concat-adr-index.sh` (ADR-0221 fragment renderer); CI can
   add `--check` calls to both new scripts to catch drift on every PR.
 
-**Negative**
+### Negative
 
 - `mkdocs build` time grows from ~28 s to ~100 s; acceptable for the
   documentation site build, which runs once per PR and is not on any
@@ -99,7 +98,7 @@ build rather than carved out.
   by the dedicated `Overview` link inside the group acting as the primary
   entry point.
 
-**Neutral follow-ups**
+#### Neutral follow-ups
 
 - A future PR may add `--check` invocations of both scripts to
   `.github/workflows/docs.yml` so PRs that add an ADR without

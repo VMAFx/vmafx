@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Praetor / HISS-16 governance scaffolding** (ADR-1249). The repository now
   carries a declarative governance manifest (`.standards.yaml`), a pinned
   standards lockfile, a technical-debt baseline that may only ratchet down, and
@@ -6,11 +8,11 @@
   `e4b35cb`. `AGENTS.md` becomes the single canonical agent harness and is
   compiled into six vendor-specific context files — `CLAUDE.md`,
   `.cursor/rules/`, `.github/copilot-instructions.md`, `.windsurfrules`,
-  `.gemini/GEMINI.md` and `.codex/rules.md` — so those may no longer be edited by
-  hand; edit `AGENTS.md` and run `make compile-context`. `AGENTS.md` is written
-  in the engine's internal register, which the gate lints; check an edit with
-  `praetorctl caveman check AGENTS.md`. To fit the transpiler's 300-line budget
-  per target, its hard rules and rebase-sensitive invariants move to
+  `.gemini/GEMINI.md` and `.codex/rules.md` — so those may no longer be edited
+  by hand; edit `AGENTS.md` and run `make compile-context`. `AGENTS.md` is
+  written in the engine's internal register, which the gate lints; check an edit
+  with `praetorctl caveman check AGENTS.md`. To fit the transpiler's 300-line
+  budget per target, its hard rules and rebase-sensitive invariants move to
   [`docs/development/agent-hard-rules.md`](docs/development/agent-hard-rules.md)
   and
   [`docs/development/rebase-sensitive-invariants.md`](docs/development/rebase-sensitive-invariants.md),

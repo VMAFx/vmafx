@@ -1,9 +1,9 @@
+from vmaf.config import VmafConfig
+
 dataset_name = "example"
 
 quality_width = 1920
 quality_height = 1080
-
-from vmaf.config import VmafConfig
 
 ref_videos = [
     {

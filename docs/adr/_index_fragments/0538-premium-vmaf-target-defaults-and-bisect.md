@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0538](0538-premium-vmaf-target-defaults-and-bisect.md) | vmaf-tune compare ships premium-archival --target-vmafs default + bisect reaches VMAF 95+ | Accepted | vmaf-tune, compare, bisect, defaults, premium-archival |

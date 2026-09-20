@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1058](1058-helm-chart-security-hardening.md) | Helm chart security hardening — PDB, RBAC split, metrics NetworkPolicy, schema tightening | Accepted | `helm`, `k8s`, `rbac`, `security`, `networkpolicy` |

@@ -21,15 +21,10 @@ libvmaf or ffmpeg.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+import calibrate_phase_f_recipes as cpfr
 import pytest
-
-_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(_SCRIPTS))
-
-import calibrate_phase_f_recipes as cpfr  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -148,8 +143,7 @@ class TestIterCorpusRows:
     def test_row_missing_required_field_is_skipped(self, tmp_path: Path):
         # Missing "mos" key — should be skipped
         content = (
-            '{"src":"a","width":640,"height":360}\n'
-            '{"src":"b","width":640,"height":360,"mos":3.0}\n'
+            '{"src":"a","width":640,"height":360}\n{"src":"b","width":640,"height":360,"mos":3.0}\n'
         )
         p = tmp_path / "corpus.jsonl"
         p.write_text(content, encoding="utf-8")
@@ -428,6 +422,6 @@ class TestCalibrateIntegration:
         valid = {"default", "aggressive", "very_aggressive"}
         for cls, recipe in payload["recipes"].items():
             if "saliency_intensity" in recipe:
-                assert (
-                    recipe["saliency_intensity"] in valid
-                ), f"{cls}.saliency_intensity={recipe['saliency_intensity']!r} not in {valid}"
+                assert recipe["saliency_intensity"] in valid, (
+                    f"{cls}.saliency_intensity={recipe['saliency_intensity']!r} not in {valid}"
+                )

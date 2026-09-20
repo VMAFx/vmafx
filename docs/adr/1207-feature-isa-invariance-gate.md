@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1207: A test gates every feature's score against the host instruction set
 
@@ -43,7 +42,7 @@ catch.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Public-API round trip under two cpumasks (chosen) | Tests the shipped code on both sides; no internal access; one file covers every feature | End-to-end, so it localises a failure to a feature rather than a kernel | — |
 | Un-`static` the scalar functions and have each SIMD test compare against them | Localises failures to the exact kernel | Widens the internal surface purely for tests, and each test still has to be remembered to update | Rejected — same maintenance hazard, larger blast radius |
 | `#include "ssimulacra2.c"` into the test TU | Reaches the statics without changing the shipped surface | Per-extractor, fragile against build-flag differences between the test TU and the real TU — which is itself a way to reintroduce the bug | Rejected |

@@ -31,11 +31,7 @@
 
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* Verify the function pointer types are correct by taking their address.
  * Each assignment must match the declared prototype exactly; a type mismatch
@@ -60,8 +56,8 @@ static char *test_symbol_prototypes(void)
     (void)fp_free;
     (void)fp_list;
 
-    mu_assert("vmaf_metal_import_state symbol is reachable", fp_import != NULL);
-    return NULL;
+    mu_assert("vmaf_metal_import_state symbol is reachable", fp_import != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 /* Verify IOSurface import sub-API symbols are reachable (ADR-0423). */
@@ -78,15 +74,13 @@ static char *test_iosurface_symbol_prototypes(void)
     (void)fp_wait;
     (void)fp_read;
 
-    mu_assert("vmaf_metal_picture_import symbol is reachable", fp_pic_import != NULL);
-    return NULL;
+    mu_assert("vmaf_metal_picture_import symbol is reachable", fp_pic_import != VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_symbol_prototypes);
     mu_run_test(test_iosurface_symbol_prototypes);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

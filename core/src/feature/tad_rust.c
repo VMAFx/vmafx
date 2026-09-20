@@ -12,6 +12,8 @@
  * into the VmafFeatureExtractor lifecycle callbacks.
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -22,7 +24,7 @@
 #include "log.h"
 #include "picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
@@ -64,8 +66,9 @@ static int tad_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, uns
     return vmafx_tad_init(&fex->priv, bpc);
 }
 
-static int tad_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                       VmafPicture *dis_pic, VmafPicture *dis_pic_90, unsigned index,
+static int tad_extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                       const VmafPicture *ref_pic_90, const VmafPicture *dis_pic,
+                       const VmafPicture *dis_pic_90, unsigned index,
                        VmafFeatureCollector *feature_collector)
 {
     /* TAD operates on the un-rotated luma plane only. */
@@ -94,8 +97,8 @@ static int tad_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, uns
     return -ENOSYS;
 }
 
-static int tad_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                       VmafPicture *dis_pic, VmafPicture *dis_pic_90, unsigned index,
+static int tad_extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                       const VmafPicture *dis_pic, const VmafPicture *dis_pic_90, unsigned index,
                        VmafFeatureCollector *feature_collector)
 {
     (void)fex;
@@ -123,14 +126,13 @@ static int tad_close(VmafFeatureExtractor *fex)
 static const char *const tad_provided_features[] = {
     "tad",
     "tad_sad",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 /* ---------------------------------------------------------------------------
  * Public extractor descriptor — registered in feature_extractor.c.
  * --------------------------------------------------------------------------- */
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_tad = {
     .name = "tad",
     .init = tad_init,
@@ -143,5 +145,3 @@ VmafFeatureExtractor vmaf_fex_tad = {
     .priv_size = 0, /* Rust allocates state internally; priv_size is unused. */
     .chars = {0},
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

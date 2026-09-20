@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0491: Add dedicated `docs/metrics/motion.md` reference page
 
 - **Status**: Accepted
@@ -31,7 +30,7 @@ backend coverage table for each variant.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Expand the inline `features.md` section | No new file, already partially exists | The inline section would grow unwieldy; no cross-linking possible from per-backend overview pages | Rejected |
 | One section per variant in separate files | Maximum granularity | Three tiny files vs one coherent page; the variants share many options | Rejected |
 

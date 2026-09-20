@@ -59,10 +59,10 @@ static char *test_predict_score_at_index(void)
 
     vmaf_model_destroy(model);
     vmaf_feature_collector_destroy(feature_collector);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-void set_meta(void *data, VmafMetadata *metadata)
+static void set_meta(void *data, const VmafMetadata *metadata)
 {
     if (!data)
         return;
@@ -78,7 +78,7 @@ static char *test_propagate_metadata(void)
 {
     int err;
 
-    VmafDictionary *dict = NULL;
+    VmafDictionary *dict = VMAF_NULLPTR;
     MetaStruct meta_data = {
         .metadata = &dict,
         .flags = 0,
@@ -112,7 +112,7 @@ static char *test_propagate_metadata(void)
         mu_assert("problem during vmaf_feature_collector_append", !err);
     }
 
-    VmafDictionaryEntry *e = vmaf_dictionary_get(&dict, "vmaf_0", 0);
+    const VmafDictionaryEntry *e = vmaf_dictionary_get(&dict, "vmaf_0", 0);
     mu_assert("error on propagaton metadata: propagated key not found!", e);
     mu_assert("error on propagaton metadata: propagated key wrong!", !strcmp(e->key, "vmaf_0"));
     mu_assert("error on propagaton metadata: propagated data wrong!",
@@ -120,7 +120,7 @@ static char *test_propagate_metadata(void)
 
     vmaf_feature_collector_destroy(feature_collector);
 
-    m.data = NULL;
+    m.data = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&feature_collector);
     mu_assert("problem during vmaf_feature_collector_init", !err);
 
@@ -134,7 +134,7 @@ static char *test_propagate_metadata(void)
 
     vmaf_feature_collector_destroy(feature_collector);
 
-    m.callback = NULL;
+    m.callback = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&feature_collector);
     mu_assert("problem during vmaf_feature_collector_init", !err);
 
@@ -152,7 +152,7 @@ static char *test_propagate_metadata(void)
     vmaf_dictionary_free(&dict);
 
     vmaf_model_destroy(model);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_find_linear_function_parameters(void)
@@ -218,7 +218,7 @@ static char *test_find_linear_function_parameters(void)
     mu_assert("returned a does not match", a == 2.5);
     mu_assert("returned b does not match", b == -15.0);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_piecewise_linear_mapping(void)
@@ -297,7 +297,7 @@ static char *test_piecewise_linear_mapping(void)
         mu_assert("returned y0 does not match y0_true", fabs(y0 - y0_true) < 1e-8);
     }
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Regression for fix/core-lifecycle-memory-audit:
@@ -325,7 +325,7 @@ static char *test_piecewise_linear_mapping_returns_neg_einval(void)
     err = piecewise_linear_mapping(0, decreasing, 2, &y);
     mu_assert("decreasing y must return -EINVAL (not +EINVAL)", err == -EINVAL);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -335,5 +335,5 @@ char *run_tests(void)
     mu_run_test(test_piecewise_linear_mapping);
     mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
     mu_run_test(test_propagate_metadata);
-    return NULL;
+    return VMAF_NULLPTR;
 }

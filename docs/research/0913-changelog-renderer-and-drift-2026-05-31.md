@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD038 MD060 -->
 # Research-0913 — CHANGELOG.md renderer splice bug + 23 k+ line drift audit
 
 - **Date**: 2026-05-31
@@ -72,11 +71,11 @@ growth per `--write` run.
 ## Quantitative audit
 
 | Metric | Pre-fix | Post-fix | Delta |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `CHANGELOG.md` lines | 59 757 | 15 030 | −44 727 |
-| `^## ` headers in CHANGELOG.md | 155 | 1 | −154 |
+| `^##` headers in CHANGELOG.md | 155 | 1 | −154 |
 | `### Section` headers post-legacy in CHANGELOG.md | 113 | 6 | −107 |
-| Fragments with leading `## ` | 84 | 0 | −84 |
+| Fragments with leading `##` | 84 | 0 | −84 |
 | Fragments with redundant `### Section` first-line header | 18 | 0 | −18 |
 | `changelog.d/<dir>/` outside known set | 2 (`perf/`, `performance/`) | 0 | −2 |
 | `--write` idempotency | broken (cycle-amplifies) | clean | — |
@@ -87,7 +86,7 @@ growth per `--write` run.
    - Boundary regex centralised in `BOUNDARY_REGEX='^## \\['` and
      plumbed through awk's `-v boundary=` so both passes share the
      same definition.
-   - `emit_fragment()` helper demotes leading `# ` / `## ` to
+   - `emit_fragment()` helper demotes leading `#` / `##` to
      `**bold**` pseudo-headers at render time — defense-in-depth even
      if a future fragment regresses.
    - `warn_unknown_subdirs()` emits a stderr WARNING for each
@@ -102,7 +101,7 @@ growth per `--write` run.
      (renderer emits `### Section` itself).
    - First-line `### Section` matching the parent directory: **deleted**
      (same reason; 18 cases).
-   - Remaining `## ` headers in fragment bodies: **demoted** to `### `
+   - Remaining `##` headers in fragment bodies: **demoted** to `###`
      so the source tree matches the splice contract without relying
      on render-time demotion.
 
@@ -148,7 +147,7 @@ diff <(cat CHANGELOG.md) <(bash scripts/release/concat-changelog-fragments.sh --
 
 ## Out of scope
 
-- Adding a `--lint` mode that *fails* on stray `## ` in fragment
+- Adding a `--lint` mode that *fails* on stray `##` in fragment
   bodies. Render-time demoter is enough; lint is incremental polish.
 - Restructuring the multi-section fragments (e.g.
   `changelog.d/added/0550-tiny-model-auto-resize.md` contains both

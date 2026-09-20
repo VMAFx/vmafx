@@ -23,9 +23,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-pd = pytest.importorskip("pandas")
+try:
+    import pandas as pd
+except ImportError:
+    pytest.skip("pandas is not installed", allow_module_level=True)
 
-from ai.data.feature_extractor import FULL_FEATURES  # noqa: E402
+from ai.data.feature_extractor import FULL_FEATURES
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_full_features.py"
@@ -57,6 +60,7 @@ def test_cache_path_carries_feature_count() -> None:
 def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch) -> None:
     """A cache whose stored feature_names no longer match FULL_FEATURES must be
     recomputed, not zipped (truncated) against the current FULL_FEATURES."""
+    pytest.importorskip("pyarrow")
     mod = _load_module()
     cache_dir = tmp_path / "cache"
     out = tmp_path / "full_features.parquet"

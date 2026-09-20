@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **docs**: `docs/ai/quantization.md` now states the int8 **wire format**
   explicitly. The page previously never mentioned QOperator and documented no
   format for any shipped model, so a reader could not tell what the fork emits,

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Second-Opinion Batch Materializer — Smoke Run
 
 Demonstrates `ai/scripts/batch_materialize_second_opinion_features.py` against
@@ -30,7 +29,7 @@ second-opinion batch materialize: tables=2 input_rows=5 output_rows=5 failed_tab
 ## What to inspect
 
 | Output path | What to check |
-|---|---|
+| --- | --- |
 | `/tmp/vmafx-smoke-second-opinion/smoke_table_a.jsonl` | Has `second_opinion_fork_nr_score`, `_status=ok`, `_runtime_ms` columns |
 | `/tmp/vmafx-smoke-second-opinion/smoke_table_a.audit.json` | Has `run_provenance.schema == "ai-run-provenance-v1"` |
 | `/tmp/vmafx-smoke-second-opinion/smoke.report.json` | `schema == "second-opinion-materializer-batch-v1"`, `summary.tables == 2`, `summary.output_rows == 5` |
@@ -39,7 +38,7 @@ second-opinion batch materialize: tables=2 input_rows=5 output_rows=5 failed_tab
 ## Fixture data
 
 | File | Description |
-|---|---|
+| --- | --- |
 | `fixtures/features_a.jsonl` | 3-row feature table keyed on `video_id` |
 | `fixtures/features_b.jsonl` | 2-row feature table keyed on `video_id` |
 | `fixtures/scores_fork_nr_a.jsonl` | 3 matching `fork-nr` score rows for table A |

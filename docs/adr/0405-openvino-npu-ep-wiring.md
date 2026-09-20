@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0405: Wire OpenVINO NPU execution provider into the tiny-AI dispatch layer
 
 - **Status**: Accepted
@@ -38,7 +37,7 @@ by power-state transitions) and is opt-in only.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add `--tiny-device=npu` only (no `openvino-cpu`/`openvino-gpu`) | Minimal grammar growth | Hides which EP is bound; ambiguous on systems with multiple NPU vendors (future Qualcomm / AMD NPUs) | Rejected — Research-0031 §4 explicitly proposes the `openvino-*` namespace for disambiguation |
 | Reuse `VMAF_DNN_DEVICE_OPENVINO` and add an NPU sub-flag | One enum value | Forces a runtime-flag check inside the dispatch switch; harder to test EP selection per device type in isolation | Rejected |
 | Extend the AUTO chain to include NPU after CUDA/OV-GPU | Zero-config NPU on AI-PC laptops | NPU power-state latency floor would surprise users running short-clip inference; the int8-first precision policy doesn't match the fork's fp32 default | Rejected — opt-in only, per Research-0031 §4 |

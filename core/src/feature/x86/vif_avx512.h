@@ -27,10 +27,10 @@ void vif_subsample_rd_8_avx512(const VifBuffer *buf, unsigned w, unsigned h);
 
 void vif_subsample_rd_16_avx512(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc);
 
-void vif_statistic_8_avx512(struct VifPublicState *s, float *num, float *den, unsigned w,
+void vif_statistic_8_avx512(const struct VifPublicState *s, float *num, float *den, unsigned w,
                             unsigned h);
 
-void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, unsigned w,
+void vif_statistic_16_avx512(const struct VifPublicState *s, float *num, float *den, unsigned w,
                              unsigned h, int bpc, int scale);
 
 #endif /* X86_AVX512_VIF_H_ */

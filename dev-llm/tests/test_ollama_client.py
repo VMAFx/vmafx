@@ -24,7 +24,7 @@ class _FakeResponse:
     def __enter__(self):
         return self
 
-    def __exit__(self, *args):  # noqa: ANN001
+    def __exit__(self, *args):
         return False
 
 
@@ -39,9 +39,11 @@ def test_generate_returns_response() -> None:
 def test_generate_raises_on_bad_payload() -> None:
     client = OllamaClient()
     payload = json.dumps({"no_response_field": True}).encode()
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(payload)):
-        with pytest.raises(OllamaError):
-            client.generate("qwen", "x")
+    with (
+        patch("urllib.request.urlopen", return_value=_FakeResponse(payload)),
+        pytest.raises(OllamaError),
+    ):
+        client.generate("qwen", "x")
 
 
 def test_available_false_on_error() -> None:

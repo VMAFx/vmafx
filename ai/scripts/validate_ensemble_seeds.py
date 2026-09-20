@@ -45,12 +45,7 @@ except ModuleNotFoundError:
 # Hoist the gate evaluator from scripts/ci/ so we share a single
 # source of truth for the threshold constants. ADR-0303 forbids
 # divergent copies of the gate logic.
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-_SCRIPT_PATH = _SCRIPT_PATHS.script_path
-_REPO_ROOT = _SCRIPT_PATHS.repo_root
-sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
-
-from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]  (sys.path edit above)
+from ensemble_prod_gate import (  # type: ignore[import-not-found]  (sys.path edit above)
     DEFAULT_ENSEMBLE_SIZE,
     SHIP_GATE_MEAN_PLCC,
     SHIP_GATE_PLCC_SPREAD_MAX,
@@ -58,8 +53,13 @@ from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]
     load_seed_jsons,
 )
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+_SCRIPT_PATH = _SCRIPT_PATHS.script_path
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
+sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -214,13 +214,9 @@ def _build_verdict(
 def _failure_aspects(report: dict) -> list[str]:
     aspects: list[str] = []
     if not report["mean_plcc_pass"]:
-        aspects.append(
-            f"mean_plcc {report['mean_plcc']:.4f} < " f"{report['mean_plcc_threshold']:.4f}"
-        )
+        aspects.append(f"mean_plcc {report['mean_plcc']:.4f} < {report['mean_plcc_threshold']:.4f}")
     if not report["plcc_spread_pass"]:
-        aspects.append(
-            f"plcc_spread {report['plcc_spread']:.4f} > " f"{report['plcc_spread_max']:.4f}"
-        )
+        aspects.append(f"plcc_spread {report['plcc_spread']:.4f} > {report['plcc_spread_max']:.4f}")
     if not report["per_seed_pass"]:
         aspects.append(f"failing seeds {report['failing_seeds']}")
     return aspects or ["unknown"]
@@ -280,8 +276,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.loso_dir.exists() or not args.loso_dir.is_dir():
         print(
-            f"[validate-ensemble] error: loso_dir not found or not a "
-            f"directory: {args.loso_dir}",
+            f"[validate-ensemble] error: loso_dir not found or not a directory: {args.loso_dir}",
             file=sys.stderr,
         )
         return 2

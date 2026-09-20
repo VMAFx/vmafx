@@ -16,7 +16,10 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 #include <stddef.h>
 
@@ -34,7 +37,7 @@
 
 /* Default minimum value allowed for the feature */
 #define DEFAULT_VIF_MIN_VAL (0.0)
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define VIF_MAX(x, y) ((x) > (y) ? (x) : (y))
 
 /* Number of float-plane-sized scratch buffers required by compute_vif. */
 #define VIF_SCRATCH_BUF_CNT 10
@@ -223,8 +226,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    s->scaled_w = (int)(w * s->vif_prescale + 0.5);
-    s->scaled_h = (int)(h * s->vif_prescale + 0.5);
+    s->scaled_w = (size_t)lround((double)w * s->vif_prescale);
+    s->scaled_h = (size_t)lround((double)h * s->vif_prescale);
 
     if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -292,8 +295,9 @@ fail:
     return -ENOMEM;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     VifState *s = fex->priv;
@@ -317,7 +321,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                       s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
                       s->scaled_float_stride / sizeof(float));
 
-    double score, score_num, score_den;
+    double score;
+    double score_num;
+    double score_den;
     double scores[8];
     err =
         compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
@@ -338,15 +344,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale1_score",
-        MAX(scores[2] / scores[3], s->vif_scale1_min_val), index);
+        VIF_MAX(scores[2] / scores[3], s->vif_scale1_min_val), index);
 
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale2_score",
-        MAX(scores[4] / scores[5], s->vif_scale2_min_val), index);
+        VIF_MAX(scores[4] / scores[5], s->vif_scale2_min_val), index);
 
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale3_score",
-        MAX(scores[6] / scores[7], s->vif_scale3_min_val), index);
+        VIF_MAX(scores[6] / scores[7], s->vif_scale3_min_val), index);
 
     if (!s->debug)
         return err;
@@ -427,7 +433,7 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_den_scale2",
                                           "vif_num_scale3",
                                           "vif_den_scale3",
-                                          NULL};
+                                          VMAF_NULLPTR};
 
 VmafFeatureExtractor vmaf_fex_float_vif = {
     .name = "float_vif",

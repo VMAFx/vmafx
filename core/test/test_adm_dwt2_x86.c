@@ -40,11 +40,7 @@
 #include "feature/x86/adm_avx512.h"
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* One axis of dwt2_src_indices_filt() in integer_adm.c, which is static there.
  * `len` is the source extent, `len_half` the subsampled extent. */
@@ -176,17 +172,17 @@ static void fixture_free(Dwt2Fixture *f)
     for (int k = 0; k < 4; ++k) {
         free(f->iy[k]);
         free(f->ix[k]);
-        f->iy[k] = NULL;
-        f->ix[k] = NULL;
+        f->iy[k] = VMAF_NULLPTR;
+        f->ix[k] = VMAF_NULLPTR;
     }
     for (int k = 0; k < 8; ++k) {
         free(f->bands[k]);
-        f->bands[k] = NULL;
+        f->bands[k] = VMAF_NULLPTR;
     }
     free(f->buf.tmp_ref);
-    f->buf.tmp_ref = NULL;
+    f->buf.tmp_ref = VMAF_NULLPTR;
     free(f->src);
-    f->src = NULL;
+    f->src = VMAF_NULLPTR;
 }
 
 /* Allocates every buffer, or frees whatever was allocated and returns -1. */
@@ -204,22 +200,22 @@ static int fixture_alloc(Dwt2Fixture *f, int w, int h)
 
     int ok = 1;
     f->src = malloc((size_t)w * (size_t)h);
-    ok = ok && (f->src != NULL);
+    ok = ok && (f->src != VMAF_NULLPTR);
     for (int k = 0; k < 4; ++k) {
         f->iy[k] = calloc((size_t)f->h_half + 64, sizeof(int));
         f->ix[k] = calloc((size_t)f->w_half + 64, sizeof(int));
-        ok = ok && (f->iy[k] != NULL) && (f->ix[k] != NULL);
+        ok = ok && (f->iy[k] != VMAF_NULLPTR) && (f->ix[k] != VMAF_NULLPTR);
         f->buf.ind_y[k] = f->iy[k];
         f->buf.ind_x[k] = f->ix[k];
     }
     for (int k = 0; k < 8; ++k) {
         f->bands[k] = calloc(f->band_elems + DWT2_SLACK, sizeof(int16_t));
-        ok = ok && (f->bands[k] != NULL);
+        ok = ok && (f->bands[k] != VMAF_NULLPTR);
         if (ok && k >= 4)
             simd_test_guard_fill(f->bands[k], (f->band_elems + DWT2_SLACK) * sizeof(int16_t));
     }
     f->buf.tmp_ref = calloc(f->tmp_elems, sizeof(int16_t));
-    ok = ok && (f->buf.tmp_ref != NULL);
+    ok = ok && (f->buf.tmp_ref != VMAF_NULLPTR);
 
     if (!ok) {
         fixture_free(f);
@@ -305,7 +301,7 @@ static char *dwt2_geometry_matches_scalar(const char *label, adm_dwt2_8_fn kerne
         (void)fprintf(stderr, "  %s %dx%d\n", label, w, h);
     mu_assert("the x86 ADM DWT2 kernel diverges from the scalar reference", matched);
     SIMD_GUARD_ASSERT_UNTOUCHED(touched, "the x86 ADM DWT2 kernel wrote outside its band");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Widths chosen so that (w + 1) / 2 % N == 1 for the vector widths the AVX2 and
@@ -331,17 +327,17 @@ static char *dwt2_kernel_matches_scalar(const char *label, adm_dwt2_8_fn kernel)
                 return msg;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* ARCH_X86 */
 
 static char *test_adm_dwt2_8_avx2_matches_scalar(void)
 {
 #if !ARCH_X86
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     if (!(vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2))
-        return NULL;
+        return VMAF_NULLPTR;
     return dwt2_kernel_matches_scalar("AVX2", adm_dwt2_8_avx2);
 #endif
 }
@@ -349,10 +345,10 @@ static char *test_adm_dwt2_8_avx2_matches_scalar(void)
 static char *test_adm_dwt2_8_avx512_matches_scalar(void)
 {
 #if !(ARCH_X86 && HAVE_AVX512)
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     if (!(vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512))
-        return NULL;
+        return VMAF_NULLPTR;
     return dwt2_kernel_matches_scalar("AVX512", adm_dwt2_8_avx512);
 #endif
 }
@@ -372,7 +368,5 @@ char *run_tests(void)
     (void)test_adm_dwt2_8_avx2_matches_scalar;
     (void)test_adm_dwt2_8_avx512_matches_scalar;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

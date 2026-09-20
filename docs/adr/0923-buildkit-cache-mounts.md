@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD029 MD060 -->
 # ADR-0923: Adopt BuildKit cache mounts and ccache across the container build matrix
 
 - **Status**: Accepted
@@ -26,7 +25,7 @@ Every `RUN apt-get install` invocation in the tree currently:
 
 Every meson / ninja / cmake / `go build` invocation similarly:
 
-3. Recompiles every translation unit from scratch with no compiler
+1. Recompiles every translation unit from scratch with no compiler
    cache; the CUDA / icx / hipcc paths are the most expensive
    (10–30 minutes for cold rebuilds on CI hardware).
 
@@ -68,7 +67,7 @@ up with sccache mounts when the Rust builder stages land.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | BuildKit cache mounts + ccache (chosen) | Native to current BuildKit; no extra infrastructure; cache lives at the daemon level; 3-5x rebuild speedup | Requires BuildKit (already the default on this repo's CI); needs `syntax=docker/dockerfile:1.7` header | Best fit for the existing build pipeline |
 | Registry-side build cache (`--cache-from`/`--cache-to`) | Shared across CI runners | Slower than local cache mount; requires registry round-trips; orthogonal to compiler-level caching | Useful complement (could land later); doesn't cover the apt or ccache layer separately |
 | Distroless multi-stage with prebuilt base images | Smaller final images | Doesn't address the build-time issue, only image size; orthogonal to this ADR | Not the problem being solved |

@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-0312](0312-ffmpeg-patches-vmaf-tune-integration.md) | FFmpeg-patch series for vmaf-tune integration (qpfile + libvmaf_tune + pass-autotune) | Accepted | tooling, ffmpeg, vmaf-tune, patch-series, scaffold |

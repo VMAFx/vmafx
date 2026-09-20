@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0317: Path-filter Docker + FFmpeg-integration on doc/Python-only PRs
 
 - **Status**: Accepted
@@ -54,7 +53,7 @@ unaffected.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Path-filter both workflows (chosen) | Eliminates the flake on the exact PR class where it's noise (doc/Python-only); preserves coverage on diffs that actually matter; matches the existing `docs.yml` precedent on this fork; small diff. | Path-filter rules can drift from build inputs over time and silently skip a workflow that should have fired; needs maintenance whenever the build picks up a new top-level input. | Chosen — the maintenance cost is bounded (one-line additions) and the precedent already exists for `docs.yml`. |
 | Add `continue-on-error: true` to FFmpeg-SYCL (Docker already has it) | One-line change; keeps coverage on every push. | Doesn't fix the root cause of runner-time waste; jobs still consume 10–15 min per push and still display red, just without blocking merge — exactly the state the merge train was already in and that motivated this PR. | Rejected — the user's brief explicitly flagged the runner-time burn, not just the merge-gate impact. |
 | Quarantine to nightly (move both to a scheduled `cron:` workflow) | Zero per-push cost; still catches regressions within 24 h. | Loses the per-PR signal — a Dockerfile or ffmpeg-patches change wouldn't be caught until the nightly run, after merge; the bug would land on master with no pre-merge gate. | Rejected — per-PR coverage on the inputs that *do* exercise these jobs is exactly what we want; we just don't want the firing on inputs that don't. |

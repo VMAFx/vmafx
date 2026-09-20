@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 -->
 # Research digest: Go static-analysis audit (2026-05-30)
 
 ## Scope
@@ -15,7 +14,9 @@ beyond the default `go vet`:
   (CWE-mapped rules, e.g. G118 / G122 / G304).
 
 Companion to PRs #330 (cmd test coverage), #347 (pkg test coverage), and
-#341 (Go dependency audit). This sweep deliberately avoids those files
+
+\#341 (Go dependency audit). This sweep deliberately avoids those files
+
 and avoids any `go.mod` / `go.sum` change.
 
 ## Findings (pre-fix)

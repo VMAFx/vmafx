@@ -1,8 +1,8 @@
 from __future__ import absolute_import
 
 import unittest
-from test.testutil import set_default_576_324_videos_for_testing
 
+from test.testutil import set_default_576_324_videos_for_testing
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
 from vmaf.core.quality_runner import VmafexecQualityRunner

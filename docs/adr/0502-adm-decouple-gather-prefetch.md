@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0502: ADM decouple gather prefetch (Approach B)
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ pure access-strategy change.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Approach A — vpermd + sequential load** | Eliminates gather latency entirely; best throughput | Requires monotone-increasing indices within a row | DWT coefficients are arbitrary int16; monotone ordering does not hold |
 | **Approach B — software prefetch (chosen)** | Hides L2/L3 miss latency; preserves gather semantics; zero risk to bit-exactness | Adds 48 scalar prefetch instructions per iteration; guard branch needed for row-end | Only option given non-monotone indices |
 | **No change** | Zero risk | 2.31 % of wall time left on table | Does not meet the T4 perf-win bar |

@@ -10,26 +10,19 @@ exports a real ONNX file. CPU-only, sub-second runtime.
 from __future__ import annotations
 
 import json
-import sys
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
+try:
+    import numpy as np
+    import onnxruntime
+except ImportError:
+    pytest.skip("NumPy/ONNX Runtime dependencies are not installed", allow_module_level=True)
 
-# pandas / numpy are training-only deps; skip if unavailable.
-pd = pytest.importorskip("pandas")
-np = pytest.importorskip("numpy")
-torch = pytest.importorskip("torch")
-onnx = pytest.importorskip("onnx")
-onnxruntime = pytest.importorskip("onnxruntime")
-
-from conftest import requires_pytorch_lightning  # noqa: E402
-
-requires_pytorch_lightning()
-
-from train_fr_regressor_v3 import (  # noqa: E402
+from conftest import requires_pytorch_lightning
+from train_fr_regressor_v3 import (
     CANONICAL_6,
     CODEC_BLOCK_DIM,
     ENCODER_VOCAB_V3,
@@ -41,6 +34,10 @@ from train_fr_regressor_v3 import (  # noqa: E402
     fit_full_corpus,
     run_loso,
 )
+
+if any(find_spec(name) is None for name in ("onnx", "pandas", "torch")):
+    pytest.skip("PyTorch/ONNX/pandas dependencies are not installed", allow_module_level=True)
+requires_pytorch_lightning()
 
 
 def _write_synthetic_corpus(path: Path) -> None:

@@ -47,11 +47,7 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #define PARITY_TOL 1e-4
 
@@ -59,11 +55,11 @@
  * frame into `scores`. Returns 0, or the error of the first failing call. */
 static int run_ssim(VmafContext *vmaf, const char *extractor, double *scores)
 {
-    int err = vmaf_use_feature(vmaf, extractor, NULL);
+    int err = vmaf_use_feature(vmaf, extractor, VMAF_NULLPTR);
     if (!err)
         err = hip_fixture_feed_frames(vmaf);
     if (!err)
-        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+        err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     for (unsigned f = 0u; f < N_FRAMES && !err; f++)
         err = vmaf_feature_score_at_index(vmaf, "ssim", &scores[f], f);
     return err;
@@ -72,14 +68,14 @@ static int run_ssim(VmafContext *vmaf, const char *extractor, double *scores)
 static char *run_cpu_ssim(double *scores)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
     err = run_ssim(vmaf, "ssim", scores);
     mu_assert("CPU: ssim extraction failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Sets *ran to false, with the test marked skipped, when there is no HIP
@@ -87,16 +83,16 @@ static char *run_cpu_ssim(double *scores)
 static char *run_hip_ssim(double *scores, int *ran)
 {
     *ran = 0;
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     VmafHipConfiguration hip_cfg = {.device_index = -1};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    if (err != 0 || hip_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
         mu_skipped = 1;
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
@@ -114,15 +110,15 @@ static char *run_hip_ssim(double *scores, int *ran)
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_hip_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_ssim_hip");
-    mu_assert("integer_ssim_hip extractor must be registered", fex != NULL);
+    mu_assert("integer_ssim_hip extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("integer_ssim_hip name matches", !strcmp(fex->name, "integer_ssim_hip"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* With the HIP backend active, model-driven dispatch resolves the `ssim`
@@ -132,12 +128,12 @@ static char *test_ssim_hip_dispatch(void)
 {
     VmafFeatureExtractor *fex =
         vmaf_get_feature_extractor_by_feature_name("ssim", VMAF_FEATURE_EXTRACTOR_HIP);
-    mu_assert("ssim must resolve to an extractor under the HIP flag", fex != NULL);
+    mu_assert("ssim must resolve to an extractor under the HIP flag", fex != VMAF_NULLPTR);
     mu_assert("ssim under the HIP flag must resolve to integer_ssim_hip",
               !strcmp(fex->name, "integer_ssim_hip"));
     mu_assert("integer_ssim_hip must carry VMAF_FEATURE_EXTRACTOR_HIP",
               (fex->flags & VMAF_FEATURE_EXTRACTOR_HIP) != 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ssim_cpu_hip_parity(void)
@@ -163,7 +159,7 @@ static char *test_ssim_cpu_hip_parity(void)
     (void)fprintf(stderr, "[%ux%u %u bpc, %u frames, max delta %.3e] ", FIXTURE_W, FIXTURE_H,
                   FIXTURE_BPC, N_FRAMES, worst);
     mu_assert("ssim CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", worst <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -171,7 +167,5 @@ char *run_tests(void)
     mu_run_test(test_ssim_hip_registered);
     mu_run_test(test_ssim_hip_dispatch);
     mu_run_test(test_ssim_cpu_hip_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,6 +1,6 @@
-dataset_name = "example"
-
 from vmaf.config import VmafConfig
+
+dataset_name = "example"
 
 ref_videos = [
     {

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0922: Coverage ratchet sizing + per-PR delta gate design
 
 - **Date**: 2026-05-31
@@ -76,7 +75,7 @@ trips?
 ## Findings
 
 | Dimension | Old | New | Justification |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `OVERALL_MIN` | 37 | 60 | +23pp ratchet; below current measured (~63 %) so no immediate trip; midpoint toward `principles.md §3` 70 % goal. |
 | `CRITICAL_MIN` | 85 | 90 | +5pp ratchet; non-exempt files all currently report ≥86.4 %. |
 | `ort_backend.c` per-file | 78 | 83 | +5pp; current measured 79.3 % → needs ~3pp investment, which is one fault-injection test. |
@@ -92,7 +91,7 @@ defaults are calibrated against measured gcov variance.
 ## Risks and mitigations
 
 | Risk | Likelihood | Mitigation |
-|---|---|---|
+| --- | --- | --- |
 | Delta gate fires on variance alone | Low | 0.5pp tolerance is 2–3× measured variance; ADR-0922 self-supersedes if false positives appear repeatedly. |
 | Base-coverage build adds CI latency | Certain (~4 minutes) | Lean CPU-only build, no ORT install, no Python suite — only enough to populate per-file gcov data. PR-only (no impact on master pushes). |
 | Grace-window reviewer misapplication | Possible | The window is short (30 days), the exemption is loud (PR title timestamp vs. 2026-05-31 is trivial to check), and it self-disables on 2026-06-30. |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Research: how ROCm 10 is distributed, and what it changed under `/opt/rocm`
 
 **Date**: 2026-09-07

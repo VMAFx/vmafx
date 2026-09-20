@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # Netflix benchmark baselines — how to reproduce them
 

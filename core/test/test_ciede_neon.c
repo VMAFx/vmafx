@@ -63,11 +63,7 @@
 
 #include "feature/arm64/ciede_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* Widths chosen to straddle every plausible vector stride (4, 8, 16) and to
  * include the pathological small cases where no vector iteration runs at all. */
@@ -159,13 +155,13 @@ static int guarded_row_alloc(GuardedRow *g, size_t readable, long page)
 {
     DWORD old_protect = 0;
     g->map_len = (size_t)page * 2u;
-    g->map = VirtualAlloc(NULL, g->map_len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    g->map = VirtualAlloc(VMAF_NULLPTR, g->map_len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!g->map) {
         return -1;
     }
     if (!VirtualProtect(g->map + page, (size_t)page, PAGE_NOACCESS, &old_protect)) {
         (void)VirtualFree(g->map, 0, MEM_RELEASE);
-        g->map = NULL;
+        g->map = VMAF_NULLPTR;
         return -1;
     }
     g->row = g->map + (size_t)page - readable;
@@ -177,7 +173,7 @@ static void guarded_row_free(GuardedRow *g)
     if (g->map) {
         (void)VirtualFree(g->map, 0, MEM_RELEASE);
     }
-    g->map = NULL;
+    g->map = VMAF_NULLPTR;
 }
 
 static int fault_trap_install(FaultTrap *trap)
@@ -233,14 +229,14 @@ static long probe_page_size(void)
 static int guarded_row_alloc(GuardedRow *g, size_t readable, long page)
 {
     g->map_len = (size_t)page * 2u;
-    g->map = mmap(NULL, g->map_len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    g->map = mmap(VMAF_NULLPTR, g->map_len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (g->map == MAP_FAILED) {
-        g->map = NULL;
+        g->map = VMAF_NULLPTR;
         return -1;
     }
     if (mprotect(g->map + page, (size_t)page, PROT_NONE) != 0) {
         (void)munmap(g->map, g->map_len);
-        g->map = NULL;
+        g->map = VMAF_NULLPTR;
         return -1;
     }
     g->row = g->map + (size_t)page - readable;
@@ -252,7 +248,7 @@ static void guarded_row_free(GuardedRow *g)
     if (g->map) {
         (void)munmap(g->map, g->map_len);
     }
-    g->map = NULL;
+    g->map = VMAF_NULLPTR;
 }
 
 static int fault_trap_install(FaultTrap *trap)
@@ -266,7 +262,7 @@ static int fault_trap_install(FaultTrap *trap)
         return -1;
     }
     if (sigaction(SIGBUS, &sa, &trap->old_bus) != 0) {
-        (void)sigaction(SIGSEGV, &trap->old_segv, NULL);
+        (void)sigaction(SIGSEGV, &trap->old_segv, VMAF_NULLPTR);
         return -1;
     }
     return 0;
@@ -274,8 +270,8 @@ static int fault_trap_install(FaultTrap *trap)
 
 static void fault_trap_restore(FaultTrap *trap)
 {
-    (void)sigaction(SIGSEGV, &trap->old_segv, NULL);
-    (void)sigaction(SIGBUS, &trap->old_bus, NULL);
+    (void)sigaction(SIGSEGV, &trap->old_segv, VMAF_NULLPTR);
+    (void)sigaction(SIGBUS, &trap->old_bus, VMAF_NULLPTR);
 }
 
 /* Returns 1 if the kernel ran to completion, 0 if it faulted on the guard.
@@ -302,7 +298,7 @@ static int run_kernel_guarded(const GuardedRow g[3], float *const out[3], int w,
 static int probe_slack(int w, int elem_size, int slack, long page, float *const out[3])
 {
     const size_t readable = ((size_t)w + (size_t)slack) * (size_t)elem_size;
-    GuardedRow g[3] = {{NULL, 0, NULL}, {NULL, 0, NULL}, {NULL, 0, NULL}};
+    GuardedRow g[3] = {{VMAF_NULLPTR, 0, VMAF_NULLPTR}, {VMAF_NULLPTR, 0, VMAF_NULLPTR}, {VMAF_NULLPTR, 0, VMAF_NULLPTR}};
     uint32_t seed = 0xC1EDE000u ^ (uint32_t)(w * 7 + slack);
     int mapped = 0;
     int survived = -1;
@@ -340,7 +336,7 @@ static void probe_outputs_free(float *out[3])
 {
     for (int k = 0; k < 3; k++) {
         free(out[k]);
-        out[k] = NULL;
+        out[k] = VMAF_NULLPTR;
     }
 }
 
@@ -350,7 +346,7 @@ static void probe_outputs_free(float *out[3])
 static int probe_overread(int w, int elem_size, int max_slack)
 {
     const long page = probe_page_size();
-    float *out[3] = {NULL, NULL, NULL};
+    float *out[3] = {VMAF_NULLPTR, VMAF_NULLPTR, VMAF_NULLPTR};
     FaultTrap trap;
     int result = -1;
 
@@ -392,9 +388,9 @@ static void parity_buffers_free(ParityBuffers *b)
         free(b->in[k]);
         free(b->ref[k]);
         free(b->simd[k]);
-        b->in[k] = NULL;
-        b->ref[k] = NULL;
-        b->simd[k] = NULL;
+        b->in[k] = VMAF_NULLPTR;
+        b->ref[k] = VMAF_NULLPTR;
+        b->simd[k] = VMAF_NULLPTR;
     }
 }
 
@@ -501,7 +497,7 @@ static int check_parity_16(int w, uint32_t seed)
 static char *test_ciede_preprocess_8_neon_parity(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int total = 0;
     for (int i = 0; i < K_NUM_WIDTHS; i++) {
@@ -510,14 +506,14 @@ static char *test_ciede_preprocess_8_neon_parity(void)
         total += m;
     }
     mu_assert("ciede_preprocess_8_neon output diverges from the scalar reference", total == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
 static char *test_ciede_preprocess_16_neon_parity(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int total = 0;
     for (int i = 0; i < K_NUM_WIDTHS; i++) {
@@ -526,7 +522,7 @@ static char *test_ciede_preprocess_16_neon_parity(void)
         total += m;
     }
     mu_assert("ciede_preprocess_16_neon output diverges from the scalar reference", total == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -539,7 +535,7 @@ static char *test_ciede_preprocess_16_neon_parity(void)
 static char *test_ciede_preprocess_8_neon_read_bounds(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int worst = 0;
     for (int i = 0; i < K_NUM_WIDTHS; i++) {
@@ -559,14 +555,14 @@ static char *test_ciede_preprocess_8_neon_read_bounds(void)
         }
     }
     mu_assert("ciede_preprocess_8_neon reads past the end of the plane row", worst == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
 static char *test_ciede_preprocess_16_neon_read_bounds(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int worst = 0;
     for (int i = 0; i < K_NUM_WIDTHS; i++) {
@@ -586,7 +582,7 @@ static char *test_ciede_preprocess_16_neon_read_bounds(void)
         }
     }
     mu_assert("ciede_preprocess_16_neon reads past the end of the plane row", worst == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -604,7 +600,5 @@ char *run_tests(void)
     (void)test_ciede_preprocess_8_neon_read_bounds;
     (void)test_ciede_preprocess_16_neon_read_bounds;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

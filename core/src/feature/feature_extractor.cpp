@@ -31,237 +31,6 @@
 #include <nvtx3/nvToolsExt.h>
 #endif
 
-/* All vmaf_fex_* symbols are defined in C-compiled TUs (.c files).
- * Wrap every extern declaration in extern "C" so MSVC (and strictly-
- * conforming C++ compilers) emit unmangled C linkage names rather than
- * C++-mangled ones, preventing LNK2019 / LNK2001 on Windows SYCL builds.
- * GCC/Clang accept bare C++ extern for POD globals, but MSVC does not. */
-extern "C" {
-
-#if VMAF_FLOAT_FEATURES
-extern VmafFeatureExtractor vmaf_fex_float_psnr;
-extern VmafFeatureExtractor vmaf_fex_float_adm;
-extern VmafFeatureExtractor vmaf_fex_float_motion;
-extern VmafFeatureExtractor vmaf_fex_float_moment;
-extern VmafFeatureExtractor vmaf_fex_float_vif;
-extern VmafFeatureExtractor vmaf_fex_speed_chroma;
-extern VmafFeatureExtractor vmaf_fex_speed_temporal;
-#endif
-extern VmafFeatureExtractor vmaf_fex_float_ssim;
-extern VmafFeatureExtractor vmaf_fex_float_ms_ssim;
-extern VmafFeatureExtractor vmaf_fex_ssim;
-extern VmafFeatureExtractor vmaf_fex_ssimulacra2;
-/* Y-FUNQUE+ wavelet-domain ATOM features (atoms-only, no fused SVR score) —
- * ADR-1114. Emits y_funque_plus_ms_ssim / _dlm / _mad. CPU-only, temporal. */
-extern VmafFeatureExtractor vmaf_fex_y_funque_plus;
-extern VmafFeatureExtractor vmaf_fex_niqe;
-/* BRISQUE no-reference, opinion-aware spatial IQA (ADR-1115). Scalar CPU
- * extractor; bundled LIVE-trained EPSILON_SVR model embedded as
- * brisque_model.h, numeric kernels in brisque_math.h. */
-extern VmafFeatureExtractor vmaf_fex_brisque;
-extern VmafFeatureExtractor vmaf_fex_ciede;
-extern VmafFeatureExtractor vmaf_fex_delta_e_itp;
-/* PU21 HDR perceptual adapter (PU-PSNR + PU-SSIM, PQ input only).
- * CPU-only additive fork feature; see docs/adr/1111-pu21-hdr-metric.md. */
-extern VmafFeatureExtractor vmaf_fex_pu21;
-extern VmafFeatureExtractor vmaf_fex_psnr;
-extern VmafFeatureExtractor vmaf_fex_psnr_hvs;
-extern VmafFeatureExtractor vmaf_fex_integer_adm;
-extern VmafFeatureExtractor vmaf_fex_integer_motion;
-/* vmaf_fex_integer_motion_v2 is the pipelined motion extractor (ADR-0337);
- * it lives in feature/integer_motion_v2.c and is distinct from the v1
- * extractor in feature/integer_motion.c. GPU backend variants
- * (_cuda, _sycl, _hip, _metal) each have their own registration below. */
-extern VmafFeatureExtractor vmaf_fex_integer_motion_v2;
-extern VmafFeatureExtractor vmaf_fex_integer_vif;
-extern VmafFeatureExtractor vmaf_fex_cambi;
-#if HAVE_CUDA
-extern VmafFeatureExtractor vmaf_fex_integer_adm_cuda;
-extern VmafFeatureExtractor vmaf_fex_integer_vif_cuda;
-extern VmafFeatureExtractor vmaf_fex_integer_motion_cuda;
-extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda;
-extern VmafFeatureExtractor vmaf_fex_psnr_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_moment_cuda;
-extern VmafFeatureExtractor vmaf_fex_ciede_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_ssim_cuda;
-/* Real integer_ssim CUDA extractor — bit-exact with CPU vmaf_fex_ssim
- * (ADR-0564). Provided by cuda/ssim_cuda.c. Distinct from
- * vmaf_fex_float_ssim_cuda which uses floating-point Gaussian weights. */
-extern VmafFeatureExtractor vmaf_fex_integer_ssim_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda;
-extern VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_psnr_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_motion_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_vif_cuda;
-extern VmafFeatureExtractor vmaf_fex_ssimulacra2_cuda;
-extern VmafFeatureExtractor vmaf_fex_float_adm_cuda;
-/* T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid). */
-extern VmafFeatureExtractor vmaf_fex_cambi_cuda;
-/* ADR-0965: speed_{chroma,temporal} CUDA twins — real GPU kernels (means,
- * cov, indterm, backward-sub, score); host-side eigendecomp + QR via
- * speed_internal.c (ADR-0964). Orphaned from this compiled registry when
- * PR #875 split feature_extractor.c → .cpp; the externs + array entries
- * stayed in the now-dead .c. Restored here so
- * vmaf_get_feature_extractor_by_name("speed_chroma_cuda") resolves. */
-extern VmafFeatureExtractor vmaf_fex_speed_chroma_cuda;
-extern VmafFeatureExtractor vmaf_fex_speed_temporal_cuda;
-#endif
-#if HAVE_SYCL
-extern VmafFeatureExtractor vmaf_fex_integer_vif_sycl;
-extern VmafFeatureExtractor vmaf_fex_integer_adm_sycl;
-extern VmafFeatureExtractor vmaf_fex_integer_motion_sycl;
-extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl;
-extern VmafFeatureExtractor vmaf_fex_psnr_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_moment_sycl;
-extern VmafFeatureExtractor vmaf_fex_ciede_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_ssim_sycl;
-/* Real integer_ssim SYCL extractor (ADR-0564). int64 moments + float32
- * SSIM formula (fp64-free per ADR-0220); places=4-5 vs CPU. */
-extern VmafFeatureExtractor vmaf_fex_integer_ssim_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl;
-extern VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_psnr_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_motion_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_vif_sycl;
-extern VmafFeatureExtractor vmaf_fex_ssimulacra2_sycl;
-extern VmafFeatureExtractor vmaf_fex_float_adm_sycl;
-/* T3-15 / ADR-0371: cambi SYCL twin (Strategy II hybrid, closes CUDA→SYCL
- * parity gap). */
-extern VmafFeatureExtractor vmaf_fex_cambi_sycl;
-/* ADR-0964: speed_{chroma,temporal} SYCL twins. Same hybrid GPU/CPU split
- * as the CUDA twins (AdaptiveCpp vs DPC++ kernel adaptations in
- * feature/sycl/speed_chroma_sycl.cpp). Restored after the PR #875
- * .c→.cpp split orphaned them. */
-extern VmafFeatureExtractor vmaf_fex_speed_chroma_sycl;
-extern VmafFeatureExtractor vmaf_fex_speed_temporal_sycl;
-#endif
-#if HAVE_HIP
-/* HIP first-consumer kernel — T7-10 / ADR-0241. With `enable_hipcc=true`
- * the kernel runs on device; without it submit() returns -ENOSYS. */
-extern VmafFeatureExtractor vmaf_fex_psnr_hip;
-/* HIP second-consumer kernel — T7-10b / ADR-0254. First real kernel:
- * float_psnr_hip. With `enable_hipcc=true` the HSACO is embedded and
- * the kernel runs on device; without it init() returns -ENOSYS. */
-extern VmafFeatureExtractor vmaf_fex_float_psnr_hip;
-/* HIP third-consumer kernel — T7-10b follow-up / ADR-0257. With
- * `enable_hipcc=true` the kernel runs on device; without it submit()
- * returns -ENOSYS. Mirrors `vmaf_fex_ciede_cuda` field-for-field. */
-extern VmafFeatureExtractor vmaf_fex_ciede_hip;
-/* HIP fourth-consumer kernel — T7-10b follow-up / ADR-0258. With
- * `enable_hipcc=true` the kernel runs on device; without it init()
- * returns -ENOSYS. Emits four `float_moment_*` features. */
-extern VmafFeatureExtractor vmaf_fex_float_moment_hip;
-/* HIP sixth consumer — ADR-0267. With `enable_hipcc=true` the kernel
- * runs on device; without it submit() returns -ENOSYS. */
-extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
-/* HIP integer_motion consumer — ADR-0468 scaffold, registration
- * landed in ADR-0523 (PR #1283), promoted to real kernel with
- * `VMAF_FEATURE_EXTRACTOR_HIP` set + selectable dispatch by
- * ADR-0530. Carries `VMAF_FEATURE_EXTRACTOR_HIP` so
- * `compute_fex_flags()` selects it when a HIP state is imported
- * (otherwise the CPU twin wins by tie-break order). Emits
- * VMAF_integer_feature_motion_score, _motion2_score, and
- * _motion3_score (mirrors `vmaf_fex_integer_motion_cuda`). Without
- * `enable_hipcc=true`, submit() returns -ENOSYS. */
-extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;
-/* HIP seventh-consumer kernel — T7-10b follow-up / ADR-0273. With
- * `enable_hipcc=true` the kernel runs on device; without it submit()
- * returns -ENOSYS. Mirrors the CUDA twin
- * `feature/cuda/float_motion_cuda.c` and pins the temporal-extractor
- * shape with a raw-pixel cache + blurred-frame ping-pong slot pair. */
-extern VmafFeatureExtractor vmaf_fex_float_motion_hip;
-/* HIP eighth-consumer kernel — T7-10b follow-up / ADR-0274. With
- * `enable_hipcc=true` the kernel runs on device; without it init()
- * returns -ENOSYS. Mirrors the CUDA twin
- * `feature/cuda/integer_ssim_cuda.c` and pins the two-dispatch +
- * five intermediate float buffers shape. v1: scale=1 only. */
-extern VmafFeatureExtractor vmaf_fex_float_ssim_hip;
-/* HIP CAMBI banding-detector — port of integer_cambi_cuda.c (ADR-0360).
- * Strategy II hybrid: three GPU kernels + CPU residual via cambi_internal.h.
- * With `enable_hipcc=true` the HSACO is loaded and the kernels run on device;
- * without it init() returns -ENOSYS. Bit-exact at places=4 w.r.t. the CPU
- * and CUDA twins. */
-extern VmafFeatureExtractor vmaf_fex_cambi_hip;
-/* HIP eleventh-consumer kernel — integer VIF HIP port. Eight kernels
- * (four vertical + four horizontal, one per scale) in
- * feature/hip/integer_vif/vif_statistics.hip. Mirrors
- * `vmaf_fex_integer_vif_cuda` field-for-field. With `enable_hipcc=true`
- * the HSACO blob is loaded and the kernels run on device; without it
- * init() returns -ENOSYS. Emits the same four VMAF_integer_feature_vif_scaleN
- * features as the CPU and CUDA twins. */
-extern VmafFeatureExtractor vmaf_fex_integer_vif_hip;
-/* HIP twelfth-consumer kernel — T7-10b batch-2 / ADR-0468. Mirrors
- * `feature/cuda/float_adm_cuda.c` — 4-stage DWT+CSF+CM pipeline,
- * 16 launches per frame, host double-precision reduction. With
- * `enable_hipcc=true` the HSACO runs on device; without it submit()
- * returns -ENOSYS. */
-extern VmafFeatureExtractor vmaf_fex_float_adm_hip;
-/* ADR-0533: full HIP-extractor registration sweep. Each of the symbols
- * below already lived in libvmaf/src/feature/hip/ mirroring its
- * CUDA twin, and their HSACO blobs are compiled into the HIP runtime
- * archive. With `enable_hipcc=true` the kernels run on device;
- * without it init() or submit() returns -ENOSYS. */
-extern VmafFeatureExtractor vmaf_fex_float_vif_hip;
-extern VmafFeatureExtractor vmaf_fex_integer_adm_hip;
-extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;
-extern VmafFeatureExtractor vmaf_fex_psnr_hvs_hip;
-extern VmafFeatureExtractor vmaf_fex_integer_ssim_hip;
-extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
-/* ADR-0964 / ADR-0852: speed_{chroma,temporal} HIP twins. Same hybrid
- * GPU/CPU split as the CUDA twins; wavefront-64 adaptations, host-side
- * eigendecomp + QR via feature/speed_internal.c. Real on-device kernels
- * under enable_hipcc=true; otherwise init() returns -ENOSYS.
- * Restored after the PR #875 .c→.cpp split orphaned them. */
-extern VmafFeatureExtractor vmaf_fex_speed_chroma_hip;
-extern VmafFeatureExtractor vmaf_fex_speed_temporal_hip;
-#endif
-#if HAVE_METAL
-/* Metal feature extractors — T8-1c through T8-1j / ADR-0421, plus
- * T8-2b (float_ms_ssim) per ADR-0490. All consumers below are fully
- * implemented as Obj-C++ .mm dispatch files in feature/metal/;
- * kernels live under feature/metal/, compiled via xcrun into the
- * __TEXT,__metallib section of libvmaf. ADR-0545 retired the dead
- * scaffold sources (integer_adm_metal, integer_cambi_metal, ...) and
- * the orphan extern for integer_adm_metal that referenced them. */
-extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_psnr_metal;
-extern VmafFeatureExtractor vmaf_fex_float_ssim_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_motion_metal;
-extern VmafFeatureExtractor vmaf_fex_float_psnr_metal;
-extern VmafFeatureExtractor vmaf_fex_float_motion_metal;
-extern VmafFeatureExtractor vmaf_fex_float_moment_metal;
-extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_metal;
-/* Rounds 3-4 Metal kernels (ADR-0959 closeout). Orphaned by the PR #875
- * .c -> .cpp registry split (the entries were added to the dead .c twin
- * that PR #1004 deleted); restored here so the shipped .mm TUs are
- * reachable via vmaf_get_feature_extractor_by_name(). */
-extern VmafFeatureExtractor vmaf_fex_integer_ssim_metal;
-extern VmafFeatureExtractor vmaf_fex_float_vif_metal;
-extern VmafFeatureExtractor vmaf_fex_float_adm_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_vif_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_adm_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_ciede_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_psnr_hvs_metal;
-extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
-extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
-#endif
-/* SpEED-QA NR metric scaffold — ADR-0253. */
-extern VmafFeatureExtractor vmaf_fex_speed_qa;
-extern VmafFeatureExtractor vmaf_fex_lpips;
-extern VmafFeatureExtractor vmaf_fex_dists_sq;
-extern VmafFeatureExtractor vmaf_fex_fastdvdnet_pre;
-extern VmafFeatureExtractor vmaf_fex_mobilesal;
-extern VmafFeatureExtractor vmaf_fex_transnet_v2;
-extern VmafFeatureExtractor vmaf_fex_null;
-
-#if HAVE_RUST_TAD
-/* ADR-0707: TAD (Temporal Absolute Difference) — Rust/cbindgen pilot extractor.
- * Only registered when the Rust staticlib is linked
- * (enable_rust_features=true). */
-extern VmafFeatureExtractor vmaf_fex_tad;
-#endif
-
-} /* extern "C" */
 
 /* The registry has internal linkage: it is only ever walked by the lookup
  * helpers in this TU.  An anonymous namespace (rather than `static`) is the
@@ -652,7 +421,7 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     if (f->fex->options && f->fex->priv) {
         err = vmaf_fex_ctx_parse_options(f);
         if (err) {
-            /* parse_options failure: tear down all allocations and NULL the
+            /* parse_options failure: tear down all allocations and nullptr the
              * out-parameter so callers cannot dereference a freed pointer. */
             free(f->fex->priv);
             goto free_x;
@@ -672,7 +441,7 @@ free_x:
     free(x);
 free_f:
     free(f);
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
+    /* nullptr the caller's handle so it cannot be dereferenced after a failed
      * create call. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
     *fex_ctx = nullptr;
     return err ? err : -ENOMEM;
@@ -753,9 +522,9 @@ int check_pic_buf_type(const VmafFeatureExtractor *fex, const VmafPicturePrivate
 
 } /* anonymous namespace */
 
-int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
-                                           VmafPicture *ref_90, VmafPicture *dist,
-                                           VmafPicture *dist_90, unsigned pic_index,
+int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, const VmafPicture *ref,
+                                           const VmafPicture *ref_90, const VmafPicture *dist,
+                                           const VmafPicture *dist_90, unsigned pic_index,
                                            VmafFeatureCollector *vfc)
 {
     if (!fex_ctx)
@@ -809,9 +578,9 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
     return err;
 }
 
-int vmaf_feature_extractor_context_submit(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
-                                          VmafPicture *ref_90, VmafPicture *dist,
-                                          VmafPicture *dist_90, unsigned pic_index)
+int vmaf_feature_extractor_context_submit(VmafFeatureExtractorContext *fex_ctx, const VmafPicture *ref,
+                                          const VmafPicture *ref_90, const VmafPicture *dist,
+                                          const VmafPicture *dist_90, unsigned pic_index)
 {
     if (!fex_ctx)
         return -EINVAL;
@@ -903,8 +672,8 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
          * vmaf_feature_extractor_context_extract() for PREV_REF extractors. */
         if (fex_ctx->fex->prev_ref.ref)
             vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-        /* free(NULL) is well-defined per C99 §7.20.3.2 / POSIX free(3);
-     * the NULL guard is redundant. CodeQL cpp/guarded-free. */
+        /* free(nullptr) is well-defined per C99 §7.20.3.2 / POSIX free(3);
+     * the nullptr guard is redundant. CodeQL cpp/guarded-free. */
         free(fex_ctx->fex->priv);
         free(fex_ctx->fex);
     }
@@ -950,7 +719,7 @@ free_p:
     free(p);
     *pool = nullptr; /* prevent dangling pointer — mirrors feature_extractor.c:797 pattern */
 fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
+    /* nullptr the caller's handle so it cannot be dereferenced after a failed
      * pool create. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
     *pool = nullptr;
     return -ENOMEM;
@@ -959,11 +728,32 @@ fail:
 namespace
 {
 
+int default_condition_init(pthread_cond_t *condition)
+{
+#ifdef _WIN32
+    pthread_condattr_t attributes = nullptr;
+    return pthread_cond_init(condition, &attributes);
+#else
+    pthread_condattr_t attributes;
+    const int attributes_init_err = pthread_condattr_init(&attributes);
+    if (attributes_init_err)
+        return attributes_init_err;
+
+    const int condition_init_err = pthread_cond_init(condition, &attributes);
+    const int attributes_destroy_err = pthread_condattr_destroy(&attributes);
+    if (!condition_init_err && attributes_destroy_err) {
+        const int condition_destroy_err = pthread_cond_destroy(condition);
+        return condition_destroy_err ? condition_destroy_err : attributes_destroy_err;
+    }
+    return condition_init_err ? condition_init_err : attributes_destroy_err;
+#endif
+}
+
 /* Look up the pool entry already registered for (fex->name, opts_dict).
  * Returns nullptr when that pair has not been registered yet. */
 struct fex_list_entry *find_fex_list_entry(VmafFeatureExtractorContextPool *pool,
                                            const VmafFeatureExtractor *fex,
-                                           VmafDictionary *opts_dict)
+                                           const VmafDictionary *opts_dict)
 {
     for (unsigned i = 0; i < pool->cnt; i++) {
         struct fex_list_entry *entry = pool->fex_list[i];
@@ -990,7 +780,10 @@ int grow_fex_list(VmafFeatureExtractorContextPool *pool)
      * assert() is compiled out under NDEBUG exactly where that matters. */
     if (pool->capacity == 0)
         return -EINVAL;
-    if (pool->capacity > UINT_MAX / 2 || pool->capacity > SIZE_MAX / sizeof(*pool->fex_list) / 2)
+    const size_t allocation_limit = SIZE_MAX / sizeof(*pool->fex_list) / 2;
+    const size_t capacity_limit = allocation_limit < UINT_MAX / 2U ? allocation_limit :
+                                                                          UINT_MAX / 2U;
+    if (pool->capacity > capacity_limit)
         return -ENOMEM;
     const unsigned capacity = pool->capacity * 2;
     struct fex_list_entry **fex_list = static_cast<struct fex_list_entry **>(
@@ -1009,6 +802,9 @@ int grow_fex_list(VmafFeatureExtractorContextPool *pool)
 int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, unsigned n_threads,
                        VmafDictionary *opts_dict)
 {
+    if (!slot || !fex || !n_threads)
+        return -EINVAL;
+
     new (slot) fex_list_entry(); /* placement-new value-init (ADR-0772) */
 
     slot->fex = fex;
@@ -1019,9 +815,12 @@ int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, u
      * functions, which are correct in that translation unit. */
     slot->capacity.store(static_cast<int>(n_threads), std::memory_order_relaxed);
     slot->in_use.store(0, std::memory_order_relaxed);
-    if (pthread_cond_init(&(slot->full), nullptr) != 0)
+    if (default_condition_init(&(slot->full)) != 0)
         return -ENOMEM;
-    if (n_threads > SIZE_MAX / sizeof(slot->ctx_list[0])) {
+    const size_t context_limit_raw = SIZE_MAX / sizeof(slot->ctx_list[0]);
+    const unsigned context_limit =
+        context_limit_raw > UINT_MAX ? UINT_MAX : static_cast<unsigned>(context_limit_raw);
+    if (n_threads > context_limit) {
         pthread_cond_destroy(&(slot->full));
         return -ENOMEM;
     }
@@ -1187,7 +986,7 @@ unlock:
 }
 
 int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
-                              VmafFeatureExtractorContext *fex_ctx)
+                              const VmafFeatureExtractorContext *fex_ctx)
 {
     if (!pool)
         return -EINVAL;

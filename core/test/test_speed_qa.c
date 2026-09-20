@@ -15,8 +15,7 @@
  * 5. Two-frame 0->255 step: frame-1 score (spatial+temporal) > frame-0 score.
  */
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain NULL for Windows C
- * support and upstream-compatible C test conventions. */
+
 
 #include <math.h>
 #include <stddef.h>
@@ -64,48 +63,48 @@ static int alloc_noise_pic(VmafPicture *pic)
 static char *test_speed_qa_is_registered(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_qa");
-    mu_assert("speed_qa must be registered by name", fex != NULL);
+    mu_assert("speed_qa must be registered by name", fex != VMAF_NULLPTR);
     mu_assert("name must match", !strcmp(fex->name, "speed_qa"));
-    mu_assert("init must be non-NULL", fex->init != NULL);
-    mu_assert("extract must be non-NULL", fex->extract != NULL);
-    mu_assert("close must be non-NULL", fex->close != NULL);
+    mu_assert("init must be non-NULL", fex->init != VMAF_NULLPTR);
+    mu_assert("extract must be non-NULL", fex->extract != VMAF_NULLPTR);
+    mu_assert("close must be non-NULL", fex->close != VMAF_NULLPTR);
     mu_assert("priv_size must be non-zero", fex->priv_size > 0u);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_qa_provided_features_well_formed(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_qa");
-    mu_assert("speed_qa must resolve", fex != NULL);
-    mu_assert("provided_features must be non-NULL", fex->provided_features != NULL);
-    mu_assert("provided_features[0] must be non-NULL", fex->provided_features[0] != NULL);
+    mu_assert("speed_qa must resolve", fex != VMAF_NULLPTR);
+    mu_assert("provided_features must be non-NULL", fex->provided_features != VMAF_NULLPTR);
+    mu_assert("provided_features[0] must be non-NULL", fex->provided_features[0] != VMAF_NULLPTR);
     const VmafFeatureExtractor *via_feat =
         vmaf_get_feature_extractor_by_feature_name(fex->provided_features[0], 0);
-    mu_assert("feature-name lookup must round-trip", via_feat != NULL);
+    mu_assert("feature-name lookup must round-trip", via_feat != VMAF_NULLPTR);
     mu_assert("round-trip resolves to speed_qa", !strcmp(via_feat->name, "speed_qa"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run n_frames of the same ref/dist pair; return score at target_index. */
-static char *run_n(VmafPicture *ref, VmafPicture *dist, unsigned n_frames, unsigned target_index,
-                   double *out_score)
+static char *run_n(const VmafPicture *ref, const VmafPicture *dist, unsigned n_frames,
+                   unsigned target_index, double *out_score)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_qa");
-    mu_assert("speed_qa registered", fex != NULL);
+    mu_assert("speed_qa registered", fex != VMAF_NULLPTR);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create ok", err == 0 && ctx != NULL);
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, VMAF_NULLPTR);
+    mu_assert("context_create ok", err == 0 && ctx != VMAF_NULLPTR);
 
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV400P, 8, SQA_W, SQA_H);
     mu_assert("context_init ok", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init ok", err == 0 && fc != NULL);
+    mu_assert("collector_init ok", err == 0 && fc != VMAF_NULLPTR);
 
     for (unsigned i = 0; i < n_frames; i++) {
-        err = vmaf_feature_extractor_context_extract(ctx, ref, NULL, dist, NULL, i, fc);
+        err = vmaf_feature_extractor_context_extract(ctx, ref, VMAF_NULLPTR, dist, VMAF_NULLPTR, i, fc);
         mu_assert("extract ok", err == 0);
     }
 
@@ -115,7 +114,7 @@ static char *run_n(VmafPicture *ref, VmafPicture *dist, unsigned n_frames, unsig
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_qa_flat_input_is_finite(void)
@@ -137,7 +136,7 @@ static char *test_speed_qa_flat_input_is_finite(void)
 
     mu_assert("flat score must be finite", isfinite(score));
     mu_assert("flat score must not be NaN", !isnan(score));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_qa_noise_higher_than_flat(void)
@@ -177,7 +176,7 @@ static char *test_speed_qa_noise_higher_than_flat(void)
         return fail;
 
     mu_assert("noise entropy must exceed flat entropy", score_noise > score_flat);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *alloc_temporal_pictures(VmafPicture *ref0, VmafPicture *dist0, VmafPicture *ref1,
@@ -191,22 +190,22 @@ static char *alloc_temporal_pictures(VmafPicture *ref0, VmafPicture *dist0, Vmaf
     mu_assert("alloc ref1", err == 0);
     err = alloc_grey_pic(dist1, 255);
     mu_assert("alloc dist1", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *init_temporal_extractor(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_qa");
-    mu_assert("speed_qa registered", fex != NULL);
+    mu_assert("speed_qa registered", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create ok", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV400P, 8, SQA_W, SQA_H);
     mu_assert("context_init ok", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init ok", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_qa_temporal_component_positive(void)
@@ -219,16 +218,16 @@ static char *test_speed_qa_temporal_component_positive(void)
     if (fail)
         return fail;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     fail = init_temporal_extractor(&ctx, &fc);
     if (fail)
         return fail;
 
     int err;
-    err = vmaf_feature_extractor_context_extract(ctx, &ref0, NULL, &dist0, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref0, VMAF_NULLPTR, &dist0, VMAF_NULLPTR, 0, fc);
     mu_assert("extract frame 0 ok", err == 0);
-    err = vmaf_feature_extractor_context_extract(ctx, &ref1, NULL, &dist1, NULL, 1, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref1, VMAF_NULLPTR, &dist1, VMAF_NULLPTR, 1, fc);
     mu_assert("extract frame 1 ok", err == 0);
 
     double score0 = 0.0;
@@ -250,7 +249,7 @@ static char *test_speed_qa_temporal_component_positive(void)
     /* Frame 1 has a maximum temporal diff (0->255 per pixel); its combined
      * score (spatial + temporal) must exceed the frame-0 spatial-only score. */
     mu_assert("frame-1 score > frame-0 (temporal component positive)", score1 > score0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -260,7 +259,5 @@ char *run_tests(void)
     mu_run_test(test_speed_qa_flat_input_is_finite);
     mu_run_test(test_speed_qa_noise_higher_than_flat);
     mu_run_test(test_speed_qa_temporal_component_positive);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

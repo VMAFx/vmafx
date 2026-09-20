@@ -169,11 +169,10 @@ static const VmafOption options_float_psnr_sycl[] = {
                 "(a zero-noise pair still reports psnr_max)",
         .offset = offsetof(FloatPsnrStateSycl, uncapped),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {nullptr}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -240,8 +239,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
@@ -343,4 +342,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_psnr_sycl = {
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

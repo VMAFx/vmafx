@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `vmaf` — command-line reference
 
 `vmaf` is the main CLI binary shipped with this fork. It takes a reference /
@@ -6,16 +5,16 @@ distorted video pair, runs one or more VMAF models (plus any additional feature
 extractors), and writes per-frame + pooled scores to an XML / JSON / CSV /
 subtitle log.
 
-> **Scope.** This page is the canonical flag reference for the `vmaf` binary
-> in the VMAFx fork. It supersedes the abbreviated help string in
-> [`core/tools/README.md`](../../core/tools/README.md) — the code's
-> `--help` is authoritative for the *set* of flags at any given commit; this
-> page adds defaults, interactions, and runnable examples per
+> **Scope.** This page is the canonical flag reference for the `vmaf` binary in
+> the VMAFx fork. It supersedes the abbreviated help string in
+> [`core/tools/README.md`](../../core/tools/README.md) — the code's `--help` is
+> authoritative for the _set_ of flags at any given commit; this page adds
+> defaults, interactions, and runnable examples per
 > [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
 >
-> For the `vmaf_bench` micro-benchmark binary, see [bench.md](bench.md).
-> For FFmpeg integration (the `libvmaf` filter), see [ffmpeg.md](ffmpeg.md).
-> For the Python bindings, see [python.md](python.md).
+> For the `vmaf_bench` micro-benchmark binary, see [bench.md](bench.md). For
+> FFmpeg integration (the `libvmaf` filter), see [ffmpeg.md](ffmpeg.md). For the
+> Python bindings, see [python.md](python.md).
 
 ## Quick start
 
@@ -32,9 +31,9 @@ vmaf \
   --output scores.xml
 ```
 
-Default behaviour when no `--model` is passed: the built-in
-`vmaf_v1.0.16_3d0h` model is loaded automatically. Default output format when
-no `--xml|--json|--csv|--sub` is passed: XML.
+Default behaviour when no `--model` is passed: the built-in `vmaf_v1.0.16_3d0h`
+model is loaded automatically. Default output format when no
+`--xml|--json|--csv|--sub` is passed: XML.
 
 > **The default changed in this fork.** It was `vmaf_v0.6.1`, and upstream
 > Netflix still defaults to that, so the same command produces different numbers
@@ -45,36 +44,36 @@ no `--xml|--json|--csv|--sub` is passed: XML.
 
 ## Required input flags
 
-| Flag | Short | Argument | Required | Notes |
-| --- | --- | --- | --- | --- |
-| `--reference` | `-r` | path | **yes** | `.y4m` or `.yuv` path. |
-| `--distorted` | `-d` | path | **yes** | `.y4m` or `.yuv` path. |
-| `--width` | `-w` | unsigned | **yes for `.yuv`** | Ignored for `.y4m` (embedded). |
-| `--height` | `-h` | unsigned | **yes for `.yuv`** | Ignored for `.y4m`. |
-| `--pixel_format` | `-p` | `420` \| `422` \| `444` | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content. |
-| `--bitdepth` | `-b` | `8` \| `10` \| `12` \| `16` | **yes for `.yuv`** | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). |
+| Flag             | Short | Argument                    | Required           | Notes                                                                                          |
+| ---------------- | ----- | --------------------------- | ------------------ | ---------------------------------------------------------------------------------------------- |
+| `--reference`    | `-r`  | path                        | **yes**            | `.y4m` or `.yuv` path.                                                                         |
+| `--distorted`    | `-d`  | path                        | **yes**            | `.y4m` or `.yuv` path.                                                                         |
+| `--width`        | `-w`  | unsigned                    | **yes for `.yuv`** | Ignored for `.y4m` (embedded).                                                                 |
+| `--height`       | `-h`  | unsigned                    | **yes for `.yuv`** | Ignored for `.y4m`.                                                                            |
+| `--pixel_format` | `-p`  | `420` \| `422` \| `444`     | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content.                                    |
+| `--bitdepth`     | `-b`  | `8` \| `10` \| `12` \| `16` | **yes for `.yuv`** | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). |
 
-If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied
-the input is treated as raw YUV and **all four** become mandatory.
+If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied the
+input is treated as raw YUV and **all four** become mandatory.
 
 ## Option-string grammar
 
 `--model` and `--feature` both take a **colon-delimited list of `key=value`
-pairs**. `:` separates pairs, the *first* `=` in a pair separates the key from
+pairs**. `:` separates pairs, the _first_ `=` in a pair separates the key from
 the value, and `.` separates the feature name from the option name in a model
 feature overload (`--model version=...:adm.adm_enhn_gain_limit=1.2`).
 
 Everything after that first `=` belongs to the value, so a path may contain
 further `=` characters without being cut short. To put one of the three
-delimiters — or a literal backslash — *inside* a key or a value, escape it with
+delimiters — or a literal backslash — _inside_ a key or a value, escape it with
 a backslash:
 
-| You want | Write |
-| --- | --- |
-| `:` inside a value | `\:` |
-| `=` inside a key or value | `\=` |
-| `.` inside an overload's feature/option name | `\.` |
-| a literal `\` | `\\` |
+| You want                                     | Write |
+| -------------------------------------------- | ----- |
+| `:` inside a value                           | `\:`  |
+| `=` inside a key or value                    | `\=`  |
+| `.` inside an overload's feature/option name | `\.`  |
+| a literal `\`                                | `\\`  |
 
 Any other backslash is data and is passed through unchanged, so Windows paths
 need no escaping in the common case:
@@ -89,16 +88,16 @@ A `:` that spells a Windows drive letter — a single ASCII letter at the start 
 a key or a value, followed by `:` and then `\` or `/` — is treated as data, not
 as a pair separator. Two caveats follow from the table above:
 
-- A UNC prefix (`\\server\share`) *does* start with an escapable `\\`, so it must
-  be written `\\\\server\share` or with forward slashes (`//server/share`).
+- A UNC prefix (`\\server\share`) _does_ start with an escapable `\\`, so it
+  must be written `\\\\server\share` or with forward slashes (`//server/share`).
 - Quote the whole option string in your shell (single quotes above), otherwise
   the shell eats the backslashes before `vmaf` ever sees them.
 
 The rules are identical for `--model`, `--feature` and the `vmafx` alias. Before
 [ADR-1190](../adr/1190-cli-option-string-escape-grammar.md) there was no escape
-mechanism at all: `path=C:\models\m.json` was rejected with `bad option string
-"\models\m.json"`, and `path=/a/dir=eq/m.json` was silently truncated to
-`/a/dir`.
+mechanism at all: `path=C:\models\m.json` was rejected with
+`bad option string "\models\m.json"`, and `path=/a/dir=eq/m.json` was silently
+truncated to `/a/dir`.
 
 ## Models
 
@@ -116,31 +115,31 @@ The `--model / -m` flag takes a colon-delimited key/value string (see
 
 JSON model files may contain at most **512 simultaneously nested arrays or
 objects**, including the outermost container. A 513th level causes model loading
-to fail; the internal parser records `maximum depth of nesting reached` (the
-CLI may report only the enclosing model-load failure).
-This implements the existing parser resource limit; it does not limit the number
-of features or array elements at one level. Flatten unnecessarily nested custom
-model data instead of increasing its nesting depth.
+to fail; the internal parser records `maximum depth of nesting reached` (the CLI
+may report only the enclosing model-load failure). This implements the existing
+parser resource limit; it does not limit the number of features or array
+elements at one level. Flatten unnecessarily nested custom model data instead of
+increasing its nesting depth.
 
 Built-in model versions (compiled into `libvmaf` via `-Dbuilt_in_models=true`,
 default `true`):
 
-| Version | Purpose |
-| --- | --- |
-| `vmaf_v1.0.16_3d0h` | **Default.** v1.0.16 standard 1080p model, 3H viewing distance. |
-| `vmaf_v1.0.16_1d5h_2160` | v1.0.16 4K model, 2160p at 1.5H. Used by the fork's 4K resolution ladder. |
-| `vmaf_v1.0.16_5d0h` | v1.0.16 phone model (1080p at 5H). |
-| `vmaf_v1.0.16_3d0h_2160` | v1.0.16 consumer 4K (2160p at 3H); operates on a [0, 110] range. |
-| `vmaf_v0.6.1` | Previous default, and still upstream's. 1080p training set, classic release. |
-| `vmaf_v0.6.1neg` | Negative-gain (NEG) — non-enhancing; recommended for encoder A/B where one encoder may artificially sharpen. There is no NEG counterpart to any v1.0.16 model, so asking for NEG also selects the v0.6.1 generation. |
-| `vmaf_b_v0.6.3` | Banding-aware variant (used with CAMBI). |
-| `vmaf_4k_v0.6.1` | 4K training set. |
-| `vmaf_4k_v0.6.1neg` | 4K + NEG. |
+| Version                  | Purpose                                                                                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vmaf_v1.0.16_3d0h`      | **Default.** v1.0.16 standard 1080p model, 3H viewing distance.                                                                                                                                                      |
+| `vmaf_v1.0.16_1d5h_2160` | v1.0.16 4K model, 2160p at 1.5H. Used by the fork's 4K resolution ladder.                                                                                                                                            |
+| `vmaf_v1.0.16_5d0h`      | v1.0.16 phone model (1080p at 5H).                                                                                                                                                                                   |
+| `vmaf_v1.0.16_3d0h_2160` | v1.0.16 consumer 4K (2160p at 3H); operates on a [0, 110] range.                                                                                                                                                     |
+| `vmaf_v0.6.1`            | Previous default, and still upstream's. 1080p training set, classic release.                                                                                                                                         |
+| `vmaf_v0.6.1neg`         | Negative-gain (NEG) — non-enhancing; recommended for encoder A/B where one encoder may artificially sharpen. There is no NEG counterpart to any v1.0.16 model, so asking for NEG also selects the v0.6.1 generation. |
+| `vmaf_b_v0.6.3`          | Banding-aware variant (used with CAMBI).                                                                                                                                                                             |
+| `vmaf_4k_v0.6.1`         | 4K training set.                                                                                                                                                                                                     |
+| `vmaf_4k_v0.6.1neg`      | 4K + NEG.                                                                                                                                                                                                            |
 
 Float-precision variants (`vmaf_float_v0.6.1`, `vmaf_float_v0.6.1neg`,
 `vmaf_float_b_v0.6.3`, `vmaf_float_4k_v0.6.1`) are also resolvable but are
-legacy — prefer the integer versions for performance, the float versions
-only for bit-exact comparison with older reports.
+legacy — prefer the integer versions for performance, the float versions only
+for bit-exact comparison with older reports.
 
 `--model` can be passed multiple times to run several models in one pass; each
 model must have a unique `name=` (or the CLI errors out). Example running VMAF +
@@ -183,26 +182,27 @@ binary, so it needs no extra arguments; `model_path` overrides it with an
 on-disk libsvm model (and is required only for builds with `built_in_models`
 disabled). See [../metrics/brisque.md](../metrics/brisque.md).
 
-See [../metrics/features.md](../metrics/features.md) for the full list of feature
-identifiers and per-feature options.
+See [../metrics/features.md](../metrics/features.md) for the full list of
+feature identifiers and per-feature options.
 
-Option validation is strict: specifying an unknown option key or a typo
-(e.g., `--feature adm=adm_csf_moed=2`) causes libvmaf to reject the configuration
-immediately with `libvmaf ERROR feature extractor '<name>': unknown option '<key>'`
-and exit non-zero ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
+Option validation is strict: specifying an unknown option key or a typo (e.g.,
+`--feature adm=adm_csf_moed=2`) causes libvmaf to reject the configuration
+immediately with
+`libvmaf ERROR feature extractor '<name>': unknown option '<key>'` and exit
+non-zero ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 
 ## Output
 
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--output` / `-o <path>` | stdout line + no file | Writes the per-frame + pooled log to `<path>`. |
-| `--xml` | **default** | XML report (upstream-compatible). |
-| `--json` | | JSON report. |
-| `--csv` | | One row per frame. |
-| `--sub` | | SubRip subtitle format — useful for overlaying scores during playback. |
+| Flag                     | Default               | Notes                                                                  |
+| ------------------------ | --------------------- | ---------------------------------------------------------------------- |
+| `--output` / `-o <path>` | stdout line + no file | Writes the per-frame + pooled log to `<path>`.                         |
+| `--xml`                  | **default**           | XML report (upstream-compatible).                                      |
+| `--json`                 |                       | JSON report.                                                           |
+| `--csv`                  |                       | One row per frame.                                                     |
+| `--sub`                  |                       | SubRip subtitle format — useful for overlaying scores during playback. |
 
-Stderr always carries a short progress line plus the final pooled-mean VMAF score,
-regardless of `--output`.
+Stderr always carries a short progress line plus the final pooled-mean VMAF
+score, regardless of `--output`.
 
 ### Score precision (fork-added)
 
@@ -214,51 +214,51 @@ regardless of `--output`.
 
 The fork's default is `%.6f` (see
 [ADR-0119](../adr/0119-cli-precision-default-revert.md), which supersedes
-[ADR-0006](../adr/0006-cli-precision-17g-default.md)), matching upstream
-Netflix output byte-for-byte so the CPU golden gate passes without explicit
-flags. Pass `--precision=max` whenever you need IEEE-754 round-trip lossless
-output (cross-backend numeric diff, archival reports, any consumer that
-re-parses scores into doubles and compares them). Affects XML, JSON, CSV,
-SUB, and stderr consistently.
+[ADR-0006](../adr/0006-cli-precision-17g-default.md)), matching upstream Netflix
+output byte-for-byte so the CPU golden gate passes without explicit flags. Pass
+`--precision=max` whenever you need IEEE-754 round-trip lossless output
+(cross-backend numeric diff, archival reports, any consumer that re-parses
+scores into doubles and compares them). Affects XML, JSON, CSV, SUB, and stderr
+consistently.
 
 See [precision.md](precision.md) for the full table of when to pick each mode.
 
 ## Backend selection
 
 Build-time: each backend is opt-in via a meson flag. At **runtime**, backend
-selection is per-invocation through flags on `vmaf` — there is **no** environment
-variable that overrides it.
+selection is per-invocation through flags on `vmaf` — there is **no**
+environment variable that overrides it.
 
-| Flag | Default | Effect |
-| --- | --- | --- |
-| `--no_cuda` | off | Forbid CUDA dispatch even if the CUDA backend is built in. |
-| `--no_sycl` | off | Forbid SYCL dispatch even if the SYCL backend is built in. |
-| `--sycl_device <N>` | auto (first GPU) | Pick SYCL device by ordinal from the oneAPI device list. |
-| `--no_hip` | off | Forbid HIP/ROCm dispatch even if the HIP backend is built in. |
-| `--hip_device <N>` | disabled (opt-in) | Pick HIP/ROCm device by ordinal. Pass `0` for the first AMD GPU. Without this flag the HIP backend is never used, even when the binary was built with `-Denable_hip=true`. See [../backends/hip/overview.md](../backends/hip/overview.md). |
-| `--no_metal` | off | Forbid Metal dispatch even if the Metal backend is built in (macOS only). |
-| `--metal_device <N>` | disabled (opt-in) | Pick Metal GPU by ordinal (macOS only). Pass `0` for the first Metal device (typically the integrated Apple GPU on Apple Silicon). Without this flag the Metal backend is never used, even on macOS builds. See [../backends/metal/index.md](../backends/metal/index.md). |
-| `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `hip_device=0` for HIP, `metal_device=0` for Metal). (The `vulkan` token and `--no_vulkan` / `--vulkan_device` flags were removed in ADR-0726.) |
-| `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
-| `--gpumask <mask>` | GPU enabled | Despite the `$bitmask` placeholder in the usage string, this is **not** a per-op mask: passing the flag at all opts into GPU backend selection, and then **any non-zero value disables the GPU feature extractors** for both CUDA and SYCL, so the run falls back to the CPU implementations. `--gpumask 0` therefore means "use the GPU" and `--gpumask 1` means "use the CPU" — the latter is byte-identical to `--no_cuda --no_sycl`. **Negative values are rejected** (`should be a non-negative integer`). Upstream accepts `--gpumask -1` only because POSIX `strtoul` silently converts `"-1"` to `ULONG_MAX`; this fork refuses a value the caller did not mean rather than wrap it (ADR-1209). Write `--gpumask 1` instead. |
-| `--threads <N>` | host `nproc` | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
+| Flag                         | Default           | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--no_cuda`                  | off               | Forbid CUDA dispatch even if the CUDA backend is built in.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `--no_sycl`                  | off               | Forbid SYCL dispatch even if the SYCL backend is built in.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `--sycl_device <N>`          | auto (first GPU)  | Pick SYCL device by ordinal from the oneAPI device list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `--no_hip`                   | off               | Forbid HIP/ROCm dispatch even if the HIP backend is built in.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `--hip_device <N>`           | disabled (opt-in) | Pick HIP/ROCm device by ordinal. Pass `0` for the first AMD GPU. Without this flag the HIP backend is never used, even when the binary was built with `-Denable_hip=true`. See [../backends/hip/overview.md](../backends/hip/overview.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `--no_metal`                 | off               | Forbid Metal dispatch even if the Metal backend is built in (macOS only).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `--metal_device <N>`         | disabled (opt-in) | Pick Metal GPU by ordinal (macOS only). Pass `0` for the first Metal device (typically the integrated Apple GPU on Apple Silicon). Without this flag the Metal backend is never used, even on macOS builds. See [../backends/metal/index.md](../backends/metal/index.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `--backend <name>`           | `auto`            | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `hip_device=0` for HIP, `metal_device=0` for Metal). (The `vulkan` token and `--no_vulkan` / `--vulkan_device` flags were removed in ADR-0726.)                                                                                                                                                                                                                                       |
+| `--cpumask <bitmask>` (`-c`) | all ISAs enabled  | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `--gpumask <mask>`           | GPU enabled       | Despite the `$bitmask` placeholder in the usage string, this is **not** a per-op mask: passing the flag at all opts into GPU backend selection, and then **any non-zero value disables the GPU feature extractors** for both CUDA and SYCL, so the run falls back to the CPU implementations. `--gpumask 0` therefore means "use the GPU" and `--gpumask 1` means "use the CPU" — the latter is byte-identical to `--no_cuda --no_sycl`. **Negative values are rejected** (`should be a non-negative integer`). Upstream accepts `--gpumask -1` only because POSIX `strtoul` silently converts `"-1"` to `ULONG_MAX`; this fork refuses a value the caller did not mean rather than wrap it (ADR-1209). Write `--gpumask 1` instead. |
+| `--threads <N>`              | host `nproc`      | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 Threaded CPU submission keeps at most one pending frame job per worker, in
-addition to jobs already running. When decoding runs ahead of feature extraction,
-submission waits for queue capacity instead of retaining an unbounded backlog.
-This bounds pending work; score storage and backend buffers still contribute to
-memory use. See [thread-pool behavior](../development/thread-pool.md).
+addition to jobs already running. When decoding runs ahead of feature
+extraction, submission waits for queue capacity instead of retaining an
+unbounded backlog. This bounds pending work; score storage and backend buffers
+still contribute to memory use. See
+[thread-pool behavior](../development/thread-pool.md).
 
 > **`--threads` with a GPU backend.** Builds before
 > [ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md) aborted with
-> `libvmaf ERROR context could not be synchronized` and exit 234
-> whenever `--threads` was combined with `--backend cuda` or
-> `--backend sycl` — for every thread count, including `--threads 1`.
-> The message was misleading: the GPU context was healthy and the
-> failure came from the feature-extractor flush. If you see it, you
-> are on an older build. Note that `testdata/bench_all.sh` pins
-> `--threads 1`, so GPU rows produced by older builds of that harness
-> were failures rather than measurements.
+> `libvmaf ERROR context could not be synchronized` and exit 234 whenever
+> `--threads` was combined with `--backend cuda` or `--backend sycl` — for every
+> thread count, including `--threads 1`. The message was misleading: the GPU
+> context was healthy and the failure came from the feature-extractor flush. If
+> you see it, you are on an older build. Note that `testdata/bench_all.sh` pins
+> `--threads 1`, so GPU rows produced by older builds of that harness were
+> failures rather than measurements.
 
 <!-- MD028: separates the two blockquotes above and below. -->
 
@@ -273,12 +273,12 @@ If neither backend is built in, these flags are silently inert. See
 which features have GPU/SIMD twins.
 
 > **Future work — `--gpu-calibrated`** (proposed,
-> [ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md)). A future flag will
-> opt into a per-arch ULP calibration head that maps raw GPU scores to their
-> CPU-equivalent values, closing the ~1e-4 cross-backend divergence
-> currently within `places=4` tolerance. **Not shipped in this release** —
-> the flag does not exist yet; the calibration model is not trained yet.
-> See the ADR for measurement gates that have to clear first.
+> [ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md)). A future flag will opt
+> into a per-arch ULP calibration head that maps raw GPU scores to their
+> CPU-equivalent values, closing the ~1e-4 cross-backend divergence currently
+> within `places=4` tolerance. **Not shipped in this release** — the flag does
+> not exist yet; the calibration model is not trained yet. See the ADR for
+> measurement gates that have to clear first.
 
 ## Frame range
 
@@ -289,8 +289,8 @@ which features have GPU/SIMD twins.
 --subsample <N>           # compute scores only every Nth frame (default 1 = all frames)
 ```
 
-`--subsample` trades precision for speed — pooled scores are still computed
-over the sampled subset, so keep it at 1 for final reports.
+`--subsample` trades precision for speed — pooled scores are still computed over
+the sampled subset, so keep it at 1 for final reports.
 
 ## Preset bundles
 
@@ -338,55 +338,52 @@ example, `--aom_ctc v7.0` is equivalent to:
 ```
 
 `--dnn-ep` and `--tiny-device` are equivalent — they select the ONNX Runtime
-execution provider and write to the same internal setting. Use whichever name
-is more natural for your script; `--dnn-ep` follows the ORT "execution
-provider" terminology, while `--tiny-device` predates the alias.
+execution provider and write to the same internal setting. Use whichever name is
+more natural for your script; `--dnn-ep` follows the ORT "execution provider"
+terminology, while `--tiny-device` predates the alias.
 
-Underscore aliases (`--tiny_model`, `--tiny_device`, `--tiny_threads`, `--tiny_fp16`,
-`--no_reference`, `--dnn_ep`) are accepted for scripting symmetry with the underscore
-flags upstream uses.
+Underscore aliases (`--tiny_model`, `--tiny_device`, `--tiny_threads`,
+`--tiny_fp16`, `--no_reference`, `--dnn_ep`) are accepted for scripting symmetry
+with the underscore flags upstream uses.
 
 When `--tiny-model <path>` is specified with a path like `<stem>.onnx`, the
 loader inspects the companion sidecar `<stem>.json`. If the sidecar declares
-`quant_mode != "fp32"` (such as `"dynamic"`, `"static"`, or `"qat"`), the runtime
-automatically redirects to load the quantized sibling `<stem>.int8.onnx` if
-present and valid. If the int8 artifact is missing, fails the op allowlist, or
-cannot be opened by the installed ONNX Runtime (a build without a kernel for
-one of its quantised ops), the loader gracefully falls back to the fp32
-baseline `<stem>.onnx` rather than failing the run (ADR-1032). The fallback is
-announced on the `VMAF_LOG_LEVEL_DEBUG` channel, which the CLI does not expose
-— the `vmaf` binary runs at `VMAF_LOG_LEVEL_INFO` — so a fallback is silent on
-the command line by design; API callers that set
+`quant_mode != "fp32"` (such as `"dynamic"`, `"static"`, or `"qat"`), the
+runtime automatically redirects to load the quantized sibling `<stem>.int8.onnx`
+if present and valid. If the int8 artifact is missing, fails the op allowlist,
+or cannot be opened by the installed ONNX Runtime (a build without a kernel for
+one of its quantised ops), the loader gracefully falls back to the fp32 baseline
+`<stem>.onnx` rather than failing the run (ADR-1032). The fallback is announced
+on the `VMAF_LOG_LEVEL_DEBUG` channel, which the CLI does not expose — the
+`vmaf` binary runs at `VMAF_LOG_LEVEL_INFO` — so a fallback is silent on the
+command line by design; API callers that set
 `VmafConfiguration.log_level = VMAF_LOG_LEVEL_DEBUG` see which graph was
 actually opened.
 
 `--no-reference` puts the CLI into no-reference (NR) mode (ADR-0520):
 
-- `--reference` / `-r` is no longer required. The CLI opens the
-  distorted source twice (two `video_input` handles backed by the same
-  file) and the rank-4 tiny-model dispatch reads picture bytes from the
-  slot that would have held the reference, so the model sees the
-  distorted frame.
-- `--tiny-model` is now **mandatory** — no classic NR scorer exists in
-  the fork. Omitting it returns the diagnostic
+- `--reference` / `-r` is no longer required. The CLI opens the distorted source
+  twice (two `video_input` handles backed by the same file) and the rank-4
+  tiny-model dispatch reads picture bytes from the slot that would have held the
+  reference, so the model sees the distorted frame.
+- `--tiny-model` is now **mandatory** — no classic NR scorer exists in the fork.
+  Omitting it returns the diagnostic
   `--no-reference requires --tiny-model; no classic NR scorer exists`.
 - The built-in `vmaf_v0.6.1` SVM is auto-suppressed (NR mode forces
-  `--no_prediction`); all classic SVM scorers consume FR feature
-  columns (`vif_*`, `adm2`, `motion2`) that cannot be computed without
-  a reference. To pin a tiny model on top of the SVM you need a
-  reference.
-- The tiny model must accept a rank-4 single-luma input
-  (`[1, 1, H, W]` with fully-resolved spatial dims matching your
-  distorted source). Rank-2 feature-vector tiny models (ADR-0518) load
-  but always score `0.0` in NR mode, because their input features are
-  derived from the reference.
-- The JSON / XML / CSV report contains only the tiny-AI feature column
-  the model wrote through; no `pooled_metrics` block exists when
-  `--no_prediction` is active.
+  `--no_prediction`); all classic SVM scorers consume FR feature columns
+  (`vif_*`, `adm2`, `motion2`) that cannot be computed without a reference. To
+  pin a tiny model on top of the SVM you need a reference.
+- The tiny model must accept a rank-4 single-luma input (`[1, 1, H, W]` with
+  fully-resolved spatial dims matching your distorted source). Rank-2
+  feature-vector tiny models (ADR-0518) load but always score `0.0` in NR mode,
+  because their input features are derived from the reference.
+- The JSON / XML / CSV report contains only the tiny-AI feature column the model
+  wrote through; no `pooled_metrics` block exists when `--no_prediction` is
+  active.
 
 See [../ai/inference.md](../ai/inference.md) for the full tiny-AI CLI
-walkthrough and the per-model registry (`model/tiny/registry.json`,
-sha256 pins, known limitations).
+walkthrough and the per-model registry (`model/tiny/registry.json`, sha256 pins,
+known limitations).
 
 ### Codec-context flags (fork-added)
 
@@ -402,36 +399,33 @@ These flags drive `vmaf_dnn_set_codec_context()` and
 `vmaf_dnn_set_resize_mode()` on the tiny model — see
 [api/dnn.md](../api/dnn.md#codec-aware-tiny-model-inputs-vmaf_dnn_set_codec_context).
 
-**Codec block.** Codec-conditioned tiny models (e.g. the v2 ladder
-regressor) accept a small categorical block alongside the per-frame
-features: encoder identity, preset ordinal, and CRF / QP. The CLI sets
-this block once at model-load time. Unknown encoder names fall back to
-the `"unknown"` bucket with a stderr diagnostic; missing `--tiny-codec`
-on a model that requires codec context is permitted and routes through
-the `"unknown"` bucket silently. Set `--tiny-codec`, `--tiny-preset`,
-or `--tiny-crf` to **any** non-default value to enable the path. See
-[ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md) for the categorical
-encoding rationale.
+**Codec block.** Codec-conditioned tiny models (e.g. the v2 ladder regressor)
+accept a small categorical block alongside the per-frame features: encoder
+identity, preset ordinal, and CRF / QP. The CLI sets this block once at
+model-load time. Unknown encoder names fall back to the `"unknown"` bucket with
+a stderr diagnostic; missing `--tiny-codec` on a model that requires codec
+context is permitted and routes through the `"unknown"` bucket silently. Set
+`--tiny-codec`, `--tiny-preset`, or `--tiny-crf` to **any** non-default value to
+enable the path. See [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md)
+for the categorical encoding rationale.
 
-**Resize mode** ([ADR-0550](../adr/0550-tiny-model-auto-resize.md)).
-Required when the source frame size (`--width` / `--height`) differs from
-the tiny model's declared input shape:
+**Resize mode** ([ADR-0550](../adr/0550-tiny-model-auto-resize.md)). Required
+when the source frame size (`--width` / `--height`) differs from the tiny
+model's declared input shape:
 
-| `--tiny-resize` | Filter                                                      | Score-stable? |
-|-----------------|-------------------------------------------------------------|---------------|
-| `disabled`      | None — size mismatch fails with `-ERANGE` (the default)     | Strict        |
-| `bilinear`      | OpenCV `INTER_LINEAR` / torchvision `BILINEAR`              | Yes — convention used by every shipped NR / image-input model |
-| `nearest`       | OpenCV `INTER_NEAREST`                                      | Yes — deterministic floor of source coord |
-| `bicubic`       | Separable Catmull-Rom (`a = -0.5`); torchvision `BICUBIC`   | Yes — exporter parity         |
+| `--tiny-resize` | Filter                                                    | Score-stable?                                                 |
+| --------------- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| `disabled`      | None — size mismatch fails with `-ERANGE` (the default)   | Strict                                                        |
+| `bilinear`      | OpenCV `INTER_LINEAR` / torchvision `BILINEAR`            | Yes — convention used by every shipped NR / image-input model |
+| `nearest`       | OpenCV `INTER_NEAREST`                                    | Yes — deterministic floor of source coord                     |
+| `bicubic`       | Separable Catmull-Rom (`a = -0.5`); torchvision `BICUBIC` | Yes — exporter parity                                         |
 
-The three filter modes produce scores that differ by approximately
-2% on the same input — treat filter choice as a model hyperparameter
-and pin it alongside the model checkpoint. A typo in the resize
-keyword surfaces at parse time
-(`--tiny-resize must be one of: bilinear, nearest, bicubic, disabled`)
-rather than after model load. Underscore aliases (`--tiny_codec`,
-`--tiny_preset`, `--tiny_crf`, `--tiny_resize`) are accepted for
-scripting symmetry.
+The three filter modes produce scores that differ by approximately 2% on the
+same input — treat filter choice as a model hyperparameter and pin it alongside
+the model checkpoint. A typo in the resize keyword surfaces at parse time
+(`--tiny-resize must be one of: bilinear, nearest, bicubic, disabled`) rather
+than after model load. Underscore aliases (`--tiny_codec`, `--tiny_preset`,
+`--tiny_crf`, `--tiny_resize`) are accepted for scripting symmetry.
 
 ### Sigstore bundle verification (fork-added)
 
@@ -440,52 +434,49 @@ scripting symmetry.
 ```
 
 `--tiny-model-verify` is a **boolean flag** (no argument). It enables
-`cosign verify-blob` verification of the Sigstore bundle attached to
-the tiny-AI ONNX model **before** the model is loaded into ORT. Both
-the model path and its bundle path are inferred from `--tiny-model`:
-the bundle is expected at `<model-path>.sigstore` alongside the model
-file. Verification is performed in-process by shelling out to the
-`cosign` binary on the host's `PATH`; on success the loader proceeds
-normally, on failure the process exits non-zero with a diagnostic to
-stderr.
+`cosign verify-blob` verification of the Sigstore bundle attached to the tiny-AI
+ONNX model **before** the model is loaded into ORT. Both the model path and its
+bundle path are inferred from `--tiny-model`: the bundle is expected at
+`<model-path>.sigstore` alongside the model file. Verification is performed
+in-process by shelling out to the `cosign` binary on the host's `PATH`; on
+success the loader proceeds normally, on failure the process exits non-zero with
+a diagnostic to stderr.
 
 When to use it: production inference pipelines that need supply-chain
-verification of model integrity — e.g. a release runner that pulls a
-fork-signed `.onnx` from an artifact store and refuses to score with
-an unsigned or tampered model. For local development against an
-unsigned checkpoint, omit the flag.
+verification of model integrity — e.g. a release runner that pulls a fork-signed
+`.onnx` from an artifact store and refuses to score with an unsigned or tampered
+model. For local development against an unsigned checkpoint, omit the flag.
 
 Failure modes (all exit non-zero before any inference runs):
 
 - `cosign` binary not on `PATH`.
 - Bundle path missing, unreadable, or not a valid Sigstore bundle.
-- `cosign verify-blob` reports an invalid signature, mismatched
-  digest, or rejected certificate identity.
+- `cosign verify-blob` reports an invalid signature, mismatched digest, or
+  rejected certificate identity.
 
-See [ADR-0211](../adr/0211-model-registry-sigstore.md)
-for the model-registry schema and the Sigstore-bundle integration
-that this flag consumes, and
+See [ADR-0211](../adr/0211-model-registry-sigstore.md) for the model-registry
+schema and the Sigstore-bundle integration that this flag consumes, and
 [../ai/inference.md](../ai/inference.md) for the end-to-end signed-model
 workflow.
 
 ## Logging and misc
 
-| Flag | Short | Effect |
-| --- | --- | --- |
-| `--help` | | Print the flag reference to stdout and exit 0. |
-| `--quiet` | `-q` | Disable the FPS meter when run in a TTY. |
-| `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
-| `--version` | `-v` | Print `libvmaf` version + git SHA and exit. |
+| Flag              | Short | Effect                                                                                                  |
+| ----------------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `--help`          |       | Print the flag reference to stdout and exit 0.                                                          |
+| `--quiet`         | `-q`  | Disable the FPS meter when run in a TTY.                                                                |
+| `--no_prediction` | `-n`  | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
+| `--version`       | `-v`  | Print `libvmaf` version + git SHA and exit.                                                             |
 
 ## Windows console output
 
-The interactive progress line (frame counter, spinner, FPS) is written to
-stderr whenever stderr is a TTY and `--quiet` is not set. The spinner uses
-Unicode braille glyphs and an ANSI erase-to-end-of-line sequence, neither of
-which a Windows console renders correctly by default: under the conhost default
-code page (cp437) each two-glyph frame decodes as six garbage characters, under
-cp936 it decodes as replacement boxes, and legacy conhost prints the erase
-sequence literally as `<-[K`.
+The interactive progress line (frame counter, spinner, FPS) is written to stderr
+whenever stderr is a TTY and `--quiet` is not set. The spinner uses Unicode
+braille glyphs and an ANSI erase-to-end-of-line sequence, neither of which a
+Windows console renders correctly by default: under the conhost default code
+page (cp437) each two-glyph frame decodes as six garbage characters, under cp936
+it decodes as replacement boxes, and legacy conhost prints the erase sequence
+literally as `<-[K`.
 
 Since ADR-1166 the CLI handles this itself. On Windows it:
 
@@ -494,37 +485,38 @@ Since ADR-1166 the CLI handles this itself. On Windows it:
    `ENABLE_VIRTUAL_TERMINAL_PROCESSING`,
 3. restores both on exit — including error exits — so your shell is left as it
    was found,
-4. and, if the console refuses either change, falls back to a pure-ASCII
-   spinner (`|` `/` `-` `\\`) and pads with spaces instead of emitting the
-   erase sequence.
+4. and, if the console refuses either change, falls back to a pure-ASCII spinner
+   (`|` `/` `-` `\\`) and pads with spaces instead of emitting the erase
+   sequence.
 
 There is no flag for this and nothing to configure; `--quiet` still suppresses
 the progress line entirely, and redirecting stderr to a file or pipe suppresses
 it as well (the CLI only draws it for a TTY). On Linux and macOS the emitted
 bytes are unchanged from previous releases.
 
-Reported upstream as [Netflix/vmaf#743](https://github.com/Netflix/vmaf/issues/743).
+Reported upstream as
+[Netflix/vmaf#743](https://github.com/Netflix/vmaf/issues/743).
 
 ## Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| 0 | Success, or `--help` / `--version` invocation. |
-| 1 | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting. |
-| 100 | Explicit `--backend <name>` requested but the backend failed to initialise (ADR-0543). |
-| 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |
-| 102 | An input stream failed to read (truncated file, unreadable media, I/O error). `vmaf` writes `problem while reading pictures` to stderr and writes **no** output file, so a partial score cannot be mistaken for a complete one (ADR-1262). |
+| Code | Meaning                                                                                                                                                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | Success, or `--help` / `--version` invocation.                                                                                                                                                                                             |
+| 1    | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting.                                                                                                                                                      |
+| 100  | Explicit `--backend <name>` requested but the backend failed to initialise (ADR-0543).                                                                                                                                                     |
+| 101  | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr.                                                                                        |
+| 102  | An input stream failed to read (truncated file, unreadable media, I/O error). `vmaf` writes `problem while reading pictures` to stderr and writes **no** output file, so a partial score cannot be mistaken for a complete one (ADR-1262). |
 
 A reference or distorted stream that simply **ends earlier than its partner** is
 not an error. `vmaf` writes `"<path>" ended before "<path>".` to stderr, scores
 the frames the two have in common, and exits 0 — scoring a shorter distorted
 clip against a longer reference is a supported use. Exit 102 is reserved for a
-read that *failed*, which is a different thing from a stream that *ended*.
+read that _failed_, which is a different thing from a stream that _ended_.
 
 A failed output-file write (bad path, full disk, permission denied) also exits
 non-zero: `vmaf` writes `problem writing output to <path> (err=<n>)` to stderr,
-where `<n>` is the negative `VMAF_ERR_*` code, instead of exiting 0 over a
-stale or partial file.
+where `<n>` is the negative `VMAF_ERR_*` code, instead of exiting 0 over a stale
+or partial file.
 
 Apart from the dedicated codes above, `libvmaf` does not surface granular error
 codes at the process boundary; the specific `VMAF_ERR_*` code from the C API is
@@ -586,50 +578,49 @@ readers that look one up by name are unaffected. For this pair the VMAF row
 reads `median="76.091664"`, `perc5="72.351853"`, `perc10="72.717340"`,
 `perc20="73.357468"`.
 
-Pooled-mean VMAF for this pair is **76.668905…**. This is one of the three Netflix
-CPU goldens preserved verbatim as a required CI gate — see
+Pooled-mean VMAF for this pair is **76.668905…**. This is one of the three
+Netflix CPU goldens preserved verbatim as a required CI gate — see
 [ADR-0024](../adr/0024-netflix-golden-preserved.md) and
 [`python/test/quality_runner_test.py`](../../python/test/quality_runner_test.py).
 
 ## Flag interactions and pitfalls
 
 - **`.yuv` without geometry**. Passing `--reference foo.yuv` without
-  `--width/--height/--pixel_format/--bitdepth` errors out. `.y4m` carries geometry
-  in the header; `.yuv` does not.
-- **Duplicate model names**. Each `--model` must have a unique `name=`. If the same
-  built-in version is loaded twice, set `name=` explicitly on at least one.
+  `--width/--height/--pixel_format/--bitdepth` errors out. `.y4m` carries
+  geometry in the header; `.yuv` does not.
+- **Duplicate model names**. Each `--model` must have a unique `name=`. If the
+  same built-in version is loaded twice, set `name=` explicitly on at least one.
 - **`--no_prediction` with `--model`**. `--no_prediction` skips model prediction
-  but does not skip loading — the model is still used to select which features to
-  extract. Omit `--model` entirely plus pass `--no_prediction` to extract only the
-  features listed via `--feature`.
+  but does not skip loading — the model is still used to select which features
+  to extract. Omit `--model` entirely plus pass `--no_prediction` to extract
+  only the features listed via `--feature`.
 - **Default `%.6f` truncation**. The default (and `--precision legacy`)
   truncates differences ≤ 1e-6 that would be distinguishable under
-  `--precision=max`. Use `max` whenever you need to compare scores
-  numerically (cross-backend diff, archival reports). The default mode
-  exists for byte-for-byte agreement with pre-fork Netflix output, which
-  the CPU golden gate depends on.
+  `--precision=max`. Use `max` whenever you need to compare scores numerically
+  (cross-backend diff, archival reports). The default mode exists for
+  byte-for-byte agreement with pre-fork Netflix output, which the CPU golden
+  gate depends on.
 - **`--tiny-model` vs `--model`**. These compose — tiny-AI models are
-  **additional** scores layered on top of the classic SVM/XGBoost prediction, not
-  a replacement for it. Use `--no_prediction` if you want tiny scores alone. See
-  [ADR-0023](../adr/0023-tinyai-user-surfaces.md).
-- **`--no_cuda` + `--no_sycl` together**. Forces CPU-only even on a build with both
-  GPU backends compiled in. Useful for cross-backend diff sessions.
+  **additional** scores layered on top of the classic SVM/XGBoost prediction,
+  not a replacement for it. Use `--no_prediction` if you want tiny scores alone.
+  See [ADR-0023](../adr/0023-tinyai-user-surfaces.md).
+- **`--no_cuda` + `--no_sycl` together**. Forces CPU-only even on a build with
+  both GPU backends compiled in. Useful for cross-backend diff sessions.
 
 ## Related
 
 - [bench.md](bench.md) — `vmaf_bench` micro-benchmark harness.
-- [vmaf-perShot.md](vmaf-perShot.md) — per-shot CRF predictor sidecar
-  (T6-3b / [ADR-0222](../adr/0222-vmaf-per-shot-tool.md)).
+- [vmaf-perShot.md](vmaf-perShot.md) — per-shot CRF predictor sidecar (T6-3b /
+  [ADR-0222](../adr/0222-vmaf-per-shot-tool.md)).
 - [ffmpeg.md](ffmpeg.md) — using the VMAF filter inside `ffmpeg`.
 - [python.md](python.md) — Python bindings for the CLI.
 - [precision.md](precision.md) — dedicated `--precision` flag walkthrough.
 - [../backends/index.md](../backends/index.md) — runtime backend dispatch rules.
-- [../metrics/features.md](../metrics/features.md) — per-feature identifiers
-  and options.
+- [../metrics/features.md](../metrics/features.md) — per-feature identifiers and
+  options.
 - [../ai/inference.md](../ai/inference.md) — tiny-AI inference walkthrough.
-- [ADR-0119](../adr/0119-cli-precision-default-revert.md) (current
-  precision default; supersedes
-  [ADR-0006](../adr/0006-cli-precision-17g-default.md)),
+- [ADR-0119](../adr/0119-cli-precision-default-revert.md) (current precision
+  default; supersedes [ADR-0006](../adr/0006-cli-precision-17g-default.md)),
   [ADR-0023](../adr/0023-tinyai-user-surfaces.md),
   [ADR-0024](../adr/0024-netflix-golden-preserved.md),
   [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).

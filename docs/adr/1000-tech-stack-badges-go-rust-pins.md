@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 -->
 # ADR-1000: Tech-stack badges in README and Go/Rust version pin consistency
 
 - **Status**: Accepted

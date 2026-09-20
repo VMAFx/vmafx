@@ -43,11 +43,7 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 #define MAX_FRAMES 2u
 #define MAX_KEYS 3u
@@ -78,11 +74,11 @@ static const CambiCase CASES[] = {
      * option tables. Designated initializers: an omitted field is zero. */
     {.name = "8-bit 4:2:0 odd size", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 333, .h = 217, .frames = 2, .keys = {"Cambi_feature_cambi_score"}},
     {.name = "10-bit 4:2:0", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 10, .w = 640, .h = 360, .frames = 2, .keys = {"Cambi_feature_cambi_score"}},
-    {.name = "10-bit full reference", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 10, .w = 480, .h = 270, .frames = 2, .opt_key = {"full_ref", NULL}, .opt_val = {"true", NULL}, .keys = {"Cambi_feature_cambi_score", "cambi_source", "cambi_full_reference"}},
-    {.name = "8-bit max_log_contrast 5", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 480, .h = 270, .frames = 2, .opt_key = {"max_log_contrast", NULL}, .opt_val = {"5", NULL}, .keys = {"cambi_mlc_5"}},
-    {.name = "8-bit 1080p high-res speedup", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 1920, .h = 1080, .frames = 1, .opt_key = {"cambi_high_res_speedup", NULL}, .opt_val = {"1080", NULL}, .keys = {"cambi_hrs_1080"}},
-    {.name = "10-bit 4:4:4 odd size, window 33", .pix_fmt = VMAF_PIX_FMT_YUV444P, .bpc = 10, .w = 575, .h = 323, .frames = 1, .opt_key = {"window_size", NULL}, .opt_val = {"33", NULL}, .keys = {"cambi_ws_33"}},
-    {.name = "10-bit ramp across the first value of the scored band", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 10, .w = 480, .h = 270, .frames = 2, .opt_key = {"cambi_vis_lum_threshold", NULL}, .opt_val = {"0.06", NULL}, .keys = {"cambi_vlt_0.06"}, .start = 61, .step = 1},
+    {.name = "10-bit full reference", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 10, .w = 480, .h = 270, .frames = 2, .opt_key = {"full_ref", VMAF_NULLPTR}, .opt_val = {"true", VMAF_NULLPTR}, .keys = {"Cambi_feature_cambi_score", "cambi_source", "cambi_full_reference"}},
+    {.name = "8-bit max_log_contrast 5", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 480, .h = 270, .frames = 2, .opt_key = {"max_log_contrast", VMAF_NULLPTR}, .opt_val = {"5", VMAF_NULLPTR}, .keys = {"cambi_mlc_5"}},
+    {.name = "8-bit 1080p high-res speedup", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 1920, .h = 1080, .frames = 1, .opt_key = {"cambi_high_res_speedup", VMAF_NULLPTR}, .opt_val = {"1080", VMAF_NULLPTR}, .keys = {"cambi_hrs_1080"}},
+    {.name = "10-bit 4:4:4 odd size, window 33", .pix_fmt = VMAF_PIX_FMT_YUV444P, .bpc = 10, .w = 575, .h = 323, .frames = 1, .opt_key = {"window_size", VMAF_NULLPTR}, .opt_val = {"33", VMAF_NULLPTR}, .keys = {"cambi_ws_33"}},
+    {.name = "10-bit ramp across the first value of the scored band", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 10, .w = 480, .h = 270, .frames = 2, .opt_key = {"cambi_vis_lum_threshold", VMAF_NULLPTR}, .opt_val = {"0.06", VMAF_NULLPTR}, .keys = {"cambi_vlt_0.06"}, .start = 61, .step = 1},
     {.name = "10-bit ramp to the top of the scored band", .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 10, .w = 480, .h = 270, .frames = 2, .keys = {"Cambi_feature_cambi_score"}, .start = 541, .step = 1},
     /* clang-format on */
 };
@@ -160,7 +156,7 @@ static int make_pic(const CambiCase *c, VmafPicture *pic, unsigned frame, bool d
 
 static int use_cambi(VmafContext *vmaf, const CambiCase *c)
 {
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     for (unsigned i = 0; i < 2 && c->opt_key[i]; i++) {
         const int err = vmaf_feature_dictionary_set(&opts, c->opt_key[i], c->opt_val[i]);
         if (err)
@@ -187,7 +183,7 @@ static int feed_frames(VmafContext *vmaf, const CambiCase *c)
         if (err)
             return err;
     }
-    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    return vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
 }
 
 /* scores[frame][key] for one dispatch level. */
@@ -198,7 +194,7 @@ typedef struct {
 static int run_case(const CambiCase *c, uint64_t cpumask, Scores *out)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     if (err)
         return err;
@@ -255,7 +251,7 @@ static char *check_case(const CambiCase *c)
         diffs += compare_level(c, &LEVELS[l], &host, &s);
     }
     mu_assert("cambi scores depend on the dispatched CPU kernels", diffs == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_cambi_dispatch_invariance(void)
@@ -267,13 +263,11 @@ static char *test_cambi_dispatch_invariance(void)
             return err;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_cambi_dispatch_invariance);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -71,11 +71,7 @@
 #if ARCH_AARCH64
 #include "feature/arm64/float_adm_neon.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 /* FLOAT_ONE_BY_30 from adm_tools.c, which does not export it. */
 #define TEST_ONE_BY_30 0.0333333351f
@@ -226,7 +222,7 @@ static const float factors[] = {1.0f, 0.10133042f, 3.7071068f};
 static char *test_float_adm_csf_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL; /* NEON kernel is aarch64-only. */
+    return VMAF_NULLPTR; /* NEON kernel is aarch64-only. */
 #else
     for (size_t g = 0; g < sizeof(geoms) / sizeof(geoms[0]); ++g) {
         const geom_t *geo = &geoms[g];
@@ -273,14 +269,14 @@ static char *test_float_adm_csf_neon_matches_scalar(void)
 
         mu_assert("float_adm_csf_neon diverges from the scalar reference", mismatches == 0);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
 static char *test_float_adm_csf_den_scale_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int failures = 0;
 
@@ -289,7 +285,7 @@ static char *test_float_adm_csf_den_scale_neon_matches_scalar(void)
         const size_t n = (size_t)geo->w * geo->h;
         float *src = calloc(n, sizeof(float));
 
-        mu_assert("calloc failed", src != NULL);
+        mu_assert("calloc failed", src != VMAF_NULLPTR);
         fill_plane(src, geo, 0xc0ffee01u ^ (uint32_t)g);
 
         for (size_t f = 0; f < sizeof(factors) / sizeof(factors[0]); ++f) {
@@ -315,14 +311,14 @@ static char *test_float_adm_csf_den_scale_neon_matches_scalar(void)
     }
 
     mu_assert("float_adm_csf_den_scale_neon diverges from the scalar reference", failures == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
 static char *test_float_adm_sum_cube_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
-    return NULL;
+    return VMAF_NULLPTR;
 #else
     int failures = 0;
 
@@ -331,7 +327,7 @@ static char *test_float_adm_sum_cube_neon_matches_scalar(void)
         const size_t n = (size_t)geo->w * geo->h;
         float *src = calloc(n, sizeof(float));
 
-        mu_assert("calloc failed", src != NULL);
+        mu_assert("calloc failed", src != VMAF_NULLPTR);
         fill_plane(src, geo, 0xfeed0002u ^ (uint32_t)g);
 
         {
@@ -355,7 +351,7 @@ static char *test_float_adm_sum_cube_neon_matches_scalar(void)
     }
 
     mu_assert("float_adm_sum_cube_neon diverges from the scalar reference", failures == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 }
 
@@ -371,7 +367,5 @@ char *run_tests(void)
     (void)test_float_adm_csf_den_scale_neon_matches_scalar;
     (void)test_float_adm_sum_cube_neon_matches_scalar;
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

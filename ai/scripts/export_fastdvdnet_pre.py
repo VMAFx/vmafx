@@ -59,6 +59,7 @@ Provenance (license attribution required by upstream MIT license):
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -74,15 +75,16 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Pinned upstream provenance — bumping these is a deliberate weights swap.
 UPSTREAM_REPO = "https://github.com/m-tassano/fastdvdnet"
@@ -301,9 +303,7 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
         "smoke": False,
         "name": "vmaf_tiny_fastdvdnet_pre_v1",
         "license": "MIT",
-        "license_url": (
-            "https://github.com/m-tassano/fastdvdnet/blob/" f"{UPSTREAM_COMMIT}/LICENSE"
-        ),
+        "license_url": (f"https://github.com/m-tassano/fastdvdnet/blob/{UPSTREAM_COMMIT}/LICENSE"),
         "upstream_repo": UPSTREAM_REPO,
         "upstream_commit": UPSTREAM_COMMIT,
         "upstream_weights_sha256": UPSTREAM_WEIGHTS_SHA256,
@@ -337,9 +337,7 @@ def _update_registry(onnx_path: Path) -> None:
         "sha256": digest,
         "smoke": False,
         "license": "MIT",
-        "license_url": (
-            "https://github.com/m-tassano/fastdvdnet/blob/" f"{UPSTREAM_COMMIT}/LICENSE"
-        ),
+        "license_url": (f"https://github.com/m-tassano/fastdvdnet/blob/{UPSTREAM_COMMIT}/LICENSE"),
         "description": (
             "FastDVDnet temporal pre-filter (5-frame luma window) — "
             "upstream m-tassano/fastdvdnet weights wrapped for the fork's "
@@ -363,7 +361,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = make_argument_parser(description=__doc__)
     scratch_root = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
     default_upstream_dir = scratch_root / "fastdvdnet_upstream"
@@ -401,8 +399,12 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Skip registry.json + sidecar update (dry-run)",
     )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
     raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    args = _parse_args(raw_argv)
 
     adapter = _build_adapter(args.upstream_dir, args.sigma)
     _export(adapter, args.output, args.height, args.width, args.opset)

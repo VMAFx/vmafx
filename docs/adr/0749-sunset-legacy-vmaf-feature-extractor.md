@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0749: Sunset VmafLegacyQualityRunner (float-path runner)
 
 - **Status**: Accepted
@@ -39,7 +38,7 @@ several other non-legacy quality runners depend on it.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Restore `float_ansnr` C implementation | Runner would work again | Reinstates a pre-VMAF metric Netflix never shipped; contradicts PR #38 rationale | Rejected — the feature was dropped deliberately |
 | Keep runner, mark deprecated, skip ansnr | Runner callable without crashing | Ansnr column silently absent; score math is wrong (SVM model expects 4 features); deceptive API | Rejected — broken API is worse than no API |
 | Sunset now (chosen) | Removes broken surface; unblocks CI | BREAKING change for any caller using the legacy Python runner | Accepted — callers should use `VmafQualityRunner` + a modern `.json` model |

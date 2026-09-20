@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Feature-extractor coverage round 2 — research digest
 
 - **Date**: 2026-05-31
@@ -16,7 +15,7 @@ commit `45d536962f` (2026-05-31).
 `gcovr -r .. --csv -e '.*test.*' -f '.*core/src/feature/.*'` baseline:
 
 | File | Lines | Covered | Pct |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | `integer_motion.c` | 213 | 153 | 71.8 % |
 | `integer_motion_v2.c` | 119 | 21 | 17.6 % |
 | `integer_psnr.c` | 87 | 61 | 70.1 % |
@@ -44,7 +43,7 @@ remaining code paths require a live ONNX session that the existing
 ## Branch coverage strategy
 
 | File | Branches plugged |
-|---|---|
+| --- | --- |
 | `integer_psnr.c` | `pix_fmt=YUV400P` (line 124-125), `pix_fmt=YUV444P` + `min_sse>0` (line 128-136), HBD extract for 10 / 12 / 16-bit (line 263-266), `flush()` with `enable_apsnr=true` (line 277-292). |
 | `integer_motion.c` | `motion_force_zero=true` (line 307-343), 4-frame default-window flow that lands the second-SAD branch (line 552-577), `motion_moving_average=true` (line 435-437), `motion_five_frame_window=true` + N<2 flush (line 441-455). |
 | `integer_motion_v2.c` | init `-ENOTSUP` rejection of `motion_five_frame_window=true` (line 288-293), `index=0` short-circuit (line 356-360), `motion_force_zero=true` (line 350-354), 3-frame extract+flush with manually-set `prev_ref` (lines 161-204), `motion_moving_average=true` (line 475), 10-bit pipeline (lines 206-254). |
@@ -59,7 +58,7 @@ After `meson test -C build-cov --suite=fast --suite=simd --suite=dnn`
 (68 tests, 100 % pass):
 
 | File | Before | After | Delta |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | `integer_motion.c` | 71.8 % | 81.7 % | +9.9 pp |
 | `integer_motion_v2.c` | 17.6 % | 88.2 % | +70.6 pp |
 | `integer_psnr.c` | 70.1 % | 92.0 % | +21.9 pp |

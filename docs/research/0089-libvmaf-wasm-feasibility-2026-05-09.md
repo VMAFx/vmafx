@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD029 MD060 -->
 # Research-0089: libvmaf WebAssembly compilation feasibility
 
 - **Status**: Active
@@ -74,15 +73,15 @@ Primary (vendor / standards docs):
 
 Adjacent (search / package-registry checks):
 
-15. npm registry search for `vmaf`.
+ 1. npm registry search for `vmaf`.
     <https://www.npmjs.com/search?q=vmaf> (accessed 2026-05-09).
-16. caniuse — `WebAssembly` baseline support.
+ 2. caniuse — `WebAssembly` baseline support.
     <https://caniuse.com/wasm> (accessed 2026-05-09).
-17. caniuse — `wasm-simd` (fixed-width SIMD baseline).
+ 3. caniuse — `wasm-simd` (fixed-width SIMD baseline).
     <https://caniuse.com/wasm-simd> (accessed 2026-05-09).
-18. caniuse — `WebCodecs` support matrix.
+ 4. caniuse — `WebCodecs` support matrix.
     <https://caniuse.com/webcodecs> (accessed 2026-05-09).
-19. simd-everywhere / simde — SSE/AVX → WASM-SIMD shim header
+ 5. simd-everywhere / simde — SSE/AVX → WASM-SIMD shim header
     library.
     <https://github.com/simd-everywhere/simde> (accessed 2026-05-09).
 
@@ -164,7 +163,7 @@ allowlist. Block on op-list audit before promising Tier 3.
 ### 3. WASM platform limitations the fork cannot paper over
 
 | Limitation | Source | Fork impact |
-|---|---|---|
+| --- | --- | --- |
 | **No GPU compute reachable from within the WASM module** for libvmaf kernels | sources 1, 4 | All of CUDA/SYCL/Vulkan/HIP/Metal are out at the libvmaf-kernel level. WebGPU is JS-only and ORT-Web-only. |
 | **Threading requires `SharedArrayBuffer`** + cross-origin isolation (`COOP: same-origin` + `COEP: require-corp`) | sources 3, 6, 8 | A site embedding the WASM build must serve those headers. Many embedding contexts (e.g. CodePen-style sandboxes, plain GitHub Pages without overrides) cannot. Single-threaded fallback must work. |
 | **No direct file I/O** in the browser sandbox | sources 1, 14 | Callers must marshal YUV through `ArrayBuffer` / `Uint8Array`, or pull frames from `WebCodecs` (source 9). The WASI surface (source 14) covers Node.js / Deno / Bun but not browsers. |
@@ -215,7 +214,7 @@ gate WASM on `make test-netflix-golden`.
 ### 6. Realistic three-tier rollout
 
 | Tier | Scope | Approx `.wasm` size | Dependencies | Build flags |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Tier 1** | Scalar VMAF score for two YUV blobs in memory; **no SIMD, no AI head**; single-threaded | ~500 KB–1 MB | Emscripten only | `meson` cross-file with `emcc`, `-O3`, `-msimd128=0` |
 | **Tier 2** | Tier 1 + WASM-SIMD via simde (AVX2/NEON shim) + optional `pthread` build for multi-frame parallelism | ~1.5–2.5 MB | Emscripten + simde header-only library | `-msimd128`, `-pthread` (requires consumer to set COOP/COEP), simde include shim |
 | **Tier 3** | Tier 2 + ONNX Runtime Web + the fork's allowlisted tiny-AI heads | ~5–10 MB module + ~3–8 MB per ONNX model | Emscripten + simde + `onnxruntime-web` (npm) + per-model op-allowlist audit | Tier-2 flags + ORT-Web JS glue |

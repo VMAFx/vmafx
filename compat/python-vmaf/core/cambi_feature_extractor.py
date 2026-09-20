@@ -1,6 +1,13 @@
+from typing import ClassVar
+
 from vmaf import ExternalProgramCaller
 from vmaf.core.feature_extractor import FeatureExtractor, VmafexecFeatureExtractorMixin
 from vmaf.tools.reader import YuvReader
+
+_COMPARISON_VALUE_10 = 10
+_COMPARISON_VALUE_12 = 12
+_COMPARISON_VALUE_16 = 16
+_COMPARISON_VALUE_8 = 8
 
 
 class CambiFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
@@ -12,9 +19,9 @@ class CambiFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = "0.7"  # Add visibility luminance threshold
     VERSION = "0.8"  # Avoid upscaling when encoding resolution is larger than input resolution
 
-    ATOM_FEATURES = ["cambi"]
+    ATOM_FEATURES: ClassVar = ["cambi"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {"cambi": "cambi"}
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {"cambi": "cambi"}
 
     def _validate_asset(self, asset):
         assert asset.dis_encode_width_height is not None, (
@@ -30,21 +37,21 @@ class CambiFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         encode_bitdepth = asset.dis_encode_bitdepth
 
         if (
-            encode_bitdepth > 8
+            encode_bitdepth > _COMPARISON_VALUE_8
             and asset.dis_yuv_type == "notyuv"
             and asset.workfile_yuv_type in YuvReader.SUPPORTED_YUV_8BIT_TYPES
         ):
-            if encode_bitdepth == 10:
+            if encode_bitdepth == _COMPARISON_VALUE_10:
                 supported_yuv_types = YuvReader.SUPPORTED_YUV_10BIT_LE_TYPES
-            elif encode_bitdepth == 12:
+            elif encode_bitdepth == _COMPARISON_VALUE_12:
                 supported_yuv_types = YuvReader.SUPPORTED_YUV_12BIT_LE_TYPES
-            elif encode_bitdepth == 16:
+            elif encode_bitdepth == _COMPARISON_VALUE_16:
                 supported_yuv_types = YuvReader.SUPPORTED_YUV_16BIT_LE_TYPES
             else:
-                assert (
-                    False
-                ), "Unsupported encoding bit depth. The supported values are 8, 10, 12, or 16."
-            assert False, (
+                raise AssertionError(
+                    "Unsupported encoding bit depth. The supported values are 8, 10, 12, or 16."
+                )
+            raise AssertionError(
                 f"workfile_yuv_type is set to {asset.workfile_yuv_type} for a {encode_bitdepth} bit encode. "
                 f"This would lead to converting the encode to 8 bit prior to calculating CAMBI and "
                 f"producing inaccurate results. To compute Cambi in {encode_bitdepth} bit, one can add "
@@ -75,8 +82,8 @@ class CambiFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         dis_path = asset.dis_procfile_path
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "cambi",
@@ -103,9 +110,9 @@ class CambiFullReferenceFeatureExtractor(CambiFeatureExtractor):
     # logic would pick "cambi_source" for the distorted-cambi atom feature,
     # producing the wrong result key.  Using the more specific "cambi_encbd_"
     # prefix restricts the wildcard to distorted-CAMBI keys only.
-    ATOM_FEATURES = ["cambi_encbd", "cambi_full_reference", "cambi_source"]
+    ATOM_FEATURES: ClassVar = ["cambi_encbd", "cambi_full_reference", "cambi_source"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "cambi_encbd": "cambi_encbd",
         "cambi_full_reference": "cambi_full_reference",
         "cambi_source": "cambi_source",

@@ -29,8 +29,6 @@
  * test_y4m_411_oob gating.
  */
 
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro (ADR-0141 / ADR-0278) */
-#define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,11 +38,7 @@
 #include "test.h"
 #include "vidinput.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* "YUV4MPEG2 W65535 H65535 F30:1 Ip C444p12\n" + "FRAME\n"
  * Parser accepts (no upper-bound check on W/H); dst_buf_sz computes to
@@ -78,7 +72,7 @@ static char *test_y4m_open_returns_error_on_oom(void)
      * shadow reservations. The pre-fix bug this test guards is not sanitizer-
      * detectable, so skipping under sanitizers gives up no coverage. */
     (void)fprintf(stderr, "(sanitizer build; skipping RLIMIT_AS test) ");
-    return NULL;
+    return VMAF_NULLPTR;
 #endif
 
     /* Cap virtual address space at 256 MiB.  The header demands ≈ 25 GiB
@@ -90,11 +84,11 @@ static char *test_y4m_open_returns_error_on_oom(void)
     if (setrlimit(RLIMIT_AS, &lim) != 0) {
         /* Sandbox / container blocks RLIMIT_AS — treat as a skip. */
         (void)fprintf(stderr, "(setrlimit denied; skipping) ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     FILE *fin = fmemopen((void *)kY4mAbsurdHeader, sizeof(kY4mAbsurdHeader) - 1U, "rb");
-    mu_assert("fmemopen failed", fin != NULL);
+    mu_assert("fmemopen failed", fin != VMAF_NULLPTR);
 
     video_input vid;
     memset(&vid, 0, sizeof(vid));
@@ -110,7 +104,7 @@ static char *test_y4m_open_returns_error_on_oom(void)
 
     /* fmemopen-backed FILE: close manually since video_input_open failed. */
     (void)fclose(fin);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 int mu_tests_run;
@@ -118,19 +112,17 @@ int mu_tests_run;
 char *run_tests(void)
 {
     mu_run_test(test_y4m_open_returns_error_on_oom);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 int main(void)
 {
-    char *msg = run_tests();
+    const char *msg = run_tests();
     if (msg) {
         (void)fprintf(stderr, "\033[31m%s\n%d tests run, 1 failed\033[0m\n", msg, mu_tests_run);
     } else {
         (void)fprintf(stderr, "\033[32m%d tests run, %d passed\033[0m\n", mu_tests_run,
                       mu_tests_run);
     }
-    return msg != NULL;
+    return msg != VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

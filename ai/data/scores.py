@@ -18,21 +18,14 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from vmaftune.defaultmodel import DEFAULT_MODEL
 
 from .feature_extractor import _ensure_binary, default_vmaf_binary
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
-if str(_VMAFTUNE_SRC) not in sys.path:
-    sys.path.insert(0, str(_VMAFTUNE_SRC))
-
-from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
 
 #: Sentinel stamped on legacy cache payloads that predate per-clip teacher
 #: provenance.  Consumers must treat it as "teacher unknown" and recompute or

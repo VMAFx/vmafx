@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **CUDA chroma PSNR above 8 bpc was a luma number.** `psnr_cuda_dispatch` has
   always passed the plane index to both kernels, but the 16-bpc kernel had no
   parameter for it and read `data[0]` / `stride[0]`, so every high-bit-depth

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0331: Skip CI on draft pull requests
 
 - **Status**: Accepted
@@ -32,7 +31,7 @@ PR object) intact.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Per-job draft gate (chosen) | Single uniform pattern across 8 workflows; safe fallback for `push:` events; honours GitHub's `ready_for_review` semantics so promotion fires CI exactly once. | Adds two lines per job; aggregator skip leaves draft PRs in "missing required check" state, but drafts are unmergeable by design so the gate is moot. | — |
 | Concurrency-only (cancel old runs but still fire new ones) | Already in place for most workflows. | Does not stop the run, only deduplicates within a ref. Each draft push still consumes one full matrix. | Rejected — does not address the cost driver. |
 | No gate, rely on rebase-before-merge | Zero workflow changes. | The user explicitly asked for a CI-skip fix; ignoring the request and waiting for rebase doubles spend on every iteration. | Rejected per direct user request. |

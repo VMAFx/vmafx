@@ -1,4 +1,6 @@
-## test(mcp-server): coverage push round 4 — describe + compare + ladder + edge cases
+# Changelog fragment
+
+## mcp server coverage round4
 
 Added 69 new pytest cases in `mcp-server/vmaf-mcp/tests/test_coverage_round4.py`
 targeting residual gaps in `server.py` and `http_transport.py`:
@@ -17,7 +19,8 @@ targeting residual gaps in `server.py` and `http_transport.py`:
 - `_strip_model_ext`, `_model_resolution_class`: branch coverage.
 - `_describe_image_with_vlm`: loaded=True pipeline=None path.
 - `_pick_worst_frames`: n > available returns all.
-- `_call_tool`: unknown tool, eval_model_on_split dispatch, compare_models dispatch.
+- `_call_tool`: unknown tool, eval_model_on_split dispatch, compare_models
+  dispatch.
 - `http_transport`: /healthz, /readyz (503), /metrics, /v1/score success + 400 +
   500; auth middleware (401 no-token, 401 wrong-token, 200 correct-token, 413
   oversized body); `_resolve_bind_host`, `_resolve_auth_token`, `_no_auth_mode`,

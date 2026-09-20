@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Pelorus interop ABI (vendored) — `libvmaf/pelorus/`
 
 The [Pelorus](https://github.com/VMAFx/pelorus) GPU pre-encode pipeline and

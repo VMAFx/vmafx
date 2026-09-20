@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0135: Port Netflix#1424 — expose built-in VMAF model-version iterator
 
 - **Status**: Accepted
@@ -90,7 +89,7 @@ to prevent the same bugs from re-emerging in a caller.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Port upstream verbatim (carry the two UB defects + test warnings) | Smallest diff from upstream; trivial to `/sync-upstream` | UBSan / ASan fail immediately on the first iteration of any test; clang-tidy flags the NULL-arith at rule `-Wnull-pointer-arithmetic`; the third defect blocks on `-Werror`. Fork's CI would reject | Not shippable under fork's quality gates |
 | Redesign the API to an index-based cursor (`size_t *state`) | No opaque-pointer dance; no UB possible | Source-incompatible with upstream; `/sync-upstream` becomes a manual reconciliation instead of a trivial merge | Too divergent for a 32-line port |
 | Expose `VmafBuiltInModel` publicly and return `const VmafBuiltInModel *` directly | Type-safe, no `const void *` casts | Leaks a type that's today entirely private to `model.c` (extern-string trick, compile-time-flagged entries). Expanding the public ABI is a bigger decision than this backlog item warrants | Chosen to keep `VmafBuiltInModel` private and match upstream's opaque-handle shape |

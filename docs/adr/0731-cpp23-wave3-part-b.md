@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0731: C++23 Wave 3 Part B — psnr_tools, luminance_tools, mkdirp
 
 - **Status**: Accepted
@@ -40,7 +39,7 @@ included `libvmaf_feature_static_lib`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Wait for PR #48 (global cpp_std=c++23) | No per-TU override boilerplate | Blocks progress; PR #48 may be delayed by merge-train ordering | Rejected — Wave 3 proceeds independently; override_options is harmless after #48 merges |
 | Convert only one file (psnr_tools) | Smaller diff | Misses the other two utilities that are equally suitable; wave cadence slows | Rejected — all three are similarly sized, have no SIMD/GPU twins, and are safe to bundle |
 | Inline the converted objects directly into libvmaf_feature_static_lib | Fewer static libs | Spreads C++23 dialect to all C TUs in libvmaf_feature before #48 merges | Rejected — isolation wrapper is the ADR-0708 invariant |

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0675: Per-EP quantisation report provenance
 
 ## Question
@@ -33,7 +32,7 @@ JSON gets the replay metadata.
 ## Alternatives Considered
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the existing JSON shape | No downstream schema delta | PTQ evidence still loses hardware/argv/model-input lineage | Rejected |
 | Add a quant-specific metadata block | Could be smaller | Duplicates ADR-0661 path hashing and argument normalization | Rejected |
 | Put provenance only in Markdown | Easy for humans | Bad for scripts and model-card automation | Rejected |

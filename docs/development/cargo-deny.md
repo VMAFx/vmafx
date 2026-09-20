@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # cargo-deny — Rust supply-chain policy
 
 The fork enforces a supply-chain policy on the Rust workspace
@@ -13,7 +12,7 @@ decision rationale and alternatives considered.
 ## What the gate checks
 
 | Check | Behaviour | Failure mode |
-|---|---|---|
+| --- | --- | --- |
 | `licenses` | Allowlist of permissive SPDX identifiers (`Apache-2.0`, `BSD-3-Clause`, `ISC`, `MIT`, `Unicode-3.0`, `Unlicense`, plus `Apache-2.0 WITH LLVM-exception`). Per-crate exceptions: `cbindgen` (MPL-2.0, build-time only). Private (`publish = false`) workspace crates are skipped. | Fails the gate. |
 | `bans` | Denies `openssl-sys` and `native-tls` (rustls preferred). Denies wildcard (`*`) version requirements. Surfaces duplicate-version transitives as warnings. | `deny` entries fail the gate; duplicates are warn-only. |
 | `advisories` | Pulls the RustSec advisory DB. Schema v2: vulnerabilities and unsound findings fail. Yanked and unmaintained crates warn-only. | Vulnerability findings fail the gate. |

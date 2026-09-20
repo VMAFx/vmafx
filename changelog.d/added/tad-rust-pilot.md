@@ -1,8 +1,11 @@
-### TAD (Temporal Absolute Difference) feature extractor — Rust/cbindgen pilot (ADR-0707)
+# Changelog fragment
 
-Added the `tad` feature extractor, the first feature in VMAFX implemented in Rust.
-The extractor computes the mean absolute difference of luma pixel values between a
-reference and distorted frame, normalised to [0.0, 1.0] by the peak luma value.
+## TAD (Temporal Absolute Difference) feature extractor — Rust/cbindgen pilot (ADR-0707)
+
+Added the `tad` feature extractor, the first feature in VMAFX implemented in
+Rust. The extractor computes the mean absolute difference of luma pixel values
+between a reference and distorted frame, normalised to [0.0, 1.0] by the peak
+luma value.
 
 **Usage:** `--feature tad` (outputs `tad` and `tad_sad` per-frame scores).
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1213: `ciede_hip` sizes its chroma staging with the picture's ceil dimensions
 
@@ -39,7 +38,7 @@ registered at 577x325.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Use `picture.c`'s ceil formula in init (chosen) | Two-line change; matches every other implementation; the upload code needs no change | Init does not have the picture, so the formula is duplicated rather than read from `pic->w[1]` | — |
 | Read `pic->w[1]` / `pic->h[1]` at first extract and allocate lazily | No duplicated formula | Moves allocation out of init into the frame path and complicates error handling for a geometry the formula already defines | Rejected |
 | Clamp `cx` / `cy` in the kernel to the staged width | Prevents the out-of-bounds read | Still drops the real last chroma column, so odd widths would score differently from every other backend | Rejected — hides the bug instead of fixing it |

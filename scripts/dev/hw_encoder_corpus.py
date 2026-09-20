@@ -26,11 +26,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import os
+import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import TextIO
+
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
 
 CANONICAL_6 = (
     "integer_adm2",
@@ -40,6 +50,27 @@ CANONICAL_6 = (
     "integer_vif_scale3",
     "integer_motion2",
 )
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_MODEL = REPO_ROOT / "model" / "vmaf_v0.6.1.json"
+
+
+def resolve_executable(value: str | Path) -> Path:
+    """Return a stable absolute executable path or fail before doing work."""
+    resolved = shutil.which(str(value))
+    if resolved is None:
+        raise FileNotFoundError(f"executable not found or not executable: {value}")
+    path = Path(resolved).resolve(strict=True)
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise FileNotFoundError(f"executable not found or not executable: {value}")
+    return path
+
+
+def report_process_output(process: CommandResult) -> None:
+    """Surface every diagnostic emitted by a child process."""
+    if process.stdout:
+        sys.stdout.write(process.stdout)
+    if process.stderr:
+        sys.stderr.write(process.stderr)
 
 
 def encode_hw(
@@ -55,12 +86,13 @@ def encode_hw(
     qsv_device: Path | None = None,
     vaapi_device: Path | None = None,
     extra: list[str] | None = None,
+    ffmpeg_bin: str | Path = "ffmpeg",
 ) -> tuple[int, float, int]:
     """Run ffmpeg with the requested hardware encoder.
 
     Returns (returncode, encode_wall_ms, bytes_written).
     """
-    pre_args: list[str] = ["ffmpeg", "-y", "-loglevel", "error"]
+    pre_args: list[str] = [str(resolve_executable(ffmpeg_bin)), "-y", "-loglevel", "error"]
     if encoder.endswith("_qsv") and qsv_device is not None:
         pre_args += [
             "-init_hw_device",
@@ -121,16 +153,27 @@ def encode_hw(
     cmd = pre_args + post + [str(out_mp4)]
 
     t0 = time.monotonic()
-    p = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    p = run_command(
+        cmd,
+        allowed_executables=(cmd[0],),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=1800,
+        max_output_bytes=16 * 1_048_576,
+    )
+    report_process_output(p)
     elapsed_ms = (time.monotonic() - t0) * 1000.0
     size = out_mp4.stat().st_size if out_mp4.exists() else 0
     return p.returncode, elapsed_ms, size
 
 
-def decode_to_raw(mp4: Path, raw_yuv: Path, pix_fmt: str) -> int:
+def decode_to_raw(
+    mp4: Path, raw_yuv: Path, pix_fmt: str, *, ffmpeg_bin: str | Path = "ffmpeg"
+) -> int:
     """ffmpeg decode mp4 -> raw YUV. Returns rc."""
     cmd = [
-        "ffmpeg",
+        str(resolve_executable(ffmpeg_bin)),
         "-y",
         "-loglevel",
         "error",
@@ -142,7 +185,16 @@ def decode_to_raw(mp4: Path, raw_yuv: Path, pix_fmt: str) -> int:
         pix_fmt,
         str(raw_yuv),
     ]
-    p = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    p = run_command(
+        cmd,
+        allowed_executables=(cmd[0],),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=600,
+        max_output_bytes=16 * 1_048_576,
+    )
+    report_process_output(p)
     return p.returncode
 
 
@@ -156,10 +208,11 @@ def score_cuda(
     json_out: Path,
 ) -> int:
     """libvmaf CUDA backend, JSON output with per-frame metrics."""
+    vmaf_executable = resolve_executable(vmaf_bin)
     pixfmt_map = {"yuv420p": "420", "yuv422p": "422", "yuv444p": "444"}
     bitdepth = 10 if "10" in pix_fmt else (12 if "12" in pix_fmt else 8)
     cmd = [
-        str(vmaf_bin),
+        str(vmaf_executable),
         "--reference",
         str(ref),
         "--distorted",
@@ -173,18 +226,26 @@ def score_cuda(
         "--bitdepth",
         str(bitdepth),
         "--model",
-        "path=model/vmaf_v0.6.1.json",
+        f"path={DEFAULT_MODEL}",
         "--threads",
         "1",
-        "--gpumask=0",
-        "--no_sycl",
-        "--no_vulkan",
+        "--backend",
+        "cuda",
         "-q",
         "--json",
         "--output",
         str(json_out),
     ]
-    p = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    p = run_command(
+        cmd,
+        allowed_executables=(vmaf_executable,),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=600,
+        max_output_bytes=16 * 1_048_576,
+    )
+    report_process_output(p)
     return p.returncode
 
 
@@ -221,7 +282,8 @@ def emit_rows(
     return rows
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the hardware-corpus command line."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--vmaf-bin", type=Path, required=True)
     ap.add_argument("--source", type=Path, required=True)
@@ -261,81 +323,117 @@ def main() -> int:
     ap.add_argument("--qsv-device", type=Path, default=Path("/dev/dri/renderD129"))
     ap.add_argument("--vaapi-device", type=Path, default=Path("/dev/dri/renderD129"))
     ap.add_argument("--out", type=Path, required=True)
-    args = ap.parse_args()
+    return ap
+
+
+def encode_candidate(
+    args: argparse.Namespace, cq: int, src_stem: str, workdir: Path
+) -> tuple[Path, float, int] | None:
+    """Encode one quality point, returning its artifact and measurements."""
+    mp4 = workdir / f"{src_stem}_{args.encoder}_cq{cq}.mp4"
+    rc, enc_ms, size = encode_hw(
+        args.source,
+        args.width,
+        args.height,
+        args.pix_fmt,
+        args.framerate,
+        args.encoder,
+        cq,
+        mp4,
+        qsv_device=args.qsv_device,
+        vaapi_device=args.vaapi_device,
+        ffmpeg_bin=args.ffmpeg_bin,
+    )
+    if rc != 0 or size == 0:
+        print(f"[skip] {src_stem} {args.encoder} cq{cq}: encode rc={rc}", file=sys.stderr)
+        return None
+    return mp4, enc_ms, size
+
+
+def score_candidate(
+    args: argparse.Namespace,
+    cq: int,
+    src_stem: str,
+    workdir: Path,
+    mp4: Path,
+    enc_ms: float,
+    size: int,
+) -> tuple[dict, list[dict]] | None:
+    """Decode and score one encoded quality point."""
+    yuv = workdir / f"{src_stem}_{args.encoder}_cq{cq}.yuv"
+    if decode_to_raw(mp4, yuv, args.pix_fmt, ffmpeg_bin=args.ffmpeg_bin) != 0 or not yuv.exists():
+        print(f"[skip] {src_stem} {args.encoder} cq{cq}: decode failed", file=sys.stderr)
+        return None
+    json_out = workdir / "vmaf.json"
+    if (
+        score_cuda(
+            args.vmaf_bin,
+            args.source,
+            yuv,
+            args.width,
+            args.height,
+            args.pix_fmt,
+            json_out,
+        )
+        != 0
+        or not json_out.exists()
+    ):
+        print(f"[skip] {src_stem} {args.encoder} cq{cq}: score failed", file=sys.stderr)
+        return None
+    payload = json.loads(json_out.read_text())
+    rows = emit_rows(
+        payload,
+        src=src_stem,
+        encoder=args.encoder,
+        cq=cq,
+        enc_bytes=size,
+        enc_time_ms=enc_ms,
+    )
+    return payload, rows
+
+
+def write_quality_rows(args: argparse.Namespace, output: TextIO, src_stem: str) -> int:
+    """Run every requested quality point and append successful frame rows."""
+    written = 0
+    for cq in args.cq:
+        with tempfile.TemporaryDirectory(prefix="hwenc_") as directory:
+            workdir = Path(directory)
+            encoded = encode_candidate(args, cq, src_stem, workdir)
+            if encoded is None:
+                continue
+            mp4, enc_ms, size = encoded
+            scored = score_candidate(args, cq, src_stem, workdir, mp4, enc_ms, size)
+            if scored is None:
+                continue
+            payload, rows = scored
+            for row in rows:
+                output.write(json.dumps(row) + "\n")
+            written += len(rows)
+            print(
+                f"[ok] {src_stem} {args.encoder} cq{cq}: "
+                f"{len(rows)} rows, vmaf_pool={payload['pooled_metrics']['vmaf']['mean']:.2f}, "
+                f"enc={enc_ms:.0f}ms, sz={size}",
+                flush=True,
+            )
+    return written
+
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     if not args.source.is_file():
         print(f"error: source not found: {args.source}", file=sys.stderr)
         return 2
-    if not args.vmaf_bin.is_file():
-        print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
+    try:
+        args.ffmpeg_bin = resolve_executable("ffmpeg")
+        args.vmaf_bin = resolve_executable(args.vmaf_bin)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
-    src_stem = args.source.stem
-    written = 0
     with args.out.open("a", encoding="utf-8") as fh:
-        for cq in args.cq:
-            with tempfile.TemporaryDirectory(prefix="hwenc_") as td:
-                td_path = Path(td)
-                mp4 = td_path / f"{src_stem}_{args.encoder}_cq{cq}.mp4"
-                rc, enc_ms, sz = encode_hw(
-                    args.source,
-                    args.width,
-                    args.height,
-                    args.pix_fmt,
-                    args.framerate,
-                    args.encoder,
-                    cq,
-                    mp4,
-                    qsv_device=args.qsv_device,
-                    vaapi_device=args.vaapi_device,
-                )
-                if rc != 0 or sz == 0:
-                    print(
-                        f"[skip] {src_stem} {args.encoder} cq{cq}: encode rc={rc}", file=sys.stderr
-                    )
-                    continue
-                yuv = td_path / f"{src_stem}_{args.encoder}_cq{cq}.yuv"
-                if decode_to_raw(mp4, yuv, args.pix_fmt) != 0 or not yuv.exists():
-                    print(
-                        f"[skip] {src_stem} {args.encoder} cq{cq}: decode failed", file=sys.stderr
-                    )
-                    continue
-                json_out = td_path / "vmaf.json"
-                if (
-                    score_cuda(
-                        args.vmaf_bin,
-                        args.source,
-                        yuv,
-                        args.width,
-                        args.height,
-                        args.pix_fmt,
-                        json_out,
-                    )
-                    != 0
-                    or not json_out.exists()
-                ):
-                    print(f"[skip] {src_stem} {args.encoder} cq{cq}: score failed", file=sys.stderr)
-                    continue
-                payload = json.loads(json_out.read_text())
-                rows = emit_rows(
-                    payload,
-                    src=src_stem,
-                    encoder=args.encoder,
-                    cq=cq,
-                    enc_bytes=sz,
-                    enc_time_ms=enc_ms,
-                )
-                for r in rows:
-                    fh.write(json.dumps(r) + "\n")
-                written += len(rows)
-                print(
-                    f"[ok] {src_stem} {args.encoder} cq{cq}: "
-                    f"{len(rows)} rows, vmaf_pool="
-                    f"{payload['pooled_metrics']['vmaf']['mean']:.2f}, "
-                    f"enc={enc_ms:.0f}ms, sz={sz}",
-                    flush=True,
-                )
+        written = write_quality_rows(args, fh, args.source.stem)
     print(f"[done] wrote {written} rows -> {args.out}")
     return 0
 

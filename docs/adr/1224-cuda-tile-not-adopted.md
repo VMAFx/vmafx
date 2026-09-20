@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1224: CUDA Tile C++ is not adopted; the audit's incidental findings are
 
@@ -79,7 +78,7 @@ adopted instead, in this change and its follow-ups:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Do not adopt; take the incidental findings (chosen) | Keeps one programming model per backend; banks three real fixes the audit surfaced | Leaves the TMA question unmeasured | — |
 | Adopt for the float kernels only | `ct::mma()` does accept float/double | The float kernels are stencils and reductions, not contractions; and it still bifurcates the build and loses the PTX floor | No contraction to accelerate |
 | Adopt for SpEED's covariance | Genuinely matrix-shaped | M=N=25 is not a power of two (measured: `shape<25,25>` and `shape<24,24>` both fail to compile); the operand is 25 overlapping shifted windows, never materialised; the accumulator is `double` for CPU parity; and the one true GEMM runs on the host at 0.39 MFLOP | Fails on four independent grounds |

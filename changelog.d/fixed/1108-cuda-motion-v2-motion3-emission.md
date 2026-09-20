@@ -1,4 +1,6 @@
-### Fixed
+# Changelog fragment
+
+## Fixed
 
 - **CUDA `motion_v2_cuda` now emits `motion3_v2_score`**: the CUDA twin of the
   `motion_v2` extractor previously emitted only `motion_v2_sad_score` and

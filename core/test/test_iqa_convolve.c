@@ -26,11 +26,6 @@
 
 #include <stdint.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,7 +91,7 @@ typedef void (*convolve_simd_fn)(float *img, int w, int h, const float *kernel_h
 // test exits process on failure path via mu_assert; analyzer can't see
 // exit; small allocations leak by design at test end. Test scaffolding
 // per ADR-0141 §2; ADR-0278 cite form.
-// NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0141 / ADR-0278
+
 static char *check_simd_variant(const float *src, int w, int h, const float *kernel_h,
                                 const float *kernel_v, int kw, int kh, const float *dst_scalar,
                                 size_t dst_n, convolve_simd_fn fn, int poison, char *fail_cmp)
@@ -104,7 +99,12 @@ static char *check_simd_variant(const float *src, int w, int h, const float *ker
     float *src_copy = (float *)malloc((size_t)w * (size_t)h * sizeof(float));
     float *dst = (float *)malloc(dst_n * sizeof(float));
     float *workspace = (float *)malloc((size_t)w * (size_t)h * sizeof(float));
-    mu_assert("simd malloc failed", src_copy && dst && workspace);
+    if (!src_copy || !dst || !workspace) {
+        free(src_copy);
+        free(dst);
+        free(workspace);
+        return "simd malloc failed";
+    }
     memcpy(src_copy, src, (size_t)w * (size_t)h * sizeof(float));
     memset(dst, poison, dst_n * sizeof(float));
 
@@ -118,9 +118,9 @@ static char *check_simd_variant(const float *src, int w, int h, const float *ker
     free(src_copy);
     free(dst);
     free(workspace);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-// NOLINTEND(clang-analyzer-unix.Malloc)
+
 #endif /* ARCH_X86 || ARCH_AARCH64 */
 
 /* Run the scalar reference convolve into `dst_scalar`. Mutates a
@@ -130,21 +130,21 @@ static char *run_scalar_reference(const float *src, int w, int h, int kw, const 
                                   const float *kernel_v, size_t src_n, float *dst_scalar)
 {
     struct iqa_kernel k;
-    k.kernel = NULL;
+    k.kernel = VMAF_NULLPTR;
     k.kernel_h = (float *)kernel_h;
     k.kernel_v = (float *)kernel_v;
     k.w = kw;
     k.h = kw;
     k.normalized = 1;
-    k.bnd_opt = NULL;
+    k.bnd_opt = VMAF_NULLPTR;
     k.bnd_const = 0.0f;
 
     float *src_scalar_copy = (float *)malloc(src_n * sizeof(float));
-    mu_assert("malloc failed", src_scalar_copy != NULL);
+    mu_assert("malloc failed", src_scalar_copy != VMAF_NULLPTR);
     memcpy(src_scalar_copy, src, src_n * sizeof(float));
-    iqa_convolve(src_scalar_copy, w, h, &k, dst_scalar, NULL, NULL);
+    iqa_convolve(src_scalar_copy, w, h, &k, dst_scalar, VMAF_NULLPTR, VMAF_NULLPTR);
     free(src_scalar_copy);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Run all configured SIMD convolves for this host and bit-compare
@@ -188,13 +188,13 @@ static char *check_all_simd_variants(const float *src, int w, int h, int kw, con
     (void)kernel_v;
     (void)dst_scalar;
     (void)dst_n;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 // test exits process on failure path via mu_assert; analyzer can't see
 // exit; small allocations leak by design at test end. Test scaffolding
 // per ADR-0141 §2; ADR-0278 cite form.
-// NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0141 / ADR-0278
+
 static char *check_case(int w, int h, int kw, const float *kernel_h, const float *kernel_v,
                         uint32_t seed)
 {
@@ -205,7 +205,11 @@ static char *check_case(int w, int h, int kw, const float *kernel_h, const float
 
     float *src = (float *)malloc(src_n * sizeof(float));
     float *dst_scalar = (float *)malloc(dst_n * sizeof(float));
-    mu_assert("malloc failed", src && dst_scalar);
+    if (!src || !dst_scalar) {
+        free(src);
+        free(dst_scalar);
+        return "malloc failed";
+    }
     fill_pattern(src, src_n, seed);
     memset(dst_scalar, 0xAA, dst_n * sizeof(float));
     (void)dst_h;
@@ -218,7 +222,6 @@ static char *check_case(int w, int h, int kw, const float *kernel_h, const float
     free(dst_scalar);
     return msg;
 }
-// NOLINTEND(clang-analyzer-unix.Malloc)
 
 /* Gaussian (11-tap, kw_even=0) cases. */
 static char *test_gauss_11x11(void)
@@ -313,7 +316,7 @@ static char *run_gauss_small_tests(void)
     mu_run_test(test_gauss_19x19);
     mu_run_test(test_gauss_20x20);
     mu_run_test(test_gauss_25x25);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Medium-and-large Gaussian cases: odd-stride tails plus the two
@@ -324,7 +327,7 @@ static char *run_gauss_large_tests(void)
     mu_run_test(test_gauss_61x41);
     mu_run_test(test_gauss_576x324);
     mu_run_test(test_gauss_1920x1080);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_gauss_tests(void)
@@ -341,17 +344,15 @@ static char *run_box_tests(void)
     mu_run_test(test_box_16x16);
     mu_run_test(test_box_21x13);
     mu_run_test(test_box_576x324);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     if (!detect_simd_support())
-        return NULL;
+        return VMAF_NULLPTR;
     char *msg = run_gauss_tests();
     if (msg)
         return msg;
     return run_box_tests();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0620: Scaffold audit P0 — three silent-correctness fixes
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ All three exception classes are added to `python/vmaf/tools/exceptions.py`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the warning-and-fallback, just improve the warning message | No caller breakage; zero migration cost | Silent wrong output persists; callers cannot distinguish warning from success | The whole problem is silent wrong output; a louder warning does not fix that |
 | Raise unconditionally (no opt-in flag) | Strictest posture | Breaks existing callers that relied on the fallback intentionally | `allow_uncalibrated` / `assume_unit_stddev` carry zero cognitive overhead and preserve backward compat for deliberate callers |
 | Iterate the ensemble and average explanations | Fixes P0-3 without raising | Semantics are undefined (weighted? unweighted? which seed?) — ship correctness first, aggregation strategy in a follow-on | Semantically ambiguous; a well-typed exception unblocks the caller to make an explicit choice |

@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-1118: Pelorus perceptual side-data weights VMAF spatial pooling, golden-isolated and opt-in
+# ADR-1118: perceptual sidedata weighting
+
+**Decision:** Pelorus perceptual side-data weights VMAF spatial pooling,
+golden-isolated and opt-in
 
 - **Status**: Accepted
 - **Date**: 2026-06-14
@@ -8,10 +10,10 @@
 
 ## Context
 
-The vendored Pelorus interop ABI (ADR-1113) lets vmafx *read* the per-frame
+The vendored Pelorus interop ABI (ADR-1113) lets vmafx _read_ the per-frame
 side-data blob that the Pelorus `vf_pelorus_*` pre-encode filters attach to each
 distorted AVFrame. That blob carries per-cell banding-risk and local-variance
-maps. The integration plan's workstream B asks vmafx to *use* those maps to make
+maps. The integration plan's workstream B asks vmafx to _use_ those maps to make
 a pooled VMAF track the distortions a deband-aware encoder actually cares about
 — regions at high banding risk should count for more.
 
@@ -37,28 +39,34 @@ spatial pooling**: each frame's per-cell banding-risk map is summarised to a
 normalized `[0,1]` salience, modulated by local variance (flat regions make
 banding more visible), and turned into a per-frame pooling weight
 `w = 1 + strength · salience`. The pooled MEAN and HARMONIC_MEAN become the
-*weighted* mean and weighted harmonic mean over per-frame VMAF scores; MIN/MAX
+_weighted_ mean and weighted harmonic mean over per-frame VMAF scores; MIN/MAX
 are unaffected (re-weighting cannot reorder extremes). The spatial maps drive
 how much each frame contributes — "spatial-pooling weighting".
 
 **Golden-gate isolation is the load-bearing invariant.** The weighting is inert
 unless BOTH (a) the operator opts in (`vmaf_set_perceptual_weight_enabled`,
 default OFF; the `vf_libvmaf` `perceptual_weight` AVOption, default 0) AND (b) a
-valid Pelorus blob was registered for that frame (`vmaf_set_perceptual_sidedata`,
-keyed by picture index). When either is false, the per-frame weight is exactly
-`1.0` and the pooling code takes a branch whose float operations are identical,
-in the same order, to upstream. With all weights `1.0`, the weighted mean equals
-`Σsᵢ/N` and the weighted harmonic mean equals `N/Σ(1/(sᵢ+1)) − 1` — but the
-implementation runs the *literal* upstream expression on the no-side-data path
-rather than a weighted formula that merely evaluates to the same number, so the
-result is byte-identical, not just numerically close. The Netflix golden pairs
-have no side-data and so score bit-exact, proven by a unit test
-(`test_perceptual_weight.c`) that pools with and without a synthetic blob.
+valid Pelorus blob was registered for that frame
+(`vmaf_set_perceptual_sidedata`, keyed by picture index). When either is false,
+the per-frame weight is exactly `1.0` and the pooling code takes a branch whose
+float operations are identical, in the same order, to upstream. With all weights
+`1.0`, the weighted mean equals `Σsᵢ/N` and the weighted harmonic mean equals
+`N/Σ(1/(sᵢ+1)) − 1` — but the implementation runs the _literal_ upstream
+expression on the no-side-data path rather than a weighted formula that merely
+evaluates to the same number, so the result is byte-identical, not just
+numerically close. The Netflix golden pairs have no side-data and so score
+bit-exact, proven by a unit test (`test_perceptual_weight.c`) that pools with
+and without a synthetic blob.
 
 New public C-API (`core/include/libvmaf/perceptual_weight.h`):
 `vmaf_set_perceptual_weight_enabled`, `vmaf_set_perceptual_weight_strength`, and
-`vmaf_set_perceptual_sidedata(VmafContext*, const uint8_t *blob, size_t len,
-unsigned pic_index)`. The weight derivation + per-frame store live in
+
+```c
+vmaf_set_perceptual_sidedata(
+    VmafContext *, const uint8_t *blob, size_t len, unsigned pic_index)
+```
+
+The weight derivation + per-frame store live in
 `core/src/feature/perceptual_weight.c`; the pooling hook is in
 `vmaf_feature_score_pooled`. The `vf_libvmaf` filter reads the blob off the
 distorted frame and drives the API (ffmpeg-patch
@@ -66,11 +74,11 @@ distorted frame and drives the API (ffmpeg-patch
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| **Spatial-pooling weighting (chosen)** | Directly answers the plan's "regions at high banding risk count more"; a single pooled VMAF reflects the perceptual intent; golden-isolated by construction (weight ≡ 1.0 ⇒ byte-identical) | Changes the meaning of a pooled score when enabled; MIN/MAX are necessarily unaffected; needs careful proof that the no-side-data path is bit-exact | Maintainer decision. It is the only option that re-weights the *score the user already reads*, and the golden gate is protected by the opt-in-AND-present double gate plus a bit-exactness test |
-| **Auxiliary feature only** | Golden VMAF is untouched by construction (a separate `pelorus_banding` feature is published alongside, never folded into the model score) | Does not satisfy the plan's intent (the pooled VMAF itself should reflect banding salience); adds a feature consumers must explicitly query; no effect on the headline number | Safe but inert — it sidesteps the requirement instead of meeting it |
-| **Both (weight pooling AND publish an auxiliary feature)** | Maximum information; downstream can choose | Doubles the surface and the doc/maintenance burden; the auxiliary half is unused by the stated use-case; larger blast radius for the golden gate | Over-scoped for the RC; the auxiliary feature can be added later without re-litigating this decision |
+| Option                                                     | Pros                                                                                                                                                                                        | Cons                                                                                                                                                                          | Why not chosen                                                                                                                                                                                  |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Spatial-pooling weighting (chosen)**                     | Directly answers the plan's "regions at high banding risk count more"; a single pooled VMAF reflects the perceptual intent; golden-isolated by construction (weight ≡ 1.0 ⇒ byte-identical) | Changes the meaning of a pooled score when enabled; MIN/MAX are necessarily unaffected; needs careful proof that the no-side-data path is bit-exact                           | Maintainer decision. It is the only option that re-weights the _score the user already reads_, and the golden gate is protected by the opt-in-AND-present double gate plus a bit-exactness test |
+| **Auxiliary feature only**                                 | Golden VMAF is untouched by construction (a separate `pelorus_banding` feature is published alongside, never folded into the model score)                                                   | Does not satisfy the plan's intent (the pooled VMAF itself should reflect banding salience); adds a feature consumers must explicitly query; no effect on the headline number | Safe but inert — it sidesteps the requirement instead of meeting it                                                                                                                             |
+| **Both (weight pooling AND publish an auxiliary feature)** | Maximum information; downstream can choose                                                                                                                                                  | Doubles the surface and the doc/maintenance burden; the auxiliary half is unused by the stated use-case; larger blast radius for the golden gate                              | Over-scoped for the RC; the auxiliary feature can be added later without re-litigating this decision                                                                                            |
 
 ## Consequences
 
@@ -92,8 +100,8 @@ distorted frame and drives the API (ffmpeg-patch
 
 - **New dependencies**: none. The reader is CPU-only, dependency-free C compiled
   into the existing `libvmaf` target; it consumes only the already-vendored
-  Pelorus interop parser (ADR-1113). No Vulkan, no GPU, no new runtime/build/test
-  dependency.
+  Pelorus interop parser (ADR-1113). No Vulkan, no GPU, no new
+  runtime/build/test dependency.
 - **Removed dependencies**: none.
 - **Build-time fetches**: none.
 - **CVE surface delta**: negligible — the new code is a bounds-checked

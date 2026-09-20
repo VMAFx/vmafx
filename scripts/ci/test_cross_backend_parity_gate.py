@@ -139,8 +139,8 @@ def test_build_matrix_two_features() -> None:
 
 
 def test_build_matrix_three_backends_produces_three_pairs() -> None:
-    backends = ["cpu", "cuda", "vulkan"]
-    expected_pairs = {("cpu", "cuda"), ("cpu", "vulkan"), ("cuda", "vulkan")}
+    backends = ["cpu", "cuda", "sycl"]
+    expected_pairs = {("cpu", "cuda"), ("cpu", "sycl"), ("cuda", "sycl")}
     cells = build_matrix(["vif"], backends)
     # C(3,2) = 3 pairs
     assert len(cells) == len(expected_pairs)
@@ -159,11 +159,11 @@ def test_build_matrix_single_backend_no_pairs() -> None:
 
 
 def test_build_matrix_no_duplicate_pairs() -> None:
-    cells = build_matrix(["vif"], ["cpu", "cuda", "vulkan", "sycl"])
+    backend_list = ["cpu", "cuda", "sycl"]
+    cells = build_matrix(["vif"], backend_list)
     pairs = [(c.backend_a, c.backend_b) for c in cells]
     # Every pair should be (earlier, later) in the input list — no (cuda, cpu).
     for a, b in pairs:
-        backend_list = ["cpu", "cuda", "vulkan", "sycl"]
         assert backend_list.index(a) < backend_list.index(b)
 
 
@@ -184,18 +184,9 @@ def test_feature_extractor_name_sycl_has_sycl_suffix() -> None:
     assert feature_extractor_name("psnr", "sycl") == "psnr_sycl"
 
 
-def test_feature_extractor_name_vulkan_has_vulkan_suffix() -> None:
-    assert feature_extractor_name("float_ssim", "vulkan") == "float_ssim_vulkan"
-
-
-def test_feature_extractor_name_alias_adm_vulkan() -> None:
-    # ADR-0586: Vulkan integer ADM uses canonical renamed extractor.
-    assert feature_extractor_name("adm", "vulkan") == "integer_adm_vulkan"
-
-
-def test_feature_extractor_name_alias_motion_vulkan() -> None:
-    # ADR-0662: Vulkan motion uses integer_motion_vulkan.
-    assert feature_extractor_name("motion", "vulkan") == "integer_motion_vulkan"
+def test_feature_extractor_name_rejects_unknown_backend() -> None:
+    with pytest.raises(KeyError):
+        feature_extractor_name("float_ssim", "unsupported")
 
 
 def test_feature_extractor_name_lcs_pseudo_feature_cpu() -> None:
@@ -245,7 +236,6 @@ def test_build_command_cpu_no_device_flag(tmp_path: Path) -> None:
     # CPU should not inject a device flag.
     assert "--gpumask" not in cmd
     assert "--sycl_device" not in cmd
-    assert "--vulkan_device" not in cmd
 
 
 def test_build_command_cuda_includes_gpumask(tmp_path: Path) -> None:
@@ -267,7 +257,7 @@ def test_build_command_cuda_includes_gpumask(tmp_path: Path) -> None:
     assert cmd[idx + 1] == "1"
 
 
-def test_build_command_vulkan_includes_vulkan_device(tmp_path: Path) -> None:
+def test_build_command_sycl_includes_sycl_device(tmp_path: Path) -> None:
     cmd = build_command(
         binary=tmp_path / "vmaf",
         ref=tmp_path / "ref.yuv",
@@ -277,11 +267,11 @@ def test_build_command_vulkan_includes_vulkan_device(tmp_path: Path) -> None:
         pix_fmt="420",
         bitdepth=8,
         feature="vif",
-        backend="vulkan",
+        backend="sycl",
         device=0,
         output=tmp_path / "out.json",
     )
-    assert "--vulkan_device" in cmd
+    assert "--sycl_device" in cmd
 
 
 def test_build_command_no_prediction_flag_present(tmp_path: Path) -> None:
@@ -413,7 +403,7 @@ def test_resolve_cell_tolerance_no_calibration_returns_feature_default() -> None
 
 
 def test_resolve_cell_tolerance_no_gpu_id_returns_default() -> None:
-    table = _calibration_table(("vulkan:0x10005:*", {"vif": 1e-6}))
+    table = _calibration_table(("sycl:0x8086:*", {"vif": 1e-6}))
     tol, src = resolve_cell_tolerance(
         "vif",
         fp16_features=[],
@@ -425,16 +415,16 @@ def test_resolve_cell_tolerance_no_gpu_id_returns_default() -> None:
 
 
 def test_resolve_cell_tolerance_calibrated_override() -> None:
-    table = _calibration_table(("vulkan:0x10005:*", {"vif": 1.5e-5}))
+    table = _calibration_table(("sycl:0x8086:*", {"vif": 1.5e-5}))
     tol, src = resolve_cell_tolerance(
         "vif",
         fp16_features=[],
         calibration=table,
-        gpu_id="vulkan:0x10005:0x0",
+        gpu_id="sycl:0x8086:0x56a5",
     )
     assert tol == pytest.approx(1.5e-5)
     assert "calibrated" in src
-    assert "vulkan:0x10005:*" in src
+    assert "sycl:0x8086:*" in src
 
 
 def test_resolve_cell_tolerance_no_match_returns_no_calibration_label() -> None:
@@ -443,7 +433,7 @@ def test_resolve_cell_tolerance_no_match_returns_no_calibration_label() -> None:
         "vif",
         fp16_features=[],
         calibration=table,
-        gpu_id="vulkan:0x10005:0x0",
+        gpu_id="sycl:0x8086:0x56a5",
     )
     assert tol == pytest.approx(FEATURE_TOLERANCE["vif"])
     assert "no-calibration" in src
@@ -594,12 +584,12 @@ def test_emit_md_tolerance_source_appears(tmp_path: Path) -> None:
         per_metric_max=result.per_metric_max,
         per_metric_mismatches=result.per_metric_mismatches,
         status=result.status,
-        tolerance_source="calibrated:vulkan:0x10005:*",
+        tolerance_source="calibrated:sycl:0x8086:*",
     )
     out = tmp_path / "out.md"
     emit_md([result], out)
     text = out.read_text(encoding="utf-8")
-    assert "calibrated:vulkan:0x10005:*" in text
+    assert "calibrated:sycl:0x8086:*" in text
 
 
 # ---------------------------------------------------------------------------

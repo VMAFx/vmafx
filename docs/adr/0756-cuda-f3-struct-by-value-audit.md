@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 <!--
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -38,7 +37,7 @@ not a repeated inner-loop global read.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Host-side extraction (pass raw `CUdeviceptr` to `cuLaunchKernel`) | Full compiler visibility; enables ptxas to use `ld.global.nc` without `__ldg()` | Requires modifying every call site in `_cuda.c` dispatch files; higher risk, larger diff | Deferred; revisit if post-F3 ncu shows remaining DRAM headroom |
 | AoS → SoA buffer restructure (F1) | Best long-term coalescing | Structural change to `VmafCudaBuffer`; API impact | Deferred per Research-0754 decision section |
 | Skip F3 for all kernels that are launch-starved at 576p | Correct that at 576p F3 rarely matters | Ignores 1080p+ production workloads | Not chosen; fork targets 1080p/4K production |

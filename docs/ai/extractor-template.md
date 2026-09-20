@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Tiny-AI extractor template
 
 This page is the recipe for adding a new tiny-AI feature extractor to
@@ -22,7 +21,7 @@ documented inline in
 [`tiny_extractor_template.h`](../../core/src/dnn/tiny_extractor_template.h):
 
 | Symbol | Purpose |
-|---|---|
+| --- | --- |
 | `vmaf_tiny_ai_resolve_model_path(name, option, env_var)` | Feature-option-then-env-var lookup. Returns NULL with a single user-facing log line when neither is set. |
 | `vmaf_tiny_ai_open_session(name, path, &out)` | `vmaf_dnn_session_open` wrapper with the standard `<name>: vmaf_dnn_session_open(<path>) failed: <rc>` log line on error. |
 | `vmaf_tiny_ai_yuv8_to_rgb8_planes(pic, dst_r, dst_g, dst_b)` | BT.709 limited-range 8-bit YUV → RGB with nearest-neighbour chroma upsample. Bit-exact with the per-extractor copies it replaces. |
@@ -199,7 +198,7 @@ specific tensor wiring. Compare to the pre-template baseline of
 ## Recipe variants
 
 | Variant | Example | Extra wiring |
-|---|---|---|
+| --- | --- | --- |
 | **Single-frame, distorted-only** | `feature_mobilesal.c` (PR #208) | As above. |
 | **Single-frame, full-reference** | `feature_lpips.c` | Add a second RGB scratch + tensor for `ref`; bind two `VmafDnnInput`s named `"ref"` and `"dist"`. |
 | **Sliding window (small N)** | `fastdvdnet_pre.c` (5 frames) | Add a ring buffer of N planes + `next_slot` + `n_buffered`; gather into a `[1, N, H, W]` input tensor; replicate-edge clamp at clip boundaries. |

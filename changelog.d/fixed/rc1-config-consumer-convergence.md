@@ -1,1 +1,4 @@
-- Route shared build configuration changes through full CI validation and let node publication consume the generated FFmpeg release default.
+# Changelog fragment
+
+- Route shared build configuration changes through full CI validation and let
+  node publication consume the generated FFmpeg release default.

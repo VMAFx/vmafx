@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # NOLINT inventory audit — ADR-0278 cite-form drift sweep (2026-05-30)
 
 ## Question
@@ -57,7 +56,7 @@ citation. Drift accumulates as new fork-touched code lands.
 ### Sites edited
 
 | File | Lines edited | Cite added |
-|---|---|---|
+| --- | --- | --- |
 | `core/src/predict.c` | 497 | ADR-0278 (bitmask enum cast) |
 | `core/src/svm.cpp` | 31 | ADR-0141 / ADR-0278 (vendored libsvm) |
 | `core/src/output.c` | 80 | ADR-0141 / ADR-0278 (writer ferror pattern) |

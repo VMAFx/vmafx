@@ -40,11 +40,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* Fixture must accommodate the 5-scale dyadic pyramid combined with
  * the 11-tap Gaussian: min dimension is `MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1)`
@@ -111,14 +107,14 @@ static int ms_ssim_db_opts(VmafFeatureDictionary **opts)
     return vmaf_feature_dictionary_set(opts, "clip_db", "true");
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_cpu_ms_ssim(bool db, bool identical, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (db) {
         err = ms_ssim_db_opts(&opts);
         mu_assert("CPU: ms_ssim_db_opts failed", !err);
@@ -129,33 +125,33 @@ static char *run_cpu_ms_ssim(bool db, bool identical, double *score)
     mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
     err = feed_frame(vmaf, identical);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", score, 0u);
     mu_assert("CPU: float_ms_ssim score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
+
 static char *run_sycl_ms_ssim(bool db, bool identical, double *score)
 {
     *score = NAN;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (db) {
         err = ms_ssim_db_opts(&opts);
         mu_assert("SYCL: ms_ssim_db_opts failed", !err);
@@ -166,22 +162,22 @@ static char *run_sycl_ms_ssim(bool db, bool identical, double *score)
     mu_assert("SYCL: vmaf_use_feature(float_ms_ssim_sycl) failed", !err);
     err = feed_frame(vmaf, identical);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", score, 0u);
     mu_assert("SYCL: float_ms_ssim score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ms_ssim_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ms_ssim_sycl");
-    mu_assert("float_ms_ssim_sycl extractor must be registered", fex != NULL);
+    mu_assert("float_ms_ssim_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_ms_ssim_sycl name matches", !strcmp(fex->name, "float_ms_ssim_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_ms_ssim_cpu_sycl_parity(void)
@@ -195,7 +191,7 @@ static char *test_ms_ssim_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (isnan(sycl_score))
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr,
@@ -204,7 +200,7 @@ static char *test_ms_ssim_cpu_sycl_parity(void)
     }
     mu_assert("float_ms_ssim CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1221 — clip_db is a CEILING on the dB output, not a clamp on the linear
@@ -227,7 +223,7 @@ static char *test_ms_ssim_clip_db_ceiling(void)
     if (msg)
         return msg;
     if (isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU float_ms_ssim dB score is non-finite", isfinite(cpu));
     mu_assert("SYCL float_ms_ssim dB score is non-finite -- clip_db must cap it at max_db",
@@ -241,7 +237,7 @@ static char *test_ms_ssim_clip_db_ceiling(void)
                       cpu, gpu, delta, PARITY_TOL);
     }
     mu_assert("float_ms_ssim dB score drifts from the CPU reference", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -249,7 +245,5 @@ char *run_tests(void)
     mu_run_test(test_ms_ssim_sycl_registered);
     mu_run_test(test_ms_ssim_cpu_sycl_parity);
     mu_run_test(test_ms_ssim_clip_db_ceiling);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

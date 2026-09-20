@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0678: Shared AI Run Manifest Helper
 
 - **Status**: Accepted
@@ -28,11 +27,11 @@ report schema may continue embedding only `build_run_provenance()`.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Keep only `build_run_provenance()` | Minimal API, no migration. | Every script still repeats the envelope and can drift. | It does not solve the duplication called out during the AI manifest sweep. |
-| Force every report through one universal schema | Maximum consistency. | Breaks existing report consumers and hides script-specific evidence behind a generic shape. | Existing reports are user-facing and should not be renamed just to reduce helper code. |
-| Add `write_run_manifest()` for standalone sidecars | Deduplicates the repeated envelope while preserving adapter-specific fields. | Scripts still choose their own `sections` keys. | Chosen because it removes boilerplate without breaking report schemas. |
+| Option                                             | Pros                                                                         | Cons                                                                                        | Why not chosen                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Keep only `build_run_provenance()`                 | Minimal API, no migration.                                                   | Every script still repeats the envelope and can drift.                                      | It does not solve the duplication called out during the AI manifest sweep.             |
+| Force every report through one universal schema    | Maximum consistency.                                                         | Breaks existing report consumers and hides script-specific evidence behind a generic shape. | Existing reports are user-facing and should not be renamed just to reduce helper code. |
+| Add `write_run_manifest()` for standalone sidecars | Deduplicates the repeated envelope while preserving adapter-specific fields. | Scripts still choose their own `sections` keys.                                             | Chosen because it removes boilerplate without breaking report schemas.                 |
 
 ## Consequences
 
@@ -54,6 +53,9 @@ report schema may continue embedding only `build_run_provenance()`.
 - [ADR-0661](0661-ai-run-manifest-provenance.md)
 - [ADR-0668](0668-ai-derived-table-provenance.md)
 - [ADR-0677](0677-ai-dataset-fetch-manifests.md)
-- Source: `req` — "somehow all you are doing now feels like it should be deduplicated? or are those adapter style scripts?"
-- Source: `req` — "yeah i guess you for sure need to add some of those claude skills etc..."
-- Source: `req` — "we should widen that later and do that with all tools lol... less work, less code, less maintenance and fixing..."
+- Source: `req` — "somehow all you are doing now feels like it should be
+  deduplicated? or are those adapter style scripts?"
+- Source: `req` — "yeah i guess you for sure need to add some of those claude
+  skills etc..."
+- Source: `req` — "we should widen that later and do that with all tools lol...
+  less work, less code, less maintenance and fixing..."

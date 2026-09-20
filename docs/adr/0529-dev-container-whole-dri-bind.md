@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0529: Replace `/dev/dri/by-path` bind with whole `/dev/dri` bind in dev container
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ with no subdirectory dependency.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `/dev/dri/by-path`-only bind (status quo) | Minimal surface area; only symlinks exposed | Fails after any PCI re-enumeration; requires manual operator intervention to restart | Rejected — the core complaint of this ADR |
 | Whole `/dev/dri` bind (chosen) | Stable bind source; no PCI-address dependency; subsumes `devices:` entry; simpler compose | Exposes all DRI nodes to the container (minor privilege expansion) | Chosen — the privilege expansion is acceptable; the dev container already has GPU passthrough via NVIDIA runtime + `/dev/kfd` |
 | Enumerate card*/renderD* at run-time via entrypoint script | No directory-level bind required; minimal privilege | Complex script; still needs `by-path/` for SYCL level-zero; adds startup latency | Rejected — complexity without benefit; whole-dir bind achieves the same with less moving parts |

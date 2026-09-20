@@ -25,6 +25,8 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include "vmaf_nullptr.h"
+
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -39,9 +41,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #if ARCH_X86
 #include "x86/integer_ssim_avx2.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -134,7 +136,6 @@ static void ssim_accumulate_row(const unsigned char *src, const unsigned char *d
             x + hkernel_offs - w + 1 <= 0 ? hkernel_sz : hkernel_sz - (x + hkernel_offs - w + 1);
         // k_min/k_max clamp to in-bounds — analyzer can't prove kernel
         // offsets stay within hkernel[0..hkernel_sz) and src/dst[0.._w) here.
-        // NOLINTBEGIN(clang-analyzer-security.ArrayBound) — ADR-0141 §2 / ADR-0278: upstream-parity bounds clamp
         for (k = k_min; k < k_max; k++) {
             signed s;
             signed d;
@@ -155,7 +156,6 @@ static void ssim_accumulate_row(const unsigned char *src, const unsigned char *d
             m.y2 += (int64_t)window * d * d;
             m.w += window;
         }
-        // NOLINTEND(clang-analyzer-security.ArrayBound)
         buf[x] = m;
     }
 }
@@ -214,6 +214,9 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
                                   int vkernel_sz, const unsigned *vkernel, int samplemax, int k_min,
                                   int k_max, double *ssim, double *ssimw)
 {
+    if (!lines || !vkernel || vkernel_sz <= 0 || k_min < 0 || k_min > k_max ||
+        k_max > vkernel_sz)
+        return;
     // samplemax² must be computed in double, not int. For 16-bpc input
     // samplemax = 65535 and 65535*65535 = 4,294,836,225 > INT_MAX, which
     // overflows a plain int multiply (signed-overflow UB, wraps to −131071)
@@ -226,7 +229,6 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
     const double sm = (double)samplemax;
     for (int x = 0; x < w; x++) {
         ssim_moments m;
-        const ssim_moments *buf;
         double c1;
         double c2;
         double mx2;
@@ -235,10 +237,8 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
         double w_d;
         int k;
         memset(&m, 0, sizeof(m));
-        // k_min/k_max clamp to in-bounds — analyzer can't prove kernel
-        // offsets stay within vkernel[0..vkernel_sz) here.
-        // NOLINTBEGIN(clang-analyzer-security.ArrayBound) — ADR-0141 §2 / ADR-0278: upstream-parity bounds clamp
         for (k = k_min; k < k_max; k++) {
+            const ssim_moments *buf;
             signed window;
             buf = lines[(y + 1 - vkernel_sz + k) & line_mask] + x;
             window = vkernel[k];
@@ -249,7 +249,6 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
             m.y2 += window * buf->y2;
             m.w += window * buf->w;
         }
-        // NOLINTEND(clang-analyzer-security.ArrayBound)
         w_d = m.w;
         c1 = sm * sm * SSIM_K1 * w_d * w_d;
         c2 = sm * sm * SSIM_K2 * w_d * w_d;
@@ -262,86 +261,85 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
     }
 }
 
-/* Kept whole for upstream parity. This file is Xiph.Org code (see the
- * copyright header) and calc_ssim is a verbatim transliteration of its
- * scalar SSIM accumulate -- the same reason the ArrayBound suppressions
- * above cite upstream parity. Restructuring it would break the rebase story
- * this file exists to preserve. ADR-0141 §2 / ADR-0278. */
-// NOLINTNEXTLINE(readability-function-size)
+typedef struct SsimLineBuffers {
+    ssim_moments *line_buf;
+    ssim_moments **lines;
+    unsigned *hkernel;
+    unsigned *vkernel;
+    int hkernel_sz;
+    int hkernel_offs;
+    int vkernel_sz;
+    int vkernel_offs;
+    int line_mask;
+} SsimLineBuffers;
+
+static void ssim_line_buffers_free(SsimLineBuffers *b)
+{
+    free(b->line_buf);
+    free((void *)b->lines);
+    free(b->vkernel);
+    free(b->hkernel);
+}
+
+static int ssim_line_buffers_init(SsimLineBuffers *b, int width)
+{
+    memset(b, 0, sizeof(*b));
+    b->vkernel_sz = gaussian_filter_init(&b->vkernel, 1.5, 5);
+    if (b->vkernel_sz < 0)
+        return -ENOMEM;
+    b->vkernel_offs = b->vkernel_sz >> 1;
+    const int line_sz = ssim_line_buffer_size(b->vkernel_sz);
+    b->line_mask = line_sz - 1;
+    b->lines = (ssim_moments **)malloc((size_t)line_sz * sizeof(*b->lines));
+    b->line_buf = (ssim_moments *)malloc((size_t)line_sz * (size_t)width * sizeof(*b->line_buf));
+    if (!b->lines || !b->line_buf) {
+        ssim_line_buffers_free(b);
+        return -ENOMEM;
+    }
+    b->lines[0] = b->line_buf;
+    for (int y = 1; y < line_sz; y++)
+        b->lines[y] = b->lines[y - 1] + width;
+    b->hkernel_sz = gaussian_filter_init(&b->hkernel, 1.5, 5);
+    if (b->hkernel_sz < 0) {
+        ssim_line_buffers_free(b);
+        return -ENOMEM;
+    }
+    b->hkernel_offs = b->hkernel_sz >> 1;
+    return 0;
+}
+
 static double calc_ssim(const unsigned char *_src, int _systride, const unsigned char *_dst,
                         int _dystride, double _par, int depth, int _w, int _h,
                         ssim_accum_row_fn_8 accum8, ssim_accum_row_fn_16 accum16)
 {
     (void)_par;
-    ssim_moments *line_buf;
-    ssim_moments **lines;
-    double ssim;
-    double ssimw;
-    unsigned *hkernel;
-    int hkernel_sz;
-    int hkernel_offs;
-    unsigned *vkernel;
-    int vkernel_sz;
-    int vkernel_offs;
-    int line_sz;
-    int line_mask;
-    int y;
-    int samplemax;
-    samplemax = (1 << depth) - 1;
-    vkernel_sz = gaussian_filter_init(&vkernel, 1.5, 5);
-    if (vkernel_sz < 0)
+    SsimLineBuffers b;
+    if (ssim_line_buffers_init(&b, _w))
         return 0.0;
-    vkernel_offs = vkernel_sz >> 1;
-    line_sz = ssim_line_buffer_size(vkernel_sz);
-    line_mask = line_sz - 1;
-    lines = (ssim_moments **)malloc((size_t)line_sz * sizeof(*lines));
-    if (!lines) {
-        free(vkernel);
-        return 0.0;
-    }
-    line_buf = (ssim_moments *)malloc((size_t)line_sz * (size_t)_w * sizeof(*line_buf));
-    if (!line_buf) {
-        free((void *)lines);
-        free(vkernel);
-        return 0.0;
-    }
-    lines[0] = line_buf;
-    for (y = 1; y < line_sz; y++)
-        lines[y] = lines[y - 1] + _w;
-    hkernel_sz = gaussian_filter_init(&hkernel, 1.5, 5);
-    if (hkernel_sz < 0) {
-        free(line_buf);
-        free((void *)lines);
-        free(vkernel);
-        return 0.0;
-    }
-    hkernel_offs = hkernel_sz >> 1;
-    ssim = 0;
-    ssimw = 0;
-    for (y = 0; y < _h + vkernel_offs; y++) {
+    const int samplemax = (1 << depth) - 1;
+    double ssim = 0;
+    double ssimw = 0;
+    for (int y = 0; y < _h + b.vkernel_offs; y++) {
         if (y < _h) {
             /* Dispatch to SIMD or scalar horizontal pass. */
             if (depth > 8) {
-                accum16((const uint16_t *)_src, (const uint16_t *)_dst, _w, hkernel, hkernel_sz,
-                        hkernel_offs, (integer_ssim_moments_t *)lines[y & line_mask]);
+                accum16((const uint16_t *)_src, (const uint16_t *)_dst, _w, b.hkernel, b.hkernel_sz,
+                        b.hkernel_offs, (integer_ssim_moments_t *)b.lines[y & b.line_mask]);
             } else {
-                accum8(_src, _dst, _w, hkernel, hkernel_sz, hkernel_offs,
-                       (integer_ssim_moments_t *)lines[y & line_mask]);
+                accum8(_src, _dst, _w, b.hkernel, b.hkernel_sz, b.hkernel_offs,
+                       (integer_ssim_moments_t *)b.lines[y & b.line_mask]);
             }
             _src += _systride;
             _dst += _dystride;
         }
-        if (y >= vkernel_offs) {
-            int k_min = vkernel_sz - y - 1 <= 0 ? 0 : vkernel_sz - y - 1;
-            int k_max = y + 1 - _h <= 0 ? vkernel_sz : vkernel_sz - (y + 1 - _h);
-            ssim_reduce_row_range(lines, line_mask, y, _w, vkernel_sz, vkernel, samplemax, k_min,
-                                  k_max, &ssim, &ssimw);
+        if (y >= b.vkernel_offs) {
+            int k_min = b.vkernel_sz - y - 1 <= 0 ? 0 : b.vkernel_sz - y - 1;
+            int k_max = y + 1 - _h <= 0 ? b.vkernel_sz : b.vkernel_sz - (y + 1 - _h);
+            ssim_reduce_row_range(b.lines, b.line_mask, y, _w, b.vkernel_sz, b.vkernel, samplemax,
+                                  k_min, k_max, &ssim, &ssimw);
         }
     }
-    free(line_buf);
-    free((void *)lines);
-    free(vkernel);
-    free(hkernel);
+    ssim_line_buffers_free(&b);
     return ssim / ssimw;
 }
 
@@ -407,8 +405,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #endif
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     IntegerSsimState *s = fex->priv;
@@ -434,7 +433,7 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"ssim", NULL};
+static const char *provided_features[] = {"ssim", VMAF_NULLPTR};
 
 /* Fixed-point SSIM extractor — registered as `ssim` in
  * `feature_extractor.c`'s `feature_extractor_list[]`. The companion
@@ -442,7 +441,6 @@ static const char *provided_features[] = {"ssim", NULL};
  * `float_ssim` name. The cross-TU reference from
  * `feature_extractor.c` is invisible to clang-tidy's per-TU
  * analysis, so the linkage check fires a false positive here. */
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_ssim = {
     .name = "ssim",
     .init = init,
@@ -452,5 +450,3 @@ VmafFeatureExtractor vmaf_fex_ssim = {
     .priv_size = sizeof(IntegerSsimState),
     .provided_features = provided_features,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

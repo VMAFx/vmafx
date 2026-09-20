@@ -54,13 +54,11 @@
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/perceptual_weight.h"
+#include "libvmaf/pelorus/denoise.h"
 #include "libvmaf/pelorus/interop.h"
+#include "libvmaf/pelorus/pelorus.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #define FEAT "feat_pw"
 
@@ -154,8 +152,8 @@ static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_by
     const size_t blob_len = (size_t)PELORUS_SIDEDATA_UUID_LEN + (size_t)total_size;
 
     uint8_t *blob = calloc(1, blob_len);
-    if (blob == NULL) {
-        return NULL;
+    if (blob == VMAF_NULLPTR) {
+        return VMAF_NULLPTR;
     }
 
     /* Build each struct in a local and memcpy it into the flat image — the blob
@@ -214,8 +212,8 @@ static uint8_t *build_banding_complexity_blob(uint16_t cols, uint16_t rows, uint
     const size_t blob_len = (size_t)PELORUS_SIDEDATA_UUID_LEN + (size_t)total_size;
 
     uint8_t *blob = calloc(1, blob_len);
-    if (blob == NULL) {
-        return NULL;
+    if (blob == VMAF_NULLPTR) {
+        return VMAF_NULLPTR;
     }
 
     memcpy(blob, pelorus_sidedata_uuid, PELORUS_SIDEDATA_UUID_LEN);
@@ -262,7 +260,7 @@ static void corrupt_abi_major(uint8_t *blob)
 static char *test_pooling_unweighted_without_sidedata(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
     mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
 
@@ -282,13 +280,13 @@ static char *test_pooling_unweighted_without_sidedata(void)
     mu_assert("unweighted HARMONIC must be bit-exact", bit_exact(hmean, expect_h));
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_enabled_but_no_sidedata_is_inert(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
     mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
     mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
@@ -301,20 +299,20 @@ static char *test_enabled_but_no_sidedata_is_inert(void)
               bit_exact(mean, (60.0 + 80.0 + 100.0) / 3u));
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sidedata_but_disabled_is_inert(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
     mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
 
     /* Register a high-risk blob for frame 2 but leave weighting DISABLED. */
     size_t blob_len = 0;
     uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
-    mu_assert("blob alloc", blob != NULL);
+    mu_assert("blob alloc", blob != VMAF_NULLPTR);
     int rc = vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 2);
     free(blob); /* summary is copied; blob no longer needed */
     mu_assert("register side-data", rc == 0);
@@ -327,7 +325,7 @@ static char *test_sidedata_but_disabled_is_inert(void)
               bit_exact(mean, (60.0 + 80.0 + 100.0) / 3u));
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Set up a context with weighting enabled (strength 1.0), inject the three
@@ -339,7 +337,7 @@ static char *test_sidedata_but_disabled_is_inert(void)
 static char *setup_and_pool_weighted(double *mean_out)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
     mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
     mu_assert("strength failed", vmaf_set_perceptual_weight_strength(vmaf, 1.0) == 0);
@@ -351,7 +349,7 @@ static char *setup_and_pool_weighted(double *mean_out)
      * and weight = 1 + 1.0*1.0 = 2.0. Frames 0 and 1 carry no side-data => w=1. */
     size_t blob_len = 0;
     uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
-    mu_assert("blob alloc", blob != NULL);
+    mu_assert("blob alloc", blob != VMAF_NULLPTR);
     int rc = vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 2);
     free(blob); /* summary is copied; blob no longer needed */
     mu_assert("register side-data", rc == 0);
@@ -360,7 +358,7 @@ static char *setup_and_pool_weighted(double *mean_out)
               vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, mean_out, 0, 2) == 0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_weighting_applies_with_sidedata(void)
@@ -379,13 +377,13 @@ static char *test_weighting_applies_with_sidedata(void)
     double unweighted = (60.0 + 80.0 + 100.0) / 3.0;
     mu_assert("weighted MEAN must shift up", mean > unweighted);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_grid_zero_degrades_to_scalar(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
     mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
     mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
@@ -393,7 +391,7 @@ static char *test_grid_zero_degrades_to_scalar(void)
     /* grid 0x0 placeholder (today's deband) — only the frame-level scalar. */
     size_t blob_len = 0;
     uint8_t *blob = build_banding_blob(0, 0, 0, 1.0f, &blob_len);
-    mu_assert("blob alloc", blob != NULL);
+    mu_assert("blob alloc", blob != VMAF_NULLPTR);
     int rc = vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 2);
     free(blob); /* summary is copied; blob no longer needed */
     mu_assert("register side-data (grid0)", rc == 0);
@@ -407,13 +405,13 @@ static char *test_grid_zero_degrades_to_scalar(void)
     mu_assert("grid-zero MEAN must shift up", mean > (60.0 + 80.0 + 100.0) / 3.0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_robustness_foreign_and_bad_abi(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
     /* Foreign buffer (e.g. an x264 user-data SEI) => -ENOENT, frame unweighted. */
@@ -425,14 +423,14 @@ static char *test_robustness_foreign_and_bad_abi(void)
     /* Corrupt the ABI major to force the R6 rejection path => -EPROTO. */
     size_t blob_len = 0;
     uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
-    mu_assert("blob alloc", blob != NULL);
+    mu_assert("blob alloc", blob != VMAF_NULLPTR);
     corrupt_abi_major(blob);
     int rc = vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 1);
     free(blob);
     mu_assert("ABI-major mismatch must be rejected", rc == -EPROTO);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* NULL-argument guards for vmaf_set_perceptual_sidedata / _weight_enabled /
@@ -444,13 +442,13 @@ static char *check_sidedata_and_enable_guards(VmafContext *vmaf)
     uint8_t buf[64];
     memset(buf, 0, sizeof(buf));
     mu_assert("NULL vmaf => -EINVAL",
-              vmaf_set_perceptual_sidedata(NULL, buf, sizeof(buf), 0) == -EINVAL);
-    mu_assert("NULL blob => -EINVAL", vmaf_set_perceptual_sidedata(vmaf, NULL, 0, 0) == -EINVAL);
+              vmaf_set_perceptual_sidedata(VMAF_NULLPTR, buf, sizeof(buf), 0) == -EINVAL);
+    mu_assert("NULL blob => -EINVAL", vmaf_set_perceptual_sidedata(vmaf, VMAF_NULLPTR, 0, 0) == -EINVAL);
     mu_assert("NULL vmaf (enable) => -EINVAL",
-              vmaf_set_perceptual_weight_enabled(NULL, 1) == -EINVAL);
+              vmaf_set_perceptual_weight_enabled(VMAF_NULLPTR, 1) == -EINVAL);
     mu_assert("NULL vmaf (strength) => -EINVAL",
-              vmaf_set_perceptual_weight_strength(NULL, 1.0) == -EINVAL);
-    return NULL;
+              vmaf_set_perceptual_weight_strength(VMAF_NULLPTR, 1.0) == -EINVAL);
+    return VMAF_NULLPTR;
 }
 
 /* Value-range guards for vmaf_set_perceptual_weight_strength (negative /
@@ -464,13 +462,13 @@ static char *check_strength_value_guards(VmafContext *vmaf)
     mu_assert("Inf strength => -EINVAL",
               vmaf_set_perceptual_weight_strength(vmaf, INFINITY) == -EINVAL);
     mu_assert("zero strength ok", vmaf_set_perceptual_weight_strength(vmaf, 0.0) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_argument_guards(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
 
     char *msg = check_sidedata_and_enable_guards(vmaf);
@@ -481,7 +479,7 @@ static char *test_argument_guards(void)
         return msg;
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -497,10 +495,10 @@ static char *test_argument_guards(void)
  * (or the section) collapses the three runs to one. Closed-form checks pin the
  * exact arithmetic.
  */
-static double pool_with_blob(uint8_t *blob, size_t blob_len)
+static double pool_with_blob(const uint8_t *blob, size_t blob_len)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     double mean = -1.0;
 
     if (vmaf_init(&vmaf, cfg) != 0) {
@@ -512,7 +510,7 @@ static double pool_with_blob(uint8_t *blob, size_t blob_len)
         vmaf_close(vmaf);
         return -1.0;
     }
-    if (blob != NULL && vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 2) != 0) {
+    if (blob != VMAF_NULLPTR && vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 2) != 0) {
         vmaf_close(vmaf);
         return -1.0;
     }
@@ -535,14 +533,14 @@ static char *compute_complexity_means(double *mean_band_only, double *mean_cx0, 
     /* Banding-only weight on frame 2: salience 1.0 -> weight 2.0. */
     size_t band_len = 0;
     uint8_t *band_blob = build_banding_blob(4, 4, 255, 1.0f, &band_len);
-    mu_assert("banding blob alloc", band_blob != NULL);
+    mu_assert("banding blob alloc", band_blob != VMAF_NULLPTR);
     *mean_band_only = pool_with_blob(band_blob, band_len);
     free(band_blob);
 
     /* Same banding map + complexity 0.0: factor 1.0 -> weight 2.0, IDENTICAL. */
     size_t cx0_len = 0;
     uint8_t *cx0_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.0f, &cx0_len);
-    mu_assert("cx0 blob alloc", cx0_blob != NULL);
+    mu_assert("cx0 blob alloc", cx0_blob != VMAF_NULLPTR);
     *mean_cx0 = pool_with_blob(cx0_blob, cx0_len);
     free(cx0_blob);
 
@@ -550,7 +548,7 @@ static char *compute_complexity_means(double *mean_band_only, double *mean_cx0, 
      * 0.5 -> weight 1.5. Closed-form: (60 + 80 + 1.5*100) / (1 + 1 + 1.5). */
     size_t cx1_len = 0;
     uint8_t *cx1_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 1.0f, &cx1_len);
-    mu_assert("cx1 blob alloc", cx1_blob != NULL);
+    mu_assert("cx1 blob alloc", cx1_blob != VMAF_NULLPTR);
     *mean_cx1 = pool_with_blob(cx1_blob, cx1_len);
     free(cx1_blob);
 
@@ -558,11 +556,11 @@ static char *compute_complexity_means(double *mean_band_only, double *mean_cx0, 
      * lands strictly between the two extremes. */
     size_t cxm_len = 0;
     uint8_t *cxm_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.5f, &cxm_len);
-    mu_assert("cxm blob alloc", cxm_blob != NULL);
+    mu_assert("cxm blob alloc", cxm_blob != VMAF_NULLPTR);
     *mean_cxm = pool_with_blob(cxm_blob, cxm_len);
     free(cxm_blob);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_complexity_modulates_weight(void)
@@ -588,7 +586,7 @@ static char *test_complexity_modulates_weight(void)
 
     mu_assert("mid complexity between extremes", mean_cxm < mean_band_only && mean_cxm > mean_cx1);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The complexity section is grid-independent: it modulates even the grid==0
@@ -598,19 +596,42 @@ static char *test_complexity_modulates_grid_zero(void)
     /* grid 0x0, banding scalar salience = 1.0; no complexity -> weight 2.0. */
     size_t b_len = 0;
     uint8_t *b_blob = build_banding_blob(0, 0, 0, 1.0f, &b_len);
-    mu_assert("grid0 banding blob alloc", b_blob != NULL);
+    mu_assert("grid0 banding blob alloc", b_blob != VMAF_NULLPTR);
     double mean_no_cx = pool_with_blob(b_blob, b_len);
     free(b_blob);
 
     /* grid 0x0 + complexity 1.0 -> factor 0.5 -> weight 1.5; strictly lower. */
     size_t c_len = 0;
     uint8_t *c_blob = build_banding_complexity_blob(0, 0, 0, 1.0f, 1.0f, &c_len);
-    mu_assert("grid0 complexity blob alloc", c_blob != NULL);
+    mu_assert("grid0 complexity blob alloc", c_blob != VMAF_NULLPTR);
     double mean_cx = pool_with_blob(c_blob, c_len);
     free(c_blob);
 
     mu_assert("grid0 high complexity lowers pooled mean", mean_cx < mean_no_cx);
-    return NULL;
+    return VMAF_NULLPTR;
+}
+
+/* Keep the vendored control-plane/version functions live in the linked
+ * libvmaf surface as well as in Pelorus's separately compiled conformance
+ * fixture. This catches drift in functions that are external ABI roots but
+ * are not used by the perceptual-weight implementation itself. */
+static char *test_pelorus_control_plane_contracts(void)
+{
+    PelorusDenoiseParams params;
+    const char *what = VMAF_NULLPTR;
+
+    pel_denoise_params_default(&params);
+    mu_assert("denoise defaults validate", pel_denoise_params_validate(&params, &what) == PEL_OK);
+
+    params.n_prev = PEL_DENOISE_MAX_PREV + 1;
+    mu_assert("denoise range rejected",
+              pel_denoise_params_validate(&params, &what) == PEL_ERR_RANGE);
+    mu_assert("denoise range field named", what != VMAF_NULLPTR && strcmp(what, "n_prev") == 0);
+
+    mu_assert("linked Pelorus version matches headers", pelorus_version() == PELORUS_VERSION_INT);
+    mu_assert("Pelorus result strings are stable",
+              strcmp(pel_result_str(PEL_ERR_ABI), "ABI major mismatch / corrupt framing") == 0);
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -625,8 +646,7 @@ char *run_tests(void)
         MU_TEST(test_argument_guards),
         MU_TEST(test_complexity_modulates_weight),
         MU_TEST(test_complexity_modulates_grid_zero),
+        MU_TEST(test_pelorus_control_plane_contracts),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

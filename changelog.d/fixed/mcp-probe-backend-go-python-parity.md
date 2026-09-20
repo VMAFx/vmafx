@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - MCP `probe_backend` (Go server, `cmd/vmafx-mcp/impl.go`): bump the synthetic
   probe frame from 32x32 to 64x64 4:2:0 8-bit, matching the Python server
   (`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`). 32x32 is below the CUDA ADM

@@ -7,8 +7,8 @@
 # Stock LLVM clang-tidy does not pick up Intel oneAPI's SYCL include path
 # the way `icpx` does, so direct invocations against SYCL TUs report
 # `'sycl/sycl.hpp' file not found` clang-diagnostic-errors. This wrapper
-# injects the SYCL include path + warning suppressions so the changed-file
-# CI lint gate can cover files under core/src/sycl/ and core/src/feature/sycl/.
+# injects the SYCL include path so the whole-tree CI lint gate can cover files
+# under core/src/sycl/ and core/src/feature/sycl/.
 #
 # Usage (mirrors clang-tidy):
 #   scripts/ci/clang-tidy-sycl.sh -p <build-sycl-dir> [other args] <file>
@@ -87,12 +87,6 @@ esac
 #                                       falls back to C++11 defaults if not
 #                                       present in compile_commands.json.
 # -extra-arg-before=-isystem<dir>     — make <sycl/sycl.hpp> resolvable.
-# -extra-arg-before=-Wno-unknown-warning-option
-#                                     — suppress warnings for flags not
-#                                       supported by clang.
-# -extra-arg-before=-Wno-unknown-pragmas
-#                                     — same rationale for icpx pragmas
-#                                       (`#pragma clang fp ...` etc).
 # ---------------------------------------------------------------------
 # ---------------------------------------------------------------------
 # Translate icx-only driver flags that stock clang rejects outright.
@@ -124,6 +118,4 @@ exec "$CLANG_TIDY_BIN" \
   "-extra-arg-before=-std=c++20" \
   "-extra-arg-before=-isystem$SYCL_INCLUDE_BASE" \
   "-extra-arg-before=-isystem$SYCL_INCLUDE_BASE/sycl" \
-  "-extra-arg-before=-Wno-unknown-warning-option" \
-  "-extra-arg-before=-Wno-unknown-pragmas" \
   "$@"

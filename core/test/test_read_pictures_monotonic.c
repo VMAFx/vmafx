@@ -14,11 +14,7 @@
 
 #include "test.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
@@ -29,9 +25,9 @@
 static VmafContext *init_context(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
-    return err == 0 ? vmaf : NULL;
+    return err == 0 ? vmaf : VMAF_NULLPTR;
 }
 
 static int submit_frame(VmafContext *vmaf, unsigned index)
@@ -59,7 +55,7 @@ static int submit_frame(VmafContext *vmaf, unsigned index)
 static char *test_read_pictures_monotonic_accepts_increasing(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     mu_assert("frame 0 rejected", submit_frame(vmaf, 0) == 0);
     mu_assert("frame 1 rejected", submit_frame(vmaf, 1) == 0);
@@ -67,13 +63,13 @@ static char *test_read_pictures_monotonic_accepts_increasing(void)
     mu_assert("frame 10 rejected", submit_frame(vmaf, 10) == 0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_read_pictures_monotonic_rejects_duplicate(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     mu_assert("frame 0 rejected", submit_frame(vmaf, 0) == 0);
     mu_assert("frame 1 rejected", submit_frame(vmaf, 1) == 0);
@@ -81,13 +77,13 @@ static char *test_read_pictures_monotonic_rejects_duplicate(void)
     mu_assert("duplicate index accepted (expected -EINVAL)", err == -EINVAL);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_read_pictures_monotonic_rejects_out_of_order(void)
 {
     VmafContext *vmaf = init_context();
-    mu_assert("init failed", vmaf != NULL);
+    mu_assert("init failed", vmaf != VMAF_NULLPTR);
 
     /* Netflix#910 reproducer sequence: out-of-order submission
      * corrupts integer_motion's 3-frame blur ring. The API must
@@ -104,7 +100,7 @@ static char *test_read_pictures_monotonic_rejects_out_of_order(void)
     mu_assert("frame 3975 rejected after recovery", submit_frame(vmaf, 3975) == 0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -112,7 +108,5 @@ char *run_tests(void)
     mu_run_test(test_read_pictures_monotonic_accepts_increasing);
     mu_run_test(test_read_pictures_monotonic_rejects_duplicate);
     mu_run_test(test_read_pictures_monotonic_rejects_out_of_order);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

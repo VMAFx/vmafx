@@ -1,1 +1,6 @@
-- Repair scalar VIF dead stores and oversized helper bodies while preserving score arithmetic and temporal entry points; reject invalid/overflowing allocation geometry, restore checked optional debug dumps, and cover odd-width strides and temporal cleanup.
+# Changelog fragment
+
+- Repair scalar VIF dead stores and oversized helper bodies while preserving
+  score arithmetic and temporal entry points; reject invalid/overflowing
+  allocation geometry, restore checked optional debug dumps, and cover odd-width
+  strides and temporal cleanup.

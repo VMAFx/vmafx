@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 
 # 2059 — Why no dependency bump can merge
 

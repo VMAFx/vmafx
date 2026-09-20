@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0644: Add vmaf-tune codec runtime variants
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ auditable after the run.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add `libsvtav1-hdr` as a codec adapter | Simple to select in `--encoders`; no new CLI flag | Falsely implies FFmpeg exposes a distinct encoder; duplicates `libsvtav1` policy; makes adapter registry carry runtime identity | The upstream HDR fork still uses the `libsvtav1` FFmpeg wrapper, so runtime identity belongs outside the adapter registry |
 | Keep only global `--ffmpeg-bin` | No code change | Cannot compare mainline and HDR-linked SVT-AV1 in the same sweep; report rows both appear as `libsvtav1` | The requested workflow is side-by-side comparison in one report |
 | Require wrapper scripts named as fake encoders | Lets shell users hide runtime differences externally | Moves provenance out of the report; hard to audit which binary produced which row; still needs a label mechanism | The report must carry enough metadata to function as an encoder profile |

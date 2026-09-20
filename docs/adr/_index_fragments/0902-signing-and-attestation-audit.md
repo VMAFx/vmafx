@@ -1,1 +1,5 @@
-| [ADR-0902](0902-signing-and-attestation-audit.md) | Signing and attestation audit (2026-05-30): existing Sigstore + SLSA + SBOM coverage is strong; close three closeable gaps by adding `actions/attest-build-provenance@v4.1.0` to all 5 container build jobs, having the post-push smoke-test verify the cosign signature before pulling, and expanding `docs/development/release.md` with copy-pasteable consumer verification recipes. Tag signing, DCO sign-off, Helm chart signing, standalone Go binary releases — explicitly scoped out. | Accepted | 2026-05-30 | security, supply-chain, sigstore, slsa, cosign, attestation, ci, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0902](0902-signing-and-attestation-audit.md) | Signing and attestation audit — close residual gaps (2026-05-30) | Accepted | security, supply-chain, sigstore, slsa, cosign, attestation, ci, fork-local |

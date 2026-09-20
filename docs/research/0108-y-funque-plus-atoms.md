@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0108: Y-FUNQUE+ wavelet-domain atom features — feasibility + constants
 
 - **Status**: Closed (ADR-1114 Accepted)
@@ -83,7 +82,7 @@ Identical-input analytic oracles (exact): `ms_ssim = 0`, `dlm = 1`, `mad = 0`
 reference oracles (re-derived live, not taken from the dossier):
 
 | Case | ms_ssim | dlm | mad |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 64×64 deterministic, frame 0 | 0.07330722 | 0.99725645 | 0 |
 | 64×64 sequence, frame 1 | 1.26043635 | 0.51557907 | 0.11999871 |
 

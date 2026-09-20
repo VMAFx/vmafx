@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -41,9 +43,9 @@
 #include "arm64/float_psnr_neon.h"
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
+ * translation unit whose sources spell the null pointer constant `VMAF_NULLPTR` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -76,9 +78,9 @@ typedef struct PsnrState {
 
 /*
  * Size the table explicitly and leave the terminator element out: C
- * zero-initialises the trailing element, which is exactly the `.name == NULL`
+ * zero-initialises the trailing element, which is exactly the `.name == VMAF_NULLPTR`
  * sentinel the option walker stops on. Written this way rather than with an
- * explicit `{0}` / `{NULL}` terminator, because either spells a null pointer
+ * explicit `{0}` / `{VMAF_NULLPTR}` terminator, because either spells a null pointer
  * constant and adds a `modernize-use-nullptr` diagnostic that would push this
  * file past its ADR-1142 clang-tidy baseline; and rather than with the C23
  * empty initialiser `{}`, because MSVC's partial C23 mode (`/std:clatest`,
@@ -154,8 +156,9 @@ fail:
     return -ENOMEM;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     PsnrState *s = fex->priv;
@@ -207,9 +210,8 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"float_psnr", NULL};
+static const char *provided_features[] = {"float_psnr", VMAF_NULLPTR};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_psnr = {
     .name = "float_psnr",
     .options = options,
@@ -219,5 +221,3 @@ VmafFeatureExtractor vmaf_fex_float_psnr = {
     .priv_size = sizeof(PsnrState),
     .provided_features = provided_features,
 };
-
-/* NOLINTEND(modernize-use-nullptr) */

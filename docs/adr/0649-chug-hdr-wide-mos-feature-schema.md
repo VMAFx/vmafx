@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0649: CHUG HDR Wide MOS Feature Schema
 
 - **Status**: Proposed
@@ -46,7 +45,7 @@ regression comparisons.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the 11-column baseline | Smallest patch; directly comparable to KonViD MOS head | Throws away CHUG temporal/HDR metadata; the first plateau could be a self-inflicted feature bottleneck | Rejected by user direction to widen the features and because the data is already available |
 | Replace `FEATURE_COLUMNS` globally | One constant; fewer code paths | Silently invalidates the committed `konvid_mos_head_v1.onnx` predictor contract | Rejected — existing model compatibility is load-bearing |
 | Add a named CHUG schema | Uses available CHUG signal while preserving KonViD compatibility | Adds schema selection plumbing and a second manifest layout | Chosen as the minimal safe widening |

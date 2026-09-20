@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - `from vmaf.core.quality_runner import VmafLegacyQualityRunner` no longer
   raises `ImportError`. A `NotImplementedError`-raising stub class is now
   exported from `compat/python-vmaf/core/quality_runner.py`; any attempt to

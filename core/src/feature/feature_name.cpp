@@ -32,7 +32,7 @@
  *     RAII pattern.
  *   - `[[nodiscard]]` applied to the two public allocation functions so
  *     callers that discard the returned pointer get a compile-time warning.
- *   - `nullptr` replaces `NULL` within this translation unit.
+ *   - `nullptr` replaces `nullptr` within this translation unit.
  *   - C-style casts replaced with `static_cast<>`.
  *   - No behaviour change vs the original C implementation.
  */
@@ -126,7 +126,7 @@ void append_option_names(char *buf, size_t buf_sz, const VmafOption *opts,
 
     const size_t dst_sz = strnlen(buf, buf_sz) + 1U;
     char *dst = static_cast<char *>(
-        malloc(dst_sz)); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0729 C ABI owner
+        malloc(dst_sz));
     if (!dst)
         return nullptr;
     strncpy(dst, buf, dst_sz);
@@ -236,7 +236,7 @@ vmaf_feature_name_dict_from_provided_features(const char **provided_features,
         }
 
         const int err = vmaf_dictionary_set(&dict_raw, feature_name, fn, 0);
-        free(fn); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0729 C ABI string owner
+        free(fn);
         if (err) {
             vmaf_dictionary_free(&dict_raw);
             return nullptr;

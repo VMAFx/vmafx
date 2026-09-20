@@ -1,1 +1,5 @@
-| [ADR-0901](0901-governance-audit.md) | Governance file audit: add `GOVERNANCE.md` + `MAINTAINERS.md`, extend CODEOWNERS for fork-local subtrees, document ADR-0108 in `CONTRIBUTING.md` | Accepted | governance, docs, meta |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0901](0901-governance-audit.md) | Governance file audit — add GOVERNANCE + MAINTAINERS, expand CODEOWNERS, document ADR-0108 in CONTRIBUTING | Accepted | `governance`, `docs`, `meta` |

@@ -37,12 +37,15 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .defaultmodel import DEFAULT_MODEL
 from .encode import EncodeRequest, EncodeResult, run_encode
 from .jsonio import dumps_strict
 from .score import ScoreRequest, ScoreResult, run_score
+
+if TYPE_CHECKING:
+    from .auto import AutoPlan
 
 
 @dataclasses.dataclass(frozen=True)
@@ -135,7 +138,7 @@ def _write_jsonl_row(fh: Any, row: dict[str, Any]) -> None:
 
 
 def run_plan(
-    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,
     src: Path,
     out_dir: Path,
     *,
@@ -301,7 +304,7 @@ class PerShotPlanResult:
 
 
 def run_plan_per_shot(
-    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,
     src: Path,
     out_dir: Path,
     *,
@@ -488,7 +491,7 @@ class SaliencyExecuteResult:
 
 
 def run_plan_saliency(
-    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,
     src: Path,
     out_dir: Path,
     *,

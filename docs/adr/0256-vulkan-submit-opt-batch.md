@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 -->
 # ADR-0256: Vulkan submit-side template + fence pool + descriptor pre-alloc
 
 - Status: Accepted
@@ -10,7 +9,9 @@
 ## Context
 
 The seven Vulkan feature extractors landed via T-GPU-DEDUP-18..24 (PRs
-#284–#290) adopted `vmaf_vulkan_kernel_pipeline_create` /
+
+\#284–#290) adopted `vmaf_vulkan_kernel_pipeline_create` /
+
 `vmaf_vulkan_kernel_pipeline_destroy` from
 `core/src/vulkan/kernel_template.h` (ADR-0221), but each kept inline
 per-frame `vkCreateFence` / `vkAllocateCommandBuffers` /

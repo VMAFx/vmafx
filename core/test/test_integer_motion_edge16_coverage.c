@@ -17,7 +17,7 @@
  *  {3571, 16004, 26386, 16004, 3571} and a known source pattern,
  *  the expected accumulator value is computable by hand.
  */
-// NOLINTBEGIN(modernize-use-nullptr) — ADR-1138/ADR-1166: MSVC C NULL.
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -41,7 +41,7 @@ static char *test_edge16_horizontal_interior(void)
     uint32_t expected = 3571u * 20u + 16004u * 30u + 26386u * 40u + 16004u * 50u + 3571u * 60u;
     uint32_t got = edge_16(true, src, /*width=*/7, /*height=*/1, /*stride=*/7, 0, 3);
     mu_assert("edge_16 horizontal interior matches expected", got == expected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Left mirror: j=0 with radius=2 reaches j_tap = -2, -1, 0, 1, 2.
@@ -53,7 +53,7 @@ static char *test_edge16_horizontal_left_mirror(void)
     uint32_t expected = 3571u * 300u + 16004u * 200u + 26386u * 100u + 16004u * 200u + 3571u * 300u;
     uint32_t got = edge_16(true, src, 7, 1, 7, 0, 0);
     mu_assert("edge_16 horizontal left mirror matches", got == expected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Right mirror: with width=5 and j=4, radius=2 -> j_tap = 2,3,4,5,6.
@@ -66,7 +66,7 @@ static char *test_edge16_horizontal_right_mirror(void)
     uint32_t expected = 3571u * 3u + 16004u * 4u + 26386u * 5u + 16004u * 4u + 3571u * 3u;
     uint32_t got = edge_16(true, src, 5, 1, 5, 0, 4);
     mu_assert("edge_16 horizontal right mirror matches", got == expected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -86,7 +86,7 @@ static char *test_edge16_vertical_top_mirror(void)
     uint32_t expected = 3571u * 30u + 16004u * 20u + 26386u * 10u + 16004u * 20u + 3571u * 30u;
     uint32_t got = edge_16(false, src, /*width=*/1, /*height=*/7, /*stride=*/1, 0, 0);
     mu_assert("edge_16 vertical top mirror matches", got == expected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Vertical bottom mirror: with height=5 and i=4, radius=2 ->
@@ -99,7 +99,7 @@ static char *test_edge16_vertical_bottom_mirror(void)
     uint32_t expected = 3571u * 13u + 16004u * 17u + 26386u * 19u + 16004u * 17u + 3571u * 13u;
     uint32_t got = edge_16(false, src, 1, 5, 1, 4, 0);
     mu_assert("edge_16 vertical bottom mirror matches", got == expected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -109,7 +109,5 @@ char *run_tests(void)
     mu_run_test(test_edge16_horizontal_right_mirror);
     mu_run_test(test_edge16_vertical_top_mirror);
     mu_run_test(test_edge16_vertical_bottom_mirror);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

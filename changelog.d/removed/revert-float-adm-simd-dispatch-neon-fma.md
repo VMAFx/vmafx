@@ -1,4 +1,6 @@
-### Removed
+# Changelog fragment
+
+## Removed
 
 - Reverted float-ADM SIMD dispatch wiring (PR #685, commit `b1a6c0d62`): the
   `AdmSimdDispatch` table and `adm_prime_simd_dispatch()` call are removed from

@@ -12,10 +12,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-
 from vmaf.core.feature_assembler import FeatureAssembler
 from vmaf.core.feature_extractor import VmafFeatureExtractor
 from vmaf.core.result import BasicResult
+
+_COMPARISON_VALUE_2 = 2
+_COMPARISON_VALUE_4 = 4
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,7 +97,7 @@ class TestFeatureAssemblerConstruction:
             parallelize=True,
             processes=4,
         )
-        assert fa.processes == 4
+        assert fa.processes == _COMPARISON_VALUE_4
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +255,7 @@ class TestCreateFeatureResultDicts:
         fa.type2results_dict = {"VMAF_feature": [mock_res_0, mock_res_1]}
 
         result_dicts = fa._create_feature_result_dicts()
-        assert len(result_dicts) == 2
+        assert len(result_dicts) == _COMPARISON_VALUE_2
         assert result_dicts[0][scores_key] == [0.95]
         assert result_dicts[1][scores_key] == [0.80]
 

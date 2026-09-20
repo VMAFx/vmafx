@@ -92,39 +92,39 @@ static int feed_frame(VmafContext *vmaf)
 static char *run_cpu_vif(double *scale0)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "vif", NULL);
+    err = vmaf_use_feature(vmaf, "vif", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(vif) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", scale0, 0u);
     mu_assert("CPU: vif_scale0 missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_hip_vif(double *scale0)
 {
     *scale0 = NAN;
-    VmafHipState *hip_state = NULL;
+    VmafHipState *hip_state = VMAF_NULLPTR;
     VmafHipConfiguration hip_cfg = {.device_index = -1};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    if (err != 0 || hip_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "vif_hip", NULL);
+    err = vmaf_use_feature(vmaf, "vif_hip", VMAF_NULLPTR);
     mu_assert("HIP: vmaf_use_feature(vif_hip) failed", !err);
     err = feed_frame(vmaf);
     if (err == -ENOSYS) {
@@ -136,25 +136,25 @@ static char *run_hip_vif(double *scale0)
         (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", scale0, 0u);
     mu_assert("HIP: vif_scale0 missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vif_hip_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("vif_hip");
-    mu_assert("vif_hip extractor must be registered", fex != NULL);
+    mu_assert("vif_hip extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("vif_hip name matches", !strcmp(fex->name, "vif_hip"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_vif_cpu_hip_parity(void)
@@ -168,7 +168,7 @@ static char *test_vif_cpu_hip_parity(void)
     if (msg)
         return msg;
     if (isnan(gpu))
-        return NULL;
+        return VMAF_NULLPTR;
     double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\nvif_scale0 parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
@@ -176,12 +176,12 @@ static char *test_vif_cpu_hip_parity(void)
     }
     mu_assert("vif_scale0 CPU vs. HIP delta exceeds places=4 tolerance (1e-4; ADR-0214/ADR-0568)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_vif_hip_registered);
     mu_run_test(test_vif_cpu_hip_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }

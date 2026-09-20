@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest — CUDA kernel parity coverage round 4 (2026-05-31)
 
 **Companion to**: [ADR-0956](../adr/0956-cuda-kernel-coverage-round4.md)
@@ -25,7 +24,7 @@ first registers `integer_ssim_cuda`, the second registers
 explains the apparent 18.
 
 | # | Kernel (CUDA reg name) | TU | CPU twin | Status before R4 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 1 | `motion_cuda` | `integer_motion_cuda.c` | `integer_motion` | covered (test_cuda_motion3_parity.c, master) |
 | 2 | `vif_cuda` | `integer_vif_cuda.c` | `integer_vif` | covered (test_integer_vif_cpu_cuda_parity.c, ADR-0541) |
 | 3 | `psnr_cuda` | `integer_psnr_cuda.c` | `psnr` | covered (PR #351, round 1) |
@@ -133,7 +132,7 @@ tight (false positives from legitimate kernel improvements).
 ## Risk register (this PR only)
 
 | Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Speed-smoke fixture too small → singular covariance → kernel logs warning + zeros score → smoke test reports score = 0.0 (finite, so passes) but masks a real bug | Low | Medium | 640x360 chosen to give 8+ blocks per channel; ADR-0567's "covariance matrix singular" log path zeros the solution rather than the score, and an all-zero solution still produces a finite (non-zero) speed score because the score is the determinant ratio, not the solution vector |
 | `vmaf_use_feature("float_motion_cuda")` silently registers a different kernel than expected | Negligible | Low | feature_extractor.c registry test (existing) gates the name → extractor mapping; if the registration is wrong, a different feature would fail to be readable via `vmaf_feature_score_at_index` |
 | The 5-tap Gaussian in `float_adm` reflects out-of-bounds at 256x144 because the test fixture is one decimation level shy of the design minimum | Low | Low | `float_ms_ssim_min_dim` (ADR-0153) gates the bottom edge at 176x176 for the larger filter; ADM's 5-tap is safe at 256-anything |

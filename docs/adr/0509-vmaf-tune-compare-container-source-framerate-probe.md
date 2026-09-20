@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0509: vmaf-tune compare auto-probes container-source framerate / duration
 
 - **Status**: Accepted
@@ -83,7 +82,7 @@ regression test stubs both without shelling out to `ffprobe`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Auto-probe + override user values when they mismatch the probe | Single source of truth; eliminates user-error footgun entirely | Breaks legitimate subsampling use-cases ("score this 60fps source as 30fps for a quick smoke run"); silent override is exactly the class of behaviour ADR-0505 was rolled back for | Rejected: probe wins by default but explicit user value must take precedence; warn on mismatch instead |
 | Require user to always pass `--framerate` for container sources | Forces operator awareness; no silent probe path | Hostile UX — `ffprobe` is right there and the answer is unambiguous for 99% of sources; doesn't actually fix the bug for callers who pass the wrong rate | Rejected: the default path is the dominant one; usability matters |
 | Change `--framerate` default to `None` and require it for raw YUV but auto-fill for containers | Cleaner sentinel semantics (no marker attribute needed) | Breaks every existing caller that relies on the 24.0 default for raw YUV; existing test `test_cli_compare_binds_real_bisect_predicate` already pins the 24.0 behaviour | Rejected: backward-compat for raw YUV trumps sentinel cleanliness |

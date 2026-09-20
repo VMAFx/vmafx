@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest — Skills library expansion (2026-05-31)
 
 Backs [ADR-0939](../adr/0939-skills-library-expansion.md). Modernization audit
@@ -12,7 +11,7 @@ The `.claude/skills/` library carries 25 skills, but three high-traffic
 surfaces have no scaffolding counterpart:
 
 | Surface | Current state | Failure mode without a scaffold |
-|---|---|---|
+| --- | --- | --- |
 | MCP tools (`cmd/vmafx-mcp/` Go + `mcp-server/vmaf-mcp/` Python) | 16 tools live; parity contract in ADR-0703 | Parity drift between Go + Python (proven twice on the merge train); per-tool doc page (ADR-0100 bar) skipped; `isError=True` reminder forgotten (project_mcp_iserror_must_be_true) |
 | k8s CRDs (`cmd/vmafx-operator/`) | 3 CRDs live (`VmafxJob`, `VmafxNode`, `VmafxModelTraining`) per ADR-0714 | Eight files in lock-step per new CRD; tight RBAC verb-set rule (no `delete`, no `*`) easy to forget; helm `crds/` and `values.yaml` desync |
 | Modernization audit (`scripts/dev/project_modernization_audit.py`) | 703-line read-only scanner | Re-invoked with ad-hoc paths each session; outputs land in unpredictable locations; downstream automation cannot rely on the de-facto `/tmp/modernization-audit-YYYY-MM-DD.md` convention |

@@ -561,8 +561,8 @@ extern "C" int vmaf_sycl_shared_frame_get(VmafSyclState *state, void **ref, void
     return 0;
 }
 
-extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *ref,
-                                             VmafPicture *dis)
+extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, const VmafPicture *ref,
+                                             const VmafPicture *dis)
 {
     if (!state || !ref || !dis)
         return -EINVAL;

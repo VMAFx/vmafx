@@ -1,1 +1,5 @@
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
 | [ADR-1093](1093-disable-recurring-flaky-tests.md) | Disable two recurring-failure tests via should_fail while root cause is under investigation | Accepted | ci, testing, flaky, picture-pool, sycl, fork-local |

@@ -25,7 +25,7 @@
 /* ADR-0729 Wave 3: feature_name.c renamed to feature_name.cpp; the test drives
  * translation-unit-local helpers, so the implementation is unity-included rather
  * than linked. The .cpp extension is deliberate and load-bearing here. */
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0729 unity include, see above
+
 #include "feature/feature_name.cpp"
 
 /* Fixtures for `vmaf_feature_name_from_options()` and
@@ -264,19 +264,15 @@ mu_message_t test_feature_name_dict_from_provided_features()
 {
     static const char *provided[] = {"a", "b", nullptr};
 
-    struct DummyState {
-        int dummy;
-    };
     static VmafOption opts[] = {{}};
-    DummyState s = {0};
 
-    VmafDictionary *dict = vmaf_feature_name_dict_from_provided_features(provided, opts, &s);
+    VmafDictionary *dict = vmaf_feature_name_dict_from_provided_features(provided, opts, nullptr);
     mu_assert("dict must be allocated when provided_features is non-empty", dict != nullptr);
     if (dict)
         vmaf_dictionary_free(&dict);
 
     static const char *empty[] = {nullptr};
-    dict = vmaf_feature_name_dict_from_provided_features(empty, opts, &s);
+    dict = vmaf_feature_name_dict_from_provided_features(empty, opts, nullptr);
     mu_assert("dict must be nullptr when provided_features is empty", dict == nullptr);
 
     return nullptr;

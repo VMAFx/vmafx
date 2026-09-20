@@ -118,10 +118,22 @@ def test_render_markdown_and_csv_include_delta_columns():
 
     markdown = render_markdown(summaries)
     csv_text = render_csv(summaries)
+    assert markdown.startswith("# VMAF encoder benchmark\n\n")
     assert "| Encoder | Status |" in markdown
     assert "libx265" in markdown
     assert "bitrate_delta_pct" in csv_text
     assert "-20.000" in csv_text
+
+
+def test_render_markdown_formats_empty_cells_for_markdownlint():
+    row = _row(encoder="libx264")
+    del row["score_time_ms"]
+    summaries = summarize_benchmark([row], target_vmaf=92.0)
+
+    markdown = render_markdown(summaries)
+
+    assert "|  |" not in markdown
+    assert markdown.rstrip().endswith("| |")
 
 
 def test_cli_benchmark_json_from_corpus(tmp_path: Path, capsys):

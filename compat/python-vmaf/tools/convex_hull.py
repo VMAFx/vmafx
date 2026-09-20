@@ -2,6 +2,8 @@ from collections.abc import Iterable
 
 from .typing_utils import RdPoint
 
+_COMPARISON_VALUE_2 = 2
+
 
 def cross(o: RdPoint, a: RdPoint, b: RdPoint) -> float:
     """
@@ -44,7 +46,7 @@ def calculate_convex_hull(points: Iterable[RdPoint]) -> list[RdPoint]:
     # Build lower hull
     hull: list[RdPoint] = []
     for p in reversed(monotonic_points):
-        while len(hull) >= 2 and cross(hull[-2], hull[-1], p) <= 0:
+        while len(hull) >= _COMPARISON_VALUE_2 and cross(hull[-2], hull[-1], p) <= 0:
             hull.pop()
         hull.append(p)
 

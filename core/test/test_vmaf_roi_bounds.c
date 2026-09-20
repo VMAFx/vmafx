@@ -2,8 +2,7 @@
  * SPDX-License-Identifier: EUPL-1.2
  * Exercise the production CLI's shared private reader and placeholder helpers.
  */
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve C/upstream NULL
- * compatibility; required Windows MSVC /std:clatest does not document nullptr. */
+
 
 #include <limits.h>
 #include <stdbool.h>
@@ -21,7 +20,7 @@ static int check_high_bitdepth(int depth)
     enum { SAMPLES = 65536 };
     uint8_t *raw = malloc((size_t)SAMPLES * 2U);
     uint8_t *luma = malloc(SAMPLES);
-    if (raw == NULL || luma == NULL) {
+    if (raw == VMAF_NULLPTR || luma == VMAF_NULLPTR) {
         free(raw);
         free(luma);
         return -ENOMEM;
@@ -32,7 +31,7 @@ static int check_high_bitdepth(int depth)
     }
     FILE *fp = tmpfile();
     int rc = -EIO;
-    if (fp != NULL && fwrite(raw, 2U, SAMPLES, fp) == SAMPLES && fseek(fp, 0, SEEK_SET) == 0) {
+    if (fp != VMAF_NULLPTR && fwrite(raw, 2U, SAMPLES, fp) == SAMPLES && fseek(fp, 0, SEEK_SET) == 0) {
         size_t got = 0;
         rc = read_luma8(fp, luma, SAMPLES, depth, &got);
         const unsigned scale = 1U << ((unsigned)depth - 8U);
@@ -45,7 +44,7 @@ static int check_high_bitdepth(int depth)
                 rc = -ERANGE;
         }
     }
-    if (fp != NULL && fclose(fp) != 0)
+    if (fp != VMAF_NULLPTR && fclose(fp) != 0)
         rc = -EIO;
     free(luma);
     free(raw);
@@ -71,13 +70,13 @@ static char *test_high_bitdepth_saturates_without_wrapping(void)
     mu_assert("10-bit conversion must be monotonic and saturating", check_high_bitdepth(10) == 0);
     mu_assert("12-bit conversion must be monotonic and saturating", check_high_bitdepth(12) == 0);
     mu_assert("16-bit conversion must be monotonic and saturating", check_high_bitdepth(16) == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_eight_bit_and_short_read(void)
 {
     FILE *fp = tmpfile();
-    mu_assert("tmpfile", fp != NULL);
+    mu_assert("tmpfile", fp != VMAF_NULLPTR);
     const uint8_t input[] = {0, 1, 128, 255};
     uint8_t output[sizeof(input)] = {0};
     const bool wrote = fwrite(input, 1U, sizeof(input), fp) == sizeof(input);
@@ -94,13 +93,13 @@ static char *test_eight_bit_and_short_read(void)
     mu_assert("short high-bit-depth input fails before writing output",
               second_seek_ok && short_rc == -EIO && untouched);
     mu_assert("close tmpfile", close_rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_invalid_reader_input_does_not_read_or_write(void)
 {
     FILE *fp = tmpfile();
-    mu_assert("tmpfile", fp != NULL);
+    mu_assert("tmpfile", fp != VMAF_NULLPTR);
     const int depths[] = {INT_MIN, -1, 0, 7, 9, 11, 13, 15, 17, 40, INT_MAX};
     uint8_t output = 91;
     size_t got = 17;
@@ -115,16 +114,16 @@ static char *test_invalid_reader_input_does_not_read_or_write(void)
     rejected = rejected && read_luma8(fp, &output, (size_t)VMAF_ROI_MAX_DIM * VMAF_ROI_MAX_DIM + 1U,
                                       16, &got) == -EINVAL;
     rejected = rejected && read_luma8(fp, &output, SIZE_MAX, 16, &got) == -EINVAL;
-    rejected = rejected && read_luma8(NULL, &output, 1U, 8, &got) == -EINVAL;
-    rejected = rejected && read_luma8(fp, NULL, 1U, 8, &got) == -EINVAL;
-    rejected = rejected && read_luma8(fp, &output, 1U, 8, NULL) == -EINVAL;
+    rejected = rejected && read_luma8(VMAF_NULLPTR, &output, 1U, 8, &got) == -EINVAL;
+    rejected = rejected && read_luma8(fp, VMAF_NULLPTR, 1U, 8, &got) == -EINVAL;
+    rejected = rejected && read_luma8(fp, &output, 1U, 8, VMAF_NULLPTR) == -EINVAL;
     const long position = ftell(fp);
     const int close_rc = fclose(fp);
     mu_assert("invalid reader inputs rejected", rejected);
     mu_assert("invalid input leaves file and output untouched",
               position == 0 && output == 91 && got == 0);
     mu_assert("close tmpfile", close_rc == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_placeholder_boundaries(void)
@@ -149,7 +148,7 @@ static char *test_placeholder_boundaries(void)
     }
     mu_assert("singleton center", fill_placeholder_saliency(1, 1, storage, 1U) == 0 &&
                                       float_bits_equal(storage[0], 1.0F));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_placeholder_rejects_invalid_extent(void)
@@ -161,9 +160,9 @@ static char *test_placeholder_rejects_invalid_extent(void)
     mu_assert("negative dimension", fill_placeholder_saliency(1, -1, &output, 1U) == -EINVAL);
     mu_assert("oversized dimension",
               fill_placeholder_saliency(VMAF_ROI_MAX_DIM + 1, 1, &output, 1U) == -EINVAL);
-    mu_assert("invalid output", fill_placeholder_saliency(1, 1, NULL, 1U) == -EINVAL);
+    mu_assert("invalid output", fill_placeholder_saliency(1, 1, VMAF_NULLPTR, 1U) == -EINVAL);
     mu_assert("rejected extents preserve output", output == -17.0F);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -173,7 +172,5 @@ char *run_tests(void)
     mu_run_test(test_invalid_reader_input_does_not_read_or_write);
     mu_run_test(test_placeholder_boundaries);
     mu_run_test(test_placeholder_rejects_invalid_extent);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) -- ADR-1138 */

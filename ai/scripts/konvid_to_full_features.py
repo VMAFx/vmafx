@@ -41,20 +41,21 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-from ai.data.feature_extractor import (  # noqa: E402
+from ai.data.feature_extractor import (
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model
 
 # isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import write_text_atomic  # noqa: E402
-from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import write_text_atomic
+from aiutils.parquet_utils import write_parquet_atomic
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
@@ -391,12 +392,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(
-        prog="konvid_to_full_features.py",
-        description=__doc__,
-    )
+def _add_konvid_io_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--konvid-root",
         type=Path,
@@ -438,13 +434,15 @@ def main(argv: list[str] | None = None) -> int:
             "fold output, row counts, and exact CLI args."
         ),
     )
+
+
+def _add_konvid_work_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--scratch",
         type=Path,
         default=Path(
             os.environ.get(
-                "VMAF_TINY_AI_SCRATCH",
-                str(Path(tempfile.gettempdir()) / "konvid_full_acquire"),
+                "VMAF_TINY_AI_SCRATCH", str(Path(tempfile.gettempdir()) / "konvid_full_acquire")
             )
         ),
     )
@@ -472,7 +470,55 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use ffprobe's source codec_name as the codec label instead of --codec.",
     )
-    args = parser.parse_args(raw_argv)
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = make_argument_parser(
+        prog="konvid_to_full_features.py",
+        description=__doc__,
+    )
+    _add_konvid_io_args(parser)
+    _add_konvid_work_args(parser)
+    return parser.parse_args(argv)
+
+
+def _process_clips(args, clips, teacher, cache_dir) -> tuple[list[dict], float]:
+    rows: list[dict] = []
+    started = time.monotonic()
+    for index, clip in enumerate(clips):
+        try:
+            rows.extend(
+                _process_clip(
+                    clip.stem,
+                    clip,
+                    args.vmaf_bin,
+                    teacher.arg,
+                    teacher.name,
+                    args.crf,
+                    cache_dir,
+                    args.scratch,
+                    args.codec,
+                    args.codec_from_source,
+                )
+            )
+        except subprocess.CalledProcessError as exc:
+            print(f"[konvid-full] {clip.stem} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
+            continue
+        except Exception as exc:
+            print(f"[konvid-full] {clip.stem} FAILED: {exc}", file=sys.stderr)
+            continue
+        if (index + 1) % 10 == 0 or index + 1 == len(clips):
+            print(
+                f"[konvid-full] {index + 1}/{len(clips)} clips, {len(rows)} frames, "
+                f"{time.monotonic() - started:.1f}s",
+                flush=True,
+            )
+    return rows, time.monotonic() - started
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -507,42 +553,7 @@ def main(argv: list[str] | None = None) -> int:
         f"[konvid-full] processing {len(clips)} clips from {videos_dir} -> {args.out}",
         flush=True,
     )
-    rows: list[dict] = []
-    t0 = time.monotonic()
-    for idx, clip in enumerate(clips):
-        key = clip.stem
-        try:
-            rows.extend(
-                _process_clip(
-                    key,
-                    clip,
-                    args.vmaf_bin,
-                    resolved_teacher.arg,
-                    resolved_teacher.name,
-                    args.crf,
-                    cache_dir,
-                    args.scratch,
-                    args.codec,
-                    args.codec_from_source,
-                )
-            )
-        except subprocess.CalledProcessError as exc:
-            print(f"[konvid-full] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
-            continue
-        except Exception as exc:
-            # An audio-only / no-video clip raises IndexError on the
-            # ffprobe streams[0] lookup, and a corrupt cache raises a
-            # JSON / value error — neither is a CalledProcessError, so
-            # without this broader catch one bad clip aborts the whole
-            # run. Log the key and continue.
-            print(f"[konvid-full] {key} FAILED: {exc}", file=sys.stderr)
-            continue
-        if (idx + 1) % 10 == 0 or idx + 1 == len(clips):
-            print(
-                f"[konvid-full] {idx + 1}/{len(clips)} clips, {len(rows)} frames, "
-                f"{time.monotonic() - t0:.1f}s",
-                flush=True,
-            )
+    rows, elapsed_s = _process_clips(args, clips, resolved_teacher, cache_dir)
 
     folds_out = None if args.no_folds_out else args.folds_out
     _write_outputs(rows, args.out, folds_out, args.fold_count)
@@ -554,7 +565,7 @@ def main(argv: list[str] | None = None) -> int:
         clips_selected=len(clips),
         rows=rows,
         folds_out=folds_out,
-        elapsed_s=time.monotonic() - t0,
+        elapsed_s=elapsed_s,
         teacher_model=resolved_teacher.name,
     )
     print(f"[konvid-full] wrote manifest {args.manifest_out}", flush=True)

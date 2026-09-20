@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
@@ -31,10 +33,10 @@
 #include "log.h"
 #include "predict.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+/* lint rationale: C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
  * upstream-mirror file whose Netflix source spells the null pointer constant
- * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * `VMAF_NULLPTR` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
@@ -108,15 +110,15 @@ static void aggregate_vector_destroy(AggregateVector *aggregate_vector)
     if (!aggregate_vector)
         return;
     for (unsigned i = 0; i < aggregate_vector->cnt; i++) {
-        /* free(NULL) is well-defined per C99 §7.20.3.2 / POSIX free(3);
-         * the NULL guard is redundant. CodeQL cpp/guarded-free. */
+        /* free(VMAF_NULLPTR) is well-defined per C99 §7.20.3.2 / POSIX free(3);
+         * the VMAF_NULLPTR guard is redundant. CodeQL cpp/guarded-free. */
         free(aggregate_vector->metric[i].name);
     }
     free(aggregate_vector->metric);
 }
 
 /* Caller holds the collector lock. Returns the stored aggregate for
- * `feature_name`, or NULL when no aggregate of that name was set. */
+ * `feature_name`, or VMAF_NULLPTR when no aggregate of that name was set. */
 static const double *aggregate_vector_find(const AggregateVector *aggregate_vector,
                                            const char *feature_name)
 {
@@ -125,7 +127,7 @@ static const double *aggregate_vector_find(const AggregateVector *aggregate_vect
         if (!strcmp(f, feature_name))
             return &(aggregate_vector->metric[i].value);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector,
@@ -199,9 +201,9 @@ free_name:
 free_fv:
     free(fv);
 fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
+    /* VMAF_NULLPTR the caller's handle so it cannot be dereferenced after a failed
      * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *feature_vector = NULL;
+    *feature_vector = VMAF_NULLPTR;
     return -ENOMEM;
 }
 
@@ -291,7 +293,7 @@ int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
     err = aggregate_vector_init(&fc->aggregate_vector);
     if (err)
         goto free_feature_vector;
-    err = pthread_mutex_init(&(fc->lock), NULL);
+    err = pthread_mutex_init(&(fc->lock), VMAF_NULLPTR);
     if (err)
         goto free_aggregate_vector;
     err = vmaf_metadata_init(&(fc->metadata));
@@ -308,9 +310,9 @@ free_feature_vector:
 free_fc:
     free(fc);
 fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
+    /* VMAF_NULLPTR the caller's handle so it cannot be dereferenced after a failed
      * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *feature_collector = NULL;
+    *feature_collector = VMAF_NULLPTR;
     return -ENOMEM;
 }
 
@@ -328,7 +330,7 @@ static int feature_collector_mount_model_unlocked(VmafFeatureCollector *feature_
         return -ENOMEM;
 
     m->model = model;
-    m->next = NULL;
+    m->next = VMAF_NULLPTR;
 
     VmafPredictModel *head = feature_collector->models;
     if (!head) {
@@ -346,7 +348,7 @@ static int feature_collector_unmount_model_unlocked(VmafFeatureCollector *featur
                                                     const VmafModel *model)
 {
     VmafPredictModel *head = feature_collector->models;
-    VmafPredictModel *prev = NULL;
+    VmafPredictModel *prev = VMAF_NULLPTR;
 
     while (head) {
         if (head->model == model) {
@@ -382,13 +384,8 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     return err;
 }
 
-/* `model` is only compared by address here, but this prototype lives in
- * feature_collector.h and is shared with the C++ twin feature_collector.cpp
- * (compiled into test_predict and the collector coverage tests); the two
- * TUs must keep an identical signature, so it stays mutable until the twins
- * are reconciled. Suppression cited per ADR-0278. */
-/* cppcheck-suppress constParameterPointer ; prototype shared with the C++ twin, see above */
-int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector,
+                                         const VmafModel *model)
 {
     if (!feature_collector)
         return -EINVAL;
@@ -428,7 +425,7 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
 
 static FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *feature_name)
 {
-    FeatureVector *feature_vector = NULL;
+    FeatureVector *feature_vector = VMAF_NULLPTR;
     for (unsigned i = 0; i < fc->cnt; i++) {
         FeatureVector *fv = fc->feature_vector[i];
         if (!strcmp(fv->name, feature_name)) {
@@ -442,12 +439,12 @@ static FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *
 FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char *feature_name)
 {
     if (!fc || !feature_name)
-        return NULL;
+        return VMAF_NULLPTR;
 
     pthread_mutex_lock(&fc->lock);
     if (fc->destroyed) {
         pthread_mutex_unlock(&fc->lock);
-        return NULL;
+        return VMAF_NULLPTR;
     }
     FeatureVector *fv = find_feature_vector(fc, feature_name);
     pthread_mutex_unlock(&fc->lock);
@@ -542,7 +539,7 @@ static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_co
                                                 double score)
 {
     VmafCallbackItem *metadata_iter =
-        feature_collector->metadata ? feature_collector->metadata->head : NULL;
+        feature_collector->metadata ? feature_collector->metadata->head : VMAF_NULLPTR;
     while (metadata_iter) {
         // Check current feature name is the same as the metadata feature name
         if (!strcmp(metadata_iter->metadata_cfg.feature_name, feature_name)) {
@@ -579,7 +576,7 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
     if (!feature_collector->timer.begin)
         feature_collector->timer.begin = clock();
 
-    FeatureVector *feature_vector = NULL;
+    FeatureVector *feature_vector = VMAF_NULLPTR;
     int err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
     if (!err)
         err = feature_vector_append(feature_vector, picture_index, score);
@@ -653,5 +650,3 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

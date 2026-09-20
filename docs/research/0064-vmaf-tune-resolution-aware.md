@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0064 — `vmaf-tune` resolution-aware model selection + CRF offsets
 
 - **Status**: Accepted as basis for [ADR-0289](../adr/0289-vmaf-tune-resolution-aware.md)
@@ -35,11 +34,11 @@ exactly and is the only rule that's defensible without a fork-local
 training run:
 
 | Encode | Threshold check | Selected model |
-|---|---|---|
+| --- | --- | --- |
 | 3840×2160 | h≥2160 ✓ | `vmaf_4k_v0.6.1` |
-| 1920×1080 | h<2160  | `vmaf_v0.6.1` |
-| 2560×1440 | h<2160  | `vmaf_v0.6.1` (best available; ~0.5 VMAF bias measured on Netflix Public against a 4K model — acceptable) |
-| 1280×720  | h<2160  | `vmaf_v0.6.1` (no 720p model exists; canonical fallback) |
+| 1920×1080 | h<2160 | `vmaf_v0.6.1` |
+| 2560×1440 | h<2160 | `vmaf_v0.6.1` (best available; ~0.5 VMAF bias measured on Netflix Public against a 4K model — acceptable) |
+| 1280×720 | h<2160 | `vmaf_v0.6.1` (no 720p model exists; canonical fallback) |
 | 7680×4320 | h≥2160 ✓ | `vmaf_4k_v0.6.1` (clamps; no 8K model) |
 
 Width is irrelevant under the public guidance. We accept a `width`
@@ -57,7 +56,7 @@ rows under-shoot). The shipped defaults — conservative, codec-agnostic
 — are:
 
 | Height range | Offset | Rationale |
-|---|---|---|
+| --- | --- | --- |
 | ≥ 2160 | -2 | 4K under-shoots at parity CRF; pull bisect bounds toward higher quality. |
 | ≥ 1080 | 0 | Baseline anchor — the 1080p model was trained against this rate-distortion regime. |
 | ≥ 720 | +2 | HD over-shoots; allow bisect to start from a lower quality bound. |

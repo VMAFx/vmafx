@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0220: SYCL feature kernels are unconditionally fp64-free
 
 - **Status**: Accepted
@@ -65,7 +64,7 @@ gain-limiting, because there is no fp64 kernel to dispatch to.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep WARNING-level "int64 emulation" wording, ignore | Zero diff | Future maintainers chase a non-existent fast path; perf bug reports keep citing this line | The wording was actively misleading — it had to go |
 | Add a runtime fp64-aspect probe and a `<UseFP64=true>` kernel instantiation for ADM gain limiting | Closes the door on the "is there a fast path we're missing?" question | The ADM kernel comment already explains why this is unsafe: a single `double` lambda capture taints the SPIR-V module for the whole TU and crashes the runtime on fp64-less devices, even when the fp64 kernel is never submitted. Building a parallel `<true>` TU per feature multiplies build time and binary size for a path no production gain value (1.0, 100.0) actually benefits from | Cost > benefit; the int64 Q31 path is exact for production gains and within ±1 LSB for fractional gains |
 | Per-feature fp64 fallback (each extractor probes independently) | Granular control | Same SPIR-V-module-taint problem applies per-TU, not per-feature; doesn't actually unlock anything | Wrong axis of granularity |

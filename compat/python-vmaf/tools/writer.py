@@ -1,19 +1,29 @@
+from contextlib import ExitStack, contextmanager
+from pathlib import Path
+from typing import ClassVar
+
 import numpy as np
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
+@contextmanager
+def _open_binary_writer(filepath):
+    with Path(filepath).open("wb") as file_handle:
+        yield file_handle
+
+
 class YuvWriter(object):
 
-    SUPPORTED_YUV_8BIT_TYPES = [
+    SUPPORTED_YUV_8BIT_TYPES: ClassVar = [
         "yuv420p",
         "yuv422p",
         "yuv444p",
         "gray",
     ]
 
-    SUPPORTED_YUV_10BIT_LE_TYPES = [
+    SUPPORTED_YUV_10BIT_LE_TYPES: ClassVar = [
         "yuv420p10le",
         "yuv422p10le",
         "yuv444p10le",
@@ -21,7 +31,7 @@ class YuvWriter(object):
     ]
 
     # ex: for yuv420p, the width and height of U/V is 0.5x, 0.5x of Y
-    UV_WIDTH_HEIGHT_MULTIPLIERS_DICT = {
+    UV_WIDTH_HEIGHT_MULTIPLIERS_DICT: ClassVar = {
         "yuv420p": (0.5, 0.5),
         "yuv422p": (0.5, 1.0),
         "yuv444p": (1.0, 1.0),
@@ -41,10 +51,11 @@ class YuvWriter(object):
 
         self._asserts()
 
-        self.file = open(self.filepath, "wb")
+        self._exit_stack = ExitStack()
+        self.file = self._exit_stack.enter_context(_open_binary_writer(self.filepath))
 
     def close(self):
-        self.file.close()
+        self._exit_stack.close()
 
     # make YuvWriter withable, e.g.:
     # with YuvWriter(...) as yuv_writer:
@@ -76,6 +87,28 @@ class YuvWriter(object):
         # assert YUV type
         self._assert_yuv_type()
 
+    def _pixel_type_and_depth(self):
+        if self._is_8bit():
+            return np.uint8, 8
+        if self._is_10bitle():
+            return np.uint16, 10
+        raise AssertionError()
+
+    @staticmethod
+    def _assert_chroma_shape(u, v, uv_height, uv_width):
+        if uv_width == 0 and uv_height == 0:
+            assert u is None
+            assert v is None
+            return
+        if uv_width <= 0 or uv_height <= 0:
+            raise AssertionError(f"Unsupported uv_width and uv_height: {uv_width}, {uv_height}")
+        assert (uv_height, uv_width) == u.shape
+        assert (uv_height, uv_width) == v.shape
+
+    @staticmethod
+    def _scale_plane(value, bit_depth):
+        return value.astype(np.double) * (2.0**bit_depth - 1.0) if value is not None else None
+
     def next(self, y, u, v, format="uint"):
 
         assert format in ["uint", "float2uint"], (
@@ -92,37 +125,13 @@ class YuvWriter(object):
 
         assert (y_height, y_width) == y.shape
 
-        if uv_width == 0 and uv_height == 0:
-            assert u is None
-            assert v is None
-        elif uv_width > 0 and uv_height > 0:
-            assert (uv_height, uv_width) == u.shape
-            assert (uv_height, uv_width) == v.shape
-        else:
-            assert False, f"Unsupported uv_width and uv_height: {uv_width}, {uv_height}"
+        self._assert_chroma_shape(u, v, uv_height, uv_width)
+        pix_type, bit_depth = self._pixel_type_and_depth()
 
-        if self._is_8bit():
-            pix_type = np.uint8
-        elif self._is_10bitle():
-            pix_type = np.uint16
-        else:
-            assert False
-
-        if format == "uint":
-            pass
-        elif format == "float2uint":
-            if self._is_8bit():
-                y = y.astype(np.double) * (2.0**8 - 1.0)
-                u = u.astype(np.double) * (2.0**8 - 1.0) if u is not None else None
-                v = v.astype(np.double) * (2.0**8 - 1.0) if v is not None else None
-            elif self._is_10bitle():
-                y = y.astype(np.double) * (2.0**10 - 1.0)
-                u = u.astype(np.double) * (2.0**10 - 1.0) if u is not None else None
-                v = v.astype(np.double) * (2.0**10 - 1.0) if v is not None else None
-            else:
-                assert False
-        else:
-            assert False
+        if format == "float2uint":
+            y = self._scale_plane(y, bit_depth)
+            u = self._scale_plane(u, bit_depth)
+            v = self._scale_plane(v, bit_depth)
 
         self.file.write(y.astype(pix_type).tobytes())
         if u is not None:

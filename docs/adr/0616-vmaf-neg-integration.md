@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0616: VMAF NEG Integration into vmaf-tune
 
 - **Status**: Proposed
@@ -28,7 +27,7 @@ post ADR-0618.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | A — `--neg` flag (chosen) | Minimal; clear intent; zero new code paths | Single-flag; does not auto-select on content type | Chosen as near-term simplest-win |
 | B — `--model-variant` enum | Cleaner API; extensible | More surface to maintain; variant list may not be exhaustive | Deferred as V2 refactor |
 | C — raw `--model` path in vmaf-tune | Zero model-specific code | Poor UX; no guard against unsupported formats | Chosen against; UX is poor |
@@ -53,7 +52,7 @@ post ADR-0618.
 ## Implementation phases
 
 | Phase | Description | Effort |
-|-------|-------------|--------|
+| ------- | ------------- | -------- |
 | P1 | `--neg` flag in CLI (`cli.py`); model path routing in `score_backend.py` | 0.5 day |
 | P2 | Propagation through `bisect.py`, `per_shot.py`, `compare.py` | 0.5 day |
 | P3 | Docs `docs/metrics/vmaf-neg.md`; "when to use" guidance | 0.5 day |

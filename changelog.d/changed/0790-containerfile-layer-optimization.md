@@ -1,3 +1,5 @@
+# Changelog fragment
+
 dev/Containerfile image-size optimization (ADR-0790).
 
 Four targeted layer changes reduce the final image size by several GB with no

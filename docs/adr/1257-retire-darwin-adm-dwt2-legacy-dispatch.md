@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1257: Retire the Darwin three-tap integer-ADM DWT2 compatibility dispatch
 
@@ -46,7 +45,7 @@ difference in `svm_predict`, not from the DWT, and are unchanged.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep the Apple wrapper (status quo) | No assertion changes | Reproduces a fixed defect on one OS forever; diverges from upstream, which fixed it; a second NEON code path that only macOS CI runs | The compatibility value has no upstream counterpart left to be compatible with |
 | Keep a Darwin branch but record the four-tap Darwin value | Pins the exact macOS number | The branch no longer distinguishes anything at `places=4`: Linux AArch64, x86 and upstream all agree with `88.030463` | Adds a platform branch with no measurable purpose |
 | Restore the three-tap rule in the universal kernel | Single code path | Breaks scalar bit-exactness on every AArch64 platform (ADR-0138/0139) | Forbidden by the bit-exactness contract |

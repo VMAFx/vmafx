@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1101: Change vmaf container user GID/UID from 1000 to 2000
 
 - **Status**: Accepted
@@ -31,7 +30,7 @@ updated atomically to 2000.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Delete the `ubuntu` built-in user/group at image start | Removes the conflict at source | Fragile — Ubuntu may re-create it; unsupported mutation of the base layer | Rejected |
 | Use `--no-user-group` + let `useradd` pick the next free UID/GID dynamically | No hard-coded ID | Non-deterministic; BuildKit cache mounts require a fixed numeric ID | Rejected |
 | Stay on Ubuntu 24.04 base | No conflict at GID 1000 | Misses Ubuntu 26.04 glibc 2.43 + Python 3.14 required by ADR-0603 | Rejected |

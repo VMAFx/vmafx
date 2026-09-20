@@ -62,10 +62,7 @@
 #include "feature/arm64/cambi_neon.h"
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 typedef void (*DpRowFn)(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
                         int width, int pad_size, bool deriv_valid);
@@ -133,7 +130,7 @@ static int random_width(uint32_t *state)
 static char *compare_bytes(const void *scalar_buf, const void *simd_buf, size_t n_bytes)
 {
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf, n_bytes, g_label);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- sweep 1: dp row ------------------------------------------------- */
@@ -168,7 +165,7 @@ static char *check_dp_row(const RowKernels *simd, int width, int pad, bool valid
 {
     DpRowBuffers b;
     const bool ok = dp_row_buffers_alloc(&b, width, pad);
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         const size_t n = dp_len(width, pad);
         uint32_t state = seed;
@@ -199,7 +196,7 @@ static char *check_dp_row_variants(const RowKernels *simd, int width, int pad, u
                 return err;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *sweep_dp_rows(const RowKernels *simd)
@@ -213,7 +210,7 @@ static char *sweep_dp_rows(const RowKernels *simd)
                 return err;
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- sweep 2: mask row ----------------------------------------------- */
@@ -263,7 +260,7 @@ static char *check_mask_row(const RowKernels *simd, int width, int pad, uint32_t
 {
     MaskRowBuffers b;
     const bool ok = mask_row_buffers_alloc(&b, width, pad);
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         const size_t n = dp_len(width, pad);
         uint32_t state = seed;
@@ -298,7 +295,7 @@ static char *sweep_mask_rows(const RowKernels *simd)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- sweep 3: whole spatial-mask recurrence --------------------------- */
@@ -367,7 +364,7 @@ static char *check_chain(const RowKernels *simd, ChainSpec *c, uint32_t seed)
 {
     ChainBuffers b;
     const bool ok = chain_buffers_alloc(&b, c);
-    char *err = NULL;
+    char *err = VMAF_NULLPTR;
     if (ok) {
         const size_t pixels = (size_t)c->width * (size_t)c->height;
         const size_t dp_n = dp_len(c->width, c->pad) * (size_t)(c->height + 2 * c->pad + 1);
@@ -404,7 +401,7 @@ static char *sweep_chains(const RowKernels *simd)
                     .pad = g_pads[p],
                     /* Mid-range threshold: about half the window is flat. */
                     .mask_index = (uint32_t)(filter * filter / 2),
-                    .derivs = NULL,
+                    .derivs = VMAF_NULLPTR,
                 };
                 char *err = check_chain(simd, &c, simd_test_xorshift32(&state));
                 if (err)
@@ -412,7 +409,7 @@ static char *sweep_chains(const RowKernels *simd)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- per-ISA entry points -------------------------------------------- */
@@ -438,11 +435,11 @@ static char *test_avx2_chain(void)
 static char *run_avx2_tests(void)
 {
     if (!simd_test_have_avx2())
-        return NULL;
+        return VMAF_NULLPTR;
     mu_run_test(test_avx2_dp_row);
     mu_run_test(test_avx2_mask_row);
     mu_run_test(test_avx2_chain);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if HAVE_AVX512
@@ -466,11 +463,11 @@ static char *test_avx512_chain(void)
 static char *run_avx512_tests(void)
 {
     if (!simd_test_have_avx512())
-        return NULL;
+        return VMAF_NULLPTR;
     mu_run_test(test_avx512_dp_row);
     mu_run_test(test_avx512_mask_row);
     mu_run_test(test_avx512_chain);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 #endif /* HAVE_AVX512 */
 #endif /* ARCH_X86 */
@@ -514,7 +511,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping: arch lacks CAMBI spatial-mask SIMD\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

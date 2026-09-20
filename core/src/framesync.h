@@ -70,7 +70,8 @@ int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, un
  * @param index   Frame index associated with @p data.
  * @return 0 on success, negative errno on failure.
  */
-int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, unsigned index);
+int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, const void *data,
+                                      unsigned index);
 
 /**
  * @brief Retrieve the buffer that was submitted for @p index, blocking until
@@ -91,7 +92,7 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
  * @param index   Frame index associated with @p data.
  * @return 0 on success, negative errno on failure.
  */
-int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigned index);
+int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, const void *data, unsigned index);
 
 /**
  * vmaf_framesync_abort - wake all retrieve_filled_data waiters and make them

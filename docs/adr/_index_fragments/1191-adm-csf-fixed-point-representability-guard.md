@@ -1,1 +1,5 @@
-| [ADR-1191](1191-adm-csf-fixed-point-representability-guard.md) | Integer ADM rejects CSF configurations its fixed-point storage cannot represent | Accepted | metrics, adm, cuda, sycl, hip, correctness |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1191](1191-adm-csf-fixed-point-representability-guard.md) | Integer ADM rejects CSF configurations its fixed-point storage cannot represent | Accepted | `metrics`, `adm`, `cuda`, `sycl`, `hip`, `correctness` |

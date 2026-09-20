@@ -22,34 +22,30 @@
 
 #include "dnn/onnx_scan.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 static char *test_null_buffer(void)
 {
-    const int err = vmaf_dnn_scan_onnx(NULL, 10, NULL);
+    const int err = vmaf_dnn_scan_onnx(VMAF_NULLPTR, 10, VMAF_NULLPTR);
     mu_assert("NULL buffer must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_zero_length(void)
 {
     const unsigned char buf[1] = {0};
-    const int err = vmaf_dnn_scan_onnx(buf, 0, NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, 0, VMAF_NULLPTR);
     mu_assert("zero-length must return -EINVAL", err == -EINVAL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_no_graph_field(void)
 {
     /* One varint field (field 1, value 1) — no ModelProto.graph present. */
     const unsigned char buf[] = {0x08, 0x01};
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("missing graph must return -ENOENT", err == -ENOENT);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_allowed_op_conv(void)
@@ -60,11 +56,11 @@ static char *test_allowed_op_conv(void)
         0x0A, 0x06,                    /* GraphProto.node, len=6     */
         0x22, 0x04, 'C', 'o', 'n', 'v' /* NodeProto.op_type = "Conv" */
     };
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("Conv must be accepted", err == 0);
-    mu_assert("first_bad must remain NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must remain NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_allowed_multiple_ops(void)
@@ -75,9 +71,9 @@ static char *test_allowed_multiple_ops(void)
                                  0x22, 0x04, 'C', 'o', 'n', 'v',
                                  0x0A, 0x06, /* node, len=6                */
                                  0x22, 0x04, 'R', 'e', 'l', 'u'};
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("Conv+Relu must be accepted", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_loop_top_level_allowed(void)
@@ -88,11 +84,11 @@ static char *test_loop_top_level_allowed(void)
      * is exercised by `test_loop_with_forbidden_subgraph` /
      * `test_loop_with_allowed_subgraph` below. */
     const unsigned char buf[] = {0x3A, 0x08, 0x0A, 0x06, 0x22, 0x04, 'L', 'o', 'o', 'p'};
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("Loop must be accepted", err == 0);
-    mu_assert("first_bad must remain NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must remain NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_if_after_allowed_now_accepted(void)
@@ -103,11 +99,11 @@ static char *test_if_after_allowed_now_accepted(void)
                                  0x0A, 0x06, 0x22, 0x04, 'C',
                                  'o',  'n',  'v',  0x0A, 0x04, /* node, len=4 */
                                  0x22, 0x02, 'I',  'f'};
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("Conv+If must both be accepted", err == 0);
-    mu_assert("first_bad must remain NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must remain NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_resize_top_level_allowed(void)
@@ -120,23 +116,23 @@ static char *test_resize_top_level_allowed(void)
      *   0A 08                     GraphProto.node,     len=8
      *   22 06 'R' 'e' 's' 'i' 'z' 'e'  NodeProto.op_type = "Resize" */
     const unsigned char buf[] = {0x3A, 0x0A, 0x0A, 0x08, 0x22, 0x06, 'R', 'e', 's', 'i', 'z', 'e'};
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("Resize must be accepted", err == 0);
-    mu_assert("first_bad must remain NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must remain NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_scan_still_rejected(void)
 {
     /* Scan stays off the allowlist (ADR-0169 § Alternatives considered). */
     const unsigned char buf[] = {0x3A, 0x08, 0x0A, 0x06, 0x22, 0x04, 'S', 'c', 'a', 'n'};
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("Scan must be rejected", err == -EPERM);
     mu_assert("first_bad must equal \"Scan\"", first_bad && strcmp(first_bad, "Scan") == 0);
     free(first_bad);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Hand-crafted ModelProto: ModelProto { graph = { node = Loop with
@@ -165,21 +161,21 @@ static const unsigned char k_loop_body_fake[] = {
 
 static char *test_loop_with_allowed_subgraph(void)
 {
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(k_loop_body_conv, sizeof(k_loop_body_conv), &first_bad);
     mu_assert("Loop with Conv body must be accepted", err == 0);
-    mu_assert("first_bad must remain NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must remain NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_loop_with_forbidden_subgraph(void)
 {
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(k_loop_body_fake, sizeof(k_loop_body_fake), &first_bad);
     mu_assert("Loop body with forbidden op must be rejected", err == -EPERM);
     mu_assert("first_bad must surface inner op", first_bad && strcmp(first_bad, "Fake") == 0);
     free(first_bad);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-0171 / T6-5b: many top-level Loop nodes must trip the
@@ -219,22 +215,22 @@ static char *test_too_many_loop_nodes_rejected(void)
         off += sizeof(loop_node);
     }
 
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, off, &first_bad);
     mu_assert("17 Loops must be rejected (cap=16)", err == -EPERM);
     mu_assert("first_bad must surface 'Loop' on cap-trip",
               first_bad && strcmp(first_bad, "Loop") == 0);
     free(first_bad);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_truncated_varint(void)
 {
     /* Single byte with continuation bit set, no follow-up byte. */
     const unsigned char buf[] = {0x80};
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("truncated varint must return -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_overlong_varint(void)
@@ -244,18 +240,18 @@ static char *test_overlong_varint(void)
     const unsigned char buf[10] = {
         0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
     };
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("overlong varint must return -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_length_overruns_buffer(void)
 {
     /* ModelProto.graph claims 16 bytes follow but buffer holds none. */
     const unsigned char buf[] = {0x3A, 0x10};
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("overrun must return -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_node_length_overruns(void)
@@ -267,9 +263,9 @@ static char *test_node_length_overruns(void)
         0x0A, 0x10, /* node, len=16 (overrun)    */
         0x22, 0x04  /* padding inside graph      */
     };
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("node overrun must return -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_op_type_overruns(void)
@@ -278,9 +274,9 @@ static char *test_op_type_overruns(void)
     const unsigned char buf[] = {
         0x3A, 0x06, 0x0A, 0x04, 0x22, 0x63, 'A', 'B' /* slen=99, only 2 bytes     */
     };
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("op_type overrun must return -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_op_name_too_long(void)
@@ -306,9 +302,9 @@ static char *test_op_name_too_long(void)
     p += SLEN;
     mu_assert("buffer fully populated", p == sizeof(buf));
 
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("overlong op name must return -EPERM", err == -EPERM);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_zero_length_op_name(void)
@@ -317,9 +313,9 @@ static char *test_zero_length_op_name(void)
     const unsigned char buf[] = {
         0x3A, 0x04, 0x0A, 0x02, 0x22, 0x00 /* op_type, slen=0            */
     };
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("empty op name must return -EPERM", err == -EPERM);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_skip_unrelated_fields(void)
@@ -332,9 +328,9 @@ static char *test_skip_unrelated_fields(void)
                                  0x19, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
                                  /* ModelProto.graph */
                                  0x3A, 0x08, 0x0A, 0x06, 0x22, 0x04, 'G', 'e', 'm', 'm'};
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("mixed wire types must be skipped cleanly", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ---- ADR-1089: NodeProto.domain bypass tests ---- */
@@ -359,11 +355,11 @@ static char *test_domain_empty_string_allowed(void)
         0x0A, 0x06,                    /* GraphProto.node,  len=6  */
         0x22, 0x04, 'C', 'o', 'n', 'v' /* NodeProto.op_type = "Conv" */
     };
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("domain absent (empty) must be accepted", err == 0);
-    mu_assert("first_bad must be NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must be NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_domain_ai_onnx_allowed(void)
@@ -385,11 +381,11 @@ static char *test_domain_ai_onnx_allowed(void)
         0x3A, 0x07, 'a', 'i', '.', 'o', 'n', 'n', 'x', /* domain="ai.onnx" */
         0x22, 0x04, 'C', 'o', 'n', 'v'                 /* op_type="Conv"   */
     };
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("domain 'ai.onnx' must be accepted", err == 0);
-    mu_assert("first_bad must be NULL on success", first_bad == NULL);
-    return NULL;
+    mu_assert("first_bad must be NULL on success", first_bad == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 static char *test_domain_custom_rejected(void)
@@ -411,13 +407,13 @@ static char *test_domain_custom_rejected(void)
         0x3A, 0x08, 'c', 'o', 'm', '.', 'e', 'v', 'i', 'l', /* domain */
         0x22, 0x04, 'C', 'o', 'n', 'v'                      /* op_type */
     };
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("custom domain must be rejected", err == -EPERM);
     mu_assert("first_bad must surface the rejected domain",
-              first_bad != NULL && strcmp(first_bad, "com.evil") == 0);
+              first_bad != VMAF_NULLPTR && strcmp(first_bad, "com.evil") == 0);
     free(first_bad);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_domain_custom_before_op_type_rejected(void)
@@ -430,9 +426,9 @@ static char *test_domain_custom_before_op_type_rejected(void)
                                  0x0A, 0x10, /* GraphProto.node,  len=16           */
                                  0x3A, 0x08, 'c', 'o', 'm', '.', 'e', 'v', 'i', 'l', /* domain */
                                  0x22, 0x04, 'C', 'o', 'n', 'v'};
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("custom domain (before op_type) must be rejected", err == -EPERM);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_domain_ml_allowed_rejected(void)
@@ -453,22 +449,22 @@ static char *test_domain_ml_allowed_rejected(void)
                                  0x3A, 0x0A, 'a', 'i', '.', 'o',
                                  'n',  'n',  'x', '.', 'm', 'l', /* domain */
                                  0x22, 0x04, 'C', 'o', 'n', 'v'};
-    char *first_bad = NULL;
+    char *first_bad = VMAF_NULLPTR;
     const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), &first_bad);
     mu_assert("ai.onnx.ml domain must be rejected", err == -EPERM);
     mu_assert("first_bad must surface the rejected domain",
-              first_bad != NULL && strcmp(first_bad, "ai.onnx.ml") == 0);
+              first_bad != VMAF_NULLPTR && strcmp(first_bad, "ai.onnx.ml") == 0);
     free(first_bad);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_unsupported_wire_type(void)
 {
     /* Group start (wire type 3) is deprecated and rejected. */
     const unsigned char buf[] = {0x0B}; /* field 1, wire 3 */
-    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), NULL);
+    const int err = vmaf_dnn_scan_onnx(buf, sizeof(buf), VMAF_NULLPTR);
     mu_assert("deprecated group wire must return -EBADMSG", err == -EBADMSG);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Split into per-category groups so the dispatcher stays under the
@@ -482,7 +478,7 @@ static char *run_tests_basic(void)
     mu_run_test(test_no_graph_field);
     mu_run_test(test_allowed_op_conv);
     mu_run_test(test_allowed_multiple_ops);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_tests_op_allowlist(void)
@@ -494,7 +490,7 @@ static char *run_tests_op_allowlist(void)
     mu_run_test(test_loop_with_allowed_subgraph);
     mu_run_test(test_loop_with_forbidden_subgraph);
     mu_run_test(test_too_many_loop_nodes_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_tests_malformed_varints(void)
@@ -504,7 +500,7 @@ static char *run_tests_malformed_varints(void)
     mu_run_test(test_length_overruns_buffer);
     mu_run_test(test_node_length_overruns);
     mu_run_test(test_op_type_overruns);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_tests_malformed_op_names(void)
@@ -513,7 +509,7 @@ static char *run_tests_malformed_op_names(void)
     mu_run_test(test_zero_length_op_name);
     mu_run_test(test_skip_unrelated_fields);
     mu_run_test(test_unsupported_wire_type);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ADR-1089: custom-domain bypass tests. */
@@ -524,7 +520,7 @@ static char *run_tests_domain(void)
     mu_run_test(test_domain_custom_rejected);
     mu_run_test(test_domain_custom_before_op_type_rejected);
     mu_run_test(test_domain_ml_allowed_rejected);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -547,5 +543,3 @@ char *run_tests(void)
     }
     return run_tests_domain();
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

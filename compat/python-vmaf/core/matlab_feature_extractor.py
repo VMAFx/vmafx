@@ -1,8 +1,10 @@
 import os
-import subprocess
+from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 
+from vmaf import run_process
 from vmaf.config import VmafConfig, VmafExternalConfig
 from vmaf.core.executor import Executor
 from vmaf.core.feature_extractor import FeatureExtractor
@@ -35,28 +37,11 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None =
         "-r",
         matlab_script,
     ]
-    # Force a deterministic C locale (mirrors ProcessRunner) so any
-    # AssertionError text raised on a non-English host stays English.
-    # Unconditional assignment: setdefault() would leave a host-set
-    # LANG=de_DE.UTF-8 in place, defeating the intent.
-    env = dict(os.environ)
-    env["LC_ALL"] = "C"
-    env["LANG"] = "C"
-    try:
-        if log_file_path is None:
-            subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env, shell=False)
-        else:
-            with open(log_file_path, "ab") as log_fh:
-                subprocess.run(
-                    argv,
-                    stdout=log_fh,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    shell=False,
-                    check=True,
-                )
-    except subprocess.CalledProcessError as e:
-        raise AssertionError(f"Process returned {e.returncode}, cmd: {argv}, msg: {str(e.output)}")
+    if log_file_path is None:
+        run_process(argv)
+    else:
+        with Path(log_file_path).open("ab") as log_fh:
+            run_process(argv, stdout=log_fh)
 
 
 class MatlabFeatureExtractor(FeatureExtractor):
@@ -76,12 +61,12 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
     # VERSION = '1.2' # fix minor frame and prev frame swap issue
     VERSION = "1.3"  # align ST-RRED with ST-RREDopt calculations
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "srred",
         "trred",
     ]
 
-    DERIVED_ATOM_FEATURES = [
+    DERIVED_ATOM_FEATURES: ClassVar = [
         "strred",
     ]
 
@@ -102,7 +87,7 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
         dis_procfile_path = asset.dis_procfile_path
         log_file_path = self._get_log_file_path(asset)
 
-        current_dir = os.getcwd() + "/"
+        current_dir = str(Path.cwd()) + "/"
 
         ref_procfile_path = make_absolute_path(ref_procfile_path, current_dir)
         dis_procfile_path = make_absolute_path(dis_procfile_path, current_dir)
@@ -158,7 +143,7 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
         assert len(srred_scores) == len(trred_scores)
 
         # === Way One: consistent with VMAF framework, which is to multiply S and T scores per frame, then average
-        strred_scores = list(map(_strred, zip(srred_scores, trred_scores)))
+        strred_scores = list(map(_strred, zip(srred_scores, trred_scores, strict=False)))
         # === Way Two: authentic way of calculating STRRED score: average first, then multiply ===
         strred_all_same_scores = (
             ListStats.nonemean(srred_scores)
@@ -181,12 +166,12 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
 
     VERSION = "1.1"  # aligned ST-RREDopt computation, i.e. each current and previous frame for calculation and append to the ST-RREDopt of the first frame the result from the 2nd one
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "srred",
         "trred",
     ]
 
-    DERIVED_ATOM_FEATURES = ["strred", "strred_all_same"]
+    DERIVED_ATOM_FEATURES: ClassVar = ["strred", "strred_all_same"]
 
     MATLAB_WORKSPACE = VmafConfig.root_path("python", "vmaf", "matlab", "strred")
 
@@ -205,7 +190,7 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
         dis_procfile_path = asset.dis_procfile_path
         log_file_path = self._get_log_file_path(asset)
 
-        current_dir = os.getcwd() + "/"
+        current_dir = str(Path.cwd()) + "/"
 
         ref_procfile_path = make_absolute_path(ref_procfile_path, current_dir)
         dis_procfile_path = make_absolute_path(dis_procfile_path, current_dir)
@@ -242,12 +227,11 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
             srred, trred = srred_trred
             if srred is not None and trred is not None:
                 return srred * trred
-            elif srred is None:
+            if srred is None:
                 # Covers (None, None) -> trred is None -> returns None.
                 return trred
-            else:
-                # srred is not None and trred is None.
-                return srred
+            # srred is not None and trred is None.
+            return srred
             # (CodeQL py/unreachable-statement: prior `else: return None`
             # was unreachable — the `srred is None` branch already covers
             # the (None, None) case.)
@@ -266,7 +250,7 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
         assert len(srred_scores) == len(trred_scores)
 
         # === Way One: consistent with VMAF framework, which is to multiply S and T scores per frame, then average
-        strred_scores = list(map(_strred, zip(srred_scores, trred_scores)))
+        strred_scores = list(map(_strred, zip(srred_scores, trred_scores, strict=False)))
         # === Way Two: authentic way of calculating STRRED score: average first, then multiply ===
         strred_all_same_scores = (
             ListStats.nonemean(srred_scores)
@@ -289,9 +273,9 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
 
     VERSION = "0.1"
 
-    scale_list = [2, 3, 4]
-    ATOM_FEATURES = []
-    DERIVED_ATOM_FEATURES = []
+    scale_list: ClassVar = [2, 3, 4]
+    ATOM_FEATURES: ClassVar = []
+    DERIVED_ATOM_FEATURES: ClassVar = []
     for scale_now in scale_list:
         ATOM_FEATURES.append("sspeed_" + str(scale_now))
         ATOM_FEATURES.append("tspeed_" + str(scale_now))
@@ -306,7 +290,7 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
         ref_procfile_path = asset.ref_procfile_path
         dis_procfile_path = asset.dis_procfile_path
         log_file_path = self._get_log_file_path(asset)
-        current_dir = os.getcwd() + "/"
+        current_dir = str(Path.cwd()) + "/"
         ref_procfile_path = make_absolute_path(ref_procfile_path, current_dir)
         dis_procfile_path = make_absolute_path(dis_procfile_path, current_dir)
         log_file_path = make_absolute_path(log_file_path, current_dir)
@@ -342,12 +326,11 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
             sspeed, tspeed = sspeed_tspeed
             if sspeed is not None and tspeed is not None:
                 return sspeed * tspeed
-            elif sspeed is None:
+            if sspeed is None:
                 # Covers (None, None) -> tspeed is None -> returns None.
                 return tspeed
-            else:
-                # sspeed is not None and tspeed is None.
-                return sspeed
+            # sspeed is not None and tspeed is None.
+            return sspeed
             # (CodeQL py/unreachable-statement: prior `else: return None`
             # was unreachable — the `sspeed is None` branch already covers
             # the (None, None) case.)
@@ -362,7 +345,7 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
             assert len(sspeed_scale_now_scores) == len(tspeed_scale_now_scores)
             # consistent with VMAF framework, which is to multiply S and T scores per frame, then average
             speed_scale_now_scores = list(
-                map(_speed, zip(sspeed_scale_now_scores, tspeed_scale_now_scores))
+                map(_speed, zip(sspeed_scale_now_scores, tspeed_scale_now_scores, strict=False))
             )
             result.result_dict[speed_scale_now_scores_key] = speed_scale_now_scores
 
@@ -377,9 +360,9 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
 
     VERSION = "0.1"
 
-    ATOM_FEATURES = ["smad", "tmad", "stmad"]
+    ATOM_FEATURES: ClassVar = ["smad", "tmad", "stmad"]
 
-    DERIVED_ATOM_FEATURES = ["smad_all_same", "tmad_all_same", "stmad_all_same"]
+    DERIVED_ATOM_FEATURES: ClassVar = ["smad_all_same", "tmad_all_same", "stmad_all_same"]
 
     MATLAB_WORKSPACE = VmafConfig.root_path("python", "vmaf", "matlab", "STMAD_2011_MatlabCode")
 
@@ -387,7 +370,7 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
     def _custom_init(self):
 
         def run_stmad_mex(matlab_bin: str, mex_script: str) -> None:
-            current_dir = os.getcwd() + "/"
+            current_dir = str(Path.cwd()) + "/"
             os.chdir(self.MATLAB_WORKSPACE)
             # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
             _run_matlab(matlab_bin, mex_script)
@@ -412,7 +395,7 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
         dis_procfile_path = asset.dis_procfile_path
         log_file_path = self._get_log_file_path(asset)
 
-        current_dir = os.getcwd() + "/"
+        current_dir = str(Path.cwd()) + "/"
 
         ref_procfile_path = make_absolute_path(ref_procfile_path, current_dir)
         dis_procfile_path = make_absolute_path(dis_procfile_path, current_dir)
@@ -482,7 +465,7 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
 
     VERSION = "1.0"
 
-    ATOM_FEATURES = ["icid"]
+    ATOM_FEATURES: ClassVar = ["icid"]
     # DERIVED_ATOM_FEATURES = ['icid_all_same']
 
     MATLAB_WORKSPACE = VmafConfig.root_path("python", "vmaf", "matlab", "cid_icid")
@@ -500,7 +483,7 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
         dis_workfile_path = asset.dis_workfile_path
         log_file_path = self._get_log_file_path(asset)
 
-        current_dir = os.getcwd() + "/"
+        current_dir = str(Path.cwd()) + "/"
 
         ref_workfile_path = make_absolute_path(ref_workfile_path, current_dir)
         dis_workfile_path = make_absolute_path(dis_workfile_path, current_dir)
@@ -533,7 +516,7 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
     def _post_process_result(cls, result):
         # override Executor._post_process_result
 
-        result = super(iCIDFeatureExtractor, cls)._post_process_result(result)
+        return super(iCIDFeatureExtractor, cls)._post_process_result(result)
 
         # icid_scores_key = cls.get_scores_key('icid')
         # icid_all_same_scores_key = cls.get_scores_key('icid_all_same')
@@ -544,5 +527,3 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
         # # validate
         # for feature in cls.DERIVED_ATOM_FEATURES:
         #     assert cls.get_scores_key(feature) in result.result_dict
-
-        return result

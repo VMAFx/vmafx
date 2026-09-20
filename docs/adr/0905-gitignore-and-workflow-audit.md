@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0905: `.gitignore` + `.github/workflows/` staleness audit (2026-05-30)
 
 - **Status**: Accepted
@@ -39,7 +38,7 @@ the five no-runs workflows are correctly dormant.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Aggressive sweep — also drop `.idea/`, `vmaf_output.xml`, `preprints*.pdf`, `*.mkv` | Maximum shrink. | Removes well-known dev-tooling defenses; future contributors who use JetBrains / produce one-off CLI XML output regain a foot-gun. | Conservative bar matches the task brief ("documented pattern: keep"). |
 | Remove the five no-runs workflows (`supply-chain.yml`, four `upstream-*-watcher.yml`) | Smaller workflow set. | All five are legitimate dormant automation (release-triggered or freshly added cron). Removing them silently disables the ADR-0448 upstream-watcher contract. | Keep — they will fire on schedule. |
 | Hold the audit until PR #321 and PR #330 merge | No diff-overlap risk. | Stale paths persist for the in-flight ADR-0700 rename window; the agent task explicitly carves around those two PRs. | Carve-around is mechanical and verified by reading their diffs. |

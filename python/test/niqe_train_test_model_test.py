@@ -1,8 +1,8 @@
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
-import os
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -46,8 +46,8 @@ class NiqeTrainTestModelTest(unittest.TestCase):
         self.model_filename = VmafConfig.workspace_path("model", "test_save_load.pkl")
 
     def tearDown(self):
-        if os.path.exists(self.model_filename):
-            os.remove(self.model_filename)
+        if Path(self.model_filename).exists():
+            Path(self.model_filename).unlink()
 
     def test_get_xs_from_results(self):
         xs = NiqeTrainTestModel.get_xs_from_results(self.features)

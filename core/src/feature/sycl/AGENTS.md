@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # AGENTS.md — core/src/feature/sycl
 
 Orientation for agents on per-feature SYCL kernels (DPC++).
@@ -98,13 +97,18 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   call can be removed in favour of GPU-side barrier — update this note then.
 
 - **`integer_vif_sycl.cpp` rd_stride uses ceiling division for odd widths** (ADR-1034).
-  Both `launch_vif_hori_impl` (scalar/SIMD-32) and `launch_vif_fused_impl` (SIMD-16)
+  Both `launch_vif_hori_impl` and `launch_vif_fused_impl` (SIMD-16)
   compute downsampled row stride as `(e_w + 1U) / 2U`, not `e_w / 2U`.
   `rd_ref`/`rd_dis` allocation in `init_fex_sycl` uses `((w+1U)/2U) * ((h+1U)/2U)`
   elements. Must stay in sync. On rebase: if future PR modifies
   downsampling path, ensure all three sites (two kernel variants + allocation) use
   same ceiling formula. For even widths/heights result identical to
   truncating division.
+  Both kernels deliberately require SIMD-16. Do not restore the former
+  SIMD-32 specialisations: oneAPI 2026.0 allocates all 128 registers and
+  spills them on Lunar Lake and Battlemage. Any subgroup-width change must
+  compile warning-free for every target in `sycl_aot_targets` and retain the
+  CPU/SYCL parity gate.
 
 - **`integer_psnr_sycl.cpp` honours `enable_chroma` option parity**
   (ADR-0453). `enable_chroma` option (default `true`) clamps `n_planes`
@@ -315,7 +319,7 @@ SYCL kernel renamed or new one added, parity test name +
 ADR-0884 / ADR-0946 backlog must update in same PR.
 
 | SYCL TU | CPU TU | Parity test | ADR |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `integer_cambi_sycl.cpp` | `cambi.c` | `test_integer_cambi_sycl.c` | pre-existing |
 | `integer_motion_sycl.cpp` (motion3) | `integer_motion.c` | `test_sycl_motion3_parity.c` | ADR-0219 |
 | `integer_motion_sycl.cpp` (motion_add_uv) | `float_motion.c` | `test_sycl_motion_add_uv_parity.c` | ADR-0989 |
@@ -394,7 +398,7 @@ tolerance. Skips cleanly when no SYCL device visible — mirrors
 Coverage matrix:
 
 | Kernel TU | Parity test | ADR |
-|---|---|---|
+| --- | --- | --- |
 | `integer_psnr_sycl.cpp` | `test_sycl_psnr_parity.c` | [ADR-0868](../../../../docs/adr/0868-gpu-backend-kernel-coverage.md) |
 | `integer_vif_sycl.cpp` | `test_sycl_vif_parity.c` | ADR-0868 |
 | `integer_adm_sycl.cpp` | `test_sycl_adm_parity.c` | [ADR-0884](../../../../docs/adr/0884-sycl-kernel-coverage-round2.md) |

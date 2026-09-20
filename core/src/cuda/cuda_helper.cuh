@@ -37,8 +37,8 @@
 #endif
 
 #define DIV_ROUND_UP(x, y) (((x) + (y) - 1) / (y))
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define VMAF_CUDA_MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define VMAF_CUDA_MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 /*
  * Netflix#1420 — CUDA error handling must return a clean errno rather
@@ -51,7 +51,7 @@
  *   CHECK_CUDA_GOTO(funcs, CALL, label) — use when the enclosing
  *     function has pushed a CUDA context, allocated a CUDA buffer, or
  *     otherwise established cleanup state that must unwind before the
- *     function returns. Callers declare `int _cuda_err = 0;` once per
+ *     function returns. Callers declare `int _cuda_err;` once per
  *     function and put the unwind sequence under `label:`, then return
  *     `_cuda_err`.
  *

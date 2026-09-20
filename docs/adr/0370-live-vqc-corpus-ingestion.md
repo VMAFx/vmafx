@@ -1,8 +1,7 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0370 — LIVE-VQC MOS-corpus ingestion for `nr_metric_v1`
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | **Status** | Accepted |
 | **Date** | 2026-05-09 |
 | **Tags** | ai, training, corpus, license, fork-local |
@@ -61,7 +60,7 @@ Waterloo IVC (ADR-0369):
 ## Alternatives considered
 
 | Alternative | Reason not chosen |
-|-------------|-------------------|
+| ------------- | ------------------- |
 | Skip LIVE-VQC; rely on LSVQ + KonViD-150k | Both cover overlapping content distributions (social-network UGC); LIVE-VQC's device-capture variety and small footprint make it the cheapest diversity add available. |
 | Merge LIVE-VQC into the LSVQ adapter as an optional split | Dataset provenance, MOS scale, and acquisition path differ; a separate adapter keeps each corpus self-contained and independently versionable per the family convention. |
 | Re-scale MOS to 1–5 at ingest time | The family policy is verbatim ingest + aggregator-side normalisation; introducing a rescaling exception here would be inconsistent with Waterloo IVC (ADR-0369). |

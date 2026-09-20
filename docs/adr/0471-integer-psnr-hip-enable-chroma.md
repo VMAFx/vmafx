@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD060 -->
-# ADR-0471: Add `enable_chroma` to `integer_psnr_hip` (chroma parity with CUDA/SYCL/Vulkan twins)
+# ADR-0471: integer psnr hip enable chroma
+
+**Decision:** Add `enable_chroma` to `integer_psnr_hip` (chroma parity with
+CUDA/SYCL/Vulkan twins)
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
@@ -9,10 +11,10 @@
 ## Context
 
 ADR-0453 added `enable_chroma` (and full chroma dispatch) to the three GPU PSNR
-twins that existed at the time: `integer_psnr_cuda.c`, `integer_psnr_sycl.cpp`, and
-`psnr_vulkan.c`. The HIP twin (`integer_psnr_hip.c`) was not included in that scope
-because it was still listed as luma-only with a follow-up note in ADR-0372
-("Chroma extension is a follow-up").
+twins that existed at the time: `integer_psnr_cuda.c`, `integer_psnr_sycl.cpp`,
+and `psnr_vulkan.c`. The HIP twin (`integer_psnr_hip.c`) was not included in
+that scope because it was still listed as luma-only with a follow-up note in
+ADR-0372 ("Chroma extension is a follow-up").
 
 As a result the HIP extractor:
 
@@ -36,10 +38,10 @@ Mirror the ADR-0453 fix pattern in `integer_psnr_hip.c`:
    `n_planes` to 1 when false or when `pix_fmt == YUV400P`.
 3. Allocate per-plane readback pairs `rb[PSNR_NUM_PLANES]` and staging buffers
    `ref_in[3]` / `dis_in[3]` (luma + up to two chroma planes).
-4. In `submit()`, loop over `n_planes` — one HtoD copy + one kernel dispatch
-   per plane.
-5. In `collect()`, loop over `n_planes` — read each plane's SSE from its
-   pinned host slot and emit the score under `psnr_name[p]`.
+4. In `submit()`, loop over `n_planes` — one HtoD copy + one kernel dispatch per
+   plane.
+5. In `collect()`, loop over `n_planes` — read each plane's SSE from its pinned
+   host slot and emit the score under `psnr_name[p]`.
 6. Update `provided_features` to `{"psnr_y", "psnr_cb", "psnr_cr", NULL}`.
 7. Update `n_dispatches_per_frame` from 1 to 3.
 
@@ -47,10 +49,10 @@ No changes to the `.hip` kernel source — it is already plane-agnostic.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| Keep HIP luma-only; document as known gap | No code change | Permanent backend divergence; callers using `psnr_cb`/`psnr_cr` on HIP silently get no output | Masks the gap rather than closing it |
-| Add a new chroma-specific HIP kernel | Could be optimised for chroma subsampling | Extra kernel maintenance; the existing kernel is already generic | Unnecessary complexity |
+| Option                                    | Pros                                      | Cons                                                                                          | Why not chosen                       |
+| ----------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Keep HIP luma-only; document as known gap | No code change                            | Permanent backend divergence; callers using `psnr_cb`/`psnr_cr` on HIP silently get no output | Masks the gap rather than closing it |
+| Add a new chroma-specific HIP kernel      | Could be optimised for chroma subsampling | Extra kernel maintenance; the existing kernel is already generic                              | Unnecessary complexity               |
 
 ## Consequences
 
@@ -65,7 +67,10 @@ No changes to the `.hip` kernel source — it is already plane-agnostic.
 
 ## References
 
-- [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) — original CUDA/SYCL/Vulkan fix
-- [ADR-0372](../adr/0372-integer-psnr-hip-real-kernel.md) — HIP PSNR kernel promotion (noted chroma as follow-up)
-- CPU reference: `core/src/feature/integer_psnr.c` (init geometry + enable_chroma guard)
+- [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) — original CUDA/SYCL/Vulkan
+  fix
+- [ADR-0372](../adr/0372-integer-psnr-hip-real-kernel.md) — HIP PSNR kernel
+  promotion (noted chroma as follow-up)
+- CPU reference: `core/src/feature/integer_psnr.c` (init geometry +
+  enable_chroma guard)
 - CUDA twin: `core/src/feature/cuda/integer_psnr_cuda.c`

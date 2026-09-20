@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0065: NVENC codec adapters for `vmaf-tune` — option-space digest
 
 - **Date**: 2026-05-03
@@ -20,7 +19,7 @@ with a "use NVENC" flag on the existing `libx264` / `libx265` /
 ## Findings
 
 | Axis | NVENC | Software encoder family |
-|---|---|---|
+| --- | --- | --- |
 | Speed (1080p) | 200–800 fps (RTX 30/40) | 5–60 fps (libx264 medium) |
 | VMAF at matched bitrate | typically 3–5 points lower | reference |
 | Quality knob name | `-cq` (constant quantizer) | `-crf` |
@@ -40,7 +39,7 @@ without retraining.
 ## Decision matrix
 
 | Option | Pros | Cons | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A. One adapter per output codec** (`h264_nvenc`, `hevc_nvenc`, `av1_nvenc`) | Mirrors the ADR-0237 "one file per codec" principle; downstream Phase C predictor learns separate curves per codec name; no branching in the harness | Three near-identical files; needs a shared helper to avoid copy-paste | **Chosen** |
 | B. One adapter per encoder family with a `hardware: bool` flag | Fewer files | Forces the harness to branch on the flag; muddies the registry's `name` → adapter-instance contract; codec one-hot in fr_regressor_v2 (six-bucket) doesn't naturally encode the hardware variant | Rejected — pushes codec-identity branching back into the search loop |
 | C. Skip NVENC for now, ship after the software trio | Lower scope | Defers the user's actual ask; NVENC adapters are the smallest among the requested codec set and unblock corpus generation on GPU dev boxes immediately | Rejected |

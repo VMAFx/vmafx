@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0257: MobileSal real-weights swap deferred (T6-2a-followup blocker)
 
 - **Status**: Accepted
@@ -79,7 +78,7 @@ shift in its own right.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Defer real-weights swap; keep placeholder; document blocker (this ADR)** | Honest record of what's actually shipped; corrects ADR-0218's MIT claim; aligns with the task-brief directive "don't fake it"; zero C-side surface change | T6-2a-followup remains open with no near-term unblock | **Chosen** — see Research-0053 for the survey supporting this |
 | Ship `yuhuan-wu/MobileSal` weights anyway under fair-use / research-only banner | Real saliency signal; matches ADR-0218's original intent | CC BY-NC-SA 4.0 is binary, not negotiable; legal exposure for every commercial libvmaf consumer; share-alike taints the rest of `model/tiny/` | Rejected — license incompatibility is a blocker, not a trade-off |
 | Swap to U-2-Net (`xuebinqin/U-2-Net`, Apache-2.0) inside this PR | Permissive licence; pure RGB; well-known SOD model; same `[1, 3, H, W] → [1, 1, H, W]` contract; pretrained `u2netp` is 4.7 MB | Renaming `mobilesal_placeholder_v0` → `u2netp_v1` is a substantive registry / API / docs shift and a fresh ADR-scope decision; mixing the model-family change into a "real weights for MobileSal" PR muddles the review | Filed as a separate backlog row; not bundled here |

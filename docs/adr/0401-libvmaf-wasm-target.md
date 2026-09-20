@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0401: libvmaf WebAssembly target — phased EXPERIMENT then GO
 
 - **Status**: Proposed
@@ -78,7 +77,7 @@ data lands.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **EXPERIMENT then phased GO (chosen)** | Prove buildability before promising anything; each tier ships its own ADR with empirical data; matches the fork's "no guessing" memory rule. | Defers a public WASM artifact by one EXPERIMENT cycle; no immediate marketing win. | — |
 | **GO directly, ship Tier 1 + Tier 2 in a single PR** | One push, fastest user-visible delivery. | Bundles a build that's never been run with the docs / CI / packaging machinery; Netflix-golden-gate confusion (does WASM count?) compounds across surfaces; violates memory `feedback_no_guessing`. | Rejected — too many unknowns to commit upfront. |
 | **NO-GO** | Zero new build target, zero new docs, zero new CI lane. | Closes the door on browser-side VMAF entirely; no in-process WASM VMAF exists on npm today, so the unfilled slot stays unfilled; loses the four use cases listed in Context. | Rejected — the use cases are real and the Emscripten path is plausibly small. |

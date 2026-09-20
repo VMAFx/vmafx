@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Agent cleanup preservation
 
 The 2026-09-08 repository audit identified two independent data-loss paths in

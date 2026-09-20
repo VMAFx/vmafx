@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research: Dispatch-Strategy Registry Audit — 2026-05-15
 
 ## Summary
@@ -69,7 +68,7 @@ All 17 appear in `feature_extractor_list[]`, but the table contained
 8 symbols defined in `core/src/feature/hip/`:
 
 | Symbol | `.name` field | In `feature_extractor_list[]` | In `vmaf_hip_dispatch_supports()` |
-|--------|--------------|-------------------------------|-----------------------------------|
+| -------- | -------------- | ------------------------------- | ----------------------------------- |
 | `vmaf_fex_psnr_hip` | `"psnr_hip"` | yes | NO — returned 0 always |
 | `vmaf_fex_float_psnr_hip` | `"float_psnr_hip"` | yes | NO |
 | `vmaf_fex_ciede_hip` | `"ciede_hip"` | yes | NO |
@@ -88,7 +87,7 @@ All 8 in `feature_extractor_list[]`, but `g_metal_features[]` in
 `vmaf_metal_dispatch_supports()` had wrong feature names:
 
 | Old entry (wrong) | Correct entry | Source |
-|-------------------|--------------|--------|
+| ------------------- | -------------- | -------- |
 | `"motion2_v2_score"` | `"VMAF_integer_feature_motion2_v2_score"` | `integer_motion_v2_metal.mm` |
 | *(missing)* | `"VMAF_integer_feature_motion_v2_sad_score"` | `integer_motion_v2_metal.mm` |
 | `"float_motion"` | `"VMAF_feature_motion_score"` | `float_motion_metal.mm` |

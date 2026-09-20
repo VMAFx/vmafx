@@ -341,7 +341,7 @@ static int post_process_feature_from_another(const VmafModel *model, struct svm_
 
 static int predict_resolve_feature_name(VmafModel *model, unsigned i)
 {
-    VmafFeatureExtractor *fex =
+    const VmafFeatureExtractor *fex =
         vmaf_get_feature_extractor_by_feature_name(model->feature[i].name, 0);
     if (!fex) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,

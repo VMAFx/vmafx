@@ -37,12 +37,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from aiutils.run_manifest import write_run_manifest
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 
 def _save_inlined_for_quant(src: Path, dst: Path) -> None:
@@ -67,8 +71,7 @@ def _save_inlined_for_quant(src: Path, dst: Path) -> None:
     onnx.save(proto, str(dst), save_as_external_data=False)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("onnx", type=Path, help="Path to fp32 ONNX file")
     parser.add_argument(
@@ -89,13 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON report with size stats and ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
 
-    try:
-        from onnxruntime.quantization import QuantType, quantize_dynamic
-    except ImportError as exc:
-        sys.exit(f"onnxruntime.quantization not available: {exc}")
 
+def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     src = args.onnx.resolve()
     if not src.is_file():
         sys.exit(f"input not found: {src}")
@@ -108,6 +108,48 @@ def main(argv: list[str] | None = None) -> int:
             f"error: destination directory is not writable: {dst.parent}\n"
             f"hint: pass --output /path/to/writable/dir/{dst.name}"
         )
+    return src, dst
+
+
+def _write_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    src: Path,
+    dst: Path,
+    input_bytes: int,
+    output_bytes: int,
+) -> None:
+    if args.report_out is None:
+        return
+    write_run_manifest(
+        args.report_out,
+        schema="ptq-dynamic-report-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"model": src},
+        outputs={"model": dst, "report": args.report_out},
+        sections={
+            "mode": "dynamic",
+            "input_bytes": input_bytes,
+            "output_bytes": output_bytes,
+            "size_ratio": output_bytes / input_bytes,
+            "per_channel": bool(args.per_channel),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
+
+    try:
+        from onnxruntime.quantization import QuantType, quantize_dynamic
+    except ImportError as exc:
+        sys.exit(f"onnxruntime.quantization not available: {exc}")
+
+    src, dst = _resolve_paths(args)
 
     print(f"[ptq_dynamic] {src}  ->  {dst}  per-channel={args.per_channel}")
     with tempfile.TemporaryDirectory(prefix="ptq_dynamic_") as tmp:
@@ -123,24 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     sz_out = dst.stat().st_size
     ratio = sz_out / sz_in
     print(f"[ptq_dynamic] done — {sz_in:,} -> {sz_out:,} bytes ({ratio:.2f}×)")
-    if args.report_out is not None:
-        write_run_manifest(
-            args.report_out,
-            schema="ptq-dynamic-report-v1",
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"model": src},
-            outputs={"model": dst, "report": args.report_out},
-            sections={
-                "mode": "dynamic",
-                "input_bytes": sz_in,
-                "output_bytes": sz_out,
-                "size_ratio": ratio,
-                "per_channel": bool(args.per_channel),
-            },
-        )
+    _write_report(args, raw_argv, src, dst, sz_in, sz_out)
     return 0
 
 

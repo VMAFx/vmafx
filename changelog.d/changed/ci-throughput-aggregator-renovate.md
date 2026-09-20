@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - CI merge throughput: the `Required Checks Aggregator` poll deadline is raised
   from 90 to 240 minutes (`timeout-minutes` 100 → 250), and Docker base-image
   digest/pin refreshes are now batched into a single Renovate PR

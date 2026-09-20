@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `scripts/lib/` — agent invariants
 
 Parent: [../AGENTS.md](../AGENTS.md).
@@ -15,7 +14,7 @@ Nothing in this directory mirrors upstream Netflix/vmaf. Rebase risk
 = "internal coupling drift", not "merge conflict".
 
 | Module | Consumers | What couples them |
-|---|---|---|
+| --- | --- | --- |
 | `backlog_tracker.py` | `scripts/ci/agent-eligibility-precheck.py` (direct import); future state-audit / status-reporter scripts. | The `BacklogItem` dataclass field names (`id` / `title` / `status` / `priority` / `pr_refs` / `raw_row`) and the status enum strings (OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED). Renames are breaking changes for every importer. |
 | `backlog_tracker.py` ↔ `.workingdir2/BACKLOG.md` row format | The regex parser in `_ID_PATTERN` + `_STATUS_RULES`. | If BACKLOG.md ever adds a column or renames a status word, the parser silently mis-classifies rows. Run the smoke (`python3 -c 'from scripts.lib.backlog_tracker import BacklogTracker; print(len(BacklogTracker().all()))'`) after any structural BACKLOG.md edit; expected ≥ 100 rows on master at 2026-05-09. |
 | `GitHubTracker._run` | Wraps the `gh` CLI. | Output schema (`number / title / body / headRefName / mergedAt / state`) is `gh`-version-coupled. Pin behaviour by passing `--json` field lists explicitly; never rely on default columns. |

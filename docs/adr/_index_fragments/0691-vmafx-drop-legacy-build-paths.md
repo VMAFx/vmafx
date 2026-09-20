@@ -1,1 +1,5 @@
-| [ADR-0691](0691-vmafx-drop-legacy-build-paths.md) | VMAFX Phase 1C — drop the Windows MinGW64 and i686 CI lanes; the fork is 64-bit only. Both lanes came back the same day in the layout rename merge `384d97d03`; MinGW64 is a required lane again, and the 64-bit-only rule now lives in ADR-1258. | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | build, meson, vmafx, phase1, fork-local |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-0691](0691-vmafx-drop-legacy-build-paths.md) | VMAFX Phase 1C — Drop Legacy Build Paths | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | `ci`, `build`, `vmafx` |

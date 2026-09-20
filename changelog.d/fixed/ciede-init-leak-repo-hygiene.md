@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **ciede init() leak:** when `vmaf_picture_alloc` fails during `ciede` feature
   init, the aligned `tmp[]` scratch buffers (and a successfully-allocated `ref`
   picture when `dist` allocation fails) leaked, because the extractor framework

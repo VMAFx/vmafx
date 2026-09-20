@@ -56,12 +56,6 @@
 #include "sycl/common.h"
 #include "log.h"
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): see
-// integer_motion_sycl.cpp for the rationale — C-style `static` is required
-// because the entry-point function addresses are consumed via the
-// `extern "C" VmafFeatureExtractor` struct at the bottom of this TU; the
-// C-API boundary is the load-bearing invariant per CLAUDE.md §12 r12.
-
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
@@ -151,142 +145,154 @@ struct AdmStateSycl {
 /* Options                                                             */
 /* ------------------------------------------------------------------ */
 
+static const VmafOption adm_csf_scale_option = {
+    .name = "adm_csf_scale",
+    .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
+    .alias = "scf",
+    .offset = offsetof(AdmStateSycl, adm_csf_scale),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
+    .min = 0.0,
+    .max = 50.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_csf_diag_scale_option = {
+    .name = "adm_csf_diag_scale",
+    .help = "scale coefficient for the diagonal direction term of CSF",
+    .alias = "scfd",
+    .offset = offsetof(AdmStateSycl, adm_csf_diag_scale),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
+    .min = 0.0,
+    .max = 50.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+/* FEATURE_PARAM is kept for feature-name-key parity. adm_dlm_weight changes
+ * adm3 arithmetic, but this twin emits adm2; see collect_fex_sycl. */
+static const VmafOption adm_dlm_weight_option = {
+    .name = "adm_dlm_weight",
+    .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
+    .alias = "dlmw",
+    .offset = offsetof(AdmStateSycl, adm_dlm_weight),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 0.5},
+    .min = 0.0,
+    .max = 1.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_enhn_gain_limit_option = {
+    .name = "adm_enhn_gain_limit",
+    .help = "enhancement gain imposed on adm, must be >= 1.0, "
+            "where 1.0 means the gain is completely disabled",
+    .alias = "egl",
+    .offset = offsetof(AdmStateSycl, adm_enhn_gain_limit),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = DEFAULT_ADM_ENHN_GAIN_LIMIT},
+    .min = 1.0,
+    .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_norm_view_dist_option = {
+    .name = "adm_norm_view_dist",
+    .help = "normalized viewing distance = viewing distance / ref display's physical height",
+    .alias = "nvd",
+    .offset = offsetof(AdmStateSycl, adm_norm_view_dist),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = DEFAULT_ADM_NORM_VIEW_DIST},
+    .min = 0.75,
+    .max = 24.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_ref_display_height_option = {
+    .name = "adm_ref_display_height",
+    .help = "reference display height in pixels",
+    .alias = "rdh",
+    .offset = offsetof(AdmStateSycl, adm_ref_display_height),
+    .type = VMAF_OPT_TYPE_INT,
+    .default_val = {.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT},
+    .min = 1,
+    .max = 4320,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_csf_mode_option = {
+    .name = "adm_csf_mode",
+    .help = "contrast sensitivity function",
+    .alias = "csf",
+    .offset = offsetof(AdmStateSycl, adm_csf_mode),
+    .type = VMAF_OPT_TYPE_INT,
+    .default_val = {.i = DEFAULT_ADM_CSF_MODE},
+    .min = 0,
+    .max = 3,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_noise_weight_option = {
+    .name = "adm_noise_weight",
+    .help = "noise weight",
+    .alias = "nw",
+    .offset = offsetof(AdmStateSycl, adm_noise_weight),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
+    .min = 0.0,
+    .max = 1500.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_skip_scale0_option = {
+    .name = "adm_skip_scale0",
+    .help = "skip the calculation of scale 0",
+    .alias = "ssz",
+    .offset = offsetof(AdmStateSycl, adm_skip_scale0),
+    .type = VMAF_OPT_TYPE_BOOL,
+    .default_val = {.b = false},
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_min_val_option = {
+    .name = "adm_min_val",
+    .help = "minimum value allowed; lower values will be clipped to this value",
+    .alias = "min",
+    .offset = offsetof(AdmStateSycl, adm_min_val),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = DEFAULT_ADM_MIN_VAL},
+    .min = 0.0,
+    .max = 1.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_p_norm_option = {
+    .name = "adm_p_norm",
+    .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
+    .alias = "apn",
+    .offset = offsetof(AdmStateSycl, adm_p_norm),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 3.0},
+    .min = 1.0,
+    .max = 20.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption adm_debug_option = {
+    .name = "debug",
+    .help = "debug mode: enable additional output",
+    .offset = offsetof(AdmStateSycl, debug),
+    .type = VMAF_OPT_TYPE_BOOL,
+    .default_val = {.b = false},
+};
+
 static const VmafOption options[] = {
-    {
-        .name = "adm_csf_scale",
-        .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
-        .alias = "scf",
-        .offset = offsetof(AdmStateSycl, adm_csf_scale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
-        .min = 0.0,
-        .max = 50.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_csf_diag_scale",
-        .help = "scale coefficient for the diagonal direction term of CSF",
-        .alias = "scfd",
-        .offset = offsetof(AdmStateSycl, adm_csf_diag_scale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
-        .min = 0.0,
-        .max = 50.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        /* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
-         * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
-         * twin does not emit (see collect_fex_sycl). Dropping it from the table
-         * would make this twin emit `integer_adm2_...` where the CPU twin emits
-         * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
-         * lookup would miss. Same posture as the CPU reference, where
-         * adm_dlm_weight likewise has no arithmetic effect on adm2. */
-        .name = "adm_dlm_weight",
-        .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
-        .alias = "dlmw",
-        .offset = offsetof(AdmStateSycl, adm_dlm_weight),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 0.5},
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_enhn_gain_limit",
-        .help = "enhancement gain imposed on adm, must be >= 1.0, "
-                "where 1.0 means the gain is completely disabled",
-        .alias = "egl",
-        .offset = offsetof(AdmStateSycl, adm_enhn_gain_limit),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = DEFAULT_ADM_ENHN_GAIN_LIMIT},
-        .min = 1.0,
-        .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_norm_view_dist",
-        .help = "normalized viewing distance = viewing distance / ref display's physical height",
-        .alias = "nvd",
-        .offset = offsetof(AdmStateSycl, adm_norm_view_dist),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = DEFAULT_ADM_NORM_VIEW_DIST},
-        .min = 0.75,
-        .max = 24.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_ref_display_height",
-        .help = "reference display height in pixels",
-        .alias = "rdh",
-        .offset = offsetof(AdmStateSycl, adm_ref_display_height),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val = {.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT},
-        .min = 1,
-        .max = 4320,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_csf_mode",
-        .help = "contrast sensitivity function",
-        .alias = "csf",
-        .offset = offsetof(AdmStateSycl, adm_csf_mode),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val = {.i = DEFAULT_ADM_CSF_MODE},
-        .min = 0,
-        .max = 3,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_noise_weight",
-        .help = "noise weight",
-        .alias = "nw",
-        .offset = offsetof(AdmStateSycl, adm_noise_weight),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
-        .min = 0.0,
-        .max = 1500.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_skip_scale0",
-        .help = "skip the calculation of scale 0",
-        .alias = "ssz",
-        .offset = offsetof(AdmStateSycl, adm_skip_scale0),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val = {.b = false},
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_min_val",
-        .help = "minimum value allowed; lower values will be clipped to this value",
-        .alias = "min",
-        .offset = offsetof(AdmStateSycl, adm_min_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = DEFAULT_ADM_MIN_VAL},
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_p_norm",
-        .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
-        .alias = "apn",
-        .offset = offsetof(AdmStateSycl, adm_p_norm),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 3.0},
-        .min = 1.0,
-        .max = 20.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "debug",
-        .help = "debug mode: enable additional output",
-        .offset = offsetof(AdmStateSycl, debug),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val = {.b = false},
-    },
-    {.name = nullptr}};
+    adm_csf_scale_option,       adm_csf_diag_scale_option, adm_dlm_weight_option,
+    adm_enhn_gain_limit_option, adm_norm_view_dist_option, adm_ref_display_height_option,
+    adm_csf_mode_option,        adm_noise_weight_option,   adm_skip_scale0_option,
+    adm_min_val_option,         adm_p_norm_option,         adm_debug_option,
+    {.name = nullptr},
+};
 
 /* ------------------------------------------------------------------ */
 /* CSF and visibility threshold helpers                                */
@@ -397,257 +403,258 @@ static inline int dev_mirror_adm(int idx, int sup)
 /* SYCL Kernel: DWT Vertical Pass (ref+dis fused)                     */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct AdmDwtVertParams {
+    const void *input[2];
+    int32_t *output[2];
+    int scale;
+    unsigned width;
+    unsigned height;
+    unsigned input_stride;
+    unsigned bpc;
+    unsigned shift;
+    unsigned dc_offset;
+};
+
+struct AdmDwtPair {
+    int32_t low;
+    int32_t high;
+};
+
+static inline int32_t adm_dwt_vert_read(const AdmDwtVertParams &p, const void *input, int x, int y)
+{
+    y = dev_mirror_adm(y, (int)p.height);
+    if (x >= (int)p.width)
+        return 0;
+    if (p.scale == 0) {
+        if (p.bpc <= 8)
+            return static_cast<const uint8_t *>(input)[y * p.input_stride + x];
+        return static_cast<const uint16_t *>(input)[y * (p.input_stride / 2) + x];
+    }
+    return static_cast<const int32_t *>(input)[y * p.input_stride + x];
+}
+
+static inline int32_t adm_dwt_vert_read_interior(const AdmDwtVertParams &p, const void *input,
+                                                 int x, int y)
+{
+    if (p.scale == 0) {
+        if (p.bpc <= 8)
+            return static_cast<const uint8_t *>(input)[y * p.input_stride + x];
+        return static_cast<const uint16_t *>(input)[y * (p.input_stride / 2) + x];
+    }
+    return static_cast<const int32_t *>(input)[y * p.input_stride + x];
+}
+
+template <typename Tile>
+static inline void adm_dwt_vert_load(const AdmDwtVertParams &p, sycl::nd_item<3> item,
+                                     const Tile &tile)
+{
+    constexpr int workgroup_x = 32;
+    constexpr int workgroup_y = 8;
+    constexpr int tile_height = 2 * workgroup_y + 2;
+    constexpr int tile_elements = tile_height * workgroup_x;
+    constexpr int workgroup_size = workgroup_x * workgroup_y;
+    int const lane = (int)item.get_local_id(1) * workgroup_x + (int)item.get_local_id(2);
+    int const origin_x = (int)(item.get_group(2) * workgroup_x);
+    int const origin_y = 2 * (int)(item.get_group(1) * workgroup_y) - 1;
+    const void *const input = p.input[item.get_global_id(0)];
+    bool const interior = origin_y >= 0 && origin_y + tile_height <= (int)p.height &&
+                          origin_x + workgroup_x <= (int)p.width;
+    for (int i = lane; i < tile_elements; i += workgroup_size) {
+        int const row = i / workgroup_x;
+        int const col = i % workgroup_x;
+        int const x = origin_x + col;
+        int const y = origin_y + row;
+        tile[row][col] = interior ? adm_dwt_vert_read_interior(p, input, x, y) :
+                                    adm_dwt_vert_read(p, input, x, y);
+    }
+}
+
+template <typename Tile>
+static inline AdmDwtPair adm_dwt_vert_filter(const AdmDwtVertParams &p, const Tile &tile, int row,
+                                             int col)
+{
+    int32_t const sample0 = tile[row][col];
+    int32_t const sample1 = tile[row + 1][col];
+    int32_t const sample2 = tile[row + 2][col];
+    int32_t const sample3 = tile[row + 3][col];
+    int64_t low = (int64_t)dwt_lo[0] * sample0 + (int64_t)dwt_lo[1] * sample1 +
+                  (int64_t)dwt_lo[2] * sample2 + (int64_t)dwt_lo[3] * sample3;
+    int64_t const high = (int64_t)dwt_hi[0] * sample0 + (int64_t)dwt_hi[1] * sample1 +
+                         (int64_t)dwt_hi[2] * sample2 + (int64_t)dwt_hi[3] * sample3;
+    if (p.scale == 0)
+        low -= (int64_t)dwt_lo_sum * p.dc_offset;
+    if (p.shift == 0)
+        return {(int32_t)low, (int32_t)high};
+    int64_t const rounding = (int64_t)1 << (p.shift - 1);
+    return {
+        (int32_t)((low + rounding) >> p.shift),
+        (int32_t)((high + rounding) >> p.shift),
+    };
+}
+
+static AdmDwtVertParams adm_dwt_vert_params(const void *input_ref, int32_t *output_ref,
+                                            const void *input_dis, int32_t *output_dis, int scale,
+                                            unsigned width, unsigned height, unsigned input_stride,
+                                            unsigned bpc, unsigned shift, unsigned dc_offset)
+{
+    return {
+        .input = {input_ref, input_dis},
+        .output = {output_ref, output_dis},
+        .scale = scale,
+        .width = width,
+        .height = height,
+        .input_stride = input_stride,
+        .bpc = bpc,
+        .shift = shift,
+        .dc_offset = dc_offset,
+    };
+}
+
 static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t *dwt_tmp_ref,
                                         const void *input_dis, int32_t *dwt_tmp_dis, int scale,
                                         unsigned width, unsigned height, unsigned in_stride,
                                         unsigned bpc, unsigned v_shift, unsigned v_add)
 {
-    // Output: dwt_tmp has interleaved lo/hi rows:
-    //   row i contains lo(i) and hi(i) for half_h rows
-    unsigned half_h = (height + 1) / 2;
-    auto e_scale = scale;
-    auto e_bpc = bpc;
-    auto e_w = width;
-    auto e_h = height;
-    auto e_in_stride = in_stride;
-    auto e_v_shift = v_shift;
-    auto e_v_add = v_add;
-    auto p_ref_in = input_ref;
-    auto p_dis_in = input_dis;
-
-    constexpr int WG_X = 32;
-    constexpr int WG_Y = 8;
-    // Each output row n needs input rows 2n-1..2n+2 (4 taps).
-    // For WG_Y outputs: 2*WG_Y + 2 input rows in the tile.
-    constexpr int TILE_H = 2 * WG_Y + 2; // 18
-    // Z=2: ref(0) + dis(1)
-    sycl::range<3> global(2, ((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                          ((size_t)(width + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<3> local(1, WG_Y, WG_X);
-
+    AdmDwtVertParams const p =
+        adm_dwt_vert_params(input_ref, dwt_tmp_ref, input_dis, dwt_tmp_dis, scale, width, height,
+                            in_stride, bpc, v_shift, v_add);
+    unsigned const half_height = (height + 1) / 2;
+    sycl::range<3> const global(2, ((size_t)(half_height + 7) / 8) * 8,
+                                ((size_t)(width + 31) / 32) * 32);
+    sycl::range<3> const local(1, 8, 32);
     return q.submit([&](sycl::handler &cgh) {
-        // SLM tile: TILE_H rows × WG_X columns
-        sycl::local_accessor<int32_t, 2> const tile(sycl::range<2>(TILE_H, WG_X), cgh);
-
+        sycl::local_accessor<int32_t, 2> const tile(sycl::range<2>(18, 32), cgh);
         cgh.parallel_for(sycl::nd_range<3>(global, local), [=](sycl::nd_item<3> item) {
-            // dim 0 = ref(0) or dis(1), dim 1 = row, dim 2 = col
-            const int is_dis = item.get_global_id(0);
-            const int gx = item.get_global_id(2);
-            const int gy = item.get_global_id(1);
-            const int lx = item.get_local_id(2);
-            const int ly = item.get_local_id(1);
-            const int lid = ly * WG_X + lx;
-            constexpr int WG_SIZE = WG_X * WG_Y;
-
-            const void *p_in = (is_dis == 0) ? p_ref_in : p_dis_in;
-            int32_t *dwt_out = (is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
-
-            // Tile origin in input space
-            int const tile_col = (int)(item.get_group(2) * WG_X);
-            int const n_start = (int)(item.get_group(1) * WG_Y);
-            int const row_start = 2 * n_start - 1; // first input row
-
-            // Read pixel from source at (x, y) with mirroring
-            auto read_px = [&](int x, int y) -> int32_t {
-                y = dev_mirror_adm(y, (int)e_h);
-                if (std::cmp_greater_equal(x, e_w))
-                    return 0;
-                if (e_scale == 0) {
-                    if (e_bpc <= 8) {
-                        return static_cast<const uint8_t *>(p_in)[y * e_in_stride + x];
-                    } else {
-                        return static_cast<const uint16_t *>(p_in)[y * (e_in_stride / 2) + x];
-                    }
-                } else {
-                    return static_cast<const int32_t *>(p_in)[y * e_in_stride + x];
-                }
-            };
-
-            // Cooperative tile load: TILE_H * WG_X elements
-            constexpr int TILE_ELEMS = TILE_H * WG_X;
-            bool const interior = (row_start >= 0) && (row_start + TILE_H <= (int)e_h) &&
-                                  (tile_col + WG_X <= (int)e_w);
-
-            if (interior) {
-                // Fast path: no boundary checks
-                for (int i = lid; i < TILE_ELEMS; i += WG_SIZE) {
-                    int const tr = i / WG_X;
-                    int const tc = i % WG_X;
-                    int const x = tile_col + tc;
-                    int const y = row_start + tr;
-                    if (e_scale == 0) {
-                        // NOLINTNEXTLINE(bugprone-branch-clone): SYCL template specialization branch — both arms reach the same code today but the conditional pins the bit-exactness contract for future SCALE / SG_SIZE divergence.
-                        if (e_bpc <= 8) {
-                            tile[tr][tc] = static_cast<const uint8_t *>(p_in)[y * e_in_stride + x];
-                        } else {
-                            tile[tr][tc] =
-                                static_cast<const uint16_t *>(p_in)[y * (e_in_stride / 2) + x];
-                        }
-                    } else {
-                        tile[tr][tc] = static_cast<const int32_t *>(p_in)[y * e_in_stride + x];
-                    }
-                }
-            } else {
-                // Boundary path: mirror + bounds check
-                for (int i = lid; i < TILE_ELEMS; i += WG_SIZE) {
-                    int const tr = i / WG_X;
-                    int const tc = i % WG_X;
-                    tile[tr][tc] = read_px(tile_col + tc, row_start + tr);
-                }
-            }
-
+            adm_dwt_vert_load(p, item, tile);
             item.barrier(sycl::access::fence_space::local_space);
-
-            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, half_h))
+            unsigned const x = item.get_global_id(2);
+            unsigned const y = item.get_global_id(1);
+            if (x >= p.width || y >= half_height)
                 return;
-
-            // Read 4 filter taps from shared memory
-            int const base = 2 * ly; // tile row offset
-            int32_t const s0 = tile[base][lx];
-            int32_t const s1 = tile[base + 1][lx];
-            int32_t const s2 = tile[base + 2][lx];
-            int32_t const s3 = tile[base + 3][lx];
-
-            // Lo-pass: coeffs = {15826, 27411, 7345, -4240}
-            int64_t lo_val = (int64_t)dwt_lo[0] * s0 + (int64_t)dwt_lo[1] * s1 +
-                             (int64_t)dwt_lo[2] * s2 + (int64_t)dwt_lo[3] * s3;
-
-            // Hi-pass: coeffs = {-4240, -7345, 27411, -15826}
-            int64_t const hi_val = (int64_t)dwt_hi[0] * s0 + (int64_t)dwt_hi[1] * s1 +
-                                   (int64_t)dwt_hi[2] * s2 + (int64_t)dwt_hi[3] * s3;
-
-            // Scale 0: subtract DC offset from lo
-            if (e_scale == 0) {
-                lo_val -= (int64_t)dwt_lo_sum * e_v_add;
-            }
-
-            // Quantize
-            int32_t lo_out;
-            int32_t hi_out;
-            if (e_v_shift > 0) {
-                lo_out = (int32_t)((lo_val + ((int64_t)1 << (e_v_shift - 1))) >> e_v_shift);
-                hi_out = (int32_t)((hi_val + ((int64_t)1 << (e_v_shift - 1))) >> e_v_shift);
-            } else {
-                lo_out = (int32_t)lo_val;
-                hi_out = (int32_t)hi_val;
-            }
-
-            // Interleaved output: lo followed by hi
-            unsigned const out_stride = e_w * 2;
-            dwt_out[gy * out_stride + gx] = lo_out;
-            dwt_out[gy * out_stride + e_w + gx] = hi_out;
+            AdmDwtPair const filtered = adm_dwt_vert_filter(p, tile, 2 * (int)item.get_local_id(1),
+                                                            (int)item.get_local_id(2));
+            unsigned const stride = p.width * 2;
+            int32_t *const output = p.output[item.get_global_id(0)];
+            output[y * stride + x] = filtered.low;
+            output[y * stride + p.width + x] = filtered.high;
         });
     });
 }
 
-/* ------------------------------------------------------------------ */
 /* SYCL Kernel: DWT Horizontal Pass (ref+dis fused)                   */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static sycl::event launch_dwt_hori_pair(
-    sycl::queue &q, const int32_t *dwt_tmp_ref, int32_t *ref_band_a, int32_t *ref_band_h,
-    int32_t *ref_band_v, int32_t *ref_band_d, const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
-    int32_t *dis_band_h, int32_t *dis_band_v, int32_t *dis_band_d, unsigned width, unsigned height,
-    // NOLINTNEXTLINE(misc-unused-parameters): SYCL kernel parameter kept for ABI symmetry across the band-launch lambda specialisations.
-    unsigned buf_stride, unsigned h_shift, unsigned h_add)
+struct AdmDwtHoriParams {
+    const int32_t *input[2];
+    int32_t *output[2][4];
+    unsigned width;
+    unsigned half_width;
+    unsigned half_height;
+    unsigned output_stride;
+    unsigned shift;
+};
+
+struct AdmDwtBands {
+    int32_t approximation;
+    int32_t horizontal;
+    int32_t vertical;
+    int32_t diagonal;
+};
+
+static inline int32_t adm_dwt_hori_read(const AdmDwtHoriParams &p, const int32_t *input,
+                                        unsigned row, bool high, int x)
 {
-    unsigned const half_w = (width + 1) / 2;
-    unsigned const half_h = (height + 1) / 2;
-    auto e_w = width;
-    auto e_half_w = half_w;
-    auto e_half_h = half_h;
-    auto e_buf_stride = buf_stride;
-    auto e_h_shift = h_shift;
+    int const sample_x = dev_mirror_adm(x, (int)p.width);
+    unsigned const offset = high ? p.width : 0;
+    return input[row * (p.width * 2) + offset + sample_x];
+}
 
-    constexpr int WG_X = 32;
-    constexpr int WG_Y = 8;
-    // Z=2: ref(0) + dis(1)
-    sycl::range<3> global(2, ((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                          ((size_t)(half_w + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<3> local(1, WG_Y, WG_X);
+static inline int32_t adm_dwt_hori_quantize(int64_t value, unsigned shift)
+{
+    if (shift == 0)
+        return (int32_t)value;
+    int64_t const rounding = (int64_t)1 << (shift - 1);
+    return (int32_t)((value + rounding) >> shift);
+}
 
+static inline AdmDwtBands adm_dwt_hori_filter(const AdmDwtHoriParams &p, const int32_t *input,
+                                              unsigned row, int base_x)
+{
+    int32_t const low0 = adm_dwt_hori_read(p, input, row, false, base_x - 1);
+    int32_t const low1 = adm_dwt_hori_read(p, input, row, false, base_x);
+    int32_t const low2 = adm_dwt_hori_read(p, input, row, false, base_x + 1);
+    int32_t const low3 = adm_dwt_hori_read(p, input, row, false, base_x + 2);
+    int64_t const approximation = (int64_t)dwt_lo[0] * low0 + (int64_t)dwt_lo[1] * low1 +
+                                  (int64_t)dwt_lo[2] * low2 + (int64_t)dwt_lo[3] * low3;
+    int64_t const horizontal = (int64_t)dwt_hi[0] * low0 + (int64_t)dwt_hi[1] * low1 +
+                               (int64_t)dwt_hi[2] * low2 + (int64_t)dwt_hi[3] * low3;
+    int32_t const high0 = adm_dwt_hori_read(p, input, row, true, base_x - 1);
+    int32_t const high1 = adm_dwt_hori_read(p, input, row, true, base_x);
+    int32_t const high2 = adm_dwt_hori_read(p, input, row, true, base_x + 1);
+    int32_t const high3 = adm_dwt_hori_read(p, input, row, true, base_x + 2);
+    int64_t const vertical = (int64_t)dwt_lo[0] * high0 + (int64_t)dwt_lo[1] * high1 +
+                             (int64_t)dwt_lo[2] * high2 + (int64_t)dwt_lo[3] * high3;
+    int64_t const diagonal = (int64_t)dwt_hi[0] * high0 + (int64_t)dwt_hi[1] * high1 +
+                             (int64_t)dwt_hi[2] * high2 + (int64_t)dwt_hi[3] * high3;
+    return {
+        adm_dwt_hori_quantize(approximation, p.shift),
+        adm_dwt_hori_quantize(horizontal, p.shift),
+        adm_dwt_hori_quantize(vertical, p.shift),
+        adm_dwt_hori_quantize(diagonal, p.shift),
+    };
+}
+
+static AdmDwtHoriParams adm_dwt_hori_params(const int32_t *dwt_tmp_ref, int32_t *ref_band_a,
+                                            int32_t *ref_band_h, int32_t *ref_band_v,
+                                            int32_t *ref_band_d, const int32_t *dwt_tmp_dis,
+                                            int32_t *dis_band_a, int32_t *dis_band_h,
+                                            int32_t *dis_band_v, int32_t *dis_band_d,
+                                            unsigned width, unsigned height, unsigned buf_stride,
+                                            unsigned shift)
+{
+    return {
+        .input = {dwt_tmp_ref, dwt_tmp_dis},
+        .output = {{ref_band_a, ref_band_h, ref_band_v, ref_band_d},
+                   {dis_band_a, dis_band_h, dis_band_v, dis_band_d}},
+        .width = width,
+        .half_width = (width + 1) / 2,
+        .half_height = (height + 1) / 2,
+        .output_stride = buf_stride,
+        .shift = shift,
+    };
+}
+
+static sycl::event launch_dwt_hori_pair(sycl::queue &q, const int32_t *dwt_tmp_ref,
+                                        int32_t *ref_band_a, int32_t *ref_band_h,
+                                        int32_t *ref_band_v, int32_t *ref_band_d,
+                                        const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
+                                        int32_t *dis_band_h, int32_t *dis_band_v,
+                                        int32_t *dis_band_d, unsigned width, unsigned height,
+                                        unsigned buf_stride, unsigned h_shift)
+{
+    AdmDwtHoriParams const p = adm_dwt_hori_params(
+        dwt_tmp_ref, ref_band_a, ref_band_h, ref_band_v, ref_band_d, dwt_tmp_dis, dis_band_a,
+        dis_band_h, dis_band_v, dis_band_d, width, height, buf_stride, h_shift);
+    sycl::range<3> const global(2, ((size_t)(p.half_height + 7) / 8) * 8,
+                                ((size_t)(p.half_width + 31) / 32) * 32);
+    sycl::range<3> const local(1, 8, 32);
     return q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<3>(global, local), [=](sycl::nd_item<3> item) {
-            const int is_dis = item.get_global_id(0);
-            const int gx = item.get_global_id(2);
-            const int gy = item.get_global_id(1);
-            if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
+            unsigned const x = item.get_global_id(2);
+            unsigned const y = item.get_global_id(1);
+            if (x >= p.half_width || y >= p.half_height)
                 return;
-
-            const int32_t *dwt_tmp = (is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
-            int32_t *band_a = (is_dis == 0) ? ref_band_a : dis_band_a;
-            int32_t *band_h = (is_dis == 0) ? ref_band_h : dis_band_h;
-            int32_t *band_v = (is_dis == 0) ? ref_band_v : dis_band_v;
-            int32_t *band_d = (is_dis == 0) ? ref_band_d : dis_band_d;
-
-            unsigned tmp_stride = e_w * 2;
-
-            // Read from lo row (first half of tmp)
-            auto read_lo = [&](int x) -> int32_t {
-                x = dev_mirror_adm(x, (int)e_w);
-                return dwt_tmp[gy * tmp_stride + x];
-            };
-
-            // Read from hi row (second half of tmp)
-            auto read_hi = [&](int x) -> int32_t {
-                x = dev_mirror_adm(x, (int)e_w);
-                return dwt_tmp[gy * tmp_stride + e_w + x];
-            };
-
-            int const base_x = 2 * gx;
-
-            // Horizontal filter on lo row -> band_a, band_h
-            int32_t const l0 = read_lo(base_x - 1);
-            int32_t const l1 = read_lo(base_x);
-            int32_t const l2 = read_lo(base_x + 1);
-            int32_t const l3 = read_lo(base_x + 2);
-
-            int64_t const a_val = (int64_t)dwt_lo[0] * l0 + (int64_t)dwt_lo[1] * l1 +
-                                  (int64_t)dwt_lo[2] * l2 + (int64_t)dwt_lo[3] * l3;
-            int64_t const h_val = (int64_t)dwt_hi[0] * l0 + (int64_t)dwt_hi[1] * l1 +
-                                  (int64_t)dwt_hi[2] * l2 + (int64_t)dwt_hi[3] * l3;
-
-            // Horizontal filter on hi row -> band_v, band_d
-            int32_t const h0 = read_hi(base_x - 1);
-            int32_t const h1 = read_hi(base_x);
-            int32_t const h2 = read_hi(base_x + 1);
-            int32_t const h3 = read_hi(base_x + 2);
-
-            int64_t const v_val = (int64_t)dwt_lo[0] * h0 + (int64_t)dwt_lo[1] * h1 +
-                                  (int64_t)dwt_lo[2] * h2 + (int64_t)dwt_lo[3] * h3;
-            int64_t const d_val = (int64_t)dwt_hi[0] * h0 + (int64_t)dwt_hi[1] * h1 +
-                                  (int64_t)dwt_hi[2] * h2 + (int64_t)dwt_hi[3] * h3;
-
-            // Quantize
-            int32_t a_out;
-            int32_t h_out;
-            int32_t v_out;
-            int32_t d_out;
-            if (e_h_shift > 0) {
-                int64_t const rnd = (int64_t)1 << (e_h_shift - 1);
-                a_out = (int32_t)((a_val + rnd) >> e_h_shift);
-                h_out = (int32_t)((h_val + rnd) >> e_h_shift);
-                v_out = (int32_t)((v_val + rnd) >> e_h_shift);
-                d_out = (int32_t)((d_val + rnd) >> e_h_shift);
-            } else {
-                a_out = (int32_t)a_val;
-                h_out = (int32_t)h_val;
-                v_out = (int32_t)v_val;
-                d_out = (int32_t)d_val;
-            }
-
-            unsigned const idx = gy * e_buf_stride + gx;
-            band_a[idx] = a_out;
-            band_h[idx] = h_out;
-            band_v[idx] = v_out;
-            band_d[idx] = d_out;
+            unsigned const plane = item.get_global_id(0);
+            AdmDwtBands const bands = adm_dwt_hori_filter(p, p.input[plane], y, 2 * (int)x);
+            unsigned const index = y * p.output_stride + x;
+            p.output[plane][0][index] = bands.approximation;
+            p.output[plane][1][index] = bands.horizontal;
+            p.output[plane][2][index] = bands.vertical;
+            p.output[plane][3][index] = bands.diagonal;
         });
     });
 }
 
-/* ------------------------------------------------------------------ */
 /* SYCL Kernel: Decouple + CSF (Fused)                                */
 /* ------------------------------------------------------------------ */
 
@@ -683,9 +690,144 @@ static inline GainLimitQ31 gain_limit_to_q31(double gain_limit)
     };
 }
 
+struct AdmDivision {
+    int32_t value;
+    int shift;
+};
+
+struct AdmDecouple {
+    int32_t value;
+    int32_t gain;
+};
+
+static inline int adm_best15_shift(uint32_t value)
+{
+    int msb = 15;
+    uint32_t scan = (value >> 15) & 0x1FFFFu;
+    if (scan >= (1u << 16)) {
+        msb += 16;
+        scan >>= 16;
+    }
+    if (scan >= (1u << 8)) {
+        msb += 8;
+        scan >>= 8;
+    }
+    if (scan >= (1u << 4)) {
+        msb += 4;
+        scan >>= 4;
+    }
+    if (scan >= (1u << 2)) {
+        msb += 2;
+        scan >>= 2;
+    }
+    if (scan >= (1u << 1))
+        msb += 1;
+    msb = msb > 31 ? 31 : msb;
+    return msb - 14;
+}
+
+static inline AdmDivision adm_division(int scale, int32_t reference, const int32_t *lookup)
+{
+    int32_t const magnitude = reference < 0 ? -reference : reference;
+    int32_t const sign = reference < 0 ? -1 : 1;
+    if (scale == 0 || magnitude < 32768)
+        return {lookup[32768 + magnitude] * sign, 0};
+    uint32_t const value = (uint32_t)magnitude;
+    int const shift = adm_best15_shift(value);
+    uint32_t const rounded = (value + (1u << (shift - 1))) >> shift;
+    return {lookup[32768 + rounded] * sign, shift};
+}
+
+static inline AdmDecouple adm_decouple(int scale, int32_t reference, int32_t distorted,
+                                       const int32_t *lookup)
+{
+    if (reference == 0)
+        return {0, 32768};
+    AdmDivision const division = adm_division(scale, reference, lookup);
+    int64_t const product = (int64_t)division.value * distorted;
+    int32_t gain;
+    if (scale == 0) {
+        gain = (int32_t)((product + (1 << 14)) >> 15);
+    } else {
+        int const shift = 15 + division.shift;
+        gain = (int32_t)((product + ((int64_t)1 << (shift - 1))) >> shift);
+    }
+    if (gain < 0)
+        gain = 0;
+    if (gain > 32768)
+        gain = 32768;
+    int32_t const value = (int32_t)(((int64_t)gain * reference + 16384) >> 15);
+    return {value, gain};
+}
+
+static inline int32_t adm_gain_limited(int32_t value, int32_t gain, int32_t reference,
+                                       int32_t distorted, bool angle_flag,
+                                       const GainLimitQ31 &gain_limit)
+{
+    if (!angle_flag)
+        return value;
+    float projected;
+    {
+#pragma clang fp contract(off)
+        float const normalized_gain = (float)gain / 32768.0f;
+        float const normalized_reference = (float)reference / 64.0f;
+        projected = normalized_gain * normalized_reference;
+    }
+    int64_t const product_high = (int64_t)value * gain_limit.gain_hi;
+    int64_t const product_low = (int64_t)value * gain_limit.gain_lo;
+    int64_t const main_part = product_high >> 15;
+    int64_t const remainder = ((product_high - (main_part << 15)) << 16) + product_low;
+    int64_t const gained = main_part + (remainder >> 31);
+    if (projected > 0.0f)
+        return (int32_t)(gained < (int64_t)distorted ? gained : (int64_t)distorted);
+    if (projected < 0.0f)
+        return (int32_t)(gained > (int64_t)distorted ? gained : (int64_t)distorted);
+    return value;
+}
+
+static inline int32_t adm_csf_value(int scale, int band, uint32_t rfactor, int32_t residual)
+{
+    if (scale == 0) {
+        int const shift = band < 2 ? 15 : 17;
+        int64_t const rounding = (int64_t)1 << (shift - 1);
+        return (int32_t)(((int64_t)rfactor * residual + rounding) >> shift);
+    }
+    return (int32_t)(((int64_t)rfactor * residual + (1LL << 27)) >> 28);
+}
+
+static inline int32_t adm_csf_filter_value(int scale, int32_t csf_value)
+{
+    int32_t const magnitude = csf_value < 0 ? -csf_value : csf_value;
+    if (scale == 0)
+        return (int32_t)(((int64_t)4369 * magnitude + 2048) >> 12);
+    return (int32_t)(((int64_t)143165577 * magnitude + (1LL << 31)) >> 32);
+}
+
+static inline bool adm_decouple_angle(const int32_t reference[3], const int32_t distorted[3])
+{
+    int64_t const dot = (int64_t)reference[0] * distorted[0] + (int64_t)reference[1] * distorted[1];
+    int64_t const reference_magnitude =
+        (int64_t)reference[0] * reference[0] + (int64_t)reference[1] * reference[1];
+    int64_t const distorted_magnitude =
+        (int64_t)distorted[0] * distorted[0] + (int64_t)distorted[1] * distorted[1];
+    return adm_angle_flag_i64(dot, reference_magnitude, distorted_magnitude) != 0;
+}
+
+struct AdmDecoupleParams {
+    int scale;
+    unsigned width;
+    unsigned height;
+    unsigned stride;
+    GainLimitQ31 gain_limit;
+    const int32_t *reference[3];
+    const int32_t *distorted[3];
+    int32_t *filtered[3];
+    uint32_t rfactor[3];
+    const int32_t *division_lookup;
+};
+
 template <bool UseFP64>
 static sycl::event
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch lambda body, see comment block above (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278)
 launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                     unsigned buf_stride, double adm_enhn_gain_limit, uint32_t i_rfactor_h,
                     uint32_t i_rfactor_v, uint32_t i_rfactor_d, const int32_t *ref_h,
@@ -693,234 +835,48 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                     const int32_t *dis_v, const int32_t *dis_d, int32_t *csf_f_h, int32_t *csf_f_v,
                     int32_t *csf_f_d, const int32_t *div_lookup)
 {
-    auto e_scale = scale;
-    auto e_w = half_w;
-    auto e_h = half_h;
-    auto e_stride = buf_stride;
-
-    // Always use int64 Q31 fixed-point for gain limiting.
-    // This avoids requiring fp64 capability (not available on Intel Arc A-series,
-    // Intel iGPUs, mobile GPUs, etc.) while being exact for all production
-    // gain values (1.0 and 100.0).  At most ±1 LSB for exotic fractional gains.
-    //
-    // NOTE: We must NOT instantiate a kernel lambda that uses 'double' operations
-    // because in SYCL, all kernels from a translation unit share a SPIR-V module.
-    // If the module contains fp64 instructions, the runtime rejects the entire
-    // module on non-fp64 hardware — even if the fp64 kernel is never submitted.
-    GainLimitQ31 const e_gain_q31 = gain_limit_to_q31(adm_enhn_gain_limit);
-
-    constexpr int WG_X = 16;
-    constexpr int WG_Y = 16;
-    sycl::range<2> const global(((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                                ((size_t)(half_w + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<2> const local(WG_Y, WG_X);
-
+    (void)UseFP64;
+    AdmDecoupleParams const p = {
+        .scale = scale,
+        .width = half_w,
+        .height = half_h,
+        .stride = buf_stride,
+        .gain_limit = gain_limit_to_q31(adm_enhn_gain_limit),
+        .reference = {ref_h, ref_v, ref_d},
+        .distorted = {dis_h, dis_v, dis_d},
+        .filtered = {csf_f_h, csf_f_v, csf_f_d},
+        .rfactor = {i_rfactor_h, i_rfactor_v, i_rfactor_d},
+        .division_lookup = div_lookup,
+    };
+    sycl::range<2> const global(((size_t)(half_h + 15) / 16) * 16,
+                                ((size_t)(half_w + 15) / 16) * 16);
+    sycl::range<2> const local(16, 16);
     return q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<2>(global, local), [=](sycl::nd_item<2> item) {
-            const int gx = item.get_global_id(1);
-            const int gy = item.get_global_id(0);
-            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, e_h))
+            unsigned const x = item.get_global_id(1);
+            unsigned const y = item.get_global_id(0);
+            if (x >= p.width || y >= p.height)
                 return;
-
-            unsigned const idx = gy * e_stride + gx;
-
-            // Load all 3 bands for ref and dis
-            int32_t const o[3] = {ref_h[idx], ref_v[idx], ref_d[idx]};
-            int32_t const t[3] = {dis_h[idx], dis_v[idx], dis_d[idx]};
-            int32_t *const cf_ptr[3] = {csf_f_h, csf_f_v, csf_f_d};
-            uint32_t const irf[3] = {i_rfactor_h, i_rfactor_v, i_rfactor_d};
-
-            // --- 2D Angle test using (H, V) bands only ---
-            // Matches CPU: angle between (oh,ov) and (th,tv)
-            int64_t const ot_dp = (int64_t)o[0] * t[0] + (int64_t)o[1] * t[1];
-            int64_t const o_mag_sq = (int64_t)o[0] * o[0] + (int64_t)o[1] * o[1];
-            int64_t const t_mag_sq = (int64_t)t[0] * t[0] + (int64_t)t[1] * t[1];
-
-            // ADR-1194: the CPU narrows each operand to float and then
-            // evaluates the comparison in double. Doing the whole thing in
-            // float (as this kernel used to) is a *different* predicate — it
-            // rounds the squared dot product and the cos(1deg)^2 product to
-            // 24 bits each — and flipped angle_flag on ~3e-5 of near-parallel
-            // band quadruples. binary64 is not an option here: Intel Arc
-            // A-series and most iGPUs expose no fp64, and one fp64
-            // instruction anywhere in this TU makes the runtime reject the
-            // whole SPIR-V module (see the GainLimitQ31 note above). The
-            // shared helper reproduces the CPU's double-precision result
-            // bit-for-bit in int64 arithmetic instead.
-            bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
-
-            // Process each band
+            unsigned const index = y * p.stride + x;
+            int32_t const reference[3] = {p.reference[0][index], p.reference[1][index],
+                                          p.reference[2][index]};
+            int32_t const distorted[3] = {p.distorted[0][index], p.distorted[1][index],
+                                          p.distorted[2][index]};
+            bool const angle_flag = adm_decouple_angle(reference, distorted);
             for (int band = 0; band < 3; band++) {
-                int32_t const oh = o[band];
-                int32_t const th = t[band];
-
-                // --- Decouple: project dis onto ref ---
-                int32_t r_val = 0;
-                int32_t k = 0;
-
-                if (oh == 0) {
-                    // When ref is 0, k = 32768 (Q15 = 1.0)
-                    k = 32768;
-                    // r = (32768 * 0 + 16384) >> 15 = 0
-                    r_val = 0;
-                } else {
-                    int32_t const abs_oh = oh < 0 ? -oh : oh;
-                    int32_t const sign_oh = oh < 0 ? -1 : 1;
-
-                    int32_t div_val;
-                    int kh_shift = 0;
-
-                    if (e_scale == 0) {
-                        // Scale 0: 16-bit values, direct LUT
-                        // CPU: div_lookup[oh + 32768] (oh is int16)
-                        // Equivalent: div_lookup[32768 + abs_oh] * sign
-                        div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                    } else {
-                        // Scale 1-3: reduce to ~15 bits
-                        // Match CPU's get_best15_from32 with rounding
-                        if (abs_oh < 32768) {
-                            div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                        } else {
-                            // Count how many bits to shift
-                            uint32_t const tmp = (uint32_t)abs_oh;
-                            // Find the MSB index.
-                            //
-                            // This branch is guarded by abs_oh >= 32768 == 2^15, so the MSB index is
-                            // at least 15. The scan is seeded with that floor instead of
-                            // rediscovering it, which makes `ks` provably positive to the static
-                            // analyser rather than resting on a comment
-                            // (clang-analyzer-core.BitwiseShift, error-level under
-                            // WarningsAsErrors). It computes the identical n for every input:
-                            // floor(log2(tmp)) == 15 + floor(log2(tmp >> 15)) whenever tmp >= 2^15.
-                            // (no __builtin_clz on the SYCL device)
-                            int n = 15;
-                            uint32_t v =
-                                (tmp >> 15) & 0x1FFFFu; // no-op on uint32_t input; states v < 2^17
-                            if (v >= (1u << 16)) {
-                                n += 16;
-                                v >>= 16;
-                            }
-                            if (v >= (1u << 8)) {
-                                n += 8;
-                                v >>= 8;
-                            }
-                            if (v >= (1u << 4)) {
-                                n += 4;
-                                v >>= 4;
-                            }
-                            if (v >= (1u << 2)) {
-                                n += 2;
-                                v >>= 2;
-                            }
-                            if (v >= (1u << 1)) {
-                                n += 1;
-                                v >>= 1;
-                            }
-                            // ks == 17 - (31 - n) == n - 14, written directly so its lower bound
-                            // follows from `n` alone. n >= 15 by the seed above, so ks is in
-                            // [1, 17] and the shift amount below is never negative. Matches the CPU
-                            // get_best15_from32 and the CUDA / HIP twins bit for bit
-                            // (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
-                            // The analyser sums all five conditional increments without propagating
-                            // the branch conditions, so it believes n can reach 46 and the shift
-                            // below can be 32. n is in [15, 31] for every uint32_t tmp >= 2^15 --
-                            // v < 2^17 after the seed, so only the 16-step can fire and the rest
-                            // cannot. Clamping states that bound; it is a no-op, verified
-                            // exhaustively over the low boundary and 400k random guarded inputs.
-                            n = n > 31 ? 31 : n;
-                            int const ks = n - 14;
-                            uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
-                            kh_shift = ks;
-                            div_val = div_lookup[32768 + rounded] * sign_oh;
-                        }
-                    }
-
-                    // k = clamp((div_val * th) >> shift, 0, 32768)
-                    int64_t const k64 = (int64_t)div_val * th;
-                    if (e_scale == 0) {
-                        k = (int32_t)((k64 + (1 << 14)) >> 15);
-                    } else {
-                        int const shift = 15 + kh_shift;
-                        k = (int32_t)((k64 + ((int64_t)1 << (shift - 1))) >> shift);
-                    }
-
-                    if (k < 0)
-                        k = 0;
-                    if (k > 32768)
-                        k = 32768;
-
-                    r_val = (int32_t)(((int64_t)k * oh + 16384) >> 15);
-                }
-
-                // --- Enhancement gain limiting ---
-                // Match CPU: uses floating-point rst_f for sign check,
-                // clamps against distorted signal (th), not reference
-                if (angle_flag) {
-                    // rst_f = (k/32768) * (oh/64) — sign depends on
-                    // k (>=0) and oh, so rst_f > 0 iff oh > 0.
-                    // No-contract block (T7-16): wrapped so the pragma
-                    // sits at the head of a compound statement.
-                    float rst_f;
-                    {
-#pragma clang fp contract(off)
-                        float const a = (float)k / 32768.0f;
-                        float const b = (float)oh / 64.0f;
-                        rst_f = a * b;
-                    }
-
-                    // int64 Q31 split-multiply gain limiting
-                    // gained = (r_val * gain_q31) >> 31
-                    //        = (r_val*hi << 16 + r_val*lo) >> 31
-                    //        = r_val*hi >> 15 + remainder >> 31
-                    int64_t const prod_hi = (int64_t)r_val * e_gain_q31.gain_hi;
-                    int64_t const prod_lo = (int64_t)r_val * e_gain_q31.gain_lo;
-                    int64_t const main_part = prod_hi >> 15;
-                    int64_t const rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
-                    // Keep as int64 — gained can exceed int32 at scales 1-3
-                    // where r_val is 32-bit and gain=100 → gained ≈ r*100
-                    int64_t const gained = main_part + (rem >> 31);
-
-                    if (rst_f > 0.0f) {
-                        int64_t const c = (gained < (int64_t)th) ? gained : (int64_t)th;
-                        r_val = (int32_t)c;
-                    } else if (rst_f < 0.0f) {
-                        int64_t const c = (gained > (int64_t)th) ? gained : (int64_t)th;
-                        r_val = (int32_t)c;
-                    }
-                }
-
-                // r_val and csf_a_val are recomputed inline in the CM kernel
-                // — only csf_f needs to be stored (3×3 neighborhood access)
-
-                // a = dis - r (residual)
-                int32_t const a_val = th - r_val;
-
-                // --- Fused CSF ---
-                int32_t csf_f_val;
-                if (e_scale == 0) {
-                    // Scale 0: rfactor * 2^21 (h,v) or 2^23 (d)
-                    int const shift = (band < 2) ? 15 : 17;
-                    int64_t const rnd_csf = ((int64_t)1 << (shift - 1));
-                    int32_t const csf_a_val =
-                        (int32_t)(((int64_t)irf[band] * a_val + rnd_csf) >> shift);
-                    // csf_f = (4369 * |csf_a| + 2048) >> 12
-                    int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = (int32_t)(((int64_t)4369 * abs_csf + 2048) >> 12);
-                } else {
-                    // Scales 1-3: rfactor * 2^32
-                    int32_t const csf_a_val =
-                        (int32_t)(((int64_t)irf[band] * a_val + (1LL << 27)) >> 28);
-                    int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = (int32_t)(((int64_t)143165577 * abs_csf + (1LL << 31)) >> 32);
-                }
-
-                cf_ptr[band][idx] = csf_f_val;
+                AdmDecouple const decoupled =
+                    adm_decouple(p.scale, reference[band], distorted[band], p.division_lookup);
+                int32_t const limited =
+                    adm_gain_limited(decoupled.value, decoupled.gain, reference[band],
+                                     distorted[band], angle_flag, p.gain_limit);
+                int32_t const csf =
+                    adm_csf_value(p.scale, band, p.rfactor[band], distorted[band] - limited);
+                p.filtered[band][index] = adm_csf_filter_value(p.scale, csf);
             }
         });
     });
 }
 
-/* ------------------------------------------------------------------ */
 /* SYCL Kernel: CSF Denominator Reduction — 3 bands fused             */
 /* ------------------------------------------------------------------ */
 
@@ -934,416 +890,285 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
 /* d_csf_f[3] is still read from global memory (3×3 neighborhood).    */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct AdmCsfShifts {
+    uint32_t square;
+    uint32_t cube;
+    uint32_t accumulation;
+};
+
+struct AdmCmShifts {
+    uint32_t inner;
+    uint32_t subtraction[3];
+    uint32_t square[3];
+    uint32_t cube[3];
+};
+
+struct AdmCombinedBuffers {
+    const int32_t *reference[3];
+    const int32_t *distorted[3];
+    const int32_t *filtered[3];
+    int64_t *csf_accum[3];
+    int64_t *cm_accum[3];
+    uint32_t rfactor[3];
+    const int32_t *division_lookup;
+};
+
+struct AdmCombinedParams {
+    int scale;
+    int left;
+    int top;
+    int right;
+    int bottom;
+    unsigned width;
+    unsigned height;
+    unsigned stride;
+    AdmCsfShifts csf_shift;
+    AdmCmShifts cm_shift;
+    GainLimitQ31 gain_limit;
+    AdmCombinedBuffers buffers;
+};
+
+struct AdmCombinedSums {
+    int64_t csf;
+    int64_t contrast;
+};
+
+static AdmCsfShifts adm_csf_shifts(int scale, int width, int height)
+{
+    AdmCsfShifts shifts = {};
+    if (scale == 0) {
+        int const area = width * height;
+        int const accumulation = (int)std::ceil(std::log2(area) - 20);
+        shifts.accumulation = accumulation > 0 ? (uint32_t)accumulation : 0;
+    } else {
+        shifts.square = scale == 2 ? 30 : 31;
+        shifts.cube = (uint32_t)std::ceil(std::log2(width));
+        shifts.accumulation = (uint32_t)std::ceil(std::log2(height));
+    }
+    return shifts;
+}
+
+static AdmCmShifts adm_cm_shifts(int scale, unsigned width, unsigned height)
+{
+    AdmCmShifts shifts = {};
+    shifts.inner = (uint32_t)std::ceil(std::log2((double)height));
+    for (int band = 0; band < 3; band++) {
+        if (scale == 0) {
+            shifts.subtraction[band] = band < 2 ? 10 : 12;
+            shifts.square[band] = band < 2 ? 29 : 30;
+            shifts.cube[band] =
+                (uint32_t)(std::ceil(std::log2((double)width)) - (band < 2 ? 4 : 3));
+        } else {
+            shifts.subtraction[band] = 15;
+            shifts.square[band] = 30;
+            shifts.cube[band] = (uint32_t)std::ceil(std::log2((double)width));
+        }
+    }
+    return shifts;
+}
+
+static AdmCombinedParams adm_combined_params(int scale, unsigned width, unsigned height,
+                                             unsigned stride, double gain_limit,
+                                             const AdmCombinedBuffers &buffers)
+{
+    AdmCombinedParams p = {};
+    p.scale = scale;
+    p.left = (int)(width * ADM_BORDER_FACTOR - 0.5);
+    p.top = (int)(height * ADM_BORDER_FACTOR - 0.5);
+    p.right = (int)width - p.left;
+    p.bottom = (int)height - p.top;
+    if (p.left < 0)
+        p.left = 0;
+    if (p.top < 0)
+        p.top = 0;
+    p.width = width;
+    p.height = height;
+    p.stride = stride;
+    p.csf_shift = adm_csf_shifts(scale, p.right - p.left, p.bottom - p.top);
+    p.cm_shift = adm_cm_shifts(scale, width, height);
+    p.gain_limit = gain_limit_to_q31(gain_limit);
+    p.buffers = buffers;
+    return p;
+}
+
+static inline int64_t adm_csf_cube(const AdmCombinedParams &p, int32_t sample)
+{
+    int32_t const magnitude = sample < 0 ? -sample : sample;
+    if (p.scale == 0)
+        return (int64_t)magnitude * magnitude * magnitude;
+    int64_t const square_rounding = (int64_t)1 << p.csf_shift.square;
+    int64_t const square = ((int64_t)magnitude * magnitude + square_rounding) >> p.csf_shift.square;
+    int64_t const cube_rounding = p.csf_shift.cube > 0 ? (int64_t)1 << (p.csf_shift.cube - 1) : 0;
+    return (square * magnitude + cube_rounding) >> p.csf_shift.cube;
+}
+
+static inline void adm_inline_decouple(const AdmCombinedParams &p, unsigned index,
+                                       int32_t decoupled[3], int32_t csf_values[3])
+{
+    int32_t const reference[3] = {p.buffers.reference[0][index], p.buffers.reference[1][index],
+                                  p.buffers.reference[2][index]};
+    int32_t const distorted[3] = {p.buffers.distorted[0][index], p.buffers.distorted[1][index],
+                                  p.buffers.distorted[2][index]};
+    bool const angle_flag = adm_decouple_angle(reference, distorted);
+    for (int band = 0; band < 3; band++) {
+        AdmDecouple const result =
+            adm_decouple(p.scale, reference[band], distorted[band], p.buffers.division_lookup);
+        decoupled[band] = adm_gain_limited(result.value, result.gain, reference[band],
+                                           distorted[band], angle_flag, p.gain_limit);
+        csf_values[band] = adm_csf_value(p.scale, band, p.buffers.rfactor[band],
+                                         distorted[band] - decoupled[band]);
+    }
+}
+
+static inline int adm_cm_neighbor(int coordinate, int limit)
+{
+    if (coordinate < 0)
+        coordinate = 1;
+    if (coordinate >= limit)
+        coordinate = limit - 1;
+    return coordinate;
+}
+
+static inline int64_t adm_contrast_threshold(const AdmCombinedParams &p, int row, int col,
+                                             const int32_t csf_values[3])
+{
+    int64_t threshold = 0;
+    for (int band = 0; band < 3; band++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0)
+                    continue;
+                // ADR-1210: mirror the near edge to 1 and clamp the far edge.
+                int const y = adm_cm_neighbor(row + dy, (int)p.height);
+                int const x = adm_cm_neighbor(col + dx, (int)p.width);
+                threshold += p.buffers.filtered[band][y * p.stride + x];
+            }
+        }
+        int32_t const magnitude = csf_values[band] < 0 ? -csf_values[band] : csf_values[band];
+        if (p.scale == 0)
+            threshold += ((int64_t)ONE_BY_15 * magnitude + 2048) >> 12;
+        else
+            threshold += ((int64_t)I4_ONE_BY_15 * magnitude + (1LL << 31)) >> 32;
+    }
+    return threshold;
+}
+
+static inline int64_t adm_contrast_cube(const AdmCombinedParams &p, int band, int32_t decoupled,
+                                        int64_t threshold)
+{
+    int64_t contrast;
+    if (p.scale == 0) {
+        contrast = (int64_t)p.buffers.rfactor[band] * decoupled;
+        contrast = contrast < 0 ? -contrast : contrast;
+        contrast -= threshold << p.cm_shift.subtraction[band];
+    } else {
+        int64_t const scaled = ((int64_t)p.buffers.rfactor[band] * decoupled + (1LL << 27)) >> 28;
+        contrast = scaled < 0 ? -scaled : scaled;
+        contrast -= threshold;
+    }
+    if (contrast < 0)
+        contrast = 0;
+    uint32_t const square_shift = p.cm_shift.square[band];
+    int64_t const square_rounding = square_shift > 0 ? (int64_t)1 << (square_shift - 1) : 0;
+    int32_t const square = (int32_t)((contrast * contrast + square_rounding) >> square_shift);
+    uint32_t const cube_shift = p.cm_shift.cube[band];
+    int64_t const cube_rounding = cube_shift > 0 ? (int64_t)1 << (cube_shift - 1) : 0;
+    return ((int64_t)square * contrast + cube_rounding) >> cube_shift;
+}
+
+static inline AdmCombinedSums adm_combined_local(const AdmCombinedParams &p, int band, int row,
+                                                 int lane)
+{
+    AdmCombinedSums sums = {};
+    for (int col = p.left + lane; col < p.right; col += 256) {
+        unsigned const index = row * p.stride + col;
+        sums.csf += adm_csf_cube(p, p.buffers.reference[band][index]);
+        int32_t decoupled[3];
+        int32_t csf_values[3];
+        adm_inline_decouple(p, index, decoupled, csf_values);
+        int64_t const threshold = adm_contrast_threshold(p, row, col, csf_values);
+        sums.contrast += adm_contrast_cube(p, band, decoupled[band], threshold);
+    }
+    return sums;
+}
+
+template <typename LocalMemory>
+static inline void adm_reduce_combined(const AdmCombinedParams &p, sycl::nd_item<1> item,
+                                       const LocalMemory &local_memory, int band,
+                                       const AdmCombinedSums &sums)
+{
+    constexpr int max_subgroups = 32;
+    sycl::sub_group const subgroup = item.get_sub_group();
+    int64_t const subgroup_csf = sycl::reduce_over_group(subgroup, sums.csf, sycl::plus<int64_t>{});
+    int64_t const subgroup_contrast =
+        sycl::reduce_over_group(subgroup, sums.contrast, sycl::plus<int64_t>{});
+    uint32_t const subgroup_id = subgroup.get_group_linear_id();
+    if (subgroup.get_local_linear_id() == 0) {
+        local_memory[subgroup_id] = subgroup_csf;
+        local_memory[max_subgroups + subgroup_id] = subgroup_contrast;
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    if (item.get_local_id(0) != 0)
+        return;
+    int64_t total_csf = 0;
+    int64_t total_contrast = 0;
+    for (uint32_t i = 0; i < subgroup.get_group_linear_range(); i++) {
+        total_csf += local_memory[i];
+        total_contrast += local_memory[max_subgroups + i];
+    }
+    int64_t const csf_rounding =
+        p.csf_shift.accumulation > 0 ? (int64_t)1 << (p.csf_shift.accumulation - 1) : 0;
+    int64_t const shifted_csf = (total_csf + csf_rounding) >> p.csf_shift.accumulation;
+    sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                     sycl::access::address_space::global_space> const
+        csf_output(*p.buffers.csf_accum[band]);
+    csf_output.fetch_add(shifted_csf);
+    int64_t const contrast_rounding =
+        p.cm_shift.inner > 0 ? (int64_t)1 << (p.cm_shift.inner - 1) : 0;
+    int64_t const shifted_contrast = (total_contrast + contrast_rounding) >> p.cm_shift.inner;
+    sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                     sycl::access::address_space::global_space> const
+        contrast_output(*p.buffers.cm_accum[band]);
+    contrast_output.fetch_add(shifted_contrast);
+}
+
 static sycl::event launch_csf_den_cm_3band(
     sycl::queue &q, int scale, unsigned half_w, unsigned half_h, unsigned buf_stride,
-    // csf_den inputs
     const int32_t *ref_band_h, const int32_t *ref_band_v, const int32_t *ref_band_d,
-    int64_t *csf_accum_h, int64_t *csf_accum_v, int64_t *csf_accum_d,
-    // cm inputs (decouple inlined)
-    uint32_t i_rfactor_h, uint32_t i_rfactor_v, uint32_t i_rfactor_d, const int32_t *dis_band_h,
+    int64_t *csf_accum_h, int64_t *csf_accum_v, int64_t *csf_accum_d, uint32_t i_rfactor_h,
+    uint32_t i_rfactor_v, uint32_t i_rfactor_d, const int32_t *dis_band_h,
     const int32_t *dis_band_v, const int32_t *dis_band_d, const int32_t *csf_f_h,
     const int32_t *csf_f_v, const int32_t *csf_f_d, const int32_t *div_lookup,
     double adm_enhn_gain_limit, int64_t *cm_accum_h, int64_t *cm_accum_v, int64_t *cm_accum_d)
 {
-    int left = (int)(half_w * ADM_BORDER_FACTOR - 0.5);
-    int top = (int)(half_h * ADM_BORDER_FACTOR - 0.5);
-    int const right = (int)half_w - left;
-    int const bottom = (int)half_h - top;
-    if (left < 0)
-        left = 0;
-    if (top < 0)
-        top = 0;
-
-    int const active_w = right - left;
-    int const active_h = bottom - top;
-    if (active_w <= 0 || active_h <= 0)
+    AdmCombinedBuffers const buffers = {
+        .reference = {ref_band_h, ref_band_v, ref_band_d},
+        .distorted = {dis_band_h, dis_band_v, dis_band_d},
+        .filtered = {csf_f_h, csf_f_v, csf_f_d},
+        .csf_accum = {csf_accum_h, csf_accum_v, csf_accum_d},
+        .cm_accum = {cm_accum_h, cm_accum_v, cm_accum_d},
+        .rfactor = {i_rfactor_h, i_rfactor_v, i_rfactor_d},
+        .division_lookup = div_lookup,
+    };
+    AdmCombinedParams const p =
+        adm_combined_params(scale, half_w, half_h, buf_stride, adm_enhn_gain_limit, buffers);
+    int const row_count = p.bottom - p.top;
+    if (p.right - p.left <= 0 || row_count <= 0)
         return sycl::event{};
-
-    // csf_den shift params
-    uint32_t csf_shift_sq;
-    uint32_t csf_shift_cub;
-    uint32_t csf_shift_accum;
-    if (scale == 0) {
-        csf_shift_sq = 0;
-        csf_shift_cub = 0;
-        int const area = active_w * active_h;
-        int const s = (int)std::ceil(std::log2(area) - 20);
-        csf_shift_accum = s > 0 ? (uint32_t)s : 0;
-    } else {
-        csf_shift_sq = (scale == 2) ? 30 : 31;
-        csf_shift_cub = (uint32_t)std::ceil(std::log2(active_w));
-        csf_shift_accum = (uint32_t)std::ceil(std::log2(active_h));
-    }
-
-    // cm shift params
-    uint32_t const cm_shift_inner_accum = (uint32_t)std::ceil(std::log2((double)half_h));
-    uint32_t cm_shift_sub[3];
-    uint32_t cm_shift_xsq[3];
-    uint32_t cm_shift_xcub[3];
-    for (int b = 0; b < 3; b++) {
-        if (scale == 0) {
-            cm_shift_sub[b] = (b < 2) ? 10 : 12;
-            cm_shift_xsq[b] = (b < 2) ? 29 : 30;
-            cm_shift_xcub[b] = (uint32_t)(std::ceil(std::log2((double)half_w)) - ((b < 2) ? 4 : 3));
-        } else {
-            cm_shift_sub[b] = 15;
-            cm_shift_xsq[b] = 30;
-            cm_shift_xcub[b] = (uint32_t)std::ceil(std::log2((double)half_w));
-        }
-    }
-
-    auto e_left = left;
-    auto e_top = top;
-    auto e_right = right;
-    auto e_stride = buf_stride;
-    auto e_scale = scale;
-    auto e_w = half_w;
-    auto e_h = half_h;
-    // csf_den
-    auto e_csf_shift_sq = csf_shift_sq;
-    auto e_csf_shift_cub = csf_shift_cub;
-    auto e_csf_shift_accum = csf_shift_accum;
-    // cm
-    auto e_cm_shift_inner = cm_shift_inner_accum;
-    auto e_cm_shift_sub0 = cm_shift_sub[0];
-    auto e_cm_shift_sub2 = cm_shift_sub[2];
-    auto e_cm_shift_xsq0 = cm_shift_xsq[0];
-    auto e_cm_shift_xsq2 = cm_shift_xsq[2];
-    auto e_cm_shift_xcub0 = cm_shift_xcub[0];
-    auto e_cm_shift_xcub2 = cm_shift_xcub[2];
-    // decouple gain limit (Q31 fixed-point, same as in launch_decouple_csf)
-    GainLimitQ31 e_gain_q31 = gain_limit_to_q31(adm_enhn_gain_limit);
-
-    constexpr int WG_SIZE = 256;
-    constexpr int MAX_SUBGROUPS = 32;
-    int num_rows = bottom - top;
-
-    // Dispatch 3 × num_rows workgroups: band = wg / num_rows
     return q.submit([&](sycl::handler &cgh) {
-        // 2 reduction slots: [0..MAX_SUBGROUPS) for csf_den,
-        //                    [MAX_SUBGROUPS..2*MAX_SUBGROUPS) for cm
-        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>((size_t)2 * MAX_SUBGROUPS), cgh);
-
-        cgh.parallel_for(
-            sycl::nd_range<1>((size_t)3 * num_rows * WG_SIZE, WG_SIZE),
-            [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                int const wg = item.get_group(0);
-                int const band_idx = wg / num_rows;
-                int const row_idx = wg % num_rows;
-                int const lid = item.get_local_id(0);
-                int const row = e_top + row_idx;
-
-                // Select band-specific pointers
-                const int32_t *ref_band = (band_idx == 0) ? ref_band_h :
-                                          (band_idx == 1) ? ref_band_v :
-                                                            ref_band_d;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                int64_t *csf_accum_ptr = (band_idx == 0) ? csf_accum_h :
-                                         (band_idx == 1) ? csf_accum_v :
-                                                           csf_accum_d;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                int64_t *cm_accum_ptr = (band_idx == 0) ? cm_accum_h :
-                                        (band_idx == 1) ? cm_accum_v :
-                                                          cm_accum_d;
-                uint32_t const i_rfactor = (band_idx == 0) ? i_rfactor_h :
-                                           (band_idx == 1) ? i_rfactor_v :
-                                                             i_rfactor_d;
-                auto e_cm_shift_sub = (band_idx < 2) ? e_cm_shift_sub0 : e_cm_shift_sub2;
-                auto e_cm_shift_xsq = (band_idx < 2) ? e_cm_shift_xsq0 : e_cm_shift_xsq2;
-                auto e_cm_shift_xcub = (band_idx < 2) ? e_cm_shift_xcub0 : e_cm_shift_xcub2;
-
-                const int32_t *const cf_ptrs[3] = {csf_f_h, csf_f_v, csf_f_d};
-                // All 3 ref/dis band pointers for inline decouple
-                const int32_t *const ref_ptrs[3] = {ref_band_h, ref_band_v, ref_band_d};
-                const int32_t *const dis_ptrs[3] = {dis_band_h, dis_band_v, dis_band_d};
-                uint32_t const irf_all[3] = {i_rfactor_h, i_rfactor_v, i_rfactor_d};
-
-                // Per-thread accumulators for both reductions
-                int64_t local_csf_sum = 0;
-                int64_t local_cm_sum = 0;
-
-                for (int col = e_left + lid; col < e_right; col += WG_SIZE) {
-                    unsigned const idx = row * e_stride + col;
-
-                    // ── CSF denominator: |ref|³ ──
-                    int32_t const t = ref_band[idx];
-                    int32_t const abs_t = t < 0 ? -t : t;
-                    int64_t t_cub;
-                    if (e_scale == 0) {
-                        t_cub = (int64_t)abs_t * abs_t * abs_t;
-                    } else {
-                        int64_t const rnd_sq = ((int64_t)1 << e_csf_shift_sq);
-                        int64_t const t_sq = ((int64_t)abs_t * abs_t + rnd_sq) >> e_csf_shift_sq;
-                        int64_t const rnd_cub =
-                            e_csf_shift_cub > 0 ? ((int64_t)1 << (e_csf_shift_cub - 1)) : 0;
-                        t_cub = (t_sq * abs_t + rnd_cub) >> e_csf_shift_cub;
-                    }
-                    local_csf_sum += t_cub;
-
-                    // ── Inline decouple + CSF for all 3 bands ──
-                    // Load ref/dis for H,V,D bands
-                    int32_t const o[3] = {ref_ptrs[0][idx], ref_ptrs[1][idx], ref_ptrs[2][idx]};
-                    int32_t const th_all[3] = {dis_ptrs[0][idx], dis_ptrs[1][idx],
-                                               dis_ptrs[2][idx]};
-
-                    // 2D angle test (uses H,V bands only)
-                    int64_t const ot_dp = (int64_t)o[0] * th_all[0] + (int64_t)o[1] * th_all[1];
-                    int64_t const o_mag_sq = (int64_t)o[0] * o[0] + (int64_t)o[1] * o[1];
-                    int64_t const t_mag_sq =
-                        (int64_t)th_all[0] * th_all[0] + (int64_t)th_all[1] * th_all[1];
-                    // fp64-free replica of the CPU predicate (ADR-1194) —
-                    // see the scale-0 kernel above for why binary64 cannot
-                    // be used in this translation unit.
-                    bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
-
-                    // Decouple + CSF for each band → r_val[band], csf_a_val[band]
-                    int32_t r_vals[3];
-                    int32_t csf_a_vals[3];
-                    for (int b = 0; b < 3; b++) {
-                        int32_t const oh = o[b];
-                        int32_t const bth = th_all[b];
-                        int32_t r_val = 0;
-                        int32_t k = 0;
-
-                        if (oh == 0) {
-                            k = 32768;
-                            r_val = 0;
-                        } else {
-                            int32_t const abs_oh = oh < 0 ? -oh : oh;
-                            int32_t const sign_oh = oh < 0 ? -1 : 1;
-                            int32_t div_val;
-                            int kh_shift = 0;
-
-                            if (e_scale == 0) {
-                                div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                            } else {
-                                if (abs_oh < 32768) {
-                                    div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                                } else {
-                                    uint32_t const tmp = (uint32_t)abs_oh;
-                                    // Find the MSB index.
-                                    //
-                                    // This branch is guarded by abs_oh >= 32768 == 2^15, so the MSB index is
-                                    // at least 15. The scan is seeded with that floor instead of
-                                    // rediscovering it, which makes `ks` provably positive to the static
-                                    // analyser rather than resting on a comment
-                                    // (clang-analyzer-core.BitwiseShift, error-level under
-                                    // WarningsAsErrors). It computes the identical n for every input:
-                                    // floor(log2(tmp)) == 15 + floor(log2(tmp >> 15)) whenever tmp >= 2^15.
-                                    // (no __builtin_clz on the SYCL device)
-                                    int n = 15;
-                                    uint32_t v =
-                                        (tmp >> 15) &
-                                        0x1FFFFu; // no-op on uint32_t input; states v < 2^17
-                                    if (v >= (1u << 16)) {
-                                        n += 16;
-                                        v >>= 16;
-                                    }
-                                    if (v >= (1u << 8)) {
-                                        n += 8;
-                                        v >>= 8;
-                                    }
-                                    if (v >= (1u << 4)) {
-                                        n += 4;
-                                        v >>= 4;
-                                    }
-                                    if (v >= (1u << 2)) {
-                                        n += 2;
-                                        v >>= 2;
-                                    }
-                                    if (v >= (1u << 1)) {
-                                        n += 1;
-                                        v >>= 1;
-                                    }
-                                    // ks == 17 - (31 - n) == n - 14, written directly so its lower bound
-                                    // follows from `n` alone. n >= 15 by the seed above, so ks is in
-                                    // [1, 17] and the shift amount below is never negative. Matches the CPU
-                                    // get_best15_from32 and the CUDA / HIP twins bit for bit
-                                    // (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
-                                    // The analyser sums all five conditional increments without propagating
-                                    // the branch conditions, so it believes n can reach 46 and the shift
-                                    // below can be 32. n is in [15, 31] for every uint32_t tmp >= 2^15 --
-                                    // v < 2^17 after the seed, so only the 16-step can fire and the rest
-                                    // cannot. Clamping states that bound; it is a no-op, verified
-                                    // exhaustively over the low boundary and 400k random guarded inputs.
-                                    n = n > 31 ? 31 : n;
-                                    int const ks = n - 14;
-                                    uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
-                                    kh_shift = ks;
-                                    div_val = div_lookup[32768 + rounded] * sign_oh;
-                                }
-                            }
-
-                            int64_t const k64 = (int64_t)div_val * bth;
-                            if (e_scale == 0) {
-                                k = (int32_t)((k64 + (1 << 14)) >> 15);
-                            } else {
-                                int const shift = 15 + kh_shift;
-                                k = (int32_t)((k64 + ((int64_t)1 << (shift - 1))) >> shift);
-                            }
-                            if (k < 0)
-                                k = 0;
-                            if (k > 32768)
-                                k = 32768;
-                            r_val = (int32_t)(((int64_t)k * oh + 16384) >> 15);
-                        }
-
-                        // Enhancement gain limiting
-                        if (angle_flag) {
-                            // No-contract block (T7-16).
-                            float rst_f;
-                            {
-#pragma clang fp contract(off)
-                                float const a = (float)k / 32768.0f;
-                                float const b = (float)oh / 64.0f;
-                                rst_f = a * b;
-                            }
-                            int64_t const prod_hi = (int64_t)r_val * e_gain_q31.gain_hi;
-                            int64_t const prod_lo = (int64_t)r_val * e_gain_q31.gain_lo;
-                            int64_t const main_part = prod_hi >> 15;
-                            int64_t const rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
-                            int64_t const gained = main_part + (rem >> 31);
-
-                            if (rst_f > 0.0f) {
-                                int64_t const c = (gained < (int64_t)bth) ? gained : (int64_t)bth;
-                                r_val = (int32_t)c;
-                            } else if (rst_f < 0.0f) {
-                                int64_t const c = (gained > (int64_t)bth) ? gained : (int64_t)bth;
-                                r_val = (int32_t)c;
-                            }
-                        }
-
-                        r_vals[b] = r_val;
-
-                        // CSF: a = dis - r, csf_a = rfactor * a
-                        int32_t const a_val = bth - r_val;
-                        if (e_scale == 0) {
-                            int const shift = (b < 2) ? 15 : 17;
-                            int64_t const rnd_csf = ((int64_t)1 << (shift - 1));
-                            csf_a_vals[b] =
-                                (int32_t)(((int64_t)irf_all[b] * a_val + rnd_csf) >> shift);
-                        } else {
-                            csf_a_vals[b] =
-                                (int32_t)(((int64_t)irf_all[b] * a_val + (1LL << 27)) >> 28);
-                        }
-                    }
-
-                    // ── Contrast measure (uses inline csf_a and r_val) ──
-                    int64_t thr = 0;
-                    for (int b = 0; b < 3; b++) {
-                        for (int dy = -1; dy <= 1; dy++) {
-                            for (int dx = -1; dx <= 1; dx++) {
-                                if (dx == 0 && dy == 0)
-                                    continue;
-                                /* ADR-1210: the CPU rule is ASYMMETRIC — the
-                                 * near edge MIRRORS to index 1, the far edge
-                                 * CLAMPS to the last index:
-                                 *   i_m1 = (i == 0)     ? 1     : i - 1;
-                                 *   i_p1 = (i == h - 1) ? h - 1 : i + 1;
-                                 * (core/src/feature/integer_adm.c:1009-1012).
-                                 * Clamping the near edge to 0 instead reads the
-                                 * centre row/column twice and drops the mirror,
-                                 * which only diverges once a scale's border crop
-                                 * collapses to 0 — band dimensions <= 14 — since
-                                 * only then are row 0 / col 0 inside the CM
-                                 * region. CUDA (adm_cm.cu) and HIP already carry
-                                 * the ADR-1167 fix; this twin was missed. */
-                                int ny = row + dy;
-                                int nx = col + dx;
-                                if (ny < 0)
-                                    ny = 1;
-                                if (std::cmp_greater_equal(ny, e_h))
-                                    ny = (int)e_h - 1;
-                                if (nx < 0)
-                                    nx = 1;
-                                if (std::cmp_greater_equal(nx, e_w))
-                                    nx = (int)e_w - 1;
-                                thr += cf_ptrs[b][ny * e_stride + nx];
-                            }
-                        }
-                        int32_t const abs_ca = csf_a_vals[b] < 0 ? -csf_a_vals[b] : csf_a_vals[b];
-                        if (e_scale == 0) {
-                            thr += ((int64_t)ONE_BY_15 * abs_ca + 2048) >> 12;
-                        } else {
-                            thr += ((int64_t)I4_ONE_BY_15 * abs_ca + (1LL << 31)) >> 32;
-                        }
-                    }
-
-                    int32_t const r_val = r_vals[band_idx];
-                    int64_t cm;
-                    if (e_scale == 0) {
-                        cm = (int64_t)i_rfactor * r_val;
-                        cm = cm < 0 ? -cm : cm;
-                        cm -= (thr << e_cm_shift_sub);
-                    } else {
-                        int64_t const scaled_r = ((int64_t)i_rfactor * r_val + (1LL << 27)) >> 28;
-                        cm = scaled_r < 0 ? -scaled_r : scaled_r;
-                        cm -= thr;
-                    }
-                    if (cm < 0)
-                        cm = 0;
-
-                    int64_t const rnd_sq2 =
-                        e_cm_shift_xsq > 0 ? ((int64_t)1 << (e_cm_shift_xsq - 1)) : 0;
-                    int32_t const x_sq = (int32_t)(((cm * cm) + rnd_sq2) >> e_cm_shift_xsq);
-                    int64_t const rnd_cub2 =
-                        e_cm_shift_xcub > 0 ? ((int64_t)1 << (e_cm_shift_xcub - 1)) : 0;
-                    int64_t const x_cub = (((int64_t)x_sq * cm) + rnd_cub2) >> e_cm_shift_xcub;
-                    local_cm_sum += x_cub;
-                }
-
-                // ── Two-phase reduction for both values ──
-                sycl::sub_group const sg = item.get_sub_group();
-                int64_t const sg_csf =
-                    sycl::reduce_over_group(sg, local_csf_sum, sycl::plus<int64_t>{});
-                int64_t const sg_cm =
-                    sycl::reduce_over_group(sg, local_cm_sum, sycl::plus<int64_t>{});
-
-                const uint32_t sg_id = sg.get_group_linear_id();
-                const uint32_t sg_lid = sg.get_local_linear_id();
-                const uint32_t n_subgroups = sg.get_group_linear_range();
-
-                if (sg_lid == 0) {
-                    lmem[sg_id] = sg_csf;
-                    lmem[MAX_SUBGROUPS + sg_id] = sg_cm;
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-                if (lid == 0) {
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
-                    int64_t total_csf = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
-                    int64_t total_cm = 0;
-                    for (uint32_t s = 0; s < n_subgroups; s++) {
-                        total_csf += lmem[s];
-                        total_cm += lmem[MAX_SUBGROUPS + s];
-                    }
-
-                    // csf_den: shift and atomic add
-                    int64_t const rnd_csf =
-                        e_csf_shift_accum > 0 ? ((int64_t)1 << (e_csf_shift_accum - 1)) : 0;
-                    int64_t const shifted_csf = (total_csf + rnd_csf) >> e_csf_shift_accum;
-                    sycl::atomic_ref<
-                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                        sycl::access::address_space::global_space> const csf_ref(*csf_accum_ptr);
-                    csf_ref.fetch_add(shifted_csf);
-
-                    // cm: shift and atomic add
-                    int64_t const rnd_cm =
-                        e_cm_shift_inner > 0 ? ((int64_t)1 << (e_cm_shift_inner - 1)) : 0;
-                    int64_t const shifted_cm = (total_cm + rnd_cm) >> e_cm_shift_inner;
-                    sycl::atomic_ref<
-                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                        sycl::access::address_space::global_space> const cm_ref(*cm_accum_ptr);
-                    cm_ref.fetch_add(shifted_cm);
-                }
-            });
+        sycl::local_accessor<int64_t, 1> const local_memory(sycl::range<1>(64), cgh);
+        cgh.parallel_for(sycl::nd_range<1>((size_t)3 * row_count * 256, 256),
+                         [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
+                             int const workgroup = item.get_group(0);
+                             int const band = workgroup / row_count;
+                             int const row = p.top + workgroup % row_count;
+                             AdmCombinedSums const sums =
+                                 adm_combined_local(p, band, row, item.get_local_id(0));
+                             adm_reduce_combined(p, item, local_memory, band, sums);
+                         });
     });
 }
 
-/* ------------------------------------------------------------------ */
 /* CPU scoring functions                                               */
 /* ------------------------------------------------------------------ */
 
@@ -1436,229 +1261,206 @@ static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init e
 static int
 close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int adm_init_runtime(VmafFeatureExtractor *fex, AdmStateSycl *s, unsigned bpc, unsigned w,
+                            unsigned h, VmafSyclState *&state)
 {
-    (void)pix_fmt;
-    auto *s = static_cast<AdmStateSycl *>(fex->priv);
-
     s->width = w;
     s->height = h;
     s->bpc = bpc;
     s->has_pending = false;
-
-    if (!fex->sycl_state) {
+    state = fex->sycl_state;
+    if (!state) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: no SYCL state\n");
         return -EINVAL;
     }
+    int const config_error = adm_csf_config_check(s);
+    if (config_error)
+        return config_error;
+    return vmaf_sycl_shared_frame_init(state, w, h, bpc);
+}
 
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
-    {
-        const int csf_err = adm_csf_config_check(s);
-        if (csf_err) {
-            return csf_err;
-        }
-    }
-
-    VmafSyclState *state = fex->sycl_state;
-
-    // Initialize shared frame buffers (idempotent, first extractor wins)
-    int err = vmaf_sycl_shared_frame_init(state, w, h, bpc);
-    if (err)
-        return err;
-
-    unsigned const half_w = (w + 1) / 2;
-    unsigned const half_h = (h + 1) / 2;
-    s->buf_stride = (half_w + 3) & ~3u; // align to 4
-
-    // Compute rfactors
-    for (unsigned scale = 0; scale < 4; scale++) {
-        AdmCsfFactors const f =
+static void adm_compute_rfactors(AdmStateSycl *s)
+{
+    for (unsigned scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        AdmCsfFactors const factors =
             adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
                             s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
-        s->rfactor[scale * 3 + 0] = f.factor1;
-        s->rfactor[scale * 3 + 1] = f.factor1;
-        s->rfactor[scale * 3 + 2] = f.factor2;
-
+        s->rfactor[scale * 3 + 0] = factors.factor1;
+        s->rfactor[scale * 3 + 1] = factors.factor1;
+        s->rfactor[scale * 3 + 2] = factors.factor2;
         double const pow2_32 = std::pow(2.0, 32);
-
         if (scale == 0) {
             adm_csf_rfactor_scale0(&s->rfactor[0], s->adm_norm_view_dist, s->adm_ref_display_height,
                                    s->adm_csf_mode, &s->i_rfactor[0]);
         } else {
-            s->i_rfactor[scale * 3 + 0] = (uint32_t)(s->rfactor[scale * 3 + 0] * pow2_32);
-            s->i_rfactor[scale * 3 + 1] = (uint32_t)(s->rfactor[scale * 3 + 1] * pow2_32);
-            s->i_rfactor[scale * 3 + 2] = (uint32_t)(s->rfactor[scale * 3 + 2] * pow2_32);
+            for (int band = 0; band < ADM_NUM_BANDS; band++) {
+                s->i_rfactor[scale * 3 + band] = (uint32_t)(s->rfactor[scale * 3 + band] * pow2_32);
+            }
         }
     }
+}
 
-    // Allocate device buffers
-    size_t const dwt_tmp_size = (size_t)w * 2 * half_h * sizeof(int32_t);
-    s->d_dwt_tmp_ref = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, dwt_tmp_size));
-    s->d_dwt_tmp_dis = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, dwt_tmp_size));
-
-    size_t const band_size = (size_t)s->buf_stride * half_h * sizeof(int32_t);
-    for (int i = 0; i < 4; i++) {
-        s->d_ref_band[i] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
-        s->d_dis_band[i] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
+static bool adm_buffers_ready(const AdmStateSycl *s)
+{
+    if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !s->d_div_lookup || !s->d_cm_accum ||
+        !s->d_csf_den_accum || !s->h_cm_accum || !s->h_csf_den_accum)
+        return false;
+    for (int band = 0; band < 4; band++) {
+        if (!s->d_ref_band[band] || !s->d_dis_band[band])
+            return false;
     }
-
-    for (auto &csf_buf : s->d_csf_f) {
-        csf_buf = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
+    for (const auto *buffer : s->d_csf_f) {
+        if (!buffer)
+            return false;
     }
+    return true;
+}
 
-    // Division LUT: 65537 entries
-    size_t const div_size = 65537 * sizeof(int32_t);
-    s->d_div_lookup = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, div_size));
-
-    // Accumulators: 4 scales x 3 bands = 12 int64 each
+static int adm_allocate_buffers(VmafSyclState *state, AdmStateSycl *s, unsigned w, unsigned h)
+{
+    unsigned const half_width = (w + 1) / 2;
+    unsigned const half_height = (h + 1) / 2;
+    s->buf_stride = (half_width + 3) & ~3u;
+    size_t const dwt_size = (size_t)w * 2 * half_height * sizeof(int32_t);
+    s->d_dwt_tmp_ref = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, dwt_size));
+    s->d_dwt_tmp_dis = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, dwt_size));
+    size_t const band_size = (size_t)s->buf_stride * half_height * sizeof(int32_t);
+    for (int band = 0; band < 4; band++) {
+        s->d_ref_band[band] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
+        s->d_dis_band[band] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
+    }
+    for (auto &buffer : s->d_csf_f)
+        buffer = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
+    s->d_div_lookup =
+        static_cast<int32_t *>(vmaf_sycl_malloc_device(state, 65537 * sizeof(int32_t)));
     size_t const accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
     s->d_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
     s->d_csf_den_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
     s->h_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
     s->h_csf_den_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
+    if (adm_buffers_ready(s))
+        return 0;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
+    return -ENOMEM;
+}
 
-    // Check ALL allocations. A NULL band/csf buffer handed to a SYCL kernel
-    // page-faults the device instead of failing cleanly here, so every USM
-    // buffer allocated above is verified. On failure, close_fex_sycl frees the
-    // partial set (it NULL-guards each free) before returning.
-    bool band_ok = true;
-    for (int i = 0; i < 4; i++) {
-        if (!s->d_ref_band[i] || !s->d_dis_band[i])
-            band_ok = false;
-    }
-    for (const auto *csf_buf : s->d_csf_f) {
-        if (!csf_buf)
-            band_ok = false;
-    }
-    if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !band_ok || !s->d_div_lookup || !s->d_cm_accum ||
-        !s->d_csf_den_accum || !s->h_cm_accum || !s->h_csf_den_accum) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
+static int adm_upload_division_lookup(VmafSyclState *state, AdmStateSycl *s)
+{
+    size_t const size = 65537 * sizeof(int32_t);
+    int32_t *lookup = static_cast<int32_t *>(std::malloc(size));
+    if (!lookup)
         return -ENOMEM;
+    std::memset(lookup, 0, size);
+    static const int32_t factor = 1073741824;
+    for (int i = 1; i <= 32768; i++) {
+        int32_t const reciprocal = (int32_t)(factor / i);
+        lookup[32768 + i] = reciprocal;
+        lookup[32768 - i] = -reciprocal;
     }
+    int const err = vmaf_sycl_memcpy_h2d(state, s->d_div_lookup, lookup, size);
+    std::free(lookup);
+    if (err)
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: div_lookup upload failed\n");
+    return err;
+}
 
-    // Generate and upload div_lookup
-    {
-        int32_t *lut = static_cast<int32_t *>(std::malloc(div_size));
-        if (!lut) {
-            close_fex_sycl(fex);
-            return -ENOMEM;
-        }
-        std::memset(lut, 0, div_size);
-        static const int32_t Q_factor = 1073741824; // 2^30
-        for (int i = 1; i <= 32768; i++) {
-            int32_t const recip = (int32_t)(Q_factor / i);
-            lut[32768 + i] = recip;
-            lut[32768 - i] = -recip;
-        }
-        int const cpy_err = vmaf_sycl_memcpy_h2d(state, s->d_div_lookup, lut, div_size);
-        std::free(lut);
-        if (cpy_err) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: div_lookup upload failed\n");
-            close_fex_sycl(fex);
-            return cpy_err;
-        }
-    }
-
+static int adm_register_graph(VmafFeatureExtractor *fex, VmafSyclState *state, AdmStateSycl *s)
+{
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
+    return vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,
+                                    s, "ADM");
+}
 
-    // Register with combined command graph
-    err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,
-                                   s, "ADM");
-    if (err) {
-        close_fex_sycl(fex);
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    auto *s = static_cast<AdmStateSycl *>(fex->priv);
+    VmafSyclState *state = nullptr;
+    int err = adm_init_runtime(fex, s, bpc, w, h, state);
+    if (err)
         return err;
-    }
-
-    return 0;
+    adm_compute_rfactors(s);
+    err = adm_allocate_buffers(state, s, w, h);
+    if (!err)
+        err = adm_upload_division_lookup(state, s);
+    if (!err)
+        err = adm_register_graph(fex, state, s);
+    if (err)
+        close_fex_sycl(fex);
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
 /* Enqueue all ADM compute work (used for both recording and direct)   */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct DwtShifts {
+    unsigned vertical;
+    unsigned vertical_offset;
+    unsigned horizontal;
+};
+
+static DwtShifts adm_dwt_shifts(const AdmStateSycl *s, int scale)
+{
+    static const DwtShifts later_scales[] = {
+        {.vertical = 0u, .vertical_offset = 0u, .horizontal = 15u},
+        {.vertical = 16u, .vertical_offset = 32768u, .horizontal = 16u},
+        {.vertical = 16u, .vertical_offset = 32768u, .horizontal = 15u},
+    };
+    if (scale == 0)
+        return {.vertical = s->bpc, .vertical_offset = 1u << (s->bpc - 1), .horizontal = 16u};
+    return later_scales[scale - 1];
+}
+
+static void adm_enqueue_dwt(sycl::queue &q, AdmStateSycl *s, const void *reference,
+                            const void *distorted, int scale, unsigned width, unsigned height,
+                            unsigned input_stride)
+{
+    DwtShifts const shifts = adm_dwt_shifts(s, scale);
+    launch_dwt_vert_pair(q, reference, s->d_dwt_tmp_ref, distorted, s->d_dwt_tmp_dis, scale, width,
+                         height, input_stride, s->bpc, shifts.vertical, shifts.vertical_offset);
+    launch_dwt_hori_pair(q, s->d_dwt_tmp_ref, s->d_ref_band[0], s->d_ref_band[1], s->d_ref_band[2],
+                         s->d_ref_band[3], s->d_dwt_tmp_dis, s->d_dis_band[0], s->d_dis_band[1],
+                         s->d_dis_band[2], s->d_dis_band[3], width, height, s->buf_stride,
+                         shifts.horizontal);
+}
+
+static void adm_enqueue_scores(sycl::queue &q, AdmStateSycl *s, int scale, unsigned width,
+                               unsigned height)
+{
+    size_t const offset = (size_t)scale * ADM_NUM_BANDS;
+    launch_decouple_csf<false>(
+        q, scale, width, height, s->buf_stride, s->adm_enhn_gain_limit, s->i_rfactor[offset + 0],
+        s->i_rfactor[offset + 1], s->i_rfactor[offset + 2], s->d_ref_band[1], s->d_ref_band[2],
+        s->d_ref_band[3], s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], s->d_csf_f[0],
+        s->d_csf_f[1], s->d_csf_f[2], s->d_div_lookup);
+    launch_csf_den_cm_3band(
+        q, scale, width, height, s->buf_stride, s->d_ref_band[1], s->d_ref_band[2],
+        s->d_ref_band[3], s->d_csf_den_accum + offset + 0, s->d_csf_den_accum + offset + 1,
+        s->d_csf_den_accum + offset + 2, s->i_rfactor[offset + 0], s->i_rfactor[offset + 1],
+        s->i_rfactor[offset + 2], s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3],
+        s->d_csf_f[0], s->d_csf_f[1], s->d_csf_f[2], s->d_div_lookup, s->adm_enhn_gain_limit,
+        s->d_cm_accum + offset + 0, s->d_cm_accum + offset + 1, s->d_cm_accum + offset + 2);
+}
+
 static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref,
                                   void *shared_dis)
 {
-    // DWT shift parameters per scale
-    struct DwtShifts {
-        unsigned v_shift, v_add, h_shift, h_add;
-    };
-    DwtShifts dwt_shifts[4];
-    dwt_shifts[0] = {
-        .v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u, .h_add = 32768u};
-    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u, .h_add = 16384u};
-    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u, .h_add = 32768u};
-    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u, .h_add = 16384u};
-
-    unsigned cur_w = s->width;
-    unsigned cur_h = s->height;
-    unsigned const cur_stride = s->buf_stride;
-
+    unsigned width = s->width;
+    unsigned height = s->height;
     for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
-        unsigned const half_w = (cur_w + 1) / 2;
-        unsigned const half_h = (cur_h + 1) / 2;
-
-        // Input source: scale 0 reads from shared frame, others from LL band
-        const void *ref_src = (scale == 0) ? shared_ref : (const void *)s->d_ref_band[0];
-        const void *dis_src = (scale == 0) ? shared_dis : (const void *)s->d_dis_band[0];
-
-        unsigned in_stride;
-        if (scale == 0) {
-            in_stride = (s->bpc <= 8) ? cur_w : cur_w * 2;
-        } else {
-            in_stride = cur_stride;
-        }
-
-        // DWT vertical pass: ref + dis fused
-        launch_dwt_vert_pair(q, ref_src, s->d_dwt_tmp_ref, dis_src, s->d_dwt_tmp_dis, scale, cur_w,
-                             cur_h, in_stride, s->bpc, dwt_shifts[scale].v_shift,
-                             dwt_shifts[scale].v_add);
-
-        // DWT horizontal pass: ref + dis fused
-        launch_dwt_hori_pair(q, s->d_dwt_tmp_ref, s->d_ref_band[0], s->d_ref_band[1],
-                             s->d_ref_band[2], s->d_ref_band[3], s->d_dwt_tmp_dis, s->d_dis_band[0],
-                             s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], cur_w, cur_h,
-                             cur_stride, dwt_shifts[scale].h_shift, dwt_shifts[scale].h_add);
-
-        // Decouple + CSF → writes only d_csf_f (r and csf_a recomputed in CM kernel)
-        launch_decouple_csf<false>(q, scale, half_w, half_h, cur_stride, s->adm_enhn_gain_limit,
-                                   s->i_rfactor[scale * 3 + 0], s->i_rfactor[scale * 3 + 1],
-                                   s->i_rfactor[scale * 3 + 2], s->d_ref_band[1], s->d_ref_band[2],
-                                   s->d_ref_band[3], s->d_dis_band[1], s->d_dis_band[2],
-                                   s->d_dis_band[3], s->d_csf_f[0], s->d_csf_f[1], s->d_csf_f[2],
-                                   s->d_div_lookup);
-
-        // CSF denominator + Contrast measure: fused 3-band kernel with inline decouple
-        launch_csf_den_cm_3band(q, scale, half_w, half_h, cur_stride,
-                                // csf_den inputs
-                                s->d_ref_band[1], s->d_ref_band[2], s->d_ref_band[3],
-                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 0,
-                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 1,
-                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 2,
-                                // cm inputs (decouple inlined)
-                                s->i_rfactor[scale * 3 + 0], s->i_rfactor[scale * 3 + 1],
-                                s->i_rfactor[scale * 3 + 2], s->d_dis_band[1], s->d_dis_band[2],
-                                s->d_dis_band[3], s->d_csf_f[0], s->d_csf_f[1], s->d_csf_f[2],
-                                s->d_div_lookup, s->adm_enhn_gain_limit,
-                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 0,
-                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 1,
-                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 2);
-
-        // Next scale dimensions
-        cur_w = half_w;
-        cur_h = half_h;
+        const void *reference = scale == 0 ? shared_ref : (const void *)s->d_ref_band[0];
+        const void *distorted = scale == 0 ? shared_dis : (const void *)s->d_dis_band[0];
+        unsigned const input_stride =
+            scale == 0 ? (s->bpc <= 8 ? width : width * 2) : s->buf_stride;
+        adm_enqueue_dwt(q, s, reference, distorted, scale, width, height, input_stride);
+        width = (width + 1) / 2;
+        height = (height + 1) / 2;
+        adm_enqueue_scores(q, s, scale, width, height);
     }
 }
 
@@ -1698,8 +1500,8 @@ static void adm_post_graph(void *queue_ptr, void *priv)
 /* Submit / Collect / Extract                                          */
 /* ------------------------------------------------------------------ */
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static int submit_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic, const VmafPicture *ref_pic_90,
+                           const VmafPicture *dist_pic, const VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
@@ -1720,128 +1522,113 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct AdmScores {
+    double numerator[ADM_NUM_SCALES];
+    double denominator[ADM_NUM_SCALES];
+    double total_numerator;
+    double total_denominator;
+};
+
+static AdmScores adm_compute_scores(const AdmStateSycl *s,
+                                    const int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS],
+                                    const int64_t csf_results[ADM_NUM_SCALES][ADM_NUM_BANDS])
+{
+    AdmScores scores = {};
+    unsigned width = s->width;
+    unsigned height = s->height;
+    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        width = (width + 1) / 2;
+        height = (height + 1) / 2;
+        double numerator;
+        double denominator;
+        conclude_adm_cm(cm_results[scale], height, width, scale, (float)s->adm_noise_weight,
+                        s->adm_p_norm, &numerator);
+        conclude_adm_csf_den((const uint64_t *)csf_results[scale], height, width, scale,
+                             &denominator, &s->rfactor[(size_t)scale * ADM_NUM_BANDS],
+                             (float)s->adm_noise_weight);
+        if (scale == 0 && s->adm_skip_scale0) {
+            scores.numerator[0] = 0.0;
+            scores.denominator[0] = 1e-10;
+            continue;
+        }
+        scores.total_numerator += numerator;
+        scores.total_denominator += denominator;
+        scores.numerator[scale] = numerator;
+        scores.denominator[scale] = denominator;
+    }
+    double const limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
+    if (scores.total_numerator < limit)
+        scores.total_numerator = 0.0;
+    if (scores.total_denominator < limit)
+        scores.total_denominator = 0.0;
+    return scores;
+}
+
+static double adm_total_score(const AdmScores &scores)
+{
+    return scores.total_denominator == 0.0 ? 1.0 :
+                                             scores.total_numerator / scores.total_denominator;
+}
+
+static void adm_append_scale_scores(VmafFeatureCollector *collector, const AdmStateSycl *s,
+                                    const AdmScores &scores, unsigned index)
+{
+    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        char name[64];
+        (void)std::snprintf(name, sizeof(name), "integer_adm_scale%d", scale);
+        double const score = scores.denominator[scale] == 0.0 ?
+                                 1.0 :
+                                 scores.numerator[scale] / scores.denominator[scale];
+        vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name, score,
+                                                index);
+    }
+}
+
+static void adm_append_debug_scores(VmafFeatureCollector *collector, const AdmStateSycl *s,
+                                    const AdmScores &scores, unsigned index)
+{
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, "integer_adm",
+                                            adm_total_score(scores), index);
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, "integer_adm_num",
+                                            scores.total_numerator, index);
+    vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, "integer_adm_den",
+                                            scores.total_denominator, index);
+    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        char name[64];
+        (void)std::snprintf(name, sizeof(name), "integer_adm_num_scale%d", scale);
+        vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name,
+                                                scores.numerator[scale], index);
+        (void)std::snprintf(name, sizeof(name), "integer_adm_den_scale%d", scale);
+        vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict, name,
+                                                scores.denominator[scale], index);
+    }
+}
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
-    VmafSyclState *state = fex->sycl_state;
-
-    // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
-
-    // Read back accumulators
+    vmaf_sycl_graph_wait(fex->sycl_state);
     int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
-    int64_t csf_den_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
+    int64_t csf_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
     std::memcpy(cm_results, s->h_cm_accum, sizeof(cm_results));
-    std::memcpy(csf_den_results, s->h_csf_den_accum, sizeof(csf_den_results));
-
-    // Compute scores
-    double num = 0.0;
-    double den = 0.0;
-    double scores_num[ADM_NUM_SCALES];
-    double scores_den[ADM_NUM_SCALES];
-    unsigned score_w = s->width;
-    unsigned score_h = s->height;
-
-    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
-        score_w = (score_w + 1) / 2;
-        score_h = (score_h + 1) / 2;
-
-        /* Promote to double — fp32 rounding in per-scale normalization amplifies
-         * to >5e-5 final-score error on devices without native fp64 (Arc A380).
-         * Both conclude_* functions are host-side; no device-kernel impact. */
-        double num_scale;
-        double den_scale;
-        conclude_adm_cm(cm_results[scale], score_h, score_w, scale, (float)s->adm_noise_weight,
-                        s->adm_p_norm, &num_scale);
-        conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
-                             &den_scale, &s->rfactor[(size_t)scale * 3],
-                             (float)s->adm_noise_weight);
-
-        /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
-         * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
-         * The GPU kernel still computes scale 0; suppression is host-side only. */
-        if (scale == 0 && s->adm_skip_scale0) {
-            scores_num[0] = 0.0;
-            scores_den[0] = 1e-10;
-            continue;
-        }
-
-        num += num_scale;
-        den += den_scale;
-        scores_num[scale] = num_scale;
-        scores_den[scale] = den_scale;
-    }
-
-    /* Apply numden_limit — CPU parity (integer_adm.c::integer_compute_adm):
-     * the precision floor scales with the FULL-FRAME area, not the scale-3
-     * area that `score_w` / `score_h` hold after the loop above. */
-    double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
-    if (num < numden_limit)
-        num = 0.0;
-    if (den < numden_limit)
-        den = 0.0;
-
-    /* ADR-0487 clamps adm3 only: the CPU reference emits
-     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
-     * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    double const score = (den == 0.0) ? 1.0 : num / den;
-
-    /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
-     * a second device CM pass with the decouple_a / decouple_r roles swapped
-     * (the CUDA twin's ADR-0746 kernels), which the SYCL kernel set does not
-     * have. Leaving both features out of `provided_features` routes them to
-     * the CPU twin through the ADR-0530 name-based fallback, which produces
-     * the correct value under the correct feature-name key. Emitting them
-     * here from a hard-coded aim_num would fabricate a score. Tracked as
-     * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
-
-    // Write primary feature
-    {
-        int const err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", score,
-            index);
-        if (err)
-            return err;
-    }
-
-    // Per-scale features
-    for (int i = 0; i < ADM_NUM_SCALES; i++) {
-        char name[64];
-        (void)std::snprintf(name, sizeof(name), "integer_adm_scale%d", i);
-        double const scale_score = (scores_den[i] == 0.0) ? 1.0 : scores_num[i] / scores_den[i];
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                scale_score, index);
-    }
-
-    // Debug features
-    if (s->debug) {
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm", score, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_num", num, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_den", den, index);
-
-        for (int i = 0; i < ADM_NUM_SCALES; i++) {
-            char name[64];
-            (void)std::snprintf(name, sizeof(name), "integer_adm_num_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    scores_num[i], index);
-            (void)std::snprintf(name, sizeof(name), "integer_adm_den_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    scores_den[i], index);
-        }
-    }
-
+    std::memcpy(csf_results, s->h_csf_den_accum, sizeof(csf_results));
+    AdmScores const scores = adm_compute_scores(s, cm_results, csf_results);
+    int const err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                            "VMAF_integer_feature_adm2_score",
+                                                            adm_total_score(scores), index);
+    if (err)
+        return err;
+    adm_append_scale_scores(feature_collector, s, scores, index);
+    if (s->debug)
+        adm_append_debug_scores(feature_collector, s, scores, index);
     s->has_pending = false;
     return 0;
 }
 
-static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index,
+static int extract_fex_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                            const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                            const VmafPicture *dist_pic_90, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     int const err = submit_fex_sycl(fex, ref_pic, ref_pic_90, dist_pic, dist_pic_90, index);
@@ -1934,8 +1721,6 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "integer_adm_num_scale3",
                                           "integer_adm_den_scale3",
                                           nullptr};
-
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_adm_sycl = {
     .name = "adm_sycl",

@@ -1,124 +1,111 @@
-<!-- markdownlint-disable MD060 -->
 # Cross-backend GPU-parity gate
 
-The GPU-parity gate is the fork's single matrix gate for verifying
-that every GPU backend agrees with the CPU scalar reference (and
-with each other) on every feature with a GPU twin. It generalises
-the older single-feature gate
-(`scripts/ci/cross_backend_vif_diff.py`) to a one-shot run that
-covers every `(feature, backend-pair)` cell.
+The cross-backend gate compares supported GPU extractors with the CPU
+reference on identical frames. The current matrix supports `cpu`, `cuda`, and
+`sycl`; it emits machine-readable JSON and a Markdown summary for every
+requested `(feature, backend-pair)` cell.
 
-The gate is enforced on every PR as the CI job
-**`vulkan-parity-matrix-gate`** in
-[`.github/workflows/tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml).
+The required hardware lane is **`SYCL Parity (Arc A380)`** in
+[`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml). It runs the
+matrix gate as `cpu sycl` when the repository's Arc runner is enabled and
+available. CUDA parity is exercised by backend tests and can be run through
+the same matrix command on a CUDA-capable development host or container.
 
-## What it gates
+## What it checks
 
-- **Per-feature absolute tolerance.** Default `5e-5` (places=4 —
-  the fork's GPU-vs-CPU contract from ADR-0125 / ADR-0138 /
-  ADR-0140). Feature-specific relaxations live in the
-  `FEATURE_TOLERANCE` table inside
-  [`scripts/ci/cross_backend_parity_gate.py`](../../scripts/ci/cross_backend_parity_gate.py)
-  and each carries an ADR pointer:
+- **Per-feature absolute tolerance.** The default is `5e-5`. Relaxations live
+  in `FEATURE_TOLERANCE` inside
+  [`cross_backend_parity_gate.py`](../../scripts/ci/cross_backend_parity_gate.py)
+  and identify the decision that established each contract.
 
   | Feature | Tolerance | Contract source |
-  |---|---:|---|
+  | --- | ---: | --- |
   | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 |
-  | `float_ssim`, `float_ms_ssim`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 |
-  | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
-  | `psnr_hvs` | `5e-4` | ADR-0191 (DCT + per-block float reduction) |
-  | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root + IIR blur) |
+  | `float_ssim`, `float_ms_ssim`, `float_psnr`, `float_motion`, `float_vif`, `float_adm`, `cambi` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0360 |
+  | `ciede` | `5e-3` | ADR-0187 |
+  | `psnr_hvs` | `5e-4` | ADR-0191 |
+  | `ssimulacra2` | `5e-3` | ADR-0192 |
 
-  Vulkan `motion` is routed through the canonical `integer_motion_vulkan`
-  extractor in both parity scripts. The legacy `motion_vulkan` extractor
-  remains addressable by explicit name for compatibility, but it is not the
-  lavapipe gate path after ADR-0662.
+- **Supported backend pairs.** `--backends` accepts `cpu`, `cuda`, and `sycl`.
+  Supplying all three creates the CPU↔CUDA, CPU↔SYCL, and CUDA↔SYCL cells.
 
-- **Backend pairs.** The CI lane runs `cpu ↔ vulkan` only — Mesa
-  lavapipe runs on stock GitHub-hosted Ubuntu and needs no GPU
-  hardware. CUDA / SYCL / hardware-Vulkan are advisory until a
-  self-hosted runner is wired in (see
-  [`docs/development/self-hosted-runner.md`](self-hosted-runner.md));
-  the script already supports them via `--backends cpu cuda sycl
-  vulkan`.
+- **Architecture calibration.** `--gpu-id` selects a row from
+  `scripts/ci/gpu_ulp_calibration.yaml`. A calibrated per-feature value wins;
+  an absent row or feature falls back visibly to the table above. Each output
+  cell records the selected tolerance source.
 
-- **FP16 features.** A `--fp16-features` flag forces the
-  `1e-2` absolute tolerance the FP16 contract calls for. Used by
-  the future ONNX Runtime tiny-AI lane (T7-39).
+- **FP16 opt-in.** `--fp16-features` applies the `1e-2` absolute FP16
+  contract only to the named features.
 
-## How to run it locally
+## Run it locally
+
+Use the development container for backend work. Rebuild it first when its
+image predates changes under `core/`, `dev/`, `ai/`, or `mcp-server/`:
 
 ```bash
-# Build CPU + Vulkan once
-cd libvmaf && meson setup build \
-    -Denable_cuda=false -Denable_sycl=false \
-    -Denable_vulkan=enabled -Denable_float=true \
-    --buildtype=release && ninja -C build
-
-# Run the matrix gate on the fork's stock 576×324 fixture
-cd ..
-python3 scripts/ci/cross_backend_parity_gate.py \
-    --vmaf-binary core/build/tools/vmaf \
-    --reference testdata/ref_576x324_48f.yuv \
-    --distorted testdata/dis_576x324_48f.yuv \
-    --width 576 --height 324 \
-    --backends cpu vulkan \
-    --json-out /tmp/parity.json --md-out /tmp/parity.md
+docker compose --project-directory "$(git rev-parse --show-toplevel)" \
+  -f dev/docker-compose.yml build dev-mcp
+docker compose --project-directory "$(git rev-parse --show-toplevel)" \
+  -f dev/docker-compose.yml up -d
 ```
 
-Default fixture in CI is the Netflix `src01_hrc00_576x324.yuv ↔
-src01_hrc01_576x324.yuv` pair fetched from the
-`Netflix/vmaf_resource` mirror with caching — same fixture as
-the legacy lane.
+Run one backend per physical device. This example checks the Arc-backed SYCL
+extractor against CPU:
 
-## How to read failure output
+```bash
+docker exec vmaf-dev-mcp python3 /workspace/scripts/ci/cross_backend_parity_gate.py \
+  --vmaf-binary /usr/local/bin/vmaf \
+  --reference /workspace/testdata/ref_576x324_48f.yuv \
+  --distorted /workspace/testdata/dis_576x324_48f.yuv \
+  --width 576 --height 324 \
+  --backends cpu sycl \
+  --features float_ssim \
+  --gpu-id sycl:0x8086:0x56a5 \
+  --json-out /tmp/parity.json \
+  --md-out /tmp/parity.md
+```
 
-The gate writes two artefacts:
+For CUDA, use `--backends cpu cuda`, a CUDA calibration ID, and a container
+with the NVIDIA device exposed. Do not schedule CUDA and SYCL work onto the
+same physical device concurrently.
 
-- **JSON** (`--json-out`) — one record per cell with
-  `status`, `tolerance_abs`, `n_frames`, `per_metric_max_abs_diff`,
-  `per_metric_mismatches`, and a free-text `note` field for
-  ERROR-class failures (binary not built, frame-count mismatch,
-  Vulkan ICD init failure, etc.). Schema is versioned in the
-  top-level `schema_version` field.
-- **Markdown** (`--md-out`) — single status table plus a
-  per-failure detail block. Suitable for direct PR comment.
+## Read the output
 
-A cell's status is one of:
+The JSON report has one record per cell with `status`, `tolerance_abs`,
+`tolerance_source`, `n_frames`, `per_metric_max_abs_diff`,
+`per_metric_mismatches`, and an error `note`. The Markdown report renders the
+same records as a reviewable table.
 
 | Status | Meaning |
-|---|---|
-| `OK` | Every per-frame metric within tolerance |
-| `FAIL` | At least one per-frame mismatch beyond `tolerance_abs` |
-| `ERROR` | Run failed before diffing (binary missing, fixture missing, ICD init failed, frame count mismatch) |
+| --- | --- |
+| `OK` | Every metric on every frame is within tolerance |
+| `FAIL` | At least one metric exceeds the selected tolerance |
+| `ERROR` | A run failed before comparison or returned incompatible output |
 
-## How to add a new feature to the gate
+An `ERROR` is a gate failure. Missing binaries, unavailable devices, command
+failures, malformed output, and frame-count mismatches are never treated as
+successful parity.
 
-1. Add the feature → metric-name list to `FEATURE_METRICS` in
-   `scripts/ci/cross_backend_parity_gate.py`. The metric names
-   must match the keys the `vmaf` JSON output emits when the
-   feature is selected via `--feature <name>`.
-2. If the feature is FP32 with no relaxations, no further change
-   is needed — it picks up the default `5e-5` (places=4)
-   automatically.
-3. If the feature carries a relaxed contract, add an entry to
-   `FEATURE_TOLERANCE` with an inline comment citing the ADR
-   that justifies the relaxation. Per CLAUDE.md §12 r1
-   ("Netflix golden assertions are untouchable") any tightening
-   later requires a measurement-driven follow-up ADR.
-4. Add a row to the table in this document.
+## Add a feature
 
-## Relationship to other gates
+1. Add its emitted metric names to `FEATURE_METRICS` in
+   `scripts/ci/cross_backend_parity_gate.py`.
+2. Add `FEATURE_TOLERANCE` only when the default `5e-5` contract is wrong, and
+   cite the measurement-backed decision beside it.
+3. Add or update backend parity tests for the extractor.
+4. Update the tolerance table above and the relevant metric/backend guide.
+5. Run the unit tests and a real device comparison; do not adjust Netflix
+   golden assertions to accommodate backend drift.
+
+## Related gates
 
 | Gate | Role |
-|---|---|
-| **Netflix golden** ([§8](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)) | CPU numerical correctness; required status check, untouchable |
-| **GPU-parity matrix gate (this doc, T6-8)** | CPU↔GPU agreement on every feature; required status check |
-| `vulkan-vif-arc-nightly` | Hardware-Vulkan drift versus lavapipe (advisory, self-hosted) |
-| Per-backend snapshot diffs (`testdata/scores_cpu_*.json`) | Per-backend regression catch (snapshot-based, not pairwise) |
+| --- | --- |
+| [Netflix golden](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify) | CPU numerical ground truth |
+| `SYCL Parity (Arc A380)` | Required CPU↔SYCL hardware comparison when the runner is enabled |
+| Backend unit parity tests | Kernel-level CPU↔GPU comparisons, including large fixtures |
+| `testdata/scores_cpu_*.json` snapshots | Regression snapshots; not a substitute for pairwise comparison |
 
-## Source
-
-- ADR: [ADR-0214](../adr/0214-gpu-parity-ci-gate.md).
-- Backlog row: T6-8.
-- Wave-1 roadmap §7.
+The matrix design originates in [ADR-0214](../adr/0214-gpu-parity-ci-gate.md),
+and calibrated tolerance selection is defined by
+[ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md).

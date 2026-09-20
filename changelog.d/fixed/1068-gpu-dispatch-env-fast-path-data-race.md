@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **core/gpu_dispatch_env**: fix C++ data race on the lock-free fast path in
   `vmaf_gpu_dispatch_env_get` — add `std::atomic<bool> ready` publication flag
   per `EnvRow`; slow-path writer does a `memory_order_release` store after

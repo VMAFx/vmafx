@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0613: Dynamic Optimizer — Joint Shot-Boundary + CRF Co-Optimisation
 
 - **Status**: Proposed
@@ -31,7 +30,7 @@ oracle.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | A — post-TransNet boundary tweak only | Minimal; no new module | Local-only; misses multi-shot interactions | Too limited to recover meaningful bits |
 | B — complexity-map segmentation (replace TransNet) | Encoding-cost objective | Discards semantic cuts; loses chapter/ad-break alignment | Breaks downstream metadata consumers |
 | C — DO post-pass (chosen) | Incremental; reuses Phase B; semantics preserved | Single-round heuristic; O(2×shots) bisect calls | — |
@@ -59,7 +58,7 @@ oracle.
 ## Implementation phases
 
 | Phase | Description | Effort |
-|-------|-------------|--------|
+| ------- | ------------- | -------- |
 | P1 | `dynamic_optimizer.py` skeleton; adjacent-pair merge evaluation; unit tests | 2 days |
 | P2 | Boundary-shift scan (±N frames); integration with `tune_per_shot` | 1 day |
 | P3 | CLI flag `--dynamic-optimizer`; docs `docs/usage/vmaf-tune-do.md` | 1 day |

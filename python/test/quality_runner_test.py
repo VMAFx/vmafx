@@ -1,17 +1,14 @@
 from __future__ import absolute_import
 
-import os
 import sys
 import unittest
-from test.testutil import (
-    set_default_576_324_10bit_videos_for_testing,
-    set_default_576_324_12bit_videos_for_testing,
-    set_default_576_324_videos_for_testing,
-    set_default_flat_1920_1080_videos_for_testing,
-)
 
 import pytest
 
+from test.testutil import (
+    set_default_576_324_videos_for_testing,
+    set_default_flat_1920_1080_videos_for_testing,
+)
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset, NorefAsset
 from vmaf.core.quality_runner import (
@@ -63,7 +60,7 @@ class QualityRunnerTest(MyTestCase):
             "without restoring the dropped feature."
         )
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -93,7 +90,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -153,7 +150,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_3threads(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -172,7 +169,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_v061(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -232,7 +229,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_with_phone_score(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -253,7 +250,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_phone_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         with self.assertRaises(AssertionError):
             VmafPhoneQualityRunner(
@@ -381,7 +378,9 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_flat(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_flat_1920_1080_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_flat_1920_1080_videos_for_testing()
+        )
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -413,7 +412,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_with_norm_type_none(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -463,7 +462,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_ensemblevmaf_runner_same_models(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = EnsembleVmafQualityRunner(
             [asset, asset_original],
@@ -490,7 +489,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_ensemblevmaf_runner_different_models(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = EnsembleVmafQualityRunner(
             [asset, asset_original],
@@ -523,7 +522,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_psnr_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = PsnrQualityRunner(
             [asset, asset_original], None, fifo_mode=False, delete_workdir=True, result_store=None
@@ -538,7 +537,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_ssim_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = SsimQualityRunner(
             [asset, asset_original], None, fifo_mode=False, result_store=None
@@ -565,7 +564,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_ms_ssim_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = MsSsimQualityRunner(
             [asset, asset_original], None, fifo_mode=False, result_store=None
@@ -640,7 +639,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_pool_harmonic_mean(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -661,7 +660,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_pool_perc10(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -682,7 +681,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_adm2_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = Adm2QualityRunner(
             [asset, asset_original],
@@ -700,7 +699,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vif_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VifQualityRunner(
             [asset, asset_original],
@@ -718,7 +717,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vif2_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = Vif2QualityRunner(
             [asset, asset_original],
@@ -1061,7 +1060,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1117,8 +1116,8 @@ class QualityRunnerTest(MyTestCase):
 
         # places=1: bootstrap VMAF score is the seed-0 single-model score (deterministic),
         # but the bagging_score is an average over K bootstrap replicates whose libsvm
-        # int→float32 head rounding accumulates across seeds.  places=1 is the correct
-        # tolerance for both; the raw per-feature assertions above use places=2–4.
+        # int-to-float32 head rounding accumulates across seeds. places=1 is the correct
+        # tolerance for both; the raw per-feature assertions above use places=2-4.
         self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.42800743529182, places=1)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
@@ -1136,7 +1135,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_with_transform_score(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1168,7 +1167,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_specific_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1213,7 +1212,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_residue_bootstrap_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1258,7 +1257,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_default_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1298,7 +1297,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_default_model_with_transform_score(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1327,7 +1326,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_10models(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1362,7 +1361,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bagging_vmaf_runner(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BaggingVmafQualityRunner(
             [asset, asset_original],
@@ -1465,7 +1464,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_with_4k_1d5H_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -1486,7 +1485,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_with_4k_1d5H_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1521,7 +1520,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_with_bootstrap_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -1630,7 +1629,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_json_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -1687,7 +1686,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_bootstrap_vmaf_runner_default_model_json_model(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = BootstrapVmafQualityRunner(
             [asset, asset_original],
@@ -1730,7 +1729,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_motion_force_zero(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -1873,7 +1872,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_nvd6(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -1930,7 +1929,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_nvd6(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -1983,7 +1982,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_rdh540(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2044,7 +2043,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_rdh540(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2097,7 +2096,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_rdh2160_nvd1d5(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2153,7 +2152,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_vifks3o2(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2209,7 +2208,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_vifks24o10(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2263,7 +2262,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_vifks360o97(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2317,7 +2316,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_vifks1o2(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2373,7 +2372,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_vifks2(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2425,7 +2424,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_float_vifks2o3(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2477,7 +2476,9 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_flat_save_workfiles_fifo_true(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_flat_1920_1080_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = (
+            set_default_flat_1920_1080_videos_for_testing()
+        )
 
         with self.assertRaises(AssertionError) as ctx:
             self.runner = VmafQualityRunner(
@@ -2497,7 +2498,7 @@ class QualityRunnerTest(MyTestCase):
         default model file vmaf_v0.6.1.json, so the fields in optional_dict kicks in.
         """
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2556,7 +2557,7 @@ class QualityRunnerTest(MyTestCase):
         default model file vmaf_v0.6.1mfz.json; the field 'vif_enhn_gain_limit' etc. has no effect.
         """
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2629,7 +2630,7 @@ class QualityRunnerResultStoreTest(unittest.TestCase):
         super().tearDown()
 
     def test_quality_runner_with_different_models(self):
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner1 = VmafQualityRunner(
             [asset, asset_original],
@@ -2681,7 +2682,7 @@ class QualityRunnerSaveWorkfilesTest(MyTestCase):
 
     def test_run_vmaf_runner_flat_save_workfiles(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafQualityRunner(
             [asset, asset_original],
@@ -2700,7 +2701,7 @@ class QualityRunnerSaveWorkfilesTest(MyTestCase):
 
     def test_run_psnr_runner_flat_save_workfiles(self):
 
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
+        _ref_path, _dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = PsnrQualityRunner(
             [asset, asset_original],

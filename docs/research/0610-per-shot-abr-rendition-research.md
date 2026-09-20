@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0610: Per-Shot ABR Rendition Selection
 
 **Scope**: Assign each shot a (resolution, bitrate) rendition drawn from the
@@ -51,7 +50,7 @@ maintain a consistent ladder presentation at the player level.
 ## Current Fork State
 
 | Component | Status |
-|-----------|--------|
+| ----------- | -------- |
 | `ladder.py` | Per-title convex hull, uncertainty-aware rung selection |
 | `per_shot.py` | Per-shot CRF selection at source resolution only |
 | Per-shot resolution switching | **Not implemented** |
@@ -136,7 +135,7 @@ resolution, CRF). The state space is larger but conceptually identical.
 ## Recommended Decision Matrix
 
 | Option | Quality gain | Runtime overhead | Dependency |
-|--------|-------------|-----------------|------------|
+| -------- | ------------- | ----------------- | ------------ |
 | A — complexity threshold | Medium | Negligible | Item 6 (complexity proxy) |
 | B — VMAF-targeted (recommended) | High | 2–5× vs current | Item 3 (NR) |
 | C — learned predictor | High | ~Zero | Item 6 + training corpus |

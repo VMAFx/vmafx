@@ -25,9 +25,10 @@ void vif_subsample_rd_8_neon(const VifBuffer *buf, unsigned w, unsigned h);
 
 void vif_subsample_rd_16_neon(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc);
 
-void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h);
+void vif_statistic_8_neon(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                          unsigned h);
 
-void vif_statistic_16_neon(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
-                           int bpc, int scale);
+void vif_statistic_16_neon(const struct VifPublicState *s, float *num, float *den, unsigned w,
+                           unsigned h, int bpc, int scale);
 
 #endif /* ARM64_VIF_H_ */

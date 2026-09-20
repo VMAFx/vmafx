@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # Research-1101: Vendoring the Pelorus interop ABI into vmafx
 
 - **Status**: Closed (ADR-1113 Accepted)

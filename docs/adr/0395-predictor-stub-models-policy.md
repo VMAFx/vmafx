@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0395: predictor stub-models policy
 
 - **Status**: Accepted
@@ -40,7 +39,7 @@ loaded.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Ship synthetic stub per codec (chosen) | Reproducible, byte-stable; CI can pin the load + monotonicity; one-line operator override (`--corpus real.jsonl`). | Predictions track the analytical fallback, not learned signal. Card warning mandatory. | Best trade-off: CI gets a real ONNX file to load, predictor PR's `model_path=` branch becomes testable, and the cost when the operator wants real weights is exactly the corpus run they were going to do anyway. |
 | Ship one shared stub for all 14 codecs | One file to sign, smaller repo footprint. | Hides per-codec coefficient differences (codec-specific `_DEFAULT_COEFFS`); operator gets identical predictions across codecs and a misleading impression of fitted weights. | Erases the per-codec contract the runtime predictor depends on. |
 | Ship no model files; require operators to train | Zero risk of stub being mistaken for production. | `Predictor(model_path=...)` is dead code on a fresh checkout; CI can never test the ONNX branch; documentation has no working example. | Drops the predict-then-verify integration test surface. |

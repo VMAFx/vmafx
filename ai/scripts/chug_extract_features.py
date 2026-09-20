@@ -17,6 +17,7 @@ The output rows remain local-only under ``.workingdir2/chug/``.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import hashlib
 import json
@@ -38,11 +39,7 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from ai.data.feature_extractor import (  # noqa: E402
+from ai.data.feature_extractor import (
     DEFAULT_FEATURES,
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
@@ -52,9 +49,14 @@ from ai.data.feature_extractor import (  # noqa: E402
 )
 
 # isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import write_text_atomic  # noqa: E402
-from aiutils.run_manifest import build_run_provenance  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+from aiutils.file_utils import write_text_atomic
+from aiutils.run_manifest import build_run_provenance
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
 
 # Default working directory for CHUG feature extraction; override with
 # ``VMAF_CHUG_DIR`` env var for container / non-maintainer layouts.
@@ -477,7 +479,7 @@ def _decode_to_yuv10(
 
 
 def _empty_visual_signals() -> dict[str, float | None]:
-    return {field: None for field in VISUAL_SIGNAL_FIELDS}
+    return dict.fromkeys(VISUAL_SIGNAL_FIELDS)
 
 
 def _read_yuv420p10le_luma_frame(
@@ -855,8 +857,7 @@ def run(
     return written
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(
         prog="chug_extract_features.py",
         description=__doc__,
@@ -885,7 +886,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ffmpeg-bin", default="ffmpeg")
     ap.add_argument("--ffprobe-bin", default="ffprobe")
     ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
     run_provenance = build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,

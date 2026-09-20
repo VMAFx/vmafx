@@ -76,14 +76,15 @@ class FeatureAssembler(object):
 
         result_dicts = self._create_feature_result_dicts()
 
-        self.results = list(
-            map(lambda tasset: BasicResult(tasset[0], tasset[1]), zip(self.assets, result_dicts))
-        )
+        self.results = [
+            BasicResult(tasset[0], tasset[1])
+            for tasset in zip(self.assets, result_dicts, strict=False)
+        ]
 
     def _create_feature_result_dicts(self):
         # assemble an output dict with demanded atom features
         # atom_features_dict = self.fextractor_atom_features_dict
-        result_dicts = list(map(lambda x: dict(), self.assets))
+        result_dicts = [{} for x in self.assets]
         for fextractor_type in self.feature_dict:
             assert fextractor_type in self.type2results_dict
             for atom_feature in self._get_atom_features(fextractor_type):
@@ -117,8 +118,7 @@ class FeatureAssembler(object):
 
     def _get_scores_key(self, fextractor_type, atom_feature):
         fextractor_subclass = FeatureExtractor.find_subclass(fextractor_type)
-        scores_key = fextractor_subclass.get_scores_key(atom_feature)
-        return scores_key
+        return fextractor_subclass.get_scores_key(atom_feature)
 
     def _get_atom_features(self, fextractor_type):
         if self.feature_dict[fextractor_type] == "all":
@@ -149,7 +149,7 @@ class FeatureAssembler(object):
         else:
             optional_dict = self.optional_dict
 
-        fextractor = fextractor_class(
+        return fextractor_class(
             assets=self.assets,
             logger=self.logger,
             fifo_mode=self.fifo_mode,
@@ -159,4 +159,3 @@ class FeatureAssembler(object):
             optional_dict2=self.optional_dict2,
             save_workfiles=self.save_workfiles,
         )
-        return fextractor

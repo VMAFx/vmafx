@@ -185,7 +185,7 @@ def test_aggregate_stats_handles_x265_fractional_coding_unit_counts():
 
 def test_aggregate_stats_empty_input_emits_zeros():
     agg = aggregate_stats([])
-    assert agg == {col: 0.0 for col in ENCODER_STATS_COLUMNS}
+    assert agg == dict.fromkeys(ENCODER_STATS_COLUMNS, 0.0)
 
 
 def test_per_frame_stats_dataclass_is_frozen():

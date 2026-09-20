@@ -31,8 +31,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _MATH_UTILS_H_
-#define _MATH_UTILS_H_
+#ifndef IQA_MATH_UTILS_H_
+#define IQA_MATH_UTILS_H_
 
 #include <math.h>
 #include "iqa_os.h"
@@ -40,23 +40,23 @@
 /**
  * Rounds a float to the nearest integer.
  */
-int _round(float a);
+int iqa_round(float a);
 
-int _max(int x, int y);
+int iqa_max(int x, int y);
 
-int _min(int x, int y);
+int iqa_min(int x, int y);
 
 /**
  * Compares 2 floats to the specified digit of precision.
  * @return 0 if equal, 1 otherwise.
  */
-int _cmp_float(float a, float b, int digits);
+int iqa_cmp_float(float a, float b, int digits);
 
 /**
  * Compares 2 matrices with the specified precision. 'b' is assumed to be the
  * same size as 'a' or smaller.
  * @return 0 if equal, 1 otherwise
  */
-int _matrix_cmp(const float *a, const float *b, int w, int h, int digits);
+int iqa_matrix_cmp(const float *a, const float *b, int w, int h, int digits);
 
-#endif /*_MATH_UTILS_H_*/
+#endif /* IQA_MATH_UTILS_H_ */

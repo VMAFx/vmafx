@@ -1,1 +1,5 @@
-| [ADR-1141](1141-integer-adm-upstream-mirror-rework.md) | Rework the upstream-mirror `integer_adm.c` / `adm_tools.c` to the fork lint profile with every kernel expression kept verbatim: the eighteen contrast-masking macros become two mirrored-neighbourhood functions, oversized stages split along phase boundaries, four cited suppressions survive, and a 62-run CLI output matrix proves bit-exactness. Supersedes the ADR-0278 cite-only row for `integer_adm.c`. | Accepted | 2026-09-02 | lint, refactor, adm, simd, rebase, quality-gate |
+# ADR index entry
+
+| ID | Title | Status | Tags |
+| --- | --- | --- | --- |
+| [ADR-1141](1141-integer-adm-upstream-mirror-rework.md) | Rework the upstream-mirror integer ADM to the fork lint profile, bit-exact | Accepted | `lint`, `refactor`, `adm`, `simd`, `rebase`, `quality-gate` |

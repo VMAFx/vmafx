@@ -17,6 +17,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <assert.h>
 #include <arm_neon.h>
 #include <stdint.h>
@@ -26,8 +28,8 @@
 
 uint32_t psnr_sse_line_8_neon(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {
-    assert(ref != NULL);
-    assert(dis != NULL);
+    assert(ref != VMAF_NULLPTR);
+    assert(dis != VMAF_NULLPTR);
     assert(w > 0u);
     uint32x4_t sum0 = vdupq_n_u32(0);
     uint32x4_t sum1 = vdupq_n_u32(0);
@@ -72,8 +74,8 @@ uint32_t psnr_sse_line_8_neon(const uint8_t *ref, const uint8_t *dis, unsigned w
 
 uint64_t psnr_sse_line_16_neon(const uint16_t *ref, const uint16_t *dis, unsigned w)
 {
-    assert(ref != NULL);
-    assert(dis != NULL);
+    assert(ref != VMAF_NULLPTR);
+    assert(dis != VMAF_NULLPTR);
     assert(w > 0u);
     uint64x2_t sum0 = vdupq_n_u64(0);
     uint64x2_t sum1 = vdupq_n_u64(0);

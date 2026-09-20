@@ -1,3 +1,5 @@
+# Changelog fragment
+
 - **Metal `integer_vif` kernel.** The Metal backend now implements the
   `integer_vif` extractor (feature `vif` — a VMAF default) via
   `integer_vif_metal.mm` + `integer_vif.metal` — a 4-scale fixed-point Gaussian

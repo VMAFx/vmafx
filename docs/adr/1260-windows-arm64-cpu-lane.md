@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-1260: Windows on ARM64 CPU build-and-test lane
 
 - **Status**: Proposed

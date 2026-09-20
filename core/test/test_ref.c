@@ -38,11 +38,11 @@ static char *test_ref_init_inc_dec_close()
     err = vmaf_ref_close(ref);
     mu_assert("problem during vmaf_ref_close", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_ref_init_inc_dec_close);
-    return NULL;
+    return VMAF_NULLPTR;
 }

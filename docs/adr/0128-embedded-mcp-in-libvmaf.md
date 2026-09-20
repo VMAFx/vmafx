@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0128: Embedded MCP server in libvmaf — SSE + UDS + stdio transports, build-flag-gated
 
 - **Status**: Accepted
@@ -119,7 +118,7 @@ runtime** and independently buildable. The design:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Three transports, build-flag-gated (chosen) | Library remains clean by default; each deployment chooses the subset that fits; matches canonical MCP transport options | Largest surface area of the alternatives; three transport backends to maintain | User explicitly selected "All three" in the 2026-04-20 question round; maintenance cost is bounded (each transport is ~300 LOC) |
 | SSE only | Smallest v1 footprint; natural library shape; matches Claude Desktop remote-MCP support | Leaves stdio-native tooling (Cursor shells, CI scripts piping JSON) without a path | SSE alone doesn't cover headless / pipe-based workflows |
 | UDS only (Linux-only) | Simplest; fits systemd world | Windows / macOS users lose the feature; contradicts the cross-platform backend policy | We don't ship Linux-only features in the core library |
@@ -128,7 +127,7 @@ runtime** and independently buildable. The design:
 
 ## Consequences
 
-**Positive**
+### Positive
 
 - Unblocks the agentic-VMAF workflow. Agents can introspect and
   (in v1, narrowly) steer measurements.
@@ -141,7 +140,7 @@ runtime** and independently buildable. The design:
 - Clean public header (`libvmaf_mcp.h`) keeps the MCP surface out
   of the core `libvmaf.h` ABI contract.
 
-**Negative**
+#### Negative
 
 - New optional dependencies (cJSON, mongoose) in
   `subprojects/`. Both single-file, but still something to track.
@@ -154,7 +153,7 @@ runtime** and independently buildable. The design:
 - Three-transport CI: each transport needs its own smoke test. Gate
   only the default-off / off-by-default matrix leg.
 
-**Neutral**
+#### Neutral
 
 - No change to the Netflix CPU golden gate or any numerical
   output — MCP is an I/O surface, not a measurement surface.

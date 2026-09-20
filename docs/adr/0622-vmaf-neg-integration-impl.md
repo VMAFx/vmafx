@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0622: VMAF NEG Integration Implementation
 
 - **Status**: Accepted (Implemented)
@@ -51,7 +50,7 @@ concrete patterns:
 ## Alternatives considered
 
 | Option | Decision |
-|---|---|
+| --- | --- |
 | Route inside argparse `type=` callback | Rejected: would fire at parse time, complicates testing, and prevents `getattr(args, "neg", False)` fallback for subcommands not yet wired |
 | Add `vmaf_model` to `bisect_target_vmaf` signature | Not needed: `bisect_target_vmaf` already accepts `vmaf_model` as a parameter; the CLI runner simply passes `_resolve_vmaf_model(args)` |
 | Separate `--neg-model` flag for explicit path | Rejected: per ADR-0616, `--model-variant` enum is deferred to V2 |

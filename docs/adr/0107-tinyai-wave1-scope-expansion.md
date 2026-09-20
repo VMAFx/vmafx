@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0107: Tiny-AI Wave 1 scope expanded beyond ADR-0020 through ADR-0023
 
 - **Status**: Accepted
@@ -46,7 +45,7 @@ plain-English artifact descriptions. Full roadmap: `docs/ai/roadmap.md`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Ship baseline C1/C2/C3 checkpoints only | Small scope; bisectable | Does not honor the user's broader Wave 1 directive; encoder-side stays untouched | Rejected |
 | Expand Wave 1 (chosen) | Each added model <3M params, shares ORT infra, marginal cost low | Op-allowlist must expand | Rationale matches |
 

@@ -34,11 +34,7 @@
 #include "libvmaf/picture.h"
 #include "picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #define MV2_W (16u)
 #define MV2_H (16u)
@@ -97,13 +93,13 @@ static int alloc_random10(VmafPicture *pic, uint32_t seed)
 static char *test_motion_v2_rejects_five_frame_window(void)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "motion_five_frame_window", "true", 0);
     mu_assert("set motion_five_frame_window", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create", err == 0);
 
@@ -113,7 +109,7 @@ static char *test_motion_v2_rejects_five_frame_window(void)
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -124,22 +120,22 @@ static char *init_motion_v2_index_zero_emits_zero(VmafFeatureExtractorContext **
                                                   VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("context_init", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_index_zero_emits_zero(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_motion_v2_index_zero_emits_zero(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -150,7 +146,7 @@ static char *test_motion_v2_index_zero_emits_zero(void)
     mu_assert("alloc ref", alloc_grey8(&ref, 128) == 0);
     mu_assert("alloc dist", alloc_grey8(&dist, 128) == 0);
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 0, fc);
     mu_assert("extract index=0", err == 0);
 
     double sad = NAN;
@@ -166,7 +162,7 @@ static char *test_motion_v2_index_zero_emits_zero(void)
     /* Drain pooled picture buffers so LSan sees no false-positive leaks
      * from the global pic_pool static (picture.c). */
     vmaf_picture_pool_flush();
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -176,9 +172,9 @@ static char *test_motion_v2_index_zero_emits_zero(void)
 static char *init_motion_v2_force_zero(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "motion_force_zero", "true", 0);
     mu_assert("set motion_force_zero", err == 0);
 
@@ -189,13 +185,13 @@ static char *init_motion_v2_force_zero(VmafFeatureExtractorContext **ctx, VmafFe
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_force_zero(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_motion_v2_force_zero(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -208,7 +204,7 @@ static char *test_motion_v2_force_zero(void)
 
     /* Even at index=5, force_zero short-circuit emits 0 score and
      * returns before the prev_ref check. */
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 5, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, VMAF_NULLPTR, &dist, VMAF_NULLPTR, 5, fc);
     mu_assert("extract force_zero", err == 0);
     /* force_zero emits an option-suffixed feature name; the branch is
      * exercised by reaching the force_zero path in extract (line 350 of
@@ -222,7 +218,7 @@ static char *test_motion_v2_force_zero(void)
     /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
     vmaf_picture_pool_flush();
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -238,22 +234,22 @@ static char *init_motion_v2_three_frame_flow(VmafFeatureExtractorContext **ctx,
                                              VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("context_init", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_three_frame_flow(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_motion_v2_three_frame_flow(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -273,7 +269,8 @@ static char *test_motion_v2_three_frame_flow(void)
      * Do NOT set ctx->fex->prev_ref manually — that bypasses the ref-count
      * accounting and causes either dangling-pointer unrefs or leaks. */
     for (unsigned i = 0; i < 3; ++i) {
-        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], VMAF_NULLPTR, &dists[i], VMAF_NULLPTR, i,
+                                                     fc);
         mu_assert("extract motion_v2 frame", err == 0);
     }
 
@@ -293,7 +290,7 @@ static char *test_motion_v2_three_frame_flow(void)
     }
     /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
     vmaf_picture_pool_flush();
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -305,9 +302,9 @@ static char *init_motion_v2_moving_average_branch(VmafFeatureExtractorContext **
                                                   VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
 
-    VmafDictionary *opts = NULL;
+    VmafDictionary *opts = VMAF_NULLPTR;
     int err = vmaf_dictionary_set(&opts, "motion_moving_average", "true", 0);
     mu_assert("set motion_moving_average", err == 0);
 
@@ -318,13 +315,13 @@ static char *init_motion_v2_moving_average_branch(VmafFeatureExtractorContext **
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_moving_average_branch(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_motion_v2_moving_average_branch(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -338,7 +335,8 @@ static char *test_motion_v2_moving_average_branch(void)
     }
     /* Let the PREV_REF wrapper manage prev_ref automatically. */
     for (unsigned i = 0; i < 4; ++i) {
-        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], VMAF_NULLPTR, &dists[i], VMAF_NULLPTR, i,
+                                                     fc);
         mu_assert("extract motion_v2 ma frame", err == 0);
     }
     err = vmaf_feature_extractor_context_flush(ctx, fc);
@@ -354,7 +352,7 @@ static char *test_motion_v2_moving_average_branch(void)
     /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
     vmaf_picture_pool_flush();
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ----------------------------------------------------------------- */
@@ -365,22 +363,22 @@ static char *init_motion_v2_10bit_extract(VmafFeatureExtractorContext **ctx,
                                           VmafFeatureCollector **fc)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
-    mu_assert("motion_v2 extractor missing", fex != NULL);
+    mu_assert("motion_v2 extractor missing", fex != VMAF_NULLPTR);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, VMAF_NULLPTR);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 10u, MV2_W, MV2_H);
     mu_assert("context_init 10bit", err == 0);
 
     err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_motion_v2_10bit_extract(void)
 {
-    VmafFeatureExtractorContext *ctx = NULL;
-    VmafFeatureCollector *fc = NULL;
+    VmafFeatureExtractorContext *ctx = VMAF_NULLPTR;
+    VmafFeatureCollector *fc = VMAF_NULLPTR;
     char *setup_error = init_motion_v2_10bit_extract(&ctx, &fc);
     if (setup_error)
         return setup_error;
@@ -394,7 +392,8 @@ static char *test_motion_v2_10bit_extract(void)
     }
     /* Let the PREV_REF wrapper manage prev_ref automatically. */
     for (unsigned i = 0; i < 2; ++i) {
-        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], VMAF_NULLPTR, &dists[i], VMAF_NULLPTR, i,
+                                                     fc);
         mu_assert("extract motion_v2 10bit frame", err == 0);
     }
 
@@ -410,7 +409,7 @@ static char *test_motion_v2_10bit_extract(void)
     }
     /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
     vmaf_picture_pool_flush();
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -421,7 +420,5 @@ char *run_tests(void)
     mu_run_test(test_motion_v2_three_frame_flow);
     mu_run_test(test_motion_v2_moving_average_branch);
     mu_run_test(test_motion_v2_10bit_extract);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

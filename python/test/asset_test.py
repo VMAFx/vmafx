@@ -3,6 +3,7 @@ __license__ = "BSD+Patent"
 
 import re
 import unittest
+from pathlib import Path
 
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset, NorefAsset
@@ -12,8 +13,6 @@ from vmaf.tools.misc import MyTestCase
 class AssetTest(MyTestCase):
 
     def test_workdir(self):
-        import re
-
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -517,7 +516,7 @@ class AssetTest(MyTestCase):
         self.assertEqual(
             str(asset), "test_0_0_refvideo_720x480_2to2_vs_disvideo_720x480_2to2_q_720x480"
         )
-        expected_repr = '{"asset_dict": {"end_frame": 2, "height": 480, "start_frame": 2, "width": 720}, "asset_id": 0, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'  # noqa
+        expected_repr = '{"asset_dict": {"end_frame": 2, "height": 480, "start_frame": 2, "width": 720}, "asset_id": 0, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'
         self.assertEqual(repr(asset), expected_repr)
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
@@ -552,7 +551,7 @@ class AssetTest(MyTestCase):
             asset_dict={"width": 720, "height": 480, "quality_width": 1920, "quality_height": 1080},
         )
         self.assertEqual(str(asset), "test_0_2_refvideo_720x480_vs_disvideo_720x480_q_1920x1080")
-        expected_repr = '{"asset_dict": {"height": 480, "quality_height": 1080, "quality_width": 1920, "width": 720}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'  # noqa
+        expected_repr = '{"asset_dict": {"height": 480, "quality_height": 1080, "quality_width": 1920, "width": 720}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'
         self.assertEqual(repr(asset), expected_repr)
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
@@ -574,7 +573,7 @@ class AssetTest(MyTestCase):
         self.assertEqual(
             str(asset), "test_0_2_refvideo_720x480_yuv422p_vs_disvideo_720x480_yuv422p_q_1920x1080"
         )
-        expected_repr = '{"asset_dict": {"height": 480, "quality_height": 1080, "quality_width": 1920, "width": 720, "yuv_type": "yuv422p"}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'  # noqa
+        expected_repr = '{"asset_dict": {"height": 480, "quality_height": 1080, "quality_width": 1920, "width": 720, "yuv_type": "yuv422p"}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'
         self.assertEqual(repr(asset), expected_repr)
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
@@ -596,7 +595,7 @@ class AssetTest(MyTestCase):
         self.assertEqual(
             str(asset), "test_0_2_refvideo_720x480_lanczos_vs_disvideo_720x480_lanczos_q_1920x1080"
         )
-        expected_repr = '{"asset_dict": {"height": 480, "quality_height": 1080, "quality_width": 1920, "resampling_type": "lanczos", "width": 720}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'  # noqa
+        expected_repr = '{"asset_dict": {"height": 480, "quality_height": 1080, "quality_width": 1920, "resampling_type": "lanczos", "width": 720}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'
         self.assertEqual(repr(asset), expected_repr)
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
@@ -612,7 +611,7 @@ class AssetTest(MyTestCase):
         self.assertEqual(
             str(asset), "test_0_2_refvideo_720x480_vs_disvideo_720x480_e_1920x1080_q_720x480"
         )
-        expected_repr = '{"asset_dict": {"dis_enc_height": 1080, "dis_enc_width": 1920, "height": 480, "width": 720}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'  # noqa
+        expected_repr = '{"asset_dict": {"dis_enc_height": 1080, "dis_enc_width": 1920, "height": 480, "width": 720}, "asset_id": 2, "content_id": 0, "dataset": "test", "dis_path": "disvideo.yuv", "ref_path": "refvideo.yuv", "workdir": ""}'
         self.assertEqual(repr(asset), expected_repr)
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
@@ -1862,16 +1861,19 @@ class AssetTest(MyTestCase):
         )
 
     def test_crop_pad_special(self):
-        import os
-
         asset = Asset(
             dataset="vp9eve_vmaf_investigation",
             content_id=0,
             asset_id=0,
-            ref_path=os.path.join(
-                "dir", "inception", "Inception_A__79_41_79_46__1920_1080__", "frame%08d.icpf"
+            ref_path=str(
+                Path(
+                    "dir",
+                    "inception",
+                    "Inception_A__79_41_79_46__1920_1080__",
+                    "frame%08d.icpf",
+                )
             ),
-            dis_path=os.path.join("dir", "inception", "10014993632.ivf"),
+            dis_path=str(Path("dir", "inception", "10014993632.ivf")),
             asset_dict={
                 "ref_yuv_type": "notyuv",
                 "ref_crop_cmd": "1920:800:0:140",
@@ -1888,11 +1890,11 @@ class AssetTest(MyTestCase):
             },
         )
         self.assertEqual(
-            os.path.basename(asset.ref_workfile_path),
+            Path(asset.ref_workfile_path).name,
             "ref_vp9eve_vmaf_investigation_0_0_frame_08d_notyuv_0to2_crop1920_800_0_140_padiw_0_ih_280_0_140_vs_10014993632_notyuv_114629to114631_q_1920x1080",
         )
         self.assertEqual(
-            os.path.basename(asset.dis_workfile_path),
+            Path(asset.dis_workfile_path).name,
             "dis_vp9eve_vmaf_investigation_0_0_frame_08d_notyuv_0to2_crop1920_800_0_140_padiw_0_ih_280_0_140_vs_10014993632_notyuv_114629to114631_q_1920x1080",
         )
 

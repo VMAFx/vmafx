@@ -42,11 +42,7 @@
 
 #include <inttypes.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -133,7 +129,7 @@ static char *test_adm_accum_precision(void)
                           accum);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #if ARCH_X86
@@ -243,7 +239,7 @@ static char *check_adm_cm_avx2_smoke_result(float r1, float r2, float r_p2)
     if (r_p2 == r1) { /* intentional exact compare: p_norm must visibly change result */
         return "adm_cm_avx2 ignored adm_p_norm";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_cm_avx2_smoke(void)
@@ -357,7 +353,7 @@ static char *check_i4_adm_cm_avx2_p_norm_result(float r_p3, float r_p2)
         r_p3) { /* intentional exact compare: different p_norm must produce different result */
         return "i4_adm_cm_avx2 ignored adm_p_norm";
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_i4_adm_cm_avx2_p_norm(void)
@@ -413,7 +409,7 @@ static char *test_i4_adm_cm_avx2_p_norm(void)
 #define DEC_PLANES 12
 
 typedef void (*adm_decouple_fn)(AdmBuffer *buf, int w, int h, int stride,
-                                double adm_enhn_gain_limit, int32_t *adm_div_lookup);
+                                double adm_enhn_gain_limit, const int32_t *adm_div_lookup);
 
 /* planes[0..5] are the inputs (ref h/v/d, dis h/v/d), planes[6..11] the
  * outputs (decouple_r h/v/d, decouple_a h/v/d). */
@@ -430,7 +426,7 @@ static void decouple_fixture_free(DecoupleFixture *f)
 {
     for (int k = 0; k < DEC_PLANES; ++k) {
         simd_test_aligned_free(f->planes[k]);
-        f->planes[k] = NULL;
+        f->planes[k] = VMAF_NULLPTR;
     }
 }
 
@@ -557,14 +553,14 @@ static char *check_decouple_geometry(adm_decouple_fn kernel, adm_decouple_fn cro
     }
     SIMD_GUARD_ASSERT_UNTOUCHED(touched, "adm_decouple wrote outside the decouple region");
     mu_assert("adm_decouple AVX2 and AVX-512 disagree inside the decouple region", same);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_adm_decouple_guard_band(void)
 {
     /* Band heights: full-height regions (top == 0) up to a clipped border. */
     static const int heights[] = {8, 12, 17, 24, 36};
-    adm_decouple_fn cross = NULL;
+    adm_decouple_fn cross = VMAF_NULLPTR;
 #if HAVE_AVX512
     if (simd_test_have_avx512()) {
         cross = adm_decouple_avx512;
@@ -579,7 +575,7 @@ static char *test_adm_decouple_guard_band(void)
             }
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* ARCH_X86 */
@@ -591,7 +587,7 @@ char *run_tests(void)
 
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
-        return NULL;
+        return VMAF_NULLPTR;
     }
     div_lookup_generator();
     mu_run_test(test_adm_cm_avx2_smoke);
@@ -600,7 +596,5 @@ char *run_tests(void)
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");
 #endif
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

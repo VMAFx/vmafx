@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0109: vmaf-tune auto winner selection
 
 - **Date**: 2026-05-14
@@ -30,7 +29,7 @@ plan-only cell emission without conflating the planner with encode execution?
 The planner now performs a deterministic estimated-row selection:
 
 | Case | Winner rule |
-|---|---|
+| --- | --- |
 | At least one cell meets target and budget | Lowest estimated bitrate; tie-break by higher VMAF, higher rung, codec, original index. |
 | No in-budget quality pass, but at least one target pass | Smallest budget overage; tie-break by lower bitrate, higher VMAF, higher rung, codec, original index. |
 | No target pass | Highest estimated VMAF; tie-break by lower bitrate, higher rung, codec, original index. |

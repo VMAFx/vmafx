@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from vmaf import ExternalProgramCaller
 from vmaf.core.feature_extractor import FeatureExtractor, VmafexecFeatureExtractorMixin
 
@@ -10,13 +12,13 @@ class FloatMotionFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtracto
     # VERSION = "1.2"  # add motion3
     VERSION = "1.3"  # fix filter mirroring
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "motion2",
         "motion3",
         "motion",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "motion3": "motion3",
         "motion2": "motion2",
         "motion": "motion",
@@ -36,8 +38,8 @@ class FloatMotionFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtracto
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "float_motion",
@@ -61,13 +63,13 @@ class IntegerMotionFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtrac
     # VERSION = "1.3"  # add motion3
     VERSION = "1.4"  # fix filter mirroring
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "motion2",
         "motion3",
         "motion",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "motion3": "integer_motion3",
         "motion2": "integer_motion2",
         "motion": "integer_motion",
@@ -87,8 +89,8 @@ class IntegerMotionFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtrac
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "motion",
@@ -111,7 +113,7 @@ class FloatVifFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = "1.2"  # fix filter mirroring
     VERSION = "1.3"  # compute the filter coefficients on the fly rather than precomputing
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "vif_scale0",
         "vif_scale1",
         "vif_scale2",
@@ -129,7 +131,7 @@ class FloatVifFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "vif_den_scale3",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "vif_scale0": "vif_scale0",
         "vif_scale1": "vif_scale1",
         "vif_scale2": "vif_scale2",
@@ -161,8 +163,8 @@ class FloatVifFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "float_vif",
@@ -187,7 +189,7 @@ class IntegerVifFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor
     # VERSION = "1.2"  # fix vectorization corner cases
     VERSION = "1.3"  # add debug features
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "vif_scale0",
         "vif_scale1",
         "vif_scale2",
@@ -205,7 +207,7 @@ class IntegerVifFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor
         "vif_den_scale3",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "vif_scale0": "integer_vif_scale0",
         "vif_scale1": "integer_vif_scale1",
         "vif_scale2": "integer_vif_scale2",
@@ -237,8 +239,8 @@ class IntegerVifFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "vif",
@@ -261,7 +263,7 @@ class FloatAdmFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     # VERSION = "1.2"  # add adm3 feature, which combines DLM and AIM using a simple linear combination (equal weights)
     VERSION = "1.3"  # expose AIM feature
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "adm2",
         "aim",
         "adm3",
@@ -282,7 +284,7 @@ class FloatAdmFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "adm_den_scale3",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "adm2": "adm2",
         "aim": "aim",
         "adm3": "adm3",
@@ -317,8 +319,8 @@ class FloatAdmFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "float_adm",
@@ -338,9 +340,9 @@ class IntegerPsnrFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtracto
     TYPE = "integer_PSNR_feature"
     VERSION = "1.0"
 
-    ATOM_FEATURES = ["psnr_y", "psnr_cb", "psnr_cr"]
+    ATOM_FEATURES: ClassVar = ["psnr_y", "psnr_cb", "psnr_cr"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "psnr_y": "psnr_y",
         "psnr_cb": "psnr_cb",
         "psnr_cr": "psnr_cr",
@@ -360,8 +362,8 @@ class IntegerPsnrFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtracto
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "psnr",
@@ -385,7 +387,7 @@ class IntegerAdmFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor
     # VERSION = "1.3"  # adm3
     VERSION = "1.4"  # expose AIM feature
 
-    ATOM_FEATURES = [
+    ATOM_FEATURES: ClassVar = [
         "adm2",
         "aim",
         "adm3",
@@ -406,7 +408,7 @@ class IntegerAdmFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor
         "adm_den_scale3",
     ]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "adm2": "integer_adm2",
         "aim": "integer_aim",
         "adm3": "integer_adm3",
@@ -441,8 +443,8 @@ class IntegerAdmFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "adm",
@@ -462,9 +464,9 @@ class CIEDE2000FeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor)
     TYPE = "CIEDE2000_feature"
     VERSION = "1.0"
 
-    ATOM_FEATURES = ["ciede2000"]
+    ATOM_FEATURES: ClassVar = ["ciede2000"]
 
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT: ClassVar = {
         "ciede2000": "ciede2000",
     }
 
@@ -482,8 +484,8 @@ class CIEDE2000FeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor)
         h = quality_height
         logger = self.logger
 
-        optional_dict = self.optional_dict if self.optional_dict is not None else dict()
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
+        optional_dict = self.optional_dict if self.optional_dict is not None else {}
+        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else {}
 
         ExternalProgramCaller.call_vmafexec_single_feature(
             "ciede",

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0277: ffmpeg-patches refresh against n8.1 — 2026-05-04 (no drift)
 
 - **Status**: Accepted
@@ -41,7 +40,7 @@ original to minimise churn."
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep originals (chosen) | Zero in-tree diff; no merge conflict surface for in-flight PRs; the regenerated diffs are pure stylistic noise | Slight inconsistency with what `format-patch` would emit fresh | The substantive content is byte-identical at the diff level; replacing with regenerated patches buys nothing and creates churn |
 | Replace with regenerated patches | Patches match what `format-patch` produces from a clean replay | Adds noise to git history (PATCH numbering, MIME headers, hunk-count reformatting) without any functional change | Pure churn; CLAUDE.md §12 prefers stable in-tree files unless there's a real change |
 | Skip the verification | No work | Drift could be silently accumulating; rule §12 r14 expects a periodic series-replay gate | Verification is the entire point of the periodic refresh cadence |

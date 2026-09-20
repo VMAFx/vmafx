@@ -47,16 +47,12 @@
 /* White-box include: pulls in the static flush_context* helpers and the full
  * VmafContext definition. Mirrors the established pattern in
  * test_feature_collector.c. */
-// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test, see above (ADR-0141 / ADR-0278).
+
 #include "feature_collector.c"
-// NOLINTNEXTLINE(bugprone-suspicious-include): static flush_context* and the private VmafContext (ADR-0141 / ADR-0278).
+
 #include "libvmaf.c"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 
 #define FRAME_W 64u
 #define FRAME_H 64u
@@ -93,12 +89,12 @@ static char *prep_threaded_context(VmafContext **out)
         .n_threads = 4,
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
-    mu_assert("thread_pool must be active for the threaded path", vmaf->thread_pool != NULL);
+    mu_assert("thread_pool must be active for the threaded path", vmaf->thread_pool != VMAF_NULLPTR);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -114,7 +110,7 @@ static char *prep_threaded_context(VmafContext **out)
 
     mu_assert("flushed must be false before any flush", !vmaf->flushed);
     *out = vmaf;
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -134,7 +130,7 @@ static char *prep_threaded_context(VmafContext **out)
 static char *test_threaded_flush_does_not_set_flushed(void)
 {
     int err = 0;
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     char *prep = prep_threaded_context(&vmaf);
     if (prep)
         return prep;
@@ -146,7 +142,7 @@ static char *test_threaded_flush_does_not_set_flushed(void)
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -160,7 +156,7 @@ static char *test_threaded_flush_does_not_set_flushed(void)
 static char *test_central_flush_sets_flushed(void)
 {
     int err = 0;
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     char *prep = prep_threaded_context(&vmaf);
     if (prep)
         return prep;
@@ -172,7 +168,7 @@ static char *test_central_flush_sets_flushed(void)
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* Feed NUM_FRAMES ref/dist pairs through the serial read path (n_threads=0).
@@ -191,7 +187,7 @@ static char *feed_serial_frames(VmafContext *vmaf, unsigned n)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("serial: vmaf_read_pictures failed", !err);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* The second-flush-rejected check + final teardown, split out of
@@ -200,12 +196,12 @@ static char *check_double_flush_rejected_and_close(VmafContext *vmaf)
 {
     /* A second flush must be rejected — proves the no-retry-once-flushed
      * contract the fix's ordering depends on. */
-    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    int err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("serial: second flush must return -EINVAL", err == -EINVAL);
 
     err = vmaf_close(vmaf);
     mu_assert("serial: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /*
@@ -225,11 +221,11 @@ static char *test_flush_via_public_api_sets_flushed(void)
         .n_threads = 0, /* serial path */
     };
 
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("serial: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    err = vmaf_use_feature(vmaf, "motion", VMAF_NULLPTR);
     mu_assert("serial: vmaf_use_feature(motion) failed", !err);
 
     char *msg = feed_serial_frames(vmaf, NUM_FRAMES);
@@ -238,7 +234,7 @@ static char *test_flush_via_public_api_sets_flushed(void)
 
     mu_assert("serial: flushed false before EOS", !vmaf->flushed);
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("serial: EOS flush failed", !err);
     mu_assert("serial: flushed must be true after EOS", vmaf->flushed);
 
@@ -246,7 +242,7 @@ static char *test_flush_via_public_api_sets_flushed(void)
     if (msg)
         return msg;
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
@@ -254,7 +250,5 @@ char *run_tests()
     mu_run_test(test_threaded_flush_does_not_set_flushed);
     mu_run_test(test_central_flush_sets_flushed);
     mu_run_test(test_flush_via_public_api_sets_flushed);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

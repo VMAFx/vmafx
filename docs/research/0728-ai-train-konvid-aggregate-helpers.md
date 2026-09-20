@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research 0728: Train / Aggregate Scripts Bootstrap Sweep
 
 ## Question
@@ -72,7 +71,7 @@ called inside the conditional to add both the repo root and `ai/src`.
 ## Alternatives Considered
 
 | Option | Trade-off |
-|--------|-----------|
+| -------- | ----------- |
 | Leave `ai/train/train.py` unchanged | Avoids conditional complexity but leaves the only remaining manual `sys.path` block in the ai/ tree |
 | Move bootstrap into `ai/train/` | Duplicates the helper; maintenance burden |
 | Use `importlib.util` to load bootstrap | Correct but verbose; adds ~6 lines of boilerplate vs. the chosen 3-line approach |

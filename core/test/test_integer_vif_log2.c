@@ -17,11 +17,7 @@
 
 #include <math.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -42,7 +38,7 @@ static void build_log2_table(uint16_t *t)
 static char *test_log2_32_value_matches_closed_form(void)
 {
     uint16_t *t = (uint16_t *)malloc(sizeof(uint16_t) * VIF_LOG2_TABLE_SIZE);
-    mu_assert("alloc log2_table", t != NULL);
+    mu_assert("alloc log2_table", t != VMAF_NULLPTR);
     build_log2_table(t);
 
     /* temp = 65536 = 2^16 → log2(temp) = 16 → integer_vif result = 16*2048
@@ -58,13 +54,13 @@ static char *test_log2_32_value_matches_closed_form(void)
     mu_assert("log2_32(32768) must be 15*2048", r2 == 30720);
 
     free(t);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_log2_64_value_matches_closed_form(void)
 {
     uint16_t *t = (uint16_t *)malloc(sizeof(uint16_t) * VIF_LOG2_TABLE_SIZE);
-    mu_assert("alloc log2_table", t != NULL);
+    mu_assert("alloc log2_table", t != VMAF_NULLPTR);
     build_log2_table(t);
 
     /* temp = 1<<17 = 131072 → log2(temp) = 17 → result = 17*2048 = 34816 */
@@ -80,13 +76,13 @@ static char *test_log2_64_value_matches_closed_form(void)
     mu_assert("log2_64(2^40) must be 40*2048", r3 == 81920);
 
     free(t);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_log2_monotonic_increasing(void)
 {
     uint16_t *t = (uint16_t *)malloc(sizeof(uint16_t) * VIF_LOG2_TABLE_SIZE);
-    mu_assert("alloc log2_table", t != NULL);
+    mu_assert("alloc log2_table", t != VMAF_NULLPTR);
     build_log2_table(t);
 
     /* The integer log2 must be monotonic over a sweep — successive
@@ -107,7 +103,7 @@ static char *test_log2_monotonic_increasing(void)
     }
 
     free(t);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -115,7 +111,5 @@ char *run_tests(void)
     mu_run_test(test_log2_32_value_matches_closed_form);
     mu_run_test(test_log2_64_value_matches_closed_form);
     mu_run_test(test_log2_monotonic_increasing);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

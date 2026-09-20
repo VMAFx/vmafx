@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0684: Pre-rebase worktree-drift guard
 
 - **Status**: Accepted
@@ -58,7 +57,7 @@ additive.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Pre-rebase hook (chosen)** | Catches the exact failure mode at the earliest mutation point; uses a real git hook (not pseudo); same bypass UX as the existing pre-commit guard; symmetrical implementation. | Adds one more hook to install via `make hooks-install`. | Highest signal-to-noise; matches the existing layer's design verbatim. |
 | Wrap `git` in a shell function | Catches checkout, rebase, reset, merge — every tree-mutating operation, not just rebase. | Per-shell, per-user; doesn't survive a fresh agent process group; agents commonly invoke `/usr/bin/git` directly; impossible to ship as a tracked repo artifact. | Brittle, easily bypassed, doesn't compose with the existing layer's hook-based design. |
 | `post-checkout` notification hook | Visibility into branch switches; can log to a tracked drift-incident file for forensics. | Cannot refuse (the checkout has already happened by the time post-checkout fires); doesn't address the root failure (the mutation). | Soft warning is less valuable than a hard refusal at the earlier point. May be added as a follow-up if forensic logging becomes useful. |

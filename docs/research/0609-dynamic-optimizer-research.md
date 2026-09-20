@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research Digest 0609: Dynamic Optimizer (DO)
 
 **Scope**: Joint shot-boundary + CRF co-optimization for per-shot encoding.
@@ -51,7 +50,7 @@ use case.
 ## Current Fork State
 
 | Component | Status |
-|-----------|--------|
+| ----------- | -------- |
 | `per_shot.py` | TransNet V2 shot detection, pluggable `PredicateFn` per shot |
 | `ladder.py` | Convex-hull ladder with uncertainty-aware rung selection |
 | `bisect.py` | Phase B binary CRF search using full FR VMAF |
@@ -117,7 +116,7 @@ complexity; overkill for most titles.
 ## Recommended Decision Matrix
 
 | Option | Quality gain | Implementation cost | Dependency risk |
-|--------|-------------|---------------------|-----------------|
+| -------- | ------------- | --------------------- | ----------------- |
 | A — boundary tweak | Low | 1 day | None |
 | B — complexity segmentation | Medium | 3 days | Replaces TransNet |
 | C — DO post-pass (recommended) | Medium-high | 3–5 days | Item 3 (NR) optional |

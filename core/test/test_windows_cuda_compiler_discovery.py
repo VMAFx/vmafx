@@ -55,9 +55,7 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
             (root / "responses.json").write_text(json.dumps(responses), encoding="utf-8")
             powershell = binary_dir / "powershell"
             powershell.write_text(
-                f"#!{sys.executable}\n"
-                + textwrap.dedent(
-                    """\
+                f"#!{sys.executable}\n" + textwrap.dedent("""\
                     import json
                     import re
                     import sys
@@ -79,8 +77,7 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
                         print(cfg['sdk_root'])
                     else:
                         sys.exit('unexpected PowerShell command')
-                    """
-                ),
+                    """),
                 encoding="utf-8",
             )
             powershell.chmod(0o700)

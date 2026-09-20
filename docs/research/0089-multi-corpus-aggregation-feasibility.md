@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD018 MD060 -->
 # Research-0089: Multi-corpus MOS aggregation — scale unification feasibility
 
 - **Date**: 2026-05-09
@@ -9,7 +8,9 @@
 ## 1. Problem framing
 
 The fork's in-flight MOS-corpus ingestion PRs (#447 KonViD-150k,
-#471 LSVQ, #481 YouTube UGC, #485 Waterloo IVC 4K-VQA) each emit a
+
+\#471 LSVQ, #481 YouTube UGC, #485 Waterloo IVC 4K-VQA) each emit a
+
 JSONL on the *source* dataset's native MOS scale. The downstream
 trainers (#487 predictor v2 real-corpus, #491 KonViD MOS head v1)
 want to learn from all shards simultaneously. Without a scale
@@ -22,7 +23,7 @@ is honest?
 ## 2. Source-scale review
 
 | corpus | scale | citation | access (2026-05-09) |
-|--------|-------|----------|---------------------|
+| -------- | ------- | ---------- | --------------------- |
 | KonViD-1k | 1–5 ACR Likert (5-point absolute category rating) | Hosu et al., QoMEX 2017 §III | <http://database.mmsp-kn.de/konvid-1k-database.html> |
 | KonViD-150k | 1–5 ACR Likert (same protocol as KonViD-1k) | Götz-Hahn et al., IEEE Access 2021 §III.B (companion ICIP 2019) | <https://database.mmsp-kn.de/konvid-150k-vqa-database.html> |
 | LSVQ | 1–5 ACR Likert, crowd-sourced | Ying et al. (Patch-VQ), CVPR 2021 §4.1 | <https://github.com/baidut/PatchVQ> |

@@ -12,24 +12,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
+try:
+    import numpy as np
+except ImportError:
+    pytest.skip("numpy is not installed", allow_module_level=True)
 
-pd = pytest.importorskip("pandas")
-np = pytest.importorskip("numpy")
-torch = pytest.importorskip("torch")
+import train_fr_regressor_v2_ensemble_loso as loso
+from conftest import requires_pytorch_lightning
+from train_fr_regressor_v2_ensemble_loso import _load_corpus, _train_one_seed
 
-from conftest import requires_pytorch_lightning  # noqa: E402
-
+if find_spec("pandas") is None:
+    pytest.skip("pandas is not installed", allow_module_level=True)
 requires_pytorch_lightning()
-
-import train_fr_regressor_v2_ensemble_loso as loso  # noqa: E402
-from train_fr_regressor_v2_ensemble_loso import _load_corpus, _train_one_seed  # noqa: E402
 
 
 def _write_synthetic_corpus(path: Path) -> None:

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research-0067 — K150K-A corpus integration feasibility and pipeline design
 
 **Date:** 2026-05-09
@@ -15,7 +14,7 @@ run.
 ## Dataset profile
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Corpus name | KoNViD-150k-A (K150K-A) |
 | Clip count | 152,265 |
 | MOS source | Crowd-sourced, per-clip mean |
@@ -47,7 +46,7 @@ The fork build at `build-cpu/tools/vmaf` supports all 11 extractors and the
 ## Smoke-test results (10 clips, 2026-05-09)
 
 | Clip | cambi\_mean | motion\_mean | vmaf\_mean | ok |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | orig\_10000251326\_540\_5s.mp4 | 0.0 | 3.77 | 100.0 | yes |
 | orig\_10000958013\_540\_5s.mp4 | 0.0 | 2.14 | 100.0 | yes |
 | orig\_10001646563\_540\_5s.mp4 | 0.0 | 4.31 | 100.0 | yes |
@@ -65,7 +64,7 @@ Wall time: ~70 s for 10 clips (~7 s/clip), ok=10 fail=0.
 ## Constant vs informative columns
 
 | Feature | Identity-pair behaviour | Useful for training? |
-|---|---|---|
+| --- | --- | --- |
 | adm2, adm\_scale\* | Floor at 1.0 | No |
 | vif\_scale\* | Floor at 1.0 | No |
 | float\_ssim, float\_ms\_ssim | Floor at 1.0 | No |
@@ -84,7 +83,7 @@ or use only the informative subset.
 ## Full-run ETA
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | Clip count | 152,265 |
 | Time per clip (observed) | ~7 s |
 | Single-process wall time | ~296 h |

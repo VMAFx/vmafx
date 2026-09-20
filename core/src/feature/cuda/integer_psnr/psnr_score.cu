@@ -32,11 +32,9 @@
 #define BLOCK_X 16
 #define BLOCK_Y 16
 
-extern "C" {
-
-__global__ void calculate_psnr_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
-                                           VmafCudaBuffer sse, unsigned width, unsigned height,
-                                           unsigned plane)
+extern "C" __global__ void calculate_psnr_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
+                                                      VmafCudaBuffer sse, unsigned width,
+                                                      unsigned height, unsigned plane)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -77,9 +75,9 @@ __global__ void calculate_psnr_kernel_8bpc(const VmafPicture ref, const VmafPict
  * kernel had no parameter for it and read `data[0]` / `stride[0]`, so every
  * high-bit-depth chroma dispatch measured a chroma-sized top-left window of
  * the LUMA plane: psnr_cb == psnr_cr == a luma value. */
-__global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
-                                            VmafCudaBuffer sse, unsigned width, unsigned height,
-                                            unsigned plane)
+extern "C" __global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
+                                                       VmafCudaBuffer sse, unsigned width,
+                                                       unsigned height, unsigned plane)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -113,5 +111,3 @@ __global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPic
                   static_cast<unsigned long long>(warp_sum));
     }
 }
-
-} /* extern "C" */

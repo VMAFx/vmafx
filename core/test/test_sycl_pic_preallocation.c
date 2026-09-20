@@ -17,7 +17,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-static VmafSyclState *sycl = NULL;
+static VmafSyclState *sycl = VMAF_NULLPTR;
 static int sycl_init_failed = 0;
 
 static char *test_sycl_pool_init_sycl(void)
@@ -27,20 +27,20 @@ static char *test_sycl_pool_init_sycl(void)
     if (err) {
         (void)fprintf(stderr, "  [SKIP] SYCL state init failed (err=%d), no GPU\n", err);
         sycl_init_failed = 1;
-        sycl = NULL;
+        sycl = VMAF_NULLPTR;
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sycl_preallocate_none(void)
 {
     if (sycl_init_failed) {
         (void)fprintf(stderr, "  [SKIP] test_sycl_preallocate_none (no GPU)\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("vmaf_init should succeed", err == 0);
 
@@ -55,18 +55,18 @@ static char *test_sycl_preallocate_none(void)
     mu_assert("preallocate with NONE should succeed as no-op", err == 0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sycl_preallocate_device_fetch_cycle(void)
 {
     if (sycl_init_failed) {
         (void)fprintf(stderr, "  [SKIP] test_sycl_preallocate_device_fetch_cycle (no GPU)\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("vmaf_init should succeed", err == 0);
 
@@ -91,8 +91,8 @@ static char *test_sycl_preallocate_device_fetch_cycle(void)
         memset(&pic, 0, sizeof(pic));
         err = vmaf_sycl_picture_fetch(vmaf, &pic);
         mu_assert("picture_fetch should succeed", err == 0);
-        mu_assert("fetched picture should have Y-plane data", pic.data[0] != NULL);
-        mu_assert("fetched picture should have ref", pic.ref != NULL);
+        mu_assert("fetched picture should have Y-plane data", pic.data[0] != VMAF_NULLPTR);
+        mu_assert("fetched picture should have ref", pic.ref != VMAF_NULLPTR);
         mu_assert("picture width preserved", pic.w[0] == 1920);
         mu_assert("picture height preserved", pic.h[0] == 1080);
         mu_assert("picture bpc preserved", pic.bpc == 8);
@@ -103,18 +103,18 @@ static char *test_sycl_preallocate_device_fetch_cycle(void)
     /* vmaf_close should release the pool without leaking. */
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close should succeed with pool", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sycl_preallocate_host_fetch_cycle(void)
 {
     if (sycl_init_failed) {
         (void)fprintf(stderr, "  [SKIP] test_sycl_preallocate_host_fetch_cycle (no GPU)\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("vmaf_init should succeed", err == 0);
 
@@ -133,7 +133,7 @@ static char *test_sycl_preallocate_host_fetch_cycle(void)
     memset(&pic, 0, sizeof(pic));
     err = vmaf_sycl_picture_fetch(vmaf, &pic);
     mu_assert("picture_fetch (host) should succeed", err == 0);
-    mu_assert("host-pool picture has data[0]", pic.data[0] != NULL);
+    mu_assert("host-pool picture has data[0]", pic.data[0] != VMAF_NULLPTR);
 
     /* Write + read back a sentinel byte at start and end of the buffer. */
     uint8_t *y = (uint8_t *)pic.data[0];
@@ -147,14 +147,14 @@ static char *test_sycl_preallocate_host_fetch_cycle(void)
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close should succeed with host pool", err == 0);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sycl_preallocate_without_state(void)
 {
     /* preallocate_pictures without an imported state must fail. */
     VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("vmaf_init should succeed", err == 0);
 
@@ -166,18 +166,18 @@ static char *test_sycl_preallocate_without_state(void)
     mu_assert("preallocate without state should fail", err != 0);
 
     vmaf_close(vmaf);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_sycl_pool_release(void)
 {
-    if (sycl_init_failed || sycl == NULL) {
+    if (sycl_init_failed || sycl == VMAF_NULLPTR) {
         (void)fprintf(stderr, "  [SKIP] test_sycl_pool_release (no GPU)\n");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     vmaf_sycl_state_free(&sycl);
-    mu_assert("state should be NULL after free", sycl == NULL);
-    return NULL;
+    mu_assert("state should be NULL after free", sycl == VMAF_NULLPTR);
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
@@ -188,7 +188,7 @@ char *run_tests(void)
     mu_run_test(test_sycl_preallocate_device_fetch_cycle);
     mu_run_test(test_sycl_preallocate_host_fetch_cycle);
     mu_run_test(test_sycl_pool_release);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #else /* !HAVE_SYCL */
@@ -196,7 +196,7 @@ char *run_tests(void)
 char *run_tests(void)
 {
     (void)fprintf(stderr, "SYCL not enabled, skipping tests\n");
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 #endif /* HAVE_SYCL */

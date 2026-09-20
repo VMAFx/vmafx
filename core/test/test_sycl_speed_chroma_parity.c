@@ -48,11 +48,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* speed_chroma operates on the CHROMA plane (W/2 x H/2 for YUV420P), which is
  * downsampled by NUM_SCALES (>>4) before the 5x5 SpEED block grid. The minimum
@@ -123,27 +119,27 @@ static char *fetch_scores(VmafContext *vmaf, double scores[3], const char *who)
             mu_assert("speed_chroma headline score missing", !err);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu(double scores[3])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "speed_chroma", NULL);
+    err = vmaf_use_feature(vmaf, "speed_chroma", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(speed_chroma) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     char *msg = fetch_scores(vmaf, scores, "CPU");
     if (msg)
         return msg;
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_sycl(double scores[3], int *device_present)
@@ -151,25 +147,25 @@ static char *run_sycl(double scores[3], int *device_present)
     for (unsigned i = 0; i < 3u; i++)
         scores[i] = NAN;
     *device_present = 0;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     *device_present = 1;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "speed_chroma_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "speed_chroma_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(speed_chroma_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     char *msg = fetch_scores(vmaf, scores, "SYCL");
     if (msg)
@@ -177,7 +173,7 @@ static char *run_sycl(double scores[3], int *device_present)
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* speed_chroma_sycl is a 752-LOC SYCL TU (ADR-0567) whose source
@@ -190,25 +186,25 @@ static char *run_sycl(double scores[3], int *device_present)
  * into libvmaf]` message that tracks the gap. */
 static int speed_chroma_sycl_present(void)
 {
-    return vmaf_get_feature_extractor_by_name("speed_chroma_sycl") != NULL;
+    return vmaf_get_feature_extractor_by_name("speed_chroma_sycl") != VMAF_NULLPTR;
 }
 
 static char *test_speed_chroma_sycl_registered_or_skip(void)
 {
     if (!speed_chroma_sycl_present()) {
         (void)fprintf(stderr, "[skip: speed_chroma_sycl not built into libvmaf] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("speed_chroma_sycl");
     mu_assert("speed_chroma_sycl name matches", !strcmp(fex->name, "speed_chroma_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_speed_chroma_cpu_sycl_parity(void)
 {
     if (!speed_chroma_sycl_present()) {
         (void)fprintf(stderr, "[skip: speed_chroma_sycl not built into libvmaf] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     double cpu_scores[3] = {0.0, 0.0, 0.0};
     double sycl_scores[3] = {NAN, NAN, NAN};
@@ -220,7 +216,7 @@ static char *test_speed_chroma_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (!device_present)
-        return NULL;
+        return VMAF_NULLPTR;
     static const char *const names[3] = {
         "Speed_chroma_feature_speed_chroma_u_score",
         "Speed_chroma_feature_speed_chroma_v_score",
@@ -235,14 +231,12 @@ static char *test_speed_chroma_cpu_sycl_parity(void)
         mu_assert("speed_chroma CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_speed_chroma_sycl_registered_or_skip);
     mu_run_test(test_speed_chroma_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

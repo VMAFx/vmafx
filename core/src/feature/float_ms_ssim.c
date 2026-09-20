@@ -16,6 +16,8 @@
  *
  */
 
+#include "vmaf_nullptr.h"
+
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -190,8 +192,9 @@ static const char *const ms_ssim_feature_names[3] = {
     "float_ms_ssim_cr",
 };
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+static int extract(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                   const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                   const VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     MsSsimState *s = fex->priv;
@@ -276,11 +279,10 @@ static const char *provided_features[] = {
     "float_ms_ssim",
     "float_ms_ssim_cb",
     "float_ms_ssim_cr",
-    NULL,
+    VMAF_NULLPTR,
 };
 
 // extern-registered in feature_extractor.c registry
-// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ms_ssim = {
     .name = "float_ms_ssim",
     .init = init,

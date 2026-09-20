@@ -1,5 +1,7 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-0790: Containerfile layer optimization — merge apt layer, strip build artifacts, no-cache-dir pip
+# ADR-0790: containerfile layer optimization
+
+**Decision:** Containerfile layer optimization — merge apt layer, strip build
+artifacts, no-cache-dir pip
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
@@ -9,9 +11,10 @@
 ## Context
 
 The `dev/Containerfile` multi-stage build produces a ~50 GB final image. Because
-all four stages form a linear chain (`build-deps → gpu-sdks → libvmaf-build →
-dev-mcp`), every layer in every stage contributes to the final image size.
-An audit identified four categories of avoidable bulk:
+all four stages form a linear chain
+(`build-deps → gpu-sdks → libvmaf-build → dev-mcp`), every layer in every stage
+contributes to the final image size. An audit identified four categories of
+avoidable bulk:
 
 1. **Redundant apt layer for `clinfo`** (Stage 2, line ~230): a standalone
    `apt-get update && apt-get install clinfo` layer was followed immediately by
@@ -27,15 +30,15 @@ An audit identified four categories of avoidable bulk:
 3. **FFmpeg source and build objects retained** (Stage 3.5 → dev-mcp): after
    `make install`, the entire `/build/ffmpeg` tree — comprising cloned source,
    configure output, and object files compiled with `-j$(nproc)` for a codec-
-   heavy FFmpeg — remained in the image. FFmpeg source plus compiled objects
-   for all enabled codecs (x264, x265, libvpx, SVT-AV1, VVenC, nvenc,
-   QSV, AMF) is several gigabytes.
+   heavy FFmpeg — remained in the image. FFmpeg source plus compiled objects for
+   all enabled codecs (x264, x265, libvpx, SVT-AV1, VVenC, nvenc, QSV, AMF) is
+   several gigabytes.
 
 4. **libvmaf meson build directory retained** (Stage 3): after `ninja install`,
-   the `core/build` directory containing CUDA PTX/SASS intermediates, SYCL
-   AOT fat binaries, HIP `.co` objects, and Meson-generated C object files
-   remained in the layer. The installed artifacts live under `/usr/local/`; the
-   build directory is not needed at runtime.
+   the `core/build` directory containing CUDA PTX/SASS intermediates, SYCL AOT
+   fat binaries, HIP `.co` objects, and Meson-generated C object files remained
+   in the layer. The installed artifacts live under `/usr/local/`; the build
+   directory is not needed at runtime.
 
 Per user direction, the fix scope is limited to safe wins only — no changes to
 the installed package set, no architecture changes.
@@ -58,18 +61,18 @@ Apply four targeted changes to `dev/Containerfile`:
    (`/usr/local/bin/ffmpeg`, `/usr/local/bin/ffprobe`) and libraries
    (`/usr/local/lib/libav*.so`) are retained; only the source tree is removed.
 
-4. **Remove `core/build`** (at `/build/vmaf/core/build`) in the same `RUN`
-   step as `ninja install`, after the install completes. The installed shared
-   library and headers under `/usr/local/` are retained; only the meson build
-   directory is removed.
+4. **Remove `core/build`** (at `/build/vmaf/core/build`) in the same `RUN` step
+   as `ninja install`, after the install completes. The installed shared library
+   and headers under `/usr/local/` are retained; only the meson build directory
+   is removed.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| True multi-stage copy — final image copies only `/usr/local/` from a builder stage | Eliminates all build toolchains from final image; largest possible size reduction | Breaks the dev-container contract: `clangd`, `icpx`, `hipcc`, `nvcc` must be available inside the container for interactive dev sessions and MCP tool calls | Contradicts the dev-container purpose |
-| Replace `intel-basekit` with component packages | Removes unneeded Intel SDK components; potentially saves 5-15 GB | Fragile — Intel's component package names change across versions; `intel-basekit` is the supported install path; fragmentation would cause breakage on next `apt-get update` | Risk outweighs benefit for this audit pass |
-| Strip installed binaries (`strip --strip-unneeded`) | Removes debug symbols from installed binaries | Destroys debug info needed for profiling and crash analysis in the dev container; not appropriate for a dev image | Contradicts dev-container purpose |
+| Option                                                                             | Pros                                                                              | Cons                                                                                                                                                                         | Why not chosen                             |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| True multi-stage copy — final image copies only `/usr/local/` from a builder stage | Eliminates all build toolchains from final image; largest possible size reduction | Breaks the dev-container contract: `clangd`, `icpx`, `hipcc`, `nvcc` must be available inside the container for interactive dev sessions and MCP tool calls                  | Contradicts the dev-container purpose      |
+| Replace `intel-basekit` with component packages                                    | Removes unneeded Intel SDK components; potentially saves 5-15 GB                  | Fragile — Intel's component package names change across versions; `intel-basekit` is the supported install path; fragmentation would cause breakage on next `apt-get update` | Risk outweighs benefit for this audit pass |
+| Strip installed binaries (`strip --strip-unneeded`)                                | Removes debug symbols from installed binaries                                     | Destroys debug info needed for profiling and crash analysis in the dev container; not appropriate for a dev image                                                            | Contradicts dev-container purpose          |
 
 ## Consequences
 

@@ -50,11 +50,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 
 /* 256x144 matches the round-2 / round-3 fixture footprint — enough
  * area for a stable reduction on Intel Arc, small enough to keep the
@@ -151,27 +147,27 @@ static char *fetch_scores(VmafContext *vmaf, double scores[4], const char *who)
             mu_assert("float_moment headline score missing", !err);
         }
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cpu(double scores[4])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_moment", NULL);
+    err = vmaf_use_feature(vmaf, "float_moment", VMAF_NULLPTR);
     mu_assert("CPU: vmaf_use_feature(float_moment) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     char *msg = fetch_scores(vmaf, scores, "CPU");
     if (msg)
         return msg;
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_sycl(double scores[4], int *device_present)
@@ -179,25 +175,25 @@ static char *run_sycl(double scores[4], int *device_present)
     for (unsigned i = 0; i < 4u; i++)
         scores[i] = NAN;
     *device_present = 0;
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = VMAF_NULLPTR;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
+    if (err != 0 || sycl_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
     *device_present = 1;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_moment_sycl", NULL);
+    err = vmaf_use_feature(vmaf, "float_moment_sycl", VMAF_NULLPTR);
     mu_assert("SYCL: vmaf_use_feature(float_moment_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     char *msg = fetch_scores(vmaf, scores, "SYCL");
     if (msg)
@@ -205,15 +201,15 @@ static char *run_sycl(double scores[4], int *device_present)
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_moment_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_moment_sycl");
-    mu_assert("float_moment_sycl extractor must be registered", fex != NULL);
+    mu_assert("float_moment_sycl extractor must be registered", fex != VMAF_NULLPTR);
     mu_assert("float_moment_sycl name matches", !strcmp(fex->name, "float_moment_sycl"));
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_moment_cpu_sycl_parity(void)
@@ -228,7 +224,7 @@ static char *test_float_moment_cpu_sycl_parity(void)
     if (msg)
         return msg;
     if (!device_present)
-        return NULL;
+        return VMAF_NULLPTR;
     static const char *const names[4] = {
         "float_moment_ref1st",
         "float_moment_dis1st",
@@ -244,14 +240,12 @@ static char *test_float_moment_cpu_sycl_parity(void)
         mu_assert("float_moment CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_moment_sycl_registered);
     mu_run_test(test_float_moment_cpu_sycl_parity);
-    return NULL;
+    return VMAF_NULLPTR;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */

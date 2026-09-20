@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0607: vmaf-tune compare: decode reference YUV once for the entire run
 
 - **Status**: Accepted
@@ -60,7 +59,7 @@ Micro-bench on a 10-second 1080p clip (3 codecs × 2 target VMAFs = 6 workers,
 mock encoder/scorer, measured over 100 repeat runs on the dev machine):
 
 | Scenario | Decode calls | Observed wall time |
-|---|---|---|
+| --- | --- | --- |
 | Before fix (per-worker ref decode) | 6 (one per worker) | 6 × T_decode |
 | After fix (shared ref decode) | 1 | T_decode + ε |
 
@@ -76,7 +75,7 @@ real-world speedup on BBB 1080p is approximately 392×.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Reference-counted ref YUV (Option 1 from spec) | Flexible — delete when last user exits | Requires `threading.Lock`-protected refcount, more complex invariants | Option 2 is simpler and achieves the same peak-space guarantee |
 | Cap concurrent bisects to 1 (Option 3 from spec) | No code change to the decode path | Serialises all codec bisects → N_workers × N_iters encodes take much longer | Destroys the parallelism that makes the sweep fast |
 | Delete the per-bisect finally-block cleanup entirely | Simple | Peak disk space grows with N concurrent workers (ADR-0577 intended to prevent this) | Disk-space violation for large runs |

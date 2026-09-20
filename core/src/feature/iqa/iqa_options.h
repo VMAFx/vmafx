@@ -16,7 +16,6 @@
  *
  */
 
-#pragma once
 
 #ifndef IQA_OPTIONS_H_
 #define IQA_OPTIONS_H_

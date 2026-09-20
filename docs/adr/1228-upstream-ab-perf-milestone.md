@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD060 -->
 # ADR-1228: A recurring "faster than upstream, and still exact" milestone
 
 - **Status**: Accepted

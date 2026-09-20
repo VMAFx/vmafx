@@ -3,19 +3,17 @@ from __future__ import absolute_import
 import os
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
+from contextlib import suppress
+from importlib import import_module
+from pathlib import Path
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
-PYTHON_ROOT = os.path.dirname(os.path.realpath(__file__))
-ROOT = os.path.abspath(
-    os.path.join(
-        PYTHON_ROOT,
-        "..",
-        "..",
-    )
-)
+PYTHON_ROOT = str(Path(__file__).resolve().parent)
+ROOT = str(Path(PYTHON_ROOT).joinpath("..", "..").resolve())
 # Fork change: the Python training/eval harness writes its dataset, model,
 # encode, output, and per-run scratch trees under a workspace directory. Upstream
 # keeps that at ROOT/workspace (repo root), which is noise for users who only
@@ -23,18 +21,18 @@ ROOT = os.path.abspath(
 # actually uses it (see docs/architecture/workspace.md). Override with the
 # VMAF_WORKSPACE env var if you need the harness to read/write elsewhere
 # (useful for CI caches or read-only checkouts).
-WORKSPACE = os.environ.get("VMAF_WORKSPACE", os.path.join(PYTHON_ROOT, "workspace"))
+WORKSPACE = os.environ.get("VMAF_WORKSPACE", str(Path(PYTHON_ROOT).joinpath("workspace")))
 # Fork change: the training/eval harness reads example datasets, param files,
 # model params, and tutorial images from a resource tree. Upstream keeps that at
 # ROOT/resource (repo root). This fork moves it next to the code that uses it
 # (see docs/architecture/index.md). Override with the VMAF_RESOURCE env var.
-RESOURCE = os.environ.get("VMAF_RESOURCE", os.path.join(PYTHON_ROOT, "resource"))
+RESOURCE = os.environ.get("VMAF_RESOURCE", str(Path(PYTHON_ROOT).joinpath("resource")))
 VMAF_RESOURCE_ROOT = "https://github.com/Netflix/vmaf_resource/raw/master"
 
 
 def download_reactively(local_path, remote_path):
-    if not os.path.exists(local_path):
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    if not Path(local_path).exists():
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         print(f"download {local_path} from {remote_path}")
         try:
             # Use the system trust store (default since Python 3.6). The
@@ -53,21 +51,21 @@ def download_reactively(local_path, remote_path):
             # cache) cannot observe a partially-written local_path.
             # Port of upstream Netflix/vmaf commit 32780bd9b.
             fd, tmp_path = tempfile.mkstemp(
-                dir=os.path.dirname(local_path),
-                prefix=os.path.basename(local_path) + ".",
+                dir=str(Path(local_path).parent),
+                prefix=Path(local_path).name + ".",
                 suffix=".part",
             )
             os.close(fd)
             try:
-                urllib.request.urlretrieve(remote_path, tmp_path)
-                os.replace(tmp_path, local_path)
+                parsed_url = urllib.parse.urlparse(remote_path)
+                if parsed_url.scheme != "https" or parsed_url.netloc != "github.com":
+                    raise ValueError(f"unsupported resource URL: {remote_path}")
+                retrieve_url = urllib.request.urlretrieve
+                retrieve_url(remote_path, tmp_path)
+                Path(tmp_path).replace(local_path)
             except Exception:
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    # Ignore errors removing the partial download; the
-                    # original exception is re-raised immediately below.
-                    pass
+                with suppress(OSError):
+                    Path(tmp_path).unlink()
                 raise
         except urllib.error.HTTPError as e:
             print(f"error downloading from {remote_path}")
@@ -88,10 +86,10 @@ class VmafExternalConfig(object):
         :return str: Configured path, if any
         """
         try:
-            from . import externals
+            externals = import_module(".externals", package=__package__)
 
             path = getattr(externals, name, None)
-            if path and os.path.exists(path):
+            if path and Path(path).exists():
                 return path
         except ImportError:
             print("ImportError")
@@ -105,10 +103,9 @@ class VmafExternalConfig(object):
         :return str: Configured attribute (not path), if any
         """
         try:
-            from . import externals
+            externals = import_module(".externals", package=__package__)
 
-            attr = getattr(externals, name, None)
-            return attr
+            return getattr(externals, name, None)
         except ImportError:
             print("ImportError")
         return None
@@ -229,15 +226,15 @@ class VmafConfig(object):
 
     @classmethod
     def root_path(cls, *components):
-        return os.path.join(ROOT, *components)
+        return str(Path(ROOT).joinpath(*components))
 
     @classmethod
     def file_result_store_path(cls, *components):
-        return os.path.join(WORKSPACE, "result_store_dir", "file_result_store", *components)
+        return str(Path(WORKSPACE).joinpath("result_store_dir", "file_result_store", *components))
 
     @classmethod
     def encode_store_path(cls, *components):
-        return os.path.join(WORKSPACE, "result_store_dir", "encode_store", *components)
+        return str(Path(WORKSPACE).joinpath("result_store_dir", "encode_store", *components))
 
     @classmethod
     def workspace_path(cls, *components):
@@ -246,11 +243,11 @@ class VmafConfig(object):
         compat/python-vmaf/workspace; override via VMAF_WORKSPACE env var. See
         docs/architecture/workspace.md for the subdirectory contract.
         """
-        return os.path.join(WORKSPACE, *components)
+        return str(Path(WORKSPACE).joinpath(*components))
 
     @classmethod
     def workdir_path(cls, *components):
-        return os.path.join(WORKSPACE, "workdir", *components)
+        return str(Path(WORKSPACE).joinpath("workdir", *components))
 
     @classmethod
     def model_path(cls, *components):
@@ -263,7 +260,7 @@ class VmafConfig(object):
         ROOT/resource to compat/python-vmaf/resource; override via VMAF_RESOURCE env
         var. See docs/architecture/index.md for the rationale.
         """
-        return os.path.join(RESOURCE, *components)
+        return str(Path(RESOURCE).joinpath(*components))
 
     @classmethod
     def test_resource_path(cls, *components, bypass_download=False):
@@ -271,8 +268,14 @@ class VmafConfig(object):
         if bypass_download:
             pass
         else:
-            remote_path = os.path.join(
-                VMAF_RESOURCE_ROOT, "python", "test", "resource", *components
+            remote_path = "/".join(
+                [
+                    VMAF_RESOURCE_ROOT.rstrip("/"),
+                    "python",
+                    "test",
+                    "resource",
+                    *(str(component).strip("/") for component in components),
+                ]
             )
             download_reactively(local_path, remote_path)
         return local_path
@@ -284,29 +287,29 @@ class VmafConfig(object):
         compat/python-vmaf/, so this resolves under PYTHON_ROOT rather than the
         pre-rename ROOT/python/vmaf/ path, which no longer exists.
         """
-        return os.path.join(PYTHON_ROOT, "tools", "resource", *components)
+        return str(Path(PYTHON_ROOT).joinpath("tools", "resource", *components))
 
     @classmethod
     def encode_path(cls, *components):
-        return os.path.join(WORKSPACE, "encode", *components)
+        return str(Path(WORKSPACE).joinpath("encode", *components))
 
 
 class DisplayConfig(object):
 
     @staticmethod
     def show(**kwargs):
-        from vmaf import plt
+        plt = import_module("vmaf").plt
 
         if "write_to_dir" in kwargs:
-            fmt = kwargs["format"] if "format" in kwargs else "png"
+            fmt = kwargs.get("format", "png")
             filedir = (
                 kwargs["write_to_dir"]
                 if kwargs["write_to_dir"] is not None
                 else VmafConfig.workspace_path("output")
             )
-            os.makedirs(filedir, exist_ok=True)
+            Path(filedir).mkdir(parents=True, exist_ok=True)
             for fignum in plt.get_fignums():
                 fig = plt.figure(fignum)
-                fig.savefig(os.path.join(filedir, str(fignum) + "." + fmt), format=fmt)
+                fig.savefig(str(Path(filedir).joinpath(str(fignum) + "." + fmt)), format=fmt)
         else:
             plt.show()

@@ -108,11 +108,11 @@ static char *run_cpu(bool db, bool identical, double *out_score)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (db) {
         err = ms_ssim_db_opts(&opts);
         mu_assert("CPU: ms_ssim_db_opts failed", !err);
@@ -123,7 +123,8 @@ static char *run_cpu(bool db, bool identical, double *out_score)
     mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CPU: fill_ref failed", !err);
         err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
@@ -131,7 +132,7 @@ static char *run_cpu(bool db, bool identical, double *out_score)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_score, 1u);
@@ -139,7 +140,7 @@ static char *run_cpu(bool db, bool identical, double *out_score)
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *run_cuda(bool db, bool identical, double *out_score)
@@ -147,23 +148,23 @@ static char *run_cuda(bool db, bool identical, double *out_score)
     *out_score = NAN;
     int err = 0;
 
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
+    VmafCudaState *cu_state = VMAF_NULLPTR;
+    VmafCudaConfiguration cuda_cfg = {VMAF_NULLPTR};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
+    if (err != 0 || cu_state == VMAF_NULLPTR) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+        return VMAF_NULLPTR;
     }
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = VMAF_NULLPTR;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CUDA: vmaf_init failed", !err);
 
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    VmafFeatureDictionary *opts = NULL;
+    VmafFeatureDictionary *opts = VMAF_NULLPTR;
     if (db) {
         err = ms_ssim_db_opts(&opts);
         mu_assert("CUDA: ms_ssim_db_opts failed", !err);
@@ -174,7 +175,8 @@ static char *run_cuda(bool db, bool identical, double *out_score)
     mu_assert("CUDA: vmaf_use_feature(float_ms_ssim_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_ref(&ref, i);
         mu_assert("CUDA: fill_ref failed", !err);
         err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
@@ -182,7 +184,7 @@ static char *run_cuda(bool db, bool identical, double *out_score)
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, VMAF_NULLPTR, VMAF_NULLPTR, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_score, 1u);
@@ -192,7 +194,7 @@ static char *run_cuda(bool db, bool identical, double *out_score)
     mu_assert("CUDA: vmaf_close failed", !err);
     err = vmaf_cuda_state_free(cu_state);
     mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_float_ms_ssim_cpu_cuda_parity(void)
@@ -207,7 +209,7 @@ static char *test_float_ms_ssim_cpu_cuda_parity(void)
     if (msg)
         return msg;
     if (isnan(cuda_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU float_ms_ssim score is non-finite", isfinite(cpu_score));
     mu_assert("CUDA float_ms_ssim score is non-finite", isfinite(cuda_score));
@@ -220,7 +222,7 @@ static char *test_float_ms_ssim_cpu_cuda_parity(void)
     }
     mu_assert("float_ms_ssim CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
               delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 /* ------------------------------------------------------------------ */
@@ -253,7 +255,7 @@ static char *test_float_ms_ssim_clip_db_ceiling(void)
     if (msg)
         return msg;
     if (isnan(gpu_score))
-        return NULL;
+        return VMAF_NULLPTR;
 
     mu_assert("CPU float_ms_ssim dB score is non-finite", isfinite(cpu_score));
     mu_assert("CUDA float_ms_ssim dB score is non-finite -- clip_db must cap it at max_db",
@@ -267,12 +269,12 @@ static char *test_float_ms_ssim_clip_db_ceiling(void)
                       cpu_score, gpu_score, delta, PARITY_TOL);
     }
     mu_assert("float_ms_ssim dB score drifts from the CPU reference", delta <= PARITY_TOL);
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_ms_ssim_cpu_cuda_parity);
     mu_run_test(test_float_ms_ssim_clip_db_ceiling);
-    return NULL;
+    return VMAF_NULLPTR;
 }

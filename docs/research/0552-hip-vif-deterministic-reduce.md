@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Research digest: ADR-0552 — HIP VIF deterministic wavefront reduction
 
 ## Problem characterisation
@@ -38,7 +37,7 @@ makes the result deterministic.
 AMD GCN/RDNA default wavefront size = 64 (not 32). Differences from CUDA:
 
 | Feature | CUDA | HIP (AMD) |
-|---------|------|-----------|
+| --------- | ------ | ----------- |
 | Warp/wavefront size | 32 | 64 |
 | Reduction intrinsic | `__shfl_down_sync(mask, val, stride)` | `__shfl_xor(val, stride)` |
 | Sync mask | Required (`0xffffffff`) | Not needed (wavefront is inherently lock-step) |

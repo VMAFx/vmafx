@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0512: Vulkan VIF Two-Variant Compute Shader (fp32 Auto-Fallback)
 
 - **Status**: Accepted
@@ -60,7 +59,7 @@ ADR-0492 retains its body unchanged per the ADR-maintenance rule
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A: strict-no-opt-in (status quo / ADR-0492) | Bit-exact CPU parity guaranteed; one shader to ship | Excludes Intel Arc, AMD iGPU, older NVIDIA — entire GPU generations refused for an unvalidated precision concern | Rejected — the empirical fp32 vs CPU delta (~1e-4) is well within tolerance |
 | B: opt-in-flag (user must pass `--vulkan-allow-fp32`) | Conservative default; users acknowledge the precision trade | Same exclusion-by-default as A; surface friction; users on Arc / AMD iGPU hit `-ENOTSUP` first and have to discover the flag | Rejected — most users have no reason to care about ~1e-4 VMAF delta |
 | C: auto-relax-flag (single shader, runtime guard relaxed) | Minimal code change | Cannot avoid the fp32-vs-double precision difference on devices without `shaderFloat64`; the shader still requires the float64 extension and would fail at SPIR-V compile time | Rejected — does not actually solve the compatibility problem |

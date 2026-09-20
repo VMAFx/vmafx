@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0872: POSIX I/O EINTR-retry + return-value audit on fork-added C
 
 - **Status**: Accepted
@@ -68,7 +67,7 @@ exist either — every `write_all*` helper loops until `off == len`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave drain-loop EINTR unhandled | Zero change | Silent stream desync under signal pressure — exact class of bug rule 7 is designed to prevent | Rejected: defeats the rule's intent |
 | Wrap `close(2)` in a helper macro `vmaf_close()` that logs on failure | One choke point | All current sites are cleanup paths where logging would add noise without actionable signal; would require new header churn | Rejected: cost > benefit for ~7 sites |
 | Audit only the MCP surface (skip the 7 close calls) | Smaller blast radius | Leaves rule-7 violations in tree visible to clang-tidy / next maintainer; rule applies project-wide | Rejected: half-measure |

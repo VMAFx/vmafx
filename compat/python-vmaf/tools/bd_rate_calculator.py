@@ -2,6 +2,8 @@ import numpy as np
 
 from vmaf.tools.interpolation_utils import InterpolationUtils
 
+_COMPARISON_VALUE_4 = 4
+
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
@@ -19,7 +21,7 @@ class BDrateCalculator(object):
 
     @staticmethod
     def _dedup_and_order(set_):
-        return sorted(list(set(set_)), key=lambda x: x[0])
+        return sorted(set(set_), key=lambda x: x[0])
 
     @classmethod
     def CalcBDRate(cls, setA, setB):
@@ -30,7 +32,7 @@ class BDrateCalculator(object):
         # ==== added by zli =======
 
         assert not (
-            len(setA) < 4 or len(setB) < 4
+            len(setA) < _COMPARISON_VALUE_4 or len(setB) < _COMPARISON_VALUE_4
         ), "Problem with input RD point lists. setA is size {}, " "setB is size {}".format(
             len(setA), len(setB)
         )
@@ -84,10 +86,7 @@ class BDrateCalculator(object):
 
     @staticmethod
     def ratesLookOkay(set_):
-        for i in range(len(set_)):
-            if set_[i][0] == 0:
-                return False
-        return True
+        return all(set_[i][0] != 0 for i in range(len(set_)))
 
     # // BD-rate calculation for arbitrary number (N) points
     # // cf. https://www.mathworks.com/moler/interp.pdf, sections 3.3 - 3.4

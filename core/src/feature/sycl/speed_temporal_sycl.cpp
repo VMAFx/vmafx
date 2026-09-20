@@ -482,80 +482,79 @@ static const VmafOption options_temporal[] = {
     {
         .name = "speed_kernelscale",
         .help = "scaling factor for the Gaussian kernel",
+        .alias = "ks",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_kernelscale),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
         .min = 0.1,
         .max = 4.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
     },
     {
         .name = "speed_prescale",
         .help = "scaling factor for the frame",
+        .alias = "ps",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_prescale),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
         .min = 0.1,
         .max = 4.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
     },
     {
         .name = "speed_prescale_method",
         .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
+        .alias = "psm",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_prescale_method),
         .type = VMAF_OPT_TYPE_STRING,
         .default_val = {.s = "nearest"},
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
     },
     {
         .name = "speed_sigma_nn",
         .help = "standard deviation of neural noise",
+        .alias = "snn",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_sigma_nn),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 0.29},
         .min = 0.1,
         .max = 2.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
     },
     {
         .name = "speed_nn_floor",
         .help = "neural noise floor fraction",
+        .alias = "nnf",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_nn_floor),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 0.0},
         .min = 0.0,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
     },
     {
         .name = "speed_max_val",
         .help = "clip output to this maximum",
+        .alias = "mxv",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1000.0},
         .min = 0.0,
         .max = 1000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
     },
     {
         .name = "speed_use_ref_diff",
         .help = "use reference frame difference instead of distorted",
+        .alias = "urd",
         .offset = offsetof(SpeedTemporalSyclState, speed_temporal_use_ref_diff),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "urd",
     },
     {nullptr},
 };
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -654,9 +653,9 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     return 0;
 }
 
-static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                                 VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                                 VmafPicture *dist_pic_90, unsigned index,
+static int extract_temporal_sycl(VmafFeatureExtractor *fex, const VmafPicture *ref_pic,
+                                 const VmafPicture *ref_pic_90, const VmafPicture *dist_pic,
+                                 const VmafPicture *dist_pic_90, unsigned index,
                                  VmafFeatureCollector *feature_collector)
 {
     (void)ref_pic_90;
@@ -775,9 +774,8 @@ VmafFeatureExtractor vmaf_fex_speed_temporal_sycl = {
     .close = close_temporal_sycl,
     .options = options_temporal,
     .priv_size = sizeof(SpeedTemporalSyclState),
-    .provided_features = provided_features_temporal,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_SYCL,
+    .provided_features = provided_features_temporal,
 };
 
 } /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

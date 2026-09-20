@@ -1,3 +1,5 @@
+# Changelog fragment
+
 Drop the `Claude (Anthropic)` author entry from all six fork `pyproject.toml`
 files (`ai`, `dev-llm`, `mcp-server/vmaf-mcp`, `tools/ensemble-training-kit`,
 `tools/vmaf-roi-score`, `tools/vmaf-tune`); Anthropic is not a rights holder

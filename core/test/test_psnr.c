@@ -96,12 +96,12 @@ static char *test_16b_large_diff()
     vmaf_picture_unref(&pic1);
     vmaf_picture_unref(&pic2);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests()
 {
     mu_run_test(test_16b_large_diff);
 
-    return NULL;
+    return VMAF_NULLPTR;
 }

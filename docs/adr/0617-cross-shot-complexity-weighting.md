@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0617: Cross-Shot Complexity Weighting and Title-Level Quality Constraints
 
 - **Status**: Proposed
@@ -27,7 +26,7 @@ function are added to `per_shot.py`. The API is backward-compatible: passing
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|--------|------|------|----------------|
+| -------- | ------ | ------ | ---------------- |
 | A — linear complexity relaxation | Zero solver overhead; fast | Not guaranteed to satisfy mean/floor constraints | Insufficient for production quality targets |
 | B — iterative redistribution | No solver; reuses bisect | 2× encode overhead; convergence not guaranteed | Order-dependent; less principled |
 | C — Lagrangian optimisation (chosen) | Principled; reuses Phase B; provably optimal under model | O(shots × λ iters) probes; NR proxy needed for speed | — |
@@ -55,7 +54,7 @@ function are added to `per_shot.py`. The API is backward-compatible: passing
 ## Implementation phases
 
 | Phase | Description | Effort |
-|-------|-------------|--------|
+| ------- | ------------- | -------- |
 | P1 | `TitleQualityConstraints` dataclass; `tune_per_shot_with_constraints` skeleton | 1 day |
 | P2 | Lagrangian λ bisect over per-shot targets; unit tests with mock bisect | 2 days |
 | P3 | Duration-weighted mean; floor soft-fail path; integration tests | 1 day |

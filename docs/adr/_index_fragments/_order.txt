@@ -991,3 +991,7 @@
 1257-retire-darwin-adm-dwt2-legacy-dispatch
 1265-clang-tidy-header-filter-absolute-paths
 1214-float-adm-csf-scale-watson-mode-and-aliases
+1266-gpu-nolint-citation-closeout-round-2
+1267-whole-tree-zero-debt-completion
+1268-ai-static-import-bootstrap
+1269-c23-nullptr-portability-shim

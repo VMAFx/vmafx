@@ -1,3 +1,5 @@
+# Changelog fragment
+
 ## Removed
 
 - **Vulkan residual config switches and stale doc claims scrubbed (ADR-0726

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0436: MCP server backend-selector parity
 
 - **Status**: Accepted
@@ -54,7 +53,7 @@ libvmaf's CLI by:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Extend enum + dispatch (chosen)** | Minimal, mechanical, mirrors what libvmaf already exposes; tests prove correctness without GPU | None — this is the obvious gap closure | Chosen |
 | **Reject unknown backends with clear error** | Forces clients to update | Breaks MCP clients that already pass `vulkan`/etc. expecting it to "work" via auto | Worse UX; the silent fall-through is a real bug, not a feature |
 | **Drop the explicit `backend` parameter entirely** | Smallest schema | Removes a load-bearing dispatch knob; cross-backend probing from the MCP layer requires it | Workflow regression |

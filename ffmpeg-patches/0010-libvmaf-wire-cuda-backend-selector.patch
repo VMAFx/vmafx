@@ -14,7 +14,8 @@ options from patches 0003 / 0004.  When `cuda=1` the filter:
     default device (CUDA_VISIBLE_DEVICES picks the device, matching
     the libvmaf CLI `--cuda` flag's behaviour — the upstream C-API's
     VmafCudaConfiguration has no device-index field),
-  * imports the state into the VmafContext,
+  * imports the state into the VmafContext through the const-qualified,
+    non-owning `vmaf_cuda_import_state` API,
   * preallocates a HOST_PINNED picture pool on the first frame
     (lazy because geometry isn't known before the first AVFrame),
   * dispenses ref/dist VmafPictures from the pool instead of
@@ -45,8 +46,8 @@ Validated against n8.1.1 with the cumulative 0001..0009 patch
 stack applied; no upstream hunks rebased.
 ---
  configure                |  6 ++-
- libavfilter/vf_libvmaf.c | 85 ++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 90 insertions(+), 1 deletion(-)
+ libavfilter/vf_libvmaf.c | 86 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 91 insertions(+), 1 deletion(-)
 
 diff --git a/configure b/configure
 index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b1240dfb063 100755
@@ -154,7 +155,7 @@ index 324e1aa82e51c229be901693859e0f2f52a3abd4..baf35892fb865be020e529737a6d2c8f
  #endif
      {
          err = vmaf_picture_alloc(dst, pix_fmt_map(src->format), bpc,
-@@ -572,6 +611,45 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -572,6 +611,46 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
  
@@ -175,6 +176,7 @@ index 324e1aa82e51c229be901693859e0f2f52a3abd4..baf35892fb865be020e529737a6d2c8f
 +                   "vmaf_cuda_state_init failed: %d.\n", err);
 +            return AVERROR(EINVAL);
 +        }
++        /* Import borrows the state; the const-qualified API does not mutate it. */
 +        err = vmaf_cuda_import_state(s->vmaf, s->cu_state);
 +        if (err) {
 +            av_log(ctx, AV_LOG_ERROR,
@@ -200,7 +202,7 @@ index 324e1aa82e51c229be901693859e0f2f52a3abd4..baf35892fb865be020e529737a6d2c8f
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -801,6 +879,13 @@ clean_up:
+@@ -801,6 +880,13 @@ clean_up:
          s->vulkan_state = NULL;
      }
  #endif

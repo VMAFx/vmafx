@@ -31,15 +31,15 @@
 static char *test_version_non_empty(void)
 {
     const char *v = vmaf_version();
-    mu_assert("vmaf_version() returned NULL", v != NULL);
+    mu_assert("vmaf_version() returned NULL", v != VMAF_NULLPTR);
     mu_assert("vmaf_version() returned empty string", v[0] != '\0');
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 static char *test_version_printable(void)
 {
     const char *v = vmaf_version();
-    mu_assert("vmaf_version() returned NULL", v != NULL);
+    mu_assert("vmaf_version() returned NULL", v != VMAF_NULLPTR);
 
     /* Every character must be printable and non-whitespace: the string is
      * embedded verbatim into XML/JSON output (output.c) and must not
@@ -48,12 +48,12 @@ static char *test_version_printable(void)
         mu_assert("vmaf_version() contains non-printable character",
                   isprint((unsigned char)*p) && !isspace((unsigned char)*p));
     }
-    return NULL;
+    return VMAF_NULLPTR;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_version_non_empty);
     mu_run_test(test_version_printable);
-    return NULL;
+    return VMAF_NULLPTR;
 }

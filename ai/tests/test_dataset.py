@@ -13,11 +13,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
+try:
+    import torch
+except ImportError:
+    pytest.skip("PyTorch not installed", allow_module_level=True)
 
-from ai.data.feature_extractor import DEFAULT_FEATURES  # noqa: E402
-from ai.data.scores import resolve_teacher_model  # noqa: E402
-from ai.train.dataset import DEFAULT_VAL_SOURCE, NetflixFrameDataset  # noqa: E402
+from ai.data.feature_extractor import DEFAULT_FEATURES
+from ai.data.scores import resolve_teacher_model
+from ai.train.dataset import DEFAULT_VAL_SOURCE, NetflixFrameDataset
 
 
 def _make_payload(pair, n_frames=3, seed=0):  # type: ignore[no-untyped-def]

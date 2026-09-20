@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
 
 # ADR-1111: Add PU21 HDR perceptual metric (PU-PSNR + PU-SSIM, PQ input only)
 
@@ -50,7 +49,7 @@ and untouched.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **PU-PSNR + PU-SSIM, PQ-only, luma-only (chosen)** | Both standard PU metrics; matches SSIM's luminance path; PQ is the common HDR case; smallest correct surface | Defers HLG/SDR and chroma | Best correctness-per-LOC; HLG/SDR are free design params with no pu21-source authority |
 | PU-PSNR only | Smaller surface | Drops PU-SSIM, the more perceptual of the two; pu21_metric.m ships both | Under-delivers the dossier's "both" recommendation |
 | Modify/parameterise the shared `float_ssim` / `iqa_ssim` to take a data range | No duplicate SSIM code | `iqa_ssim` feeds the Netflix **golden** assertions (L=255 hardcoded); any change risks the protected golden gate | **Rejected** — golden SSIM must remain byte-identical |

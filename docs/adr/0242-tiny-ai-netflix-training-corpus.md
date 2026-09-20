@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # ADR-0242: Tiny-AI training on the original Netflix VMAF training corpus
 
 - **Status**: Accepted
@@ -61,7 +60,7 @@ any popup questions from the training agent.
 ### A. Model architecture
 
 | Option | Pros | Cons | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 2-layer MLP on libvmaf feature vectors (current `fr_tiny_v1` baseline) | Fast to train and evaluate; deterministic; interpretable; no new deps | Accuracy ceiling bounded by the hand-crafted features; no spatial sensitivity | **Default starting point** |
 | 4-layer MLP with batch-norm | Higher capacity; still lightweight for ONNX export | Overfit risk on 70-pair corpus; need careful regularisation | Viable; evaluate in sweep |
 | 1-D CNN over temporal feature sequences | Captures motion/temporal quality trends | Much larger; training data sparse for temporal modelling on 70 pairs | Defer to Phase 4 |
@@ -70,7 +69,7 @@ any popup questions from the training agent.
 ### B. Distillation vs from-scratch
 
 | Option | Pros | Cons | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Distill from `vmaf_v0.6.1` (soft-label regression) | Tiny-model inherits `vmaf_v0.6.1` score distribution without needing raw MOS | Output is bounded by teacher; systematic teacher errors are inherited | **Recommended starting point** |
 | Train from scratch on subjective scores Netflix published (ACM MM 2016 appendix) | Ground truth independent of teacher; potential to exceed `vmaf_v0.6.1` | Published MOS for only a subset of pairs; high variance on 70-pair corpus | Viable; run in parallel sweep |
 | Fine-tune an existing ONNX checkpoint | Fast convergence; stable initialisation | Risk of catastrophic forgetting; checkpoint may not exist for the right opset | Deferred |
@@ -78,7 +77,7 @@ any popup questions from the training agent.
 ### C. Model size
 
 | Option | Target params | Inference budget (CPU, 1080p) | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Micro (≤ 4 KB ONNX) | < 1 K | < 2 ms | Fits embedded / Wasm targets |
 | Small (≤ 64 KB ONNX) | 4 K – 16 K | 2–10 ms | Current `fr_tiny_v1` range |
 | Medium (≤ 512 KB ONNX) | 16 K – 128 K | 10–50 ms | Headroom for spatial features |
@@ -86,7 +85,7 @@ any popup questions from the training agent.
 ### D. Evaluation scope
 
 | Option | Pros | Cons | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Netflix golden CPU pairs only (3 pairs, `python/test/`) | Locked CI gate; regression-proof | Tiny sample; overfits to golden distribution | Required gate, not sole criterion |
 | Cross-backend ULP delta (`/cross-backend-diff`) | Verifies numerical parity GPU↔CPU | Doesn't measure perceptual accuracy | Required gate for GPU paths |
 | Both golden + cross-backend + PLCC/SROCC on held-out split | Comprehensive | Most expensive to run each PR | **Recommended for release gate** |

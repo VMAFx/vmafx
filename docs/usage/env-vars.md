@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # Environment variable reference
 
 VMAFX reads a number of environment variables at runtime.  This page is the
@@ -11,7 +10,7 @@ All variables are optional unless marked **required**.
 ## Core C library (`libvmaf`)
 
 | Name | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAF_CUDA_DISPATCH` | string | _(auto)_ | CUDA dispatch strategy. Accepts a bare strategy name (`adaptive`, `batched`, `serial`) or a per-feature override `feature=strategy[,...]`. See [CUDA dispatch knobs](#cuda-dispatch-knob). |
 | `VMAF_DISTS_SQ_MODEL_PATH` | path | _(auto)_ | Absolute path to the DISTS-SQ ONNX model file. Overrides the `VMAF_TINY_MODEL_DIR` search. |
 | `VMAF_FASTDVDNET_PRE_MODEL_PATH` | path | _(auto)_ | Absolute path to the FastDVDNet-Pre ONNX model file. |
@@ -39,7 +38,7 @@ See also [ai/scripts-env-vars.md](../ai/scripts-env-vars.md) for per-corpus
 overrides not listed here.
 
 | Name | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAF_BIN` | path | `core/build-cpu/tools/vmaf` | Path to the `vmaf` CLI binary used by Python AI scripts and feature-extraction pipelines. |
 | `VMAF_BVI_DVC_RAW_DIR` | path | `<repo>/.workingdir2/bvi-dvc-raw` | Root of the raw BVI-DVC dataset for `train_predictor_v2_realcorpus.py`. |
 | `VMAF_CHUG_DIR` | path | `<repo>/.corpus/chug` | Root of the CHUG shard tree used by `chug_extract_features.py` and `chug_to_corpus_jsonl.py`. |
@@ -54,7 +53,7 @@ overrides not listed here.
 ## MCP server (`cmd/vmafx-mcp`, Python MCP server)
 
 | Name | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAF_MCP_ALLOW` | colon-separated paths | _(built-in roots)_ | Additional filesystem roots that the MCP server is allowed to read YUV files from.  Paths outside any allowed root are rejected. |
 | `VMAF_MCP_ASYNC` | string | `asyncio` | anyio backend for the Python MCP server.  Pass `trio` to switch to the Trio event loop. |
 | `VMAF_ROOT` | path | _(auto-detect)_ | Override the repo root detected by the Go MCP server (`cmd/vmafx-mcp`). |
@@ -79,7 +78,7 @@ modules own the listeners.
 > migrate.
 
 | Name | Type | Default | golusoris key | Description |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | `http.addr` | HTTP listen address (serves `/healthz`, `/readyz`, `/metrics`, `/v1/score`). |
 | `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | `grpc.listen` | gRPC listen address (serves both `VmafxScoring` and `VmafxController`). |
 | `VMAFX_DB_PATH` | path | `vmafx-controller.db` | `db.path` | Path to the embedded SQLite job + node-persistence database (kept, not migrated to golusoris.Jobs — ADR-1119). |
@@ -111,7 +110,7 @@ bare port numbers.
 > default gRPC address changed from `:50051` to golusoris' `:9090`.
 
 | Name | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | HTTP listen address (serves `/healthz`, `/livez`, `/readyz`, `/startupz`, `/metrics`, `/v1/score`, `/v1/health`, `/v1/ready`, `/swagger`). golusoris key `http.addr`. |
 | `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | gRPC listen address (`VmafxScoring`). golusoris key `grpc.listen`. |
 | `VMAFX_LOG_LEVEL` | string | `INFO` | Structured log level: `DEBUG`, `INFO`, `WARN`, `ERROR`. |
@@ -130,7 +129,7 @@ lowercases, and replaces **every** underscore with the `.` delimiter, so the
 listed env var maps to the dotted koanf key shown in the third column.
 
 | Name | koanf key | Type | Default | Description |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | gRPC listen address for the node's `VmafxScoring` service. **Breaking — replaces `VMAFX_NODE_ADDR`** (ADR-1119). |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | Path to the `ffmpeg` binary used by the startup encoder probe.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
 | `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | Path to the `vmaf` CLI binary backing the unary `Score` RPC. |
@@ -151,7 +150,7 @@ listed env var maps to the dotted koanf key shown in the third column.
 ## Go operator (`cmd/vmafx-operator`)
 
 | Name | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAFX_OPERATOR_LEADER_ELECTION` | `true`/`false` | `false` | Enable leader election for high-availability deployments. Set to `true` when running multiple operator replicas. |
 | `VMAFX_OPERATOR_LEADER_ELECTION_ID` | string | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled. |
 | `VMAFX_OPERATOR_METRICS_ADDR` | `host:port` | `:8080` | Bind address for the Prometheus metrics endpoint. |
@@ -171,7 +170,7 @@ These variables are read exclusively by test harnesses and CI gates.  They
 are not read by production code paths.
 
 | Name | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAF_BIN_FOR_TESTS` | path | _(auto-detect)_ | Explicit path to the `vmaf` binary for integration tests (`test_chug_extract_features_smoke.py`, ADR-0543 backend-enforcement tests).  When unset the tests probe the canonical build paths and `PATH`. |
 | `VMAF_TEST_DATA` | path | _(repo-relative)_ | Override for the test-data root in Python-harness tests. |
 | `VMAF_FORCE_BACKEND` | string | _(none)_ | Scoring backend override (`cuda`, `sycl`, `cpu`, etc.) for Python-harness `ExternalProgramCaller` invocations; appends `--backend <val>`. |
@@ -185,7 +184,7 @@ are not read by production code paths.
 driver.  Three strategies are available:
 
 | Value | Behaviour |
-|---|---|
+| --- | --- |
 | `adaptive` | Runtime heuristic: selects `batched` above the 720p frame-area threshold, `serial` below it.  **Default** when the variable is unset. |
 | `batched` | Submits a full drain-batch of per-extractor events and waits once (ADR-0483). Lowest latency at ≥ 1080p. |
 | `serial` | Synchronises after each extractor.  Lower overhead at small resolutions or single-extractor runs. |
@@ -208,7 +207,7 @@ parse grammar.
 are available:
 
 | Value | Behaviour |
-|---|---|
+| --- | --- |
 | `direct` | Submit kernels directly to an in-order queue (no graph).  Lower per-frame overhead at small resolutions. |
 | `graph` | Use SYCL graph replay (ADR-0483).  Reduces kernel-launch overhead at ≥ 720p. |
 
