@@ -411,24 +411,28 @@ __device__ __forceinline__ S0CmParams s0_cm_params(const AdmBufferCuda &buf,
                                                    const AdmFixedParametersCuda &params, int h,
                                                    int src_stride)
 {
+    /* Positional: see i4_cm_neighbours. Field order is
+     * S0CmParams{ref, dis, i_rfactor, adm_enhn_gain_limit, h, src_stride}. */
     return {
-        .ref = &buf.ref_dwt2,
-        .dis = &buf.dis_dwt2,
-        .i_rfactor = params.i_rfactor,
-        .adm_enhn_gain_limit = params.adm_enhn_gain_limit,
-        .h = h,
-        .src_stride = src_stride,
+        &buf.ref_dwt2,              /* ref */
+        &buf.dis_dwt2,              /* dis */
+        params.i_rfactor,           /* i_rfactor */
+        params.adm_enhn_gain_limit, /* adm_enhn_gain_limit */
+        h,                          /* h */
+        src_stride,                 /* src_stride */
     };
 }
 
 /* The host-computed cubic-accumulation shifts of scale-0 band `band`. */
 __device__ __forceinline__ CmCubeShifts s0_cm_cube_shifts(const WarpShift &ws, int band)
 {
+    /* Positional: see i4_cm_neighbours. Field order is
+     * CmCubeShifts{add_shift_sq, shift_sq, add_shift_cub, shift_cub}. */
     return {
-        .add_shift_sq = (int32_t)ws.add_shift_sq[band],
-        .shift_sq = ws.shift_sq[band],
-        .add_shift_cub = (int32_t)ws.add_shift_cub[band],
-        .shift_cub = ws.shift_cub[band],
+        (int32_t)ws.add_shift_sq[band],  /* add_shift_sq */
+        ws.shift_sq[band],               /* shift_sq */
+        (int32_t)ws.add_shift_cub[band], /* add_shift_cub */
+        ws.shift_cub[band],              /* shift_cub */
     };
 }
 
