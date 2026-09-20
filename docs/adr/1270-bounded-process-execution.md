@@ -30,8 +30,9 @@ selected executable, rejects relative path traversal and NULs, bounds each
 argument and the aggregate argument vector, validates the environment and
 working directory, closes stdin unless bounded input is supplied, and applies
 an explicit deadline. Captured stdout and stderr share a caller-configurable
-memory ceiling. POSIX children run in a new session so timeout and overflow
-cleanup signal the complete process group; Windows children run in a new
+memory ceiling. POSIX children run in a new session so timeout, output
+overflow, and caller cancellation signal the complete process group and reap
+the direct child before returning control; Windows children run in a new
 process group and use the platform termination path.
 
 Expose synchronous and asynchronous entry points with immutable binary and

@@ -6,13 +6,23 @@
 from __future__ import annotations
 
 import importlib.util
-import subprocess
+import os
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import CommandFailed, CommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
+SCRIPT = ROOT / "scripts/ci/agent-eligibility-precheck.py"
+PYTHON = str(Path(sys.executable).resolve(strict=True))
 SPEC = importlib.util.spec_from_file_location(
     "agent_eligibility_precheck", ROOT / "scripts/ci/agent-eligibility-precheck.py"
 )
@@ -42,7 +52,9 @@ class AgentEligibilityPrecheckTests(unittest.TestCase):
 
     def test_failed_gh_query_blocks_merged_pr_check(self) -> None:
         tracker = mock.Mock()
-        tracker.search_prs.side_effect = subprocess.CalledProcessError(7, ["gh"])
+        tracker.search_prs.side_effect = CommandFailed(
+            CommandResult(argv=("gh",), returncode=7, stdout="", stderr="")
+        )
         with mock.patch.object(PRECHECK.shutil, "which", return_value="/usr/bin/gh"):
             self.assertFalse(PRECHECK.check_no_merged_pr("T3-9", tracker))
 
@@ -63,6 +75,70 @@ class AgentEligibilityPrecheckTests(unittest.TestCase):
             self.assertFalse(
                 PRECHECK.check_no_active_agent("T3-9", tasks_glob="ignored", open_branches=[])
             )
+
+
+class AgentEligibilityPrecheckCliTests(unittest.TestCase):
+    """End-to-end runs of the CLI against a `gh` that exits non-zero.
+
+    The in-process tests above patch the tracker; these drive the real
+    argv path, so they also cover the ``sys.path`` bootstrap and the
+    exception type the bounded-subprocess wrapper actually raises.
+
+    A failed `gh` query must BLOCK dispatch. The precheck exists to stop a
+    second agent starting work that is already in flight, so a lookup that
+    could not run is not evidence that nothing is in flight -- reporting it
+    as clear is the gate-that-did-not-run HISS-18 forbids.
+    """
+
+    def run_precheck(self, *arguments: str) -> TextCommandResult:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_gh = fake_bin / "gh"
+            fake_gh.write_text("#!/bin/sh\nexit 7\n")
+            fake_gh.chmod(0o755)
+            environment = dict(os.environ)
+            environment["PATH"] = os.pathsep.join((str(fake_bin), environment.get("PATH", "")))
+            return run_command(
+                [PYTHON, str(SCRIPT), *arguments],
+                allowed_executables=(PYTHON,),
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout_seconds=10,
+            )
+
+    def test_merged_pr_lookup_failure_blocks_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            backlog = Path(temporary) / "BACKLOG.md"
+            backlog.write_text("| **T9-99** | pending fixture |\n")
+            result = self.run_precheck(
+                "--backlog-id",
+                "T9-99",
+                "--backlog-path",
+                str(backlog),
+                "--skip-active-scan",
+            )
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("agent-eligibility: merged-PR check failed", result.stderr)
+        self.assertIn("gh search exited 7", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_open_branch_lookup_failure_blocks_dispatch(self) -> None:
+        result = self.run_precheck(
+            "--task-tag",
+            "offline-fixture",
+            "--harness-tasks-glob",
+            "/definitely/missing/*.output",
+        )
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("agent-eligibility: open-branch check failed", result.stderr)
+        self.assertIn("gh branch listing exited 7", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":

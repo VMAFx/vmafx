@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
+import signal
 import sys
 import tempfile
 import time
@@ -21,6 +24,7 @@ from scripts.lib.safe_subprocess import (
     CommandTimedOut,
     CommandValidationError,
     run,
+    run_async,
 )
 
 PYTHON = str(Path(sys.executable).resolve(strict=True))
@@ -162,6 +166,64 @@ class SafeSubprocessTests(unittest.TestCase):
                 time.sleep(0.05)
             else:
                 self.fail(f"descendant {child_pid} survived after its session leader exited")
+
+
+@unittest.skipUnless(
+    os.name == "posix" and Path("/proc").is_dir(),
+    "process-group cancellation assertion requires procfs and POSIX signals",
+)
+class SafeSubprocessAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancellation_terminates_process_group_and_reaps_leader(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            pid_file = Path(temporary) / "processes.pid"
+            source = (
+                "import os, pathlib, subprocess, sys, time; "
+                "child=subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                f"pathlib.Path({str(pid_file)!r}).write_text(f'{{os.getpid()}} {{child.pid}}'); "
+                "time.sleep(30)"
+            )
+            task = asyncio.create_task(
+                run_async(
+                    [PYTHON, "-c", source],
+                    allowed_executables=ALLOW_PYTHON,
+                    timeout_seconds=30,
+                )
+            )
+            leader_pid: int | None = None
+            child_pid: int | None = None
+            try:
+                deadline = asyncio.get_running_loop().time() + 3
+                while not pid_file.exists() and asyncio.get_running_loop().time() < deadline:
+                    await asyncio.sleep(0.01)
+                self.assertTrue(pid_file.exists(), "child did not publish its process IDs")
+                leader_pid, child_pid = (int(value) for value in pid_file.read_text().split())
+
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+
+                deadline = asyncio.get_running_loop().time() + 3
+                while asyncio.get_running_loop().time() < deadline:
+                    leader_exists = Path(f"/proc/{leader_pid}").exists()
+                    child_stat = Path(f"/proc/{child_pid}/stat")
+                    child_stopped = (
+                        not child_stat.exists() or child_stat.read_text().split()[2] == "Z"
+                    )
+                    if not leader_exists and child_stopped:
+                        break
+                    await asyncio.sleep(0.05)
+                else:
+                    self.fail(
+                        f"cancelled process group survived: leader={leader_pid}, child={child_pid}"
+                    )
+            finally:
+                if leader_pid is not None:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(leader_pid, signal.SIGKILL)
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
 
 if __name__ == "__main__":

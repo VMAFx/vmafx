@@ -59,7 +59,7 @@ reused across jobs on the same host — `down -v` wipes it.
 
 ## 2. CI wiring
 
-- `runner-available` (hosted, `ubuntu-24.04`) runs
+- `runner-available` (hosted, `ubuntu-26.04`) runs
   [`scripts/ci/check-runner-available.sh`](../../scripts/ci/check-runner-available.sh)
   and gates the self-hosted job through `needs:`.
 - `SYCL Parity (Arc A380)` (self-hosted) checks that only the Arc is

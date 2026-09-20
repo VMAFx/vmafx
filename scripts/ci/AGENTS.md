@@ -219,7 +219,7 @@ until master fixed.
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
 | `cross_backend_vif_diff.py` | `tests-and-quality-gates.yml` — every `*-cross-backend-diff` step | The `--feature`, `--backend`, `--places` flag names; the `FEATURE_METRICS` dict (workflow steps reference feature names verbatim). |
-| `cross_backend_parity_gate.py` | `tests-and-quality-gates.yml` — `Run GPU-parity matrix gate` step | The `--gpu-id`, `--calibration-table`, `--backends`, `--features`, `--fp16-features`, `--json-out`, `--md-out` flag names. The matrix-gate step name (`gpu-parity-matrix-gate`) is itself a required-status check on PRs. |
+| `cross_backend_parity_gate.py` | `sycl-parity.yml` — `Run cross-backend parity gate (calibrated features)` | The `--gpu-id`, `--calibration-table`, `--backends`, `--features`, `--fp16-features`, `--json-out`, and `--md-out` flag names. The current CI consumer is CPU↔SYCL `float_ssim` on Arc A380. `SYCL Parity (Arc A380)` is conditionally required through the lane switch; the removed Vulkan matrix job must not be documented as current coverage. |
 | `cross_backend_calibration.py` | (loader, not invoked directly by workflow) | Imported by the two gate scripts via `sys.path.insert(0, …)`; lives next to them on purpose. Don't move it without updating the import sites. |
 | `gpu_ulp_calibration.yaml` | (data, not invoked directly by workflow) | The default path is hard-coded as `Path(__file__).parent / "gpu_ulp_calibration.yaml"` in `cross_backend_calibration.DEFAULT_CALIBRATION_PATH`. Renaming this file is a breaking change for the gate scripts and any caller that didn't pass `--calibration-table` explicitly. |
 | `test_calibration.py` | `tests-and-quality-gates.yml` — pytest collection (`pytest-tests` lane) | Discovered automatically by pytest; the test module name is part of the gate's contract. |
@@ -289,11 +289,10 @@ distance to them; `actions/checkout` default of 1 supplies neither.
 per-GPU-generation tolerance overrides on cross-backend parity
 gate. Lookup contract:
 
-1. Caller passes `--gpu-id <runtime_id>` to gate. ID format
-   follows Research-0041:
-   - `vulkan:0xVVVV:0xDDDD`
-   - `cuda:M.m`
-   - `sycl:0xVVVV:DRIVER`
+1. Caller passes `--gpu-id <runtime_id>` to the gate. Current executable
+   backend identifiers are `cuda:M.m` and `sycl:0xVVVV:DRIVER`. The table
+   retains historical Vulkan rows for old reports, but ADR-0726 removed
+   Vulkan from the gate's backend choices.
 2. Loader picks most-specific glob match (longest non-
    wildcard prefix wins; trailing `*` supported).
 3. If row has `features:` override for cell, that wins.
@@ -314,17 +313,12 @@ behaviour.
 
 1. New `--feature` value → add to `FEATURE_METRICS` in *both*
    gate scripts (single source of truth lives in parity gate;
-   per-feature script mirrors it). Add workflow step to
-   `tests-and-quality-gates.yml`.
-   Existing compatibility names not always `feature + suffix`:
-   ADR-0586 renamed Vulkan integer ADM to `integer_adm_vulkan`, so both
-   scripts must keep `BACKEND_EXTRACTOR_ALIASES[("adm", "vulkan")]`.
-   ADR-0662 routes lavapipe motion parity through
-   `BACKEND_EXTRACTOR_ALIASES[("motion", "vulkan")] =
-   "integer_motion_vulkan"` because the legacy `motion_vulkan`
-   compatibility extractor stays explicit-name only.
+   per-feature script mirrors it). Add it to a workflow only when that lane
+   owns executable hardware coverage; the current consumer is
+   `sycl-parity.yml`.
 2. New backend → extend `BACKEND_SUFFIX`, `BACKEND_DEVICE_FLAG`,
-   `BACKEND_DEFAULT_DEVICE` in both scripts.
+   `BACKEND_DEFAULT_DEVICE`, tests, and user documentation. Script support
+   alone is not CI coverage.
 3. New GPU arch → add row to `gpu_ulp_calibration.yaml`. Mark it
    `status: placeholder` until real-hardware corpus exists;
    placeholder row operationally no-op (empty `features:`

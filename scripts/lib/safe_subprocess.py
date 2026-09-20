@@ -454,18 +454,23 @@ async def _supervise(
 
     timed_out = False
     overflowed = False
+    cancellation: asyncio.CancelledError | None = None
     try:
         await asyncio.wait_for(asyncio.gather(*tasks), timeout=timeout_seconds)
     except TimeoutError:
         timed_out = True
     except _CaptureOverflow:
         overflowed = True
+    except asyncio.CancelledError as exc:
+        cancellation = exc
     finally:
-        if timed_out or overflowed:
+        if timed_out or overflowed or cancellation is not None:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             await _terminate_process_group(process)
+    if cancellation is not None:
+        raise cancellation
     stdout = bytes(stdout_bytes) if configuration.capture_stdout else None
     stderr = bytes(stderr_bytes) if configuration.capture_stderr else None
     return stdout, stderr, timed_out, overflowed

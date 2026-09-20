@@ -18,7 +18,7 @@ Nothing in this directory mirrors upstream Netflix/vmaf. Rebase risk
 | `backlog_tracker.py` | `scripts/ci/agent-eligibility-precheck.py` (direct import); future state-audit / status-reporter scripts. | The `BacklogItem` dataclass field names (`id` / `title` / `status` / `priority` / `pr_refs` / `raw_row`) and the status enum strings (OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED). Renames are breaking changes for every importer. |
 | `backlog_tracker.py` ↔ `.workingdir/BACKLOG.md` row format | The regex parser in `_ID_PATTERN` + `_STATUS_RULES`. | If BACKLOG.md ever adds a column or renames a status word, the parser silently mis-classifies rows. Run the smoke (`python3 -c 'from scripts.lib.backlog_tracker import BacklogTracker; print(len(BacklogTracker().all()))'`) after any structural BACKLOG.md edit; expected ≥ 100 rows on master at 2026-05-09. |
 | `GitHubTracker._run` | Wraps the `gh` CLI. | Output schema (`number / title / body / headRefName / mergedAt / state`) is `gh`-version-coupled. Pin behaviour by passing `--json` field lists explicitly; never rely on default columns. |
-| `safe_subprocess.py` | Python automation under `scripts/`. | Every executable is allowlisted, argv/environment/cwd are validated, captured output and runtime are bounded, and POSIX timeout cleanup owns the process group. `scripts/__init__.py` plus canonical `scripts.lib.safe_subprocess` imports preserve one runtime/type identity. Do not replace it with a raw `subprocess` call or an `S603` waiver. |
+| `safe_subprocess.py` | Python automation under `scripts/`. | Every executable is allowlisted, argv/environment/cwd are validated, captured output and runtime are bounded, and POSIX timeout, output-overflow, and caller-cancellation cleanup own the process group. `scripts/__init__.py` plus canonical `scripts.lib.safe_subprocess` imports preserve one runtime/type identity. Do not replace it with a raw `subprocess` call or an `S603` waiver. |
 
 ## Read-only invariant
 
@@ -54,6 +54,11 @@ production launch paths. See [ADR-1270](../../docs/adr/1270-bounded-process-exec
 Keep `scripts/__init__.py` and the two-root mypy regression in
 `scripts/git-hooks/test-pre-push-mypy.py`; removing either recreates the
 `lib.safe_subprocess` / `scripts.lib.safe_subprocess` duplicate-module failure.
+Keep the cancellation and fail-soft consumer cases in
+`test_safe_subprocess.py` and
+`scripts/ci/tests/test_agent_eligibility_precheck.py` wired to both commit and
+push hooks; cancellation must terminate descendants and reap the direct child
+before propagating `CancelledError`.
 
 ## Worktree-aware path resolution
 

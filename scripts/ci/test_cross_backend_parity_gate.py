@@ -616,9 +616,8 @@ def test_emit_md_tolerance_source_appears(tmp_path: Path) -> None:
 def test_every_feature_in_feature_tolerance_is_in_feature_metrics() -> None:
     """All keys in FEATURE_TOLERANCE must appear in FEATURE_METRICS."""
     missing = set(FEATURE_TOLERANCE) - set(FEATURE_METRICS)
-    assert (
-        missing == set()
-    ), f"Features in FEATURE_TOLERANCE but missing from FEATURE_METRICS: {missing}"
+    message = f"Features in FEATURE_TOLERANCE but missing from FEATURE_METRICS: {missing}"
+    assert missing == set(), message
 
 
 def test_feature_metrics_values_are_non_empty_tuples() -> None:

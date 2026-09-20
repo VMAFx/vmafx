@@ -257,9 +257,10 @@ contract while preserving ADR-1113's base mirror decision.
 - `scripts/lib/safe_subprocess.py` is the process-execution boundary for
   Python automation under `scripts/`: executable allowlist, bounded argv and
   captured output, explicit deadline, closed unused stdin, and process-group
-  cleanup. When an upstream sync or script port adds a direct `subprocess`
-  launch in this scope, adapt it to the boundary; do not restore an `S603`
-  annotation.
+  cleanup on timeout, output overflow, and caller cancellation. Cancellation
+  cleanup must finish before `CancelledError` propagates. When an upstream
+  sync or script port adds a direct `subprocess` launch in this scope, adapt it
+  to the boundary; do not restore an `S603` annotation.
 - Consumer tests deliberately preserve each command's prior return and output
   semantics. Keep the `allowed_executables` set narrow and command-specific;
   broadening it to whatever happens to be on `PATH` defeats the boundary.
@@ -267,6 +268,11 @@ contract while preserving ADR-1113's base mirror decision.
   load-bearing. Direct-path scripts first prepend their resolved repository
   root; do not restore the `lib.safe_subprocess` fallback, which gives mypy two
   names for the same file. Keep the two-root regression test.
+- `scripts/ci/agent-eligibility-precheck.py` imports tracker and process
+  exceptions through `scripts.*`. Its GitHub search/list checks intentionally
+  fail soft after emitting a notice; keep the two CLI regressions wired to the
+  process-boundary hook so a `CommandFailed` identity mismatch cannot turn an
+  offline dispatch check into a traceback.
 - `.github/ci-impact.json` classifies every tracked top-level entry. Add new
   roots to `known_prefixes` or `known_files` in the same change that creates
   them so routing does not silently degrade to the fail-closed full plan.

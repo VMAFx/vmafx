@@ -1,124 +1,122 @@
 <!-- markdownlint-disable MD060 -->
 # Cross-backend GPU-parity gate
 
-The GPU-parity gate is the fork's single matrix gate for verifying
-that every GPU backend agrees with the CPU scalar reference (and
-with each other) on every feature with a GPU twin. It generalises
-the older single-feature gate
-(`scripts/ci/cross_backend_vif_diff.py`) to a one-shot run that
-covers every `(feature, backend-pair)` cell.
+`scripts/ci/cross_backend_parity_gate.py` compares per-frame metrics across
+selected CPU, CUDA, and SYCL backends. It can run every selected feature over
+every selected backend pair and emits machine-readable JSON plus a Markdown
+summary.
 
-The gate is enforced on every PR as the CI job
-**`vulkan-parity-matrix-gate`** in
-[`.github/workflows/tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml).
+This script is not currently an all-backend, every-PR CI matrix. Vulkan and
+its hosted lavapipe lane were removed by
+[ADR-0726](../adr/0726-drop-vulkan-backend.md). The current CI consumer is the
+`SYCL Parity (Arc A380)` job in
+[`.github/workflows/sycl-parity.yml`](../../.github/workflows/sycl-parity.yml),
+which compares CPU and SYCL `float_ssim` on the self-hosted Arc runner. That
+job runs for eligible non-draft in-repository pull requests, pushes to
+`master`, and manual dispatches when `SYCL_ARC_RUNNER_ENABLED=true` and the
+runner is online. When the lane is disabled, the required-check aggregator
+explicitly accepts its skip.
 
-## What it gates
+## What it checks
 
-- **Per-feature absolute tolerance.** Default `5e-5` (places=4 —
-  the fork's GPU-vs-CPU contract from ADR-0125 / ADR-0138 /
-  ADR-0140). Feature-specific relaxations live in the
-  `FEATURE_TOLERANCE` table inside
-  [`scripts/ci/cross_backend_parity_gate.py`](../../scripts/ci/cross_backend_parity_gate.py)
-  and each carries an ADR pointer:
+- **Per-feature absolute tolerance.** The default is `5e-5` (places=4), the
+  fork's GPU-vs-CPU contract from ADR-0125, ADR-0138, and ADR-0140.
+  Feature-specific relaxations live in `FEATURE_TOLERANCE` inside
+  [`cross_backend_parity_gate.py`](../../scripts/ci/cross_backend_parity_gate.py):
 
   | Feature | Tolerance | Contract source |
   |---|---:|---|
-  | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 |
-  | `float_ssim`, `float_ms_ssim`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 |
+  | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360 |
+  | `float_ssim`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
-  | `psnr_hvs` | `5e-4` | ADR-0191 (DCT + per-block float reduction) |
-  | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root + IIR blur) |
+  | `psnr_hvs` | `5e-4` | ADR-0191 (DCT plus per-block float reduction) |
+  | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
-  Vulkan `motion` is routed through the canonical `integer_motion_vulkan`
-  extractor in both parity scripts. The legacy `motion_vulkan` extractor
-  remains addressable by explicit name for compatibility, but it is not the
-  lavapipe gate path after ADR-0662.
+- **Backend pairs.** The script accepts `cpu`, `cuda`, and `sycl`; its command
+  line default is `cpu cuda`. HIP and Metal have backend-specific tests but are
+  not wired into this matrix runner.
 
-- **Backend pairs.** The CI lane runs `cpu ↔ vulkan` only — Mesa
-  lavapipe runs on stock GitHub-hosted Ubuntu and needs no GPU
-  hardware. CUDA / SYCL / hardware-Vulkan are advisory until a
-  self-hosted runner is wired in (see
-  [`docs/development/self-hosted-runner.md`](self-hosted-runner.md));
-  the script already supports them via `--backends cpu cuda sycl
-  vulkan`.
+- **Per-device calibration.** `--gpu-id` selects the most-specific matching
+  row in `scripts/ci/gpu_ulp_calibration.yaml`. If no row or feature override
+  matches, the feature's built-in tolerance remains authoritative.
 
-- **FP16 features.** A `--fp16-features` flag forces the
-  `1e-2` absolute tolerance the FP16 contract calls for. Used by
-  the future ONNX Runtime tiny-AI lane (T7-39).
+- **FP16 features.** Names passed through `--fp16-features` use the `1e-2`
+  FP16 absolute-tolerance contract.
 
-## How to run it locally
+## Run it locally
+
+Use the dev-MCP container, which carries the backend toolchains and the
+repository fixture mounts:
 
 ```bash
-# Build CPU + Vulkan once
-cd libvmaf && meson setup build \
-    -Denable_cuda=false -Denable_sycl=false \
-    -Denable_vulkan=enabled -Denable_float=true \
-    --buildtype=release && ninja -C build
+docker compose --project-directory "$(git rev-parse --show-toplevel)" \
+  -f dev/docker-compose.yml build dev-mcp
+docker compose -f dev/docker-compose.yml up -d
 
-# Run the matrix gate on the fork's stock 576×324 fixture
-cd ..
-python3 scripts/ci/cross_backend_parity_gate.py \
-    --vmaf-binary core/build/tools/vmaf \
+docker exec vmaf-dev-mcp bash -lc '
+  cd /workspace &&
+  python3 scripts/ci/cross_backend_parity_gate.py \
+    --vmaf-binary /usr/local/bin/vmaf \
     --reference testdata/ref_576x324_48f.yuv \
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 \
-    --backends cpu vulkan \
-    --json-out /tmp/parity.json --md-out /tmp/parity.md
+    --backends cpu cuda \
+    --features float_ssim vif \
+    --json-out /tmp/parity.json \
+    --md-out /tmp/parity.md
+'
 ```
 
-Default fixture in CI is the Netflix `src01_hrc00_576x324.yuv ↔
-src01_hrc01_576x324.yuv` pair fetched from the
-`Netflix/vmaf_resource` mirror with caching — same fixture as
-the legacy lane.
+Pin each concurrent run to different hardware; do not multiplex one device
+across parallel parity jobs.
 
-## How to read failure output
+## Read the output
 
-The gate writes two artefacts:
-
-- **JSON** (`--json-out`) — one record per cell with
-  `status`, `tolerance_abs`, `n_frames`, `per_metric_max_abs_diff`,
-  `per_metric_mismatches`, and a free-text `note` field for
-  ERROR-class failures (binary not built, frame-count mismatch,
-  Vulkan ICD init failure, etc.). Schema is versioned in the
-  top-level `schema_version` field.
-- **Markdown** (`--md-out`) — single status table plus a
-  per-failure detail block. Suitable for direct PR comment.
+The JSON artifact contains one record per cell with `status`,
+`tolerance_abs`, `tolerance_source`, `n_frames`,
+`per_metric_max_abs_diff`, `per_metric_mismatches`, and a free-text `note` for
+errors. Its top-level `schema_version` versions the format. The Markdown
+artifact contains the same cell summary plus a failure-detail section.
 
 A cell's status is one of:
 
 | Status | Meaning |
 |---|---|
-| `OK` | Every per-frame metric within tolerance |
-| `FAIL` | At least one per-frame mismatch beyond `tolerance_abs` |
-| `ERROR` | Run failed before diffing (binary missing, fixture missing, ICD init failed, frame count mismatch) |
+| `OK` | Every per-frame metric is within tolerance. |
+| `FAIL` | At least one per-frame mismatch exceeds `tolerance_abs`. |
+| `ERROR` | Execution failed before diffing, or the frame counts differ. |
 
-## How to add a new feature to the gate
+## Add a feature or backend
 
-1. Add the feature → metric-name list to `FEATURE_METRICS` in
-   `scripts/ci/cross_backend_parity_gate.py`. The metric names
-   must match the keys the `vmaf` JSON output emits when the
-   feature is selected via `--feature <name>`.
-2. If the feature is FP32 with no relaxations, no further change
-   is needed — it picks up the default `5e-5` (places=4)
-   automatically.
-3. If the feature carries a relaxed contract, add an entry to
-   `FEATURE_TOLERANCE` with an inline comment citing the ADR
-   that justifies the relaxation. Per CLAUDE.md §12 r1
-   ("Netflix golden assertions are untouchable") any tightening
-   later requires a measurement-driven follow-up ADR.
-4. Add a row to the table in this document.
+1. Add the feature-to-metric mapping to `FEATURE_METRICS` in both parity
+   scripts. Metric names must match the keys emitted by the selected `vmaf`
+   feature extractor.
+2. Add a `FEATURE_TOLERANCE` entry only when the feature differs from the
+   default `5e-5`, and cite the measurement or ADR that owns the relaxation.
+3. Add or update unit tests in
+   `scripts/ci/test_cross_backend_parity_gate.py` and update the tolerance
+   table above.
+4. For a new backend, extend the suffix and device-selection maps, add
+   executable coverage, and update the consuming workflow explicitly. Adding
+   support to the script alone does not create CI coverage.
+
+Netflix golden assertions remain untouched; parity thresholds never replace
+the CPU golden-data gate.
 
 ## Relationship to other gates
 
 | Gate | Role |
 |---|---|
-| **Netflix golden** ([§8](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)) | CPU numerical correctness; required status check, untouchable |
-| **GPU-parity matrix gate (this doc, T6-8)** | CPU↔GPU agreement on every feature; required status check |
-| `vulkan-vif-arc-nightly` | Hardware-Vulkan drift versus lavapipe (advisory, self-hosted) |
-| Per-backend snapshot diffs (`testdata/scores_cpu_*.json`) | Per-backend regression catch (snapshot-based, not pairwise) |
+| **Netflix golden** ([§8](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)) | CPU numerical correctness; required and untouchable. |
+| **SYCL Parity (Arc A380)** | Conditional required lane; CPU↔SYCL `float_ssim` on real Arc hardware. |
+| Backend Meson parity tests | Backend-specific correctness, including large-fixture variants where registered. |
+| This matrix runner outside CI | Broader CPU/CUDA/SYCL feature sweeps and calibration evidence. |
+| Per-backend snapshots (`testdata/scores_cpu_*.json`) | Snapshot-based regression checks, not pairwise parity. |
 
-## Source
+## Sources
 
-- ADR: [ADR-0214](../adr/0214-gpu-parity-ci-gate.md).
-- Backlog row: T6-8.
-- Wave-1 roadmap §7.
+- [ADR-0214](../adr/0214-gpu-parity-ci-gate.md): original matrix design.
+- [ADR-0726](../adr/0726-drop-vulkan-backend.md): removal of Vulkan and its
+  hosted matrix lanes.
+- [ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md): current Arc runner
+  and lane-switch contract.

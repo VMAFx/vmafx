@@ -29,6 +29,7 @@ MYPY = (
     if Path(sys.executable).with_name("mypy").is_file()
     else shutil.which("mypy")
 )
+MYPY_ISOLATION_ARGS = ["--no-site-packages", "--disable-error-code=import-not-found"]
 
 
 def hook_config(identifier: str) -> str:
@@ -335,8 +336,11 @@ class MypyScope(unittest.TestCase):
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
         based = [call for call in calls if "--explicit-package-bases" in call]
         plain = [call for call in calls if "--explicit-package-bases" not in call]
-        self.assertEqual([c[1:] for c in based], [["ai/src/aiutils/mod.py"]])
-        self.assertEqual(plain, [["scripts/owned.py"]])
+        self.assertEqual(
+            based,
+            [[*MYPY_ISOLATION_ARGS, "--explicit-package-bases", "ai/src/aiutils/mod.py"]],
+        )
+        self.assertEqual(plain, [[*MYPY_ISOLATION_ARGS, "scripts/owned.py"]])
 
     def test_baseline_worktree_is_always_removed(self) -> None:
         self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
@@ -364,7 +368,12 @@ class MypyModuleIdentity(unittest.TestCase):
         """Simultaneous roots must not name safe_subprocess twice."""
         assert MYPY is not None
         result = run_command(
-            [MYPY, str(HELPER.relative_to(ROOT)), str(SCRIPT.relative_to(ROOT))],
+            [
+                MYPY,
+                *MYPY_ISOLATION_ARGS,
+                str(HELPER.relative_to(ROOT)),
+                str(SCRIPT.relative_to(ROOT)),
+            ],
             allowed_executables=(MYPY,),
             cwd=ROOT,
             capture_output=True,

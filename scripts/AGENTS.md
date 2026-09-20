@@ -329,6 +329,11 @@ Two invariants:
   `finally` (ADR-0332 drift guard). CI `mypy` = advisory
   (`|| echo` in `Python Lint`), inherited findings vary with installed
   numpy / pandas / torch stubs.
+- Blocking runs keep site packages out with `--no-site-packages` and suppress
+  only the resulting `import-not-found` diagnostics. This makes the result
+  independent of the active environment's PEP 561 packages; resolved local and
+  standard-library types remain checked. Keep the dependency-rich hosted run
+  advisory until its type-check environment is pinned.
 
 Non-zero exit with no attributable finding = mypy broke -> fail closed, exit 2.
 Do not restore raw exit-status propagation.
