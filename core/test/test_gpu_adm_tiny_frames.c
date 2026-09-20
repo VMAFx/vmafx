@@ -61,6 +61,10 @@
 #elif defined(HAVE_SYCL)
 #include "libvmaf/libvmaf_sycl.h"
 #define GPU_FEATURE "adm_sycl"
+#else
+/* No backend defined: see the gpu_open() stub below for why this branch
+ * exists. The name is never looked up, because gpu_open() fails first. */
+#define GPU_FEATURE "adm_none"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -276,6 +280,33 @@ static int gpu_import(VmafContext *vmaf, GpuState *state)
 static void gpu_free(GpuState **state)
 {
     vmaf_sycl_state_free(state);
+}
+#else
+/* No backend defined. meson compiles this source only into the per-backend
+ * executables, so the build never takes this branch -- but clang-tidy parses
+ * the file standalone, with no HAVE_* macro, and without these declarations
+ * every use below is a clang-diagnostic-error (`use of undeclared identifier
+ * 'GpuState'`), which fails the Tidy Changed gate on any PR that touches the
+ * file. The stubs report "no device", which is exactly what score_gpu()
+ * already treats as a skip. */
+typedef struct GpuStateStub GpuState;
+
+static int gpu_open(GpuState **state)
+{
+    (void)state;
+    return -1;
+}
+
+static int gpu_import(VmafContext *vmaf, GpuState *state)
+{
+    (void)vmaf;
+    (void)state;
+    return -1;
+}
+
+static void gpu_free(GpuState **state)
+{
+    (void)state;
 }
 #endif
 
