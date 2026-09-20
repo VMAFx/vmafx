@@ -68,7 +68,6 @@
 #include "integer_cambi_hip.h"
 
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 #endif /* HAVE_HIPCC */
 

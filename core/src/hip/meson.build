@@ -185,8 +185,21 @@ if not hip_runtime_dep.found()
     endif
     hip_runtime_dep = declare_dependency(
         dependencies: [hip_lib],
-        compile_args: ['-D__HIP_PLATFORM_AMD__=1'],
         include_directories: include_directories(hip_include_dir, is_system: true),
     )
 endif
+
+# `<hip/hip_runtime_api.h>` refuses to compile unless one of the platform
+# macros is set, so every HIP host TU needs it. It used to arrive two ways:
+# `-D__HIP_PLATFORM_AMD__=1` on the fallback branch above, and a hand-written
+# `#define __HIP_PLATFORM_AMD__ 1` at the top of eight host sources. The macro is
+# in the reserved `__`-prefixed namespace, so each of those files tripped
+# cert-dcl37-c the moment a PR touched it (bug ledger L-36), and the define
+# never covered the `dependency('hip-lang')` branch at all -- a pkg-config
+# ROCm would have relied entirely on the in-file copies.
+#
+# Declaring it here covers BOTH branches from one place, which is what let the
+# in-file defines go. Keep it outside the `if`: moving it back inside
+# re-creates the gap.
+hip_deps += declare_dependency(compile_args: ['-D__HIP_PLATFORM_AMD__=1'])
 hip_deps += hip_runtime_dep

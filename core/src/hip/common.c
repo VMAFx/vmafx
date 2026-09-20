@@ -27,7 +27,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
 #include "common.h"

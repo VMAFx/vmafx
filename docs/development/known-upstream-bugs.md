@@ -46,30 +46,27 @@ Upstream PR [#1494](https://github.com/Netflix/vmaf/pull/1494) (open since April
 by an upstream maintainer) refactors the same ADM functions. It does not touch
 the lines above, but whichever lands first leaves the other needing a rebase.
 
-## Seen upstream, not reported
+## Reported upstream on 2026-09-19
 
-Found on `86da14d0` while validating the pull requests above, outside their
-scope. Nothing about these was posted upstream; each is a candidate for a later
-one. Recorded here so the fork does not rediscover them.
+Six defects found on `86da14d0` while validating the pull requests above were
+reported on 2026-09-19, each reproduced on upstream first. The right-hand
+column is this fork's own status, checked against the fork's tree the same day
+rather than inferred from upstream's.
 
-1. **checkasm's `check_adm_dwt2` over-reads its 16-bit source**
-   (`libvmaf/test/checkasm/check_adm.c:381`): it passes `w * sizeof(uint16_t)`
-   as `src_stride`, but `adm_dwt2_16()` indexes samples, not bytes. ASan on a
-   checkasm build reports a `heap-buffer-overflow` read of size 2, zero bytes after
-   a 512-byte region. One-line fix, and the newest code of the list.
-2. **Direct-read YUV input breaks odd dimensions**
-   (`yuv_fetch_into_vmaf_picture`): it reads `w >> 1` chroma samples per row
-   while the frame layout uses `(w + 1) / 2`. A 19x19 4:2:0 clip reports an error
-   and then segfaults, because the tool continues after the failed fetch.
-3. **Frames below 17 px crash integer ADM.** At 16x16, UBSan reports a shift
-   exponent of 4294967295 in `adm_cm` and a release build dumps core.
-4. **`get_best15_from32()` shifts by a negative count** (`adm_avx2.c:1339`) for
-   values below 32768, on every lane before the blend. The result is discarded.
-5. **A zero-length variable-length array** at `vmaf.c:220` with
-   `--no_prediction`.
-6. **The SIMD `adm_cm` casts its accumulator to float before dividing**
-   (`adm_avx2.c:2383`, `adm_avx512.c:2040`) where scalar divides the int64 in
-   double. This likely explains upstream's 1e-4 checkasm tolerance. Not measured.
+| Upstream | What | This fork |
+| --- | --- | --- |
+| [#1603](https://github.com/Netflix/vmaf/pull/1603) (PR) | checkasm's `check_adm_dwt2` passes a byte stride where `adm_dwt2_16()` indexes samples, and a second site passes a band stride as the source stride; ASan: heap over-read | **Not affected** — the fork carries no `checkasm` tree |
+| [#1604](https://github.com/Netflix/vmaf/pull/1604) (PR) | The direct YUV and y4m readers read floor-sized chroma rows where the file stores ceil-sized ones, and `fetch_picture()` returns `!ret`, turning a reader error into "usable picture" and a crash | **Not affected** on both counts: `picture_compute_geometry()` allocates ceiling chroma, `USE_DIRECT_READ` is never defined so the buffered reader runs, the CLI refuses odd 4:2:0 dimensions outright, and `finish_unread_picture()` maps errors to `-1`. The one piece upstream left open — two failed reads classified as a clean end of stream, and every read failure exiting 0 — **was live here** and is fixed by ADR-1262 |
+| [#1605](https://github.com/Netflix/vmaf/pull/1605) (PR) | AVX2 `get_best15_from32()` shifts by a negative count on every lane before the blend discards it | **Not affected** — the AVX2 helper has returned early below 32768 since PR #792; scalar, AVX-512, CUDA, HIP, Metal and SYCL guard at the call site |
+| [#1606](https://github.com/Netflix/vmaf/pull/1606) (PR) | A zero-length variable-length array when `--no_prediction` leaves `model_cnt` at 0 | **Not affected** — `ModelArrays::allocate()` returns before allocating when the count is 0 (ADR-0809) |
+| [#1607](https://github.com/Netflix/vmaf/issues/1607) (issue) | Frames of 16 px and below crash integer ADM: `(uint32_t)ceil(log2(w) - 4)` converts a negative double, and `h_half - 2` underflows an unsigned bound in `dwt2_src_indices_filt()`. Upstream #1599 and #1600 do not fix it | **Not affected** — the extractor refuses the input with `integer_adm requires width >= 17 and height >= 17` instead of running; measured at 8, 12 and 16 px. Whether to refuse or support such frames is the decision upstream was asked to make |
+| [#1608](https://github.com/Netflix/vmaf/issues/1608) (issue) | The SIMD `adm_cm` narrows `accum_h` to `float` before dividing where its siblings and scalar do not | **Same cast present** (`adm_avx512.c`), **no effect**: the divisor is an exact power of two, all 108 values over the three reference pairs are bit-identical, and 2,000,000 random integers in `[2^53, 2^62)` show no difference |
+
+The earlier note on the last item — that the cast "likely explains upstream's
+1e-4 checkasm tolerance" — was wrong and is withdrawn: instrumenting the three
+tolerance sites over a full `checkasm --test=adm` run gives 90 comparisons, 87
+exactly equal, and a worst relative deviation of `1.910e-07`, roughly 500 times
+inside the tolerance.
 
 ---
 

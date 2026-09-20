@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+# A hang detector, not a timing assertion: these subprocesses finish in tens of
+# milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
+# TimeoutExpired then reads as a real test failure (bug ledger L-76). 120s still
+# catches a genuine hang long before the job's own timeout.
+SUBPROCESS_TIMEOUT_S = 120
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scorecard_gate.py"
 spec = importlib.util.spec_from_file_location("scorecard_gate", SCRIPT)
 assert spec and spec.loader
@@ -216,7 +222,7 @@ class ScorecardReportTests(unittest.TestCase):
 
             def run(args: list[str]) -> int:
                 return subprocess.run(  # noqa: S603 -- ADR-1247: fixed gate CLI with disposable reports
-                    args, capture_output=True, timeout=10
+                    args, capture_output=True, timeout=SUBPROCESS_TIMEOUT_S
                 ).returncode
 
             self.assertNotEqual(run(command), 0)
@@ -272,7 +278,7 @@ class SourceBindingTests(unittest.TestCase):
             check=True,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=SUBPROCESS_TIMEOUT_S,
         ).stdout
 
     def test_clean_source_binding_and_only_generated_report_allowed(self) -> None:
@@ -367,7 +373,7 @@ class SourceBindingTests(unittest.TestCase):
     @staticmethod
     def run_cli(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(  # noqa: S603 -- ADR-1247: this test's fixed Python gate and fixture paths
-            command, env=env, capture_output=True, timeout=10
+            command, env=env, capture_output=True, timeout=SUBPROCESS_TIMEOUT_S
         )
 
     def test_actual_cli_missing_before_or_wrong_run_never_passes(self) -> None:

@@ -487,6 +487,20 @@ static int fvif_hip_readback(FloatVifStateHip *s, hipStream_t pic_stream)
 }
 #endif /* HAVE_HIPCC */
 
+/* Scaffold posture of submit_fex_hip() (enable_hipcc=false): report
+ * not-implemented, which is the contract `meson_options.txt` documents and
+ * every HIP parity test skips on (ADR-1264).
+ *
+ * The scaffold branch used to call `vmaf_hip_kernel_submit_pre_launch(&s->lc,
+ * s->ctx, NULL, 0, 0)` first and return its result on error. That call passes
+ * `rb == NULL`, which the helper rejects outright, so it ALWAYS returned
+ * -EINVAL and the `-ENOSYS` after it was unreachable. The extractor therefore
+ * failed instead of skipping on every default-configured HIP build, and
+ * `test_hip_float_vif_parity` failed with it. The call did nothing else: the
+ * NULL check is the helper's first statement, ahead of any work.
+ *
+ * This explanation sits here rather than in the branch it describes so the
+ * function body stays inside the 60-line limit. */
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -538,12 +552,10 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
     return fvif_hip_readback(s, pic_stream);
 #else
-    /* Scaffold posture: surface -ENOSYS. */
+    /* Scaffold posture: -ENOSYS. The why is above this function. */
     (void)ref_pic;
     (void)dist_pic;
-    int err = vmaf_hip_kernel_submit_pre_launch(&s->lc, s->ctx, NULL, 0, 0);
-    if (err != 0)
-        return err;
+    (void)s;
     return -ENOSYS;
 #endif /* HAVE_HIPCC */
 }

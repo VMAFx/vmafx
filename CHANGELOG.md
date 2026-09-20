@@ -21042,6 +21042,20 @@ mean VMAF 94.32301 on CPU.
   [ADR-0316](../../docs/adr/0316-cli-parse-long-only-error-fix.md).
 
 
+- **`vmaf` now exits 102 instead of 0 when an input stream fails to read.**
+  The CLI's frame loop reported only a frame count, so a truncated or corrupt
+  input was indistinguishable from a clean end of stream: the binary exited 0
+  and wrote a full report over whatever prefix had arrived. When *both* inputs
+  failed it did not even print a diagnostic, because the "both streams ended"
+  test ran before the error test and a pair of `-1` return values satisfies it.
+  Read failures now exit with the dedicated code `102`, print
+  `problem while reading pictures`, and write no output file. A stream that
+  legitimately ends earlier than its partner is unchanged — it keeps its
+  `ended before` warning and exit 0. **Behaviour change**: a caller that
+  silently consumed partial scores from truncated media will now see a non-zero
+  exit. See [ADR-1262](docs/adr/1262-cli-input-read-error-exit-code.md).
+
+
 - **`vmaf` CLI `-c` / `--cpumask` short option silently dropped.** `cli_parse.c`
   declared `'c'` in `short_opts[]` so `getopt_long` consumed `-c <value>` from the
   command line, but the `switch` statement had only `case ARG_CPUMASK:` (the
@@ -23545,6 +23559,20 @@ is addressed.
   uses `-f docker/Dockerfile.node --target <stage>` directly.
 
 
+- **The GPU build lanes are warning-free again, and four CI test helpers no longer
+  flake on a loaded runner.** A glob written inside a block comment
+  (`core/src/feature/hip/*.c`) opens a nested comment, so 15 files warned under
+  `-Wcomment` on every HIP and CUDA build — 28 of the HIP lane's 53 warnings, plus one
+  on the Metal header where the same glob also pointed at the pre-ADR-0700
+  `libvmaf/src/` path. `__HIP_PLATFORM_AMD__` now comes from the build in one place
+  rather than a reserved-identifier `#define` in eight sources
+  ([ADR-1263](docs/adr/1263-hip-platform-macro-single-source.md)). The 10-second
+  subprocess caps in four `scripts/ci/` test modules, which are hang detectors rather
+  than timing assertions, are raised to 120 s after a CI run blew them under contention
+  and the `TimeoutExpired` read as a real failure. `.gitignore` now also matches
+  `.workingdir` / `.workingdir2` as symlinks, not only as directories.
+
+
 - **GPU `motion_v2` twins emit `motion3_v2_score` (SYCL / HIP / Metal).** The
   SYCL, HIP, and Metal `motion_v2` twins now emit
   `VMAF_integer_feature_motion3_v2_score` and accept the
@@ -23924,6 +23952,19 @@ Per ADR-0613 the HIP picture pool is now fully implemented (`hipMalloc` /
 ### HIP PSNR memory copy direction
 
 Fixed `integer_psnr_hip.c` to use `hipMemcpyHostToDevice` (not `hipMemcpyDeviceToDevice`) for host-to-device copies of reference and distortion picture planes during submit. The incorrect enum silently corrupted results or triggered driver faults on affected HIP runtimes.
+
+
+- **Four HIP parity tests failed on an ordinary `-Denable_hip=true` build instead of
+  skipping.** `enable_hipcc` defaults to false, so that build has no device kernels and
+  the extractors are meant to report `-ENOSYS`, which every parity test turns into a skip.
+  `float_vif_hip.c` and `integer_psnr_hvs_hip.c` instead returned `-EINVAL`: their scaffold
+  path called `vmaf_hip_kernel_submit_pre_launch()` with a NULL readback buffer, and
+  rejecting NULL is that helper's first statement, so the `return -ENOSYS` after it was
+  unreachable. Separately `test_hip_speed_singular_parity.c` looked for `-ENOSYS` only at
+  `vmaf_use_feature()`, while its extractor reports it from the frame submit. The default
+  HIP fast suite goes from 173 ok / 4 fail to **177 ok / 0 fail**, and with
+  `enable_hipcc=true` the same four run against real kernels and pass (183 ok / 0 fail).
+  See [ADR-1264](docs/adr/1264-hip-scaffold-enosys-contract.md).
 
 
 - **The HIP parity tests reported 15 failures on a healthy checkout.**

@@ -634,3 +634,35 @@ types; dB conversion goes through `ms_ssim_convert_to_db()`. Guard =
 `test_hip_ms_ssim_parity.c::test_ms_ssim_clip_db_ceiling`, which
 feeds IDENTICAL pair — on merely high-similarity fixture, ceiling
 never binds, variant passes against unfixed twin.
+
+## Scaffold posture returns -ENOSYS, nothing else (ADR-1264)
+
+`enable_hipcc` defaults **false** -> no device kernels -> extractor must report
+`-ENOSYS`. Parity tests turn that into `[skip: ...]` and pass.
+
+Scaffold path returns `-ENOSYS` **directly**. Never call a kernel-submit helper
+with placeholder args first: `vmaf_hip_kernel_submit_pre_launch(..., NULL, ...)`
+rejects NULL `rb` as its first statement, so it always returns `-EINVAL` and any
+`return -ENOSYS` after it is dead code. That shape failed
+`test_hip_float_vif_parity` and `test_hip_psnr_hvs_parity*` on every default
+build.
+
+Writing a new HIP parity test: check `-ENOSYS` at **both** sites --
+`vmaf_use_feature()` AND `vmaf_read_pictures()`. Extractor may give up at
+registration or inside `extract()`; `speed_temporal_hip` does the latter.
+Reference shape: `core/test/test_hip_speed_temporal_parity.c`.
+
+## `__HIP_PLATFORM_AMD__` comes from the build (ADR-1263)
+
+New HIP host source needs **no** `#define __HIP_PLATFORM_AMD__`. `hip_deps` in
+`core/src/hip/meson.build` supplies `-D__HIP_PLATFORM_AMD__=1` to every HIP TU,
+outside the `hip_runtime_dep` discovery branch, so both branches get it.
+
+Copying the old `#define` from a neighbour re-adds a reserved identifier
+(`cert-dcl37-c`): next PR touching that file then owns removing it.
+
+## No path globs in block comments
+
+`core/src/feature/hip/*.c` inside `/* ... */` opens nested comment ->
+`-Wcomment` on every HIP build -> zero-warning gate fails. 14 parity tests had
+it. Name the set in prose: "the .c files under core/src/feature/hip/".

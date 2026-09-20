@@ -51422,3 +51422,76 @@ same `adm3` guard and marker removal on the `port/upstream-2026-09` stack;
 those hunks are identical and merge clean, the fixture change is separate.
 The CUDA arms were not run here; run `test_cuda_adm_small_border` and
 `test_cuda_adm_wide_rounding` after any rebase that touches `adm_cm.cu`.
+
+## The HIP scaffold posture reports `-ENOSYS`, at one of two sites (ADR-1264)
+
+`enable_hipcc` defaults to false, so the ordinary `-Denable_hip=true` build has no device
+kernels and every HIP extractor must report `-ENOSYS`. Two things to preserve:
+
+1. **A scaffold path returns `-ENOSYS` directly.** It does not call a kernel-submit helper
+   with placeholder arguments first. `float_vif_hip.c` and `integer_psnr_hvs_hip.c` used to
+   call `vmaf_hip_kernel_submit_pre_launch(&s->lc, s->ctx, NULL, …)` and return its error;
+   the NULL `rb` check is that helper's first statement, so they always returned `-EINVAL`
+   and their `return -ENOSYS` was dead. Do not reintroduce the call, and do not relax the
+   helper's NULL guard to accommodate it.
+2. **A HIP parity test checks `-ENOSYS` at BOTH observation points** — the
+   `vmaf_use_feature()` return and the `vmaf_read_pictures()` return. Which one fires depends
+   on whether the extractor gives up at registration or inside `extract()`;
+   `speed_temporal_hip` does the latter, so a registration-only check fails the test instead
+   of skipping it. `core/test/test_hip_speed_temporal_parity.c` is the reference shape.
+## `__HIP_PLATFORM_AMD__` comes from `hip_deps`, not from each source (ADR-1263)
+
+`core/src/hip/meson.build` appends `declare_dependency(compile_args: ['-D__HIP_PLATFORM_AMD__=1'])`
+to `hip_deps` **outside** the `if not hip_runtime_dep.found()` block. Two ways to break it:
+
+1. **Moving it back inside the `if`.** It used to live there, which left the
+   `dependency('hip-lang')` branch with no definition — invisible, because the eight host
+   sources each carried their own `#define` as well. Those defines are gone now, so a
+   pkg-config ROCm would fail outright.
+2. **Re-adding `#define __HIP_PLATFORM_AMD__ 1` to a HIP host source.** It is a reserved
+   identifier (`cert-dcl37-c`) and makes the next PR that touches that file responsible for
+   removing it again. A new HIP host file needs nothing: `hip_deps` already supplies it.
+
+## Globs inside block comments break every GPU build (-Wcomment)
+
+Writing a path glob such as `core/src/feature/hip/*.c` inside a `/* ... */` comment opens a
+nested comment; GCC and clang both warn, and the zero-warning gate fails. Fifteen files had
+it (14 HIP parity tests, one CUDA ADM test) plus `core/src/metal/state_priv.h`. When a rebase
+reintroduces one of these comments, spell the set out in prose ("the .c files under
+core/src/feature/hip/") instead of restoring the glob. `core/src/metal/state_priv.h` carries
+an inline note to that effect.
+## `core/tools/vmaf.cpp` — the frame loop reports a status, not just a count (ADR-1262)
+
+`run_frame_loop()` returns `FrameLoopResult { frames, exit_code }`, and the pair of
+`fetch_picture()` results is classified by `classify_frame_fetch()`. Two things there are
+load-bearing and an upstream sync will try to undo both, because upstream still has the
+original shape:
+
+1. **The error test runs before the end-of-stream test.** `fetch_picture()` returns `1` at
+   EOF and `-1` on a read error, so `ret1 && ret2` is true when *both* sides fail. Upstream's
+   ordering tests that first and therefore reports two corrupt inputs as a clean end of
+   stream — no diagnostic, exit 0. Netflix/vmaf#1604 records this as known and unfixed
+   upstream, so a conflict here will present the buggy order as "theirs". Keep ours.
+2. **The loop's status reaches `main()`.** Upstream returns only the frame count, which is
+   why every read failure exits 0 there. If a rebase collapses `FrameLoopResult` back to an
+   `unsigned`, exit code 102 stops being reachable and
+   `core/tools/test/test_vmaf_read_error_exit.sh` fails on case 2.
+
+A legitimately shorter stream must stay exit 0 with its `ended before` warning; that is a
+deliberate line, not an oversight. See `docs/usage/cli.md` §Exit codes.
+## Upstream reports of 2026-09-19 — recognise them when they land
+
+Four pull requests and two issues were sent to Netflix/vmaf on 2026-09-19
+(`docs/development/known-upstream-bugs.md` has the table). When a sync brings any of them in:
+
+- **#1603** touches `libvmaf/test/checkasm/`, which this fork does not carry — nothing to port.
+- **#1604** changes the direct YUV/y4m readers and `fetch_picture()`. The fork needs **none** of
+  it: chroma geometry is already ceiling-based, the direct-read path is compiled out, and
+  reader errors already map to `-1`. Take upstream's new `test_video_input.c` only if its
+  19x19 cases are adapted — the fork's CLI refuses odd 4:2:0 dimensions by design.
+- **#1605** adds the early return the fork's `adm_avx2.c` has had since PR #792. A conflict
+  there is two spellings of the same guard; keep the fork's.
+- **#1606** patches a VLA the fork replaced with `ModelArrays` (ADR-0809) — nothing to port.
+- **#1607 / #1608** are issues. If upstream chooses to *support* frames below 17 px rather
+  than refuse them, that is a behaviour decision for the fork too, not a mechanical port:
+  the fork currently refuses with `integer_adm requires width >= 17 and height >= 17`.
