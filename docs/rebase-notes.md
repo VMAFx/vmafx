@@ -51590,9 +51590,9 @@ restores the `^`-only anchor, `Tidy Ratchet` will start reporting every header f
    request. `float_adm`'s aliases are `scf` / `scfd`; a sync that brings back
    `cs` / `cds` reintroduces the split key.
 
-## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
+## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
-No rebase impact on product behavior: the two Netflix-derived Python test files only split
-existing assertion blocks into private helpers. Test names, setup order, fixtures, assertion
-expressions, expected values, and tolerances stay unchanged. An upstream textual conflict may
-take the upstream test body, then reapply the helper boundaries needed by HISS-04.
+No rebase impact on product behavior: the four Netflix-derived Python test files only split
+existing setup and assertion blocks into private helpers. Test names, execution order, fixtures,
+assertion expressions, expected values, and tolerances stay unchanged. An upstream textual
+conflict may take the upstream test body, then reapply the helper boundaries needed by HISS-04.

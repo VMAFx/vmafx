@@ -328,6 +328,9 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
+        self._assert_vmaf_runner_checkerboard_results(results)
+
+    def _assert_vmaf_runner_checkerboard_results(self, results):
         self.assertAlmostEqual(results[0]["VMAF_integer_feature_vif_scale0_score"], 0.0, places=4)
         self.assertAlmostEqual(results[0]["VMAF_integer_feature_vif_scale1_score"], 0.0, places=4)
         self.assertAlmostEqual(results[0]["VMAF_integer_feature_vif_scale2_score"], 0.0, places=4)
@@ -574,6 +577,10 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
+        self._assert_ms_ssim_distorted_results(results)
+        self._assert_ms_ssim_original_results(results)
+
+    def _assert_ms_ssim_distorted_results(self, results):
         self.assertAlmostEqual(results[0]["MS_SSIM_score"], 0.9632498125, places=4)
         self.assertAlmostEqual(
             results[0]["MS_SSIM_feature_ms_ssim_l_scale0_score"], 0.9981474583333334, places=4
@@ -621,6 +628,7 @@ class QualityRunnerTest(MyTestCase):
             results[0]["MS_SSIM_feature_ms_ssim_s_scale4_score"], 0.998222583333, places=4
         )
 
+    def _assert_ms_ssim_original_results(self, results):
         self.assertAlmostEqual(results[1]["MS_SSIM_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["MS_SSIM_feature_ms_ssim_l_scale0_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["MS_SSIM_feature_ms_ssim_c_scale0_score"], 1.0, places=4)
@@ -1079,6 +1087,9 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
+        self._assert_bootstrap_vmaf_results(results)
+
+    def _assert_bootstrap_vmaf_results(self, results):
         self.assertAlmostEqual(
             results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
         )
@@ -1380,6 +1391,9 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
+        self._assert_bagging_vmaf_results(results)
+
+    def _assert_bagging_vmaf_results(self, results):
         self.assertAlmostEqual(
             results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
         )
@@ -1583,6 +1597,9 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
+        self._assert_vmaf_runner_input160x90_results(results)
+
+    def _assert_vmaf_runner_input160x90_results(self, results):
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_vif_scale0_score"], 0.6895391472210215, places=4
         )
