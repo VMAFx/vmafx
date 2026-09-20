@@ -59,7 +59,7 @@ no upstream-Netflix equivalent.
 
 ## Rebase-sensitive invariants
 
-### `sync-pelorus-interop.sh` reads one exact source object (ADR-1113)
+### `sync-pelorus-interop.sh` reads one exact source object (ADR-1113, ADR-1276)
 
 The Pelorus mirror guard pins a full 40-character released commit and reads
 every source with `git show`. A non-Git source directory or a checkout missing

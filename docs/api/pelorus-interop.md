@@ -11,8 +11,10 @@ round-trips a filtergraph and never collides with codec side data.
 This ABI is **single-sourced in Pelorus** (Pelorus ADR-0103). vmafx carries a
 **verbatim, pinned, read-only mirror** of it so the two repos can build, test,
 and evolve independently without a submodule or a shared package. The vendoring
-decision and its guard rails are recorded in
-[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md).
+decision is recorded in
+[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md); the current safety
+re-pin and exact-mirror guard rails are recorded in
+[ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md).
 
 > **The mirror is read-only.** Do not edit the vendored files. They are
 > byte-identical to their Pelorus origin (pinned at
@@ -225,4 +227,5 @@ A re-sync that changes the ABI is an ADR-worthy event (a new section bit or an
 appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-pin
 as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md). A
 released parser-only correctness/security fix keeps the ABI number intact and
-is recorded as a dated ADR-1113 maintenance amendment plus research evidence.
+is recorded in a new follow-up decision plus research evidence; ADR-1276
+records the v0.2.2 safety re-pin while preserving ADR-1113's immutable body.

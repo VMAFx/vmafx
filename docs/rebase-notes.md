@@ -5,7 +5,8 @@
 
 No Netflix-upstream file is involved. The cross-repo conflict surface is the
 fork-local Pelorus mirror, its sync/lint tooling, and the existing required
-Pre-Commit workflow.
+Pre-Commit workflow. ADR-1276 records the re-pin and fail-closed maintenance
+contract while preserving ADR-1113's base mirror decision.
 
 - `PELORUS_VENDOR_SHA` is the full released v0.2.2 commit
   `93bef1206d68d9e09024c08a12732fb8e77b9b16`. ABI stays 1.3. A future rebase

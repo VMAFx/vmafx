@@ -83,42 +83,6 @@ fork-local edit that would break byte-identity.
   explicit bounds checks (`pel_blob_find_section` validates framing, offsets,
   and sizes before dereferencing) and no network/IO surface.
 
-## Amendment — 2026-09-20: released parser safety re-pins
-
-The read-only-mirror decision applies to released parser correctness and
-security fixes as well as ABI additions. VMAFx therefore re-pins the mirror to
-Pelorus v0.2.2 at
-`93bef1206d68d9e09024c08a12732fb8e77b9b16`, even though the wire ABI remains
-1.3. That release removes undefined behavior when a valid blob arrives at a
-misaligned caller-buffer base by moving wire headers and directory entries
-through aligned local objects with `memcpy`; it also rejects a `header_size`
-that would misalign the directory.
-
-This amendment does not change the original architecture, alternatives, or
-append-only ABI rules. It makes their maintenance consequence explicit:
-
-- `PELORUS_VENDOR_SHA` names a reviewed released commit, not merely the newest
-  commit that changed `PELORUS_ABI_MINOR`.
-- A released parser correctness/security fix triggers a coordinated re-pin,
-  exact fixture sync, sanitizer run, and drift check even when the ABI
-  major/minor are unchanged.
-- The required VMAFx Pre-Commit workflow checks out that exact Pelorus object
-  and runs the default drift guard. A non-Git source directory or a checkout
-  missing the pinned object fails closed.
-- The shared fixture body remains exact Pelorus source apart from the original
-  include rewrite. Its VMAFx-authored prefix is rendered canonically from the
-  pinned source and ABI version, and the complete file is compared through EOF.
-  VMAFx lint and format exclusions carry local policy; local `NOLINT` bands or
-  ignored-return casts must not be inserted into the fixture.
-- Lint exclusion is limited to manifest-owned mirror paths. The drift guard
-  rejects any extra or missing tracked file in the exempt Pelorus namespaces.
-
-The earlier pins below remain historical records. The current source is
-`VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`, release v0.2.2,
-`libpelorus/{include/pelorus,src,test}`. See
-[Research-2072](../research/2072-pelorus-interop-v022-sync-2026-09-20.md)
-for the sanitizer reproduction and exact-source proof.
-
 ## References
 
 - Integration plan: `.workingdir2/rc/pelorus/PLAN.md` — workstream A
@@ -132,5 +96,4 @@ for the sanitizer reproduction and exact-source proof.
   `e1d7c4a2-6b93-4f08-9a55-0f3c2db17e64`, ABI 1.0; pack/parse in `interop.c`,
   dependency-free, BSD+Patent, vendorable) — the single source of truth this
   ADR mirrors.
-- Initial pinned source: `VMAFx/pelorus@835e097`,
-  `libpelorus/{include/pelorus,src,test}`.
+- Pinned source: `VMAFx/pelorus@835e097`, `libpelorus/{include/pelorus,src,test}`.
