@@ -28960,6 +28960,14 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   native target while retaining the portable SPIR-V fallback.
 
 
+**Changelog fragment**
+
+- **SYCL clang-tidy now preserves every diagnostic option.** Synthetic
+  compile commands still remove Intel device-only arguments and translate the
+  strict floating-point spelling, but no longer discard `-pedantic` or other
+  warning flags to make analyzer output quieter.
+
+
 - **sycl:** Fix crashes and prediction errors when running default model `vmaf_v1.0.16_3d0h`
   on Intel Arc GPUs. Fix uninitialized bounds and histogram buffer allocation in
   `integer_cambi_sycl.cpp`, eliminate `double` accumulators and accessors in
