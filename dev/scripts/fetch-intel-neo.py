@@ -11,37 +11,104 @@ intel/compute-runtime release tag. See ADR-1145.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import http.client
 import json
 import os
 import re
-import subprocess
+import shutil
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import IO, Any, NoReturn
+from urllib.parse import unquote, urlsplit
+
+HTTP_NOT_FOUND = 404
+ASCII_CONTROL_LIMIT = 32
+ASCII_DELETE = 127
+MAX_METADATA_BYTES = 8 * 1024 * 1024
+HTTP_TIMEOUT_SECONDS = 60
+ALLOWED_DOWNLOAD_HOSTS = {"api.github.com", "github.com"}
 
 
-def make_request(url: str, token: Optional[str] = None) -> bytes:
+def _validate_https_url(url: str) -> None:
+    """Reject credentials, fragments, non-HTTPS schemes, and non-GitHub hosts."""
+    parsed = urlsplit(url)
+    hostname = parsed.hostname or ""
+    github_content = hostname.endswith(".githubusercontent.com")
+    if (
+        parsed.scheme != "https"
+        or (hostname not in ALLOWED_DOWNLOAD_HOSTS and not github_content)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in {None, 443}
+        or not parsed.path.startswith("/")
+        or parsed.fragment
+    ):
+        raise ValueError(f"refusing non-GitHub HTTPS URL: {url}")
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep urllib redirects inside the same validated HTTPS trust boundary."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        _validate_https_url(newurl)
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and urlsplit(req.full_url).hostname != urlsplit(newurl).hostname:
+            redirected.remove_header("Authorization")
+        return redirected
+
+
+class _GitHubAuthorizationHandler(urllib.request.BaseHandler):
+    """Attach API credentials only to exact api.github.com requests."""
+
+    def __init__(self, token: str | None) -> None:
+        self._token = token
+
+    def https_request(self, request: urllib.request.Request) -> urllib.request.Request:
+        if self._token and urlsplit(request.full_url).hostname == "api.github.com":
+            request.add_unredirected_header("Authorization", f"Bearer {self._token}")
+        return request
+
+
+def _opener(url: str, token: str | None) -> urllib.request.OpenerDirector:
+    _validate_https_url(url)
+    opener = urllib.request.build_opener(
+        _HttpsOnlyRedirectHandler(), _GitHubAuthorizationHandler(token)
+    )
+    opener.addheaders = [
+        ("User-Agent", "vmaf-dev-container-build"),
+        ("Accept", "application/vnd.github+json"),
+    ]
+    return opener
+
+
+def make_request(url: str, token: str | None = None) -> bytes:
     """Execute an HTTP GET with GitHub API / standard headers and rate-limit handling."""
-    headers = {
-        "User-Agent": "vmaf-dev-container-build",
-        "Accept": "application/vnd.github+json",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req) as resp:
-            return resp.read()
+        with _opener(url, token).open(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            body = response.read(MAX_METADATA_BYTES + 1)
+            if not isinstance(body, bytes):
+                raise ValueError("GitHub response body is not bytes")
+            if len(body) > MAX_METADATA_BYTES:
+                raise ValueError("GitHub response exceeds the metadata size limit")
+            return body
     except urllib.error.HTTPError as err:
         body = ""
-        try:
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
             body = err.read().decode("utf-8", errors="replace")
-        except Exception:
-            pass
 
         if err.code in (403, 429) or "rate limit" in body.lower():
             print(
@@ -51,7 +118,7 @@ def make_request(url: str, token: Optional[str] = None) -> bytes:
                 file=sys.stderr,
             )
             sys.exit(1)
-        elif err.code == 404:
+        elif err.code == HTTP_NOT_FOUND:
             print(
                 f"\nFATAL: Resource not found (HTTP 404): {url}\nResponse: {body}",
                 file=sys.stderr,
@@ -63,7 +130,7 @@ def make_request(url: str, token: Optional[str] = None) -> bytes:
                 file=sys.stderr,
             )
             sys.exit(1)
-    except Exception as err:
+    except (http.client.HTTPException, OSError, ValueError) as err:
         print(f"\nFATAL: Network error while accessing {url}: {err}", file=sys.stderr)
         sys.exit(1)
 
@@ -71,261 +138,279 @@ def make_request(url: str, token: Optional[str] = None) -> bytes:
 def sha256_file(path: Path) -> str:
     """Compute sha256 hex digest of a file."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
 
 
 def download_file(
-    url: str, dest_path: Path, token: Optional[str] = None, max_retries: int = 3
+    url: str, dest_path: Path, token: str | None = None, max_retries: int = 3
 ) -> None:
-    """Download a file directly to dest_path using curl."""
-    cmd = [
-        "curl",
-        "-fsSL",
-        "--retry",
-        str(max_retries),
-        "--connect-timeout",
-        "30",
-        "-o",
-        str(dest_path),
-        url,
-    ]
-    if token and "api.github.com" in url:
-        cmd.extend(["-H", f"Authorization: Bearer {token}"])
+    """Download a GitHub HTTPS asset atomically, retrying transient I/O failures."""
+    last_error: Exception | None = None
+    for _attempt in range(max_retries + 1):
+        temporary_path: Path | None = None
+        try:
+            with (
+                _opener(url, token).open(url, timeout=HTTP_TIMEOUT_SECONDS) as response,
+                tempfile.NamedTemporaryFile(
+                    dir=dest_path.parent, prefix=f".{dest_path.name}.", delete=False
+                ) as temporary,
+            ):
+                temporary_path = Path(temporary.name)
+                shutil.copyfileobj(response, temporary)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            temporary_path.replace(dest_path)
+            return
+        except (http.client.HTTPException, OSError, ValueError) as error:
+            last_error = error
+            if temporary_path is not None:
+                with contextlib.suppress(FileNotFoundError):
+                    temporary_path.unlink()
+    print(f"FATAL: download failed for {url}: {last_error}", file=sys.stderr, flush=True)
+    sys.exit(1)
 
+
+def _fatal(message: str) -> NoReturn:
+    print(f"FATAL: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def _decode_json(raw: bytes, source: str) -> dict[str, Any]:
     try:
-        subprocess.run(cmd, check=True)
-    except Exception as err:
-        print(f"FATAL: curl failed to download {url}: {err}", file=sys.stderr, flush=True)
-        sys.exit(1)
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        _fatal(f"failed to parse JSON from {source}: {error}")
+    if not isinstance(document, dict):
+        _fatal(f"JSON from {source} is not an object")
+    return document
 
 
-def fetch_release(neo_ver: str, token: Optional[str] = None) -> Tuple[Dict[str, str], str]:
-    """Return the release's (asset name -> download URL) map and its body text."""
-    api_url = f"https://api.github.com/repos/intel/compute-runtime/releases/tags/{neo_ver}"
-    print(f"Querying Intel compute-runtime release metadata for {neo_ver}...")
-    release_raw = make_request(api_url, token=token)
-    try:
-        release_data = json.loads(release_raw.decode("utf-8"))
-    except json.JSONDecodeError as err:
-        print(f"FATAL: Failed to parse GitHub API JSON from {api_url}: {err}", file=sys.stderr)
-        sys.exit(1)
-
-    assets: Dict[str, str] = {
-        a["name"]: a["browser_download_url"] for a in release_data.get("assets", [])
-    }
-    return assets, release_data.get("body", "")
-
-
-def select_asset(
-    assets: Dict[str, str],
-    pattern: str,
-    label: str,
-    neo_ver: str,
-    exclude_legacy: bool = True,
-) -> str:
-    """First asset name matching @p pattern; exits when the release has none.
-
-    ``.ddeb`` (debug-symbol) assets never qualify. ``legacy`` builds are skipped
-    for the runtime packages but not for gmmlib, which publishes no legacy
-    variant and was never filtered on that substring.
-    """
-    matches = [
-        n
-        for n in assets
-        if re.match(pattern, n)
-        and not n.endswith(".ddeb")
-        and not (exclude_legacy and "legacy" in n)
-    ]
-    if not matches:
-        print(f"FATAL: No {label} deb asset found in compute-runtime {neo_ver}", file=sys.stderr)
-        sys.exit(1)
-    return matches[0]
+def _release_assets(document: dict[str, Any], source: str) -> tuple[dict[str, str], str]:
+    records = document.get("assets")
+    body = document.get("body", "")
+    if not isinstance(records, list) or not isinstance(body, str):
+        _fatal(f"release metadata from {source} has invalid assets or body fields")
+    assets: dict[str, str] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            _fatal(f"release metadata from {source} contains a non-object asset")
+        name = record.get("name")
+        url = record.get("browser_download_url")
+        if not isinstance(name, str) or not isinstance(url, str):
+            _fatal(f"release metadata from {source} contains an invalid asset")
+        _validate_https_url(url)
+        try:
+            safe_name = _validate_asset_filename(name)
+            url_name = _asset_filename(url)
+        except ValueError as error:
+            _fatal(f"release metadata from {source} contains an invalid asset: {error}")
+        if safe_name != url_name:
+            _fatal(
+                f"release metadata from {source} names asset {safe_name!r} "
+                f"but its URL ends in {url_name!r}"
+            )
+        assets[name] = url
+    return assets, body
 
 
-def resolve_igc_urls(assets: Dict[str, str], body: str, neo_ver: str) -> Tuple[str, str]:
-    """IGC core + opencl deb URLs, taken from the assets or from the release body."""
-    igc_core_matches = [n for n in assets if re.match(r"^intel-igc-core-2_[0-9].*_amd64\.deb$", n)]
-    igc_opencl_matches = [
-        n for n in assets if re.match(r"^intel-igc-opencl-2_[0-9].*_amd64\.deb$", n)
-    ]
-    igc_core_url = assets[igc_core_matches[0]] if igc_core_matches else None
-    igc_opencl_url = assets[igc_opencl_matches[0]] if igc_opencl_matches else None
-
-    if not igc_core_url:
-        m = re.search(r"https://github\.com/[^\s]+/intel-igc-core-2_[^\s]+_amd64\.deb", body)
-        if m:
-            igc_core_url = m.group(0)
-    if not igc_opencl_url:
-        m = re.search(r"https://github\.com/[^\s]+/intel-igc-opencl-2_[^\s]+_amd64\.deb", body)
-        if m:
-            igc_opencl_url = m.group(0)
-
-    if not igc_core_url or not igc_opencl_url:
-        print(
-            f"FATAL: Could not resolve IGC deb packages for compute-runtime {neo_ver} from assets or body.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    return igc_core_url, igc_opencl_url
+def _first_asset(
+    assets: dict[str, str], pattern: str, description: str, *, reject: tuple[str, ...] = ()
+) -> tuple[str, str]:
+    for name, url in assets.items():
+        if re.match(pattern, name) and not any(marker in name for marker in reject):
+            return name, url
+    _fatal(f"no {description} asset found")
 
 
-def resolve_packages(neo_ver: str, token: Optional[str] = None) -> Dict[str, Any]:
-    """Resolve every deb of the matched NEO set plus its checksum asset."""
-    assets, body = fetch_release(neo_ver, token=token)
+def _body_asset(body: str, package: str) -> str | None:
+    match = re.search(rf"https://github\.com/[^\s]+/{package}_[^\s]+_amd64\.deb", body)
+    if match is None:
+        return None
+    url = match.group(0)
+    _validate_https_url(url)
+    return url
 
-    gmm_name = select_asset(
+
+def _validate_asset_filename(name: str) -> str:
+    has_control_character = any(
+        ord(character) < ASCII_CONTROL_LIMIT or ord(character) == ASCII_DELETE for character in name
+    )
+    if (
+        not name
+        or name in {".", ".."}
+        or Path(name).name != name
+        or "\\" in name
+        or has_control_character
+    ):
+        raise ValueError(f"unsafe release asset filename: {name!r}")
+    return name
+
+
+def _asset_filename(url: str) -> str:
+    return _validate_asset_filename(unquote(Path(urlsplit(url).path).name))
+
+
+def _package_version(name: str, pattern: str) -> str:
+    match = re.search(pattern, name)
+    return match.group(1) if match else "unknown"
+
+
+@dataclass(frozen=True)
+class StackAssets:
+    gmm: tuple[str, str]
+    icd: tuple[str, str]
+    level_zero: tuple[str, str]
+    igc_core: tuple[str, str]
+    igc_opencl: tuple[str, str]
+    checksum: tuple[str, str]
+
+    @property
+    def targets(self) -> list[tuple[str, str]]:
+        return [self.gmm, self.icd, self.level_zero, self.igc_core, self.igc_opencl]
+
+
+def _resolve_stack(document: dict[str, Any], neo_ver: str, source: str) -> StackAssets:
+    assets, body = _release_assets(document, source)
+    gmm = _first_asset(
         assets,
         r"^(intel-igdgmm12|libigdgmm12)_[0-9].*_amd64\.deb$",
-        "gmmlib",
-        neo_ver,
-        exclude_legacy=False,
+        f"gmmlib deb in compute-runtime {neo_ver}",
+        reject=(".ddeb",),
     )
-    icd_name = select_asset(
-        assets, r"^intel-opencl-icd_[0-9].*_amd64\.deb$", "intel-opencl-icd", neo_ver
+    icd = _first_asset(
+        assets,
+        r"^intel-opencl-icd_[0-9].*_amd64\.deb$",
+        f"intel-opencl-icd deb in compute-runtime {neo_ver}",
+        reject=(".ddeb", "legacy"),
     )
-    ze_name = select_asset(
+    level_zero = _first_asset(
         assets,
         r"^(intel-level-zero-gpu|libze-intel-gpu1)_[0-9].*_amd64\.deb$",
-        "libze-intel-gpu1 / level-zero-gpu",
-        neo_ver,
+        f"libze-intel-gpu1 / level-zero-gpu deb in compute-runtime {neo_ver}",
+        reject=(".ddeb", "legacy"),
     )
-
-    sum_matches = [n for n in assets if n.endswith(".sum") or "sha256" in n]
-    if not sum_matches:
-        print(
-            f"FATAL: No .sum / sha256 checksum asset found in compute-runtime {neo_ver}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    sum_name = sum_matches[0]
-
-    igc_core_url, igc_opencl_url = resolve_igc_urls(assets, body, neo_ver)
-    igc_core_name = igc_core_url.split("/")[-1].replace("%2B", "+")
-    igc_opencl_name = igc_opencl_url.split("/")[-1].replace("%2B", "+")
-
-    gmm_ver_match = re.search(r"_(.+)_amd64\.deb$", gmm_name)
-    igc_ver_match = re.search(r"intel-igc-core-2_(.+)_amd64\.deb$", igc_core_name)
-
-    return {
-        "gmm_name": gmm_name,
-        "gmm_url": assets[gmm_name],
-        "gmm_ver": gmm_ver_match.group(1) if gmm_ver_match else "unknown",
-        "icd_name": icd_name,
-        "icd_url": assets[icd_name],
-        "ze_name": ze_name,
-        "ze_url": assets[ze_name],
-        "sum_name": sum_name,
-        "sum_url": assets[sum_name],
-        "igc_core_name": igc_core_name,
-        "igc_core_url": igc_core_url,
-        "igc_opencl_name": igc_opencl_name,
-        "igc_opencl_url": igc_opencl_url,
-        "igc_ver": igc_ver_match.group(1) if igc_ver_match else "unknown",
-    }
+    checksum = _first_asset(
+        assets, r"^.*(?:\.sum|sha256.*)$", f"checksum in compute-runtime {neo_ver}"
+    )
+    igc_core = _optional_igc_asset(assets, body, "intel-igc-core-2", neo_ver)
+    igc_opencl = _optional_igc_asset(assets, body, "intel-igc-opencl-2", neo_ver)
+    return StackAssets(gmm, icd, level_zero, igc_core, igc_opencl, checksum)
 
 
-def print_resolution(neo_ver: str, pkgs: Dict[str, Any]) -> None:
-    """Print the resolved package set so CI logs record what was pinned."""
+def _optional_igc_asset(
+    assets: dict[str, str], body: str, package: str, neo_ver: str
+) -> tuple[str, str]:
+    pattern = rf"^{package}_[0-9].*_amd64\.deb$"
+    direct = next(((name, url) for name, url in assets.items() if re.match(pattern, name)), None)
+    if direct is not None:
+        return direct
+    url = _body_asset(body, package)
+    if url is None:
+        _fatal(f"could not resolve {package} for compute-runtime {neo_ver} from assets or body")
+    return _asset_filename(url), url
+
+
+def _print_resolution(neo_ver: str, stack: StackAssets) -> None:
+    gmm_version = _package_version(stack.gmm[0], r"_(.+)_amd64\.deb$")
+    igc_version = _package_version(stack.igc_core[0], r"intel-igc-core-2_(.+)_amd64\.deb$")
     print("========================================================================")
     print("Intel NEO Compute Stack Resolution (ADR-1145)")
     print(f"Pinned NEO_VER: {neo_ver}")
     print("Resolved packages:")
-    print(f"  - intel-opencl-icd: {pkgs['icd_name']}")
-    print(f"  - libze-intel-gpu1: {pkgs['ze_name']}")
-    print(f"  - gmmlib:           {pkgs['gmm_name']} (derived GMMLIB_VER: {pkgs['gmm_ver']})")
-    print(f"  - intel-igc-core-2: {pkgs['igc_core_name']} (derived IGC_VER: {pkgs['igc_ver']})")
-    print(f"  - intel-igc-opencl: {pkgs['igc_opencl_name']}")
-    print(f"  - checksum file:    {pkgs['sum_name']}")
+    print(f"  - intel-opencl-icd: {stack.icd[0]}")
+    print(f"  - libze-intel-gpu1: {stack.level_zero[0]}")
+    print(f"  - gmmlib:           {stack.gmm[0]} (derived GMMLIB_VER: {gmm_version})")
+    print(f"  - intel-igc-core-2: {stack.igc_core[0]} (derived IGC_VER: {igc_version})")
+    print(f"  - intel-igc-opencl: {stack.igc_opencl[0]}")
+    print(f"  - checksum file:    {stack.checksum[0]}")
     print("========================================================================")
 
 
-def collect_expected_shas(pkgs: Dict[str, Any], token: Optional[str] = None) -> Dict[str, str]:
-    """Published sha256 sums, merging in the IGC release body when needed."""
-    print(f"Downloading checksum file: {pkgs['sum_url']}...")
-    sum_data = make_request(pkgs["sum_url"], token=token).decode("utf-8")
-    expected_shas: Dict[str, str] = {}
-    for line in sum_data.splitlines():
-        parts = line.strip().split()
-        if len(parts) >= 2:
-            expected_shas[parts[1]] = parts[0]
-
-    # Fetch IGC checksums from IGC release if not in compute-runtime's sum file
-    needed_igc = [
-        f for f in (pkgs["igc_core_name"], pkgs["igc_opencl_name"]) if f not in expected_shas
-    ]
-    if needed_igc:
-        tag_match = re.search(r"/releases/download/([^/]+)/", pkgs["igc_core_url"])
-        if tag_match:
-            igc_tag = tag_match.group(1)
-            print(f"Fetching IGC checksums from intel-graphics-compiler tag {igc_tag}...")
-            igc_api_url = f"https://api.github.com/repos/intel/intel-graphics-compiler/releases/tags/{igc_tag}"
-            igc_raw = make_request(igc_api_url, token=token)
-            igc_data = json.loads(igc_raw.decode("utf-8"))
-            for sha, fname in re.findall(
-                r"([a-f0-9]{64})\s+([^\s]+\.deb)", igc_data.get("body", "")
-            ):
-                expected_shas[fname] = sha
-
-    return expected_shas
+def _record_checksum(checksums: dict[str, str], filename: str, digest: str, source: str) -> None:
+    normalized_digest = digest.lower()
+    previous_digest = checksums.get(filename)
+    if previous_digest is not None and previous_digest != normalized_digest:
+        _fatal(f"conflicting checksums for {filename} in {source}")
+    checksums[filename] = normalized_digest
 
 
-def download_and_verify(
-    targets: List[Tuple[str, str]],
-    expected_shas: Dict[str, str],
+def _parse_checksums(raw: bytes, source: str) -> dict[str, str]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeError as error:
+        _fatal(f"checksum file from {source} is not UTF-8: {error}")
+    checksums: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.fullmatch(r"([a-fA-F0-9]{64})\s+\*?(\S+)", line.strip())
+        if match is not None:
+            digest, filename = match.groups()
+            _record_checksum(checksums, filename, digest, source)
+    return checksums
+
+
+def _add_igc_checksums(checksums: dict[str, str], stack: StackAssets, token: str | None) -> None:
+    if all(name in checksums for name, _url in (stack.igc_core, stack.igc_opencl)):
+        return
+    tag_match = re.search(r"/releases/download/([^/]+)/", stack.igc_core[1])
+    if tag_match is None:
+        return
+    igc_tag = tag_match.group(1)
+    print(f"Fetching IGC checksums from intel-graphics-compiler tag {igc_tag}...")
+    source = f"https://api.github.com/repos/intel/intel-graphics-compiler/releases/tags/{igc_tag}"
+    document = _decode_json(make_request(source, token=token), source)
+    body = document.get("body", "")
+    if not isinstance(body, str):
+        _fatal(f"IGC release metadata from {source} has an invalid body")
+    for sha, filename in re.findall(r"([a-fA-F0-9]{64})\s+([^\s]+\.deb)", body):
+        _record_checksum(checksums, filename, sha, source)
+
+
+def _download_and_verify(
     output_dir: Path,
-    token: Optional[str] = None,
+    targets: list[tuple[str, str]],
+    checksums: dict[str, str],
+    token: str | None,
 ) -> None:
-    """Download each deb and abort unless its sha256 matches the published value."""
     for deb_name, deb_url in targets:
-        if deb_name not in expected_shas:
-            print(
-                f"FATAL: Checksum for {deb_name} not found in published release hashes!",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
+        expected_sha = checksums.get(deb_name)
+        if expected_sha is None:
+            _fatal(f"checksum for {deb_name} not found in published release hashes")
         target_path = output_dir / deb_name
         print(f"Downloading {deb_name} from {deb_url}...")
         download_file(deb_url, target_path, token=token)
-
         actual_sha = sha256_file(target_path)
-        expected_sha = expected_shas[deb_name]
         if actual_sha.lower() != expected_sha.lower():
-            print(
-                f"FATAL: Checksum mismatch for {deb_name}!\n  Expected: {expected_sha}\n  Actual:   {actual_sha}",
-                file=sys.stderr,
+            target_path.unlink(missing_ok=True)
+            _fatal(
+                f"checksum mismatch for {deb_name}!\n"
+                f"  Expected: {expected_sha}\n  Actual:   {actual_sha}"
             )
-            sys.exit(1)
         print(f"  Verified {deb_name}: sha256={actual_sha} (OK)")
 
 
-def resolve_and_fetch(neo_ver: str, output_dir: Path, token: Optional[str] = None) -> None:
+def _write_checksum_audit(
+    output_dir: Path, targets: list[tuple[str, str]], checksums: dict[str, str]
+) -> None:
+    with (output_dir / "SHA256SUMS").open("w", encoding="utf-8") as stream:
+        for deb_name, _url in targets:
+            stream.write(f"{checksums[deb_name]}  {deb_name}\n")
+
+
+def resolve_and_fetch(neo_ver: str, output_dir: Path, token: str | None = None) -> None:
     """Resolve deb URLs, download, and verify against published checksums."""
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    pkgs = resolve_packages(neo_ver, token=token)
-    print_resolution(neo_ver, pkgs)
-
-    expected_shas = collect_expected_shas(pkgs, token=token)
-
-    targets: List[Tuple[str, str]] = [
-        (pkgs["gmm_name"], pkgs["gmm_url"]),
-        (pkgs["icd_name"], pkgs["icd_url"]),
-        (pkgs["ze_name"], pkgs["ze_url"]),
-        (pkgs["igc_core_name"], pkgs["igc_core_url"]),
-        (pkgs["igc_opencl_name"], pkgs["igc_opencl_url"]),
-    ]
-    download_and_verify(targets, expected_shas, output_dir, token=token)
-
-    # Also save the full checksum file in output_dir for auditing
-    with open(output_dir / "SHA256SUMS", "w", encoding="utf-8") as f:
-        for deb_name, _ in targets:
-            f.write(f"{expected_shas[deb_name]}  {deb_name}\n")
-
+    source = f"https://api.github.com/repos/intel/compute-runtime/releases/tags/{neo_ver}"
+    print(f"Querying Intel compute-runtime release metadata for {neo_ver}...")
+    stack = _resolve_stack(_decode_json(make_request(source, token=token), source), neo_ver, source)
+    _print_resolution(neo_ver, stack)
+    print(f"Downloading checksum file: {stack.checksum[1]}...")
+    checksums = _parse_checksums(make_request(stack.checksum[1], token=token), stack.checksum[1])
+    _add_igc_checksums(checksums, stack, token)
+    _download_and_verify(output_dir, stack.targets, checksums, token)
+    _write_checksum_audit(output_dir, stack.targets, checksums)
     print("\nAll Intel NEO deb packages downloaded and verified successfully.")
 
 
@@ -340,7 +425,7 @@ def main() -> None:
         "--neo-ver", required=True, help="Pinned compute-runtime release tag (e.g. 26.31.39395.13)"
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("."), help="Directory to save downloaded debs"
+        "--output-dir", type=Path, default=Path(), help="Directory to save downloaded debs"
     )
     parser.add_argument(
         "--github-token",
