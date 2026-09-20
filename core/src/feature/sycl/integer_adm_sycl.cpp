@@ -39,6 +39,7 @@
 
 #include "sycl_compat.h"
 
+#include <cassert>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -1641,6 +1642,13 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, void *shared_dis)
 {
+    assert(s != nullptr);
+    assert(shared_ref != nullptr);
+    assert(shared_dis != nullptr);
+    /* Scale 0 shifts by bpc; a zero bpc would make the `1u << (s->bpc - 1)`
+     * rounding term below shift by 2^32 - 1. libvmaf accepts 8 to 16. */
+    assert(s->bpc >= 8u && s->bpc <= 16u);
+
     // DWT shift parameters per scale
     struct DwtShifts {
         unsigned v_shift, v_add, h_shift;
@@ -1914,8 +1922,12 @@ int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_coll
 
 int close_fex_sycl(VmafFeatureExtractor *fex)
 {
+    assert(fex != nullptr);
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
+    /* The framework never closes an extractor it did not initialise, so priv
+     * is set whenever a state exists to free. */
+    assert(state == nullptr || s != nullptr);
 
     if (state) {
         (void)vmaf_sycl_queue_wait(state);

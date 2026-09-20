@@ -10,14 +10,19 @@ import shlex
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "gen-gpu-compile-commands.py"
 
 
-def _load():
+def _load() -> ModuleType:
+    """Import the hyphenated script under test by path."""
     spec = importlib.util.spec_from_file_location("gen_gpu_compile_commands", SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot build an import spec for {SCRIPT}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -45,7 +50,9 @@ build src/picture.o: CUSTOM_COMMAND ../core/src/sycl/picture.cpp | /opt/intel/ic
 
 
 class KernelEntries(unittest.TestCase):
-    def _run(self, existing=lambda _root: []) -> list[dict[str, str]]:
+    def _run(
+        self, existing: Callable[[Path], list[dict[str, str]]] = lambda _root: []
+    ) -> list[dict[str, str]]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             build = root / "build"
@@ -54,7 +61,9 @@ class KernelEntries(unittest.TestCase):
             compdb = json.dumps(existing(root))
             (build / "compile_commands.json").write_text(compdb, encoding="utf-8")
             self.assertEqual(gen.main(["gen", str(build)]), 0)
-            entries = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+            entries: list[dict[str, str]] = json.loads(
+                (build / "compile_commands.json").read_text(encoding="utf-8")
+            )
             for entry in entries:
                 entry["file"] = Path(entry["file"]).name
             return entries
