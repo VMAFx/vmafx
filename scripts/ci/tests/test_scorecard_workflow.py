@@ -8,10 +8,16 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
+import sys
 import textwrap
 import unittest
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
@@ -190,13 +196,14 @@ new AsyncFunction('github','context','core','process','Date','setTimeout',input.
  github,context,core,{env:{GITHUB_RUN_ID:'1'}},VirtualDate,callback=>callback()
 ).then(()=>process.stdout.write(JSON.stringify(failures))).catch(e=>{console.error(e);process.exitCode=1;});
 """
-        result = subprocess.run(  # noqa: S603 -- ADR-1247: fixed Node driver and repository workflow fixture
+        result = run_command(
             [node, "-e", driver],
-            input=json.dumps({"script": script, "event": event, "checks": checks}),
+            allowed_executables=(node,),
+            input_data=json.dumps({"script": script, "event": event, "checks": checks}),
             text=True,
             capture_output=True,
             check=True,
-            timeout=SUBPROCESS_TIMEOUT_S,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
         messages: object = json.loads(result.stdout)
         if not isinstance(messages, list) or not all(isinstance(m, str) for m in messages):

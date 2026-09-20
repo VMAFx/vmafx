@@ -57,7 +57,6 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
-import subprocess
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
@@ -68,7 +67,14 @@ from pathlib import Path, PurePosixPath
 
 import tomllib
 
-GIT = shutil.which("git") or "/usr/bin/git"
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
+
+_GIT_PATH = shutil.which("git")
+GIT = str(Path(_GIT_PATH).resolve(strict=True)) if _GIT_PATH is not None else None
 TARGET = "EUPL-1.2"
 # Split so this file's own source is never mistaken for a tag to rewrite.
 TAG = "SPDX-License-" + "Identifier:"
@@ -255,8 +261,15 @@ def die(message: str) -> None:
 
 
 def git(repo: Path, *args: str) -> str:
-    proc = subprocess.run(  # noqa: S603 -- fixed git argv, absolute binary, no shell
-        [GIT, "-C", str(repo), *args], capture_output=True, text=True, check=False
+    if GIT is None:
+        raise RuntimeError("git is required to classify fork provenance")
+    proc = run_command(
+        [GIT, "-C", str(repo), *args],
+        allowed_executables=(GIT,),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=120,
     )
     if proc.returncode != 0:
         die(f"git {' '.join(args[:3])} failed: {proc.stderr.strip()}")

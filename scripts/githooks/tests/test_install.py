@@ -9,10 +9,18 @@ import json
 import os
 import re
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = """repos:
@@ -123,6 +131,9 @@ class HookInstallTests(unittest.TestCase):
         self.run_git("config", "user.email", "hook-test@example.invalid")
         for directory in ("githooks", "git-hooks"):
             shutil.copytree(ROOT / "scripts" / directory, self.repo / "scripts" / directory)
+        helper = self.repo / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
         self.write(".pre-commit-config.yaml", CONFIG)
         self.write("probe.py", PROBE)
         self.write("docs/index.md", "# Docs\n")
@@ -155,26 +166,30 @@ class HookInstallTests(unittest.TestCase):
         target.write_text(text)
         target.chmod(0o755)
 
-    def run_command(
-        self, *args: str, cwd: Path | None = None, check: bool = True
-    ) -> subprocess.CompletedProcess[str]:
-        result = (
-            subprocess.run(  # noqa: S603 -- ADR-1241: fixed fixture commands, isolated Git config.
-                args, cwd=cwd or self.repo, env=self.env, text=True, capture_output=True
-            )
+    def run_command(self, *args: str, cwd: Path | None = None, check: bool = True) -> CommandResult:
+        if args[0] in {"git", "bash", "pre-commit"}:
+            allowed = (args[0],)
+        else:
+            executable = Path(args[0]).resolve(strict=True)
+            executable.relative_to(self.repo)
+            allowed = (executable,)
+        result = run_command(
+            args,
+            allowed_executables=allowed,
+            cwd=cwd or self.repo,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            timeout_seconds=300,
         )
         if check:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
-    def run_git(
-        self, *args: str, cwd: Path | None = None, check: bool = True
-    ) -> subprocess.CompletedProcess[str]:
+    def run_git(self, *args: str, cwd: Path | None = None, check: bool = True) -> CommandResult:
         return self.run_command("git", "-C", str(cwd or self.repo), *args, check=check)
 
-    def install(
-        self, *, cwd: Path | None = None, check: bool = True
-    ) -> subprocess.CompletedProcess[str]:
+    def install(self, *, cwd: Path | None = None, check: bool = True) -> CommandResult:
         return self.run_command("bash", "scripts/githooks/install.sh", cwd=cwd, check=check)
 
     def events(self) -> list[list[str]]:

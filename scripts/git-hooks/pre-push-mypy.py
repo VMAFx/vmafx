@@ -33,10 +33,17 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import CommandFailed
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandFailed
+    from lib.safe_subprocess import run as run_command
 
 # mypy writes `path:line: error: message  [code]`; `note:` lines are context.
 FINDING_RE = re.compile(
@@ -51,8 +58,13 @@ def git(*args: str) -> str:
     executable = shutil.which("git")
     if executable is None:
         raise RuntimeError("git is required")
-    result = subprocess.run(  # noqa: S603 -- literal git operations, argument vector
-        [executable, *args], capture_output=True, text=True, check=True
+    result = run_command(
+        [executable, *args],
+        allowed_executables=(executable,),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=120,
     )
     return result.stdout
 
@@ -77,12 +89,15 @@ def run_mypy(executable: str, paths: list[str], cwd: Path) -> tuple[int, str]:
     for args, group in ((["--explicit-package-bases"], based), ([], plain)):
         if not group:
             continue
-        completed = subprocess.run(  # noqa: S603 -- contained Git filenames, no shell
+        completed = run_command(
             [executable, *args, *group],
+            allowed_executables=(executable,),
             cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=1800,
+            max_output_bytes=64 * 1_048_576,
         )
         status = status or completed.returncode
         output += completed.stdout + completed.stderr
@@ -125,7 +140,7 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
         # a cleanup failure must not mask the finding the caller is reporting.
         try:
             git("-C", str(root), "worktree", "remove", "--force", str(worktree))
-        except (OSError, RuntimeError, subprocess.CalledProcessError):
+        except (OSError, RuntimeError, CommandFailed):
             print(f"mypy: could not remove the baseline worktree {worktree}", file=sys.stderr)
 
 
@@ -202,7 +217,7 @@ def main() -> int:
             )
         inherited = baseline_fingerprints(executable, selected, root, base)
         return report(current - inherited, len(current & inherited))
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, RuntimeError, CommandFailed) as exc:
         print(f"mypy scope check failed: {exc}", file=sys.stderr)
         return 2
 

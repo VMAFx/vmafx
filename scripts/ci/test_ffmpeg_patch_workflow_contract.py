@@ -9,12 +9,17 @@ import importlib.util
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ffmpeg-patch-stack.yml"
@@ -231,13 +236,15 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 python.chmod(0o700)
                 env = {**os.environ, "RUNNER_TEMP": temporary}
                 env["PATH"] = f"{temporary}{os.pathsep}{env.get('PATH', '')}"
-                result = subprocess.run(  # noqa: S603 -- fixed workflow block, isolated fake CLI
+                result = run_command(
                     [BASH, "-c", _run(_step(job, step_name))],
+                    allowed_executables=(BASH,),
                     cwd=temporary,
                     env=env,
                     check=False,
                     capture_output=True,
                     text=True,
+                    timeout_seconds=120,
                 )
                 self.assertEqual(result.returncode, 17, result.stdout + result.stderr)
                 self.assertIn(

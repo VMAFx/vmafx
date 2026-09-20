@@ -18,13 +18,18 @@ import os
 import re
 import shutil
 import stat
-import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from fractions import Fraction
 from pathlib import Path
 from typing import cast
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 VERSION = "v5.5.0"
 TOOL_COMMIT = "c395761df6afe1a69e476bc60a013a94bcbc153f"
@@ -201,12 +206,13 @@ def git(root: Path, *args: str) -> bytes:
     executable = shutil.which("git")
     if executable is None:
         raise InvalidReport("Git is required for source binding")
-    return subprocess.run(  # noqa: S603 -- ADR-1247: fixed Git inspection argv, no shell
+    return run_command(
         [executable, "--no-optional-locks", "-C", str(root), *args],
+        allowed_executables=(executable,),
         env=env,
         check=True,
         capture_output=True,
-        timeout=60,
+        timeout_seconds=60,
     ).stdout
 
 
@@ -347,8 +353,8 @@ def markdown(assessment: Assessment) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_argparser() -> argparse.ArgumentParser:
-    """Command-line interface for the three gate modes."""
+def parse_args() -> argparse.Namespace:
+    """Parse the scorecard evidence mode and explicit binding paths."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["snapshot", "local", "master"])
     parser.add_argument("--sha", required=True)
@@ -359,11 +365,11 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--master-ref", type=Path)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--summary", type=Path)
-    return parser
+    return parser.parse_args()
 
 
 def write_snapshot(args: argparse.Namespace) -> int:
-    """snapshot mode: record the pre-scan source identity outside the checkout."""
+    """Persist the immutable before-scan source identity."""
     if args.receipt.resolve().is_relative_to(args.root.resolve()):
         raise InvalidReport("snapshot must be outside the scanned checkout")
     receipt = source_identity(args.root, args.sha)
@@ -376,33 +382,40 @@ def write_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
-def local_binding(args: argparse.Namespace) -> dict[str, object]:
-    """local mode: verify the before-scan snapshot still matches this checkout."""
-    if args.snapshot is None:
-        raise InvalidReport("local mode requires a before-scan source snapshot")
-    binding = source_identity(
-        args.root,
-        args.sha,
-        (
-            str(args.report.relative_to(args.root))
-            if args.report.is_absolute()
-            else str(args.report)
-        ),
-    )
-    before = load_json(args.snapshot)
-    expected_binding = dict(
-        binding,
-        repository=args.repository,
-        run_id=os.environ.get("GITHUB_RUN_ID"),
-        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
-    )
-    if before != expected_binding:
-        raise InvalidReport("before/after source, repository or workflow-run binding differs")
-    return binding
+def validate_source_binding(args: argparse.Namespace) -> dict[str, object] | None:
+    """Validate the source receipt required by the selected report scope."""
+    if args.mode == "local":
+        if args.snapshot is None:
+            raise InvalidReport("local mode requires a before-scan source snapshot")
+        binding = source_identity(
+            args.root,
+            args.sha,
+            (
+                str(args.report.relative_to(args.root))
+                if args.report.is_absolute()
+                else str(args.report)
+            ),
+        )
+        before = load_json(args.snapshot)
+        expected = dict(
+            binding,
+            repository=args.repository,
+            run_id=os.environ.get("GITHUB_RUN_ID"),
+            run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
+        )
+        if before != expected:
+            raise InvalidReport("before/after source, repository or workflow-run binding differs")
+        return binding
+    if args.master_ref is None:
+        raise InvalidReport("master mode requires the final live master-ref receipt")
+    return master_identity(load_json(args.master_ref), args.sha)
 
 
-def write_assessment(args: argparse.Namespace, binding: dict[str, object] | None) -> int:
-    """Assess the report, persist the receipt and emit the markdown summary."""
+def write_assessment(args: argparse.Namespace) -> int:
+    """Validate one report and write its bound machine and Markdown receipts."""
+    if args.report is None:
+        raise InvalidReport("--report is required")
+    binding = validate_source_binding(args)
     report = load_json(args.report)
     assessment = assess(report, args.mode, args.repository, args.sha)
     receipt = asdict(assessment)
@@ -426,21 +439,10 @@ def write_assessment(args: argparse.Namespace, binding: dict[str, object] | None
 
 
 def main() -> int:
-    args = build_argparser().parse_args()
+    args = parse_args()
     try:
-        if args.mode == "snapshot":
-            return write_snapshot(args)
-        if args.report is None:
-            raise InvalidReport("--report is required")
-        binding: dict[str, object] | None = None
-        if args.mode == "local":
-            binding = local_binding(args)
-        if args.mode == "master":
-            if args.master_ref is None:
-                raise InvalidReport("master mode requires the final live master-ref receipt")
-            binding = master_identity(load_json(args.master_ref), args.sha)
-        return write_assessment(args, binding)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return write_snapshot(args) if args.mode == "snapshot" else write_assessment(args)
+    except (OSError, ValueError, RuntimeError) as error:
         print(f"Scorecard gate failed: {error}", file=sys.stderr)
         return 1
 

@@ -11,11 +11,17 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Protocol, cast
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 BASH = shutil.which("bash") or "/bin/bash"
@@ -59,8 +65,11 @@ class LevelZeroSingleSource(unittest.TestCase):
         self.assertEqual(self.check(self.text), [])
 
     def test_workflow_checker_entrypoint_retains_container_validation(self) -> None:
-        subprocess.run(  # noqa: S603 -- isolated disposable Git fixture
-            [GIT, "init", "-q", str(self.repo)], check=True, env=self.env
+        run_command(
+            [GIT, "init", "-q", str(self.repo)],
+            allowed_executables=(GIT,),
+            check=True,
+            env=self.env,
         )
         (self.repo / "build-config.env").write_text((ROOT / "build-config.env").read_text())
         for text, status in (
@@ -69,18 +78,13 @@ class LevelZeroSingleSource(unittest.TestCase):
         ):
             with self.subTest(status=status):
                 (self.repo / "dev/Containerfile").write_text(text)
-                result = (
-                    subprocess.run(  # noqa: S603 -- shipped checker in a disposable Git fixture
-                        [
-                            shutil.which("python3") or "/usr/bin/python3",
-                            str(ROOT / "scripts/ci/check-workflow-versions.py"),
-                        ],
-                        cwd=self.repo,
-                        env=self.env,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
+                result = run_command(
+                    [sys.executable, str(ROOT / "scripts/ci/check-workflow-versions.py")],
+                    allowed_executables=(sys.executable,),
+                    cwd=self.repo,
+                    env=self.env,
+                    capture_output=True,
+                    text=True,
                 )
                 self.assertEqual(result.returncode, status, result.stdout + result.stderr)
 
@@ -117,13 +121,13 @@ class LevelZeroSingleSource(unittest.TestCase):
             with self.subTest(version=version):
                 config.write_text(f'LEVEL_ZERO_VERSION="{version}"\n')
                 log.write_text("")
-                result = subprocess.run(  # noqa: S603 -- actual RUN body with all external commands stubbed
+                result = run_command(
                     [BASH, "-c", command],
+                    allowed_executables=(BASH,),
                     cwd=self.repo,
                     env={"PATH": str(tools), "PROBE_LOG": str(log), "LEVEL_ZERO_VERSION": "0.0.0"},
                     capture_output=True,
                     text=True,
-                    check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 calls = log.read_text()

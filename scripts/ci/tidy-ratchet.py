@@ -27,7 +27,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -35,6 +34,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 if os.name == "posix":
     import fcntl
@@ -294,8 +299,13 @@ def cc_version(build_dir: Path) -> str:
 def clang_tidy_version(binary: str) -> str:
     """Return the LLVM version string of *binary*, or "" when unavailable."""
     try:
-        out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-            [binary, "--version"], capture_output=True, text=True, check=False
+        out = run_command(
+            [binary, "--version"],
+            allowed_executables=(binary,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
         ).stdout
     except OSError:
         return ""
@@ -328,8 +338,15 @@ def run_one(
         arg if arg.startswith("--extra-arg") else f"--extra-arg={arg}" for arg in extra_args
     ]
     argv = [binary, "-p", str(build_dir), *forwarded, str(source)]
-    proc = subprocess.run(  # noqa: S603 -- argv built from compile_commands, no shell
-        argv, capture_output=True, text=True, check=False, cwd=str(directory)
+    proc = run_command(
+        argv,
+        allowed_executables=(binary,),
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(directory),
+        timeout_seconds=600,
+        max_output_bytes=64 * 1_048_576,
     )
     return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode
 

@@ -9,13 +9,19 @@ import os
 import re
 import runpy
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 from unittest import mock
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MODEL = ROOT / "scripts/ci/cppcheck-public-entrypoints.cfg"
@@ -180,12 +186,15 @@ class CppcheckPosixModelTests(unittest.TestCase):
             command.remove(f"--library={PUBLIC_MODEL}")
             if public_model is not None:
                 command.append(f"--library={public_model}")
-        result = subprocess.run(  # noqa: S603 -- resolved tool, fixture argv, no shell
+        result = run_command(
             [*command, "--template={severity}:{id}:{message}", *extra],
+            allowed_executables=(self.binary,),
             cwd=self.directory,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=300,
+            max_output_bytes=16 * 1_048_576,
         )
         self.assertEqual(database.read_bytes(), before)
         diagnostics = re.findall(
@@ -300,8 +309,13 @@ int main(void) {
         code, diagnostics, output = self.analyze(
             source, language="c", extra=("--check-level=normal",)
         )
-        version = subprocess.run(  # noqa: S603 -- resolved analyzer, fixed argv
-            [self.binary, "--version"], capture_output=True, text=True, check=True
+        version = run_command(
+            [self.binary, "--version"],
+            allowed_executables=(self.binary,),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
         ).stdout
         match = re.search(r"Cppcheck (\d+)\.(\d+)", version)
         self.assertIsNotNone(match, version)
@@ -361,8 +375,13 @@ int main(void) {
         self.assertIn("uninitvar", ids, output)
         # Older distro tools do not implement this newer diagnostic; when the
         # installed analyzer supports it, the model must leave it enabled.
-        listed = subprocess.run(  # noqa: S603 -- resolved tool, fixed argv
-            [self.binary, "--errorlist"], capture_output=True, text=True, check=True
+        listed = run_command(
+            [self.binary, "--errorlist"],
+            allowed_executables=(self.binary,),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
         )
         supported = set(re.findall(r'<error id="([A-Za-z0-9_]+)"', listed.stdout + listed.stderr))
         if "uninitMemberVarNoCtor" in supported:

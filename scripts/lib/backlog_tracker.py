@@ -45,10 +45,14 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    from .safe_subprocess import run as run_command
+except ImportError:
+    from safe_subprocess import run as run_command
 
 # Number of `|`-separated cells before the title cell in a parsed
 # BACKLOG.md row: cells[0] is the leading empty string before the
@@ -309,17 +313,17 @@ class GitHubTracker:
     def _run(self, *args: str) -> str:
         """Run ``gh`` and return stdout. Raises on non-zero exit.
 
-        ``gh`` is the only command this wrapper ever executes; the
-        S603 lint warning ("untrusted input") is mitigated because
-        the caller-supplied ``args`` always become ``gh`` flags, not
-        a separate program. ``shell=True`` is intentionally not used.
+        ``gh`` is the only command this wrapper ever executes. Resolve it to
+        an absolute path before appending the fixed API argument vectors.
         """
         cmd = ["gh", *args]
-        result = subprocess.run(  # noqa: S603  fixed argv[0]=`gh`, no shell, see docstring
+        result = run_command(
             cmd,
+            allowed_executables=("gh",),
             check=True,
             capture_output=True,
             text=True,
+            timeout_seconds=60,
         )
         return result.stdout
 

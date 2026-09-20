@@ -35,9 +35,14 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 # `0000000000004414 <ssim_accumulate_avx512>:`
 _FUNC_RE = re.compile(r"^[0-9a-f]+ <(?P<name>[^>]+)>:$")
@@ -59,19 +64,23 @@ _ALIGNED_VEC_RE = re.compile(
 
 def _objdump_binary(explicit: str | None) -> str:
     for candidate in (explicit, "x86_64-w64-mingw32-objdump", "objdump"):
-        if candidate and shutil.which(candidate):
-            return candidate
+        if candidate:
+            resolved = shutil.which(candidate)
+            if resolved is not None:
+                return str(Path(resolved).resolve(strict=True))
     raise SystemExit(
         "error: no usable objdump found (tried --objdump, x86_64-w64-mingw32-objdump, objdump)"
     )
 
 
 def _disassemble(objdump: str, path: Path) -> str:
-    proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+    proc = run_command(
         [objdump, "-d", "--no-show-raw-insn", str(path)],
+        allowed_executables=(objdump,),
         capture_output=True,
         text=True,
         check=False,
+        timeout_seconds=60,
     )
     if proc.returncode != 0:
         return ""

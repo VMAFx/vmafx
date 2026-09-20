@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -55,12 +54,28 @@ from pathlib import Path
 # is the drift ADR-1282 deliberately left alone; move this import up when it is raised.
 import tomllib
 
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
+
 # A `git clone` invocation, following backslash continuations, that mentions
 # level-zero somewhere in it.
 # Consume any number of backslash-continued lines, then the final one. The
 # naive `[^\n]*(?:\\\n[^\n]*)*` swallows the trailing backslash itself and
 # then cannot match the continuation, silently seeing only the first line.
-GIT = shutil.which("git") or "/usr/bin/git"  # absolute path: ruff S607
+
+
+def required_executable(name: str) -> str:
+    """Resolve a required tool once so later PATH changes cannot replace it."""
+    resolved = shutil.which(name)
+    if resolved is None:
+        raise RuntimeError(f"required executable not found: {name}")
+    return str(Path(resolved).resolve(strict=True))
+
+
+GIT = required_executable("git")
 
 CLONE_RE = re.compile(r"git clone(?:[^\n]*\\\n)*[^\n]*")
 BRANCH_RE = re.compile(r'--branch\s+"?v([0-9][0-9.]*)')
@@ -316,13 +331,14 @@ def check_mypy_python_version(root: Path, py_ci: str | None = None) -> list[str]
 
 
 def main() -> int:
-    # S603: the argument vector is a fixed literal -- no user input reaches it.
     root = Path(
-        subprocess.run(  # noqa: S603
+        run_command(
             [GIT, "rev-parse", "--show-toplevel"],
+            allowed_executables=(GIT,),
             capture_output=True,
             text=True,
             check=True,
+            timeout_seconds=30,
         ).stdout.strip()
     )
     cfg = load_config(root)

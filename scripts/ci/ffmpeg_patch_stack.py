@@ -12,10 +12,18 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import TypedDict
+
+try:
+    from scripts.lib.safe_subprocess import CommandTimedOut
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandTimedOut
+    from lib.safe_subprocess import run as run_command
 
 STABLE_TAG = re.compile(r"n(\d+)\.(\d+)(?:\.(\d+))?\Z")
 PATCH_NAME = re.compile(r"\d{4}-[A-Za-z0-9_.-]+\.patch\Z")
@@ -90,8 +98,11 @@ class Replay:
             GIT_CONFIG_GLOBAL=os.devnull,
         )
         # A hook in the caller's Git configuration must not execute here.
+        git = shutil.which("git")
+        if git is None:
+            raise RuntimeError("git is required to replay the FFmpeg patch stack")
         self.prefix = [
-            shutil.which("git") or "/usr/bin/git",
+            str(Path(git).resolve(strict=True)),
             "-c",
             "core.hooksPath=/dev/null",
             "-c",
@@ -105,19 +116,27 @@ class Replay:
     def git(self, *args: str) -> str:
         command = [*self.prefix, "-C", str(self.checkout), *args]
         # Fixed Git executable/subcommands and argument lists; no shell expansion.
-        result = subprocess.run(  # noqa: S603
-            command, env=self.environment, text=True, capture_output=True, timeout=180
+        result = run_command(
+            command,
+            allowed_executables=(self.prefix[0],),
+            env=self.environment,
+            text=True,
+            capture_output=True,
+            timeout_seconds=180,
+            max_output_bytes=16 * 1_048_576,
         )
         with (self.output / "replay.log").open("a") as log:
             log.write(f"$ git {' '.join(args)}\n{result.stdout}{result.stderr}")
         if result.returncode:
             if args[0] in {"am", "rebase"}:
-                diff = subprocess.run(  # noqa: S603 -- same fixed Git invocation
+                diff = run_command(
                     [*self.prefix, "-C", str(self.checkout), "diff", "--binary"],
+                    allowed_executables=(self.prefix[0],),
                     env=self.environment,
                     text=True,
                     capture_output=True,
-                    timeout=30,
+                    timeout_seconds=30,
+                    max_output_bytes=16 * 1_048_576,
                 )
                 (self.output / "conflict.diff").write_text(diff.stdout)
             raise RuntimeError(
@@ -126,7 +145,14 @@ class Replay:
         return result.stdout
 
     def fetch(self, remote: str, tag: str) -> str:
-        self.git("fetch", "--no-tags", "--depth=1", remote, f"refs/tags/{tag}")
+        self.git(
+            "fetch",
+            "--no-tags",
+            "--depth=1",
+            "--end-of-options",
+            remote,
+            f"refs/tags/{tag}",
+        )
         return self.git("rev-parse", "FETCH_HEAD^{commit}").strip()
 
 
@@ -212,8 +238,8 @@ class Receipt(TypedDict, total=False):
     error: str
 
 
-def resolve_target_tag(replay: Replay, remote: str, current_tag: str, latest: bool) -> str:
-    """The tag to land on: the configured one, or upstream's newest stable release."""
+def select_target_tag(replay: Replay, remote: str, current_tag: str, latest: bool) -> str:
+    """Resolve the requested stable tag without permitting a downgrade."""
     if not latest:
         return current_tag
     target_tag = latest_release(replay.git("ls-remote", "--tags", "--refs", remote, "refs/tags/n*"))
@@ -222,11 +248,11 @@ def resolve_target_tag(replay: Replay, remote: str, current_tag: str, latest: bo
     return target_tag
 
 
-def regenerate_patches(
-    replay: Replay, repo: Path, output: Path, names: list[str], commits: list[str]
+def format_patch_updates(
+    repo: Path, output: Path, replay: Replay, names: list[str], commits: list[str]
 ) -> dict[Path, bytes]:
-    """Re-export every replayed commit as a patch and stage the candidate copies."""
-    updates: dict[Path, bytes] = {}
+    """Render the replayed commits into candidate patch bytes."""
+    updates = {}
     candidate = output / "patches"
     candidate.mkdir(exist_ok=True)
     for name, commit in zip(names, commits, strict=True):
@@ -245,31 +271,6 @@ def regenerate_patches(
     return updates
 
 
-def plan_updates(
-    repo: Path, updates: dict[Path, bytes], remote: str, target_tag: str, refresh: bool
-) -> tuple[list[str], str]:
-    """Fold the mirrors and build-config entries in; returns (changed paths, status)."""
-    updates.update(mirrors(repo, remote, target_tag))
-    config = repo / "build-config.env"
-    updates[config] = re.sub(
-        r"(?m)^FFMPEG_TAG=.*$", f'FFMPEG_TAG="{target_tag}"', config.read_text()
-    ).encode()
-    changed = [
-        str(path.relative_to(repo)) for path, data in updates.items() if path.read_bytes() != data
-    ]
-    return changed, "refreshed" if refresh else "checked"
-
-
-def commit_updates(updates: dict[Path, bytes], changed: list[str], refresh: bool) -> None:
-    """Write the refreshed files, or fail the check when drift was detected."""
-    if refresh:
-        replace_files(updates)
-    elif changed:
-        raise ValueError(
-            "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
-        )
-
-
 def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
     receipt: Receipt = {}
     output.mkdir(parents=True, exist_ok=True)
@@ -281,7 +282,7 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
         with tempfile.TemporaryDirectory(prefix="vmafx-ffmpeg-") as temporary:
             replay = Replay(Path(temporary), output)
             replay.git("init", "--quiet")
-            target_tag = resolve_target_tag(replay, remote, current_tag, latest)
+            target_tag = select_target_tag(replay, remote, current_tag, latest)
             base = replay.fetch(remote, current_tag)
             replay.git("switch", "--quiet", "--detach", base)
             for name in names:
@@ -303,11 +304,25 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
                 raise ValueError(
                     "refresh changed the number of patches; review upstreamed/empty patches"
                 )
-            updates = regenerate_patches(replay, repo, output, names, commits)
-            changed, status = plan_updates(repo, updates, remote, target_tag, refresh)
-            receipt.update({"changed": changed, "status": status})
-            commit_updates(updates, changed, refresh)
-    except (KeyError, ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+            updates = format_patch_updates(repo, output, replay, names, commits)
+            updates.update(mirrors(repo, remote, target_tag))
+            config = repo / "build-config.env"
+            updates[config] = re.sub(
+                r"(?m)^FFMPEG_TAG=.*$", f'FFMPEG_TAG="{target_tag}"', config.read_text()
+            ).encode()
+            changed = [
+                str(path.relative_to(repo))
+                for path, data in updates.items()
+                if path.read_bytes() != data
+            ]
+            receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
+            if refresh:
+                replace_files(updates)
+            elif changed:
+                raise ValueError(
+                    "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
+                )
+    except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         receipt.update({"status": "failed", "error": str(error)})
         raise
     finally:
@@ -343,7 +358,7 @@ def main() -> int:
     output = args.output_dir or Path(tempfile.mkdtemp(prefix="vmafx-ffmpeg-report-"))
     try:
         result = maintain(repo, output.resolve(), args.refresh, args.latest)
-    except (KeyError, ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+    except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         print(f"FFmpeg patch stack FAILED: {error}\nDiagnostics: {output}")
         return 1
     print(

@@ -30818,6 +30818,11 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   `>` as output redirection.
 
 
+- Bound repository automation subprocesses to explicit executables, arguments,
+  output memory, deadlines, and process-group cleanup instead of relying on
+  static-analysis waivers at each call site.
+
+
 **Python type, dependency, and security audit bundle**
 
 This bundle consolidates four source PRs into a single coherent audit pass

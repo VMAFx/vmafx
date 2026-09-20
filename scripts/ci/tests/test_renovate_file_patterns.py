@@ -15,10 +15,16 @@ import json
 import os
 import re
 import shutil
-import subprocess
+import sys
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -45,9 +51,16 @@ class RenovateFilePatterns(unittest.TestCase):
         environment = {
             key: value for key, value in os.environ.items() if not key.startswith("GIT_")
         }
-        cls.files = subprocess.check_output(  # noqa: S603 -- fixed read-only Git command
-            [GIT, "-C", str(ROOT), "ls-files"], env=environment, text=True
-        ).splitlines()
+        result = run_command(
+            [GIT, "-C", str(ROOT), "ls-files"],
+            allowed_executables=(GIT,),
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert isinstance(result.stdout, str)
+        cls.files = result.stdout.splitlines()
 
     def patterns(self, manager: dict[str, Any]) -> list[re.Pattern[str]]:
         patterns = manager["managerFilePatterns"]

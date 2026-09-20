@@ -4,10 +4,18 @@
 """Check source-driven ADR generation without modifying the caller's repo."""
 
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 NAV = """site_name: fixture
@@ -45,17 +53,17 @@ class GeneratorTests(unittest.TestCase):
         )
         (self.adr / "0100-second.md").write_text("# ADR-0100: Second\nTags: docs\n")
 
-    def run_generator(
-        self, script: str, mode: str, *, check: bool = True
-    ) -> subprocess.CompletedProcess[str]:
+    def run_generator(self, script: str, mode: str, *, check: bool = True) -> CommandResult:
         executable = shutil.which("bash")
         assert executable is not None, "bash is required by the generator fixture"
         # ADR-1242: fixed repository scripts in a disposable fixture, no shell.
-        result = subprocess.run(  # noqa: S603
+        result = run_command(
             (executable, str(self.root / "scripts/docs" / script), mode),
+            allowed_executables=(executable,),
             text=True,
             capture_output=True,
             check=False,
+            timeout_seconds=60,
         )
         if check:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

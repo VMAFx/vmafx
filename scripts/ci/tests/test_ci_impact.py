@@ -13,13 +13,18 @@ import importlib.util
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol, cast
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PLANNER = REPO_ROOT / "scripts" / "ci" / "plan-ci-impact.py"
@@ -92,11 +97,13 @@ class ConfigContract(unittest.TestCase):
         """A path the planner cannot classify forces mode=full (fail-closed).
         Keep the map in step with the tree so routing actually happens."""
         config = planner.load_config(CONFIG)
-        tracked = subprocess.run(  # noqa: S603 -- fixed argv, absolute git
+        tracked = run_command(
             [GIT, "-C", str(REPO_ROOT), "ls-tree", "--name-only", "HEAD"],
+            allowed_executables=(GIT,),
             capture_output=True,
             text=True,
             check=True,
+            timeout_seconds=60,
         ).stdout.split()
         known_prefixes = {p.rstrip("/") for p in config["known_prefixes"]}
         known_files = set(config["known_files"])
@@ -289,9 +296,17 @@ class GitIntegration(unittest.TestCase):
         }
 
         def git(*a: str) -> str:
-            return subprocess.run(  # noqa: S603 -- fixed argv, absolute git
-                [GIT, "-C", tmp, *a], capture_output=True, text=True, check=True, env=env
+            result = run_command(
+                [GIT, "-C", tmp, *a],
+                allowed_executables=(GIT,),
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,
+                timeout_seconds=60,
             ).stdout.strip()
+            assert isinstance(result, str)
+            return result
 
         git("init", "-q", "-b", "master")
         for d in ("docs", "core/src", ".github", "scripts/ci"):
@@ -308,7 +323,7 @@ class GitIntegration(unittest.TestCase):
     def _run(self, tmp: str, event: str, base: str, head: str) -> dict[str, str]:
         with tempfile.TemporaryDirectory() as t:
             out = Path(t) / "gh"
-            proc = subprocess.run(  # noqa: S603 -- fixed argv: our own planner
+            proc = run_command(
                 [
                     sys.executable,
                     str(PLANNER),
@@ -323,8 +338,10 @@ class GitIntegration(unittest.TestCase):
                     "--github-output",
                     str(out),
                 ],
+                allowed_executables=(sys.executable,),
                 capture_output=True,
                 text=True,
+                timeout_seconds=60,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             return dict(line.split("=", 1) for line in out.read_text().splitlines())

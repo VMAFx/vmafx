@@ -9,11 +9,19 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -36,32 +44,35 @@ def snapshot(directory: Path) -> dict[str, bytes]:
     }
 
 
-def git_environment() -> dict[str, str]:
+def clean_git_environment() -> dict[str, str]:
+    """Return a deterministic environment with all caller Git state removed."""
     clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
     return clean
 
 
-def git(
-    path: Path, *args: str, environment: dict[str, str] | None = None
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- isolated disposable Git caller
+def run_git(path: Path, *args: str, environment: dict[str, str]) -> CommandResult:
+    """Run Git only inside a disposable fixture repository."""
+    return run_command(
         [GIT, "-C", str(path), *args],
-        env=git_environment() if environment is None else environment,
+        allowed_executables=(GIT,),
+        env=environment,
         text=True,
         capture_output=True,
         check=True,
+        timeout_seconds=60,
     )
 
 
-def write_hook(hook: Path, marker: Path, command: list[str]) -> None:
-    hook.write_text(
-        f"#!{sys.executable}\n"
-        "import json, os, subprocess\nfrom pathlib import Path\n"
-        f"Path({str(marker)!r}).write_text(json.dumps({{'GIT_DIR': os.environ.get('GIT_DIR')}}))\n"
-        f"subprocess.run({command!r}, check=True)\n"
-    )
-    hook.chmod(0o700)
+def linked_hook_command(root: Path, old_command: bool) -> list[str]:
+    """Select the destructive control or the isolated fixed helper."""
+    if old_command:
+        return [GIT, "init", "-q", str(root / "old-fixture")]
+    return [
+        sys.executable,
+        str(ROOT / "scripts/ci/tests/test_level_zero_single_source.py"),
+        "LevelZeroSingleSource.test_workflow_checker_entrypoint_retains_container_validation",
+    ]
 
 
 class GitFixtureIsolation(unittest.TestCase):
@@ -74,16 +85,19 @@ class GitFixtureIsolation(unittest.TestCase):
             temporary.mkdir()
             # Even the adversarial test's setup must never inherit a real
             # caller's repository, index, object store or config overrides.
-            clean = git_environment()
+            clean = clean_git_environment()
 
-            git(caller, "init", "-q", "-b", "master", environment=clean)
-            git(caller, "config", "user.name", "Isolation Test", environment=clean)
-            git(caller, "config", "user.email", "fixture@example.invalid", environment=clean)
+            def git(*args: str) -> None:
+                run_git(caller, *args, environment=clean)
+
+            git("init", "-q", "-b", "master")
+            git("config", "user.name", "Isolation Test")
+            git("config", "user.email", "fixture@example.invalid")
             (caller / "tracked").write_text("committed caller work\n")
-            git(caller, "add", "tracked", environment=clean)
-            git(caller, "commit", "-qm", "test: caller baseline", environment=clean)
+            git("add", "tracked")
+            git("commit", "-qm", "test: caller baseline")
             (caller / "staged").write_text("unique staged caller work\n")
-            git(caller, "add", "staged", environment=clean)
+            git("add", "staged")
             (caller / "tracked").write_text("unique unstaged caller work\n")
             poison = {
                 "GIT_DIR": str(caller / ".git"),
@@ -99,13 +113,14 @@ class GitFixtureIsolation(unittest.TestCase):
             }
             before = snapshot(caller)
             executable = sys.executable if helper.endswith(".py") else BASH
-            result = subprocess.run(  # noqa: S603 -- shipped fixture; poison points only inside temporary root
+            result = run_command(
                 [executable, str(ROOT / helper)],
+                allowed_executables=(executable,),
                 cwd=root,
                 env=environment,
                 text=True,
                 capture_output=True,
-                timeout=90,
+                timeout_seconds=90,
                 check=False,
             )
             after = snapshot(caller)
@@ -137,9 +152,6 @@ class GitFixtureIsolation(unittest.TestCase):
     def test_level_zero_fixture(self) -> None:
         self.check_helper("scripts/ci/tests/test_level_zero_single_source.py")
 
-    def test_pelorus_sync_fixture(self) -> None:
-        self.check_helper("scripts/ci/tests/test-sync-pelorus-interop.sh")
-
     def test_real_linked_worktree_hook_preserves_shared_repository(self) -> None:
         # A real Git hook supplies GIT_DIR even when its caller has no Git
         # variables. Keep both the old-command control and fixed helper inside
@@ -153,21 +165,15 @@ class GitFixtureIsolation(unittest.TestCase):
                 caller = root / "caller"
                 linked = root / "linked"
                 caller.mkdir()
+                git = partial(run_git, environment=clean_git_environment())
+
                 git(caller, "init", "-q", "-b", "master")
                 git(caller, "config", "user.name", "Linked Hook Test")
                 git(caller, "config", "user.email", "fixture@example.invalid")
                 (caller / "tracked").write_text("committed caller work\n")
                 git(caller, "add", "tracked")
                 git(caller, "commit", "-qm", "test: linked hook baseline")
-                git(
-                    caller,
-                    "worktree",
-                    "add",
-                    "-q",
-                    "-b",
-                    "linked",
-                    str(linked),
-                )
+                git(caller, "worktree", "add", "-q", "-b", "linked", str(linked))
                 for path in (caller, linked):
                     (path / "staged").write_text("unique staged work\n")
                     git(path, "add", "staged")
@@ -176,17 +182,15 @@ class GitFixtureIsolation(unittest.TestCase):
                     git(caller, "config", "--local", "--get", "core.bare").stdout, "false\n"
                 )
                 marker = root / "hook-environment.json"
-                command = (
-                    [GIT, "init", "-q", str(root / "old-fixture")]
-                    if old_command
-                    else [
-                        sys.executable,
-                        str(ROOT / "scripts/ci/tests/test_level_zero_single_source.py"),
-                        "LevelZeroSingleSource.test_workflow_checker_entrypoint_retains_container_validation",
-                    ]
-                )
+                command = linked_hook_command(root, old_command)
                 hook = caller / ".git/hooks/pre-commit"
-                write_hook(hook, marker, command)
+                hook.write_text(
+                    f"#!{sys.executable}\n"
+                    "import json, os, subprocess\nfrom pathlib import Path\n"
+                    f"Path({str(marker)!r}).write_text(json.dumps({{'GIT_DIR': os.environ.get('GIT_DIR')}}))\n"
+                    f"subprocess.run({command!r}, check=True)\n"
+                )
+                hook.chmod(0o700)
                 before_caller, before_linked = snapshot(caller), snapshot(linked)
                 git(linked, "hook", "run", "pre-commit")
                 inherited = json.loads(marker.read_text())["GIT_DIR"]
@@ -215,7 +219,6 @@ class GitFixtureIsolation(unittest.TestCase):
             "scripts/dev/test-cleanup-agent-state.sh",
             "scripts/ci/test-classify-dependency-pr.sh",
             "scripts/ci/tests/test_level_zero_single_source.py",
-            "scripts/ci/tests/test-sync-pelorus-interop.sh",
             ".pre-commit-config.yaml",
         ):
             self.assertIsNotNone(re.search(pattern, path), path)

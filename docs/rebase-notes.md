@@ -252,6 +252,23 @@ contract while preserving ADR-1113's base mirror decision.
 - The fixture's `fopen(path, "w")` remains an upstream-owned CodeQL finding,
   tracked separately in `docs/state.md`. Fix it in Pelorus and re-vendor; do not
   patch only the VMAFx mirror.
+## fix/bounded-process-execution — repository automation process boundary (fork-local, 2026-09-20)
+
+- `scripts/lib/safe_subprocess.py` is the process-execution boundary for
+  Python automation under `scripts/`: executable allowlist, bounded argv and
+  captured output, explicit deadline, closed unused stdin, and process-group
+  cleanup. When an upstream sync or script port adds a direct `subprocess`
+  launch in this scope, adapt it to the boundary; do not restore an `S603`
+  annotation.
+- Consumer tests deliberately preserve each command's prior return and output
+  semantics. Keep the `allowed_executables` set narrow and command-specific;
+  broadening it to whatever happens to be on `PATH` defeats the boundary.
+- `.github/ci-impact.json` classifies every tracked top-level entry. Add new
+  roots to `known_prefixes` or `known_files` in the same change that creates
+  them so routing does not silently degrade to the fail-closed full plan.
+
+See [ADR-1270](adr/1270-bounded-process-execution.md) and
+[Research-2071](research/2071-bounded-process-execution.md).
 
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 

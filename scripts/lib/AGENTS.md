@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD060 -->
 # `scripts/lib/` — agent invariants
 
 Parent: [../AGENTS.md](../AGENTS.md).
@@ -15,10 +14,11 @@ Nothing in this directory mirrors upstream Netflix/vmaf. Rebase risk
 = "internal coupling drift", not "merge conflict".
 
 | Module | Consumers | What couples them |
-|---|---|---|
+| --- | --- | --- |
 | `backlog_tracker.py` | `scripts/ci/agent-eligibility-precheck.py` (direct import); future state-audit / status-reporter scripts. | The `BacklogItem` dataclass field names (`id` / `title` / `status` / `priority` / `pr_refs` / `raw_row`) and the status enum strings (OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED). Renames are breaking changes for every importer. |
 | `backlog_tracker.py` ↔ `.workingdir/BACKLOG.md` row format | The regex parser in `_ID_PATTERN` + `_STATUS_RULES`. | If BACKLOG.md ever adds a column or renames a status word, the parser silently mis-classifies rows. Run the smoke (`python3 -c 'from scripts.lib.backlog_tracker import BacklogTracker; print(len(BacklogTracker().all()))'`) after any structural BACKLOG.md edit; expected ≥ 100 rows on master at 2026-05-09. |
 | `GitHubTracker._run` | Wraps the `gh` CLI. | Output schema (`number / title / body / headRefName / mergedAt / state`) is `gh`-version-coupled. Pin behaviour by passing `--json` field lists explicitly; never rely on default columns. |
+| `safe_subprocess.py` | Python automation under `scripts/`. | Every executable is allowlisted, argv/environment/cwd are validated, captured output and runtime are bounded, and POSIX timeout cleanup owns the process group. Do not replace it with a raw `subprocess` call or an `S603` waiver. |
 
 ## Read-only invariant
 
@@ -41,6 +41,16 @@ SDK, etc.) = regression, two reasons:
    without virtualenv setup.
 
 New dep genuinely justified -> write ADR first.
+
+## Process-execution invariant
+
+Repository automation under `scripts/` launches external programs through
+`safe_subprocess.run()` or `run_async()`. Every caller supplies the executable
+allowlist and receives a deadline and output ceiling, using stricter explicit
+values where the default is not appropriate. A missing executable, malformed
+argv, timeout, or output flood fails closed.
+Tests that intentionally spell `subprocess` as fixture source text are not
+production launch paths. See [ADR-1270](../../docs/adr/1270-bounded-process-execution.md).
 
 ## Worktree-aware path resolution
 
