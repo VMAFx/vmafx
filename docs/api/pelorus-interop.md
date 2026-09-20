@@ -56,8 +56,10 @@ Pelorus's. (`qp_report_csv.c` is required to link: the ABI-1.3 fixture exercises
 The conformance test additionally carries a vmafx-authored
 (`Copyright 2026 Lusoris`) header instead of cloning Pelorus's. From its first
 vendored `#include` onward, its body is exact Pelorus source apart from the same
-include rewrite. VMAFx format and tidy scopes exclude that exact-source body;
-lint-policy changes belong in VMAFx tooling, never in the fixture.
+include rewrite. The sync script renders that prefix canonically from the pin
+and ABI version, then appends the transformed body. VMAFx format and tidy
+scopes exclude only the manifest-owned fixture path; lint-policy changes belong
+in VMAFx tooling, never in the fixture.
 
 ## The blob, in brief
 
@@ -207,13 +209,15 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 #   4. rebuild + run the conformance fixture (must stay green).
 ```
 
-`--update` re-vendors both the manifest files **and** the conformance-fixture
-body (the Lusoris-authored header before the first vendored `#include` is
-preserved; only the body from that include onward is replaced and the
-`pelorus/` → `libvmaf/pelorus/` include rewrite re-applied). The drift check
-compares transformed files and the fixture body byte-for-byte through EOF, so
-even a missing or extra final newline is drift. Local formatting or tidy edits
-therefore fail the guard instead of becoming a second implementation.
+`--update` re-vendors both the manifest files **and the complete conformance
+fixture**. It regenerates the canonical Lusoris-authored prefix with the pinned
+commit and ABI version, then appends the Pelorus body with the `pelorus/` →
+`libvmaf/pelorus/` include rewrite. The drift check compares every complete
+rendered file byte-for-byte through EOF, so a prefix mutation, stale fixture
+pin, or missing/extra final newline is drift. It also rejects any added or
+missing tracked file in the exact-mirror lint namespaces unless the manifest
+owns that path. Local formatting or tidy edits therefore fail the guard instead
+of becoming a second implementation or silently gaining a lint exemption.
 
 A re-sync that changes the ABI is an ADR-worthy event (a new section bit or an
 appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-pin

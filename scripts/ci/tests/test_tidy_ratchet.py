@@ -27,6 +27,32 @@ def _load():
 ratchet = _load()
 
 
+class ExactPelorusMirror(unittest.TestCase):
+    def test_only_manifested_paths_are_lint_exempt(self) -> None:
+        for path in (
+            "core/include/libvmaf/pelorus/pelorus.h",
+            "core/include/libvmaf/pelorus/interop.h",
+            "core/include/libvmaf/pelorus/deband.h",
+            "core/include/libvmaf/pelorus/denoise.h",
+            "core/src/interop/pelorus_interop.c",
+            "core/src/interop/pelorus_deband_params.c",
+            "core/src/interop/pelorus_denoise_params.c",
+            "core/src/interop/pelorus_qp_report_csv.c",
+            "core/src/interop/pelorus_version.c",
+            "core/test/test_pelorus_interop.c",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(ratchet.is_exact_pelorus_mirror(path))
+
+        for path in (
+            "core/include/libvmaf/pelorus/unmanifested.h",
+            "core/include/libvmaf/pelorus/nested/unmanifested.h",
+            "core/src/interop/pelorus_unmanifested.c",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(ratchet.is_exact_pelorus_mirror(path))
+
+
 class ParseDiagnostics(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()

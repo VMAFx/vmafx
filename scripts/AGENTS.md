@@ -65,10 +65,12 @@ The Pelorus mirror guard pins a full 40-character released commit and reads
 every source with `git show`. A non-Git source directory or a checkout missing
 that object fails closed; never restore fallback to working-tree bytes. Re-pin
 for reviewed ABI additions and released parser correctness/security fixes,
-even when ABI 1.3 is unchanged. The conformance fixture body is byte-sensitive
-through EOF apart from the documented include rewrite; lint/format exclusions
-belong in VMAFx tooling, not inside that shared body. Keep the guard, its
-hermetic test, and the required Pre-Commit workflow checkout in one change.
+even when ABI 1.3 is unchanged. The conformance fixture is a canonical
+VMAFx-authored prefix (including pin and ABI version) plus the transformed
+Pelorus body; the complete file is byte-sensitive through EOF. The guard also
+requires every tracked path in lint-exempt Pelorus namespaces to appear in its
+manifest. Keep lint/format policy outside the shared body, and keep the guard,
+its hermetic test, and the required Pre-Commit workflow checkout in one change.
 
 ### `dev/cleanup-agent-state.sh` preserves unclassified work
 

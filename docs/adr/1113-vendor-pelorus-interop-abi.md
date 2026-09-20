@@ -100,14 +100,18 @@ append-only ABI rules. It makes their maintenance consequence explicit:
 - `PELORUS_VENDOR_SHA` names a reviewed released commit, not merely the newest
   commit that changed `PELORUS_ABI_MINOR`.
 - A released parser correctness/security fix triggers a coordinated re-pin,
-  exact fixture-body sync, sanitizer run, and drift check even when the ABI
+  exact fixture sync, sanitizer run, and drift check even when the ABI
   major/minor are unchanged.
 - The required VMAFx Pre-Commit workflow checks out that exact Pelorus object
   and runs the default drift guard. A non-Git source directory or a checkout
   missing the pinned object fails closed.
 - The shared fixture body remains exact Pelorus source apart from the original
-  include rewrite. VMAFx lint and format exclusions carry local policy; local
-  `NOLINT` bands or ignored-return casts must not be inserted into the fixture.
+  include rewrite. Its VMAFx-authored prefix is rendered canonically from the
+  pinned source and ABI version, and the complete file is compared through EOF.
+  VMAFx lint and format exclusions carry local policy; local `NOLINT` bands or
+  ignored-return casts must not be inserted into the fixture.
+- Lint exclusion is limited to manifest-owned mirror paths. The drift guard
+  rejects any extra or missing tracked file in the exempt Pelorus namespaces.
 
 The earlier pins below remain historical records. The current source is
 `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`, release v0.2.2,

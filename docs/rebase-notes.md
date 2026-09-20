@@ -18,7 +18,12 @@ Pre-Commit workflow.
 - From its first vendored include onward, `test_pelorus_interop.c` is exact
   Pelorus source except for the include rewrite. Do not reapply PR #1351's
   VMAFx-only `NOLINT` band or `(void)` casts. Formatting/tidy exclusions belong
-  in VMAFx tooling, and the drift guard compares the transformed body exactly.
+  in VMAFx tooling. The drift guard renders the VMAFx prefix canonically from
+  the source pin and ABI version, then compares the complete fixture exactly.
+- Native-lint exemption uses an explicit manifest-owned path set. The sync
+  guard rejects extra or missing tracked files in the Pelorus header/source
+  namespaces; do not restore prefix-wide exemption without that fail-closed
+  manifest check.
 - The guard must keep reading the pinned Git object and failing closed for a
   plain directory or a checkout that lacks it. The existing required
   `Pre-Commit` job checks out that exact object and runs the default guard.

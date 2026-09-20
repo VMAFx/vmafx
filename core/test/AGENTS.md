@@ -280,8 +280,9 @@ identical to that source.
   and `scripts/ci/tidy-ratchet.py`. The exact-source fixture is excluded there.
 - After any re-pin, run `scripts/sync-pelorus-interop.sh` against a Git checkout
   containing the exact object, then run `test_pelorus_interop` under normal,
-  ASan, and UBSan builds. The default guard compares the transformed body
-  byte-for-byte and fails closed when the object is unavailable.
+  ASan, and UBSan builds. The default guard renders the canonical VMAFx prefix
+  plus transformed Pelorus body and compares the complete file byte-for-byte;
+  it fails closed when the object is unavailable or the prefix is changed.
 
 ## Governing ADRs
 
