@@ -444,3 +444,14 @@ When debugging fault here, `AMD_SERIALIZE_KERNEL=3
 HIP_LAUNCH_BLOCKING=1 AMD_LOG_LEVEL=3` names offending kernel.
 Faulting address in host heap range is tell that host pointer
 reached device.
+
+## HISS-21: `g_hip_features[]` stays packed (2026-09-21)
+
+`dispatch_strategy.c`'s `g_hip_features[]` table is hand-packed inside a
+`// clang-format off` / `on` fence so the block stays under the HISS-04 60-line
+bound — the same treatment the HIP `VmafOption` tables and the CPU SpEED tables
+in `core/src/feature/speed.c` get. Letting clang-format re-expand it (one string
+per line) puts the file straight back over the bound. The table is a
+name-matching allowlist consumed by `vmaf_hip_dispatch_supports()`, so a rebase
+must preserve every string, the per-extractor comment headers that group them,
+and the trailing `NULL` sentinel.

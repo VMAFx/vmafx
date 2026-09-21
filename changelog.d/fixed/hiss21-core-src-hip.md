@@ -22,3 +22,8 @@
   stays inside the HISS-04 60-line bound. Every option name, alias, help
   string, default, range and flag — and the array order — is unchanged,
   so no CLI surface, feature-name key or model lookup moves.
+- HIP backend runtime: the `g_hip_features[]` dispatch table in
+  `core/src/hip/dispatch_strategy.c` is packed the same way, so it also
+  stays inside the HISS-04 60-line bound. The feature-name strings,
+  their per-extractor comment headers and the array order (with the
+  `NULL` sentinel last) are unchanged.
