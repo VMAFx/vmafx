@@ -17,6 +17,61 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from ai.scripts import calibrate_nr_threshold
 
 
+def _write_corpus_clip(tmp_path: Path) -> Path:
+    """Create a one-clip corpus directory holding a 64-byte placeholder YUV."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "sample_64x64.yuv").write_bytes(b"\x00" * 64)
+    return corpus
+
+
+def _write_model_stubs(tmp_path: Path) -> tuple[Path, Path]:
+    """Create the placeholder NR model JSON + ONNX that the calibrator rewrites."""
+    model_json = tmp_path / "nr_metric_v1.json"
+    model_json.write_text('{"id": "nr_metric_v1"}\n', encoding="utf-8")
+    model_onnx = tmp_path / "nr_metric_v1.onnx"
+    model_onnx.write_bytes(b"fake-onnx")
+    return model_json, model_onnx
+
+
+def _patch_codec_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the ffmpeg encode/decode shell-outs with byte-writing stubs."""
+
+    def fake_encode(*_args: Any, output: Path, **_kwargs: Any) -> bool:
+        output.write_bytes(b"encoded")
+        return True
+
+    def fake_decode(_encoded: Path, output: Path, **_kwargs: Any) -> bool:
+        output.write_bytes(b"decoded")
+        return True
+
+    monkeypatch.setattr(calibrate_nr_threshold, "_encode_yuv", fake_encode)
+    monkeypatch.setattr(calibrate_nr_threshold, "_decode_to_yuv", fake_decode)
+
+
+def _assert_accepted_calibration(
+    payload: dict[str, Any], model_json: Path, report_dir: Path
+) -> None:
+    """Assert the accepted-calibration fields and ADR-0661 provenance block."""
+    assert payload["calibration_slope"] == 1.0
+    assert payload["calibration_intercept"] == 2.0
+    assert payload["calibration_threshold"] == 0.0
+    assert payload["calibration_quality_status"] == "accepted"
+    assert payload["calibration_quality_reasons"] == []
+    assert payload["calibration_min_samples"] == 2
+    assert payload["calibration_min_plcc"] == 0.7
+    assert payload["calibration_allow_weak"] is False
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/calibrate_nr_threshold.py"
+    assert provenance["inputs"]["requested_corpus"]["kind"] == "directory"
+    assert provenance["inputs"]["model_onnx"]["kind"] == "file"
+    assert provenance["outputs"]["model_json"]["path"] == str(model_json)
+    assert provenance["outputs"]["markdown_report"]["path"].startswith(str(report_dir))
+    assert provenance["args"]["max_clips"] == 1
+    assert provenance["args"]["nr_ep"] == "cpu"
+
+
 def test_fr_vmaf_uses_current_cli_pixel_format_and_quiet(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -91,24 +146,9 @@ def test_detect_yuv_geometry_knows_netflix_public_1080p_names() -> None:
 def test_nr_threshold_calibration_records_run_provenance(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
-    yuv = corpus / "sample_64x64.yuv"
-    yuv.write_bytes(b"\x00" * 64)
-
-    model_json = tmp_path / "nr_metric_v1.json"
-    model_json.write_text('{"id": "nr_metric_v1"}\n', encoding="utf-8")
-    model_onnx = tmp_path / "nr_metric_v1.onnx"
-    model_onnx.write_bytes(b"fake-onnx")
+    corpus = _write_corpus_clip(tmp_path)
+    model_json, model_onnx = _write_model_stubs(tmp_path)
     report_dir = tmp_path / "reports"
-
-    def fake_encode(*_args: Any, output: Path, **_kwargs: Any) -> bool:
-        output.write_bytes(b"encoded")
-        return True
-
-    def fake_decode(_encoded: Path, output: Path, **_kwargs: Any) -> bool:
-        output.write_bytes(b"decoded")
-        return True
 
     def fake_fr(_ref_yuv: Path, dist_yuv: Path, **_kwargs: Any) -> float:
         return 92.0 if "crf20" in dist_yuv.name else 82.0
@@ -117,8 +157,7 @@ def test_nr_threshold_calibration_records_run_provenance(
         assert kwargs["nr_use_gpu_ep"] is False
         return 90.0 if "crf20" in dist_yuv.name else 80.0
 
-    monkeypatch.setattr(calibrate_nr_threshold, "_encode_yuv", fake_encode)
-    monkeypatch.setattr(calibrate_nr_threshold, "_decode_to_yuv", fake_decode)
+    _patch_codec_stubs(monkeypatch)
     monkeypatch.setattr(calibrate_nr_threshold, "_run_fr_vmaf", fake_fr)
     monkeypatch.setattr(calibrate_nr_threshold, "_run_nr_score", fake_nr)
 
@@ -145,23 +184,7 @@ def test_nr_threshold_calibration_records_run_provenance(
 
     assert rc == 0
     payload = json.loads(model_json.read_text(encoding="utf-8"))
-    assert payload["calibration_slope"] == 1.0
-    assert payload["calibration_intercept"] == 2.0
-    assert payload["calibration_threshold"] == 0.0
-    assert payload["calibration_quality_status"] == "accepted"
-    assert payload["calibration_quality_reasons"] == []
-    assert payload["calibration_min_samples"] == 2
-    assert payload["calibration_min_plcc"] == 0.7
-    assert payload["calibration_allow_weak"] is False
-    provenance = payload["run_provenance"]
-    assert provenance["schema"] == "ai-run-provenance-v1"
-    assert provenance["entrypoint"]["path"] == "ai/scripts/calibrate_nr_threshold.py"
-    assert provenance["inputs"]["requested_corpus"]["kind"] == "directory"
-    assert provenance["inputs"]["model_onnx"]["kind"] == "file"
-    assert provenance["outputs"]["model_json"]["path"] == str(model_json)
-    assert provenance["outputs"]["markdown_report"]["path"].startswith(str(report_dir))
-    assert provenance["args"]["max_clips"] == 1
-    assert provenance["args"]["nr_ep"] == "cpu"
+    _assert_accepted_calibration(payload, model_json, report_dir)
 
 
 def test_nr_threshold_single_sample_requires_delta_override(
@@ -214,24 +237,9 @@ def test_nr_threshold_single_sample_requires_delta_override(
 def test_nr_threshold_quality_gate_rejects_weak_correlation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
-    yuv = corpus / "sample_64x64.yuv"
-    yuv.write_bytes(b"\x00" * 64)
-
-    model_json = tmp_path / "nr_metric_v1.json"
-    model_json.write_text('{"id": "nr_metric_v1"}\n', encoding="utf-8")
-    model_onnx = tmp_path / "nr_metric_v1.onnx"
-    model_onnx.write_bytes(b"fake-onnx")
+    corpus = _write_corpus_clip(tmp_path)
+    model_json, model_onnx = _write_model_stubs(tmp_path)
     report_dir = tmp_path / "reports"
-
-    def fake_encode(*_args: Any, output: Path, **_kwargs: Any) -> bool:
-        output.write_bytes(b"encoded")
-        return True
-
-    def fake_decode(_encoded: Path, output: Path, **_kwargs: Any) -> bool:
-        output.write_bytes(b"decoded")
-        return True
 
     def fake_fr(_ref_yuv: Path, dist_yuv: Path, **_kwargs: Any) -> float:
         if "crf20" in dist_yuv.name:
@@ -247,8 +255,7 @@ def test_nr_threshold_quality_gate_rejects_weak_correlation(
             return 80.0
         return 70.0
 
-    monkeypatch.setattr(calibrate_nr_threshold, "_encode_yuv", fake_encode)
-    monkeypatch.setattr(calibrate_nr_threshold, "_decode_to_yuv", fake_decode)
+    _patch_codec_stubs(monkeypatch)
     monkeypatch.setattr(calibrate_nr_threshold, "_run_fr_vmaf", fake_fr)
     monkeypatch.setattr(calibrate_nr_threshold, "_run_nr_score", fake_nr)
 

@@ -47,6 +47,48 @@ def _fake_executable(path: Path) -> Path:
     return path
 
 
+def _plant_stale_cache(mod: Any, cache_dir: Path, pair: SimpleNamespace) -> None:
+    """Write a pre-ADR-0559 cache holding only the first two FULL_FEATURES columns.
+
+    This is the exact poison the old ``strict=False`` zip swallowed.
+    """
+    stale_path = mod._per_clip_cache_path(cache_dir, pair.source, pair.dis_path.stem)
+    stale_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_path.write_text(
+        json.dumps(
+            {
+                "feature_names": list[Any](FULL_FEATURES[:2]),
+                "per_frame": [[1.0, 2.0], [3.0, 4.0]],
+                "teacher_per_frame": [80.0, 81.0],
+            }
+        )
+    )
+
+
+def _patch_fresh_compute(mod: Any, monkeypatch: pytest.MonkeyPatch, pair: SimpleNamespace) -> None:
+    """Stub the extractor so a fresh compute returns every FULL_FEATURES column.
+
+    A full-width result proves the stale cache was rejected and recomputed
+    rather than zipped against the current feature set.
+    """
+    fresh_per_frame = np.asarray(
+        [[float(i) for i in range(len(FULL_FEATURES))]] * 2, dtype=np.float32
+    )
+    monkeypatch.setattr(mod, "iter_pairs", lambda _root, max_pairs=None: [pair])
+    monkeypatch.setattr(
+        mod,
+        "extract_features",
+        lambda *_a, **_k: SimpleNamespace(
+            feature_names=tuple(FULL_FEATURES), per_frame=fresh_per_frame
+        ),
+    )
+    monkeypatch.setattr(
+        mod,
+        "teacher_scores",
+        lambda *_a, **_k: SimpleNamespace(per_frame=np.asarray([80.0, 81.0], dtype=np.float32)),
+    )
+
+
 def test_cache_path_carries_feature_count() -> None:
     """The per-clip cache key must include the feature-set count so a cache
     produced under a different FULL_FEATURES length misses instead of aliasing."""
@@ -72,39 +114,8 @@ def test_stale_short_cache_is_not_silently_truncated(
         height=16,
     )
 
-    # Plant a STALE cache at the *fixed-name* location with only the first two
-    # FULL_FEATURES columns (simulating a pre-ADR-0559 22-col cache).  This is
-    # the exact poison the old strict=False zip swallowed.
-    stale_path = mod._per_clip_cache_path(cache_dir, pair.source, pair.dis_path.stem)
-    stale_path.parent.mkdir(parents=True, exist_ok=True)
-    stale_path.write_text(
-        json.dumps(
-            {
-                "feature_names": list[Any](FULL_FEATURES[:2]),
-                "per_frame": [[1.0, 2.0], [3.0, 4.0]],
-                "teacher_per_frame": [80.0, 81.0],
-            }
-        )
-    )
-
-    # Fresh compute returns the FULL set (all columns) — proving the stale cache
-    # was rejected and recomputed rather than used.
-    fresh_per_frame = np.asarray(
-        [[float(i) for i in range(len(FULL_FEATURES))]] * 2, dtype=np.float32
-    )
-    monkeypatch.setattr(mod, "iter_pairs", lambda _root, max_pairs=None: [pair])
-    monkeypatch.setattr(
-        mod,
-        "extract_features",
-        lambda *_a, **_k: SimpleNamespace(
-            feature_names=tuple(FULL_FEATURES), per_frame=fresh_per_frame
-        ),
-    )
-    monkeypatch.setattr(
-        mod,
-        "teacher_scores",
-        lambda *_a, **_k: SimpleNamespace(per_frame=np.asarray([80.0, 81.0], dtype=np.float32)),
-    )
+    _plant_stale_cache(mod, cache_dir, pair)
+    _patch_fresh_compute(mod, monkeypatch, pair)
 
     rc = mod.main(
         [

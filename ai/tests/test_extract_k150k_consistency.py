@@ -82,6 +82,50 @@ def _build_args(out_path: Path) -> argparse.Namespace:
     )
 
 
+def _write_done_checkpoint(done_path: Path, count: int) -> None:
+    """Write a ``.done`` checkpoint naming ``count`` completed clips."""
+    done_path.write_text(
+        "\n".join(f"clip_{i:04d}.mp4" for i in range(count)) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_parquet_rows(out_path: Path, count: int) -> None:
+    """Write a feature parquet holding ``count`` extracted rows."""
+    pd.DataFrame(
+        [{"clip_name": f"clip_{i:04d}.mp4", "vmaf": 95.0} for i in range(count)]
+    ).to_parquet(out_path, index=False)
+
+
+def _raise_script_consistency_error(
+    *,
+    done_set: set[str],
+    accounted: int,
+    parquet_count: int,
+    recovered_rows: list[Any],
+    done_path: Path,
+) -> None:
+    """Raise exactly the ``RuntimeError`` the script's restart guard raises.
+
+    The guard is replicated here rather than reached through ``main()``,
+    which would need a real mp4 corpus. If the script's message ever drifts
+    from this copy, the assertions in the caller fail loudly — which is the
+    point: a future refactor of the check must keep the contract intact.
+    """
+    if len(done_set) > accounted:
+        missing = len(done_set) - accounted
+        raise RuntimeError(
+            f"[k150k] CONSISTENCY ERROR: .done lists {len(done_set)} "
+            f"completed clip(s) but parquet has only {parquet_count} "
+            f"row(s) (+{len(recovered_rows)} recovered from staging). "
+            f"{missing} clip(s) appear to have been lost by a prior "
+            f"crash mid-write. Operator must re-extract them: remove "
+            f"the affected entries from {done_path} (or delete it to "
+            f"re-extract everything) and re-run. "
+            f"See ADR k150k-crash-restart-row-loss-consistency-check."
+        )
+
+
 def test_consistency_check_raises_on_done_parquet_mismatch(
     k150k_module: Any, tmp_path: Path
 ) -> None:
@@ -101,29 +145,19 @@ def test_consistency_check_raises_on_done_parquet_mismatch(
     done_path = out_path.with_suffix(".done")
 
     # 1. Build a .done checkpoint with 100 entries.
-    done_path.write_text(
-        "\n".join(f"clip_{i:04d}.mp4" for i in range(100)) + "\n",
-        encoding="utf-8",
-    )
+    _write_done_checkpoint(done_path, 100)
     done_set = k150k_module._load_done_set(done_path)
     assert len(done_set) == 100
 
     # 2. Write a parquet with only 50 rows.
-    parquet_rows = pd.DataFrame(
-        [{"clip_name": f"clip_{i:04d}.mp4", "vmaf": 95.0} for i in range(50)]
-    )
-    parquet_rows.to_parquet(out_path, index=False)
+    _write_parquet_rows(out_path, 50)
     assert k150k_module._parquet_row_count(out_path) == 50
 
     # 3. Staging is absent (operator-cleaned).
     staging_path = k150k_module._staging_path(out_path)
     assert not staging_path.exists()
 
-    # 4. Inline the no-op branch's consistency guard. We can't call main()
-    # directly without an mp4 corpus, so we replicate just the guard.
-    # If the guard text below ever drifts from the script, this test
-    # will fail loudly — which is the point: any future refactor of the
-    # check must keep the contract intact.
+    # 4. Exercise the no-op branch's consistency guard.
     recovered_rows = k150k_module._load_staging_rows(staging_path)
     assert recovered_rows == []
 
@@ -132,20 +166,14 @@ def test_consistency_check_raises_on_done_parquet_mismatch(
 
     assert len(done_set) > accounted, "Test scaffolding broken: expected .done > accounted."
 
-    # Now raise the same way the script would.
     with pytest.raises(RuntimeError) as excinfo:
-        if len(done_set) > accounted:
-            missing = len(done_set) - accounted
-            raise RuntimeError(
-                f"[k150k] CONSISTENCY ERROR: .done lists {len(done_set)} "
-                f"completed clip(s) but parquet has only {parquet_count} "
-                f"row(s) (+{len(recovered_rows)} recovered from staging). "
-                f"{missing} clip(s) appear to have been lost by a prior "
-                f"crash mid-write. Operator must re-extract them: remove "
-                f"the affected entries from {done_path} (or delete it to "
-                f"re-extract everything) and re-run. "
-                f"See ADR k150k-crash-restart-row-loss-consistency-check."
-            )
+        _raise_script_consistency_error(
+            done_set=done_set,
+            accounted=accounted,
+            parquet_count=parquet_count,
+            recovered_rows=recovered_rows,
+            done_path=done_path,
+        )
 
     msg = str(excinfo.value)
     assert "CONSISTENCY ERROR" in msg

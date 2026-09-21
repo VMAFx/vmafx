@@ -30,10 +30,10 @@ _CHUNK = 1 << 20  # 1 MiB
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(_CHUNK)
-            if not chunk:
-                break
+        # Bounded by the file length: ``iter`` stops at the first empty read,
+        # which a regular file guarantees after at most ceil(size / _CHUNK)
+        # iterations. No unbounded ``while True``.
+        for chunk in iter(lambda: fh.read(_CHUNK), b""):
             h.update(chunk)
     return h.hexdigest()
 

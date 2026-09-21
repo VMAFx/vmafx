@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -85,10 +86,19 @@ def test_assign_folds_is_deterministic_and_balanced() -> None:
     assert counts == {"fold0": 4, "fold1": 4, "fold2": 4, "fold3": 4, "fold4": 4}
 
 
-def test_main_writes_full_and_folded_parquets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    mod = _load_module()
+@dataclass(frozen=True)
+class _KonvidFixture:
+    """Paths of the synthetic KoNViD corpus and the CLI outputs under test."""
+
+    root: Path
+    vmaf_bin: Path
+    model: Path
+    out_plain: Path
+    out_folds: Path
+
+
+def _prepare_konvid_fixture(tmp_path: Path) -> _KonvidFixture:
+    """Create a two-clip KoNViD tree plus a stub vmaf binary and model JSON."""
     root = tmp_path / "konvid-1k"
     videos = root / "KoNViD_1k_videos"
     videos.mkdir(parents=True)
@@ -100,23 +110,50 @@ def test_main_writes_full_and_folded_parquets(
     fake_vmaf.chmod(0o755)
     fake_model = tmp_path / "model.json"
     fake_model.write_text("{}")
-    out_plain = tmp_path / "full_features_konvid.parquet"
-    out_folds = tmp_path / "full_features_konvid_with_folds.parquet"
+
+    return _KonvidFixture(
+        root=root,
+        vmaf_bin=fake_vmaf,
+        model=fake_model,
+        out_plain=tmp_path / "full_features_konvid.parquet",
+        out_folds=tmp_path / "full_features_konvid_with_folds.parquet",
+    )
+
+
+def _assert_konvid_manifest(manifest: dict[str, Any], plain: pd.DataFrame) -> None:
+    """Assert the replay manifest the script writes beside the plain parquet."""
+    assert manifest["schema"] == "konvid-full-features-manifest-v1"
+    assert manifest["teacher_model"] == "model"
+    assert manifest["features"] == list(FULL_FEATURES)
+    assert manifest["folds"] == {"enabled": True, "fold_count": 5}
+    assert manifest["stats"]["clips_selected"] == 2
+    assert manifest["stats"]["clips_processed"] == 2
+    assert manifest["stats"]["frames"] == 4
+    assert manifest["stats"]["columns"] == len(plain.columns)
+    assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert manifest["run_provenance"]["args"]["max_clips"] == 2
+
+
+def test_main_writes_full_and_folded_parquets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load_module()
+    fixture = _prepare_konvid_fixture(tmp_path)
 
     monkeypatch.setattr(
         "sys.argv",
         [
             "konvid_to_full_features.py",
             "--konvid-root",
-            str(root),
+            str(fixture.root),
             "--vmaf-bin",
-            str(fake_vmaf),
+            str(fixture.vmaf_bin),
             "--model",
-            str(fake_model),
+            str(fixture.model),
             "--out",
-            str(out_plain),
+            str(fixture.out_plain),
             "--folds-out",
-            str(out_folds),
+            str(fixture.out_folds),
             "--scratch",
             str(tmp_path / "scratch"),
             "--cache-dir",
@@ -130,8 +167,8 @@ def test_main_writes_full_and_folded_parquets(
         rc = mod.main()
 
     assert rc == 0
-    plain = pd.read_parquet(out_plain)
-    folded = pd.read_parquet(out_folds)
+    plain = pd.read_parquet(fixture.out_plain)
+    folded = pd.read_parquet(fixture.out_folds)
     assert len(plain) == 4
     assert len(folded) == 4
     for feature in FULL_FEATURES:
@@ -142,14 +179,7 @@ def test_main_writes_full_and_folded_parquets(
     assert "source" not in plain.columns
     assert set(folded["source"]).issubset({"fold0", "fold1", "fold2", "fold3", "fold4"})
 
-    manifest = json.loads(out_plain.with_suffix(".manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema"] == "konvid-full-features-manifest-v1"
-    assert manifest["teacher_model"] == "model"
-    assert manifest["features"] == list(FULL_FEATURES)
-    assert manifest["folds"] == {"enabled": True, "fold_count": 5}
-    assert manifest["stats"]["clips_selected"] == 2
-    assert manifest["stats"]["clips_processed"] == 2
-    assert manifest["stats"]["frames"] == 4
-    assert manifest["stats"]["columns"] == len(plain.columns)
-    assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
-    assert manifest["run_provenance"]["args"]["max_clips"] == 2
+    manifest = json.loads(
+        fixture.out_plain.with_suffix(".manifest.json").read_text(encoding="utf-8")
+    )
+    _assert_konvid_manifest(manifest, plain)

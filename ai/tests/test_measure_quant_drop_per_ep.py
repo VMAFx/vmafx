@@ -17,13 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from ai.scripts import measure_quant_drop_per_ep
 
 
-def test_quant_ep_report_records_run_provenance(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    repo = tmp_path / "repo"
+def _write_toy_registry(repo: Path) -> tuple[Path, Path, Path]:
+    """Lay out a one-model tiny-model tree; return (script, model_dir, registry)."""
     script_path = repo / "ai" / "scripts" / "measure_quant_drop_per_ep.py"
     model_dir = repo / "model" / "tiny"
-    out_dir = tmp_path / "quant-eps"
     registry = model_dir / "registry.json"
     script_path.parent.mkdir(parents=True)
     model_dir.mkdir(parents=True)
@@ -45,24 +42,51 @@ def test_quant_ep_report_records_run_provenance(
         ),
         encoding="utf-8",
     )
+    return script_path, model_dir, registry
+
+
+def _fake_per_ep_result(model_dir: Path) -> dict[str, Any]:
+    """Return one passing CPU-EP measurement for the toy model."""
+    return {
+        "model_id": "toy_model",
+        "fp32": str(model_dir / "toy.onnx"),
+        "int8": str(model_dir / "toy.int8.onnx"),
+        "budget": 0.02,
+        "per_ep": {
+            "cpu": {
+                "status": "ok",
+                "plcc": 0.999,
+                "drop": 0.001,
+                "worst_abs": 0.01,
+                "wall_s": 0.1,
+                "pass": True,
+            }
+        },
+    }
+
+
+def _assert_quant_ep_provenance(payload: dict[str, Any], out_dir: Path) -> None:
+    """Assert the ADR-0661 provenance block of the per-EP quantisation report."""
+    assert payload["models"][0]["model_id"] == "toy_model"
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/measure_quant_drop_per_ep.py"
+    assert provenance["inputs"]["registry"]["kind"] == "file"
+    assert provenance["inputs"]["extra_fp32"] == []
+    assert provenance["outputs"]["json_report"]["path"] == str(out_dir / "results.json")
+    assert provenance["outputs"]["markdown_report"]["path"] == str(out_dir / "results.md")
+    assert provenance["args"]["eps"] == ["cpu"]
+
+
+def test_quant_ep_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    out_dir = tmp_path / "quant-eps"
+    script_path, model_dir, registry = _write_toy_registry(repo)
 
     def fake_run_model(*_args: Any, **_kwargs: Any) -> Any:
-        return {
-            "model_id": "toy_model",
-            "fp32": str(model_dir / "toy.onnx"),
-            "int8": str(model_dir / "toy.int8.onnx"),
-            "budget": 0.02,
-            "per_ep": {
-                "cpu": {
-                    "status": "ok",
-                    "plcc": 0.999,
-                    "drop": 0.001,
-                    "worst_abs": 0.01,
-                    "wall_s": 0.1,
-                    "pass": True,
-                }
-            },
-        }
+        return _fake_per_ep_result(model_dir)
 
     monkeypatch.setattr(measure_quant_drop_per_ep, "REPO_ROOT", repo)
     monkeypatch.setattr(measure_quant_drop_per_ep, "SCRIPT_PATH", script_path)
@@ -85,13 +109,5 @@ def test_quant_ep_report_records_run_provenance(
     assert measure_quant_drop_per_ep.main() == 0
 
     payload = json.loads((out_dir / "results.json").read_text(encoding="utf-8"))
-    assert payload["models"][0]["model_id"] == "toy_model"
-    provenance = payload["run_provenance"]
-    assert provenance["schema"] == "ai-run-provenance-v1"
-    assert provenance["entrypoint"]["path"] == "ai/scripts/measure_quant_drop_per_ep.py"
-    assert provenance["inputs"]["registry"]["kind"] == "file"
-    assert provenance["inputs"]["extra_fp32"] == []
-    assert provenance["outputs"]["json_report"]["path"] == str(out_dir / "results.json")
-    assert provenance["outputs"]["markdown_report"]["path"] == str(out_dir / "results.md")
-    assert provenance["args"]["eps"] == ["cpu"]
+    _assert_quant_ep_provenance(payload, out_dir)
     assert (out_dir / "results.md").is_file()

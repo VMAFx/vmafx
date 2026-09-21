@@ -67,8 +67,8 @@ def _save_inlined_for_quant(src: Path, dst: Path) -> None:
     onnx.save(proto, str(dst), save_as_external_data=False)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the dynamic-PTQ command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("onnx", type=Path, help="Path to fp32 ONNX file")
     parser.add_argument(
@@ -89,13 +89,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON report with size stats and ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser
 
-    try:
-        from onnxruntime.quantization import QuantType, quantize_dynamic
-    except ImportError as exc:
-        sys.exit(f"onnxruntime.quantization not available: {exc}")
 
+def _resolve_io_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    """Validate the input model and resolve a writable destination path."""
     src = args.onnx.resolve()
     if not src.is_file():
         sys.exit(f"input not found: {src}")
@@ -108,6 +106,48 @@ def main(argv: list[str] | None = None) -> int:
             f"error: destination directory is not writable: {dst.parent}\n"
             f"hint: pass --output /path/to/writable/dir/{dst.name}"
         )
+    return src, dst
+
+
+def _write_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    src: Path,
+    dst: Path,
+    sz_in: int,
+    sz_out: int,
+    ratio: float,
+) -> None:
+    """Emit the ADR-0661 replay manifest for this quantisation run."""
+    write_run_manifest(
+        args.report_out,
+        schema="ptq-dynamic-report-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"model": src},
+        outputs={"model": dst, "report": args.report_out},
+        sections={
+            "mode": "dynamic",
+            "input_bytes": sz_in,
+            "output_bytes": sz_out,
+            "size_ratio": ratio,
+            "per_channel": bool(args.per_channel),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+
+    try:
+        from onnxruntime.quantization import QuantType, quantize_dynamic
+    except ImportError as exc:
+        sys.exit(f"onnxruntime.quantization not available: {exc}")
+
+    src, dst = _resolve_io_paths(args)
 
     print(f"[ptq_dynamic] {src}  ->  {dst}  per-channel={args.per_channel}")
     with tempfile.TemporaryDirectory(prefix="ptq_dynamic_") as tmp:
@@ -124,23 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     ratio = sz_out / sz_in
     print(f"[ptq_dynamic] done — {sz_in:,} -> {sz_out:,} bytes ({ratio:.2f}×)")
     if args.report_out is not None:
-        write_run_manifest(
-            args.report_out,
-            schema="ptq-dynamic-report-v1",
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"model": src},
-            outputs={"model": dst, "report": args.report_out},
-            sections={
-                "mode": "dynamic",
-                "input_bytes": sz_in,
-                "output_bytes": sz_out,
-                "size_ratio": ratio,
-                "per_channel": bool(args.per_channel),
-            },
-        )
+        _write_report(args, raw_argv, src, dst, sz_in, sz_out, ratio)
     return 0
 
 

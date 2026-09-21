@@ -142,24 +142,15 @@ OP_ALLOWLIST_STATIC = {
 }
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("onnxruntime") is None or importlib.util.find_spec("onnx") is None,
-    reason="onnxruntime or onnx not installed; skipping full ptq_static round-trip",
-)
-def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
-    """End-to-end static PTQ: build a tiny Conv+Gemm ONNX, calibrate with .npz,
-    and assert output is in QDQ format (all node op_types within allowlist,
-    no QLinear* or QGemm ops). Proof test: fails if format ever flips to QOperator."""
-    pytest.importorskip("onnxruntime.quantization")
+def _build_tiny_conv_gemm_model(dst: Path) -> None:
+    """Write a minimal fp32 Conv -> Relu -> Reshape -> Gemm ONNX graph to ``dst``.
 
+    Imports live inside the helper because ``onnx`` is an optional dependency;
+    the module must stay importable on an installation without it.
+    """
     import numpy as np
     import onnx
     from onnx import TensorProto, helper
-
-    src = tmp_path / "tiny_conv_gemm.onnx"
-    cal = tmp_path / "calibration.npz"
-    dst = tmp_path / "tiny_conv_gemm.int8.onnx"
-    report = tmp_path / "ptq_static_report.json"
 
     x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 1, 4, 4])
     y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 2])
@@ -194,10 +185,48 @@ def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
         initializer=[w_conv, b_conv, shape_const, w_gemm, b_gemm],
     )
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-    onnx.save(model, str(src))
+    onnx.save(model, str(dst))
+
+
+def _write_calibration_npz(path: Path) -> None:
+    """Write a deterministic four-sample calibration set for graph input ``x``."""
+    import numpy as np
 
     cal_data = np.random.RandomState(42).randn(4, 1, 4, 4).astype(np.float32)
-    np.savez(cal, x=cal_data)
+    np.savez(path, x=cal_data)
+
+
+def _assert_qdq_only(model_path: Path) -> None:
+    """Assert every op is QDQ-allowlisted — proof the format never flips to QOperator."""
+    import onnx
+
+    quantized_model = onnx.load(str(model_path))
+    op_types = [node.op_type for node in quantized_model.graph.node]
+    assert len(op_types) > 0
+
+    for op in op_types:
+        assert op in OP_ALLOWLIST_STATIC, f"Op {op} not in allowlist"
+        assert not op.startswith("QLinear"), f"Unexpected QOperator op: {op}"
+        assert not op.startswith("QGemm"), f"Unexpected QOperator op: {op}"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("onnxruntime") is None or importlib.util.find_spec("onnx") is None,
+    reason="onnxruntime or onnx not installed; skipping full ptq_static round-trip",
+)
+def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
+    """End-to-end static PTQ: build a tiny Conv+Gemm ONNX, calibrate with .npz,
+    and assert output is in QDQ format (all node op_types within allowlist,
+    no QLinear* or QGemm ops). Proof test: fails if format ever flips to QOperator."""
+    pytest.importorskip("onnxruntime.quantization")
+
+    src = tmp_path / "tiny_conv_gemm.onnx"
+    cal = tmp_path / "calibration.npz"
+    dst = tmp_path / "tiny_conv_gemm.int8.onnx"
+    report = tmp_path / "ptq_static_report.json"
+
+    _build_tiny_conv_gemm_model(src)
+    _write_calibration_npz(cal)
 
     cp = subprocess.run(
         [
@@ -219,14 +248,7 @@ def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
     assert cp.returncode == 0, cp.stderr
     assert dst.is_file()
 
-    quantized_model = onnx.load(str(dst))
-    op_types = [node.op_type for node in quantized_model.graph.node]
-    assert len(op_types) > 0
-
-    for op in op_types:
-        assert op in OP_ALLOWLIST_STATIC, f"Op {op} not in allowlist"
-        assert not op.startswith("QLinear"), f"Unexpected QOperator op: {op}"
-        assert not op.startswith("QGemm"), f"Unexpected QOperator op: {op}"
+    _assert_qdq_only(dst)
 
     payload = json.loads(report.read_text())
     assert payload["mode"] == "static"

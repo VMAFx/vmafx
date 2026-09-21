@@ -9,6 +9,10 @@ import os
 import tempfile
 from pathlib import Path
 
+#: Streaming read granularity for :func:`sha256`. 1 MiB keeps the syscall
+#: count low on multi-GiB YUV corpora without pinning a large buffer.
+_CHUNK_BYTES: int = 1 << 20
+
 
 def write_text_atomic(path: Path, text: str, *, encoding: str = "utf-8") -> None:
     """Write *text* to *path* atomically using a same-directory temp file.
@@ -47,9 +51,9 @@ def sha256(path: Path) -> str:
     """
     h = hashlib.sha256()
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(1 << 20)  # 1 MiB
-            if not chunk:
-                break
+        # Bounded by the file length: ``iter`` stops at the first empty read,
+        # which a regular file guarantees after at most ceil(size / 1 MiB)
+        # iterations. No unbounded ``while True``.
+        for chunk in iter(lambda: fh.read(_CHUNK_BYTES), b""):
             h.update(chunk)
     return h.hexdigest()

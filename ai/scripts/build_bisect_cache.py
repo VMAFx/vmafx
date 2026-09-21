@@ -314,8 +314,8 @@ def check(
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the bisect-cache command-line parser."""
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument(
         "--out",
@@ -346,19 +346,26 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional replay manifest JSON sidecar with ADR-0661 run provenance.",
     )
-    args = p.parse_args(raw_argv)
-    if args.check:
-        rc = check(args.out, source_features=args.source_features, target_column=args.target_column)
-        if args.manifest_out is not None:
-            _write_manifest(
-                path=args.manifest_out,
-                args=args,
-                raw_argv=raw_argv,
-                mode="check",
-                status="pass" if rc == 0 else "fail",
-                exit_code=rc,
-            )
-        return rc
+    return p
+
+
+def _run_check(args: argparse.Namespace, raw_argv: list[str]) -> int:
+    """Diff the committed cache against a fresh regeneration."""
+    rc = check(args.out, source_features=args.source_features, target_column=args.target_column)
+    if args.manifest_out is not None:
+        _write_manifest(
+            path=args.manifest_out,
+            args=args,
+            raw_argv=raw_argv,
+            mode="check",
+            status="pass" if rc == 0 else "fail",
+            exit_code=rc,
+        )
+    return rc
+
+
+def _run_regenerate(args: argparse.Namespace, raw_argv: list[str]) -> int:
+    """Rewrite the generated cache artifacts under ``args.out``."""
     # Wipe only generated artifacts; preserve hand-written siblings such as
     # README.md that explain the cache to future readers.
     parquet = args.out / "features.parquet"
@@ -379,6 +386,14 @@ def main(argv: list[str] | None = None) -> int:
             exit_code=0,
         )
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.check:
+        return _run_check(args, raw_argv)
+    return _run_regenerate(args, raw_argv)
 
 
 if __name__ == "__main__":

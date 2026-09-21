@@ -29,7 +29,9 @@ import io
 import os
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -159,8 +161,12 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+#: Emit one progress line every N successfully-processed clips.
+_PROGRESS_EVERY: int = 50
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the KoNViD frame-extraction command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
@@ -180,88 +186,150 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Replay manifest JSON sidecar (default: ai/data/konvid_frames_manifest.json).",
     )
-    args = parser.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = DATA_DIR / "konvid_frames_manifest.json"
+    return parser
 
+
+def _load_manifest_entries() -> list[dict[str, Any]]:
+    """Load the populated KoNViD manifest, exiting when it is absent or empty."""
     if not MANIFEST.exists():
         sys.exit(f"manifest not found: {MANIFEST}; run vmaf-train manifest-scan first")
-
     with MANIFEST.open() as fh:
         doc = yaml.safe_load(fh)
     entries = doc.get("entries") or []
     if not entries:
         sys.exit("manifest has no entries")
+    return list(entries)
 
-    root = args.root or _default_root()
-    if not root.is_dir():
-        sys.exit(f"dataset root not found: {root}")
 
+def _prepare_output_dirs(root: Path) -> tuple[Path, Path]:
+    """Create (and return) the C2 and C3 frame directories plus ``ai/data``."""
     c2_dir = root / "_frames_c2"
     c3_dir = root / "_frames_c3_pairs"
     c2_dir.mkdir(parents=True, exist_ok=True)
     c3_dir.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return c2_dir, c3_dir
 
-    c2_rows = []
-    c3_rows = []
-    missing_count = 0
-    error_count = 0
+
+@dataclass
+class _ClipOutcome:
+    """Result of extracting one manifest clip."""
+
+    c2_row: dict[str, Any] | None = None
+    c3_row: dict[str, Any] | None = None
+    missing: bool = False
+    failed: bool = False
+
+
+@dataclass
+class _ExtractionTally:
+    """Aggregate of every :class:`_ClipOutcome` produced by one run."""
+
+    c2_rows: list[dict[str, Any]] = field(default_factory=list)
+    c3_rows: list[dict[str, Any]] = field(default_factory=list)
+    missing: int = 0
+    errors: int = 0
+
+
+def _extract_clip(
+    entry: dict[str, Any],
+    *,
+    root: Path,
+    c2_dir: Path,
+    c3_dir: Path,
+    target_hw: int,
+) -> _ClipOutcome:
+    """Materialise the C2 frame and the C3 clean/degraded pair for one clip."""
+    key = entry["key"]
+    mp4 = root / entry["path"]
+    if not mp4.is_file():
+        print(f"[skip] missing {mp4}")
+        return _ClipOutcome(missing=True)
+
+    c2_path = c2_dir / f"{key}.npy"
+    c3_clean_path = c3_dir / f"{key}_clean.npy"
+    c3_deg_path = c3_dir / f"{key}_deg.npy"
+
+    if not c2_path.exists():
+        try:
+            clean = _extract_middle_frame_y(mp4, target_hw)
+        except Exception as exc:
+            print(f"[error] {mp4.name}: {exc}")
+            return _ClipOutcome(failed=True)
+        np.save(c2_path, clean)
+    else:
+        clean = np.load(c2_path)
+
+    if not c3_clean_path.exists() or not c3_deg_path.exists():
+        np.save(c3_clean_path, clean)
+        np.save(c3_deg_path, _make_degraded(clean))
+
+    return _ClipOutcome(
+        c2_row={"key": key, "frame_path": str(c2_path), "mos": float(entry["mos"])},
+        c3_row={
+            "key": key,
+            "deg_path": str(c3_deg_path),
+            "clean_path": str(c3_clean_path),
+        },
+    )
+
+
+def _extract_all(
+    entries: list[dict[str, Any]],
+    *,
+    root: Path,
+    c2_dir: Path,
+    c3_dir: Path,
+    target_hw: int,
+) -> _ExtractionTally:
+    """Run :func:`_extract_clip` over every manifest entry and tally outcomes."""
+    tally = _ExtractionTally()
     n = len(entries)
-    for i, e in enumerate(entries):
-        key = e["key"]
-        mp4 = root / e["path"]
-        if not mp4.is_file():
-            print(f"[skip] missing {mp4}")
-            missing_count += 1
-            continue
+    for i, entry in enumerate(entries):
+        outcome = _extract_clip(entry, root=root, c2_dir=c2_dir, c3_dir=c3_dir, target_hw=target_hw)
+        if outcome.missing:
+            tally.missing += 1
+        elif outcome.failed:
+            tally.errors += 1
+        elif outcome.c2_row is not None and outcome.c3_row is not None:
+            tally.c2_rows.append(outcome.c2_row)
+            tally.c3_rows.append(outcome.c3_row)
+            if (i + 1) % _PROGRESS_EVERY == 0 or i + 1 == n:
+                print(f"[extract] {i + 1}/{n} clips")
+    return tally
 
-        c2_path = c2_dir / f"{key}.npy"
-        c3_clean_path = c3_dir / f"{key}_clean.npy"
-        c3_deg_path = c3_dir / f"{key}_deg.npy"
 
-        if not c2_path.exists():
-            try:
-                clean = _extract_middle_frame_y(mp4, args.target_hw)
-            except Exception as exc:
-                print(f"[error] {mp4.name}: {exc}")
-                error_count += 1
-                continue
-            np.save(c2_path, clean)
-        else:
-            clean = np.load(c2_path)
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = DATA_DIR / "konvid_frames_manifest.json"
 
-        if not c3_clean_path.exists() or not c3_deg_path.exists():
-            np.save(c3_clean_path, clean)
-            np.save(c3_deg_path, _make_degraded(clean))
+    entries = _load_manifest_entries()
 
-        c2_rows.append({"key": key, "frame_path": str(c2_path), "mos": float(e["mos"])})
-        c3_rows.append(
-            {
-                "key": key,
-                "deg_path": str(c3_deg_path),
-                "clean_path": str(c3_clean_path),
-            }
-        )
-        if (i + 1) % 50 == 0 or i + 1 == n:
-            print(f"[extract] {i + 1}/{n} clips")
+    root = args.root or _default_root()
+    if not root.is_dir():
+        sys.exit(f"dataset root not found: {root}")
 
-    pd.DataFrame(c2_rows).to_parquet(C2_PARQUET, index=False)
-    pd.DataFrame(c3_rows).to_parquet(C3_PARQUET, index=False)
+    c2_dir, c3_dir = _prepare_output_dirs(root)
+    tally = _extract_all(entries, root=root, c2_dir=c2_dir, c3_dir=c3_dir, target_hw=args.target_hw)
+
+    pd.DataFrame(tally.c2_rows).to_parquet(C2_PARQUET, index=False)
+    pd.DataFrame(tally.c3_rows).to_parquet(C3_PARQUET, index=False)
     _write_manifest(
         path=args.manifest_out,
         args=args,
         raw_argv=raw_argv,
         root=root,
-        manifest_entries=n,
-        processed_count=len(c2_rows),
-        missing_count=missing_count,
-        error_count=error_count,
-        c2_rows=len(c2_rows),
-        c3_rows=len(c3_rows),
+        manifest_entries=len(entries),
+        processed_count=len(tally.c2_rows),
+        missing_count=tally.missing,
+        error_count=tally.errors,
+        c2_rows=len(tally.c2_rows),
+        c3_rows=len(tally.c3_rows),
     )
-    print(f"[done] C2 parquet: {C2_PARQUET} ({len(c2_rows)} rows)")
-    print(f"[done] C3 parquet: {C3_PARQUET} ({len(c3_rows)} rows)")
+    print(f"[done] C2 parquet: {C2_PARQUET} ({len(tally.c2_rows)} rows)")
+    print(f"[done] C3 parquet: {C3_PARQUET} ({len(tally.c3_rows)} rows)")
     return 0
 
 
