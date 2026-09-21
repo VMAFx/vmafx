@@ -328,6 +328,7 @@ nav:
       - Release: development/release.md
       - CI: development/ci.md
       - CI runners: development/ci-runners.md
+      - Silent-revert gate: development/silent-revert-gate.md
       - Python process execution: development/python-process-execution.md
       - Cross-backend gate: development/cross-backend-gate.md
       - Fuzzing: development/fuzzing.md
@@ -1396,6 +1397,7 @@ nav:
         - "ADR-1277: workingdir-contract-cleanup": adr/1277-workingdir-contract-cleanup.md
         - "ADR-1278: python-safe-parallel-execution": adr/1278-python-safe-parallel-execution.md
         - "ADR-1280: worktree-state-sync": adr/1280-worktree-state-sync.md
+        - "ADR-1284: silent-revert-detection-gate": adr/1284-silent-revert-detection-gate.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

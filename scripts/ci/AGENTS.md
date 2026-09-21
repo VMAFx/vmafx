@@ -512,6 +512,41 @@ Derive additions from what Renovate edits (`gh pr list --author
 app/renovate` and diff the file lists), not from what looks like manifest —
 see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/research/1152-dependency-classifier-surface-audit.md).
 
+## check-silent-revert.py invariants (ADR-1284)
+
+Gate reports what merge removes from target that branch never set out to touch.
+Four load-bearing properties. Drop one, gate becomes decoration.
+
+1. **Measure merge result, not branch tree.** `merge_result_tree()` runs
+   `git merge-tree --write-tree base head` — tree that squash merge commits.
+   `git diff base..head` is no substitute: reports every file target changed
+   and branch never touched. Red on any behind branch.
+2. **Intent excludes merge commits.** `branch_intent()` unions diffs of
+   `git rev-list --no-merges merge_base..head`. Conflict resolution is not
+   branch work. Resolutions taken against target are what `dropped` and
+   `resurrected` hunt. Re-adding `--merges` makes every bad resolution
+   self-justifying. Both detectors then check surviving tree — `dropped` needs
+   line absent from merged blob, `resurrected` absent from base blob. Drop that
+   check and both fire on diff-alignment artefact: insert text above line,
+   cumulative diff re-pairs line as delete plus add, no single commit diff shows
+   pair.
+3. **Workflow resolves live target tip.** `Silent-Revert Guard` fetches
+   `github.event.pull_request.base.ref`, uses its tip. Never `base.sha` —
+   `base.sha` records base branch at PR open, and defect class is target
+   moving afterwards.
+4. **Fail closed.** Unresolvable ref, no merge base, merge that does not
+   resolve cleanly, git without `merge-tree --write-tree`: all exit non-zero.
+   Never print `clean` for case gate could not analyse.
+
+Only opt-out is declaration in PR: `revert:` title, `reverts: #N`,
+`intentional revert: <reason>`. No in-tree suppression. `GENERATED_PREFIXES`
+covers rendered files only; never widen to source trees.
+`is_evidence()` drops conflict markers — `0c494cca0` committed three into
+`core/src/feature/cuda/integer_vif_cuda.c`, and PR deleting them reset file to
+pre-marker blob.
+
+Regression: `python3 scripts/ci/tests/test_check_silent_revert.py` (12 tests).
+
 ## check-aggregator-names.sh invariants
 
 - Gates 1:1 parity between required status checks declared in

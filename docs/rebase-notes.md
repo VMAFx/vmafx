@@ -1,6 +1,37 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug-silent-revert — a merge may not quietly rewind the target (2026-09-21)
+
+Fork-local CI tooling; no upstream C-source impact. Preserve
+`scripts/ci/check-silent-revert.py`, its fixture suite
+`scripts/ci/tests/test_check_silent_revert.py`, the `Silent-Revert Guard` job
+in `rule-enforcement.yml` and its entry in `required-aggregator.yml` when
+resolving workflow conflicts. The gate must keep measuring the **merge result**
+(`git merge-tree --write-tree base head`), not `git diff base..head`: the
+branch-tree form reports every file the target changed that the branch never
+touched and is unusable on any branch that is behind. It must keep resolving
+the **live** target tip rather than `github.event.pull_request.base.sha`, since
+the defect class is master moving after the branch was cut.
+
+Do not add an in-tree suppression path — no annotation, allowlist or per-path
+exclusion. The only opt-out is a declaration in the PR itself (`revert:` title,
+`reverts: #N`, `intentional revert: <reason>`), and the unedited
+`intentional revert: REASON` placeholder must keep failing. Keep the
+fail-closed exits (unresolvable ref, no merge base, conflicting merge, git
+below 2.38) — a case the gate cannot analyse must never print "clean".
+
+`GENERATED_PREFIXES` covers rendered files only (`CHANGELOG.md`,
+`docs/adr/README.md`, `docs/adr/by-tag/`, `mkdocs.yml`, the standards and tidy
+baselines); do not widen it to source trees to quiet a finding. The
+conflict-marker exclusion in `is_evidence()` is load-bearing: `0c494cca0` once
+committed three markers into `core/src/feature/cuda/integer_vif_cuda.c` and the
+PR that deleted them reset the file to its pre-marker blob.
+
+Regression command: `python3 scripts/ci/tests/test_check_silent_revert.py`
+(12 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
+clone and skips otherwise). See ADR-1284.
+
 ## fix/configured-lint-warning-exit — diagnostics cannot pass as green (2026-09-21)
 
 The fork-local configured-lint driver must pass `--warnings-as-errors=*` to

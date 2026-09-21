@@ -1087,4 +1087,5 @@ public authority; documentation never links into either local root.
 | [ADR-1278](1278-python-safe-parallel-execution.md) | Replace unsafe Python `fork` execution with ordered loky/spawn processing and restore the reference 5PL equation with overflow-safe sigmoid evaluation. | Proposed | python, testing, concurrency, numerical-correctness, dependencies |
 | [ADR-1280](1280-worktree-state-sync.md) | Synchronize canonical private state through regular, locked worktree mirrors. | Accepted | workspace, agents, git, hooks |
 | [ADR-1277](1277-workingdir-contract-cleanup.md) | Separate private state, corpora, and tracked evidence | Accepted | workspace, datasets, agents, ci, docs |
+| [ADR-1284](1284-silent-revert-detection-gate.md) | Gate merges on the work they would remove from the target | Accepted | ci, agents, workspace |
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |

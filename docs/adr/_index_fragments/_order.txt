@@ -995,3 +995,4 @@
 1278-python-safe-parallel-execution
 1280-worktree-state-sync
 1277-workingdir-contract-cleanup
+1284-silent-revert-detection-gate
