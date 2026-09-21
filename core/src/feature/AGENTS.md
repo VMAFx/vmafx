@@ -435,6 +435,11 @@ feature/
   overflow stays. See
   [ADR-0155](../../../docs/adr/0155-adm-i4-rounding-deferred-netflix-955.md)
   and [rebase-notes 0048](../../../docs/rebase-notes.md).
+  CUDA mirrors name the same negative value directly as `INT32_MIN` in
+  `cuda/integer_adm/adm_csf.cu` and both fused paths in
+  `cuda/integer_adm/adm_cm.cu`. Do not restore the `1u << 31`
+  unsigned-to-signed conversion there: NVCC diagnoses it as `#68-D`, while
+  widening it would violate this numerical invariant.
 
 - **`integer_adm.c` DWT mirror table for tiny extents** (fork-only fix,
   [Research-2063](../../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)):
