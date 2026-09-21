@@ -51722,6 +51722,48 @@ helper boundaries are structural only: extractor selection, pending indices,
 error propagation, and score output remain unchanged. No new public surface or
 rebase-sensitive policy was introduced.
 
+## Strict host diagnostic contracts (2026-09-21)
+
+`core/src/svm.cpp` keeps its file-wide `NOLINT` cordon for now. Removing it is
+prepared and verified but deferred, because it un-hides six HISS-04 reports in
+which `praetorctl` counts an anonymous namespace as a function — unfixable in
+source, since only an anonymous namespace can give a class internal linkage.
+See `docs/research/strict-host-diagnostics-2026-09-21.md`. Do not treat the
+surviving cordon as an endorsement of the observation-only posture: ADR-1142
+still puts `svm.cpp` in whole-tree scope.
+
+`fex_ctx_vector_internal.h::vmaf_next_fex_capacity()` and the feature-extractor
+pool compute the smaller of the count-doubling bound and allocation-byte bound,
+then compare values of the same width. Keep both bounds; a direct 32-bit count
+comparison against a `SIZE_MAX`-derived 64-bit limit is tautological on 64-bit
+hosts. Preserve the explicit full-range BT.709/BT.601 switch exits, complete
+aggregate/sentinel initialization, and the explicitly disabled SYCL profiling
+field. These are source-level diagnostic repairs, not warning annotations.
+
+`speed_chroma_cuda.c` keeps allocation and release split by device,
+pinned-host and aligned-host ownership; both context users call
+`pop_cuda_context_with_retry()` so a failed pop gets one best-effort stack
+recovery before the first error is returned. Do not restore its cleanup jumps
+or function-size suppressions during an upstream resolution.
+`feature_extractor.cpp`'s `fail_context_create()` owns the private-state free
+and the extractor copy's `priv` is nulled after the `memcpy`; keep both
+together or the unknown-option path leaks again.
+
+`core/tools/vmaf.cpp` still has its `goto cleanup` spine. The `CliRunState`
+replacement is prepared but deferred alongside the libsvm change, for the same
+scanner reason. Two defects it fixes are worth knowing about before touching
+this file: the CLI loses the `VmafCudaState` it allocates in
+`init_gpu_backends()` and leaks it on every CUDA invocation, and
+`amend_json_with_backend_used()` writes at offset zero when the output file has
+no closing brace. If that work is revived, keep the `backend_used` annotation
+best-effort — `--output /dev/null` and a piped `/dev/stdout` must stay exit 0.
+
+`core/tools/test/test_vmaf_cuda_gpumask.sh` keeps 1920x1080 for all four
+two-frame invocations, and its budget lives in `core/tools/test/meson.build`
+(`timeout : 120`, `is_parallel : false`), sized from the measurements in both
+files' header comments. Do not shrink the fixture to fit a budget: the wall
+time is fixed CUDA bring-up plus a first-run module-load premium, not pixels.
+
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
