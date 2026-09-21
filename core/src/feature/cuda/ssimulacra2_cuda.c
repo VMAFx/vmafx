@@ -85,7 +85,7 @@ enum yuv_matrix_c {
 };
 
 /* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
-static const double g_weights[108] = {
+static const double g_weights_first[54] = {
     0.0,
     0.0007376606707406586,
     0.0,
@@ -140,6 +140,9 @@ static const double g_weights[108] = {
     19.213238186143016,
     0.0011401524586618361,
     0.001237755635509985,
+};
+
+static const double g_weights_second[54] = {
     176.39317598450694,
     0.0,
     0.0,
@@ -195,6 +198,11 @@ static const double g_weights[108] = {
     0.0,
     0.00010854057858411537,
 };
+
+static inline double ss2c_pool_weight(size_t index)
+{
+    return index < 54u ? g_weights_first[index] : g_weights_second[index - 54u];
+}
 
 typedef struct Ssimu2StateCuda {
     /* Options. */
@@ -295,10 +303,7 @@ static const VmafOption options[] = {
  * create_recursive_gaussian in ssimulacra2.c.                        */
 /* ------------------------------------------------------------------ */
 
-/* Verbatim port of the libjxl Charalampidis 2016 derivation; per
- * ADR-0141 carve-out, splitting the linear-system solve would
- * obscure the scalar-diff audit trail.
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+/* Verbatim port of the libjxl Charalampidis 2016 derivation. */
 static void ss2c_setup_gaussian(Ssimu2StateCuda *s, double sigma)
 {
     const double radius = round(3.2795 * sigma + 0.2546);
@@ -399,11 +404,86 @@ static inline float ss2c_read_plane(const VmafPicture *pic, int plane, int x, in
     return (float)row[sx];
 }
 
-/* Verbatim port of ssimulacra2.c::picture_to_linear_rgb. Splitting
- * would break the line-for-line scalar-diff audit trail
- * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
- * sweep closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+typedef struct Ss2cYuvConversion {
+    float inv_peak;
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_off;
+    float c_off;
+} Ss2cYuvConversion;
+
+static Ss2cYuvConversion ss2c_yuv_conversion(const Ssimu2StateCuda *s)
+{
+    const float peak = (float)((1u << s->bpc) - 1u);
+    float kr;
+    float kg;
+    float kb;
+    int limited = 1;
+    switch (s->yuv_matrix) {
+    case SS2C_MATRIX_BT709_FULL:
+        limited = 0;
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
+    case SS2C_MATRIX_BT709_LIMITED:
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
+    case SS2C_MATRIX_BT601_FULL:
+        limited = 0;
+        kr = 0.299f;
+        kg = 0.587f;
+        kb = 0.114f;
+        break;
+    case SS2C_MATRIX_BT601_LIMITED:
+    default:
+        kr = 0.299f;
+        kg = 0.587f;
+        kb = 0.114f;
+        break;
+    }
+    return (Ss2cYuvConversion){
+        .inv_peak = 1.0f / peak,
+        .cr_r = 2.0f * (1.0f - kr),
+        .cb_b = 2.0f * (1.0f - kb),
+        .cb_g = -(2.0f * kb * (1.0f - kb)) / kg,
+        .cr_g = -(2.0f * kr * (1.0f - kr)) / kg,
+        .y_scale = limited ? (255.0f / 219.0f) : 1.0f,
+        .c_scale = limited ? (255.0f / 224.0f) : 1.0f,
+        .y_off = limited ? (16.0f / 255.0f) : 0.0f,
+        .c_off = 0.5f,
+    };
+}
+
+static inline void ss2c_write_linear_rgb_pixel(const VmafPicture *pic,
+                                               const Ss2cYuvConversion *conversion, unsigned x,
+                                               unsigned y, float *rp, float *gp, float *bp,
+                                               size_t index)
+{
+    const float Y = ss2c_read_plane(pic, 0, (int)x, (int)y) * conversion->inv_peak;
+    const float U = ss2c_read_plane(pic, 1, (int)x, (int)y) * conversion->inv_peak;
+    const float V = ss2c_read_plane(pic, 2, (int)x, (int)y) * conversion->inv_peak;
+    const float Yn = (Y - conversion->y_off) * conversion->y_scale;
+    const float Un = (U - conversion->c_off) * conversion->c_scale;
+    const float Vn = (V - conversion->c_off) * conversion->c_scale;
+    float R = fmaf(conversion->cr_r, Vn, Yn);
+    float G = fmaf(conversion->cb_g, Un, Yn);
+    G = fmaf(conversion->cr_g, Vn, G);
+    float B = fmaf(conversion->cb_b, Un, Yn);
+    R = ss2c_clampf(R, 0.0f, 1.0f);
+    G = ss2c_clampf(G, 0.0f, 1.0f);
+    B = ss2c_clampf(B, 0.0f, 1.0f);
+    rp[index] = vmaf_ss2_srgb_eotf(R);
+    gp[index] = vmaf_ss2_srgb_eotf(G);
+    bp[index] = vmaf_ss2_srgb_eotf(B);
+}
+
 static void ss2c_picture_to_linear_rgb(const Ssimu2StateCuda *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->width;
@@ -412,71 +492,11 @@ static void ss2c_picture_to_linear_rgb(const Ssimu2StateCuda *s, const VmafPictu
     float *rp = out;
     float *gp = out + plane_sz;
     float *bp = out + 2 * plane_sz;
-
-    const float peak = (float)((1u << s->bpc) - 1u);
-    const float inv_peak = 1.0f / peak;
-
-    float kr;
-    float kg;
-    float kb;
-    int limited = 1;
-    switch (s->yuv_matrix) {
-    case SS2C_MATRIX_BT709_FULL:
-        limited = 0;
-        // fallthrough
-    case SS2C_MATRIX_BT709_LIMITED:
-        kr = 0.2126f;
-        kg = 0.7152f;
-        kb = 0.0722f;
-        break;
-    case SS2C_MATRIX_BT601_FULL:
-        limited = 0;
-        // fallthrough
-    case SS2C_MATRIX_BT601_LIMITED:
-    default:
-        kr = 0.299f;
-        kg = 0.587f;
-        kb = 0.114f;
-        break;
-    }
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
-
+    const Ss2cYuvConversion conversion = ss2c_yuv_conversion(s);
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
-            float Y = ss2c_read_plane(pic, 0, (int)x, (int)y) * inv_peak;
-            float U = ss2c_read_plane(pic, 1, (int)x, (int)y) * inv_peak;
-            float V = ss2c_read_plane(pic, 2, (int)x, (int)y) * inv_peak;
-            float Yn = (Y - y_off) * y_scale;
-            float Un = (U - c_off) * c_scale;
-            float Vn = (V - c_off) * c_scale;
-            /* ADR-0891 FMA unification: the AVX2 / AVX-512 / NEON / SVE2
-             * kernels and their scalar tails all use a single-rounded
-             * fused multiply-add here. This copy was missed when ADR-0891
-             * landed, so it produced a mul-then-add result that differs
-             * from the SIMD paths by ~1 ULP. The ssimulacra2 pipeline is
-             * ill-conditioned downstream (the edge-diff term takes
-             * |img - blur(img)|, a catastrophic cancellation, and the
-             * 4-norm pooling amplifies the survivors), so that 1 ULP grew
-             * into a 2.6e-3 score delta. Keep these three lines
-             * fmaf()-based and in this exact order. See ADR-1205. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
-            R = ss2c_clampf(R, 0.0f, 1.0f);
-            G = ss2c_clampf(G, 0.0f, 1.0f);
-            B = ss2c_clampf(B, 0.0f, 1.0f);
             const size_t idx = (size_t)y * w + x;
-            rp[idx] = vmaf_ss2_srgb_eotf(R);
-            gp[idx] = vmaf_ss2_srgb_eotf(G);
-            bp[idx] = vmaf_ss2_srgb_eotf(B);
+            ss2c_write_linear_rgb_pixel(pic, &conversion, x, y, rp, gp, bp, idx);
         }
     }
 }
@@ -536,6 +556,22 @@ static void ss2c_host_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w
     }
 }
 
+static float ss2c_downsample_pixel(const float *in, unsigned iw, unsigned ih, unsigned ox,
+                                   unsigned oy)
+{
+    float sum = 0.0f;
+    for (unsigned dy = 0; dy < 2; dy++) {
+        const unsigned sample_y = oy * 2 + dy;
+        const unsigned iy = sample_y < ih ? sample_y : ih - 1;
+        for (unsigned dx = 0; dx < 2; dx++) {
+            const unsigned sample_x = ox * 2 + dx;
+            const unsigned ix = sample_x < iw ? sample_x : iw - 1;
+            sum += in[(size_t)iy * iw + ix];
+        }
+    }
+    return sum * 0.25f;
+}
+
 static void ss2c_downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out, unsigned ow,
                                 unsigned oh, size_t plane_stride)
 {
@@ -543,21 +579,8 @@ static void ss2c_downsample_2x2(const float *in, unsigned iw, unsigned ih, float
         const float *ip = in + (size_t)c * plane_stride;
         float *op = out + (size_t)c * plane_stride;
         for (unsigned oy = 0; oy < oh; oy++) {
-            for (unsigned ox = 0; ox < ow; ox++) {
-                float sum = 0.0f;
-                for (unsigned dy = 0; dy < 2; dy++) {
-                    for (unsigned dx = 0; dx < 2; dx++) {
-                        unsigned ix = ox * 2 + dx;
-                        unsigned iy = oy * 2 + dy;
-                        if (ix >= iw)
-                            ix = iw - 1;
-                        if (iy >= ih)
-                            iy = ih - 1;
-                        sum += ip[(size_t)iy * iw + ix];
-                    }
-                }
-                op[(size_t)oy * ow + ox] = sum * 0.25f;
-            }
+            for (unsigned ox = 0; ox < ow; ox++)
+                op[(size_t)oy * ow + ox] = ss2c_downsample_pixel(ip, iw, ih, ox, oy);
         }
     }
 }
@@ -608,84 +631,109 @@ static int ss2c_alloc_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
     return ret ? -ENOMEM : 0;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int ss2c_cuda_status(CUresult result, const char *operation)
 {
-    (void)pix_fmt;
+    if (result == CUDA_SUCCESS)
+        return 0;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_cuda: %s failed with CUDA error %d\n", operation,
+             (int)result);
+    return vmaf_cuda_result_to_errno((int)result);
+}
+
+static void keep_first_ss2c_error(int *first_error, int error)
+{
+    if (!*first_error && error)
+        *first_error = error;
+}
+
+static int ss2c_resolve_functions(Ssimu2StateCuda *s, CudaFunctions *cu_f)
+{
+    CUfunction *const blur_functions[] = {&s->func_blur_h, &s->func_blur_v, &s->func_blur_h3,
+                                          &s->func_transpose, &s->func_blur_v3_transposed};
+    static const char *const blur_names[] = {
+        "ssimulacra2_blur_h",
+        "ssimulacra2_blur_v",
+        "ssimulacra2_blur_h3",
+        "ssimulacra2_transpose",
+        "ssimulacra2_blur_v3_transposed",
+    };
+    for (size_t i = 0; i < sizeof(blur_functions) / sizeof(blur_functions[0]); i++) {
+        const int err = ss2c_cuda_status(
+            cu_f->cuModuleGetFunction(blur_functions[i], s->module_blur, blur_names[i]),
+            blur_names[i]);
+        if (err)
+            return err;
+    }
+    return ss2c_cuda_status(
+        cu_f->cuModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3"),
+        "ssimulacra2_mul3");
+}
+
+static int ss2c_load_runtime(VmafFeatureExtractor *fex)
+{
     Ssimu2StateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
+    int err = ss2c_cuda_status(cu_f->cuCtxPushCurrent(fex->cu_state->ctx), "cuCtxPushCurrent");
+    if (err)
+        return err;
+    keep_first_ss2c_error(
+        &err, ss2c_cuda_status(cu_f->cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0),
+                               "cuStreamCreateWithPriority"));
+    if (!err) {
+        keep_first_ss2c_error(
+            &err, ss2c_cuda_status(cu_f->cuModuleLoadData(&s->module_blur, ssimulacra2_blur_ptx),
+                                   "cuModuleLoadData(blur)"));
+    }
+    if (!err) {
+        keep_first_ss2c_error(
+            &err, ss2c_cuda_status(cu_f->cuModuleLoadData(&s->module_mul, ssimulacra2_mul_ptx),
+                                   "cuModuleLoadData(mul)"));
+    }
+    if (!err)
+        keep_first_ss2c_error(&err, ss2c_resolve_functions(s, cu_f));
+    keep_first_ss2c_error(&err, ss2c_cuda_status(cu_f->cuCtxPopCurrent(NULL), "cuCtxPopCurrent"));
+    return err;
+}
 
+static int ss2c_configure_geometry(Ssimu2StateCuda *s, unsigned bpc, unsigned w, unsigned h)
+{
     if (w < 8u || h < 8u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_cuda: input %ux%u below 8x8 lower bound\n", w,
                  h);
         return -EINVAL;
     }
-
     s->width = w;
     s->height = h;
     s->bpc = bpc;
     ss2c_setup_gaussian(s, SS2C_SIGMA);
-
     s->scale_w[0] = w;
     s->scale_h[0] = h;
     for (int i = 1; i < SS2C_NUM_SCALES; i++) {
         s->scale_w[i] = (s->scale_w[i - 1] + 1) / 2;
         s->scale_h[i] = (s->scale_h[i - 1] + 1) / 2;
     }
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — all module/function failures redirect to fail_after_stream
-     * so the stream is destroyed before we return; previously `fail` only
-     * popped the context, leaking s->str and any loaded modules. */
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_blur, ssimulacra2_blur_ptx),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_mul, ssimulacra2_mul_ptx), fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h"),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"),
-                    fail_after_stream);
-    /* ADR-0456: fused 3-channel H + transpose + fused 3-channel V. */
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_h3, s->module_blur, "ssimulacra2_blur_h3"),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_transpose, s->module_blur, "ssimulacra2_transpose"),
-        fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_v3_transposed, s->module_blur,
-                                        "ssimulacra2_blur_v3_transposed"),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3"),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-
-    int ret = ss2c_alloc_buffers(fex, s);
-    if (ret) {
-        (void)close_fex_cuda(fex);
-        return ret;
-    }
     return 0;
+}
 
-fail_after_stream:
-    /* Unload any modules already loaded before destroying the stream. */
-    if (s->module_mul)
-        (void)cu_f->cuModuleUnload(s->module_mul);
-    if (s->module_blur)
-        (void)cu_f->cuModuleUnload(s->module_blur);
-    s->module_mul = s->module_blur = NULL;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    Ssimu2StateCuda *s = fex->priv;
+    int err = ss2c_configure_geometry(s, bpc, w, h);
+    if (!err)
+        err = ss2c_load_runtime(fex);
+    if (!err)
+        err = ss2c_alloc_buffers(fex, s);
+    if (err) {
+        const int cleanup_err = close_fex_cuda(fex);
+        if (cleanup_err) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "ssimulacra2_cuda: cleanup after init failure also failed with error %d\n",
+                     cleanup_err);
+        }
+    }
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -804,11 +852,7 @@ static int ss2c_blur_3plane(Ssimu2StateCuda *s, CudaFunctions *cu_f, CUdeviceptr
 }
 
 /* Per-pixel SSIM + EdgeDiff combine in double precision. Mirrors
- * libvmaf/src/feature/ssimulacra2.c::ssim_map + ::edge_diff_map.
- * Splitting would break the line-for-line scalar-diff audit trail
- * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5 sweep
- * closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * libvmaf/src/feature/ssimulacra2.c::ssim_map + ::edge_diff_map. */
 static void ss2c_host_combine(const Ssimu2StateCuda *s, int scale, double avg_ssim[6],
                               double avg_ed[12])
 {
@@ -879,9 +923,9 @@ static double ss2c_pool_score(const double avg_ssim[6][6], const double avg_ed[6
                 double s_term = scale < num_scales ? avg_ssim[scale][c * 2 + n] : 0.0;
                 double r_term = scale < num_scales ? avg_ed[scale][c * 4 + n] : 0.0;
                 double b_term = scale < num_scales ? avg_ed[scale][c * 4 + n + 2] : 0.0;
-                ssim += g_weights[i++] * fabs(s_term);
-                ssim += g_weights[i++] * fabs(r_term);
-                ssim += g_weights[i++] * fabs(b_term);
+                ssim += ss2c_pool_weight(i++) * fabs(s_term);
+                ssim += ss2c_pool_weight(i++) * fabs(r_term);
+                ssim += ss2c_pool_weight(i++) * fabs(b_term);
             }
         }
     }
@@ -896,114 +940,204 @@ static double ss2c_pool_score(const double avg_ssim[6][6], const double avg_ed[6
     return ssim;
 }
 
-/* Per-scale GPU work: 3 mul + 5 blur. After this returns the host
- * mu/sigma buffers are populated and the host combine can run.
- * Body mirrors the CPU dispatch ordering step-by-step; splitting
- * would obscure the dispatch sequence required for parity audit
- * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5 sweep
- * closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
-static int ss2c_run_scale_gpu(Ssimu2StateCuda *s, CudaFunctions *cu_f, int scale)
+typedef struct Ss2cScaleBuffers {
+    CUdeviceptr ref_xyb;
+    CUdeviceptr dis_xyb;
+    CUdeviceptr mul;
+    CUdeviceptr mu1;
+    CUdeviceptr mu2;
+    CUdeviceptr s11;
+    CUdeviceptr s22;
+    CUdeviceptr s12;
+    size_t plane_bytes;
+    size_t valid_bytes;
+} Ss2cScaleBuffers;
+
+static Ss2cScaleBuffers ss2c_scale_buffers(const Ssimu2StateCuda *s, int scale)
 {
     const size_t plane_full_pixels = (size_t)s->width * (size_t)s->height;
-    const size_t plane_full_bytes = plane_full_pixels * sizeof(float);
-    /* Only `scale_w * scale_h` pixels per plane carry valid data — the
-     * rest of each plane's `plane_full_pixels` reservation is garbage
-     * (host pre-pass) or untouched (GPU mu/s11/s22/s12 outputs). The
-     * device-side allocations stay full-size so `plane_stride` offsets
-     * remain valid in the kernels; only the `cuMemcpyHtoDAsync` /
-     * `cuMemcpyDtoHAsync` byte counts shrink to the valid sub-region.
-     * At scale 2 of 1080p that is 518 KB / plane vs the previous 8 MB
-     * full-plane transfer per copy (≈15× PCIe traffic reduction). */
     const size_t scale_pixels = (size_t)s->scale_w[scale] * (size_t)s->scale_h[scale];
-    const size_t scale_bytes_per_plane = scale_pixels * sizeof(float);
-    int err = 0;
+    return (Ss2cScaleBuffers){
+        .ref_xyb = (CUdeviceptr)s->d_ref_xyb->data,
+        .dis_xyb = (CUdeviceptr)s->d_dis_xyb->data,
+        .mul = (CUdeviceptr)s->d_mul_buf->data,
+        .mu1 = (CUdeviceptr)s->d_mu1->data,
+        .mu2 = (CUdeviceptr)s->d_mu2->data,
+        .s11 = (CUdeviceptr)s->d_s11->data,
+        .s22 = (CUdeviceptr)s->d_s22->data,
+        .s12 = (CUdeviceptr)s->d_s12->data,
+        .plane_bytes = plane_full_pixels * sizeof(float),
+        .valid_bytes = scale_pixels * sizeof(float),
+    };
+}
 
-    CUdeviceptr ref_xyb = (CUdeviceptr)s->d_ref_xyb->data;
-    CUdeviceptr dis_xyb = (CUdeviceptr)s->d_dis_xyb->data;
-    CUdeviceptr mul_buf = (CUdeviceptr)s->d_mul_buf->data;
-    CUdeviceptr mu1 = (CUdeviceptr)s->d_mu1->data;
-    CUdeviceptr mu2 = (CUdeviceptr)s->d_mu2->data;
-    CUdeviceptr ds11 = (CUdeviceptr)s->d_s11->data;
-    CUdeviceptr ds22 = (CUdeviceptr)s->d_s22->data;
-    CUdeviceptr ds12 = (CUdeviceptr)s->d_s12->data;
-
-    /* Upload XYB buffers (host computed) — per-plane, only the valid
-     * sub-region. */
+static int ss2c_upload_xyb(Ssimu2StateCuda *s, CudaFunctions *cu_f, const Ss2cScaleBuffers *buffers)
+{
     for (size_t c = 0; c < 3u; c++) {
-        const size_t plane_off_bytes = c * plane_full_bytes;
-        CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync(ref_xyb + plane_off_bytes,
-                                                  (const uint8_t *)s->h_ref_xyb + plane_off_bytes,
-                                                  scale_bytes_per_plane, s->str));
-        CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync(dis_xyb + plane_off_bytes,
-                                                  (const uint8_t *)s->h_dis_xyb + plane_off_bytes,
-                                                  scale_bytes_per_plane, s->str));
+        const size_t offset = c * buffers->plane_bytes;
+        CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync(buffers->ref_xyb + offset,
+                                                  (const uint8_t *)s->h_ref_xyb + offset,
+                                                  buffers->valid_bytes, s->str));
+        CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync(buffers->dis_xyb + offset,
+                                                  (const uint8_t *)s->h_dis_xyb + offset,
+                                                  buffers->valid_bytes, s->str));
     }
+    return 0;
+}
 
-    /* 1) ref² → mul → blur into s11. */
-    err = ss2c_launch_mul3(s, cu_f, ref_xyb, ref_xyb, mul_buf, (unsigned)scale);
+static int ss2c_compute_scale_moments(Ssimu2StateCuda *s, CudaFunctions *cu_f,
+                                      const Ss2cScaleBuffers *buffers, int scale)
+{
+    int err = ss2c_launch_mul3(s, cu_f, buffers->ref_xyb, buffers->ref_xyb, buffers->mul,
+                               (unsigned)scale);
     if (err)
         return err;
-    err = ss2c_blur_3plane(s, cu_f, mul_buf, ds11, scale);
+    err = ss2c_blur_3plane(s, cu_f, buffers->mul, buffers->s11, scale);
     if (err)
         return err;
+    err = ss2c_launch_mul3(s, cu_f, buffers->dis_xyb, buffers->dis_xyb, buffers->mul,
+                           (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2c_blur_3plane(s, cu_f, buffers->mul, buffers->s22, scale);
+    if (err)
+        return err;
+    err = ss2c_launch_mul3(s, cu_f, buffers->ref_xyb, buffers->dis_xyb, buffers->mul,
+                           (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2c_blur_3plane(s, cu_f, buffers->mul, buffers->s12, scale);
+    if (err)
+        return err;
+    err = ss2c_blur_3plane(s, cu_f, buffers->ref_xyb, buffers->mu1, scale);
+    if (err)
+        return err;
+    return ss2c_blur_3plane(s, cu_f, buffers->dis_xyb, buffers->mu2, scale);
+}
 
-    /* 2) dis² → mul → blur into s22. */
-    err = ss2c_launch_mul3(s, cu_f, dis_xyb, dis_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2c_blur_3plane(s, cu_f, mul_buf, ds22, scale);
-    if (err)
-        return err;
-
-    /* 3) ref·dis → mul → blur into s12. */
-    err = ss2c_launch_mul3(s, cu_f, ref_xyb, dis_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2c_blur_3plane(s, cu_f, mul_buf, ds12, scale);
-    if (err)
-        return err;
-
-    /* 4) blur ref_xyb → mu1. */
-    err = ss2c_blur_3plane(s, cu_f, ref_xyb, mu1, scale);
-    if (err)
-        return err;
-    /* 5) blur dis_xyb → mu2. */
-    err = ss2c_blur_3plane(s, cu_f, dis_xyb, mu2, scale);
-    if (err)
-        return err;
-
-    /* Download blurred buffers — per-plane, only the valid sub-region.
-     * Same rationale as the H2D loop above: kernels only populate the
-     * first `scale_w * scale_h` floats of each plane; the unused tail
-     * of `plane_full_pixels` is never read by the host combine. */
+static int ss2c_download_moments(Ssimu2StateCuda *s, CudaFunctions *cu_f,
+                                 const Ss2cScaleBuffers *buffers)
+{
     for (size_t c = 0; c < 3u; c++) {
-        const size_t plane_off_bytes = c * plane_full_bytes;
+        const size_t offset = c * buffers->plane_bytes;
         CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync((uint8_t *)s->h_mu1 + plane_off_bytes,
-                                            mu1 + plane_off_bytes, scale_bytes_per_plane, s->str));
+                          cuMemcpyDtoHAsync((uint8_t *)s->h_mu1 + offset, buffers->mu1 + offset,
+                                            buffers->valid_bytes, s->str));
         CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync((uint8_t *)s->h_mu2 + plane_off_bytes,
-                                            mu2 + plane_off_bytes, scale_bytes_per_plane, s->str));
+                          cuMemcpyDtoHAsync((uint8_t *)s->h_mu2 + offset, buffers->mu2 + offset,
+                                            buffers->valid_bytes, s->str));
         CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync((uint8_t *)s->h_s11 + plane_off_bytes,
-                                            ds11 + plane_off_bytes, scale_bytes_per_plane, s->str));
+                          cuMemcpyDtoHAsync((uint8_t *)s->h_s11 + offset, buffers->s11 + offset,
+                                            buffers->valid_bytes, s->str));
         CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync((uint8_t *)s->h_s22 + plane_off_bytes,
-                                            ds22 + plane_off_bytes, scale_bytes_per_plane, s->str));
+                          cuMemcpyDtoHAsync((uint8_t *)s->h_s22 + offset, buffers->s22 + offset,
+                                            buffers->valid_bytes, s->str));
         CHECK_CUDA_RETURN(cu_f,
-                          cuMemcpyDtoHAsync((uint8_t *)s->h_s12 + plane_off_bytes,
-                                            ds12 + plane_off_bytes, scale_bytes_per_plane, s->str));
+                          cuMemcpyDtoHAsync((uint8_t *)s->h_s12 + offset, buffers->s12 + offset,
+                                            buffers->valid_bytes, s->str));
+    }
+    return 0;
+}
+
+static int ss2c_run_scale_gpu(Ssimu2StateCuda *s, CudaFunctions *cu_f, int scale)
+{
+    const Ss2cScaleBuffers buffers = ss2c_scale_buffers(s, scale);
+    int err = ss2c_upload_xyb(s, cu_f, &buffers);
+    if (!err)
+        err = ss2c_compute_scale_moments(s, cu_f, &buffers, scale);
+    if (!err)
+        err = ss2c_download_moments(s, cu_f, &buffers);
+    if (err)
+        return err;
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
+    return 0;
+}
+
+static int ss2c_copy_raw_planes(Ssimu2StateCuda *s, CudaFunctions *cu_f, const VmafPicture *ref_pic,
+                                const VmafPicture *dist_pic, VmafPicture *host_ref,
+                                VmafPicture *host_dis)
+{
+    const size_t bytes_per_pixel = (s->bpc <= 8u) ? 1u : 2u;
+    *host_ref = *ref_pic;
+    *host_dis = *dist_pic;
+    for (int plane = 0; plane < 3; plane++) {
+        const unsigned width = ref_pic->w[plane];
+        const unsigned height = ref_pic->h[plane];
+        const ptrdiff_t row_bytes = (ptrdiff_t)width * (ptrdiff_t)bytes_per_pixel;
+        s->plane_w[plane] = width;
+        s->plane_h[plane] = height;
+        s->plane_row_bytes[plane] = row_bytes;
+
+        CUDA_MEMCPY2D copy = {0};
+        copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+        copy.srcDevice = (CUdeviceptr)ref_pic->data[plane];
+        copy.srcPitch = ref_pic->stride[plane];
+        copy.dstMemoryType = CU_MEMORYTYPE_HOST;
+        copy.dstHost = s->h_ref_raw[plane];
+        copy.dstPitch = (size_t)row_bytes;
+        copy.WidthInBytes = (size_t)row_bytes;
+        copy.Height = height;
+        CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, s->str));
+        copy.srcDevice = (CUdeviceptr)dist_pic->data[plane];
+        copy.srcPitch = dist_pic->stride[plane];
+        copy.dstHost = s->h_dis_raw[plane];
+        CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, s->str));
+
+        host_ref->data[plane] = s->h_ref_raw[plane];
+        host_ref->stride[plane] = row_bytes;
+        host_dis->data[plane] = s->h_dis_raw[plane];
+        host_dis->stride[plane] = row_bytes;
     }
     CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
     return 0;
 }
 
-/* Per-scale orchestration mirrors the CPU extract loop step-by-step;
- * splitting would obscure the dispatch ordering required for parity
- * audit (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
- * sweep closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+static void ss2c_downsample_host_pair(Ssimu2StateCuda *s, unsigned width, unsigned height,
+                                      size_t plane_stride, unsigned *next_width,
+                                      unsigned *next_height)
+{
+    *next_width = (width + 1) / 2;
+    *next_height = (height + 1) / 2;
+    const size_t copy_bytes = (size_t)*next_width * (size_t)*next_height * sizeof(float);
+    ss2c_downsample_2x2(s->h_ref_lin, width, height, s->h_ref_lin_ds, *next_width, *next_height,
+                        plane_stride);
+    for (int channel = 0; channel < 3; channel++) {
+        memcpy(s->h_ref_lin + (size_t)channel * plane_stride,
+               s->h_ref_lin_ds + (size_t)channel * plane_stride, copy_bytes);
+    }
+    ss2c_downsample_2x2(s->h_dis_lin, width, height, s->h_dis_lin_ds, *next_width, *next_height,
+                        plane_stride);
+    for (int channel = 0; channel < 3; channel++) {
+        memcpy(s->h_dis_lin + (size_t)channel * plane_stride,
+               s->h_dis_lin_ds + (size_t)channel * plane_stride, copy_bytes);
+    }
+}
+
+static int ss2c_process_scales(Ssimu2StateCuda *s, CudaFunctions *cu_f, double avg_ssim[6][6],
+                               double avg_ed[6][12], int *completed)
+{
+    unsigned width = s->width;
+    unsigned height = s->height;
+    const size_t plane_stride = (size_t)s->width * (size_t)s->height;
+    for (int scale = 0; scale < SS2C_NUM_SCALES && width >= 8u && height >= 8u; scale++) {
+        ss2c_host_linear_rgb_to_xyb(s->h_ref_lin, s->h_ref_xyb, width, height, plane_stride);
+        ss2c_host_linear_rgb_to_xyb(s->h_dis_lin, s->h_dis_xyb, width, height, plane_stride);
+        const int err = ss2c_run_scale_gpu(s, cu_f, scale);
+        if (err)
+            return err;
+        ss2c_host_combine(s, scale, avg_ssim[scale], avg_ed[scale]);
+        (*completed)++;
+        if (scale + 1 < SS2C_NUM_SCALES) {
+            unsigned next_width = 0;
+            unsigned next_height = 0;
+            ss2c_downsample_host_pair(s, width, height, plane_stride, &next_width, &next_height);
+            width = next_width;
+            height = next_height;
+        }
+    }
+    return 0;
+}
+
 static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index,
@@ -1013,121 +1147,131 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)dist_pic_90;
     Ssimu2StateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), out);
-    ctx_pushed = 1;
-
-    /* Stage 0: D2H-copy raw YUV planes into pinned host scratch.
-     * picture_cuda hands us a VmafPicture whose `data[]` is a
-     * CUdeviceptr; direct host reads via `ss2c_read_plane` would
-     * segfault. Build a synthetic host-side VmafPicture mirror that
-     * matches the layout so `ss2c_picture_to_linear_rgb` is unchanged.
-     *
-     * The CPU sibling (ssimulacra2.c) takes a host VmafPicture
-     * directly — this D2H is the GPU-extractor cost we pay for not
-     * routing the YUV→linear-RGB pass through a kernel. Per ADR-0201,
-     * keeping the pre-pass on host is what unlocks places=4. */
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    VmafPicture host_ref = *ref_pic;
-    VmafPicture host_dis = *dist_pic;
-    for (int p = 0; p < 3; p++) {
-        const unsigned pw = ref_pic->w[p];
-        const unsigned ph = ref_pic->h[p];
-        const ptrdiff_t row_bytes = (ptrdiff_t)pw * (ptrdiff_t)bpp;
-        s->plane_w[p] = pw;
-        s->plane_h[p] = ph;
-        s->plane_row_bytes[p] = row_bytes;
-
-        CUDA_MEMCPY2D cpy = {0};
-        cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-        cpy.srcDevice = (CUdeviceptr)ref_pic->data[p];
-        cpy.srcPitch = ref_pic->stride[p];
-        cpy.dstMemoryType = CU_MEMORYTYPE_HOST;
-        cpy.dstHost = s->h_ref_raw[p];
-        cpy.dstPitch = (size_t)row_bytes;
-        cpy.WidthInBytes = (size_t)row_bytes;
-        cpy.Height = ph;
-        CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&cpy, s->str), out);
-        cpy.srcDevice = (CUdeviceptr)dist_pic->data[p];
-        cpy.srcPitch = dist_pic->stride[p];
-        cpy.dstHost = s->h_dis_raw[p];
-        CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&cpy, s->str), out);
-
-        host_ref.data[p] = s->h_ref_raw[p];
-        host_ref.stride[p] = row_bytes;
-        host_dis.data[p] = s->h_dis_raw[p];
-        host_dis.stride[p] = row_bytes;
+    int err = ss2c_cuda_status(cu_f->cuCtxPushCurrent(fex->cu_state->ctx), "cuCtxPushCurrent");
+    if (err)
+        return err;
+    VmafPicture host_ref;
+    VmafPicture host_dis;
+    err = ss2c_copy_raw_planes(s, cu_f, ref_pic, dist_pic, &host_ref, &host_dis);
+    if (!err) {
+        ss2c_picture_to_linear_rgb(s, &host_ref, s->h_ref_lin);
+        ss2c_picture_to_linear_rgb(s, &host_dis, s->h_dis_lin);
     }
-    /* Block until the 6 D2H copies are visible to the host. */
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->str), out);
-
-    /* Stage 1: host YUV → linear RGB on the pinned host buffers. */
-    ss2c_picture_to_linear_rgb(s, &host_ref, s->h_ref_lin);
-    ss2c_picture_to_linear_rgb(s, &host_dis, s->h_dis_lin);
-
-    /* Stage 2: per-scale loop. */
     double avg_ssim[6][6] = {{0}};
     double avg_ed[6][12] = {{0}};
     int completed = 0;
-    unsigned cw = s->width;
-    unsigned ch = s->height;
-    const size_t plane_full = (size_t)s->width * (size_t)s->height;
-
-    for (int scale = 0; scale < SS2C_NUM_SCALES; scale++) {
-        if (cw < 8u || ch < 8u)
-            break;
-
-        ss2c_host_linear_rgb_to_xyb(s->h_ref_lin, s->h_ref_xyb, cw, ch, plane_full);
-        ss2c_host_linear_rgb_to_xyb(s->h_dis_lin, s->h_dis_xyb, cw, ch, plane_full);
-
-        int err = ss2c_run_scale_gpu(s, cu_f, scale);
-        if (err) {
-            _cuda_err = err;
-            goto out;
-        }
-
-        ss2c_host_combine(s, scale, avg_ssim[scale], avg_ed[scale]);
-        completed++;
-
-        if (scale + 1 < SS2C_NUM_SCALES) {
-            const unsigned nw = (cw + 1) / 2;
-            const unsigned nh = (ch + 1) / 2;
-            /* Use the pinned scratch pre-allocated by `ss2c_alloc_buffers`
-             * — the previous per-scale `malloc(3 * plane_full *
-             * sizeof(float))` cost a fresh `mmap`/`brk` pair per scale
-             * under memory pressure (24 MB × up to 5 scales / frame at
-             * 1080p). The scratch is reused for ref then dis on every
-             * scale: ref is downsampled and copied back before dis is
-             * touched, so a single buffer per side is sufficient. */
-            ss2c_downsample_2x2(s->h_ref_lin, cw, ch, s->h_ref_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++) {
-                memcpy(s->h_ref_lin + (size_t)c * plane_full,
-                       s->h_ref_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            }
-            ss2c_downsample_2x2(s->h_dis_lin, cw, ch, s->h_dis_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++) {
-                memcpy(s->h_dis_lin + (size_t)c * plane_full,
-                       s->h_dis_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            }
-            cw = nw;
-            ch = nh;
-        }
-    }
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), out);
-    ctx_pushed = 0;
-
+    if (!err)
+        err = ss2c_process_scales(s, cu_f, avg_ssim, avg_ed, &completed);
+    keep_first_ss2c_error(&err, ss2c_cuda_status(cu_f->cuCtxPopCurrent(NULL), "cuCtxPopCurrent"));
+    if (err)
+        return err;
     const double score = ss2c_pool_score(avg_ssim, avg_ed, completed);
     return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
+}
 
-out:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    return _cuda_err;
+static void record_ss2c_error(int *first_error, int error, const char *operation)
+{
+    if (!error)
+        return;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_cuda: %s failed with error %d\n", operation, error);
+    keep_first_ss2c_error(first_error, error);
+}
+
+static int ss2c_release_runtime(VmafFeatureExtractor *fex)
+{
+    Ssimu2StateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
+    if (!cu_f)
+        return 0;
+    int err = 0;
+    if (s->str)
+        keep_first_ss2c_error(
+            &err, ss2c_cuda_status(cu_f->cuStreamSynchronize(s->str), "cuStreamSynchronize"));
+    if (s->module_blur) {
+        keep_first_ss2c_error(
+            &err, ss2c_cuda_status(cu_f->cuModuleUnload(s->module_blur), "cuModuleUnload(blur)"));
+        s->module_blur = NULL;
+    }
+    if (s->module_mul) {
+        keep_first_ss2c_error(
+            &err, ss2c_cuda_status(cu_f->cuModuleUnload(s->module_mul), "cuModuleUnload(mul)"));
+        s->module_mul = NULL;
+    }
+    if (s->str) {
+        keep_first_ss2c_error(&err,
+                              ss2c_cuda_status(cu_f->cuStreamDestroy(s->str), "cuStreamDestroy"));
+        s->str = 0;
+    }
+    return err;
+}
+
+static void ss2c_release_device_buffer(VmafFeatureExtractor *fex, VmafCudaBuffer **buffer,
+                                       int *error)
+{
+    if (!*buffer)
+        return;
+    record_ss2c_error(error, vmaf_cuda_buffer_free(fex->cu_state, *buffer), "device buffer free");
+    free(*buffer);
+    *buffer = NULL;
+}
+
+static int ss2c_release_device_buffers(VmafFeatureExtractor *fex)
+{
+    Ssimu2StateCuda *s = fex->priv;
+    int err = 0;
+    ss2c_release_device_buffer(fex, &s->d_ref_lin, &err);
+    ss2c_release_device_buffer(fex, &s->d_dis_lin, &err);
+    ss2c_release_device_buffer(fex, &s->d_ref_xyb, &err);
+    ss2c_release_device_buffer(fex, &s->d_dis_xyb, &err);
+    ss2c_release_device_buffer(fex, &s->d_mul_buf, &err);
+    ss2c_release_device_buffer(fex, &s->d_blur_scratch, &err);
+    ss2c_release_device_buffer(fex, &s->d_transpose_buf, &err);
+    ss2c_release_device_buffer(fex, &s->d_mu1, &err);
+    ss2c_release_device_buffer(fex, &s->d_mu2, &err);
+    ss2c_release_device_buffer(fex, &s->d_s11, &err);
+    ss2c_release_device_buffer(fex, &s->d_s22, &err);
+    ss2c_release_device_buffer(fex, &s->d_s12, &err);
+    return err;
+}
+
+static void ss2c_release_host_buffer(VmafFeatureExtractor *fex, void **buffer, int *error)
+{
+    if (!*buffer)
+        return;
+    record_ss2c_error(error, vmaf_cuda_buffer_host_free(fex->cu_state, *buffer),
+                      "host buffer free");
+    *buffer = NULL;
+}
+
+static void ss2c_release_float_buffer(VmafFeatureExtractor *fex, float **buffer, int *error)
+{
+    if (!*buffer)
+        return;
+    record_ss2c_error(error, vmaf_cuda_buffer_host_free(fex->cu_state, *buffer),
+                      "host float buffer free");
+    *buffer = NULL;
+}
+
+static int ss2c_release_host_buffers(VmafFeatureExtractor *fex)
+{
+    Ssimu2StateCuda *s = fex->priv;
+    int err = 0;
+    ss2c_release_float_buffer(fex, &s->h_ref_lin, &err);
+    ss2c_release_float_buffer(fex, &s->h_dis_lin, &err);
+    ss2c_release_float_buffer(fex, &s->h_ref_lin_ds, &err);
+    ss2c_release_float_buffer(fex, &s->h_dis_lin_ds, &err);
+    ss2c_release_float_buffer(fex, &s->h_ref_xyb, &err);
+    ss2c_release_float_buffer(fex, &s->h_dis_xyb, &err);
+    ss2c_release_float_buffer(fex, &s->h_mu1, &err);
+    ss2c_release_float_buffer(fex, &s->h_mu2, &err);
+    ss2c_release_float_buffer(fex, &s->h_s11, &err);
+    ss2c_release_float_buffer(fex, &s->h_s22, &err);
+    ss2c_release_float_buffer(fex, &s->h_s12, &err);
+    for (int plane = 0; plane < 3; plane++) {
+        ss2c_release_host_buffer(fex, &s->h_ref_raw[plane], &err);
+        ss2c_release_host_buffer(fex, &s->h_dis_raw[plane], &err);
+    }
+    return err;
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
@@ -1135,78 +1279,10 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     Ssimu2StateCuda *s = fex->priv;
     if (!s)
         return 0;
-    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
-    int ret = 0;
-
-    if (cu_f && s->str) {
-        (void)cu_f->cuStreamSynchronize(s->str);
-        /* Unload the two PTX modules loaded by `init_fex_cuda` —
-         * `cuModuleLoadData` allocates ~200-500 KB of GPU-resident
-         * module backing store per module, none of which is reclaimed
-         * by `cuStreamDestroy` or `cuCtxDestroy` on a primary context.
-         * Skipping these calls leaks the modules every `vmaf_close()`
-         * cycle (caught by `compute-sanitizer --tool memcheck` on a
-         * 100-iteration init/extract/close loop). Guarded by null
-         * checks so partial-init failure paths are still safe. */
-        if (s->module_blur)
-            (void)cu_f->cuModuleUnload(s->module_blur);
-        if (s->module_mul)
-            (void)cu_f->cuModuleUnload(s->module_mul);
-        (void)cu_f->cuStreamDestroy(s->str);
-    }
-
-#define SS2C_FREE_DEV(b)                                                                           \
-    do {                                                                                           \
-        if (s->b) {                                                                                \
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->b);                                     \
-            free(s->b);                                                                            \
-        }                                                                                          \
-    } while (0)
-    SS2C_FREE_DEV(d_ref_lin);
-    SS2C_FREE_DEV(d_dis_lin);
-    SS2C_FREE_DEV(d_ref_xyb);
-    SS2C_FREE_DEV(d_dis_xyb);
-    SS2C_FREE_DEV(d_mul_buf);
-    SS2C_FREE_DEV(d_blur_scratch);
-    SS2C_FREE_DEV(d_transpose_buf);
-    SS2C_FREE_DEV(d_mu1);
-    SS2C_FREE_DEV(d_mu2);
-    SS2C_FREE_DEV(d_s11);
-    SS2C_FREE_DEV(d_s22);
-    SS2C_FREE_DEV(d_s12);
-#undef SS2C_FREE_DEV
-
-#define SS2C_FREE_HOST(p)                                                                          \
-    do {                                                                                           \
-        if (s->p) {                                                                                \
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->p);                                \
-            s->p = NULL;                                                                           \
-        }                                                                                          \
-    } while (0)
-    SS2C_FREE_HOST(h_ref_lin);
-    SS2C_FREE_HOST(h_dis_lin);
-    SS2C_FREE_HOST(h_ref_lin_ds);
-    SS2C_FREE_HOST(h_dis_lin_ds);
-    SS2C_FREE_HOST(h_ref_xyb);
-    SS2C_FREE_HOST(h_dis_xyb);
-    SS2C_FREE_HOST(h_mu1);
-    SS2C_FREE_HOST(h_mu2);
-    SS2C_FREE_HOST(h_s11);
-    SS2C_FREE_HOST(h_s22);
-    SS2C_FREE_HOST(h_s12);
-#undef SS2C_FREE_HOST
-
-    for (int p = 0; p < 3; p++) {
-        if (s->h_ref_raw[p]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_ref_raw[p]);
-            s->h_ref_raw[p] = NULL;
-        }
-        if (s->h_dis_raw[p]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_dis_raw[p]);
-            s->h_dis_raw[p] = NULL;
-        }
-    }
-    return ret;
+    int err = ss2c_release_runtime(fex);
+    keep_first_ss2c_error(&err, ss2c_release_device_buffers(fex));
+    keep_first_ss2c_error(&err, ss2c_release_host_buffers(fex));
+    return err;
 }
 
 static const char *provided_features[] = {"ssimulacra2", NULL};

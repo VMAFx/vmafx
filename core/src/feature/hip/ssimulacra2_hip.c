@@ -69,7 +69,7 @@ enum yuv_matrix_h {
 };
 
 /* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
-static const double g_weights[108] = {
+static const double g_weights_first[54] = {
     0.0,
     0.0007376606707406586,
     0.0,
@@ -124,6 +124,9 @@ static const double g_weights[108] = {
     19.213238186143016,
     0.0011401524586618361,
     0.001237755635509985,
+};
+
+static const double g_weights_second[54] = {
     176.39317598450694,
     0.0,
     0.0,
@@ -179,6 +182,11 @@ static const double g_weights[108] = {
     0.0,
     0.00010854057858411537,
 };
+
+static inline double ss2h_pool_weight(size_t index)
+{
+    return index < 54u ? g_weights_first[index] : g_weights_second[index - 54u];
+}
 
 typedef struct Ssimu2StateHip {
     /* Options. */
@@ -253,9 +261,6 @@ static const VmafOption options[] = {
 
 /* ------------------------------------------------------------------ */
 /* Recursive Gaussian setup (verbatim port of ss2c_setup_gaussian).   */
-/* Splitting would break the line-for-line scalar-diff audit trail     */
-/* (ADR-0141 §2 upstream-parity load-bearing invariant).              */
-/* NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
 /* ------------------------------------------------------------------ */
 static void ss2h_setup_gaussian(Ssimu2StateHip *s, double sigma)
 {
@@ -355,11 +360,86 @@ static inline float ss2h_read_plane(const VmafPicture *pic, int plane, int x, in
     return (float)row[sx];
 }
 
-/* Verbatim port of ssimulacra2.c::picture_to_linear_rgb.
- * Splitting would break the line-for-line scalar-diff audit trail
- * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5 sweep
- * closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+typedef struct Ss2hYuvConversion {
+    float inv_peak;
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_off;
+    float c_off;
+} Ss2hYuvConversion;
+
+static Ss2hYuvConversion ss2h_yuv_conversion(const Ssimu2StateHip *s)
+{
+    const float peak = (float)((1u << s->bpc) - 1u);
+    float kr;
+    float kg;
+    float kb;
+    int limited = 1;
+    switch (s->yuv_matrix) {
+    case SS2H_MATRIX_BT709_FULL:
+        limited = 0;
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
+    case SS2H_MATRIX_BT709_LIMITED:
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
+    case SS2H_MATRIX_BT601_FULL:
+        limited = 0;
+        kr = 0.299f;
+        kg = 0.587f;
+        kb = 0.114f;
+        break;
+    case SS2H_MATRIX_BT601_LIMITED:
+    default:
+        kr = 0.299f;
+        kg = 0.587f;
+        kb = 0.114f;
+        break;
+    }
+    return (Ss2hYuvConversion){
+        .inv_peak = 1.0f / peak,
+        .cr_r = 2.0f * (1.0f - kr),
+        .cb_b = 2.0f * (1.0f - kb),
+        .cb_g = -(2.0f * kb * (1.0f - kb)) / kg,
+        .cr_g = -(2.0f * kr * (1.0f - kr)) / kg,
+        .y_scale = limited ? (255.0f / 219.0f) : 1.0f,
+        .c_scale = limited ? (255.0f / 224.0f) : 1.0f,
+        .y_off = limited ? (16.0f / 255.0f) : 0.0f,
+        .c_off = 0.5f,
+    };
+}
+
+static inline void ss2h_write_linear_rgb_pixel(const VmafPicture *pic,
+                                               const Ss2hYuvConversion *conversion, unsigned x,
+                                               unsigned y, float *rp, float *gp, float *bp,
+                                               size_t index)
+{
+    const float Y = ss2h_read_plane(pic, 0, (int)x, (int)y) * conversion->inv_peak;
+    const float U = ss2h_read_plane(pic, 1, (int)x, (int)y) * conversion->inv_peak;
+    const float V = ss2h_read_plane(pic, 2, (int)x, (int)y) * conversion->inv_peak;
+    const float Yn = (Y - conversion->y_off) * conversion->y_scale;
+    const float Un = (U - conversion->c_off) * conversion->c_scale;
+    const float Vn = (V - conversion->c_off) * conversion->c_scale;
+    float R = fmaf(conversion->cr_r, Vn, Yn);
+    float G = fmaf(conversion->cb_g, Un, Yn);
+    G = fmaf(conversion->cr_g, Vn, G);
+    float B = fmaf(conversion->cb_b, Un, Yn);
+    R = ss2h_clampf(R, 0.0f, 1.0f);
+    G = ss2h_clampf(G, 0.0f, 1.0f);
+    B = ss2h_clampf(B, 0.0f, 1.0f);
+    rp[index] = vmaf_ss2_srgb_eotf(R);
+    gp[index] = vmaf_ss2_srgb_eotf(G);
+    bp[index] = vmaf_ss2_srgb_eotf(B);
+}
+
 static void ss2h_picture_to_linear_rgb(const Ssimu2StateHip *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->width;
@@ -368,71 +448,11 @@ static void ss2h_picture_to_linear_rgb(const Ssimu2StateHip *s, const VmafPictur
     float *rp = out;
     float *gp = out + plane_sz;
     float *bp = out + 2 * plane_sz;
-
-    const float peak = (float)((1u << s->bpc) - 1u);
-    const float inv_peak = 1.0f / peak;
-
-    float kr;
-    float kg;
-    float kb;
-    int limited = 1;
-    switch (s->yuv_matrix) {
-    case SS2H_MATRIX_BT709_FULL:
-        limited = 0;
-        // fallthrough
-    case SS2H_MATRIX_BT709_LIMITED:
-        kr = 0.2126f;
-        kg = 0.7152f;
-        kb = 0.0722f;
-        break;
-    case SS2H_MATRIX_BT601_FULL:
-        limited = 0;
-        // fallthrough
-    case SS2H_MATRIX_BT601_LIMITED:
-    default:
-        kr = 0.299f;
-        kg = 0.587f;
-        kb = 0.114f;
-        break;
-    }
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
-
+    const Ss2hYuvConversion conversion = ss2h_yuv_conversion(s);
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
-            float Y = ss2h_read_plane(pic, 0, (int)x, (int)y) * inv_peak;
-            float U = ss2h_read_plane(pic, 1, (int)x, (int)y) * inv_peak;
-            float V = ss2h_read_plane(pic, 2, (int)x, (int)y) * inv_peak;
-            float Yn = (Y - y_off) * y_scale;
-            float Un = (U - c_off) * c_scale;
-            float Vn = (V - c_off) * c_scale;
-            /* ADR-0891 FMA unification: the AVX2 / AVX-512 / NEON / SVE2
-             * kernels and their scalar tails all use a single-rounded
-             * fused multiply-add here. This copy was missed when ADR-0891
-             * landed, so it produced a mul-then-add result that differs
-             * from the SIMD paths by ~1 ULP. The ssimulacra2 pipeline is
-             * ill-conditioned downstream (the edge-diff term takes
-             * |img - blur(img)|, a catastrophic cancellation, and the
-             * 4-norm pooling amplifies the survivors), so that 1 ULP grew
-             * into a 2.6e-3 score delta. Keep these three lines
-             * fmaf()-based and in this exact order. See ADR-1205. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
-            R = ss2h_clampf(R, 0.0f, 1.0f);
-            G = ss2h_clampf(G, 0.0f, 1.0f);
-            B = ss2h_clampf(B, 0.0f, 1.0f);
             const size_t idx = (size_t)y * w + x;
-            rp[idx] = vmaf_ss2_srgb_eotf(R);
-            gp[idx] = vmaf_ss2_srgb_eotf(G);
-            bp[idx] = vmaf_ss2_srgb_eotf(B);
+            ss2h_write_linear_rgb_pixel(pic, &conversion, x, y, rp, gp, bp, idx);
         }
     }
 }
@@ -489,6 +509,22 @@ static void ss2h_host_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w
     }
 }
 
+static float ss2h_downsample_pixel(const float *in, unsigned iw, unsigned ih, unsigned ox,
+                                   unsigned oy)
+{
+    float sum = 0.0f;
+    for (unsigned dy = 0; dy < 2; dy++) {
+        const unsigned sample_y = oy * 2 + dy;
+        const unsigned iy = sample_y < ih ? sample_y : ih - 1;
+        for (unsigned dx = 0; dx < 2; dx++) {
+            const unsigned sample_x = ox * 2 + dx;
+            const unsigned ix = sample_x < iw ? sample_x : iw - 1;
+            sum += in[(size_t)iy * iw + ix];
+        }
+    }
+    return sum * 0.25f;
+}
+
 static void ss2h_downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out, unsigned ow,
                                 unsigned oh, size_t plane_stride)
 {
@@ -496,21 +532,8 @@ static void ss2h_downsample_2x2(const float *in, unsigned iw, unsigned ih, float
         const float *ip = in + (size_t)c * plane_stride;
         float *op = out + (size_t)c * plane_stride;
         for (unsigned oy = 0; oy < oh; oy++) {
-            for (unsigned ox = 0; ox < ow; ox++) {
-                float sum = 0.0f;
-                for (unsigned dy = 0; dy < 2; dy++) {
-                    for (unsigned dx = 0; dx < 2; dx++) {
-                        unsigned ix = ox * 2 + dx;
-                        unsigned iy = oy * 2 + dy;
-                        if (ix >= iw)
-                            ix = iw - 1;
-                        if (iy >= ih)
-                            iy = ih - 1;
-                        sum += ip[(size_t)iy * iw + ix];
-                    }
-                }
-                op[(size_t)oy * ow + ox] = sum * 0.25f;
-            }
+            for (unsigned ox = 0; ox < ow; ox++)
+                op[(size_t)oy * ow + ox] = ss2h_downsample_pixel(ip, iw, ih, ox, oy);
         }
     }
 }
@@ -545,87 +568,104 @@ static int ss2h_hip_rc(hipError_t rc)
 
 #ifdef HAVE_HIPCC
 
-/* Null-check + free helpers shared between init's fail_mod_mul path and
- * close_fex_hip. When ss2h_alloc_device or ss2h_alloc_pinned returns on
- * the first hipMalloc failure, any allocations that succeeded before that
- * point would leak unless the unwind path frees them. ADR-0345 / HIP twin
- * of ssimulacra2_cuda.c. */
-static void ss2h_free_device_buffers(Ssimu2StateHip *s)
+static void ss2h_keep_first_error(int *first_error, int error)
 {
-#define SS2H_FREE_DEV_NULL(f)                                                                      \
-    do {                                                                                           \
-        if (s->f) {                                                                                \
-            (void)hipFree(s->f);                                                                   \
-            s->f = NULL;                                                                           \
-        }                                                                                          \
-    } while (0)
-    SS2H_FREE_DEV_NULL(d_ref_xyb);
-    SS2H_FREE_DEV_NULL(d_dis_xyb);
-    SS2H_FREE_DEV_NULL(d_mul_buf);
-    SS2H_FREE_DEV_NULL(d_blur_scratch);
-    SS2H_FREE_DEV_NULL(d_mu1);
-    SS2H_FREE_DEV_NULL(d_mu2);
-    SS2H_FREE_DEV_NULL(d_s11);
-    SS2H_FREE_DEV_NULL(d_s22);
-    SS2H_FREE_DEV_NULL(d_s12);
-#undef SS2H_FREE_DEV_NULL
+    if (!*first_error && error)
+        *first_error = error;
 }
 
-static void ss2h_free_pinned_buffers(Ssimu2StateHip *s)
+static int ss2h_hip_status(hipError_t hip_rc, const char *operation)
 {
-#define SS2H_FREE_PIN_NULL(f)                                                                      \
-    do {                                                                                           \
-        if (s->f) {                                                                                \
-            (void)hipHostFree(s->f);                                                               \
-            s->f = NULL;                                                                           \
-        }                                                                                          \
-    } while (0)
-    SS2H_FREE_PIN_NULL(h_ref_lin);
-    SS2H_FREE_PIN_NULL(h_dis_lin);
-    SS2H_FREE_PIN_NULL(h_ref_lin_ds);
-    SS2H_FREE_PIN_NULL(h_dis_lin_ds);
-    SS2H_FREE_PIN_NULL(h_ref_xyb);
-    SS2H_FREE_PIN_NULL(h_dis_xyb);
-    SS2H_FREE_PIN_NULL(h_mu1);
-    SS2H_FREE_PIN_NULL(h_mu2);
-    SS2H_FREE_PIN_NULL(h_s11);
-    SS2H_FREE_PIN_NULL(h_s22);
-    SS2H_FREE_PIN_NULL(h_s12);
-#undef SS2H_FREE_PIN_NULL
-    for (int p = 0; p < 3; p++) {
-        if (s->h_ref_raw[p]) {
-            (void)hipHostFree(s->h_ref_raw[p]);
-            s->h_ref_raw[p] = NULL;
-        }
-        if (s->h_dis_raw[p]) {
-            (void)hipHostFree(s->h_dis_raw[p]);
-            s->h_dis_raw[p] = NULL;
-        }
+    const int error = ss2h_hip_rc(hip_rc);
+    if (error) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_hip: %s failed with HIP error %d\n", operation,
+                 (int)hip_rc);
     }
+    return error;
+}
+
+static void ss2h_release_device_buffer(void **buffer, const char *name, int *first_error)
+{
+    if (!*buffer)
+        return;
+    const hipError_t hip_rc = hipFree(*buffer);
+    *buffer = NULL;
+    ss2h_keep_first_error(first_error, ss2h_hip_status(hip_rc, name));
+}
+
+static void ss2h_release_pinned_buffer(void **buffer, const char *name, int *first_error)
+{
+    if (!*buffer)
+        return;
+    const hipError_t hip_rc = hipHostFree(*buffer);
+    *buffer = NULL;
+    ss2h_keep_first_error(first_error, ss2h_hip_status(hip_rc, name));
+}
+
+static int ss2h_free_device_buffers(Ssimu2StateHip *s)
+{
+    void **const buffers[] = {&s->d_ref_xyb,      &s->d_dis_xyb, &s->d_mul_buf,
+                              &s->d_blur_scratch, &s->d_mu1,     &s->d_mu2,
+                              &s->d_s11,          &s->d_s22,     &s->d_s12};
+    static const char *const names[] = {
+        "hipFree(d_ref_xyb)",      "hipFree(d_dis_xyb)", "hipFree(d_mul_buf)",
+        "hipFree(d_blur_scratch)", "hipFree(d_mu1)",     "hipFree(d_mu2)",
+        "hipFree(d_s11)",          "hipFree(d_s22)",     "hipFree(d_s12)",
+    };
+    int err = 0;
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        ss2h_release_device_buffer(buffers[i], names[i], &err);
+    return err;
+}
+
+static int ss2h_free_pinned_buffers(Ssimu2StateHip *s)
+{
+    void **const buffers[] = {
+        (void **)&s->h_ref_lin,    (void **)&s->h_dis_lin, (void **)&s->h_ref_lin_ds,
+        (void **)&s->h_dis_lin_ds, (void **)&s->h_ref_xyb, (void **)&s->h_dis_xyb,
+        (void **)&s->h_mu1,        (void **)&s->h_mu2,     (void **)&s->h_s11,
+        (void **)&s->h_s22,        (void **)&s->h_s12,
+    };
+    static const char *const names[] = {
+        "hipHostFree(h_ref_lin)",    "hipHostFree(h_dis_lin)", "hipHostFree(h_ref_lin_ds)",
+        "hipHostFree(h_dis_lin_ds)", "hipHostFree(h_ref_xyb)", "hipHostFree(h_dis_xyb)",
+        "hipHostFree(h_mu1)",        "hipHostFree(h_mu2)",     "hipHostFree(h_s11)",
+        "hipHostFree(h_s22)",        "hipHostFree(h_s12)",
+    };
+    int err = 0;
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        ss2h_release_pinned_buffer(buffers[i], names[i], &err);
+    for (int plane = 0; plane < 3; plane++) {
+        ss2h_release_pinned_buffer(&s->h_ref_raw[plane], "hipHostFree(h_ref_raw)", &err);
+        ss2h_release_pinned_buffer(&s->h_dis_raw[plane], "hipHostFree(h_dis_raw)", &err);
+    }
+    return err;
 }
 
 static int ss2h_alloc_device(Ssimu2StateHip *s)
 {
     const size_t three_plane_bytes = 3u * (size_t)s->width * (size_t)s->height * sizeof(float);
-    hipError_t hip_rc;
-#define SS2H_ALLOC_DEV(f)                                                                          \
-    do {                                                                                           \
-        hip_rc = hipMalloc(&s->f, three_plane_bytes);                                              \
-        if (hip_rc != hipSuccess) {                                                                \
-            ss2h_free_device_buffers(s);                                                           \
-            return ss2h_hip_rc(hip_rc);                                                            \
-        }                                                                                          \
-    } while (0)
-    SS2H_ALLOC_DEV(d_ref_xyb);
-    SS2H_ALLOC_DEV(d_dis_xyb);
-    SS2H_ALLOC_DEV(d_mul_buf);
-    SS2H_ALLOC_DEV(d_blur_scratch);
-    SS2H_ALLOC_DEV(d_mu1);
-    SS2H_ALLOC_DEV(d_mu2);
-    SS2H_ALLOC_DEV(d_s11);
-    SS2H_ALLOC_DEV(d_s22);
-    SS2H_ALLOC_DEV(d_s12);
-#undef SS2H_ALLOC_DEV
+    void **const buffers[] = {&s->d_ref_xyb,      &s->d_dis_xyb, &s->d_mul_buf,
+                              &s->d_blur_scratch, &s->d_mu1,     &s->d_mu2,
+                              &s->d_s11,          &s->d_s22,     &s->d_s12};
+    static const char *const names[] = {
+        "hipMalloc(d_ref_xyb)",      "hipMalloc(d_dis_xyb)", "hipMalloc(d_mul_buf)",
+        "hipMalloc(d_blur_scratch)", "hipMalloc(d_mu1)",     "hipMalloc(d_mu2)",
+        "hipMalloc(d_s11)",          "hipMalloc(d_s22)",     "hipMalloc(d_s12)",
+    };
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
+        const int err = ss2h_hip_status(hipMalloc(buffers[i], three_plane_bytes), names[i]);
+        if (err) {
+            const int cleanup_err = ss2h_free_device_buffers(s);
+            if (cleanup_err) {
+                vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                         "ssimulacra2_hip: device cleanup after allocation failure also failed "
+                         "with error %d\n",
+                         cleanup_err);
+            }
+            return err;
+        }
+    }
     return 0;
 }
 
@@ -633,41 +673,40 @@ static int ss2h_alloc_pinned(Ssimu2StateHip *s)
 {
     const size_t three_plane_bytes = 3u * (size_t)s->width * (size_t)s->height * sizeof(float);
     const size_t worst_plane_bytes = (size_t)s->width * (size_t)s->height * 2u;
-    hipError_t hip_rc;
-#define SS2H_ALLOC_PIN(f)                                                                          \
-    do {                                                                                           \
-        hip_rc = hipHostMalloc((void **)&s->f, three_plane_bytes, 0);                              \
-        if (hip_rc != hipSuccess) {                                                                \
-            ss2h_free_pinned_buffers(s);                                                           \
-            return ss2h_hip_rc(hip_rc);                                                            \
-        }                                                                                          \
-    } while (0)
-    SS2H_ALLOC_PIN(h_ref_lin);
-    SS2H_ALLOC_PIN(h_dis_lin);
-    SS2H_ALLOC_PIN(h_ref_lin_ds);
-    SS2H_ALLOC_PIN(h_dis_lin_ds);
-    SS2H_ALLOC_PIN(h_ref_xyb);
-    SS2H_ALLOC_PIN(h_dis_xyb);
-    SS2H_ALLOC_PIN(h_mu1);
-    SS2H_ALLOC_PIN(h_mu2);
-    SS2H_ALLOC_PIN(h_s11);
-    SS2H_ALLOC_PIN(h_s22);
-    SS2H_ALLOC_PIN(h_s12);
-#undef SS2H_ALLOC_PIN
-    for (int p = 0; p < 3; p++) {
-        hip_rc = hipHostMalloc(&s->h_ref_raw[p], worst_plane_bytes, 0);
-        if (hip_rc != hipSuccess) {
-            ss2h_free_pinned_buffers(s);
-            return ss2h_hip_rc(hip_rc);
-        }
-        s->raw_plane_bytes[p] = worst_plane_bytes;
-        hip_rc = hipHostMalloc(&s->h_dis_raw[p], worst_plane_bytes, 0);
-        if (hip_rc != hipSuccess) {
-            ss2h_free_pinned_buffers(s);
-            return ss2h_hip_rc(hip_rc);
+    void **const buffers[] = {
+        (void **)&s->h_ref_lin,    (void **)&s->h_dis_lin, (void **)&s->h_ref_lin_ds,
+        (void **)&s->h_dis_lin_ds, (void **)&s->h_ref_xyb, (void **)&s->h_dis_xyb,
+        (void **)&s->h_mu1,        (void **)&s->h_mu2,     (void **)&s->h_s11,
+        (void **)&s->h_s22,        (void **)&s->h_s12,
+    };
+    static const char *const names[] = {
+        "hipHostMalloc(h_ref_lin)",    "hipHostMalloc(h_dis_lin)", "hipHostMalloc(h_ref_lin_ds)",
+        "hipHostMalloc(h_dis_lin_ds)", "hipHostMalloc(h_ref_xyb)", "hipHostMalloc(h_dis_xyb)",
+        "hipHostMalloc(h_mu1)",        "hipHostMalloc(h_mu2)",     "hipHostMalloc(h_s11)",
+        "hipHostMalloc(h_s22)",        "hipHostMalloc(h_s12)",
+    };
+    int err = 0;
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]) && !err; i++)
+        err = ss2h_hip_status(hipHostMalloc(buffers[i], three_plane_bytes, 0), names[i]);
+    for (int plane = 0; plane < 3 && !err; plane++) {
+        err = ss2h_hip_status(hipHostMalloc(&s->h_ref_raw[plane], worst_plane_bytes, 0),
+                              "hipHostMalloc(h_ref_raw)");
+        if (!err) {
+            s->raw_plane_bytes[plane] = worst_plane_bytes;
+            err = ss2h_hip_status(hipHostMalloc(&s->h_dis_raw[plane], worst_plane_bytes, 0),
+                                  "hipHostMalloc(h_dis_raw)");
         }
     }
-    return 0;
+    if (err) {
+        const int cleanup_err = ss2h_free_pinned_buffers(s);
+        if (cleanup_err) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "ssimulacra2_hip: pinned cleanup after allocation failure also failed with "
+                     "error %d\n",
+                     cleanup_err);
+        }
+    }
+    return err;
 }
 
 static int ss2h_launch_mul3(Ssimu2StateHip *s, void *a, void *b, void *out, unsigned scale)
@@ -722,11 +761,7 @@ static int ss2h_blur_3plane(Ssimu2StateHip *s, void *in_buf, void *out_buf, unsi
     return 0;
 }
 
-/* Per-pixel SSIM + EdgeDiff combine in double precision.
- * Splitting would break the line-for-line scalar-diff audit trail
- * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5 sweep
- * closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+/* Per-pixel SSIM + EdgeDiff combine in double precision. */
 static void ss2h_host_combine(const Ssimu2StateHip *s, int scale, double avg_ssim[6],
                               double avg_ed[12])
 {
@@ -796,9 +831,9 @@ static double ss2h_pool_score(const double avg_ssim[6][6], const double avg_ed[6
                 double s_term = scale < num_scales ? avg_ssim[scale][c * 2 + n] : 0.0;
                 double r_term = scale < num_scales ? avg_ed[scale][c * 4 + n] : 0.0;
                 double b_term = scale < num_scales ? avg_ed[scale][c * 4 + n + 2] : 0.0;
-                ssim += g_weights[i++] * fabs(s_term);
-                ssim += g_weights[i++] * fabs(r_term);
-                ssim += g_weights[i++] * fabs(b_term);
+                ssim += ss2h_pool_weight(i++) * fabs(s_term);
+                ssim += ss2h_pool_weight(i++) * fabs(r_term);
+                ssim += ss2h_pool_weight(i++) * fabs(b_term);
             }
         }
     }
@@ -813,103 +848,227 @@ static double ss2h_pool_score(const double avg_ssim[6][6], const double avg_ed[6
     return ssim;
 }
 
-/* Per-scale GPU work: 3 mul + 5 blur.
- * Splitting would obscure the dispatch sequence required for parity
- * audit (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
- * sweep closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+typedef struct Ss2hScaleBuffers {
+    void *ref_xyb;
+    void *dis_xyb;
+    void *mul;
+    void *mu1;
+    void *mu2;
+    void *s11;
+    void *s22;
+    void *s12;
+    size_t plane_bytes;
+    size_t valid_bytes;
+} Ss2hScaleBuffers;
+
+static Ss2hScaleBuffers ss2h_scale_buffers(const Ssimu2StateHip *s, int scale)
+{
+    const size_t plane_pixels = (size_t)s->width * (size_t)s->height;
+    const size_t scale_pixels = (size_t)s->scale_w[scale] * (size_t)s->scale_h[scale];
+    return (Ss2hScaleBuffers){
+        .ref_xyb = s->d_ref_xyb,
+        .dis_xyb = s->d_dis_xyb,
+        .mul = s->d_mul_buf,
+        .mu1 = s->d_mu1,
+        .mu2 = s->d_mu2,
+        .s11 = s->d_s11,
+        .s22 = s->d_s22,
+        .s12 = s->d_s12,
+        .plane_bytes = plane_pixels * sizeof(float),
+        .valid_bytes = scale_pixels * sizeof(float),
+    };
+}
+
+static int ss2h_upload_xyb(Ssimu2StateHip *s, const Ss2hScaleBuffers *buffers)
+{
+    for (size_t channel = 0; channel < 3u; channel++) {
+        const size_t offset = channel * buffers->plane_bytes;
+        int err =
+            ss2h_hip_status(hipMemcpyAsync((uint8_t *)buffers->ref_xyb + offset,
+                                           (const uint8_t *)s->h_ref_xyb + offset,
+                                           buffers->valid_bytes, hipMemcpyHostToDevice, s->str),
+                            "hipMemcpyAsync(ref_xyb upload)");
+        if (err)
+            return err;
+        err = ss2h_hip_status(hipMemcpyAsync((uint8_t *)buffers->dis_xyb + offset,
+                                             (const uint8_t *)s->h_dis_xyb + offset,
+                                             buffers->valid_bytes, hipMemcpyHostToDevice, s->str),
+                              "hipMemcpyAsync(dis_xyb upload)");
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+static int ss2h_compute_scale_moments(Ssimu2StateHip *s, const Ss2hScaleBuffers *buffers, int scale)
+{
+    int err =
+        ss2h_launch_mul3(s, buffers->ref_xyb, buffers->ref_xyb, buffers->mul, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, buffers->mul, buffers->s11, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_launch_mul3(s, buffers->dis_xyb, buffers->dis_xyb, buffers->mul, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, buffers->mul, buffers->s22, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_launch_mul3(s, buffers->ref_xyb, buffers->dis_xyb, buffers->mul, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, buffers->mul, buffers->s12, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, buffers->ref_xyb, buffers->mu1, (unsigned)scale);
+    if (err)
+        return err;
+    return ss2h_blur_3plane(s, buffers->dis_xyb, buffers->mu2, (unsigned)scale);
+}
+
+static int ss2h_download_moments(Ssimu2StateHip *s, const Ss2hScaleBuffers *buffers)
+{
+    void *const device_buffers[] = {buffers->mu1, buffers->mu2, buffers->s11, buffers->s22,
+                                    buffers->s12};
+    float *const host_buffers[] = {s->h_mu1, s->h_mu2, s->h_s11, s->h_s22, s->h_s12};
+    static const char *const names[] = {
+        "hipMemcpyAsync(mu1 download)", "hipMemcpyAsync(mu2 download)",
+        "hipMemcpyAsync(s11 download)", "hipMemcpyAsync(s22 download)",
+        "hipMemcpyAsync(s12 download)",
+    };
+    for (size_t channel = 0; channel < 3u; channel++) {
+        const size_t offset = channel * buffers->plane_bytes;
+        for (size_t field = 0; field < sizeof(device_buffers) / sizeof(device_buffers[0]);
+             field++) {
+            const int err =
+                ss2h_hip_status(hipMemcpyAsync((uint8_t *)host_buffers[field] + offset,
+                                               (uint8_t *)device_buffers[field] + offset,
+                                               buffers->valid_bytes, hipMemcpyDeviceToHost, s->str),
+                                names[field]);
+            if (err)
+                return err;
+        }
+    }
+    return 0;
+}
+
 static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
 {
-    const size_t plane_full_bytes = (size_t)s->width * (size_t)s->height * sizeof(float);
-    const size_t scale_pixels = (size_t)s->scale_w[scale] * (size_t)s->scale_h[scale];
-    const size_t scale_bytes_per_plane = scale_pixels * sizeof(float);
-    void *ref_xyb = s->d_ref_xyb;
-    void *dis_xyb = s->d_dis_xyb;
-    void *mul_buf = s->d_mul_buf;
-    void *mu1 = s->d_mu1;
-    void *mu2 = s->d_mu2;
-    void *ds11 = s->d_s11;
-    void *ds22 = s->d_s22;
-    void *ds12 = s->d_s12;
+    const Ss2hScaleBuffers buffers = ss2h_scale_buffers(s, scale);
+    int err = ss2h_upload_xyb(s, &buffers);
+    if (!err)
+        err = ss2h_compute_scale_moments(s, &buffers, scale);
+    if (!err)
+        err = ss2h_download_moments(s, &buffers);
+    if (err)
+        return err;
+    return ss2h_hip_status(hipStreamSynchronize(s->str), "hipStreamSynchronize(scale)");
+}
 
-    /* Upload XYB buffers per plane (valid sub-region only). */
-    for (int c = 0; c < 3; c++) {
-        const size_t plane_off_bytes = (size_t)c * plane_full_bytes;
-        hipError_t hip_rc;
-        hip_rc = hipMemcpyAsync((uint8_t *)ref_xyb + plane_off_bytes,
-                                (const uint8_t *)s->h_ref_xyb + plane_off_bytes,
-                                scale_bytes_per_plane, hipMemcpyHostToDevice, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
-        hip_rc = hipMemcpyAsync((uint8_t *)dis_xyb + plane_off_bytes,
-                                (const uint8_t *)s->h_dis_xyb + plane_off_bytes,
-                                scale_bytes_per_plane, hipMemcpyHostToDevice, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
+static void ss2h_downsample_host_pair(Ssimu2StateHip *s, unsigned width, unsigned height,
+                                      size_t plane_stride, unsigned *next_width,
+                                      unsigned *next_height)
+{
+    *next_width = (width + 1) / 2;
+    *next_height = (height + 1) / 2;
+    const size_t copy_bytes = (size_t)*next_width * (size_t)*next_height * sizeof(float);
+    ss2h_downsample_2x2(s->h_ref_lin, width, height, s->h_ref_lin_ds, *next_width, *next_height,
+                        plane_stride);
+    for (int channel = 0; channel < 3; channel++) {
+        memcpy(s->h_ref_lin + (size_t)channel * plane_stride,
+               s->h_ref_lin_ds + (size_t)channel * plane_stride, copy_bytes);
     }
+    ss2h_downsample_2x2(s->h_dis_lin, width, height, s->h_dis_lin_ds, *next_width, *next_height,
+                        plane_stride);
+    for (int channel = 0; channel < 3; channel++) {
+        memcpy(s->h_dis_lin + (size_t)channel * plane_stride,
+               s->h_dis_lin_ds + (size_t)channel * plane_stride, copy_bytes);
+    }
+}
 
+static int ss2h_process_scales(Ssimu2StateHip *s, double avg_ssim[6][6], double avg_ed[6][12],
+                               int *completed)
+{
+    unsigned width = s->width;
+    unsigned height = s->height;
+    const size_t plane_stride = (size_t)s->width * (size_t)s->height;
+    for (int scale = 0; scale < SS2H_NUM_SCALES && width >= 8u && height >= 8u; scale++) {
+        ss2h_host_linear_rgb_to_xyb(s->h_ref_lin, s->h_ref_xyb, width, height, plane_stride);
+        ss2h_host_linear_rgb_to_xyb(s->h_dis_lin, s->h_dis_xyb, width, height, plane_stride);
+        const int err = ss2h_run_scale_gpu(s, scale);
+        if (err)
+            return err;
+        ss2h_host_combine(s, scale, avg_ssim[scale], avg_ed[scale]);
+        (*completed)++;
+        if (scale + 1 < SS2H_NUM_SCALES) {
+            unsigned next_width = 0;
+            unsigned next_height = 0;
+            ss2h_downsample_host_pair(s, width, height, plane_stride, &next_width, &next_height);
+            width = next_width;
+            height = next_height;
+        }
+    }
+    return 0;
+}
+
+static int ss2h_resolve_functions(Ssimu2StateHip *s)
+{
+    int err =
+        ss2h_hip_status(hipModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h"),
+                        "hipModuleGetFunction(ssimulacra2_blur_h)");
+    if (!err) {
+        err = ss2h_hip_status(
+            hipModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"),
+            "hipModuleGetFunction(ssimulacra2_blur_v)");
+    }
+    if (!err) {
+        err =
+            ss2h_hip_status(hipModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3"),
+                            "hipModuleGetFunction(ssimulacra2_mul3)");
+    }
+    return err;
+}
+
+static int ss2h_load_runtime(Ssimu2StateHip *s)
+{
+    int err = ss2h_hip_status(hipStreamCreateWithFlags(&s->str, hipStreamNonBlocking),
+                              "hipStreamCreateWithFlags");
+    if (!err) {
+        err = ss2h_hip_status(hipModuleLoadData(&s->module_blur, ssimulacra2_blur_hsaco),
+                              "hipModuleLoadData(blur)");
+    }
+    if (!err) {
+        err = ss2h_hip_status(hipModuleLoadData(&s->module_mul, ssimulacra2_mul_hsaco),
+                              "hipModuleLoadData(mul)");
+    }
+    if (!err)
+        err = ss2h_resolve_functions(s);
+    return err;
+}
+
+static int ss2h_release_runtime(Ssimu2StateHip *s)
+{
     int err = 0;
-
-    err = ss2h_launch_mul3(s, ref_xyb, ref_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, mul_buf, ds11, scale);
-    if (err)
-        return err;
-
-    err = ss2h_launch_mul3(s, dis_xyb, dis_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, mul_buf, ds22, scale);
-    if (err)
-        return err;
-
-    err = ss2h_launch_mul3(s, ref_xyb, dis_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, mul_buf, ds12, scale);
-    if (err)
-        return err;
-
-    err = ss2h_blur_3plane(s, ref_xyb, mu1, scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, dis_xyb, mu2, scale);
-    if (err)
-        return err;
-
-    /* Download blurred buffers (valid sub-region only). */
-    for (int c = 0; c < 3; c++) {
-        const size_t plane_off_bytes = (size_t)c * plane_full_bytes;
-        hipError_t hip_rc;
-        hip_rc =
-            hipMemcpyAsync((uint8_t *)s->h_mu1 + plane_off_bytes, (uint8_t *)mu1 + plane_off_bytes,
-                           scale_bytes_per_plane, hipMemcpyDeviceToHost, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
-        hip_rc =
-            hipMemcpyAsync((uint8_t *)s->h_mu2 + plane_off_bytes, (uint8_t *)mu2 + plane_off_bytes,
-                           scale_bytes_per_plane, hipMemcpyDeviceToHost, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
-        hip_rc =
-            hipMemcpyAsync((uint8_t *)s->h_s11 + plane_off_bytes, (uint8_t *)ds11 + plane_off_bytes,
-                           scale_bytes_per_plane, hipMemcpyDeviceToHost, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
-        hip_rc =
-            hipMemcpyAsync((uint8_t *)s->h_s22 + plane_off_bytes, (uint8_t *)ds22 + plane_off_bytes,
-                           scale_bytes_per_plane, hipMemcpyDeviceToHost, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
-        hip_rc =
-            hipMemcpyAsync((uint8_t *)s->h_s12 + plane_off_bytes, (uint8_t *)ds12 + plane_off_bytes,
-                           scale_bytes_per_plane, hipMemcpyDeviceToHost, s->str);
-        if (hip_rc != hipSuccess)
-            return ss2h_hip_rc(hip_rc);
+    if (s->str) {
+        ss2h_keep_first_error(
+            &err, ss2h_hip_status(hipStreamSynchronize(s->str), "hipStreamSynchronize(close)"));
     }
-    hipError_t hip_rc = hipStreamSynchronize(s->str);
-    return ss2h_hip_rc(hip_rc);
+    if (s->module_blur) {
+        ss2h_keep_first_error(
+            &err, ss2h_hip_status(hipModuleUnload(s->module_blur), "hipModuleUnload(blur)"));
+        s->module_blur = NULL;
+    }
+    if (s->module_mul) {
+        ss2h_keep_first_error(
+            &err, ss2h_hip_status(hipModuleUnload(s->module_mul), "hipModuleUnload(mul)"));
+        s->module_mul = NULL;
+    }
+    if (s->str) {
+        ss2h_keep_first_error(&err, ss2h_hip_status(hipStreamDestroy(s->str), "hipStreamDestroy"));
+        s->str = NULL;
+    }
+    return err;
 }
 
 #endif /* HAVE_HIPCC */
@@ -917,6 +1076,41 @@ static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
 /* ------------------------------------------------------------------ */
 /* init / extract / close                                             */
 /* ------------------------------------------------------------------ */
+
+static int close_fex_hip(VmafFeatureExtractor *fex)
+{
+    Ssimu2StateHip *s = fex->priv;
+    if (!s)
+        return 0;
+#ifdef HAVE_HIPCC
+    int err = ss2h_release_runtime(s);
+    ss2h_keep_first_error(&err, ss2h_free_device_buffers(s));
+    ss2h_keep_first_error(&err, ss2h_free_pinned_buffers(s));
+    return err;
+#else
+    return 0;
+#endif
+}
+
+static int ss2h_configure_geometry(Ssimu2StateHip *s, unsigned bpc, unsigned w, unsigned h)
+{
+    if (w < 8u || h < 8u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_hip: input %ux%u below 8x8 lower bound\n", w,
+                 h);
+        return -EINVAL;
+    }
+    s->width = w;
+    s->height = h;
+    s->bpc = bpc;
+    ss2h_setup_gaussian(s, SS2H_SIGMA);
+    s->scale_w[0] = w;
+    s->scale_h[0] = h;
+    for (int i = 1; i < SS2H_NUM_SCALES; i++) {
+        s->scale_w[i] = (s->scale_w[i - 1] + 1) / 2;
+        s->scale_h[i] = (s->scale_h[i - 1] + 1) / 2;
+    }
+    return 0;
+}
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
@@ -930,79 +1124,25 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return -ENOSYS;
 #else
     Ssimu2StateHip *s = fex->priv;
-
-    if (w < 8u || h < 8u) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_hip: input %ux%u below 8x8 lower bound\n", w,
-                 h);
-        return -EINVAL;
+    int err = ss2h_configure_geometry(s, bpc, w, h);
+    if (!err)
+        err = ss2h_load_runtime(s);
+    if (!err)
+        err = ss2h_alloc_device(s);
+    if (!err)
+        err = ss2h_alloc_pinned(s);
+    if (err) {
+        const int cleanup_err = close_fex_hip(fex);
+        if (cleanup_err) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "ssimulacra2_hip: cleanup after init failure also failed with error %d\n",
+                     cleanup_err);
+        }
     }
-
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    ss2h_setup_gaussian(s, SS2H_SIGMA);
-
-    s->scale_w[0] = w;
-    s->scale_h[0] = h;
-    for (int i = 1; i < SS2H_NUM_SCALES; i++) {
-        s->scale_w[i] = (s->scale_w[i - 1] + 1) / 2;
-        s->scale_h[i] = (s->scale_h[i - 1] + 1) / 2;
-    }
-
-    hipError_t hip_rc;
-    hip_rc = hipStreamCreateWithFlags(&s->str, hipStreamNonBlocking);
-    if (hip_rc != hipSuccess)
-        return ss2h_hip_rc(hip_rc);
-
-    hip_rc = hipModuleLoadData(&s->module_blur, ssimulacra2_blur_hsaco);
-    if (hip_rc != hipSuccess)
-        goto fail_stream;
-    hip_rc = hipModuleLoadData(&s->module_mul, ssimulacra2_mul_hsaco);
-    if (hip_rc != hipSuccess)
-        goto fail_mod_blur;
-    hip_rc = hipModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h");
-    if (hip_rc != hipSuccess)
-        goto fail_mod_mul;
-    hip_rc = hipModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v");
-    if (hip_rc != hipSuccess)
-        goto fail_mod_mul;
-    hip_rc = hipModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3");
-    if (hip_rc != hipSuccess)
-        goto fail_mod_mul;
-
-    int ret = ss2h_alloc_device(s);
-    if (ret)
-        goto fail_mod_mul;
-    ret = ss2h_alloc_pinned(s);
-    if (ret)
-        goto fail_mod_mul;
-    return 0;
-
-fail_mod_mul:
-    /* Free any device + pinned allocations that succeeded before the
-     * fault. ss2h_alloc_device / ss2h_alloc_pinned each free their own
-     * partial state internally, but if init failed after one of them
-     * returned 0 (i.e. an allocation succeeded fully and then the OTHER
-     * helper or a later step failed), this label is the only cleanup. */
-    ss2h_free_pinned_buffers(s);
-    ss2h_free_device_buffers(s);
-    (void)hipModuleUnload(s->module_mul);
-    s->module_mul = NULL;
-fail_mod_blur:
-    (void)hipModuleUnload(s->module_blur);
-    s->module_blur = NULL;
-fail_stream:
-    (void)hipStreamDestroy(s->str);
-    s->str = NULL;
-    return ss2h_hip_rc(hip_rc);
+    return err;
 #endif
 }
 
-/* Per-scale orchestration mirrors the CUDA extract loop.
- * Splitting would obscure the dispatch ordering required for parity
- * audit (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
- * sweep closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
 static int extract_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                            VmafFeatureCollector *feature_collector)
@@ -1018,84 +1158,17 @@ static int extract_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return -ENOSYS;
 #else
     Ssimu2StateHip *s = fex->priv;
-
-    /* D2H copy raw YUV planes into pinned host scratch, then build
-     * synthetic host-side VmafPictures for ss2h_picture_to_linear_rgb.
-     * Pictures on HIP arrive as CPU VmafPictures (HIP flag not set),
-     * so data[] is a host pointer — no D2H needed. Clone the pointers. */
-    VmafPicture host_ref = *ref_pic;
-    VmafPicture host_dis = *dist_pic;
-
-    /* Stage 1: host YUV → linear RGB. */
-    ss2h_picture_to_linear_rgb(s, &host_ref, s->h_ref_lin);
-    ss2h_picture_to_linear_rgb(s, &host_dis, s->h_dis_lin);
-
-    /* Stage 2: per-scale loop. */
+    ss2h_picture_to_linear_rgb(s, ref_pic, s->h_ref_lin);
+    ss2h_picture_to_linear_rgb(s, dist_pic, s->h_dis_lin);
     double avg_ssim[6][6] = {{0}};
     double avg_ed[6][12] = {{0}};
     int completed = 0;
-    unsigned cw = s->width;
-    unsigned ch = s->height;
-    const size_t plane_full = (size_t)s->width * (size_t)s->height;
-
-    for (int scale = 0; scale < SS2H_NUM_SCALES; scale++) {
-        if (cw < 8u || ch < 8u)
-            break;
-
-        ss2h_host_linear_rgb_to_xyb(s->h_ref_lin, s->h_ref_xyb, cw, ch, plane_full);
-        ss2h_host_linear_rgb_to_xyb(s->h_dis_lin, s->h_dis_xyb, cw, ch, plane_full);
-
-        int err = ss2h_run_scale_gpu(s, scale);
-        if (err)
-            return err;
-
-        ss2h_host_combine(s, scale, avg_ssim[scale], avg_ed[scale]);
-        completed++;
-
-        if (scale + 1 < SS2H_NUM_SCALES) {
-            const unsigned nw = (cw + 1) / 2;
-            const unsigned nh = (ch + 1) / 2;
-            ss2h_downsample_2x2(s->h_ref_lin, cw, ch, s->h_ref_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
-                memcpy(s->h_ref_lin + (size_t)c * plane_full,
-                       s->h_ref_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            ss2h_downsample_2x2(s->h_dis_lin, cw, ch, s->h_dis_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
-                memcpy(s->h_dis_lin + (size_t)c * plane_full,
-                       s->h_dis_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            cw = nw;
-            ch = nh;
-        }
-    }
-
+    const int err = ss2h_process_scales(s, avg_ssim, avg_ed, &completed);
+    if (err)
+        return err;
     const double score = ss2h_pool_score(avg_ssim, avg_ed, completed);
     return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
 #endif
-}
-
-static int close_fex_hip(VmafFeatureExtractor *fex)
-{
-    Ssimu2StateHip *s = fex->priv;
-    if (!s)
-        return 0;
-#ifdef HAVE_HIPCC
-    if (s->str)
-        (void)hipStreamSynchronize(s->str);
-    if (s->module_blur)
-        (void)hipModuleUnload(s->module_blur);
-    if (s->module_mul)
-        (void)hipModuleUnload(s->module_mul);
-    if (s->str)
-        (void)hipStreamDestroy(s->str);
-
-    /* Shared with init's fail_mod_mul path so close and init unwind use
-     * the same null-guarded free sequence. */
-    ss2h_free_device_buffers(s);
-    ss2h_free_pinned_buffers(s);
-#endif
-    return 0;
 }
 
 static const char *provided_features[] = {"ssimulacra2", NULL};

@@ -137,82 +137,58 @@ typedef struct SpeedTemporalHipState {
     SpeedInternalSingularTally singular_tally;
 } SpeedTemporalHipState;
 
+#define SPEED_TEMPORAL_DOUBLE_OPTION(name_, alias_, help_, member_, default_, min_, max_)          \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .alias = alias_,                                                                           \
+        .offset = offsetof(SpeedTemporalHipState, member_),                                        \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = default_,                                                                 \
+        .min = min_,                                                                               \
+        .max = max_,                                                                               \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+#define SPEED_TEMPORAL_STRING_OPTION(name_, alias_, help_, member_, default_)                      \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .alias = alias_,                                                                           \
+        .offset = offsetof(SpeedTemporalHipState, member_),                                        \
+        .type = VMAF_OPT_TYPE_STRING,                                                              \
+        .default_val.s = default_,                                                                 \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+#define SPEED_TEMPORAL_BOOL_OPTION(name_, alias_, help_, member_)                                  \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .alias = alias_,                                                                           \
+        .offset = offsetof(SpeedTemporalHipState, member_),                                        \
+        .type = VMAF_OPT_TYPE_BOOL,                                                                \
+        .default_val.b = false,                                                                    \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+
 static const VmafOption options_temporal[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the Gaussian kernel",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_KERNELSCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_PRESCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = ST_DEFAULT_PRESCALE_METHOD,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_SIGMA_NN,
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor fraction",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_NN_FLOOR,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "clip output to this maximum",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = ST_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_use_ref_diff",
-        .help = "use reference frame difference instead of distorted",
-        .offset = offsetof(SpeedTemporalHipState, speed_temporal_use_ref_diff),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "urd",
-    },
-    {0},
-};
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_kernelscale", "ks",
+                                 "scaling factor for the Gaussian kernel",
+                                 speed_temporal_kernelscale, ST_DEFAULT_KERNELSCALE, 0.1, 4.0),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_prescale", "ps", "scaling factor for the frame",
+                                 speed_temporal_prescale, ST_DEFAULT_PRESCALE, 0.1, 4.0),
+    SPEED_TEMPORAL_STRING_OPTION("speed_prescale_method", "psm",
+                                 "scaling method [nearest, bilinear, bicubic, lanczos4]",
+                                 speed_temporal_prescale_method, ST_DEFAULT_PRESCALE_METHOD),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_sigma_nn", "snn", "standard deviation of neural noise",
+                                 speed_temporal_sigma_nn, ST_DEFAULT_SIGMA_NN, 0.1, 2.0),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_nn_floor", "nnf", "neural noise floor fraction",
+                                 speed_temporal_nn_floor, ST_DEFAULT_NN_FLOOR, 0.0, 1.0),
+    SPEED_TEMPORAL_DOUBLE_OPTION("speed_max_val", "mxv", "clip output to this maximum",
+                                 speed_temporal_max_val, ST_DEFAULT_MAX_VAL, 0.0, 1000.0),
+    SPEED_TEMPORAL_BOOL_OPTION("speed_use_ref_diff", "urd",
+                               "use reference frame difference instead of distorted",
+                               speed_temporal_use_ref_diff),
+    {0}};
 
 /* ------------------------------------------------------------------ */
 /* HIP helpers                                                         */
@@ -247,76 +223,82 @@ static int hip_rc_st(hipError_t rc)
     }
 }
 
-static void free_hip_buffers_st(SpeedTemporalHipState *s)
+static void record_st_hip_error(int *first_err, hipError_t rc, const char *operation)
 {
-#define FD(p)                                                                                      \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            (void)hipFree((p));                                                                    \
-            (p) = NULL;                                                                            \
-        }                                                                                          \
-    } while (0)
-#define FH(p)                                                                                      \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            (void)hipHostFree((p));                                                                \
-            (p) = NULL;                                                                            \
-        }                                                                                          \
-    } while (0)
-    FD(s->d_plane);
-    FD(s->d_means);
-    FD(s->d_cov_mat);
-    FD(s->d_indterm_ref);
-    FD(s->d_indterm_dis);
-    FD(s->d_sol_ref);
-    FD(s->d_sol_dis);
-    FD(s->d_R);
-    FD(s->d_eigenvalues);
-    FD(s->d_eigenvalues_ref);
-    FD(s->d_ref_ent);
-    FD(s->d_ref_var);
-    FD(s->d_dis_ent);
-    FD(s->d_dis_var);
-    FH(s->h_cov_mat);
-    FH(s->h_ref_ent);
-    FH(s->h_ref_var);
-    FH(s->h_dis_ent);
-    FH(s->h_dis_var);
+    if (rc == hipSuccess)
+        return;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_temporal_hip %s failed with HIP error %d\n", operation,
+             (int)rc);
+    if (!*first_err)
+        *first_err = hip_rc_st(rc);
+}
+
+static void release_st_device_pointer(void **ptr, int *first_err, const char *name)
+{
+    if (!*ptr)
+        return;
+    record_st_hip_error(first_err, hipFree(*ptr), name);
+    *ptr = NULL;
+}
+
+static void release_st_host_pointer(float **ptr, int *first_err, const char *name)
+{
+    if (!*ptr)
+        return;
+    record_st_hip_error(first_err, hipHostFree(*ptr), name);
+    *ptr = NULL;
+}
+
+static int free_hip_buffers_st(SpeedTemporalHipState *s, bool synchronize)
+{
+    int first_err = 0;
+    if (synchronize && s->stream)
+        record_st_hip_error(&first_err, hipStreamSynchronize(s->stream), "stream synchronize");
+    release_st_device_pointer(&s->d_plane, &first_err, "plane free");
+    release_st_device_pointer(&s->d_means, &first_err, "means free");
+    release_st_device_pointer(&s->d_cov_mat, &first_err, "covariance free");
+    release_st_device_pointer(&s->d_indterm_ref, &first_err, "reference indterm free");
+    release_st_device_pointer(&s->d_indterm_dis, &first_err, "distorted indterm free");
+    release_st_device_pointer(&s->d_sol_ref, &first_err, "reference solution free");
+    release_st_device_pointer(&s->d_sol_dis, &first_err, "distorted solution free");
+    release_st_device_pointer(&s->d_R, &first_err, "R matrix free");
+    release_st_device_pointer(&s->d_eigenvalues, &first_err, "eigenvalues free");
+    release_st_device_pointer(&s->d_eigenvalues_ref, &first_err, "reference eigenvalues free");
+    release_st_device_pointer(&s->d_ref_ent, &first_err, "reference entropy free");
+    release_st_device_pointer(&s->d_ref_var, &first_err, "reference variance free");
+    release_st_device_pointer(&s->d_dis_ent, &first_err, "distorted entropy free");
+    release_st_device_pointer(&s->d_dis_var, &first_err, "distorted variance free");
+    release_st_host_pointer(&s->h_cov_mat, &first_err, "host covariance free");
+    release_st_host_pointer(&s->h_ref_ent, &first_err, "host reference entropy free");
+    release_st_host_pointer(&s->h_ref_var, &first_err, "host reference variance free");
+    release_st_host_pointer(&s->h_dis_ent, &first_err, "host distorted entropy free");
+    release_st_host_pointer(&s->h_dis_var, &first_err, "host distorted variance free");
     if (s->module) {
-        (void)hipModuleUnload(s->module);
+        record_st_hip_error(&first_err, hipModuleUnload(s->module), "module unload");
         s->module = NULL;
     }
     if (s->stream) {
-        (void)hipStreamDestroy(s->stream);
+        record_st_hip_error(&first_err, hipStreamDestroy(s->stream), "stream destroy");
         s->stream = NULL;
     }
-#undef FD
-#undef FH
+    return first_err;
 }
 
 static int st_hip_module_load(SpeedTemporalHipState *s)
 {
-    hipError_t rc = hipModuleLoadData(&s->module, speed_score_hsaco);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-
-#define GET_FN(field, name)                                                                        \
-    do {                                                                                           \
-        rc = hipModuleGetFunction(&(s->field), s->module, (name));                                 \
-        if (rc != hipSuccess) {                                                                    \
-            (void)hipModuleUnload(s->module);                                                      \
-            s->module = NULL;                                                                      \
-            return hip_rc_st(rc);                                                                  \
-        }                                                                                          \
-    } while (0)
-
-    GET_FN(func_means, "speed_means_hip_kernel");
-    GET_FN(func_cov, "speed_cov_hip_kernel");
-    GET_FN(func_indterm, "speed_indterm_hip_kernel");
-    GET_FN(func_solve, "speed_solve_hip_kernel");
-    GET_FN(func_score, "speed_score_hip_kernel");
-#undef GET_FN
-    return 0;
+    int err = hip_rc_st(hipModuleLoadData(&s->module, speed_score_hsaco));
+    if (!err)
+        err = hip_rc_st(hipModuleGetFunction(&s->func_means, s->module, "speed_means_hip_kernel"));
+    if (!err)
+        err = hip_rc_st(hipModuleGetFunction(&s->func_cov, s->module, "speed_cov_hip_kernel"));
+    if (!err)
+        err = hip_rc_st(
+            hipModuleGetFunction(&s->func_indterm, s->module, "speed_indterm_hip_kernel"));
+    if (!err)
+        err = hip_rc_st(hipModuleGetFunction(&s->func_solve, s->module, "speed_solve_hip_kernel"));
+    if (!err)
+        err = hip_rc_st(hipModuleGetFunction(&s->func_score, s->module, "speed_score_hip_kernel"));
+    return err;
 }
 
 static int st_hip_bufs_alloc(SpeedTemporalHipState *s)
@@ -328,39 +310,44 @@ static int st_hip_bufs_alloc(SpeedTemporalHipState *s)
     const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
     const size_t score_bytes = nb * sizeof(float);
 
-#define AD(f, sz)                                                                                  \
-    do {                                                                                           \
-        if (hipMalloc(&(s->f), (sz)) != hipSuccess)                                                \
-            return -ENOMEM;                                                                        \
-    } while (0)
-#define AH(f, sz)                                                                                  \
-    do {                                                                                           \
-        if (hipHostMalloc((void **)&(s->f), (sz), 0) != hipSuccess)                                \
-            return -ENOMEM;                                                                        \
-    } while (0)
-
-    AD(d_plane, plane_bytes);
-    AD(d_means, indterm_bytes);
-    AD(d_cov_mat, cov_bytes);
-    AD(d_indterm_ref, indterm_bytes);
-    AD(d_indterm_dis, indterm_bytes);
-    AD(d_sol_ref, indterm_bytes);
-    AD(d_sol_dis, indterm_bytes);
-    AD(d_R, cov_bytes);
-    AD(d_eigenvalues, ST_ELEMENTS * sizeof(float));
-    AD(d_eigenvalues_ref, ST_ELEMENTS * sizeof(float));
-    AD(d_ref_ent, score_bytes);
-    AD(d_ref_var, score_bytes);
-    AD(d_dis_ent, score_bytes);
-    AD(d_dis_var, score_bytes);
-    AH(h_cov_mat, cov_bytes);
-    AH(h_ref_ent, score_bytes);
-    AH(h_ref_var, score_bytes);
-    AH(h_dis_ent, score_bytes);
-    AH(h_dis_var, score_bytes);
-#undef AD
-#undef AH
-    return 0;
+    int err = hip_rc_st(hipMalloc(&s->d_plane, plane_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_means, indterm_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_cov_mat, cov_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_indterm_ref, indterm_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_indterm_dis, indterm_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_sol_ref, indterm_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_sol_dis, indterm_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_R, cov_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_eigenvalues, ST_ELEMENTS * sizeof(float)));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_eigenvalues_ref, ST_ELEMENTS * sizeof(float)));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_ref_ent, score_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_ref_var, score_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_dis_ent, score_bytes));
+    if (!err)
+        err = hip_rc_st(hipMalloc(&s->d_dis_var, score_bytes));
+    if (!err)
+        err = hip_rc_st(hipHostMalloc((void **)&s->h_cov_mat, cov_bytes, 0));
+    if (!err)
+        err = hip_rc_st(hipHostMalloc((void **)&s->h_ref_ent, score_bytes, 0));
+    if (!err)
+        err = hip_rc_st(hipHostMalloc((void **)&s->h_ref_var, score_bytes, 0));
+    if (!err)
+        err = hip_rc_st(hipHostMalloc((void **)&s->h_dis_ent, score_bytes, 0));
+    if (!err)
+        err = hip_rc_st(hipHostMalloc((void **)&s->h_dis_var, score_bytes, 0));
+    return err;
 }
 
 static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, void *d_indterm,
@@ -382,8 +369,9 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
 
     {
         const uint32_t grid_x = (num_blocks + ST_MEANS_BLOCK - 1u) / ST_MEANS_BLOCK;
-        void *args[] = {&s->d_plane,   &s->d_means, &op_w,        &stride_px,
-                        &num_blocks_h, &num_blocks, &submatrix_w, &submatrix_h};
+        void *args[] = {(void *)&s->d_plane,  (void *)&s->d_means,   (void *)&op_w,
+                        (void *)&stride_px,   (void *)&num_blocks_h, (void *)&num_blocks,
+                        (void *)&submatrix_w, (void *)&submatrix_h};
         rc = hipModuleLaunchKernel(s->func_means, grid_x, 1u, 1u, ST_MEANS_BLOCK, 1u, 1u, 0u,
                                    s->stream, args, NULL);
         if (rc != hipSuccess)
@@ -391,8 +379,9 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
     }
     {
         const size_t smem = ST_COV_BLOCK * sizeof(double);
-        void *args[] = {&s->d_plane,   &s->d_means, &s->d_cov_mat, &stride_px,
-                        &num_blocks_h, &num_blocks, &submatrix_w,  &submatrix_h};
+        void *args[] = {(void *)&s->d_plane,  (void *)&s->d_means,   (void *)&s->d_cov_mat,
+                        (void *)&stride_px,   (void *)&num_blocks_h, (void *)&num_blocks,
+                        (void *)&submatrix_w, (void *)&submatrix_h};
         rc = hipModuleLaunchKernel(s->func_cov, ST_ELEMENTS, ST_ELEMENTS, 1u, ST_COV_BLOCK, 1u, 1u,
                                    (uint32_t)smem, s->stream, args, NULL);
         if (rc != hipSuccess)
@@ -401,7 +390,8 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
     {
         const uint32_t total = ST_ELEMENTS * num_blocks;
         const uint32_t grid_x = (total + ST_INDTERM_BLOCK - 1u) / ST_INDTERM_BLOCK;
-        void *args[] = {&s->d_plane, &d_indterm, &stride_px, &num_blocks_h, &num_blocks};
+        void *args[] = {(void *)&s->d_plane, (void *)&d_indterm, (void *)&stride_px,
+                        (void *)&num_blocks_h, (void *)&num_blocks};
         rc = hipModuleLaunchKernel(s->func_indterm, grid_x, 1u, 1u, ST_INDTERM_BLOCK, 1u, 1u, 0u,
                                    s->stream, args, NULL);
         if (rc != hipSuccess)
@@ -448,7 +438,10 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
         if (rc != hipSuccess)
             return hip_rc_st(rc);
     } else {
-        (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
+        const int qr_err =
+            speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
+        if (qr_err)
+            return qr_err;
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
 
         rc = hipMemcpyAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float),
@@ -462,7 +455,7 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
         /* K4: backward substitution — one wavefront per column.
          * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
         const uint32_t u_nb = (uint32_t)nb;
-        void *args[] = {&s->d_R, &d_sol, &u_nb};
+        void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
         rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u,
                                    s->stream, args, NULL);
         if (rc != hipSuccess)
@@ -483,48 +476,45 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
     return hip_rc_st(rc);
 }
 
-static int run_score_st(SpeedTemporalHipState *s, float *score_out)
+static int launch_score_st(SpeedTemporalHipState *s, uint32_t num_blocks)
 {
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const float sigma_nn = (float)s->opt.speed_sigma_nn;
-    hipError_t rc = hipSuccess;
+    const uint32_t grid = (num_blocks + ST_SCORE_BLOCK - 1u) / ST_SCORE_BLOCK;
+    void *args[] = {
+        (void *)&s->d_eigenvalues_ref, (void *)&s->d_eigenvalues, (void *)&s->d_sol_ref,
+        (void *)&s->d_sol_dis,         (void *)&s->d_indterm_ref, (void *)&s->d_indterm_dis,
+        (void *)&s->d_ref_ent,         (void *)&s->d_ref_var,     (void *)&s->d_dis_ent,
+        (void *)&s->d_dis_var,         (void *)&num_blocks,       (void *)&sigma_nn,
+    };
+    return hip_rc_st(hipModuleLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
+                                           s->stream, args, NULL));
+}
 
-    /* K5: entropy + score. The kernel reads d_eigenvalues_ref for the ref
-     * entropy and d_eigenvalues (the dis eigenvalues uploaded by the dis
-     * run_cpu_linalg_st pass) for the dis entropy. */
-    {
-        const uint32_t grid = (num_blocks + ST_SCORE_BLOCK - 1u) / ST_SCORE_BLOCK;
-        void *args[] = {&s->d_eigenvalues_ref, &s->d_eigenvalues, &s->d_sol_ref, &s->d_sol_dis,
-                        &s->d_indterm_ref,     &s->d_indterm_dis, &s->d_ref_ent, &s->d_ref_var,
-                        &s->d_dis_ent,         &s->d_dis_var,     &num_blocks,   &sigma_nn};
-        rc = hipModuleLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
-                                   s->stream, args, NULL);
-        if (rc != hipSuccess)
-            return hip_rc_st(rc);
-    }
-
+static int download_score_st(SpeedTemporalHipState *s, uint32_t num_blocks)
+{
     const size_t ab = (size_t)num_blocks * sizeof(float);
-    rc = hipMemcpyAsync(s->h_ref_ent, s->d_ref_ent, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(s->h_ref_var, s->d_ref_var, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(s->h_dis_ent, s->d_dis_ent, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipMemcpyAsync(s->h_dis_var, s->d_dis_var, ab, hipMemcpyDeviceToHost, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
-    rc = hipStreamSynchronize(s->stream);
-    if (rc != hipSuccess)
-        return hip_rc_st(rc);
+    int err =
+        hip_rc_st(hipMemcpyAsync(s->h_ref_ent, s->d_ref_ent, ab, hipMemcpyDeviceToHost, s->stream));
+    if (!err)
+        err = hip_rc_st(
+            hipMemcpyAsync(s->h_ref_var, s->d_ref_var, ab, hipMemcpyDeviceToHost, s->stream));
+    if (!err)
+        err = hip_rc_st(
+            hipMemcpyAsync(s->h_dis_ent, s->d_dis_ent, ab, hipMemcpyDeviceToHost, s->stream));
+    if (!err)
+        err = hip_rc_st(
+            hipMemcpyAsync(s->h_dis_var, s->d_dis_var, ab, hipMemcpyDeviceToHost, s->stream));
+    if (!err)
+        err = hip_rc_st(hipStreamSynchronize(s->stream));
+    return err;
+}
 
+static float aggregate_score_st(const SpeedTemporalHipState *s, uint32_t num_blocks)
+{
     const float base_entropy =
         (float)ST_ELEMENTS *
         (log2f((1.0f + (float)s->opt.speed_nn_floor) * (float)s->opt.speed_sigma_nn) +
          log2f(2.0f * 3.14159265358979323846f * 2.71828182845904523536f));
-
     float total = 0.0f;
     for (uint32_t i = 0; i < num_blocks; ++i) {
         const float re = s->h_ref_ent[i];
@@ -533,11 +523,20 @@ static int run_score_st(SpeedTemporalHipState *s, float *score_out)
             continue;
         const float rv = s->h_ref_var[i];
         const float dv = s->h_dis_var[i];
-        /* speed_temporal uses weight_var_mode = 0. */
         total += fabsf(re * log2f(1.0f + rv) - de * log2f(1.0f + dv));
     }
-    *score_out = total / (float)num_blocks;
-    return 0;
+    return total / (float)num_blocks;
+}
+
+static int run_score_st(SpeedTemporalHipState *s, float *score_out)
+{
+    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
+    int err = launch_score_st(s, num_blocks);
+    if (!err)
+        err = download_score_st(s, num_blocks);
+    if (!err)
+        *score_out = aggregate_score_st(s, num_blocks);
+    return err;
 }
 
 #endif /* HAVE_HIPCC */
@@ -546,105 +545,8 @@ static int run_score_st(SpeedTemporalHipState *s, float *score_out)
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                             unsigned w, unsigned h)
+static void free_temporal_cpu_buffers(SpeedTemporalHipState *s)
 {
-    (void)pix_fmt;
-    (void)bpc;
-    SpeedTemporalHipState *s = fex->priv;
-
-    s->opt = (SpeedInternalOptions){
-        .speed_kernelscale = s->speed_temporal_kernelscale,
-        .speed_prescale = s->speed_temporal_prescale,
-        .speed_prescale_method = s->speed_temporal_prescale_method,
-        .speed_sigma_nn = s->speed_temporal_sigma_nn,
-        .speed_nn_floor = s->speed_temporal_nn_floor,
-        .speed_weight_var_mode = 0,
-    };
-
-    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
-    if (err)
-        return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t nb = s->dim.num_blocks;
-    const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = ST_ELEMENTS * nb * sizeof(float);
-    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
-
-#define ALLOC_A(field, sz) s->field = (float *)aligned_malloc((sz), 32)
-    ALLOC_A(h_ref[0], plane_bytes);
-    ALLOC_A(h_ref[1], plane_bytes);
-    ALLOC_A(h_dis[0], plane_bytes);
-    ALLOC_A(h_dis[1], plane_bytes);
-    ALLOC_A(h_eigenvalues, ST_ELEMENTS * sizeof(float));
-    ALLOC_A(h_eig_scratch, (ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float));
-    ALLOC_A(h_Q, cov_bytes);
-    ALLOC_A(h_R, cov_bytes);
-    ALLOC_A(h_qr_scratch, 4u * cov_bytes);
-    ALLOC_A(h_indterm_ref, indterm_bytes);
-    ALLOC_A(h_indterm_dis, indterm_bytes);
-    ALLOC_A(h_qt_scratch, indterm_bytes);
-#undef ALLOC_A
-
-    if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
-        !s->h_Q || !s->h_R) {
-        err = -ENOMEM;
-        goto free_cpu;
-    }
-
-#ifdef HAVE_HIPCC
-    err = st_hip_module_load(s);
-    if (err)
-        goto free_cpu;
-
-    if (hipStreamCreate(&s->stream) != hipSuccess) {
-        err = -EIO;
-        goto free_module;
-    }
-
-    /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
-     * Used as blockDim.x for speed_solve_hip_kernel. */
-    {
-        int dev = 0;
-        hipDeviceProp_t prop;
-        (void)hipGetDevice(&dev);
-        s->solve_warp = (hipGetDeviceProperties(&prop, dev) == hipSuccess) ?
-                            (unsigned)prop.warpSize :
-                            ST_SOLVE_WARP_DEFAULT;
-    }
-
-    err = st_hip_bufs_alloc(s);
-    if (err)
-        goto free_hip;
-#else
-    return -ENOSYS;
-#endif /* HAVE_HIPCC */
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        goto free_hip;
-#endif
-    }
-
-    s->frame_index = 0;
-    return 0;
-
-#ifdef HAVE_HIPCC
-free_hip:
-    free_hip_buffers_st(s);
-    goto free_cpu;
-free_module:
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-free_cpu:
     aligned_free(s->h_ref[0]);
     aligned_free(s->h_ref[1]);
     aligned_free(s->h_dis[0]);
@@ -657,8 +559,163 @@ free_cpu:
     aligned_free(s->h_indterm_ref);
     aligned_free(s->h_indterm_dis);
     aligned_free(s->h_qt_scratch);
+    s->h_ref[0] = NULL;
+    s->h_ref[1] = NULL;
+    s->h_dis[0] = NULL;
+    s->h_dis[1] = NULL;
+    s->h_eigenvalues = NULL;
+    s->h_eig_scratch = NULL;
+    s->h_Q = NULL;
+    s->h_R = NULL;
+    s->h_qr_scratch = NULL;
+    s->h_indterm_ref = NULL;
+    s->h_indterm_dis = NULL;
+    s->h_qt_scratch = NULL;
+}
+
+static int init_temporal_dimensions(SpeedTemporalHipState *s, unsigned w, unsigned h)
+{
+    s->opt = (SpeedInternalOptions){
+        .speed_kernelscale = s->speed_temporal_kernelscale,
+        .speed_prescale = s->speed_temporal_prescale,
+        .speed_prescale_method = s->speed_temporal_prescale_method,
+        .speed_sigma_nn = s->speed_temporal_sigma_nn,
+        .speed_nn_floor = s->speed_temporal_nn_floor,
+        .speed_weight_var_mode = 0,
+    };
+    const int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
+    if (err)
+        return err;
+    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+    return s->float_stride ? 0 : -EOVERFLOW;
+}
+
+static int allocate_temporal_cpu_buffers(SpeedTemporalHipState *s)
+{
+    if (s->dim.alloc_height > SIZE_MAX / s->float_stride ||
+        s->dim.num_blocks > SIZE_MAX / (ST_ELEMENTS * sizeof(float)))
+        return -EOVERFLOW;
+    const size_t plane_bytes = s->dim.alloc_height * s->float_stride;
+    const size_t indterm_bytes = ST_ELEMENTS * s->dim.num_blocks * sizeof(float);
+    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
+    s->h_ref[0] = aligned_malloc(plane_bytes, 32);
+    s->h_ref[1] = aligned_malloc(plane_bytes, 32);
+    s->h_dis[0] = aligned_malloc(plane_bytes, 32);
+    s->h_dis[1] = aligned_malloc(plane_bytes, 32);
+    s->h_eigenvalues = aligned_malloc(ST_ELEMENTS * sizeof(float), 32);
+    s->h_eig_scratch =
+        aligned_malloc((ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float), 32);
+    s->h_Q = aligned_malloc(cov_bytes, 32);
+    s->h_R = aligned_malloc(cov_bytes, 32);
+    s->h_qr_scratch = aligned_malloc(4u * cov_bytes, 32);
+    s->h_indterm_ref = aligned_malloc(indterm_bytes, 32);
+    s->h_indterm_dis = aligned_malloc(indterm_bytes, 32);
+    s->h_qt_scratch = aligned_malloc(indterm_bytes, 32);
+    if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
+        !s->h_eig_scratch || !s->h_Q || !s->h_R || !s->h_qr_scratch || !s->h_indterm_ref ||
+        !s->h_indterm_dis || !s->h_qt_scratch)
+        return -ENOMEM;
+    return 0;
+}
+
+#ifdef HAVE_HIPCC
+static int init_temporal_hip_runtime(SpeedTemporalHipState *s)
+{
+    int err = st_hip_module_load(s);
+    if (!err)
+        err = hip_rc_st(hipStreamCreate(&s->stream));
+    int device = 0;
+    hipDeviceProp_t properties;
+    if (!err)
+        err = hip_rc_st(hipGetDevice(&device));
+    if (!err)
+        err = hip_rc_st(hipGetDeviceProperties(&properties, device));
+    if (!err && properties.warpSize <= 0)
+        err = -EIO;
+    if (!err)
+        s->solve_warp = (unsigned)properties.warpSize;
+    if (!err)
+        err = st_hip_bufs_alloc(s);
     return err;
 }
+#endif
+
+static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                             unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    SpeedTemporalHipState *const s = fex->priv;
+    int err = init_temporal_dimensions(s, w, h);
+#ifndef HAVE_HIPCC
+    return err ? err : -ENOSYS;
+#else
+    if (!err)
+        err = allocate_temporal_cpu_buffers(s);
+    if (!err)
+        err = init_temporal_hip_runtime(s);
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
+    }
+    if (err) {
+        const int hip_cleanup_err = free_hip_buffers_st(s, false);
+        if (hip_cleanup_err)
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_temporal_hip initialization cleanup failed: %d\n",
+                     hip_cleanup_err);
+        free_temporal_cpu_buffers(s);
+    } else {
+        s->frame_index = 0;
+    }
+    return err;
+#endif
+}
+
+#ifdef HAVE_HIPCC
+static int prepare_temporal_diffs(SpeedTemporalHipState *s, int cyclic, int other)
+{
+    const int width = (int)s->dim.original_width;
+    const int height = (int)s->dim.original_height;
+    subtract_plane(s->h_ref[other], s->h_ref[cyclic], width, height, s->float_stride);
+    const float *const comparison =
+        s->speed_temporal_use_ref_diff ? s->h_ref[cyclic] : s->h_dis[cyclic];
+    subtract_plane(s->h_dis[other], comparison, width, height, s->float_stride);
+    if (s->dim.alloc_height > SIZE_MAX / s->float_stride / 2u)
+        return -EOVERFLOW;
+    const size_t tmp_bytes = 2u * s->dim.alloc_height * s->float_stride;
+    float *const tmp_filter = aligned_malloc(tmp_bytes, 32);
+    if (!tmp_filter)
+        return -ENOMEM;
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[other], tmp_filter,
+                                        s->float_stride);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
+                                        s->float_stride);
+    aligned_free(tmp_filter);
+    return 0;
+}
+
+static int score_temporal_diffs(SpeedTemporalHipState *s, int other, float *score)
+{
+    int err = run_gpu_pipeline_st(s, s->h_ref[other], s->d_indterm_ref, s->h_indterm_ref);
+    bool singular_ref = false;
+    if (!err)
+        err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
+    if (!err)
+        err = hip_rc_st(
+            hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float)));
+    bool singular_dis = false;
+    if (!err)
+        err = run_gpu_pipeline_st(s, s->h_dis[other], s->d_indterm_dis, s->h_indterm_dis);
+    if (!err)
+        err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
+    *score = 0.0f;
+    if (!err && singular_ref == singular_dis)
+        err = run_score_st(s, score);
+    return err;
+}
+#endif
 
 static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                                 VmafPicture *ref_pic_90, VmafPicture *dist_pic,
@@ -676,90 +733,21 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)feature_collector;
     return -ENOSYS;
 #else
-    SpeedTemporalHipState *s = fex->priv;
-
+    SpeedTemporalHipState *const s = fex->priv;
     const int cyclic = (int)(index % 2u);
     const int other = (int)((index + 1u) % 2u);
-
     picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
     picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
-
-    if (index == 0) {
+    if (index == 0)
         return vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
             0.0, index);
-    }
-
-    const int orig_w = (int)s->dim.original_width;
-    const int orig_h = (int)s->dim.original_height;
-    subtract_plane(s->h_ref[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    if (s->speed_temporal_use_ref_diff)
-        subtract_plane(s->h_dis[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    else
-        subtract_plane(s->h_dis[other], s->h_dis[cyclic], orig_w, orig_h, s->float_stride);
-
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
-    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
-    if (!tmp_filter)
-        return -ENOMEM;
-
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[other], tmp_filter,
-                                        s->float_stride);
-    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
-                                        s->float_stride);
-    aligned_free(tmp_filter);
-
-    /* Reference diff: means → cov → indterm, then eigendecomp + QR. Uploads ref
-     * eigenvalues into the shared d_eigenvalues buffer. */
-    int err = run_gpu_pipeline_st(s, s->h_ref[other], s->d_indterm_ref, s->h_indterm_ref);
-    if (err)
-        return err;
-
-    bool singular_ref = false;
-    err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
-    if (err)
-        return err;
-
-    /* Stash the reference eigenvalues aside before the distorted linalg pass
-     * overwrites d_eigenvalues. The CPU reference (est_params in speed.c)
-     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
-     * needs both. run_cpu_linalg_st synchronizes the stream after its
-     * eigenvalue H2D, so this DtoD copy is correctly ordered. */
-    {
-        hipError_t drc =
-            hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float));
-        if (drc != hipSuccess)
-            return hip_rc_st(drc);
-    }
-
-    /* Distorted diff: means → cov → indterm (keeps the DIS covariance in
-     * h_cov_mat — no save/restore of the ref covariance), then eigendecomp + QR.
-     * Uploads dis eigenvalues into d_eigenvalues. */
-    err = run_gpu_pipeline_st(s, s->h_dis[other], s->d_indterm_dis, s->h_indterm_dis);
-    if (err)
-        return err;
-
-    bool singular_dis = false;
-    err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
-    if (err)
-        return err;
-
-    /* Exactly one side numerically unstable: report 0 rather than the inflated
-     * score a zeroed solution on one side produces. Verbatim the CPU rule in
-     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
-     * sides are singular the CPU still scores, from two zeroed solutions — so
-     * do we, which is why the singular branch above zeroes `d_sol` on the
-     * device. ADR-1218. */
+    int err = prepare_temporal_diffs(s, cyclic, other);
     float score = 0.0f;
-    if (singular_ref != singular_dis) {
-        score = 0.0f;
-    } else {
-        err = run_score_st(s, &score);
-        if (err)
-            return err;
-    }
-
+    if (!err)
+        err = score_temporal_diffs(s, other, &score);
+    if (err)
+        return err;
     const double mxv = s->speed_temporal_max_val;
     const double clipped = (double)score < mxv ? (double)score : mxv;
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
@@ -770,26 +758,20 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
 static int close_temporal_hip(VmafFeatureExtractor *fex)
 {
-    SpeedTemporalHipState *s = fex->priv;
+    SpeedTemporalHipState *const s = fex->priv;
     speed_internal_report_singular(&s->singular_tally, "speed_temporal_hip");
+    int err = 0;
 #ifdef HAVE_HIPCC
-    free_hip_buffers_st(s);
+    err = free_hip_buffers_st(s, true);
 #endif
-    aligned_free(s->h_ref[0]);
-    aligned_free(s->h_ref[1]);
-    aligned_free(s->h_dis[0]);
-    aligned_free(s->h_dis[1]);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
-    if (s->feature_name_dict)
-        vmaf_dictionary_free(&s->feature_name_dict);
-    return 0;
+    free_temporal_cpu_buffers(s);
+    const int dict_err = vmaf_dictionary_free(&s->feature_name_dict);
+    if (dict_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_temporal_hip dictionary free failed: %d\n", dict_err);
+        if (!err)
+            err = dict_err;
+    }
+    return err;
 }
 
 static const char *provided_features_temporal[] = {

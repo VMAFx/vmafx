@@ -112,7 +112,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {NULL}};
+    {0}};
 
 static uint32_t sse_line_8_c(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {

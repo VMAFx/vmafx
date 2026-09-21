@@ -63,7 +63,40 @@
 /* Tile dimension for the transpose kernel (must be power-of-two ≤ 32). */
 #define SS2C_TILE 32
 
-extern "C" {
+typedef struct Ssimulacra2IirState {
+    float prev1_0;
+    float prev1_1;
+    float prev1_2;
+    float prev2_0;
+    float prev2_1;
+    float prev2_2;
+} Ssimulacra2IirState;
+
+__device__ __forceinline__ float ssimulacra2_iir_step(Ssimulacra2IirState *state, float sum,
+                                                      float n2_0, float n2_1, float n2_2,
+                                                      float d1_0, float d1_1, float d1_2)
+{
+    const float ns0 = n2_0 * sum;
+    const float dp0 = d1_0 * state->prev1_0;
+    const float t0 = ns0 - dp0;
+    const float o0 = t0 - state->prev2_0;
+    const float ns1 = n2_1 * sum;
+    const float dp1 = d1_1 * state->prev1_1;
+    const float t1 = ns1 - dp1;
+    const float o1 = t1 - state->prev2_1;
+    const float ns2 = n2_2 * sum;
+    const float dp2 = d1_2 * state->prev1_2;
+    const float t2 = ns2 - dp2;
+    const float o2 = t2 - state->prev2_2;
+    state->prev2_0 = state->prev1_0;
+    state->prev2_1 = state->prev1_1;
+    state->prev2_2 = state->prev1_2;
+    state->prev1_0 = o0;
+    state->prev1_1 = o1;
+    state->prev1_2 = o2;
+    const float sum01 = o0 + o1;
+    return sum01 + o2;
+}
 
 /* ------------------------------------------------------------------ */
 /* Transpose kernel                                                   */
@@ -89,10 +122,9 @@ extern "C" {
  * per block, 1 resident block per SM (Ada Lovelace max 1536 threads/SM;
  * 4 × 1024 > 1536 so minBlocksPerSM = 1 is the safe value).
  */
-__global__ __launch_bounds__(SS2C_TILE *SS2C_TILE,
-                             1) void ssimulacra2_transpose(const float *__restrict__ in,
-                                                           float *__restrict__ out, unsigned width,
-                                                           unsigned height, unsigned plane_stride)
+extern "C" __global__ __launch_bounds__(SS2C_TILE *SS2C_TILE, 1) void ssimulacra2_transpose(
+    const float *__restrict__ in, float *__restrict__ out, unsigned width, unsigned height,
+    unsigned plane_stride)
 {
     /* +1 pad column to avoid bank conflicts on the column-wise store. */
     __shared__ float tile[SS2C_TILE][SS2C_TILE + 1];
@@ -139,12 +171,11 @@ __global__ __launch_bounds__(SS2C_TILE *SS2C_TILE,
  *  is derived from blockIdx.z × plane_stride.
  *
  *  Bit-identical control flow with CPU `fast_gaussian_1d`.
- *  `__launch_bounds__(SS2C_BLUR_BLOCK = 64, minBlocksPerSM = 32)`
- *  documents the block-size + occupancy contract — NVCC then trims the
- *  per-thread register budget to keep ≥32 resident blocks per SM,
- *  consistent with the host-side launch shape in
- *  `ss2c_launch_blur_pass`. */
-__global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
+ *  `__launch_bounds__(SS2C_BLUR_BLOCK = 64)` documents the block-size
+ *  contract. The former 32-block occupancy hint required 2048 resident
+ *  threads and was rejected by ptxas for the supported targets, so it never
+ *  constrained code generation. */
+extern "C" __global__ __launch_bounds__(64) void ssimulacra2_blur_h(
     const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
     float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
     unsigned in_offset, unsigned out_offset)
@@ -156,8 +187,7 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
     const int xsize = (int)width;
     const int N = radius;
 
-    float prev1_0 = 0.f, prev1_1 = 0.f, prev1_2 = 0.f;
-    float prev2_0 = 0.f, prev2_1 = 0.f, prev2_2 = 0.f;
+    Ssimulacra2IirState state = {0};
 
     const unsigned in_base = in_offset + row * width;
     const unsigned out_base = out_offset + row * width;
@@ -169,33 +199,9 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
         const float rv = (right < xsize) ? in_buf[in_base + (unsigned)right] : 0.f;
         const float sum = lv + rv;
 
-        /* Match CPU expression `n2*sum - d1*prev1 - prev2` ordering
-         * exactly. Explicit temporaries + --fmad=false at the
-         * fatbin level keep this as separate FMUL/FSUB ops. */
-        const float ns0 = n2_0 * sum;
-        const float dp0 = d1_0 * prev1_0;
-        const float t0 = ns0 - dp0;
-        const float o0 = t0 - prev2_0;
-        const float ns1 = n2_1 * sum;
-        const float dp1 = d1_1 * prev1_1;
-        const float t1 = ns1 - dp1;
-        const float o1 = t1 - prev2_1;
-        const float ns2 = n2_2 * sum;
-        const float dp2 = d1_2 * prev1_2;
-        const float t2 = ns2 - dp2;
-        const float o2 = t2 - prev2_2;
-        prev2_0 = prev1_0;
-        prev2_1 = prev1_1;
-        prev2_2 = prev1_2;
-        prev1_0 = o0;
-        prev1_1 = o1;
-        prev1_2 = o2;
-
-        if (n >= 0) {
-            const float s01 = o0 + o1;
-            const float s_total = s01 + o2;
-            out_buf[out_base + (unsigned)n] = s_total;
-        }
+        const float output = ssimulacra2_iir_step(&state, sum, n2_0, n2_1, n2_2, d1_0, d1_1, d1_2);
+        if (n >= 0)
+            out_buf[out_base + (unsigned)n] = output;
     }
 }
 
@@ -213,12 +219,10 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_h(
  * plane, the caller sets in_offset/out_offset = 0 and the kernel
  * computes the per-plane offset itself from blockIdx.z × plane_stride.
  */
-__global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(const float *__restrict__ in_buf,
-                                                              float *__restrict__ out_buf,
-                                                              unsigned width, unsigned height,
-                                                              float n2_0, float n2_1, float n2_2,
-                                                              float d1_0, float d1_1, float d1_2,
-                                                              int radius, unsigned plane_stride)
+extern "C" __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(
+    const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
+    float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
+    unsigned plane_stride)
 {
     const unsigned c = blockIdx.z;
     const unsigned row = blockIdx.x * blockDim.x + threadIdx.x;
@@ -228,8 +232,7 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(const float *__res
     const int xsize = (int)width;
     const int N = radius;
 
-    float prev1_0 = 0.f, prev1_1 = 0.f, prev1_2 = 0.f;
-    float prev2_0 = 0.f, prev2_1 = 0.f, prev2_2 = 0.f;
+    Ssimulacra2IirState state = {0};
 
     const unsigned in_base = c * plane_stride + row * width;
     const unsigned out_base = c * plane_stride + row * width;
@@ -241,30 +244,9 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(const float *__res
         const float rv = (right < xsize) ? in_buf[in_base + (unsigned)right] : 0.f;
         const float sum = lv + rv;
 
-        const float ns0 = n2_0 * sum;
-        const float dp0 = d1_0 * prev1_0;
-        const float t0 = ns0 - dp0;
-        const float o0 = t0 - prev2_0;
-        const float ns1 = n2_1 * sum;
-        const float dp1 = d1_1 * prev1_1;
-        const float t1 = ns1 - dp1;
-        const float o1 = t1 - prev2_1;
-        const float ns2 = n2_2 * sum;
-        const float dp2 = d1_2 * prev1_2;
-        const float t2 = ns2 - dp2;
-        const float o2 = t2 - prev2_2;
-        prev2_0 = prev1_0;
-        prev2_1 = prev1_1;
-        prev2_2 = prev1_2;
-        prev1_0 = o0;
-        prev1_1 = o1;
-        prev1_2 = o2;
-
-        if (n >= 0) {
-            const float s01 = o0 + o1;
-            const float s_total = s01 + o2;
-            out_buf[out_base + (unsigned)n] = s_total;
-        }
+        const float output = ssimulacra2_iir_step(&state, sum, n2_0, n2_1, n2_2, d1_0, d1_1, d1_2);
+        if (n >= 0)
+            out_buf[out_base + (unsigned)n] = output;
     }
 }
 
@@ -274,7 +256,7 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_h3(const float *__res
 
 /* V pass: one thread per column.  Same `__launch_bounds__` contract
  * as the H pass — see the H-pass block comment above. */
-__global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
+extern "C" __global__ __launch_bounds__(64) void ssimulacra2_blur_v(
     const float *__restrict__ in_buf, float *__restrict__ out_buf, unsigned width, unsigned height,
     float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2, int radius,
     unsigned in_offset, unsigned out_offset)
@@ -286,8 +268,7 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
     const int ysize = (int)height;
     const int N = radius;
 
-    float prev1_0 = 0.f, prev1_1 = 0.f, prev1_2 = 0.f;
-    float prev2_0 = 0.f, prev2_1 = 0.f, prev2_2 = 0.f;
+    Ssimulacra2IirState state = {0};
 
     for (int n = -N + 1; n < ysize; ++n) {
         const int left = n - N - 1;
@@ -296,30 +277,9 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
         const float rv = (right < ysize) ? in_buf[in_offset + (unsigned)right * width + col] : 0.f;
         const float sum = lv + rv;
 
-        const float ns0 = n2_0 * sum;
-        const float dp0 = d1_0 * prev1_0;
-        const float t0 = ns0 - dp0;
-        const float o0 = t0 - prev2_0;
-        const float ns1 = n2_1 * sum;
-        const float dp1 = d1_1 * prev1_1;
-        const float t1 = ns1 - dp1;
-        const float o1 = t1 - prev2_1;
-        const float ns2 = n2_2 * sum;
-        const float dp2 = d1_2 * prev1_2;
-        const float t2 = ns2 - dp2;
-        const float o2 = t2 - prev2_2;
-        prev2_0 = prev1_0;
-        prev2_1 = prev1_1;
-        prev2_2 = prev1_2;
-        prev1_0 = o0;
-        prev1_1 = o1;
-        prev1_2 = o2;
-
-        if (n >= 0) {
-            const float s01 = o0 + o1;
-            const float s_total = s01 + o2;
-            out_buf[out_offset + (unsigned)n * width + col] = s_total;
-        }
+        const float output = ssimulacra2_iir_step(&state, sum, n2_0, n2_1, n2_2, d1_0, d1_1, d1_2);
+        if (n >= 0)
+            out_buf[out_offset + (unsigned)n * width + col] = output;
     }
 }
 
@@ -353,7 +313,7 @@ __global__ __launch_bounds__(64, 32) void ssimulacra2_blur_v(
  * The transposed input delivers the same numerical values to the IIR;
  * only their memory layout has changed.
  */
-__global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
+extern "C" __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
     const float *__restrict__ in_transposed, float *__restrict__ out_buf, unsigned width,
     unsigned height, float n2_0, float n2_1, float n2_2, float d1_0, float d1_1, float d1_2,
     int radius, unsigned plane_stride)
@@ -366,8 +326,7 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
     const int ysize = (int)height;
     const int N = radius;
 
-    float prev1_0 = 0.f, prev1_1 = 0.f, prev1_2 = 0.f;
-    float prev2_0 = 0.f, prev2_1 = 0.f, prev2_2 = 0.f;
+    Ssimulacra2IirState state = {0};
 
     /* Column-major base for this column in the transposed buffer.
      * Successive rows are at +1 stride — fully coalesced loads. */
@@ -381,32 +340,8 @@ __global__ __launch_bounds__(64, 16) void ssimulacra2_blur_v3_transposed(
         const float rv = (right < ysize) ? in_transposed[col_base + (unsigned)right] : 0.f;
         const float sum = lv + rv;
 
-        const float ns0 = n2_0 * sum;
-        const float dp0 = d1_0 * prev1_0;
-        const float t0 = ns0 - dp0;
-        const float o0 = t0 - prev2_0;
-        const float ns1 = n2_1 * sum;
-        const float dp1 = d1_1 * prev1_1;
-        const float t1 = ns1 - dp1;
-        const float o1 = t1 - prev2_1;
-        const float ns2 = n2_2 * sum;
-        const float dp2 = d1_2 * prev1_2;
-        const float t2 = ns2 - dp2;
-        const float o2 = t2 - prev2_2;
-        prev2_0 = prev1_0;
-        prev2_1 = prev1_1;
-        prev2_2 = prev1_2;
-        prev1_0 = o0;
-        prev1_1 = o1;
-        prev1_2 = o2;
-
-        if (n >= 0) {
-            const float s01 = o0 + o1;
-            const float s_total = s01 + o2;
-            /* Write back to row-major: out[c * plane_stride + row * width + col] */
-            out_buf[c * plane_stride + (unsigned)n * width + col] = s_total;
-        }
+        const float output = ssimulacra2_iir_step(&state, sum, n2_0, n2_1, n2_2, d1_0, d1_1, d1_2);
+        if (n >= 0)
+            out_buf[c * plane_stride + (unsigned)n * width + col] = output;
     }
 }
-
-} /* extern "C" */

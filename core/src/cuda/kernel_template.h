@@ -73,10 +73,6 @@
 #include "cuda_helper.cuh"
 #include "picture_cuda.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * Per-frame async lifecycle the CUDA feature kernels share.
  *
@@ -188,7 +184,7 @@ static inline int vmaf_cuda_kernel_readback_alloc(VmafCudaKernelReadback *rb,
 /*
  * Per-frame submit-side helper.
  *
- *   1. Zero the device accumulator on `lc->str`.
+ *   1. Zero the device accumulator on `picture_stream`.
  *   2. Wait for the dist-side ready event on `picture_stream`
  *      (so both ref and dist uploads are complete before launch).
  *
@@ -205,8 +201,7 @@ static inline int vmaf_cuda_kernel_readback_alloc(VmafCudaKernelReadback *rb,
  * (See the migration guide for the post-launch boilerplate
  * helper if/when a second metric adopts this template.)
  */
-static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaKernelLifecycle *lc,
-                                                     VmafCudaState *cu_state,
+static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaState *cu_state,
                                                      VmafCudaKernelReadback *rb,
                                                      CUstream picture_stream,
                                                      CUevent dist_ready_event)
@@ -277,7 +272,11 @@ static inline int vmaf_cuda_kernel_collect_wait(VmafCudaKernelLifecycle *lc,
  * register without touching their collect() paths. Forward declared:
  * the implementation lives in ``drain_batch.c``.
  */
+#ifdef __cplusplus
+extern "C" int vmaf_cuda_drain_batch_register(VmafCudaKernelLifecycle *lc);
+#else
 int vmaf_cuda_drain_batch_register(VmafCudaKernelLifecycle *lc);
+#endif
 
 static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *lc,
                                                       VmafCudaState *cu_state)
@@ -294,11 +293,14 @@ static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *l
      * mean exactly "a flush completed since this submit". */
     lc->drained = false;
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(lc->finished, lc->str));
-    /* Best-effort: drain-batch registration failure (overflow, no
-     * batch open) silently degrades to per-stream sync; never
-     * propagated as an error — the extractor is still correct. */
-    (void)vmaf_cuda_drain_batch_register(lc);
-    return 0;
+    const int batch_err = vmaf_cuda_drain_batch_register(lc);
+    if (batch_err == -ENOSPC) {
+        /* A full optional batch deliberately falls back to the private
+         * stream wait in collect(); make that state explicit. */
+        lc->drained = false;
+        return 0;
+    }
+    return batch_err;
 }
 
 /*
@@ -380,9 +382,5 @@ static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
     rb->bytes = 0;
     return rc;
 }
-
-#ifdef __cplusplus
-} /* extern "C" */
-#endif
 
 #endif /* LIBVMAF_CUDA_KERNEL_TEMPLATE_H_ */

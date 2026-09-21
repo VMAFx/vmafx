@@ -57,157 +57,150 @@ static __device__ __forceinline__ void copy_vec_4(const int16_t *__restrict__ in
     }
 }
 
+__constant__ const uint8_t i_shifts[4] = {0, 15, 15, 17};
+__constant__ const uint16_t i_shiftsadd[4] = {0, 16384, 16384, 65535};
+
+struct I4AdmCsfContext {
+    const int32_t *ref_h;
+    const int32_t *ref_v;
+    const int32_t *ref_d;
+    const int32_t *dis_h;
+    const int32_t *dis_v;
+    const int32_t *dis_d;
+    uint32_t rfactor;
+    double gain_limit;
+};
+
+__device__ __forceinline__ int32_t i4_adm_csf_pixel(const I4AdmCsfContext *ctx, int index, int band)
+{
+    const int32_t oh = __ldg(&ctx->ref_h[index]);
+    const int32_t ov = __ldg(&ctx->ref_v[index]);
+    const int32_t od = __ldg(&ctx->ref_d[index]);
+    const int32_t th = __ldg(&ctx->dis_h[index]);
+    const int32_t tv = __ldg(&ctx->dis_v[index]);
+    const int32_t td = __ldg(&ctx->dis_d[index]);
+    const int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
+    const int32_t r_val =
+        decouple_r_s123(oh, ov, od, th, tv, td, band - 1, angle_flag, ctx->gain_limit);
+    const int32_t t_val = band == 1 ? th : (band == 2 ? tv : td);
+    const int32_t a_val = t_val - r_val;
+    const uint32_t shift_dst = 28;
+    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
+    const int32_t dst_val =
+        (int32_t)(((ctx->rfactor * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
+    const uint32_t fix_one_by_30 = 143165577;
+    const uint32_t shift_flt = 32;
+    const int32_t add_bef_shift_flt = static_cast<int32_t>(1u << (shift_flt - 1));
+    return (int32_t)((((int64_t)fix_one_by_30 * abs(dst_val)) + add_bef_shift_flt) >> shift_flt);
+}
+
+struct S0AdmCsfContext {
+    const int16_t *ref_h;
+    const int16_t *ref_v;
+    const int16_t *ref_d;
+    const int16_t *dis_h;
+    const int16_t *dis_v;
+    const int16_t *dis_d;
+    uint32_t rfactor;
+    double gain_limit;
+};
+
+__device__ __forceinline__ int16_t s0_adm_csf_pixel(const S0AdmCsfContext *ctx, int index, int band)
+{
+    const int16_t oh = __ldg(&ctx->ref_h[index]);
+    const int16_t ov = __ldg(&ctx->ref_v[index]);
+    const int16_t od = __ldg(&ctx->ref_d[index]);
+    const int16_t th = __ldg(&ctx->dis_h[index]);
+    const int16_t tv = __ldg(&ctx->dis_v[index]);
+    const int16_t td = __ldg(&ctx->dis_d[index]);
+    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
+    const int16_t r_val =
+        decouple_r_s0(oh, ov, od, th, tv, td, band - 1, angle_flag, ctx->gain_limit);
+    const int16_t t_val = band == 1 ? th : (band == 2 ? tv : td);
+    const int16_t a_val = t_val - r_val;
+    const int32_t dst_val = ctx->rfactor * (uint32_t)a_val;
+    const int16_t shifted = (dst_val + i_shiftsadd[band]) >> i_shifts[band];
+    const uint16_t fix_one_by_30 = 4369;
+    return ((fix_one_by_30 * abs((int32_t)shifted)) + 2048) >> 12;
+}
+
 /* Scales 1-3 CSF with inline decouple — reads ref/dis DWT2, writes only csf_f */
 template <int rows_per_thread, int cols_per_thread>
 __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, int top, int bottom,
                                                   int left, int right, int stride,
                                                   AdmFixedParametersCuda params)
 {
-
-    const int band = blockIdx.z + 1;
+    const int band = (int)blockIdx.z + 1;
     const cuda_i4_adm_dwt_band_t *ref = &buf.i4_ref_dwt2;
     const cuda_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
-    int32_t *flt_ptr = buf.i4_csf_f.bands[band];
-
-    /* F3: extract __restrict__ read-only band pointers before the hot inner
-     * loop so the compiler can route all loads through the L1 read-only cache
-     * via __ldg().  AdmBufferCuda is passed by value, hiding the sub-struct
-     * pointers from ptxas alias analysis; the one-time extraction here makes
-     * the alias-free invariant visible (ADR-0773, mirrors ADR-0763/ADR-0754). */
     const int32_t *__restrict__ ref_h = ref->band_h;
     const int32_t *__restrict__ ref_v = ref->band_v;
     const int32_t *__restrict__ ref_d = ref->band_d;
     const int32_t *__restrict__ dis_h = dis->band_h;
     const int32_t *__restrict__ dis_v = dis->band_v;
     const int32_t *__restrict__ dis_d = dis->band_d;
-
-    int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
-    int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
-
-    const uint32_t i_rfactor = params.i_rfactor[scale * 3 + blockIdx.z];
-    const uint32_t FIX_ONE_BY_30 = 143165577;
-    const uint32_t shift_dst = 28;
-    const uint32_t shift_flt = 32;
-    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
-    const int32_t add_bef_shift_flt = (1u << (shift_flt - 1));
-
-    const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
-
-    const int offset = y * stride + x;
-
+    const I4AdmCsfContext ctx = {ref_h,
+                                 ref_v,
+                                 ref_d,
+                                 dis_h,
+                                 dis_v,
+                                 dis_d,
+                                 params.i_rfactor[scale * 3 + blockIdx.z],
+                                 params.adm_enhn_gain_limit};
+    int32_t *flt_ptr = buf.i4_csf_f.bands[band];
+    const int y = top + ((int)blockIdx.y * (int)blockDim.y + (int)threadIdx.y) * rows_per_thread;
+    const int x = left + ((int)blockIdx.x * (int)blockDim.x + (int)threadIdx.x) * cols_per_thread;
     if (y < bottom && x < right) {
         __align__(16) int32_t flt_vec[cols_per_thread];
-
+        const int offset = y * stride + x;
         for (int row = 0; row < rows_per_thread; ++row) {
             const int row_off = offset + row * stride;
-
-            for (int col = 0; col < cols_per_thread; ++col) {
-                const int idx = row_off + col;
-                int32_t oh = __ldg(&ref_h[idx]);
-                int32_t ov = __ldg(&ref_v[idx]);
-                int32_t od = __ldg(&ref_d[idx]);
-                int32_t th = __ldg(&dis_h[idx]);
-                int32_t tv = __ldg(&dis_v[idx]);
-                int32_t td = __ldg(&dis_d[idx]);
-
-                int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-                int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, band - 1, angle_flag,
-                                                adm_enhn_gain_limit);
-
-                int32_t t_val;
-                if (band == 1)
-                    t_val = th;
-                else if (band == 2)
-                    t_val = tv;
-                else
-                    t_val = td;
-
-                int32_t a_val = t_val - r_val;
-
-                int32_t dst_val =
-                    (int32_t)(((i_rfactor * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
-                flt_vec[col] =
-                    (int32_t)((((int64_t)FIX_ONE_BY_30 * abs(dst_val)) + add_bef_shift_flt) >>
-                              shift_flt);
-            }
+            for (int col = 0; col < cols_per_thread; ++col)
+                flt_vec[col] = i4_adm_csf_pixel(&ctx, row_off + col, band);
             copy_vec_4<cols_per_thread>(flt_vec, flt_ptr + row_off);
         }
     }
 }
-
-__constant__ const uint8_t i_shifts[4] = {0, 15, 15, 17};
-__constant__ const uint16_t i_shiftsadd[4] = {0, 16384, 16384, 65535};
 
 /* Scale-0 CSF with inline decouple — reads ref/dis DWT2, writes only csf_f */
 template <int rows_per_thread, int cols_per_thread>
 __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int bottom, int left,
                                                int right, int stride, AdmFixedParametersCuda params)
 {
-    const int band = blockIdx.z + 1;
-
+    const int band = (int)blockIdx.z + 1;
     const cuda_adm_dwt_band_t *ref = &buf.ref_dwt2;
     const cuda_adm_dwt_band_t *dis = &buf.dis_dwt2;
-    int16_t *flt_ptr = buf.csf_f.bands[band];
-
-    /* F3: extract __restrict__ read-only band pointers before the hot inner
-     * loop (ADR-0773, mirrors ADR-0763/ADR-0754). */
     const int16_t *__restrict__ ref_h = ref->band_h;
     const int16_t *__restrict__ ref_v = ref->band_v;
     const int16_t *__restrict__ ref_d = ref->band_d;
     const int16_t *__restrict__ dis_h = dis->band_h;
     const int16_t *__restrict__ dis_v = dis->band_v;
     const int16_t *__restrict__ dis_d = dis->band_d;
-
-    int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
-    int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
-
-    const uint32_t i_rfactor = params.i_rfactor[blockIdx.z];
-    const uint16_t FIX_ONE_BY_30 = 4369; //(1/30)*2^17
-
-    const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
-
+    const S0AdmCsfContext ctx = {ref_h,
+                                 ref_v,
+                                 ref_d,
+                                 dis_h,
+                                 dis_v,
+                                 dis_d,
+                                 params.i_rfactor[blockIdx.z],
+                                 params.adm_enhn_gain_limit};
+    int16_t *flt_ptr = buf.csf_f.bands[band];
+    const int y = top + ((int)blockIdx.y * (int)blockDim.y + (int)threadIdx.y) * rows_per_thread;
+    const int x = left + ((int)blockIdx.x * (int)blockDim.x + (int)threadIdx.x) * cols_per_thread;
     if (y < bottom && x < right) {
         __align__(8) int16_t flt_vec[cols_per_thread];
-
         const int offset = y * stride + x;
-
         for (int row = 0; row < rows_per_thread; ++row) {
             const int row_off = offset + row * stride;
-
-            for (int col = 0; col < cols_per_thread; ++col) {
-                const int idx = row_off + col;
-                int16_t oh = __ldg(&ref_h[idx]);
-                int16_t ov = __ldg(&ref_v[idx]);
-                int16_t od = __ldg(&ref_d[idx]);
-                int16_t th = __ldg(&dis_h[idx]);
-                int16_t tv = __ldg(&dis_v[idx]);
-                int16_t td = __ldg(&dis_d[idx]);
-
-                int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-                int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, band - 1, angle_flag,
-                                              adm_enhn_gain_limit);
-
-                int16_t t_val;
-                if (band == 1)
-                    t_val = th;
-                else if (band == 2)
-                    t_val = tv;
-                else
-                    t_val = td;
-
-                int16_t a_val = t_val - r_val;
-
-                int32_t dst_val = i_rfactor * (uint32_t)a_val;
-                int16_t i16_dst_val = (dst_val + i_shiftsadd[band]) >> i_shifts[band];
-                flt_vec[col] = ((FIX_ONE_BY_30 * abs((int32_t)i16_dst_val)) + 2048) >> 12;
-            }
+            for (int col = 0; col < cols_per_thread; ++col)
+                flt_vec[col] = s0_adm_csf_pixel(&ctx, row_off + col, band);
             copy_vec_4<cols_per_thread>(flt_vec, flt_ptr + row_off);
         }
     }
 }
 
 #define ADM_CSF_KERNEL(rows_per_thread, cols_per_thread)                                           \
-    __global__ void adm_csf_kernel_##rows_per_thread##_##cols_per_thread(                          \
+    extern "C" __global__ void adm_csf_kernel_##rows_per_thread##_##cols_per_thread(               \
         AdmBufferCuda buf, int top, int bottom, int left, int right, int stride,                   \
         AdmFixedParametersCuda params)                                                             \
     {                                                                                              \
@@ -216,7 +209,7 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
     }
 
 #define I4_ADM_CSF_KERNEL(rows_per_thread, cols_per_thread)                                        \
-    __global__ void i4_adm_csf_kernel_##rows_per_thread##_##cols_per_thread(                       \
+    extern "C" __global__ void i4_adm_csf_kernel_##rows_per_thread##_##cols_per_thread(            \
         AdmBufferCuda buf, int scale, int top, int bottom, int left, int right, int stride,        \
         AdmFixedParametersCuda params)                                                             \
     {                                                                                              \
@@ -224,7 +217,5 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
                                                             stride, params);                       \
     }
 
-extern "C" {
 ADM_CSF_KERNEL(1, 4);    // adm_csf_kernel_1_4
 I4_ADM_CSF_KERNEL(1, 4); // i4_adm_csf_kernel_1_4
-}

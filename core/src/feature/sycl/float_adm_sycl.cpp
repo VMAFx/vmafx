@@ -38,9 +38,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace
-{
-
 constexpr int FADM_BX = 16;
 constexpr int FADM_BY = 16;
 constexpr int FADM_NUM_SCALES = 4;
@@ -161,8 +158,74 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned
 /* ------------------------------------------------------------------ */
 /* Stage 0 — DWT vertical.                                             */
 /* ------------------------------------------------------------------ */
+struct FadmDwtVertArgs {
+    const void *ref_raw;
+    const void *dis_raw;
+    const float *parent_ref_band;
+    const float *parent_dis_band;
+    float *dwt_ref;
+    float *dwt_dis;
+    unsigned raw_stride;
+    unsigned parent_buf_stride;
+    unsigned parent_w;
+    unsigned parent_h;
+    unsigned cur_w;
+    unsigned cur_h;
+    unsigned half_h;
+    unsigned bpc;
+    float scaler;
+    float pixel_offset;
+};
+
+static inline float fadm_read_raw(const FadmDwtVertArgs &args, const void *plane, int y, int x)
+{
+    y = fadm_mirror_host(y, (int)args.cur_h);
+    x = sycl::clamp(x, 0, (int)args.cur_w - 1);
+    if (args.bpc <= 8u)
+        return (float)static_cast<const uint8_t *>(plane)[y * args.raw_stride + x] +
+               args.pixel_offset;
+    const auto *row = reinterpret_cast<const uint16_t *>(static_cast<const uint8_t *>(plane) +
+                                                         (size_t)y * args.raw_stride);
+    return (float)row[x] / args.scaler + args.pixel_offset;
+}
+
+static inline float fadm_read_parent(const FadmDwtVertArgs &args, const float *band, int y, int x)
+{
+    y = fadm_mirror_host(y, (int)args.parent_h);
+    x = sycl::clamp(x, 0, (int)args.parent_w - 1);
+    return band[y * (int)args.parent_buf_stride + x];
+}
+
 template <int SCALE>
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static inline void fadm_dwt_vert_pixel(const FadmDwtVertArgs &args, sycl::nd_item<3> item)
+{
+    const int x = (int)item.get_global_id(2);
+    const int y = (int)item.get_global_id(1);
+    const bool distorted = item.get_global_id(0) != 0;
+    if (std::cmp_greater_equal(x, args.cur_w) || std::cmp_greater_equal(y, args.half_h))
+        return;
+    const int row_start = 2 * y - 1;
+    float samples[4];
+    for (int tap = 0; tap < 4; tap++) {
+        if constexpr (SCALE == 0) {
+            const void *plane = distorted ? args.dis_raw : args.ref_raw;
+            samples[tap] = fadm_read_raw(args, plane, row_start + tap, x);
+        } else {
+            const float *band = distorted ? args.parent_dis_band : args.parent_ref_band;
+            samples[tap] = fadm_read_parent(args, band, row_start + tap, x);
+        }
+    }
+    const float lo = FADM_LO0 * samples[0] + FADM_LO1 * samples[1] + FADM_LO2 * samples[2] +
+                     FADM_LO3 * samples[3];
+    const float hi = FADM_HI0 * samples[0] + FADM_HI1 * samples[1] + FADM_HI2 * samples[2] +
+                     FADM_HI3 * samples[3];
+    const int out_stride = (int)args.cur_w * 2;
+    float *destination = distorted ? args.dwt_dis : args.dwt_ref;
+    destination[y * out_stride + x] = lo;
+    destination[y * out_stride + (int)args.cur_w + x] = hi;
+}
+
+template <int SCALE>
 static sycl::event launch_dwt_vert(sycl::queue &q, const void *ref_raw, const void *dis_raw,
                                    unsigned raw_stride_bytes, const float *parent_ref_band,
                                    const float *parent_dis_band, unsigned parent_buf_stride,
@@ -172,84 +235,26 @@ static sycl::event launch_dwt_vert(sycl::queue &q, const void *ref_raw, const vo
 {
     const size_t global_x = (size_t)((cur_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
     const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
-    const unsigned e_cur_w = cur_w;
-    const unsigned e_cur_h = cur_h;
-    const unsigned e_half_h = half_h;
-    const unsigned e_bpc = bpc;
-    const unsigned e_raw_stride = raw_stride_bytes;
-    const unsigned e_parent_w = parent_w;
-    const unsigned e_parent_h = parent_h;
-    const unsigned e_parent_buf_stride = parent_buf_stride;
-    const float e_scaler = scaler;
-    const float e_pixel_offset = pixel_offset;
-    const void *e_ref_raw = ref_raw;
-    const void *e_dis_raw = dis_raw;
-    const float *e_p_ref_band = parent_ref_band;
-    const float *e_p_dis_band = parent_dis_band;
-    float *e_dwt_ref = dwt_tmp_ref;
-    float *e_dwt_dis = dwt_tmp_dis;
-
+    const FadmDwtVertArgs args{ref_raw,
+                               dis_raw,
+                               parent_ref_band,
+                               parent_dis_band,
+                               dwt_tmp_ref,
+                               dwt_tmp_dis,
+                               raw_stride_bytes,
+                               parent_buf_stride,
+                               parent_w,
+                               parent_h,
+                               cur_w,
+                               cur_h,
+                               half_h,
+                               bpc,
+                               scaler,
+                               pixel_offset};
     return q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(
-            sycl::nd_range<3>(sycl::range<3>(2, global_y, global_x),
-                              sycl::range<3>(1, FADM_BY, FADM_BX)),
-            [=](sycl::nd_item<3> item) {
-                const int gx = (int)item.get_global_id(2);
-                const int gy = (int)item.get_global_id(1);
-                const int plane_is_dis = (int)item.get_global_id(0);
-                if (std::cmp_greater_equal(gx, e_cur_w) || std::cmp_greater_equal(gy, e_half_h))
-                    return;
-
-                auto mirror = [](int idx, int sup) -> int {
-                    if (idx < 0)
-                        return -idx;
-                    if (idx >= sup)
-                        return 2 * sup - idx - 1;
-                    return idx;
-                };
-                auto read_src = [&](const void *plane, int y, int x) -> float {
-                    y = mirror(y, (int)e_cur_h);
-                    if (x < 0)
-                        x = 0;
-                    if (std::cmp_greater_equal(x, e_cur_w))
-                        x = (int)e_cur_w - 1;
-                    if (e_bpc <= 8u) {
-                        return (float)static_cast<const uint8_t *>(plane)[y * e_raw_stride + x] +
-                               e_pixel_offset;
-                    }
-                    const uint16_t v = reinterpret_cast<const uint16_t *>(
-                        static_cast<const uint8_t *>(plane) + (size_t)y * e_raw_stride)[x];
-                    return (float)v / e_scaler + e_pixel_offset;
-                };
-                auto read_parent = [&](const float *band, int y, int x) -> float {
-                    y = mirror(y, (int)e_parent_h);
-                    if (x < 0)
-                        x = 0;
-                    if (std::cmp_greater_equal(x, e_parent_w))
-                        x = (int)e_parent_w - 1;
-                    return band[y * (int)e_parent_buf_stride + x];
-                };
-
-                const int row_start = 2 * gy - 1;
-                float s[4];
-                for (int k = 0; k < 4; k++) {
-                    if constexpr (SCALE == 0) {
-                        const void *plane = (plane_is_dis == 0) ? e_ref_raw : e_dis_raw;
-                        s[k] = read_src(plane, row_start + k, gx);
-                    } else {
-                        const float *band = (plane_is_dis == 0) ? e_p_ref_band : e_p_dis_band;
-                        s[k] = read_parent(band, row_start + k, gx);
-                    }
-                }
-                const float lo =
-                    FADM_LO0 * s[0] + FADM_LO1 * s[1] + FADM_LO2 * s[2] + FADM_LO3 * s[3];
-                const float hi =
-                    FADM_HI0 * s[0] + FADM_HI1 * s[1] + FADM_HI2 * s[2] + FADM_HI3 * s[3];
-                const int out_stride = (int)e_cur_w * 2;
-                float *dst = (plane_is_dis == 0) ? e_dwt_ref : e_dwt_dis;
-                dst[gy * out_stride + gx] = lo;
-                dst[gy * out_stride + (int)e_cur_w + gx] = hi;
-            });
+        cgh.parallel_for(sycl::nd_range<3>(sycl::range<3>(2, global_y, global_x),
+                                           sycl::range<3>(1, FADM_BY, FADM_BX)),
+                         [=](sycl::nd_item<3> item) { fadm_dwt_vert_pixel<SCALE>(args, item); });
     });
 }
 
@@ -322,150 +327,94 @@ static sycl::event launch_dwt_hori(sycl::queue &q, const float *dwt_tmp_ref,
 /* ------------------------------------------------------------------ */
 /* Stage 2 — Decouple + CSF.                                           */
 /* ------------------------------------------------------------------ */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct FadmDecoupleArgs {
+    const float *reference;
+    const float *distorted;
+    float *csf_a;
+    float *csf_f;
+    unsigned width;
+    unsigned height;
+    unsigned stride;
+    float rfactor[3];
+    float gain_limit;
+};
+
+static inline float fadm_restored(float original, float test, bool angle_flag, float gain_limit)
+{
+    float ratio = test / (original + FADM_EPS);
+    ratio = sycl::fmax(0.0f, sycl::fmin(ratio, 1.0f));
+    float restored = ratio * original;
+    if (angle_flag && restored > 0.0f)
+        restored = sycl::fmin(restored * gain_limit, test);
+    else if (angle_flag && restored < 0.0f)
+        restored = sycl::fmax(restored * gain_limit, test);
+    return restored;
+}
+
+template <bool USE_RESTORED>
+static inline void fadm_decouple_pixel(const FadmDecoupleArgs &args, sycl::nd_item<2> item)
+{
+    const int x = (int)item.get_global_id(1);
+    const int y = (int)item.get_global_id(0);
+    if (std::cmp_greater_equal(x, args.width) || std::cmp_greater_equal(y, args.height))
+        return;
+    const int slice = (int)args.stride * (int)args.height;
+    const int offset = y * (int)args.stride + x;
+    float original[3];
+    float test[3];
+    for (int band = 0; band < FADM_NUM_BANDS; band++) {
+        original[band] = args.reference[(band + 1) * slice + offset];
+        test[band] = args.distorted[(band + 1) * slice + offset];
+    }
+    const float dot = (original[0] * test[0]) + (original[1] * test[1]);
+    const float original_magnitude = (original[0] * original[0]) + (original[1] * original[1]);
+    const float test_magnitude = (test[0] * test[0]) + (test[1] * test[1]);
+    const bool angle_flag =
+        (dot >= 0.0f) && (dot * dot >= FADM_COS_1DEG_SQ * (original_magnitude * test_magnitude));
+    for (int band = 0; band < FADM_NUM_BANDS; band++) {
+        const float restored =
+            fadm_restored(original[band], test[band], angle_flag, args.gain_limit);
+        const float selected = USE_RESTORED ? restored : test[band] - restored;
+        const float csf_a = args.rfactor[band] * selected;
+        args.csf_a[band * slice + offset] = csf_a;
+        args.csf_f[band * slice + offset] = FADM_ONE_BY_30 * sycl::fabs(csf_a);
+    }
+}
+
+template <bool USE_RESTORED>
+static sycl::event
+launch_decouple_impl(sycl::queue &q, const float *ref_band, const float *dis_band, float *csf_a,
+                     float *csf_f, unsigned half_w, unsigned half_h, unsigned buf_stride,
+                     float rfactor_h, float rfactor_v, float rfactor_d, float gain_limit)
+{
+    const size_t global_x = (size_t)((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
+    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
+    const FadmDecoupleArgs args{ref_band,  dis_band, csf_a,      csf_f,
+                                half_w,    half_h,   buf_stride, {rfactor_h, rfactor_v, rfactor_d},
+                                gain_limit};
+    return q.submit([&](sycl::handler &cgh) {
+        cgh.parallel_for(
+            sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FADM_BY, FADM_BX)),
+            [=](sycl::nd_item<2> item) { fadm_decouple_pixel<USE_RESTORED>(args, item); });
+    });
+}
+
 static sycl::event launch_decouple_csf(sycl::queue &q, const float *ref_band, const float *dis_band,
                                        float *csf_a, float *csf_f, unsigned half_w, unsigned half_h,
                                        unsigned buf_stride, float rfactor_h, float rfactor_v,
                                        float rfactor_d, float gain_limit)
 {
-    const size_t global_x = (size_t)((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
-    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
-    const unsigned e_half_w = half_w;
-    const unsigned e_half_h = half_h;
-    const unsigned e_buf_stride = buf_stride;
-    const float e_rfh = rfactor_h;
-    const float e_rfv = rfactor_v;
-    const float e_rfd = rfactor_d;
-    const float e_gl = gain_limit;
-    const float *e_ref = ref_band;
-    const float *e_dis = dis_band;
-    float *e_csf_a = csf_a;
-    float *e_csf_f = csf_f;
-
-    return q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(
-            sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FADM_BY, FADM_BX)),
-            [=](sycl::nd_item<2> item) {
-                const int gx = (int)item.get_global_id(1);
-                const int gy = (int)item.get_global_id(0);
-                if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
-                    return;
-                const int slice = (int)e_buf_stride * (int)e_half_h;
-                auto rb = [&](int band, int y, int x) -> float {
-                    return e_ref[band * slice + y * (int)e_buf_stride + x];
-                };
-                auto db = [&](int band, int y, int x) -> float {
-                    return e_dis[band * slice + y * (int)e_buf_stride + x];
-                };
-                const float oh = rb(1, gy, gx);
-                const float ov = rb(2, gy, gx);
-                const float od = rb(3, gy, gx);
-                const float th = db(1, gy, gx);
-                const float tv = db(2, gy, gx);
-                const float td = db(3, gy, gx);
-                const float ot_dp = (oh * th) + (ov * tv);
-                const float o_mag = (oh * oh) + (ov * ov);
-                const float t_mag = (th * th) + (tv * tv);
-                const float lhs = ot_dp * ot_dp;
-                const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-                const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-                float const oarr[3] = {oh, ov, od};
-                float const tarr[3] = {th, tv, td};
-                float const rfac[3] = {e_rfh, e_rfv, e_rfd};
-                for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                    float k = tarr[b] / (oarr[b] + FADM_EPS);
-                    k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
-                    float rst = k * oarr[b];
-                    if (angle_flag && rst > 0.0f) {
-                        rst = sycl::fmin(rst * e_gl, tarr[b]);
-                    } else if (angle_flag && rst < 0.0f) {
-                        rst = sycl::fmax(rst * e_gl, tarr[b]);
-                    }
-                    const float a_val = tarr[b] - rst;
-                    const float csf_a_val = rfac[b] * a_val;
-                    e_csf_a[b * slice + gy * (int)e_buf_stride + gx] = csf_a_val;
-                    e_csf_f[b * slice + gy * (int)e_buf_stride + gx] =
-                        FADM_ONE_BY_30 * sycl::fabs(csf_a_val);
-                }
-            });
-    });
+    return launch_decouple_impl<false>(q, ref_band, dis_band, csf_a, csf_f, half_w, half_h,
+                                       buf_stride, rfactor_h, rfactor_v, rfactor_d, gain_limit);
 }
 
-/* ------------------------------------------------------------------ */
-/* Stage 2b — CSF on decouple_r (writes csf_a_aim + csf_f_aim).       */
-/* ADR-0574: mirrors stage 2 but computes CSF of r_val = k*o rather   */
-/* than the anomaly a_val = t - r.                                     */
-/* ------------------------------------------------------------------ */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_csf_r(sycl::queue &q, const float *ref_band, const float *dis_band,
                                 float *csf_a_aim, float *csf_f_aim, unsigned half_w,
                                 unsigned half_h, unsigned buf_stride, float rfactor_h,
                                 float rfactor_v, float rfactor_d, float gain_limit)
 {
-    const size_t global_x = (size_t)((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
-    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
-    const unsigned e_half_w = half_w;
-    const unsigned e_half_h = half_h;
-    const unsigned e_buf_stride = buf_stride;
-    const float e_rfh = rfactor_h;
-    const float e_rfv = rfactor_v;
-    const float e_rfd = rfactor_d;
-    const float e_gl = gain_limit;
-    const float *e_ref = ref_band;
-    const float *e_dis = dis_band;
-    float *e_csf_a_aim = csf_a_aim;
-    float *e_csf_f_aim = csf_f_aim;
-
-    return q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(
-            sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FADM_BY, FADM_BX)),
-            [=](sycl::nd_item<2> item) {
-                const int gx = (int)item.get_global_id(1);
-                const int gy = (int)item.get_global_id(0);
-                if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
-                    return;
-                const int slice = (int)e_buf_stride * (int)e_half_h;
-                auto rb = [&](int band, int y, int x) -> float {
-                    return e_ref[band * slice + y * (int)e_buf_stride + x];
-                };
-                auto db = [&](int band, int y, int x) -> float {
-                    return e_dis[band * slice + y * (int)e_buf_stride + x];
-                };
-                const float oh = rb(1, gy, gx);
-                const float ov = rb(2, gy, gx);
-                const float od = rb(3, gy, gx);
-                const float th = db(1, gy, gx);
-                const float tv = db(2, gy, gx);
-                const float td = db(3, gy, gx);
-                const float ot_dp = (oh * th) + (ov * tv);
-                const float o_mag = (oh * oh) + (ov * ov);
-                const float t_mag = (th * th) + (tv * tv);
-                const float lhs = ot_dp * ot_dp;
-                const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-                const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-                float const oarr[3] = {oh, ov, od};
-                float const tarr[3] = {th, tv, td};
-                float const rfac[3] = {e_rfh, e_rfv, e_rfd};
-                for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                    /* Compute decouple_r[b] = k * o, same logic as stage 2. */
-                    float k = tarr[b] / (oarr[b] + FADM_EPS);
-                    k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
-                    float r_val = k * oarr[b];
-                    if (angle_flag && r_val > 0.0f) {
-                        r_val = sycl::fmin(r_val * e_gl, tarr[b]);
-                    } else if (angle_flag && r_val < 0.0f) {
-                        r_val = sycl::fmax(r_val * e_gl, tarr[b]);
-                    }
-                    /* CSF on decouple_r — matches adm_csf(&decouple_r, ...) in adm.c. */
-                    const float csf_a_val = rfac[b] * r_val;
-                    e_csf_a_aim[b * slice + gy * (int)e_buf_stride + gx] = csf_a_val;
-                    e_csf_f_aim[b * slice + gy * (int)e_buf_stride + gx] =
-                        FADM_ONE_BY_30 * sycl::fabs(csf_a_val);
-                }
-            });
-    });
+    return launch_decouple_impl<true>(q, ref_band, dis_band, csf_a_aim, csf_f_aim, half_w, half_h,
+                                      buf_stride, rfactor_h, rfactor_v, rfactor_d, gain_limit);
 }
 
 /* ------------------------------------------------------------------ */
@@ -481,7 +430,189 @@ static inline float fadm_pnorm_term(float x, float p_norm)
     return (p_norm == 3.0f) ? (x * x * x) : sycl::pow(x, p_norm);
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+struct FadmAccumArgs {
+    const float *reference;
+    const float *distorted;
+    const float *csf_a;
+    const float *csf_f;
+    float *output;
+    unsigned width;
+    unsigned height;
+    unsigned stride;
+    unsigned active_height;
+    int left;
+    int top;
+    int right;
+    float rfactor[3];
+    float gain_limit;
+    float p_norm;
+};
+
+struct FadmAccumPair {
+    float csf;
+    float cm;
+};
+
+static inline float fadm_read_band(const float *bands, const FadmAccumArgs &args, int band, int y,
+                                   int x)
+{
+    const int slice = (int)args.stride * (int)args.height;
+    return bands[band * slice + y * (int)args.stride + x];
+}
+
+static inline float fadm_read_threshold_f(const FadmAccumArgs &args, int band, int y, int x)
+{
+    if (x < 0)
+        x = -x;
+    if (std::cmp_greater_equal(x, args.width))
+        x = (int)args.width - 1;
+    if (y < 0)
+        y = -y;
+    if (std::cmp_greater_equal(y, args.height))
+        y = (int)args.height - 1;
+    x = sycl::clamp(x, 0, (int)args.width - 1);
+    y = sycl::clamp(y, 0, (int)args.height - 1);
+    return fadm_read_band(args.csf_f, args, band, y, x);
+}
+
+static inline float fadm_read_threshold_a(const FadmAccumArgs &args, int band, int y, int x)
+{
+    x = sycl::clamp(x, 0, (int)args.width - 1);
+    y = sycl::clamp(y, 0, (int)args.height - 1);
+    return fadm_read_band(args.csf_a, args, band, y, x);
+}
+
+static inline float fadm_threshold(const FadmAccumArgs &args, int row, int column)
+{
+    float threshold = 0.0f;
+    for (int band = 0; band < FADM_NUM_BANDS; band++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx != 0 || dy != 0)
+                    threshold += fadm_read_threshold_f(args, band, row + dy, column + dx);
+            }
+        }
+    }
+    threshold += FADM_ONE_BY_15 * sycl::fabs(fadm_read_threshold_a(args, 0, row, column));
+    threshold += FADM_ONE_BY_15 * sycl::fabs(fadm_read_threshold_a(args, 1, row, column));
+    threshold += FADM_ONE_BY_15 * sycl::fabs(fadm_read_threshold_a(args, 2, row, column));
+    return threshold;
+}
+
+template <bool AIM_MODE>
+static inline FadmAccumPair fadm_accum_column(const FadmAccumArgs &args, unsigned band, int row,
+                                              int column)
+{
+    float original[3];
+    float test[3];
+    for (int component = 0; component < FADM_NUM_BANDS; component++) {
+        original[component] = fadm_read_band(args.reference, args, component + 1, row, column);
+        test[component] = fadm_read_band(args.distorted, args, component + 1, row, column);
+    }
+    const float dot = (original[0] * test[0]) + (original[1] * test[1]);
+    const float original_magnitude = (original[0] * original[0]) + (original[1] * original[1]);
+    const float test_magnitude = (test[0] * test[0]) + (test[1] * test[1]);
+    const bool angle_flag =
+        (dot >= 0.0f) && (dot * dot >= FADM_COS_1DEG_SQ * (original_magnitude * test_magnitude));
+    const float restored = fadm_restored(original[band], test[band], angle_flag, args.gain_limit);
+    const float selected = AIM_MODE ? test[band] - restored : restored;
+    float magnitude = sycl::fabs(args.rfactor[band] * selected) - fadm_threshold(args, row, column);
+    if (magnitude < 0.0f)
+        magnitude = 0.0f;
+    const float cm = fadm_pnorm_term(magnitude, args.p_norm);
+    if constexpr (AIM_MODE)
+        return {0.0f, cm};
+    const float source = sycl::fabs(
+        args.rfactor[band] * fadm_read_band(args.reference, args, (int)band + 1, row, column));
+    return {fadm_pnorm_term(source, args.p_norm), cm};
+}
+
+template <bool AIM_MODE>
+static inline void fadm_accum_group(const FadmAccumArgs &args, sycl::nd_item<1> item,
+                                    const sycl::local_accessor<float, 1> &local_csf,
+                                    const sycl::local_accessor<float, 1> &local_cm)
+{
+    const unsigned group = (unsigned)item.get_group(0);
+    const unsigned local_id = (unsigned)item.get_local_id(0);
+    const unsigned band = group / args.active_height;
+    const unsigned row_index = group - band * args.active_height;
+    const int row = args.top + (int)row_index;
+    FadmAccumPair local{0.0f, 0.0f};
+    constexpr int work_group_size = FADM_BX * FADM_BY;
+    for (int column = args.left + (int)local_id; column < args.right; column += work_group_size) {
+        const FadmAccumPair value = fadm_accum_column<AIM_MODE>(args, band, row, column);
+        local.csf += value.csf;
+        local.cm += value.cm;
+    }
+    const sycl::sub_group subgroup = item.get_sub_group();
+    const float subgroup_csf = sycl::reduce_over_group(subgroup, local.csf, sycl::plus<float>{});
+    const float subgroup_cm = sycl::reduce_over_group(subgroup, local.cm, sycl::plus<float>{});
+    const uint32_t subgroup_id = subgroup.get_group_linear_id();
+    if (subgroup.get_local_linear_id() == 0) {
+        local_csf[subgroup_id] = subgroup_csf;
+        local_cm[subgroup_id] = subgroup_cm;
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    if (local_id != 0)
+        return;
+    float total_csf = 0.0f;
+    float total_cm = 0.0f;
+    for (uint32_t index = 0; index < subgroup.get_group_linear_range(); index++) {
+        total_csf += local_csf[index];
+        total_cm += local_cm[index];
+    }
+    const unsigned slot_base = group * FADM_ACCUM_SLOTS;
+    if constexpr (AIM_MODE)
+        args.output[slot_base + 6u + band] = total_cm;
+    else {
+        args.output[slot_base + band] = total_csf;
+        args.output[slot_base + 3u + band] = total_cm;
+    }
+}
+
+template <bool AIM_MODE>
+static sycl::event launch_accum_impl(sycl::queue &q, const FadmAccumArgs &args)
+{
+    if (args.active_height == 0u || args.right <= args.left)
+        return sycl::event{};
+    constexpr size_t work_group_size = (size_t)FADM_BX * FADM_BY;
+    const size_t global_size = 3u * args.active_height * work_group_size;
+    return q.submit([&](sycl::handler &cgh) {
+        const sycl::local_accessor<float, 1> local_csf(sycl::range<1>(work_group_size / 32), cgh);
+        const sycl::local_accessor<float, 1> local_cm(sycl::range<1>(work_group_size / 32), cgh);
+        cgh.parallel_for(
+            sycl::nd_range<1>(sycl::range<1>(global_size), sycl::range<1>(work_group_size)),
+            [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
+                fadm_accum_group<AIM_MODE>(args, item, local_csf, local_cm);
+            });
+    });
+}
+
+static FadmAccumArgs fadm_accum_args(const float *ref_band, const float *dis_band,
+                                     const float *csf_a, const float *csf_f, float *accum_out,
+                                     unsigned half_w, unsigned half_h, unsigned buf_stride,
+                                     int active_left, int active_top, int active_right,
+                                     int active_bottom, float rfactor_h, float rfactor_v,
+                                     float rfactor_d, float gain_limit, float p_norm)
+{
+    const int active_height = active_bottom - active_top;
+    return FadmAccumArgs{ref_band,
+                         dis_band,
+                         csf_a,
+                         csf_f,
+                         accum_out,
+                         half_w,
+                         half_h,
+                         buf_stride,
+                         active_height > 0 ? (unsigned)active_height : 0u,
+                         active_left,
+                         active_top,
+                         active_right,
+                         {rfactor_h, rfactor_v, rfactor_d},
+                         gain_limit,
+                         p_norm};
+}
+
 static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const float *dis_band,
                                  const float *csf_a_aim, const float *csf_f_aim, float *accum_out,
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
@@ -489,168 +620,13 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  int active_bottom, float rfactor_h, float rfactor_v,
                                  float rfactor_d, float gain_limit, float p_norm)
 {
-    const int active_h = active_bottom - active_top;
-    const int active_w = active_right - active_left;
-    if (active_h <= 0 || active_w <= 0)
-        return sycl::event{};
-    const size_t num_groups = (size_t)3 * active_h;
-    const size_t WG_SIZE = (size_t)FADM_BX * FADM_BY;
-    const size_t global_x = num_groups * WG_SIZE;
-
-    const unsigned e_half_w = half_w;
-    const unsigned e_half_h = half_h;
-    const unsigned e_buf_stride = buf_stride;
-    const int e_left = active_left;
-    const int e_top = active_top;
-    const int e_right = active_right;
-    const float e_rfh = rfactor_h;
-    const float e_rfv = rfactor_v;
-    const float e_rfd = rfactor_d;
-    const float e_gl = gain_limit;
-    const float e_pnorm = p_norm;
-    const unsigned e_active_h = (unsigned)active_h;
-    const float *e_ref = ref_band;
-    const float *e_dis = dis_band;
-    const float *e_csf_a_aim = csf_a_aim;
-    const float *e_csf_f_aim = csf_f_aim;
-    float *e_accum = accum_out;
-
-    return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> const s_aim(sycl::range<1>(WG_SIZE / 32), cgh);
-        cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(global_x), sycl::range<1>(WG_SIZE)),
-                         [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                             const unsigned wg_id = (unsigned)item.get_group(0);
-                             const unsigned lid = (unsigned)item.get_local_id(0);
-                             const unsigned band_idx = wg_id / e_active_h;
-                             const unsigned row_idx = wg_id - band_idx * e_active_h;
-                             const int row = e_top + (int)row_idx;
-                             const int slice = (int)e_buf_stride * (int)e_half_h;
-                             const float rfactor_band = (band_idx == 0u) ? e_rfh :
-                                                        (band_idx == 1u) ? e_rfv :
-                                                                           e_rfd;
-
-                             auto rb = [&](int band, int y, int x) -> float {
-                                 return e_ref[band * slice + y * (int)e_buf_stride + x];
-                             };
-                             auto db_ = [&](int band, int y, int x) -> float {
-                                 return e_dis[band * slice + y * (int)e_buf_stride + x];
-                             };
-                             /* Edge policy: near edge MIRRORS to index 1, far
-                              * edge CLAMPS to the last index — matches the CPU
-                              * closed form in `adm_cm_thresh3x3_s`. See
-                              * ADR-1204. */
-                             auto read_csf_f_aim = [&](int band, int y, int x) -> float {
-                                 if (x < 0)
-                                     x = -x;
-                                 if (std::cmp_greater_equal(x, e_half_w))
-                                     x = (int)e_half_w - 1;
-                                 if (y < 0)
-                                     y = -y;
-                                 if (std::cmp_greater_equal(y, e_half_h))
-                                     y = (int)e_half_h - 1;
-                                 if (x < 0)
-                                     x = 0;
-                                 if (y < 0)
-                                     y = 0;
-                                 if (std::cmp_greater_equal(x, e_half_w))
-                                     x = (int)e_half_w - 1;
-                                 if (std::cmp_greater_equal(y, e_half_h))
-                                     y = (int)e_half_h - 1;
-                                 return e_csf_f_aim[band * slice + y * (int)e_buf_stride + x];
-                             };
-                             auto read_csf_a_aim = [&](int band, int y, int x) -> float {
-                                 if (x < 0)
-                                     x = 0;
-                                 if (std::cmp_greater_equal(x, e_half_w))
-                                     x = (int)e_half_w - 1;
-                                 if (y < 0)
-                                     y = 0;
-                                 if (std::cmp_greater_equal(y, e_half_h))
-                                     y = (int)e_half_h - 1;
-                                 return e_csf_a_aim[band * slice + y * (int)e_buf_stride + x];
-                             };
-
-                             float local_aim_cm = 0.0f;
-                             for (int col = e_left + (int)lid; col < e_right; col += (int)WG_SIZE) {
-                                 const float oh = rb(1, row, col);
-                                 const float ov = rb(2, row, col);
-                                 const float od = rb(3, row, col);
-                                 const float th = db_(1, row, col);
-                                 const float tv = db_(2, row, col);
-                                 const float td = db_(3, row, col);
-                                 (void)od;
-                                 (void)td;
-                                 const float ot_dp = (oh * th) + (ov * tv);
-                                 const float o_mag = (oh * oh) + (ov * ov);
-                                 const float t_mag = (th * th) + (tv * tv);
-                                 const float lhs = ot_dp * ot_dp;
-                                 const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-                                 const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-                                 float const oarr[3] = {oh, ov, od};
-                                 float const tarr[3] = {th, tv, td};
-                                 float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
-                                 k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
-                                 float r_val = k * oarr[band_idx];
-                                 if (angle_flag && r_val > 0.0f) {
-                                     r_val = sycl::fmin(r_val * e_gl, tarr[band_idx]);
-                                 } else if (angle_flag && r_val < 0.0f) {
-                                     r_val = sycl::fmax(r_val * e_gl, tarr[band_idx]);
-                                 }
-                                 /* decouple_a[band] = t - r (the anomaly component). */
-                                 const float a_val = tarr[band_idx] - r_val;
-
-                                 /* AIM CM threshold: cross-band aggregate using aim csf buffers. */
-                                 float thr = 0.0f;
-                                 for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                                     for (int dy = -1; dy <= 1; dy++) {
-                                         for (int dx = -1; dx <= 1; dx++) {
-                                             if (dx == 0 && dy == 0)
-                                                 continue;
-                                             thr += read_csf_f_aim(b, row + dy, col + dx);
-                                         }
-                                     }
-                                 }
-                                 const float own_h = read_csf_a_aim(0, row, col);
-                                 const float own_v = read_csf_a_aim(1, row, col);
-                                 const float own_d = read_csf_a_aim(2, row, col);
-                                 thr += FADM_ONE_BY_15 * sycl::fabs(own_h);
-                                 thr += FADM_ONE_BY_15 * sycl::fabs(own_v);
-                                 thr += FADM_ONE_BY_15 * sycl::fabs(own_d);
-
-                                 /* CM: (|rfactor * a_val| - thr)_+^3; noise_weight=0. */
-                                 const float x_val = rfactor_band * a_val;
-                                 float xa = sycl::fabs(x_val) - thr;
-                                 if (xa < 0.0f)
-                                     xa = 0.0f;
-                                 local_aim_cm += fadm_pnorm_term(xa, e_pnorm);
-                             }
-
-                             sycl::sub_group const sg = item.get_sub_group();
-                             const float wn_aim =
-                                 sycl::reduce_over_group(sg, local_aim_cm, sycl::plus<float>{});
-                             const uint32_t sg_id = sg.get_group_linear_id();
-                             const uint32_t sg_lid = sg.get_local_linear_id();
-                             const uint32_t n_sg = sg.get_group_linear_range();
-                             if (sg_lid == 0)
-                                 s_aim[sg_id] = wn_aim;
-                             item.barrier(sycl::access::fence_space::local_space);
-                             if (lid == 0) {
-                                 float total_aim = 0.0f;
-                                 for (uint32_t i = 0; i < n_sg; i++)
-                                     total_aim += s_aim[i];
-                                 /* AIM CM lands in slots 6..8 of the per-WG accumulator. */
-                                 const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
-                                 e_accum[slot_base + 6u + band_idx] = total_aim;
-                             }
-                         });
-    });
+    const FadmAccumArgs args =
+        fadm_accum_args(ref_band, dis_band, csf_a_aim, csf_f_aim, accum_out, half_w, half_h,
+                        buf_stride, active_left, active_top, active_right, active_bottom, rfactor_h,
+                        rfactor_v, rfactor_d, gain_limit, p_norm);
+    return launch_accum_impl<true>(q, args);
 }
 
-/* ------------------------------------------------------------------ */
-/* Stage 3 — CSF denominator + CM fused.                               */
-/* ------------------------------------------------------------------ */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const float *dis_band,
                                  const float *csf_a, const float *csf_f, float *accum_out,
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
@@ -658,349 +634,172 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  int active_bottom, float rfactor_h, float rfactor_v,
                                  float rfactor_d, float gain_limit, float p_norm)
 {
-    const int active_h = active_bottom - active_top;
-    const int active_w = active_right - active_left;
-    if (active_h <= 0 || active_w <= 0)
-        return sycl::event{};
-    const size_t num_groups = (size_t)3 * active_h;
-    const size_t WG_SIZE = (size_t)FADM_BX * FADM_BY;
-    const size_t global_x = num_groups * WG_SIZE;
-
-    const unsigned e_half_w = half_w;
-    const unsigned e_half_h = half_h;
-    const unsigned e_buf_stride = buf_stride;
-    const int e_left = active_left;
-    const int e_top = active_top;
-    const int e_right = active_right;
-    const float e_rfh = rfactor_h;
-    const float e_rfv = rfactor_v;
-    const float e_rfd = rfactor_d;
-    const float e_gl = gain_limit;
-    const float e_pnorm = p_norm;
-    const unsigned e_active_h = (unsigned)active_h;
-    const float *e_ref = ref_band;
-    const float *e_dis = dis_band;
-    const float *e_csf_a = csf_a;
-    const float *e_csf_f = csf_f;
-    float *e_accum = accum_out;
-
-    return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> const s_csf(sycl::range<1>(WG_SIZE / 32), cgh);
-        sycl::local_accessor<float, 1> const s_cm(sycl::range<1>(WG_SIZE / 32), cgh);
-        cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(global_x), sycl::range<1>(WG_SIZE)),
-                         [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                             const unsigned wg_id = (unsigned)item.get_group(0);
-                             const unsigned lid = (unsigned)item.get_local_id(0);
-                             const unsigned band_idx = wg_id / e_active_h;
-                             const unsigned row_idx = wg_id - band_idx * e_active_h;
-                             const int row = e_top + (int)row_idx;
-                             const int slice = (int)e_buf_stride * (int)e_half_h;
-                             const float rfactor_band = (band_idx == 0u) ? e_rfh :
-                                                        (band_idx == 1u) ? e_rfv :
-                                                                           e_rfd;
-
-                             auto rb = [&](int band, int y, int x) -> float {
-                                 return e_ref[band * slice + y * (int)e_buf_stride + x];
-                             };
-                             auto db_ = [&](int band, int y, int x) -> float {
-                                 return e_dis[band * slice + y * (int)e_buf_stride + x];
-                             };
-                             auto read_csf_f = [&](int band, int y, int x) -> float {
-                                 if (x < 0)
-                                     x = -x;
-                                 if (std::cmp_greater_equal(x, e_half_w))
-                                     x = (int)e_half_w - 1;
-                                 if (y < 0)
-                                     y = -y;
-                                 if (std::cmp_greater_equal(y, e_half_h))
-                                     y = (int)e_half_h - 1;
-                                 if (x < 0)
-                                     x = 0;
-                                 if (y < 0)
-                                     y = 0;
-                                 if (std::cmp_greater_equal(x, e_half_w))
-                                     x = (int)e_half_w - 1;
-                                 if (std::cmp_greater_equal(y, e_half_h))
-                                     y = (int)e_half_h - 1;
-                                 return e_csf_f[band * slice + y * (int)e_buf_stride + x];
-                             };
-                             auto read_csf_a = [&](int band, int y, int x) -> float {
-                                 if (x < 0)
-                                     x = 0;
-                                 if (std::cmp_greater_equal(x, e_half_w))
-                                     x = (int)e_half_w - 1;
-                                 if (y < 0)
-                                     y = 0;
-                                 if (std::cmp_greater_equal(y, e_half_h))
-                                     y = (int)e_half_h - 1;
-                                 return e_csf_a[band * slice + y * (int)e_buf_stride + x];
-                             };
-
-                             float local_csf_sum = 0.0f;
-                             float local_cm_sum = 0.0f;
-                             for (int col = e_left + (int)lid; col < e_right; col += (int)WG_SIZE) {
-                                 const float src_ref = rb((int)band_idx + 1, row, col);
-                                 const float csf_o = sycl::fabs(rfactor_band * src_ref);
-                                 local_csf_sum += fadm_pnorm_term(csf_o, e_pnorm);
-
-                                 const float oh = rb(1, row, col);
-                                 const float ov = rb(2, row, col);
-                                 const float od = rb(3, row, col);
-                                 const float th = db_(1, row, col);
-                                 const float tv = db_(2, row, col);
-                                 const float td = db_(3, row, col);
-                                 (void)od;
-                                 (void)td;
-                                 const float ot_dp = (oh * th) + (ov * tv);
-                                 const float o_mag = (oh * oh) + (ov * ov);
-                                 const float t_mag = (th * th) + (tv * tv);
-                                 const float lhs = ot_dp * ot_dp;
-                                 const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-                                 const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-                                 float const oarr[3] = {oh, ov, od};
-                                 float const tarr[3] = {th, tv, td};
-                                 float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
-                                 k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
-                                 float r_val = k * oarr[band_idx];
-                                 if (angle_flag && r_val > 0.0f) {
-                                     r_val = sycl::fmin(r_val * e_gl, tarr[band_idx]);
-                                 } else if (angle_flag && r_val < 0.0f) {
-                                     r_val = sycl::fmax(r_val * e_gl, tarr[band_idx]);
-                                 }
-
-                                 float thr = 0.0f;
-                                 for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                                     for (int dy = -1; dy <= 1; dy++) {
-                                         for (int dx = -1; dx <= 1; dx++) {
-                                             if (dx == 0 && dy == 0)
-                                                 continue;
-                                             thr += read_csf_f(b, row + dy, col + dx);
-                                         }
-                                     }
-                                 }
-                                 const float own_h = read_csf_a(0, row, col);
-                                 const float own_v = read_csf_a(1, row, col);
-                                 const float own_d = read_csf_a(2, row, col);
-                                 thr += FADM_ONE_BY_15 * sycl::fabs(own_h);
-                                 thr += FADM_ONE_BY_15 * sycl::fabs(own_v);
-                                 thr += FADM_ONE_BY_15 * sycl::fabs(own_d);
-
-                                 const float x_val = rfactor_band * r_val;
-                                 float xa = sycl::fabs(x_val) - thr;
-                                 if (xa < 0.0f)
-                                     xa = 0.0f;
-                                 local_cm_sum += fadm_pnorm_term(xa, e_pnorm);
-                             }
-
-                             sycl::sub_group const sg = item.get_sub_group();
-                             const float wn_csf =
-                                 sycl::reduce_over_group(sg, local_csf_sum, sycl::plus<float>{});
-                             const float wn_cm =
-                                 sycl::reduce_over_group(sg, local_cm_sum, sycl::plus<float>{});
-                             const uint32_t sg_id = sg.get_group_linear_id();
-                             const uint32_t sg_lid = sg.get_local_linear_id();
-                             const uint32_t n_sg = sg.get_group_linear_range();
-                             if (sg_lid == 0) {
-                                 s_csf[sg_id] = wn_csf;
-                                 s_cm[sg_id] = wn_cm;
-                             }
-                             item.barrier(sycl::access::fence_space::local_space);
-                             if (lid == 0) {
-                                 float total_csf = 0.0f;
-                                 float total_cm = 0.0f;
-                                 for (uint32_t i = 0; i < n_sg; i++) {
-                                     total_csf += s_csf[i];
-                                     total_cm += s_cm[i];
-                                 }
-                                 const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
-                                 e_accum[slot_base + band_idx] = total_csf;
-                                 e_accum[slot_base + 3u + band_idx] = total_cm;
-                             }
-                         });
-    });
+    const FadmAccumArgs args =
+        fadm_accum_args(ref_band, dis_band, csf_a, csf_f, accum_out, half_w, half_h, buf_stride,
+                        active_left, active_top, active_right, active_bottom, rfactor_h, rfactor_v,
+                        rfactor_d, gain_limit, p_norm);
+    return launch_accum_impl<false>(q, args);
 }
 
-} /* anonymous namespace */
-
-extern "C" {
+#define FADM_BOOL_OPTION(name_, help_, alias_, member_, default_, flags_)                          \
+    {.name = name_,                                                                                \
+     .help = help_,                                                                                \
+     .alias = alias_,                                                                              \
+     .offset = offsetof(FloatAdmStateSycl, member_),                                               \
+     .type = VMAF_OPT_TYPE_BOOL,                                                                   \
+     .default_val = {.b = default_},                                                               \
+     .min = 0.0,                                                                                   \
+     .max = 0.0,                                                                                   \
+     .flags = flags_}
+#define FADM_DOUBLE_OPTION(name_, help_, alias_, member_, default_, min_, max_)                    \
+    {.name = name_,                                                                                \
+     .help = help_,                                                                                \
+     .alias = alias_,                                                                              \
+     .offset = offsetof(FloatAdmStateSycl, member_),                                               \
+     .type = VMAF_OPT_TYPE_DOUBLE,                                                                 \
+     .default_val = {.d = default_},                                                               \
+     .min = min_,                                                                                  \
+     .max = max_,                                                                                  \
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM}
+#define FADM_INT_OPTION(name_, help_, alias_, member_, default_, min_, max_)                       \
+    {.name = name_,                                                                                \
+     .help = help_,                                                                                \
+     .alias = alias_,                                                                              \
+     .offset = offsetof(FloatAdmStateSycl, member_),                                               \
+     .type = VMAF_OPT_TYPE_INT,                                                                    \
+     .default_val = {.i = default_},                                                               \
+     .min = min_,                                                                                  \
+     .max = max_,                                                                                  \
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM}
 
 static const VmafOption options_float_adm_sycl[] = {
-    {.name = "debug",
-     .help = "debug mode",
-     .offset = offsetof(FloatAdmStateSycl, debug),
-     .type = VMAF_OPT_TYPE_BOOL,
-     .default_val = {.b = false}},
-    {.name = "adm_enhn_gain_limit",
-     .alias = "egl",
-     .help = "enhancement gain (>=1.0)",
-     .offset = offsetof(FloatAdmStateSycl, adm_enhn_gain_limit),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = 100.0},
-     .min = 1.0,
-     .max = 100.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_norm_view_dist",
-     .alias = "nvd",
-     .help = "normalized viewing distance",
-     .offset = offsetof(FloatAdmStateSycl, adm_norm_view_dist),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = 3.0},
-     .min = 0.75,
-     .max = 24.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_ref_display_height",
-     .alias = "rdf",
-     .help = "reference display height in pixels",
-     .offset = offsetof(FloatAdmStateSycl, adm_ref_display_height),
-     .type = VMAF_OPT_TYPE_INT,
-     .default_val = {.i = 1080},
-     .min = 1,
-     .max = 4320,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_csf_mode",
-     .alias = "csf",
-     .help = "contrast sensitivity function (mode 0 only on SYCL v1)",
-     .offset = offsetof(FloatAdmStateSycl, adm_csf_mode),
-     .type = VMAF_OPT_TYPE_INT,
-     .default_val = {.i = 0},
-     .min = 0,
-     .max = 9,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_csf_scale",
-     .alias = "scf",
-     .help = "CSF band-scale multiplier for h/v bands (default 1.0 = no scaling)",
-     .offset = offsetof(FloatAdmStateSycl, adm_csf_scale),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
-     .min = 0.0,
-     .max = 100.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_csf_diag_scale",
-     .alias = "scfd",
-     .help = "CSF band-scale multiplier for diagonal bands (default 1.0 = no scaling)",
-     .offset = offsetof(FloatAdmStateSycl, adm_csf_diag_scale),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
-     .min = 0.0,
-     .max = 100.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_noise_weight",
-     .alias = "nw",
-     .help = "noise floor weight for CM numerator (default 0.03125 = 1/32)",
-     .offset = offsetof(FloatAdmStateSycl, adm_noise_weight),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
-     .min = 0.0,
-     .max = 100.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    /* ADR-0574: AIM / ADM3 options — mirrors CUDA twin. */
-    {.name = "adm_adm3_apply_hm",
-     .alias = "aah",
-     .help = "apply harmonic mean for adm3 score (false = linear blend)",
-     .offset = offsetof(FloatAdmStateSycl, adm_adm3_apply_hm),
+    FADM_BOOL_OPTION("debug", "debug mode", nullptr, debug, false, 0),
+    FADM_DOUBLE_OPTION("adm_enhn_gain_limit", "enhancement gain (>=1.0)", "egl",
+                       adm_enhn_gain_limit, 100.0, 1.0, 100.0),
+    FADM_DOUBLE_OPTION("adm_norm_view_dist", "normalized viewing distance", "nvd",
+                       adm_norm_view_dist, 3.0, 0.75, 24.0),
+    FADM_INT_OPTION("adm_ref_display_height", "reference display height in pixels", "rdf",
+                    adm_ref_display_height, 1080, 1, 4320),
+    FADM_INT_OPTION("adm_csf_mode", "contrast sensitivity function (mode 0 only on SYCL v1)", "csf",
+                    adm_csf_mode, 0, 0, 9),
+    FADM_DOUBLE_OPTION("adm_csf_scale",
+                       "CSF band-scale multiplier for h/v bands (default 1.0 = no scaling)", "scf",
+                       adm_csf_scale, DEFAULT_ADM_CSF_SCALE, 0.0, 100.0),
+    FADM_DOUBLE_OPTION("adm_csf_diag_scale",
+                       "CSF band-scale multiplier for diagonal bands (default 1.0 = no scaling)",
+                       "scfd", adm_csf_diag_scale, DEFAULT_ADM_CSF_DIAG_SCALE, 0.0, 100.0),
+    FADM_DOUBLE_OPTION("adm_noise_weight",
+                       "noise floor weight for CM numerator (default 0.03125 = 1/32)", "nw",
+                       adm_noise_weight, DEFAULT_ADM_NOISE_WEIGHT, 0.0, 100.0),
+    FADM_BOOL_OPTION("adm_adm3_apply_hm",
+                     "apply harmonic mean for adm3 score (false = linear blend)", "aah",
+                     adm_adm3_apply_hm, false, VMAF_OPT_FLAG_FEATURE_PARAM),
+    FADM_DOUBLE_OPTION("adm_p_norm", "p-norm exponent for AIM/ADM3 score (default 3.0)", "apn",
+                       adm_p_norm, 3.0, 1.0, 20.0),
+    FADM_DOUBLE_OPTION("adm_dlm_weight", "DLM weight for linear-blend adm3 score (default 0.5)",
+                       "dlmw", adm_dlm_weight, 0.5, 0.0, 1.0),
+    FADM_DOUBLE_OPTION("adm_min_val", "minimum clamp for adm3 score (default 0.0)", "min",
+                       adm_min_val, DEFAULT_ADM_MIN_VAL, 0.0, 1.0),
+    {.name = nullptr,
+     .help = nullptr,
+     .alias = nullptr,
+     .offset = 0,
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_p_norm",
-     .alias = "apn",
-     .help = "p-norm exponent for AIM/ADM3 score (default 3.0)",
-     .offset = offsetof(FloatAdmStateSycl, adm_p_norm),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = 3.0},
-     .min = 1.0,
-     .max = 20.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_dlm_weight",
-     .alias = "dlmw",
-     .help = "DLM weight for linear-blend adm3 score (default 0.5)",
-     .offset = offsetof(FloatAdmStateSycl, adm_dlm_weight),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = 0.5},
      .min = 0.0,
-     .max = 1.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_min_val",
-     .alias = "min",
-     .help = "minimum clamp for adm3 score (default 0.0)",
-     .offset = offsetof(FloatAdmStateSycl, adm_min_val),
-     .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val = {.d = DEFAULT_ADM_MIN_VAL},
-     .min = 0.0,
-     .max = 1.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = nullptr}};
+     .max = 0.0,
+     .flags = 0}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// integer_motion_sycl.cpp and integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these
-// are load-bearing invariants of the SYCL <-> libvmaf C-API ABI.
+#undef FADM_BOOL_OPTION
+#undef FADM_DOUBLE_OPTION
+#undef FADM_INT_OPTION
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+template <typename T> static void fadm_free_buffer(FloatAdmStateSycl *s, T *&buffer)
 {
-    (void)pix_fmt;
-    auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
+    if (!buffer)
+        return;
+    vmaf_sycl_free(s->sycl_state, static_cast<void *>(buffer));
+    buffer = nullptr;
+}
 
+static void fadm_release_buffers(FloatAdmStateSycl *s)
+{
+    if (!s->sycl_state)
+        return;
+    fadm_free_buffer(s, s->h_ref_raw);
+    fadm_free_buffer(s, s->h_dis_raw);
+    fadm_free_buffer(s, s->d_ref_raw);
+    fadm_free_buffer(s, s->d_dis_raw);
+    fadm_free_buffer(s, s->d_dwt_tmp_ref);
+    fadm_free_buffer(s, s->d_dwt_tmp_dis);
+    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+        fadm_free_buffer(s, s->d_ref_band[scale]);
+        fadm_free_buffer(s, s->d_dis_band[scale]);
+        fadm_free_buffer(s, s->d_accum[scale]);
+        fadm_free_buffer(s, s->h_accum[scale]);
+    }
+    fadm_free_buffer(s, s->d_csf_a);
+    fadm_free_buffer(s, s->d_csf_f);
+    fadm_free_buffer(s, s->d_csf_a_aim);
+    fadm_free_buffer(s, s->d_csf_f_aim);
+}
+
+static int fadm_configure(FloatAdmStateSycl *s, VmafSyclState *sycl_state, unsigned bpc, unsigned w,
+                          unsigned h)
+{
     if (s->adm_csf_mode != 0)
         return -EINVAL;
-
+    if (!sycl_state)
+        return -EINVAL;
     s->width = w;
     s->height = h;
     s->bpc = bpc;
     s->has_pending = false;
-
-    /* Per-scale dims. */
-    unsigned cw = w;
-    unsigned ch = h;
+    s->sycl_state = sycl_state;
+    unsigned width = w;
+    unsigned height = h;
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        s->scale_w[scale] = cw;
-        s->scale_h[scale] = ch;
-        s->scale_half_w[scale] = (cw + 1u) / 2u;
-        s->scale_half_h[scale] = (ch + 1u) / 2u;
-        cw = s->scale_half_w[scale];
-        ch = s->scale_half_h[scale];
+        s->scale_w[scale] = width;
+        s->scale_h[scale] = height;
+        s->scale_half_w[scale] = (width + 1u) / 2u;
+        s->scale_half_h[scale] = (height + 1u) / 2u;
+        width = s->scale_half_w[scale];
+        height = s->scale_half_h[scale];
     }
     s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
-
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const float f1 =
             fadm_dwt_quant_step(scale, 1, s->adm_norm_view_dist, s->adm_ref_display_height);
         const float f2 =
             fadm_dwt_quant_step(scale, 2, s->adm_norm_view_dist, s->adm_ref_display_height);
-        /* ADR-1214: match the CPU reference exactly. In the Watson-97 mode this
-         * twin supports (adm_csf_mode == 0) `adm_tools.c::adm_csf_rfactor_s`
-         * sets rfactor = 1 / dwt_quant_step(...) and does NOT consult
-         * adm_csf_scale / adm_csf_diag_scale — those two options only enter the
-         * Barten branch (mode 1). Multiplying them in here made a non-default
-         * scale change the GPU score while the CPU ignored it, and the comment
-         * that used to sit here claimed the opposite of what adm_tools.c does. */
         s->rfactor[scale * 3 + 0] = 1.0f / f1;
         s->rfactor[scale * 3 + 1] = 1.0f / f1;
         s->rfactor[scale * 3 + 2] = 1.0f / f2;
     }
+    return 0;
+}
 
-    if (!fex->sycl_state)
-        return -EINVAL;
-    s->sycl_state = fex->sycl_state;
-
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t raw_bytes = (size_t)w * h * bpp;
+static void fadm_allocate_shared_buffers(FloatAdmStateSycl *s)
+{
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const size_t raw_bytes = (size_t)s->width * s->height * bpp;
     s->h_ref_raw = vmaf_sycl_malloc_host(s->sycl_state, raw_bytes);
     s->h_dis_raw = vmaf_sycl_malloc_host(s->sycl_state, raw_bytes);
     s->d_ref_raw = vmaf_sycl_malloc_device(s->sycl_state, raw_bytes);
     s->d_dis_raw = vmaf_sycl_malloc_device(s->sycl_state, raw_bytes);
-
-    const size_t dwt_bytes = (size_t)w * 2u * s->scale_half_h[0] * sizeof(float);
+    const size_t dwt_bytes = (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
     s->d_dwt_tmp_ref = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, dwt_bytes));
     s->d_dwt_tmp_dis = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, dwt_bytes));
+    const size_t csf_bytes =
+        (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
+    s->d_csf_a = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
+    s->d_csf_f = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
+    s->d_csf_a_aim = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
+    s->d_csf_f_aim = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
+}
 
+static void fadm_allocate_scale_buffers(FloatAdmStateSycl *s)
+{
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const size_t band_bytes =
             (size_t)4u * s->buf_stride * s->scale_half_h[scale] * sizeof(float);
@@ -1008,15 +807,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
             static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, band_bytes));
         s->d_dis_band[scale] =
             static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, band_bytes));
-    }
-    const size_t csf_bytes =
-        (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
-    s->d_csf_a = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
-    s->d_csf_f = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
-    s->d_csf_a_aim = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
-    s->d_csf_f_aim = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, csf_bytes));
-
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const int hh = (int)s->scale_half_h[scale];
         int top = (int)((double)hh * FADM_BORDER_FACTOR - 0.5);
         if (top < 0)
@@ -1029,37 +819,48 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
             static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, accum_bytes));
         s->h_accum[scale] = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, accum_bytes));
     }
+}
 
+static bool fadm_buffers_ready(const FloatAdmStateSycl *s)
+{
     if (!s->h_ref_raw || !s->h_dis_raw || !s->d_ref_raw || !s->d_dis_raw || !s->d_dwt_tmp_ref ||
         !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_f || !s->d_csf_a_aim || !s->d_csf_f_aim)
-        return -ENOMEM;
+        return false;
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         if (!s->d_ref_band[scale] || !s->d_dis_band[scale] || !s->d_accum[scale] ||
             !s->h_accum[scale])
-            return -ENOMEM;
+            return false;
     }
+    return true;
+}
 
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
+    int err = fadm_configure(s, fex->sycl_state, bpc, w, h);
+    if (err)
+        return err;
+    fadm_allocate_shared_buffers(s);
+    fadm_allocate_scale_buffers(s);
+    if (!fadm_buffers_ready(s)) {
+        fadm_release_buffers(s);
+        return -ENOMEM;
+    }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        fadm_release_buffers(s);
         return -ENOMEM;
+    }
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+static void fadm_upload_frames(FloatAdmStateSycl *s, sycl::queue &queue, const VmafPicture *ref_pic,
+                               const VmafPicture *dist_pic)
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
-    auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
-        return -EINVAL;
-    sycl::queue &q = *qptr;
-
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const unsigned raw_stride = (unsigned)(s->width * bpp);
     if (s->bpc <= 8u) {
         copy_y_plane<uint8_t>(ref_pic, s->h_ref_raw, s->width, s->height);
         copy_y_plane<uint8_t>(dist_pic, s->h_dis_raw, s->width, s->height);
@@ -1068,268 +869,305 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         copy_y_plane<uint16_t>(dist_pic, s->h_dis_raw, s->width, s->height);
     }
     const size_t raw_bytes = (size_t)s->width * s->height * bpp;
-    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
-    q.memcpy(s->d_dis_raw, s->h_dis_raw, raw_bytes);
-
-    /* Reset accumulator buffers. */
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        q.memset(s->d_accum[scale], 0,
-                 (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float));
-    }
-
-    float scaler = 1.0f;
-    if (s->bpc == 10u) {
-        scaler = 4.0f;
-    } else if (s->bpc == 12u) {
-        scaler = 16.0f;
-    } else if (s->bpc == 16u) {
-        scaler = 256.0f;
-    }
-    const float pixel_offset = -128.0f;
-
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const unsigned cur_w = s->scale_w[scale];
-        const unsigned cur_h = s->scale_h[scale];
-        const unsigned half_w = s->scale_half_w[scale];
-        const unsigned half_h = s->scale_half_h[scale];
-        /* Parent LL band dimensions = scale_w/h[scale] (input dim at
-         * this scale = parent's LL output dim). See float_adm_cuda.c
-         * for the long version of this comment. */
-        const unsigned parent_w = (scale > 0) ? s->scale_w[scale] : 0u;
-        const unsigned parent_h = (scale > 0) ? s->scale_h[scale] : 0u;
-        const float *parent_ref = (scale > 0) ? s->d_ref_band[scale - 1] : nullptr;
-        const float *parent_dis = (scale > 0) ? s->d_dis_band[scale - 1] : nullptr;
-
-        int top = (int)((double)half_h * FADM_BORDER_FACTOR - 0.5);
-        int left = (int)((double)half_w * FADM_BORDER_FACTOR - 0.5);
-        if (top < 0)
-            top = 0;
-        if (left < 0)
-            left = 0;
-        const int bottom = (int)half_h - top;
-        const int right = (int)half_w - left;
-
-        if (scale == 0) {
-            launch_dwt_vert<0>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
-                               s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
-                               s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
-                               pixel_offset);
-        } else if (scale == 1) {
-            launch_dwt_vert<1>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
-                               s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
-                               s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
-                               pixel_offset);
-        } else if (scale == 2) {
-            launch_dwt_vert<2>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
-                               s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
-                               s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
-                               pixel_offset);
-        } else {
-            launch_dwt_vert<3>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
-                               s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
-                               s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
-                               pixel_offset);
-        }
-
-        launch_dwt_hori(q, s->d_dwt_tmp_ref, s->d_dwt_tmp_dis, s->d_ref_band[scale],
-                        s->d_dis_band[scale], cur_w, half_w, half_h, s->buf_stride);
-        launch_decouple_csf(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a, s->d_csf_f,
-                            half_w, half_h, s->buf_stride, s->rfactor[scale * 3 + 0],
-                            s->rfactor[scale * 3 + 1], s->rfactor[scale * 3 + 2],
-                            (float)s->adm_enhn_gain_limit);
-        launch_csf_cm(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a, s->d_csf_f,
-                      s->d_accum[scale], half_w, half_h, s->buf_stride, left, top, right, bottom,
-                      s->rfactor[scale * 3 + 0], s->rfactor[scale * 3 + 1],
-                      s->rfactor[scale * 3 + 2], (float)s->adm_enhn_gain_limit,
-                      (float)s->adm_p_norm);
-        /* Stage 2b — CSF on decouple_r (ADR-0574). */
-        launch_csf_r(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
-                     half_w, half_h, s->buf_stride, s->rfactor[scale * 3 + 0],
-                     s->rfactor[scale * 3 + 1], s->rfactor[scale * 3 + 2],
-                     (float)s->adm_enhn_gain_limit);
-        /* Stage 3b — AIM CM numerator into slots 6..8 (ADR-0574). */
-        launch_aim_cm(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
-                      s->d_accum[scale], half_w, half_h, s->buf_stride, left, top, right, bottom,
-                      s->rfactor[scale * 3 + 0], s->rfactor[scale * 3 + 1],
-                      s->rfactor[scale * 3 + 2], (float)s->adm_enhn_gain_limit,
-                      (float)s->adm_p_norm);
-    }
-
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        q.memcpy(s->h_accum[scale], s->d_accum[scale],
-                 (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float));
-    }
-
-    s->pending_index = index;
-    s->has_pending = true;
-    return 0;
+    queue.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
+    queue.memcpy(s->d_dis_raw, s->h_dis_raw, raw_bytes);
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+static void fadm_reset_accumulators(FloatAdmStateSycl *s, sycl::queue &queue)
 {
-    auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
-    auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
-        return -EINVAL;
-    qptr->wait();
+    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+        queue.memset(s->d_accum[scale], 0,
+                     (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float));
+    }
+}
 
-    /* Per-scale double accumulation.
-     * Slots 0..2: csf_den per band; 3..5: cm_num per band;
-     * 6..8: aim_cm per band (ADR-0574). */
-    double cm_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
-    double csf_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
-    double aim_cm_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
+static float fadm_sample_scaler(unsigned bpc)
+{
+    if (bpc == 10u)
+        return 4.0f;
+    if (bpc == 12u)
+        return 16.0f;
+    if (bpc == 16u)
+        return 256.0f;
+    return 1.0f;
+}
+
+struct FadmScaleGeometry {
+    unsigned width;
+    unsigned height;
+    unsigned half_width;
+    unsigned half_height;
+    int left;
+    int top;
+    int right;
+    int bottom;
+};
+
+static FadmScaleGeometry fadm_scale_geometry(const FloatAdmStateSycl *s, int scale)
+{
+    const unsigned half_width = s->scale_half_w[scale];
+    const unsigned half_height = s->scale_half_h[scale];
+    int top = (int)((double)half_height * FADM_BORDER_FACTOR - 0.5);
+    int left = (int)((double)half_width * FADM_BORDER_FACTOR - 0.5);
+    if (top < 0)
+        top = 0;
+    if (left < 0)
+        left = 0;
+    return FadmScaleGeometry{
+        s->scale_w[scale],      s->scale_h[scale],     half_width, half_height, left, top,
+        (int)half_width - left, (int)half_height - top};
+}
+
+template <int SCALE>
+static sycl::event fadm_launch_vertical(FloatAdmStateSycl *s, sycl::queue &queue,
+                                        const FadmScaleGeometry &geometry, unsigned raw_stride,
+                                        float scaler)
+{
+    const float *parent_ref = SCALE > 0 ? s->d_ref_band[SCALE - 1] : nullptr;
+    const float *parent_dis = SCALE > 0 ? s->d_dis_band[SCALE - 1] : nullptr;
+    const unsigned parent_width = SCALE > 0 ? geometry.width : 0u;
+    const unsigned parent_height = SCALE > 0 ? geometry.height : 0u;
+    return launch_dwt_vert<SCALE>(queue, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref,
+                                  parent_dis, s->buf_stride, parent_width, parent_height,
+                                  s->d_dwt_tmp_ref, s->d_dwt_tmp_dis, geometry.width,
+                                  geometry.height, geometry.half_height, s->bpc, scaler, -128.0f);
+}
+
+static sycl::event fadm_dispatch_vertical(FloatAdmStateSycl *s, sycl::queue &queue, int scale,
+                                          const FadmScaleGeometry &geometry, unsigned raw_stride,
+                                          float scaler)
+{
+    switch (scale) {
+    case 0:
+        return fadm_launch_vertical<0>(s, queue, geometry, raw_stride, scaler);
+    case 1:
+        return fadm_launch_vertical<1>(s, queue, geometry, raw_stride, scaler);
+    case 2:
+        return fadm_launch_vertical<2>(s, queue, geometry, raw_stride, scaler);
+    default:
+        return fadm_launch_vertical<3>(s, queue, geometry, raw_stride, scaler);
+    }
+}
+
+static void fadm_submit_scale(FloatAdmStateSycl *s, sycl::queue &queue, int scale,
+                              unsigned raw_stride, float scaler)
+{
+    const FadmScaleGeometry g = fadm_scale_geometry(s, scale);
+    fadm_dispatch_vertical(s, queue, scale, g, raw_stride, scaler);
+    launch_dwt_hori(queue, s->d_dwt_tmp_ref, s->d_dwt_tmp_dis, s->d_ref_band[scale],
+                    s->d_dis_band[scale], g.width, g.half_width, g.half_height, s->buf_stride);
+    const float *rfactor = s->rfactor + scale * 3;
+    launch_decouple_csf(queue, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a, s->d_csf_f,
+                        g.half_width, g.half_height, s->buf_stride, rfactor[0], rfactor[1],
+                        rfactor[2], (float)s->adm_enhn_gain_limit);
+    launch_csf_cm(queue, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a, s->d_csf_f,
+                  s->d_accum[scale], g.half_width, g.half_height, s->buf_stride, g.left, g.top,
+                  g.right, g.bottom, rfactor[0], rfactor[1], rfactor[2],
+                  (float)s->adm_enhn_gain_limit, (float)s->adm_p_norm);
+    launch_csf_r(queue, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
+                 g.half_width, g.half_height, s->buf_stride, rfactor[0], rfactor[1], rfactor[2],
+                 (float)s->adm_enhn_gain_limit);
+    launch_aim_cm(queue, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
+                  s->d_accum[scale], g.half_width, g.half_height, s->buf_stride, g.left, g.top,
+                  g.right, g.bottom, rfactor[0], rfactor[1], rfactor[2],
+                  (float)s->adm_enhn_gain_limit, (float)s->adm_p_norm);
+}
+
+static void fadm_download_accumulators(FloatAdmStateSycl *s, sycl::queue &queue)
+{
+    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+        queue.memcpy(s->h_accum[scale], s->d_accum[scale],
+                     (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float));
+    }
+}
+
+static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+    auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
+    auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    if (!queue)
+        return -EINVAL;
+    try {
+        fadm_upload_frames(s, *queue, ref_pic, dist_pic);
+        fadm_reset_accumulators(s, *queue);
+        const unsigned raw_stride = s->width * ((s->bpc <= 8u) ? 1u : 2u);
+        const float scaler = fadm_sample_scaler(s->bpc);
+        for (int scale = 0; scale < FADM_NUM_SCALES; scale++)
+            fadm_submit_scale(s, *queue, scale, raw_stride, scaler);
+        fadm_download_accumulators(s, *queue);
+        s->pending_index = index;
+        s->has_pending = true;
+        return 0;
+    } catch (const sycl::exception &exception) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_adm_sycl: submission failed: %s\n", exception.what());
+        return -EIO;
+    }
+}
+
+struct FadmTotals {
+    double cm[FADM_NUM_SCALES][FADM_NUM_BANDS];
+    double csf[FADM_NUM_SCALES][FADM_NUM_BANDS];
+    double aim[FADM_NUM_SCALES][FADM_NUM_BANDS];
+};
+
+static FadmTotals fadm_gather_totals(const FloatAdmStateSycl *s)
+{
+    FadmTotals totals{};
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const float *slots = s->h_accum[scale];
-        const unsigned wg_count = s->wg_count[scale];
-        for (unsigned wg = 0u; wg < wg_count; wg++) {
-            const float *p = slots + (size_t)wg * FADM_ACCUM_SLOTS;
-            for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                csf_totals[scale][b] += (double)p[b];
-                cm_totals[scale][b] += (double)p[3 + b];
-                aim_cm_totals[scale][b] += (double)p[6 + b];
+        for (unsigned group = 0u; group < s->wg_count[scale]; group++) {
+            const float *values = slots + (size_t)group * FADM_ACCUM_SLOTS;
+            for (int band = 0; band < FADM_NUM_BANDS; band++) {
+                totals.csf[scale][band] += (double)values[band];
+                totals.cm[scale][band] += (double)values[3 + band];
+                totals.aim[scale][band] += (double)values[6 + band];
             }
         }
     }
+    return totals;
+}
 
-    double score_num = 0.0;
-    double score_den = 0.0;
-    double aim_num = 0.0;
-    double aim_den = 0.0;
-    double scores[8];
+struct FadmPooled {
+    double numerator;
+    double denominator;
+    double aim_numerator;
+    double aim_denominator;
+    double scales[8];
+};
+
+static FadmPooled fadm_pool_totals(const FloatAdmStateSycl *s, const FadmTotals &totals)
+{
+    FadmPooled pooled{};
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const int hw = (int)s->scale_half_w[scale];
-        const int hh = (int)s->scale_half_h[scale];
-        int left = (int)((double)hw * FADM_BORDER_FACTOR - 0.5);
-        int top = (int)((double)hh * FADM_BORDER_FACTOR - 0.5);
-        if (left < 0)
-            left = 0;
-        if (top < 0)
-            top = 0;
-        const int right = hw - left;
-        const int bottom = hh - top;
-        /* The pooling root and the noise constant are 1/adm_p_norm, not a
-         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
-         * get_noise_constant(..., adm_p_norm). ADR-1220. */
+        const FadmScaleGeometry geometry = fadm_scale_geometry(s, scale);
         const float inv_p = 1.0f / (float)s->adm_p_norm;
-        const float area_cbrt =
-            std::pow((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
+        const int active_area = (geometry.bottom - geometry.top) * (geometry.right - geometry.left);
+        const float area_root = std::pow((float)active_area * (float)s->adm_noise_weight, inv_p);
         float num_scale = 0.0f;
         float den_scale = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            num_scale += std::pow((float)cm_totals[scale][b], inv_p) + area_cbrt;
-            den_scale += std::pow((float)csf_totals[scale][b], inv_p) + area_cbrt;
+        for (int band = 0; band < FADM_NUM_BANDS; band++) {
+            num_scale += std::pow((float)totals.cm[scale][band], inv_p) + area_root;
+            den_scale += std::pow((float)totals.csf[scale][band], inv_p) + area_root;
         }
-        scores[2 * scale + 0] = num_scale;
-        scores[2 * scale + 1] = den_scale;
-        score_num += num_scale;
-        score_den += den_scale;
-
-        /* ADR-0574: AIM accumulation — same CSF denominator as adm2 (den_scale). */
+        pooled.scales[2 * scale + 0] = num_scale;
+        pooled.scales[2 * scale + 1] = den_scale;
+        pooled.numerator += num_scale;
+        pooled.denominator += den_scale;
         float aim_num_scale = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; b++)
-            aim_num_scale += std::pow((float)aim_cm_totals[scale][b], inv_p);
-        aim_den += den_scale;
-        aim_num += aim_num_scale;
+        for (int band = 0; band < FADM_NUM_BANDS; band++)
+            aim_num_scale += std::pow((float)totals.aim[scale][band], inv_p);
+        pooled.aim_denominator += den_scale;
+        pooled.aim_numerator += aim_num_scale;
     }
+    return pooled;
+}
 
+struct FadmScores {
+    double adm;
+    double aim;
+    double adm3;
+};
+
+static FadmScores fadm_finalize_scores(const FloatAdmStateSycl *s, FadmPooled *pooled)
+{
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
-    if (score_num < numden_limit)
-        score_num = 0.0;
-    if (score_den < numden_limit)
-        score_den = 0.0;
-    const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
-
-    /* ADR-0574: AIM score and ADM3 score. */
-    const double score_aim = (aim_den == 0.0) ? 1.0 : std::fmin(aim_num / aim_den, 1.0);
-    double score_adm3;
+    if (pooled->numerator < numden_limit)
+        pooled->numerator = 0.0;
+    if (pooled->denominator < numden_limit)
+        pooled->denominator = 0.0;
+    const double adm = pooled->denominator == 0.0 ? 1.0 : pooled->numerator / pooled->denominator;
+    const double aim = pooled->aim_denominator == 0.0 ?
+                           1.0 :
+                           std::fmin(pooled->aim_numerator / pooled->aim_denominator, 1.0);
+    double adm3;
     if (s->adm_adm3_apply_hm) {
-        const double hm_denom = score + score_aim;
-        score_adm3 = (hm_denom > 0.0) ? (2.0 * score * score_aim / hm_denom) : 0.0;
+        const double hm_denom = adm + aim;
+        adm3 = hm_denom > 0.0 ? 2.0 * adm * aim / hm_denom : 0.0;
     } else {
-        score_adm3 = score * s->adm_dlm_weight + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
+        adm3 = adm * s->adm_dlm_weight + (1.0 - aim) * (1.0 - s->adm_dlm_weight);
     }
-    if (score_adm3 < s->adm_min_val)
-        score_adm3 = s->adm_min_val;
+    if (adm3 < s->adm_min_val)
+        adm3 = s->adm_min_val;
+    return {adm, aim, adm3};
+}
 
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm2_score", score, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale0_score", scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale1_score", scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale2_score", scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale3_score", scores[6] / scores[7], index);
-    /* ADR-0574: emit AIM and ADM3 sub-feature scores. */
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_aim_score", score_aim, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm3_score", score_adm3, index);
+static int fadm_append(VmafFeatureCollector *collector, VmafDictionary *dictionary,
+                       const char *name, double score, unsigned index)
+{
+    return vmaf_feature_collector_append_with_dict(collector, dictionary, name, score, index);
+}
 
-    if (s->debug && !err) {
-        err |=
-            vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm", score, index);
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_num",
-                                                       score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_den",
-                                                       score_den, index);
-        const char *const names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
-                                      "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
-                                      "adm_num_scale3", "adm_den_scale3"};
-        for (int i = 0; i < 8 && !err; i++) {
-            err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, names[i],
-                                                           scores[i], index);
-        }
+static int fadm_append_scores(const FloatAdmStateSycl *s, VmafFeatureCollector *collector,
+                              const FadmPooled &pooled, const FadmScores &scores, unsigned index)
+{
+    static const char *const scale_names[] = {
+        "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
+        "VMAF_feature_adm_scale2_score", "VMAF_feature_adm_scale3_score"};
+    int err =
+        fadm_append(collector, s->feature_name_dict, "VMAF_feature_adm2_score", scores.adm, index);
+    for (int scale = 0; scale < FADM_NUM_SCALES && !err; scale++) {
+        err = fadm_append(collector, s->feature_name_dict, scale_names[scale],
+                          pooled.scales[2 * scale] / pooled.scales[2 * scale + 1], index);
     }
+    if (!err)
+        err = fadm_append(collector, s->feature_name_dict, "VMAF_feature_aim_score", scores.aim,
+                          index);
+    if (!err)
+        err = fadm_append(collector, s->feature_name_dict, "VMAF_feature_adm3_score", scores.adm3,
+                          index);
     return err;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static int fadm_append_debug(const FloatAdmStateSycl *s, VmafFeatureCollector *collector,
+                             const FadmPooled &pooled, const FadmScores &scores, unsigned index)
+{
+    if (!s->debug)
+        return 0;
+    int err = fadm_append(collector, s->feature_name_dict, "adm", scores.adm, index);
+    if (!err)
+        err = fadm_append(collector, s->feature_name_dict, "adm_num", pooled.numerator, index);
+    if (!err)
+        err = fadm_append(collector, s->feature_name_dict, "adm_den", pooled.denominator, index);
+    static const char *const names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
+                                         "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
+                                         "adm_num_scale3", "adm_den_scale3"};
+    for (int value = 0; value < 8 && !err; value++)
+        err =
+            fadm_append(collector, s->feature_name_dict, names[value], pooled.scales[value], index);
+    return err;
+}
+
+static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+{
+    auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
+    auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    if (!queue)
+        return -EINVAL;
+    try {
+        queue->wait_and_throw();
+    } catch (const sycl::exception &exception) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_adm_sycl: execution failed: %s\n", exception.what());
+        return -EIO;
+    }
+    const FadmTotals totals = fadm_gather_totals(s);
+    FadmPooled pooled = fadm_pool_totals(s, totals);
+    const FadmScores scores = fadm_finalize_scores(s, &pooled);
+    int err = fadm_append_scores(s, fc, pooled, scores, index);
+    if (!err)
+        err = fadm_append_debug(s, fc, pooled, scores, index);
+    return err;
+}
+
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
-    if (s->sycl_state) {
-        if (s->h_ref_raw)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_raw);
-        if (s->h_dis_raw)
-            vmaf_sycl_free(s->sycl_state, s->h_dis_raw);
-        if (s->d_ref_raw)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_raw);
-        if (s->d_dis_raw)
-            vmaf_sycl_free(s->sycl_state, s->d_dis_raw);
-        if (s->d_dwt_tmp_ref)
-            vmaf_sycl_free(s->sycl_state, s->d_dwt_tmp_ref);
-        if (s->d_dwt_tmp_dis)
-            vmaf_sycl_free(s->sycl_state, s->d_dwt_tmp_dis);
-        for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-            if (s->d_ref_band[scale])
-                vmaf_sycl_free(s->sycl_state, s->d_ref_band[scale]);
-            if (s->d_dis_band[scale])
-                vmaf_sycl_free(s->sycl_state, s->d_dis_band[scale]);
-            if (s->d_accum[scale])
-                vmaf_sycl_free(s->sycl_state, s->d_accum[scale]);
-            if (s->h_accum[scale])
-                vmaf_sycl_free(s->sycl_state, s->h_accum[scale]);
-        }
-        if (s->d_csf_a)
-            vmaf_sycl_free(s->sycl_state, s->d_csf_a);
-        if (s->d_csf_f)
-            vmaf_sycl_free(s->sycl_state, s->d_csf_f);
-        /* ADR-0574: AIM CSF buffers. */
-        if (s->d_csf_a_aim)
-            vmaf_sycl_free(s->sycl_state, s->d_csf_a_aim);
-        if (s->d_csf_f_aim)
-            vmaf_sycl_free(s->sycl_state, s->d_csf_f_aim);
-    }
-    if (s->feature_name_dict)
-        vmaf_dictionary_free(&s->feature_name_dict);
-    return 0;
+    fadm_release_buffers(s);
+    return s->feature_name_dict ? vmaf_dictionary_free(&s->feature_name_dict) : 0;
 }
 
 static const char *provided_features_float_adm_sycl[] = {"VMAF_feature_adm2_score",
@@ -1352,8 +1190,6 @@ static const char *provided_features_float_adm_sycl[] = {"VMAF_feature_adm2_scor
                                                          "adm_den_scale3",
                                                          nullptr};
 
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
-
 extern "C" VmafFeatureExtractor vmaf_fex_float_adm_sycl = {
     .name = "float_adm_sycl",
     .init = init_fex_sycl,
@@ -1363,9 +1199,12 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_adm_sycl = {
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,
     .options = options_float_adm_sycl,
+    .priv = nullptr,
     .priv_size = sizeof(FloatAdmStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_float_adm_sycl,
+    .sycl_state = nullptr,
+    .framesync = nullptr,
+    .prev_ref = {},
+    .chars = {},
 };
-
-} /* extern "C" */

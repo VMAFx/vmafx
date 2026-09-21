@@ -27,6 +27,7 @@
 #include "feature_name.h"
 #include "cuda/integer_moment_cuda.h"
 #include "cuda/kernel_template.h"
+#include "log.h"
 #include "mem.h"
 #include "picture.h"
 #include "picture_cuda.h"
@@ -78,6 +79,51 @@ static int moment_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
     return 0;
 }
 
+static int load_moment_module(VmafFeatureExtractor *fex)
+{
+    MomentStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+    int _cuda_err = 0;
+    int ctx_pushed = 0;
+
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
+    ctx_pushed = 1;
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, moment_score_ptx), fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_moment_kernel_8bpc"), fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_kernel_16bpc"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    return 0;
+
+fail:
+    if (ctx_pushed)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+fail_after_pop:
+    return _cuda_err;
+}
+
+static int release_moment_resources(VmafFeatureExtractor *fex)
+{
+    MomentStateCuda *s = fex->priv;
+    int err = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    const int readback_err = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    const int dict_err = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!err)
+        err = readback_err;
+    if (!err)
+        err = dict_err;
+
+    const CudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f && s->module) {
+        const CUresult result = cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+        if (!err && result != CUDA_SUCCESS)
+            err = vmaf_cuda_result_to_errno((int)result);
+    }
+    return err;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -85,51 +131,36 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     (void)w;
     (void)h;
     MomentStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
         return err;
 
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, moment_score_ptx), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_moment_kernel_8bpc"), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_kernel_16bpc"), fail);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    err = load_moment_module(fex);
+    if (err) {
+        const int cleanup_err = release_moment_resources(fex);
+        if (cleanup_err)
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_moment_cuda: module-load cleanup failed: %d\n",
+                     cleanup_err);
+        return err;
+    }
 
     s->bpc = bpc;
 
     err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, 4u * sizeof(uint64_t));
-    if (err)
-        goto free_ref;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_ref;
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
     }
-
-    return 0;
-
-free_ref:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    if (err) {
+        const int cleanup_err = release_moment_resources(fex);
+        if (cleanup_err)
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "integer_moment_cuda: initialization cleanup failed: %d\n", cleanup_err);
+    }
     return err;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -147,7 +178,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Pre-launch: zero the four device counters and wait for the
      * dist-side ready event. The kernel uses atomic adds, so the
      * memset is mandatory. */
-    int err = vmaf_cuda_kernel_submit_pre_launch(&s->lc, fex->cu_state, &s->rb,
+    int err = vmaf_cuda_kernel_submit_pre_launch(fex->cu_state, &s->rb,
                                                  vmaf_cuda_picture_get_stream(ref_pic),
                                                  vmaf_cuda_picture_get_ready_event(dist_pic));
     if (err)
@@ -217,18 +248,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
-    MomentStateCuda *s = fex->priv;
-    int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    if (rc == 0)
-        rc = rb_rc;
-    int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
-    if (rc == 0)
-        rc = dict_rc;
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
-    return rc;
+    return release_moment_resources(fex);
 }
 
 static const char *provided_features[] = {

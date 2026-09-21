@@ -119,7 +119,64 @@ assert_eq "Anonymous-namespace tree with missing symbol exits 1" "1" "$exit_code
 assert_eq "Missing message emitted for namespace spelling" "1" \
   "$(grep -cF 'MISSING: vmaf_fex_sample_cuda not in feature_extractor_list[]' <<<"$out")"
 
-echo "=== Test 5: Missing feature_extractor.cpp triggers error ==="
+echo "=== Test 5: Grouped registry is parsed through the reachable group list ==="
+mock_tree_groups="$(mktemp -d -p "$TMPDIR_TESTS")"
+mkdir -p "$mock_tree_groups/core/src/feature/cuda"
+cat <<'MOCK_EOF' >"$mock_tree_groups/core/src/feature/cuda/fex.c"
+VmafFeatureExtractor vmaf_fex_sample_cuda = {
+    .name = "sample_cuda",
+};
+MOCK_EOF
+cat <<'MOCK_EOF' >"$mock_tree_groups/core/src/feature/feature_extractor.cpp"
+static VmafFeatureExtractor *const cuda_feature_extractors[] = {
+    &vmaf_fex_sample_cuda,
+    nullptr,
+};
+
+static VmafFeatureExtractor *const *const feature_extractor_groups[] = {
+    cuda_feature_extractors,
+    nullptr,
+};
+MOCK_EOF
+
+exit_code=0
+out=$(bash "$CHECK_SCRIPT" "$mock_tree_groups" 2>&1) || exit_code=$?
+assert_eq "Grouped registry exits 0" "0" "$exit_code"
+assert_eq "Grouped registry outputs PASS" "1" \
+  "$(grep -cF 'PASS: all backend symbols present' <<<"$out")"
+
+echo "=== Test 6: Unreachable group does not satisfy registration ==="
+mock_tree_unreachable="$(mktemp -d -p "$TMPDIR_TESTS")"
+mkdir -p "$mock_tree_unreachable/core/src/feature/cuda"
+cat <<'MOCK_EOF' >"$mock_tree_unreachable/core/src/feature/cuda/fex.c"
+VmafFeatureExtractor vmaf_fex_sample_cuda = {
+    .name = "sample_cuda",
+};
+MOCK_EOF
+cat <<'MOCK_EOF' >"$mock_tree_unreachable/core/src/feature/feature_extractor.cpp"
+static VmafFeatureExtractor *const cuda_feature_extractors[] = {
+    &vmaf_fex_other_cuda,
+    nullptr,
+};
+
+static VmafFeatureExtractor *const unreachable_feature_extractors[] = {
+    &vmaf_fex_sample_cuda,
+    nullptr,
+};
+
+static VmafFeatureExtractor *const *const feature_extractor_groups[] = {
+    cuda_feature_extractors,
+    nullptr,
+};
+MOCK_EOF
+
+exit_code=0
+out=$(bash "$CHECK_SCRIPT" "$mock_tree_unreachable" 2>&1) || exit_code=$?
+assert_eq "Unreachable group exits 1" "1" "$exit_code"
+assert_eq "Unreachable group emits missing message" "1" \
+  "$(grep -cF 'MISSING: vmaf_fex_sample_cuda not in feature_extractor_list[]' <<<"$out")"
+
+echo "=== Test 7: Missing feature_extractor.cpp triggers error ==="
 mock_tree_nofex="$(mktemp -d -p "$TMPDIR_TESTS")"
 exit_code=0
 out=$(bash "$CHECK_SCRIPT" "$mock_tree_nofex" 2>&1) || exit_code=$?

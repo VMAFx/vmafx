@@ -59,6 +59,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "cuda/integer_psnr_cuda.h"
+#include "log.h"
 #include "mem.h"
 #include "picture.h"
 #include "picture_cuda.h"
@@ -146,15 +147,9 @@ static int psnr_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis, Vm
     return 0;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static void configure_psnr_planes(PsnrStateCuda *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                  unsigned h)
 {
-    PsnrStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-
-    /* Per-plane geometry derived from pix_fmt. CPU reference:
-     * libvmaf/src/feature/integer_psnr.c::init computes the same
-     * (ss_hor, ss_ver) split. YUV400 has chroma absent, so n_planes = 1. */
     s->width[0] = w;
     s->height[0] = h;
     if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
@@ -171,27 +166,20 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->width[1] = s->width[2] = cw;
         s->height[1] = s->height[2] = ch;
     }
-    /* Mirror CPU integer_psnr.c::init's enable_chroma guard (ADR-0453):
-     * when the caller passes enable_chroma=false, skip chroma dispatches
-     * identically to the YUV400 path above. YUV400 already forces
-     * n_planes=1, so this only activates for 4:2:0/4:2:2/4:4:4. */
     if (!s->enable_chroma && s->n_planes > 1U) {
         s->n_planes = 1U;
         s->width[1] = s->width[2] = 0U;
         s->height[1] = s->height[2] = 0U;
     }
+}
 
-    /* Stream + event pair via the template — replaces the
-     * cuCtxPushCurrent → cuStreamCreateWithPriority → cuEventCreate ×2
-     * → cuCtxPopCurrent block every CUDA feature kernel hand-rolled. */
-    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
-    if (err)
-        return err;
-
-    /* Module load + function lookups stay per-feature (each metric
-     * has its own .ptx blob and entry-point names). */
+static int load_psnr_module(VmafFeatureExtractor *fex)
+{
+    PsnrStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
     int _cuda_err = 0;
     int ctx_pushed = 0;
+
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_score_ptx), fail);
@@ -200,45 +188,77 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_psnr_kernel_16bpc"), fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-
-    s->bpc = bpc;
-    s->peak = (1u << bpc) - 1u;
-    /* Match CPU integer_psnr.c::init's psnr_max default branch
-     * (`min_sse == 0.0`): psnr_max[p] = (6 * bpc) + 12. */
-    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++)
-        s->psnr_max[p] = (double)(6U * bpc) + 12.0;
-
-    /* Per-plane readback pairs (device SSE accumulator + pinned host
-     * slot) via the template. One pair per plane — matches the
-     * template's documented multi-plane PSNR pattern. */
-    for (unsigned p = 0; p < s->n_planes; p++) {
-        err = vmaf_cuda_kernel_readback_alloc(&s->rb[p], fex->cu_state, sizeof(uint64_t));
-        if (err)
-            goto free_ref;
-    }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto free_ref;
-
     return 0;
-
-free_ref:
-    for (unsigned p = 0; p < s->n_planes; p++)
-        (void)vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
-    if (s->feature_name_dict) {
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
-    }
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return -ENOMEM;
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
 fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
+}
+
+static int release_psnr_resources(VmafFeatureExtractor *fex)
+{
+    PsnrStateCuda *s = fex->priv;
+    int err = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    for (unsigned p = 0; p < s->n_planes; p++) {
+        const int readback_err = vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
+        if (!err)
+            err = readback_err;
+    }
+    const int dict_err = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!err)
+        err = dict_err;
+    const CudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f && s->module) {
+        const CUresult result = cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+        if (!err && result != CUDA_SUCCESS)
+            err = vmaf_cuda_result_to_errno((int)result);
+    }
+    return err;
+}
+
+static int allocate_psnr_readbacks(VmafFeatureExtractor *fex)
+{
+    PsnrStateCuda *s = fex->priv;
+    int err = 0;
+    for (unsigned p = 0; !err && p < s->n_planes; p++)
+        err = vmaf_cuda_kernel_readback_alloc(&s->rb[p], fex->cu_state, sizeof(uint64_t));
+    return err;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    PsnrStateCuda *s = fex->priv;
+    configure_psnr_planes(s, pix_fmt, w, h);
+
+    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
+    if (err)
+        return err;
+    err = load_psnr_module(fex);
+
+    s->bpc = bpc;
+    s->peak = (1u << bpc) - 1u;
+    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++)
+        s->psnr_max[p] = (double)(6U * bpc) + 12.0;
+
+    if (!err)
+        err = allocate_psnr_readbacks(fex);
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
+    }
+    if (err) {
+        const int cleanup_err = release_psnr_resources(fex);
+        if (cleanup_err)
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_psnr_cuda: initialization cleanup failed: %d\n",
+                     cleanup_err);
+    }
+    return err;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -256,16 +276,16 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * once on the dist-side ready event (the picture-stream wait is
      * a property of the picture, not the per-plane dispatch). The
      * template's `submit_pre_launch` does both; we call it once for
-     * plane 0 and then zero the remaining planes' accumulators
-     * directly on the same private stream. */
-    int err = vmaf_cuda_kernel_submit_pre_launch(&s->lc, fex->cu_state, &s->rb[0],
-                                                 vmaf_cuda_picture_get_stream(ref_pic),
+     * plane 0 and then zero the remaining planes' accumulators on that
+     * same picture stream before any plane kernel launches. */
+    const CUstream picture_stream = vmaf_cuda_picture_get_stream(ref_pic);
+    int err = vmaf_cuda_kernel_submit_pre_launch(fex->cu_state, &s->rb[0], picture_stream,
                                                  vmaf_cuda_picture_get_ready_event(dist_pic));
     if (err)
         return err;
     for (unsigned p = 1; p < s->n_planes; p++) {
-        CHECK_CUDA_RETURN(cu_f,
-                          cuMemsetD8Async(s->rb[p].device->data, 0, s->rb[p].bytes, s->lc.str));
+        CHECK_CUDA_RETURN(
+            cu_f, cuMemsetD8Async(s->rb[p].device->data, 0, s->rb[p].bytes, picture_stream));
     }
 
     /* One dispatch per active plane against per-plane (w, h). All
@@ -273,8 +293,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * with motion_cuda.c et al. is preserved. */
     for (unsigned p = 0; p < s->n_planes; p++) {
         err = psnr_cuda_dispatch(ref_pic, dist_pic, s->rb[p].device, ref_pic->w[p], ref_pic->h[p],
-                                 p, s->bpc, s->funcbpc8, s->funcbpc16, cu_f,
-                                 vmaf_cuda_picture_get_stream(ref_pic));
+                                 p, s->bpc, s->funcbpc8, s->funcbpc16, cu_f, picture_stream);
         if (err)
             return err;
     }
@@ -284,7 +303,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * accumulator + record `finished`. The template documents this
      * exact sequence in its docstring; left inline for clarity since
      * the kernel launch + ref_pic stream are inherently per-feature. */
-    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, vmaf_cuda_picture_get_stream(ref_pic)));
+    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, picture_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
     for (unsigned p = 0; p < s->n_planes; p++) {
         CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb[p].host_pinned,
@@ -344,24 +363,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
-    PsnrStateCuda *s = fex->priv;
-
-    /* Lifecycle teardown via the template (sync → destroy stream →
-     * destroy events). Best-effort error aggregation matches the
-     * old hand-rolled CHECK_CUDA_GOTO chain. */
-    int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    for (unsigned p = 0; p < s->n_planes; p++) {
-        const int err = vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
-        if (err && rc == 0)
-            rc = err;
-    }
-    const int err = vmaf_dictionary_free(&s->feature_name_dict);
-    if (err && rc == 0)
-        rc = err;
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
-    return rc;
+    return release_psnr_resources(fex);
 }
 
 /* Provided features — full luma + chroma per the chroma extension

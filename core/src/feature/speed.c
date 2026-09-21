@@ -131,7 +131,7 @@ typedef struct SpeedState {
 #define EIGENVALUE_EPS (1e-6)
 #define EIGENVALUE_MAX_ITERS (500)
 #define ALMOST_EQUAL(x, c) (fabs((x) - (c)) < 1.0e-3)
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define SPEED_MAX(x, y) ((x) > (y) ? (x) : (y))
 
 typedef struct Matrix {
     int rows;
@@ -1084,8 +1084,8 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     dim->original_width = w;
     dim->scaled_height = (int)lround((double)dim->original_height * speed_prescale);
     dim->scaled_width = (int)lround((double)dim->original_width * speed_prescale);
-    dim->alloc_height = MAX(dim->original_height, dim->scaled_height);
-    dim->alloc_width = MAX(dim->original_width, dim->scaled_width);
+    dim->alloc_height = SPEED_MAX(dim->original_height, dim->scaled_height);
+    dim->alloc_width = SPEED_MAX(dim->original_width, dim->scaled_width);
     dim->operating_height = dim->scaled_height >> NUM_SCALES;
     dim->operating_width = dim->scaled_width >> NUM_SCALES;
     dim->block_size = DEFAULT_BLOCK_SIZE;
@@ -1254,87 +1254,76 @@ typedef struct SpeedChromaState {
     int speed_weight_var_mode;
 } SpeedChromaState;
 
+#define SPEED_DOUBLE_OPTION(state_, name_, alias_, help_, member_, default_, min_, max_)           \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .offset = offsetof(state_, member_),                                                       \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = default_,                                                                 \
+        .min = min_,                                                                               \
+        .max = max_,                                                                               \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = alias_,                                                                           \
+    }
+#define SPEED_STRING_OPTION(state_, name_, alias_, help_, member_, default_)                       \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .offset = offsetof(state_, member_),                                                       \
+        .type = VMAF_OPT_TYPE_STRING,                                                              \
+        .default_val.s = default_,                                                                 \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = alias_,                                                                           \
+    }
+#define SPEED_INT_OPTION(state_, name_, alias_, help_, member_, default_, min_, max_)              \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .offset = offsetof(state_, member_),                                                       \
+        .type = VMAF_OPT_TYPE_INT,                                                                 \
+        .default_val.i = default_,                                                                 \
+        .min = min_,                                                                               \
+        .max = max_,                                                                               \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = alias_,                                                                           \
+    }
+#define SPEED_BOOL_OPTION(state_, name_, alias_, help_, member_)                                   \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .offset = offsetof(state_, member_),                                                       \
+        .type = VMAF_OPT_TYPE_BOOL,                                                                \
+        .default_val.b = false,                                                                    \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+        .alias = alias_,                                                                           \
+    }
+
 static const VmafOption options_chroma[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the gaussian kernel (2.0 means "
-                "multiplying the standard deviation by 2 and enlarge "
-                "the kernel size accordingly",
-        .offset = offsetof(SpeedChromaState, speed_chroma_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_KERNELSCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame (2.0 means "
-                "making the image twice as large on each dimension)",
-        .offset = offsetof(SpeedChromaState, speed_chroma_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_PRESCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method for the frame, supported options: "
-                "[nearest, bilinear, bicubic, lanczos4]",
-        .offset = offsetof(SpeedChromaState, speed_chroma_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = DEFAULT_SPEED_PRESCALE_METHOD,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedChromaState, speed_chroma_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_SIGMA_NN,
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor, expressed in percentage of sigma_nn",
-        .offset = offsetof(SpeedChromaState, speed_chroma_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_NN_FLOOR,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "maximum value allowed; "
-                "larger values will be clipped to this value",
-        .offset = offsetof(SpeedChromaState, speed_chroma_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_weight_var_mode",
-        .help = "different approaches to perform variance-absed weighting",
-        .offset = offsetof(SpeedChromaState, speed_weight_var_mode),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.d = 0,
-        .min = 0,
-        .max = 6,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "wvm",
-    },
+    SPEED_DOUBLE_OPTION(SpeedChromaState, "speed_kernelscale", "ks",
+                        "scaling factor for the gaussian kernel (2.0 means multiplying the "
+                        "standard deviation by 2 and enlarge the kernel size accordingly",
+                        speed_chroma_kernelscale, DEFAULT_SPEED_KERNELSCALE, 0.1, 4.0),
+    SPEED_DOUBLE_OPTION(SpeedChromaState, "speed_prescale", "ps",
+                        "scaling factor for the frame (2.0 means making the image twice as large "
+                        "on each dimension)",
+                        speed_chroma_prescale, DEFAULT_SPEED_PRESCALE, 0.1, 4.0),
+    SPEED_STRING_OPTION(SpeedChromaState, "speed_prescale_method", "psm",
+                        "scaling method for the frame, supported options: [nearest, bilinear, "
+                        "bicubic, lanczos4]",
+                        speed_chroma_prescale_method, DEFAULT_SPEED_PRESCALE_METHOD),
+    SPEED_DOUBLE_OPTION(SpeedChromaState, "speed_sigma_nn", "snn",
+                        "standard deviation of neural noise", speed_chroma_sigma_nn,
+                        DEFAULT_SPEED_SIGMA_NN, 0.1, 2.0),
+    SPEED_DOUBLE_OPTION(SpeedChromaState, "speed_nn_floor", "nnf",
+                        "neural noise floor, expressed in percentage of sigma_nn",
+                        speed_chroma_nn_floor, DEFAULT_SPEED_NN_FLOOR, 0.0, 1.0),
+    SPEED_DOUBLE_OPTION(SpeedChromaState, "speed_max_val", "mxv",
+                        "maximum value allowed; larger values will be clipped to this value",
+                        speed_chroma_max_val, DEFAULT_SPEED_MAX_VAL, 0.0, 1000.0),
+    SPEED_INT_OPTION(SpeedChromaState, "speed_weight_var_mode", "wvm",
+                     "different approaches to perform variance-absed weighting",
+                     speed_weight_var_mode, 0, 0, 6),
     {0}};
 
 static int init_chroma(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -1497,84 +1486,29 @@ typedef struct SpeedTemporalState {
 } SpeedTemporalState;
 
 static const VmafOption options[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the gaussian kernel (2.0 means "
-                "multiplying the standard deviation by 2 and enlarge "
-                "the kernel size accordingly",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_KERNELSCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame (2.0 means "
-                "making the image twice as large on each dimension)",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_PRESCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method for the frame, supported options: "
-                "[nearest, bilinear, bicubic, lanczos4]",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = DEFAULT_SPEED_PRESCALE_METHOD,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_SIGMA_NN,
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor, expressed in percentage of sigma_nn",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_NN_FLOOR,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "maximum value allowed; larger values will be clipped to this "
-                "value",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_SPEED_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_use_ref_diff",
-        .help = "debug mode: enable additional output",
-        .offset = offsetof(SpeedTemporalState, speed_temporal_use_ref_diff),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "urd",
-    },
+    SPEED_DOUBLE_OPTION(SpeedTemporalState, "speed_kernelscale", "ks",
+                        "scaling factor for the gaussian kernel (2.0 means multiplying the "
+                        "standard deviation by 2 and enlarge the kernel size accordingly",
+                        speed_temporal_kernelscale, DEFAULT_SPEED_KERNELSCALE, 0.1, 4.0),
+    SPEED_DOUBLE_OPTION(SpeedTemporalState, "speed_prescale", "ps",
+                        "scaling factor for the frame (2.0 means making the image twice as large "
+                        "on each dimension)",
+                        speed_temporal_prescale, DEFAULT_SPEED_PRESCALE, 0.1, 4.0),
+    SPEED_STRING_OPTION(SpeedTemporalState, "speed_prescale_method", "psm",
+                        "scaling method for the frame, supported options: [nearest, bilinear, "
+                        "bicubic, lanczos4]",
+                        speed_temporal_prescale_method, DEFAULT_SPEED_PRESCALE_METHOD),
+    SPEED_DOUBLE_OPTION(SpeedTemporalState, "speed_sigma_nn", "snn",
+                        "standard deviation of neural noise", speed_temporal_sigma_nn,
+                        DEFAULT_SPEED_SIGMA_NN, 0.1, 2.0),
+    SPEED_DOUBLE_OPTION(SpeedTemporalState, "speed_nn_floor", "nnf",
+                        "neural noise floor, expressed in percentage of sigma_nn",
+                        speed_temporal_nn_floor, DEFAULT_SPEED_NN_FLOOR, 0.0, 1.0),
+    SPEED_DOUBLE_OPTION(SpeedTemporalState, "speed_max_val", "mxv",
+                        "maximum value allowed; larger values will be clipped to this value",
+                        speed_temporal_max_val, DEFAULT_SPEED_MAX_VAL, 0.0, 1000.0),
+    SPEED_BOOL_OPTION(SpeedTemporalState, "speed_use_ref_diff", "urd",
+                      "debug mode: enable additional output", speed_temporal_use_ref_diff),
     {0}};
 
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,

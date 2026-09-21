@@ -46,8 +46,8 @@
  * offset     — integer offset added to each sample after division
  * scaler     — divisor applied to each 16-bit sample before offset
  * channel    — 0=Y, 1=Cb, 2=Cr */
-static void picture_copy_hbd(float *dst, std::ptrdiff_t dst_stride, VmafPicture *src, int offset,
-                             float scaler, int channel)
+static void picture_copy_hbd(float *dst, std::ptrdiff_t dst_stride, const VmafPicture *src,
+                             int offset, float scaler, int channel)
 {
     const unsigned h = src->h[channel];
     const unsigned w = src->w[channel];
@@ -69,8 +69,8 @@ static void picture_copy_hbd(float *dst, std::ptrdiff_t dst_stride, VmafPicture 
     }
 }
 
-void picture_copy(float *dst, ptrdiff_t dst_stride, VmafPicture *src, int offset, unsigned bpc,
-                  int channel)
+void picture_copy(float *dst, ptrdiff_t dst_stride, const VmafPicture *src, int offset,
+                  unsigned bpc, int channel)
 {
     if (bpc == 10U) {
         picture_copy_hbd(dst, dst_stride, src, offset, 4.0f, channel);

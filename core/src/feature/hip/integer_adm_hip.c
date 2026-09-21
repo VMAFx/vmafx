@@ -40,6 +40,7 @@
 #include "feature_name.h"
 #include "integer_adm.h"
 #include "libvmaf/picture.h"
+#include "log.h"
 
 #include "hip/integer_adm_hip.h"
 
@@ -297,264 +298,174 @@ typedef struct write_score_parameters_adm_hip {
     unsigned index, h, w;
 } write_score_parameters_adm_hip;
 
-static void write_scores(const write_score_parameters_adm_hip *params)
-{
-    VmafFeatureCollector *feature_collector = params->feature_collector;
-    const AdmStateHip *s = params->s;
-    unsigned index = params->index;
-
-    double scores[8];
+typedef struct AdmScoresHip {
+    double scales[8];
     double score;
-    double score_num;
-    double score_den;
+    double num;
+    double den;
+} AdmScoresHip;
+
+static void calculate_adm_scores(const write_score_parameters_adm_hip *params, AdmScoresHip *result)
+{
+    const AdmStateHip *s = params->s;
     double num = 0;
     double den = 0;
-
     unsigned w = params->w;
     unsigned h = params->h;
-
     int64_t *adm_cm = (int64_t *)s->buf.results_host;
     uint64_t *adm_csf = &((uint64_t *)s->buf.results_host)[RES_BUFFER_SIZE / 2];
-    float num_scale;
-    float den_scale;
 
     for (unsigned scale = 0; scale < 4; ++scale) {
         w = (w + 1) / 2;
         h = (h + 1) / 2;
-
+        float num_scale;
+        float den_scale;
         conclude_adm_cm(&adm_cm[scale * 3], (int)h, (int)w, (int)scale, (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
         conclude_adm_csf_den(&adm_csf[scale * 3], (int)h, (int)w, (int)scale, &den_scale,
                              &s->rfactor[scale * 3], (float)s->adm_noise_weight);
-
-        /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
-         * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
-         * The GPU kernel still computes scale 0; suppression is host-side only. */
         if (scale == 0u && s->adm_skip_scale0) {
-            scores[0] = 0.0;
-            scores[1] = 1e-10;
+            result->scales[0] = 0.0;
+            result->scales[1] = 1e-10;
             continue;
         }
-
         num += num_scale;
         den += den_scale;
-
-        scores[2 * scale + 0] = num_scale;
-        scores[2 * scale + 1] = den_scale;
+        result->scales[2 * scale + 0] = num_scale;
+        result->scales[2 * scale + 1] = den_scale;
     }
-
-    /* CPU parity (integer_adm.c::integer_compute_adm): the precision floor
-     * scales with the FULL-FRAME area, not the scale-3 area that `w`/`h`
-     * hold after the loop above. */
     const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
+    result->num = num < numden_limit ? 0 : num;
+    result->den = den < numden_limit ? 0 : den;
+    result->score = result->den == 0.0 ? 1.0 : result->num / result->den;
+}
 
-    if (den == 0.0) {
-        score = 1.0;
-    } else {
-        score = num / den;
-    }
-    /* ADR-0487 clamps adm3 only: the CPU reference emits
-     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
-     * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    score_num = num;
-    score_den = den;
-
-    /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
-     * a second device CM pass with the decouple_a / decouple_r roles swapped
-     * (the CUDA twin's ADR-0746 kernels), which the HIP kernel set does not
-     * have. Leaving both features out of `provided_features` routes them to
-     * the CPU twin through the ADR-0530 name-based fallback, which produces
-     * the correct value under the correct feature-name key. Emitting them
-     * here from a hard-coded aim_num would fabricate a score. Tracked as
-     * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
-
+static int append_adm_primary_scores(const write_score_parameters_adm_hip *params,
+                                     const AdmScoresHip *scores)
+{
+    static const char *const names[] = {"VMAF_integer_feature_adm2_score", "integer_adm_scale0",
+                                        "integer_adm_scale1", "integer_adm_scale2",
+                                        "integer_adm_scale3"};
+    const double values[] = {
+        scores->score, scores->scales[0] / scores->scales[1], scores->scales[2] / scores->scales[3],
+        scores->scales[4] / scores->scales[5], scores->scales[6] / scores->scales[7]};
     int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_adm2_score", score, index);
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale0", scores[0] / scores[1], index);
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale1", scores[2] / scores[3], index);
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale2", scores[4] / scores[5], index);
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale3", scores[6] / scores[7], index);
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        err |= vmaf_feature_collector_append_with_dict(params->feature_collector,
+                                                       params->s->feature_name_dict, names[i],
+                                                       values[i], params->index);
+    return err;
+}
 
-    if (!s->debug) {
-        (void)err;
-        return;
-    }
+static int append_adm_debug_scores(const write_score_parameters_adm_hip *params,
+                                   const AdmScoresHip *scores)
+{
+    static const char *const names[] = {"integer_adm",
+                                        "integer_adm_num",
+                                        "integer_adm_den",
+                                        "integer_adm_num_scale0",
+                                        "integer_adm_den_scale0",
+                                        "integer_adm_num_scale1",
+                                        "integer_adm_den_scale1",
+                                        "integer_adm_num_scale2",
+                                        "integer_adm_den_scale2",
+                                        "integer_adm_num_scale3",
+                                        "integer_adm_den_scale3"};
+    const double values[] = {scores->score,     scores->num,       scores->den,
+                             scores->scales[0], scores->scales[1], scores->scales[2],
+                             scores->scales[3], scores->scales[4], scores->scales[5],
+                             scores->scales[6], scores->scales[7]};
+    int err = 0;
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        err |= vmaf_feature_collector_append_with_dict(params->feature_collector,
+                                                       params->s->feature_name_dict, names[i],
+                                                       values[i], params->index);
+    return err;
+}
 
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm", score, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num", score_num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den", score_den, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale0", scores[0], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale0", scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale1", scores[2], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale1", scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale2", scores[4], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale2", scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale3", scores[6], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale3", scores[7], index);
-    (void)err; /* accumulated collector status intentionally discarded; void writer API */
+static int write_scores(const write_score_parameters_adm_hip *params)
+{
+    AdmScoresHip scores;
+    calculate_adm_scores(params, &scores);
+    int err = append_adm_primary_scores(params, &scores);
+    if (params->s->debug)
+        err |= append_adm_debug_scores(params, &scores);
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
 /* VmafOption table                                                     */
 /* ------------------------------------------------------------------ */
 
+#define ADM_HIP_BOOL_OPTION(name_, alias_, help_, member_, flags_)                                 \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .alias = alias_,                                                                           \
+        .offset = offsetof(AdmStateHip, member_),                                                  \
+        .type = VMAF_OPT_TYPE_BOOL,                                                                \
+        .default_val.b = false,                                                                    \
+        .flags = flags_,                                                                           \
+    }
+#define ADM_HIP_DOUBLE_OPTION(name_, alias_, help_, member_, default_, min_, max_)                 \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .alias = alias_,                                                                           \
+        .offset = offsetof(AdmStateHip, member_),                                                  \
+        .type = VMAF_OPT_TYPE_DOUBLE,                                                              \
+        .default_val.d = default_,                                                                 \
+        .min = min_,                                                                               \
+        .max = max_,                                                                               \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+#define ADM_HIP_INT_OPTION(name_, alias_, help_, member_, default_, min_, max_)                    \
+    {                                                                                              \
+        .name = name_,                                                                             \
+        .help = help_,                                                                             \
+        .alias = alias_,                                                                           \
+        .offset = offsetof(AdmStateHip, member_),                                                  \
+        .type = VMAF_OPT_TYPE_INT,                                                                 \
+        .default_val.i = default_,                                                                 \
+        .min = min_,                                                                               \
+        .max = max_,                                                                               \
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
+    }
+
 static const VmafOption options_hip[] = {
-    {
-        .name = "debug",
-        .help = "debug mode: enable additional output",
-        .offset = offsetof(AdmStateHip, debug),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-    },
-    {
-        .name = "adm_csf_scale",
-        .alias = "scf",
-        .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
-        .offset = offsetof(AdmStateHip, adm_csf_scale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_CSF_SCALE,
-        .min = 0.0,
-        .max = 50.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_csf_diag_scale",
-        .alias = "scfd",
-        .help = "scale coefficient for the diagonal direction term of CSF",
-        .offset = offsetof(AdmStateHip, adm_csf_diag_scale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_CSF_DIAG_SCALE,
-        .min = 0.0,
-        .max = 50.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        /* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
-         * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
-         * twin does not emit (see write_scores). Dropping it from the table
-         * would make this twin emit `integer_adm2_...` where the CPU twin emits
-         * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
-         * lookup would miss. Same posture as the CPU reference, where
-         * adm_dlm_weight likewise has no arithmetic effect on adm2. */
-        .name = "adm_dlm_weight",
-        .alias = "dlmw",
-        .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
-        .offset = offsetof(AdmStateHip, adm_dlm_weight),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 0.5,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_enhn_gain_limit",
-        .alias = "egl",
-        .help = "enhancement gain imposed on adm, must be >= 1.0, "
-                "where 1.0 means the gain is completely disabled",
-        .offset = offsetof(AdmStateHip, adm_enhn_gain_limit),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_ENHN_GAIN_LIMIT,
-        .min = 1.0,
-        .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_norm_view_dist",
-        .alias = "nvd",
-        .help = "normalized viewing distance = viewing distance / ref display's physical height",
-        .offset = offsetof(AdmStateHip, adm_norm_view_dist),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_NORM_VIEW_DIST,
-        .min = 0.75,
-        .max = 24.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_ref_display_height",
-        .alias = "rdh",
-        .help = "reference display height in pixels",
-        .offset = offsetof(AdmStateHip, adm_ref_display_height),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT,
-        .min = 1,
-        .max = 4320,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_csf_mode",
-        .alias = "csf",
-        .help = "contrast sensitivity function",
-        .offset = offsetof(AdmStateHip, adm_csf_mode),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = DEFAULT_ADM_CSF_MODE,
-        .min = 0,
-        .max = 3,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_noise_weight",
-        .alias = "nw",
-        .help = "noise weight",
-        .offset = offsetof(AdmStateHip, adm_noise_weight),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_NOISE_WEIGHT,
-        .min = 0.0,
-        .max = 1500.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_skip_scale0",
-        .alias = "ssz",
-        .help = "skip the calculation of scale 0",
-        .offset = offsetof(AdmStateHip, adm_skip_scale0),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_min_val",
-        .alias = "min",
-        .help = "minimum value allowed; lower values will be clipped to this value",
-        .offset = offsetof(AdmStateHip, adm_min_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_MIN_VAL,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_p_norm",
-        .alias = "apn",
-        .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
-        .offset = offsetof(AdmStateHip, adm_p_norm),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 3.0,
-        .min = 1.0,
-        .max = 20.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
+    ADM_HIP_BOOL_OPTION("debug", NULL, "debug mode: enable additional output", debug, 0),
+    ADM_HIP_DOUBLE_OPTION("adm_csf_scale", "scf",
+                          "scale coefficient for the horizontal & vertical direction terms of CSF",
+                          adm_csf_scale, DEFAULT_ADM_CSF_SCALE, 0.0, 50.0),
+    ADM_HIP_DOUBLE_OPTION("adm_csf_diag_scale", "scfd",
+                          "scale coefficient for the diagonal direction term of CSF",
+                          adm_csf_diag_scale, DEFAULT_ADM_CSF_DIAG_SCALE, 0.0, 50.0),
+    ADM_HIP_DOUBLE_OPTION("adm_dlm_weight", "dlmw",
+                          "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
+                          adm_dlm_weight, 0.5, 0.0, 1.0),
+    ADM_HIP_DOUBLE_OPTION("adm_enhn_gain_limit", "egl",
+                          "enhancement gain imposed on adm, must be >= 1.0, where 1.0 means the "
+                          "gain is completely disabled",
+                          adm_enhn_gain_limit, DEFAULT_ADM_ENHN_GAIN_LIMIT, 1.0,
+                          DEFAULT_ADM_ENHN_GAIN_LIMIT),
+    ADM_HIP_DOUBLE_OPTION(
+        "adm_norm_view_dist", "nvd",
+        "normalized viewing distance = viewing distance / ref display's physical height",
+        adm_norm_view_dist, DEFAULT_ADM_NORM_VIEW_DIST, 0.75, 24.0),
+    ADM_HIP_INT_OPTION("adm_ref_display_height", "rdh", "reference display height in pixels",
+                       adm_ref_display_height, DEFAULT_ADM_REF_DISPLAY_HEIGHT, 1, 4320),
+    ADM_HIP_INT_OPTION("adm_csf_mode", "csf", "contrast sensitivity function", adm_csf_mode,
+                       DEFAULT_ADM_CSF_MODE, 0, 3),
+    ADM_HIP_DOUBLE_OPTION("adm_noise_weight", "nw", "noise weight", adm_noise_weight,
+                          DEFAULT_ADM_NOISE_WEIGHT, 0.0, 1500.0),
+    ADM_HIP_BOOL_OPTION("adm_skip_scale0", "ssz", "skip the calculation of scale 0",
+                        adm_skip_scale0, VMAF_OPT_FLAG_FEATURE_PARAM),
+    ADM_HIP_DOUBLE_OPTION("adm_min_val", "min",
+                          "minimum value allowed; lower values will be clipped to this value",
+                          adm_min_val, DEFAULT_ADM_MIN_VAL, 0.0, 1.0),
+    ADM_HIP_DOUBLE_OPTION("adm_p_norm", "apn",
+                          "p-norm exponent for fixed-point ADM contrast-measure finalisation",
+                          adm_p_norm, 3.0, 1.0, 20.0),
     {0}};
 
 /* ================================================================== */
@@ -588,7 +499,7 @@ static int hip_rc(hipError_t rc)
 /* Device-dispatch helpers (mirror integer_adm_cuda.c functions)      */
 /* ------------------------------------------------------------------ */
 
-#define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
+#define HIP_DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
 
 static int dwt2_8_device_hip(AdmStateHip *s, const uint8_t *d_picture, hip_adm_dwt_band_t *d_dst,
                              hip_i4_adm_dwt_band_t i4_dwt_dst, int w, int h, int src_stride,
@@ -606,9 +517,10 @@ static int dwt2_8_device_hip(AdmStateHip *s, const uint8_t *d_picture, hip_adm_d
                     &src_stride, &dst_stride, &v_shift,    &v_add_shift, p};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
-        (uint32_t)DIV_ROUND_UP((w + 1) / 2, horz_out_tile_cols),
-        (uint32_t)DIV_ROUND_UP((h + 1) / 2, horz_out_tile_rows), 1, (uint32_t)vert_out_tile_cols,
-        (uint32_t)(vert_out_tile_rows / rows_per_thread), 1, 0, c_stream, args, NULL);
+        (uint32_t)HIP_DIV_ROUND_UP((w + 1) / 2, horz_out_tile_cols),
+        (uint32_t)HIP_DIV_ROUND_UP((h + 1) / 2, horz_out_tile_rows), 1,
+        (uint32_t)vert_out_tile_cols, (uint32_t)(vert_out_tile_rows / rows_per_thread), 1, 0,
+        c_stream, args, NULL);
     return hip_rc(rc);
 }
 
@@ -629,9 +541,10 @@ static int dwt2_16_device_hip(AdmStateHip *s, const uint16_t *d_picture, hip_adm
                     &src_stride, &dst_stride, &v_shift,    &v_add_shift, p};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
-        (uint32_t)DIV_ROUND_UP((w + 1) / 2, horz_out_tile_cols),
-        (uint32_t)DIV_ROUND_UP((h + 1) / 2, horz_out_tile_rows), 1, (uint32_t)vert_out_tile_cols,
-        (uint32_t)(vert_out_tile_rows / rows_per_thread), 1, 0, c_stream, args, NULL);
+        (uint32_t)HIP_DIV_ROUND_UP((w + 1) / 2, horz_out_tile_cols),
+        (uint32_t)HIP_DIV_ROUND_UP((h + 1) / 2, horz_out_tile_rows), 1,
+        (uint32_t)vert_out_tile_cols, (uint32_t)(vert_out_tile_rows / rows_per_thread), 1, 0,
+        c_stream, args, NULL);
     return hip_rc(rc);
 }
 
@@ -647,16 +560,16 @@ static int adm_dwt2_s123_combined_device_hip(AdmStateHip *s, const int32_t *d_i4
     switch (scale) {
     case 1:
         rc = hipModuleLaunchKernel(s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
-                                   (uint32_t)DIV_ROUND_UP(w, 128), (uint32_t)BLOCK_Y, 1, 128, 1, 1,
-                                   0, cu_stream, args_vert, NULL);
+                                   (uint32_t)HIP_DIV_ROUND_UP(w, 128), (uint32_t)BLOCK_Y, 1, 128, 1,
+                                   1, 0, cu_stream, args_vert, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
         break;
     case 2: /* fall-through */
     case 3:
         rc = hipModuleLaunchKernel(s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
-                                   (uint32_t)DIV_ROUND_UP(w, 128), (uint32_t)BLOCK_Y, 1, 128, 1, 1,
-                                   0, cu_stream, args_vert, NULL);
+                                   (uint32_t)HIP_DIV_ROUND_UP(w, 128), (uint32_t)BLOCK_Y, 1, 128, 1,
+                                   1, 0, cu_stream, args_vert, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
         break;
@@ -668,22 +581,22 @@ static int adm_dwt2_s123_combined_device_hip(AdmStateHip *s, const int32_t *d_i4
     switch (scale) {
     case 1:
         rc = hipModuleLaunchKernel(s->func_dwt_s123_combined_hori_kernel_16384_15,
-                                   (uint32_t)DIV_ROUND_UP((w + 1) / 2, 128), (uint32_t)BLOCK_Y, 1,
-                                   128, 1, 1, 0, cu_stream, args_hori, NULL);
+                                   (uint32_t)HIP_DIV_ROUND_UP((w + 1) / 2, 128), (uint32_t)BLOCK_Y,
+                                   1, 128, 1, 1, 0, cu_stream, args_hori, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
         break;
     case 2:
         rc = hipModuleLaunchKernel(s->func_dwt_s123_combined_hori_kernel_32768_16,
-                                   (uint32_t)DIV_ROUND_UP((w + 1) / 2, 128), (uint32_t)BLOCK_Y, 1,
-                                   128, 1, 1, 0, cu_stream, args_hori, NULL);
+                                   (uint32_t)HIP_DIV_ROUND_UP((w + 1) / 2, 128), (uint32_t)BLOCK_Y,
+                                   1, 128, 1, 1, 0, cu_stream, args_hori, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
         break;
     case 3:
         rc = hipModuleLaunchKernel(s->func_dwt_s123_combined_hori_kernel_16384_15,
-                                   (uint32_t)DIV_ROUND_UP((w + 1) / 2, 128), (uint32_t)BLOCK_Y, 1,
-                                   128, 1, 1, 0, cu_stream, args_hori, NULL);
+                                   (uint32_t)HIP_DIV_ROUND_UP((w + 1) / 2, 128), (uint32_t)BLOCK_Y,
+                                   1, 128, 1, 1, 0, cu_stream, args_hori, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
         break;
@@ -720,10 +633,11 @@ static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, i
     const int BLOCKX = 32, BLOCKY = 4;
 
     void *args[] = {buf, &top, &bottom, &left, &right, &stride, p};
-    hipError_t rc = hipModuleLaunchKernel(
-        s->func_adm_csf_kernel_1_4, (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
-        (uint32_t)DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3, (uint32_t)BLOCKX,
-        (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
+    hipError_t rc =
+        hipModuleLaunchKernel(s->func_adm_csf_kernel_1_4,
+                              (uint32_t)HIP_DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
+                              (uint32_t)HIP_DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3,
+                              (uint32_t)BLOCKX, (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
     return hip_rc(rc);
 }
 
@@ -756,8 +670,8 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, i
     void *args[] = {buf, &scale, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
-                              (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
-                              (uint32_t)DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3,
+                              (uint32_t)HIP_DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
+                              (uint32_t)HIP_DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3,
                               (uint32_t)BLOCKX, (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
     return hip_rc(rc);
 }
@@ -791,7 +705,7 @@ static int adm_csf_den_s123_device_hip(AdmStateHip *s, AdmBufferHip *buf, int sc
                     &buf->adm_csf_den[scale]};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_csf_den_s123_line_kernel,
-        (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
+        (uint32_t)HIP_DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
         (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
     return hip_rc(rc);
 }
@@ -815,7 +729,7 @@ static int adm_csf_den_scale_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w
                     &left,          &right, &src_stride, &buf->adm_csf_den[scale]};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_csf_den_scale_line_kernel,
-        (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
+        (uint32_t)HIP_DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
         (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
     return hip_rc(rc);
 }
@@ -826,6 +740,22 @@ typedef struct WarpShiftHip {
     uint32_t shift_sq[3];
     uint32_t add_shift_sq[3];
 } WarpShiftHip;
+
+static WarpShiftHip make_warp_shift_hip(int w)
+{
+    static const int fixed_shift[3] = {4, 4, 3};
+    static const int32_t shift_xsq[3] = {29, 29, 30};
+    static const int32_t add_shift_xsq[3] = {268435456, 268435456, 536870912};
+    WarpShiftHip shift;
+    for (int band = 0; band < 3; ++band) {
+        shift.shift_cub[band] = (uint32_t)ceilf(log2f((float)w));
+        shift.shift_cub[band] -= (uint32_t)fixed_shift[band];
+        shift.shift_sq[band] = (uint32_t)shift_xsq[band];
+        shift.add_shift_sq[band] = (uint32_t)add_shift_xsq[band];
+        shift.add_shift_cub[band] = 1u << (shift.shift_cub[band] - 1u);
+    }
+    return shift;
+}
 
 static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
                                 int csf_a_stride, int scale, AdmFixedParametersHip *p,
@@ -852,7 +782,7 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
             &right,        &start_row, &end_row,  &start_col,     &end_col,        &src_stride,
             &csf_a_stride, &scale,     &buffer_h, &buffer_stride, &buf->tmp_accum, p};
         hipError_t rc = hipModuleLaunchKernel(
-            s->func_i4_adm_cm_line_kernel, (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX),
+            s->func_i4_adm_cm_line_kernel, (uint32_t)HIP_DIV_ROUND_UP(buffer_stride, BLOCKX),
             (uint32_t)buffer_h, 3, (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
@@ -860,7 +790,6 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
 
     /* reduce kernel */
     {
-        const int val_per_thread = 4;
         const int warps_per_cta = 4;
         const int BLOCKX = 32 * warps_per_cta;
         void *args[] = {
@@ -891,19 +820,7 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
     int buffer_stride = end_col - start_col;
     int buffer_h = end_row - start_row;
 
-    const int fixed_shift[3] = {4, 4, 3};
-    const int32_t shift_xsq[3] = {29, 29, 30};
-    const int32_t add_shift_xsq[3] = {268435456, 268435456, 536870912};
-
-    WarpShiftHip ws;
-    for (int band = 0; band < 3; ++band) {
-        ws.shift_cub[band] = (uint32_t)ceilf(log2f((float)w));
-        ws.shift_cub[band] -= (uint32_t)fixed_shift[band];
-        ws.shift_sq[band] = (uint32_t)shift_xsq[band];
-        ws.add_shift_sq[band] = (uint32_t)add_shift_xsq[band];
-        ws.add_shift_cub[band] = 1u << (ws.shift_cub[band] - 1u);
-    }
-
+    WarpShiftHip ws = make_warp_shift_hip(w);
     uint32_t shift_inner_accum = (uint32_t)ceilf(log2f((float)h));
     uint32_t add_shift_inner_accum = 1u << (shift_inner_accum - 1u);
 
@@ -935,7 +852,7 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
                         &add_shift_inner_accum};
         hipError_t rc =
             hipModuleLaunchKernel(s->func_adm_cm_line_kernel_8, 1,
-                                  (uint32_t)DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
+                                  (uint32_t)HIP_DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
                                   (uint32_t)BLOCKX, (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
@@ -947,192 +864,189 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
 /* Main per-frame computation                                           */
 /* ------------------------------------------------------------------ */
 
+typedef struct AdmComputeContextHip {
+    AdmStateHip *s;
+    AdmBufferHip *buf;
+    AdmFixedParametersHip fixed;
+    int w;
+    int h;
+    size_t buf_stride;
+    size_t curr_ref_stride;
+    size_t curr_dis_stride;
+    int32_t *curr_ref;
+    int32_t *curr_dis;
+} AdmComputeContextHip;
+
+static void init_adm_fixed_parameters(AdmComputeContextHip *ctx, double gain_limit,
+                                      double view_distance, int display_height)
+{
+    static const int32_t coeffs_lo[4] = {15826, 27411, 7345, -4240};
+    static const int32_t coeffs_hi[4] = {-4240, -7345, 27411, -15826};
+    AdmFixedParametersHip *const p = &ctx->fixed;
+    memset(p, 0, sizeof(*p));
+    memcpy(p->dwt2_db2_coeffs_lo, coeffs_lo, sizeof(coeffs_lo));
+    memcpy(p->dwt2_db2_coeffs_hi, coeffs_hi, sizeof(coeffs_hi));
+    p->dwt2_db2_coeffs_lo_sum = 46342;
+    p->dwt2_db2_coeffs_hi_sum = 0;
+    p->log2_w = log2f((float)ctx->w);
+    p->log2_h = log2f((float)ctx->h);
+    p->adm_ref_display_height = display_height;
+    p->adm_norm_view_dist = view_distance;
+    p->adm_enhn_gain_limit = gain_limit;
+    const double pow2_32 = pow(2, 32);
+    for (unsigned scale = 0; scale < 4; ++scale) {
+        const AdmCsfFactors factors =
+            adm_csf_factors((int)scale, view_distance, display_height, ctx->s->adm_csf_mode,
+                            ctx->s->adm_csf_scale, ctx->s->adm_csf_diag_scale);
+        p->rfactor[scale * 3] = factors.factor1;
+        p->rfactor[scale * 3 + 1] = factors.factor1;
+        p->rfactor[scale * 3 + 2] = factors.factor2;
+        if (scale == 0) {
+            uint16_t i_rf[3];
+            adm_csf_rfactor_scale0(p->rfactor, view_distance, display_height, ctx->s->adm_csf_mode,
+                                   i_rf);
+            p->i_rfactor[0] = i_rf[0];
+            p->i_rfactor[1] = i_rf[1];
+            p->i_rfactor[2] = i_rf[2];
+        } else {
+            p->i_rfactor[scale * 3] = (uint32_t)(p->rfactor[scale * 3] * pow2_32);
+            p->i_rfactor[scale * 3 + 1] = (uint32_t)(p->rfactor[scale * 3 + 1] * pow2_32);
+            p->i_rfactor[scale * 3 + 2] = (uint32_t)(p->rfactor[scale * 3 + 2] * pow2_32);
+        }
+    }
+    memcpy(ctx->s->rfactor, p->rfactor, sizeof(p->rfactor));
+}
+
+static int stage_adm_luma(AdmComputeContextHip *ctx, const VmafPicture *ref_pic,
+                          const VmafPicture *dis_pic)
+{
+    const size_t bytes_per_pixel = ref_pic->bpc > 8 ? sizeof(uint16_t) : sizeof(uint8_t);
+    const size_t row_bytes = (size_t)ctx->w * bytes_per_pixel;
+    hipError_t rc = hipMemcpy2DAsync(ctx->s->d_ref_luma, ctx->s->luma_pitch, ref_pic->data[0],
+                                     (size_t)ref_pic->stride[0], row_bytes, (size_t)ctx->h,
+                                     hipMemcpyHostToDevice, ctx->s->str);
+    if (rc != hipSuccess)
+        return hip_rc(rc);
+    rc = hipMemcpy2DAsync(ctx->s->d_dis_luma, ctx->s->luma_pitch, dis_pic->data[0],
+                          (size_t)dis_pic->stride[0], row_bytes, (size_t)ctx->h,
+                          hipMemcpyHostToDevice, ctx->s->str);
+    if (rc != hipSuccess)
+        return hip_rc(rc);
+    return hip_rc(hipStreamSynchronize(ctx->s->str));
+}
+
+static int wait_for_adm_input(AdmStateHip *s)
+{
+    hipError_t rc = hipEventRecord(s->ref_event, 0);
+    if (rc == hipSuccess)
+        rc = hipEventRecord(s->dis_event, 0);
+    if (rc == hipSuccess)
+        rc = hipStreamWaitEvent(s->str, s->dis_event, 0);
+    if (rc == hipSuccess)
+        rc = hipStreamWaitEvent(s->str, s->ref_event, 0);
+    return hip_rc(rc);
+}
+
+static int run_adm_scale0(AdmComputeContextHip *ctx, const VmafPicture *ref_pic,
+                          const VmafPicture *dis_pic)
+{
+    int err;
+    if (ref_pic->bpc == 8) {
+        err = dwt2_8_device_hip(ctx->s, ctx->s->d_ref_luma, &ctx->buf->ref_dwt2,
+                                ctx->buf->i4_ref_dwt2, ctx->w, ctx->h, (int)ctx->curr_ref_stride,
+                                (int)ctx->buf_stride, &ctx->fixed, 0);
+        if (!err)
+            err = dwt2_8_device_hip(
+                ctx->s, ctx->s->d_dis_luma, &ctx->buf->dis_dwt2, ctx->buf->i4_dis_dwt2, ctx->w,
+                ctx->h, (int)ctx->curr_dis_stride, (int)ctx->buf_stride, &ctx->fixed, 0);
+    } else {
+        err = dwt2_16_device_hip(ctx->s, ctx->s->d_ref_luma, &ctx->buf->ref_dwt2,
+                                 ctx->buf->i4_ref_dwt2, ctx->w, ctx->h, (int)ctx->curr_ref_stride,
+                                 (int)ctx->buf_stride, (int)ref_pic->bpc, &ctx->fixed, 0);
+        if (!err)
+            err =
+                dwt2_16_device_hip(ctx->s, ctx->s->d_dis_luma, &ctx->buf->dis_dwt2,
+                                   ctx->buf->i4_dis_dwt2, ctx->w, ctx->h, (int)ctx->curr_dis_stride,
+                                   (int)ctx->buf_stride, (int)dis_pic->bpc, &ctx->fixed, 0);
+    }
+    if (err)
+        return err;
+    err = wait_for_adm_input(ctx->s);
+    ctx->w = (ctx->w + 1) / 2;
+    ctx->h = (ctx->h + 1) / 2;
+    if (!err)
+        err = adm_csf_den_scale_device_hip(ctx->s, ctx->buf, ctx->w, ctx->h, (int)ctx->buf_stride,
+                                           ctx->s->str);
+    if (!err)
+        err = adm_csf_device_hip(ctx->s, ctx->buf, ctx->w, ctx->h, (int)ctx->buf_stride,
+                                 &ctx->fixed, ctx->s->str);
+    if (!err)
+        err = adm_cm_device_hip(ctx->s, ctx->buf, ctx->w, ctx->h, (int)ctx->buf_stride,
+                                (int)ctx->buf_stride, &ctx->fixed, ctx->s->str);
+    return err;
+}
+
+static int run_adm_later_scale(AdmComputeContextHip *ctx, unsigned scale)
+{
+    int err = adm_dwt2_s123_combined_device_hip(
+        ctx->s, ctx->curr_ref, ctx->buf->tmp_ref, ctx->buf->i4_ref_dwt2, ctx->w, ctx->h,
+        (int)ctx->curr_ref_stride, (int)ctx->buf_stride, (int)scale, &ctx->fixed, ctx->s->str);
+    if (!err)
+        err = adm_dwt2_s123_combined_device_hip(
+            ctx->s, ctx->curr_dis, ctx->buf->tmp_dis, ctx->buf->i4_dis_dwt2, ctx->w, ctx->h,
+            (int)ctx->curr_dis_stride, (int)ctx->buf_stride, (int)scale, &ctx->fixed, ctx->s->str);
+    if (err)
+        return err;
+    ctx->w = (ctx->w + 1) / 2;
+    ctx->h = (ctx->h + 1) / 2;
+    err = adm_csf_den_s123_device_hip(ctx->s, ctx->buf, (int)scale, ctx->w, ctx->h,
+                                      (int)ctx->buf_stride, ctx->s->str);
+    if (!err)
+        err = i4_adm_csf_device_hip(ctx->s, ctx->buf, (int)scale, ctx->w, ctx->h,
+                                    (int)ctx->buf_stride, &ctx->fixed, ctx->s->str);
+    if (!err)
+        err = i4_adm_cm_device_hip(ctx->s, ctx->buf, ctx->w, ctx->h, (int)ctx->buf_stride,
+                                   (int)ctx->buf_stride, (int)scale, &ctx->fixed, ctx->s->str);
+    return err;
+}
+
+static void advance_adm_scale(AdmComputeContextHip *ctx)
+{
+    ctx->curr_ref = ctx->buf->i4_ref_dwt2.band_a;
+    ctx->curr_dis = ctx->buf->i4_dis_dwt2.band_a;
+    ctx->curr_ref_stride = ctx->buf_stride;
+    ctx->curr_dis_stride = ctx->buf_stride;
+}
+
 static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPicture *dis_pic,
                                    AdmBufferHip *buf, double adm_enhn_gain_limit,
                                    double adm_norm_view_dist, int adm_ref_display_height)
 {
-    int w = (int)ref_pic->w[0];
-    int h = (int)ref_pic->h[0];
-
-    AdmFixedParametersHip p;
-    memset(&p, 0, sizeof(p));
-    p.dwt2_db2_coeffs_lo[0] = 15826;
-    p.dwt2_db2_coeffs_lo[1] = 27411;
-    p.dwt2_db2_coeffs_lo[2] = 7345;
-    p.dwt2_db2_coeffs_lo[3] = -4240;
-    p.dwt2_db2_coeffs_hi[0] = -4240;
-    p.dwt2_db2_coeffs_hi[1] = -7345;
-    p.dwt2_db2_coeffs_hi[2] = 27411;
-    p.dwt2_db2_coeffs_hi[3] = -15826;
-    p.dwt2_db2_coeffs_lo_sum = 46342;
-    p.dwt2_db2_coeffs_hi_sum = 0;
-    p.log2_w = log2f((float)w);
-    p.log2_h = log2f((float)h);
-    p.adm_ref_display_height = adm_ref_display_height;
-    p.adm_norm_view_dist = adm_norm_view_dist;
-    p.adm_enhn_gain_limit = adm_enhn_gain_limit;
-
-    const double pow2_32 = pow(2, 32);
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        const AdmCsfFactors f =
-            adm_csf_factors((int)scale, adm_norm_view_dist, adm_ref_display_height, s->adm_csf_mode,
-                            s->adm_csf_scale, s->adm_csf_diag_scale);
-        p.rfactor[scale * 3] = f.factor1;
-        p.rfactor[scale * 3 + 1] = f.factor1;
-        p.rfactor[scale * 3 + 2] = f.factor2;
-        if (scale == 0) {
-            uint16_t i_rf[3];
-            adm_csf_rfactor_scale0(p.rfactor, adm_norm_view_dist, adm_ref_display_height,
-                                   s->adm_csf_mode, i_rf);
-            p.i_rfactor[0] = i_rf[0];
-            p.i_rfactor[1] = i_rf[1];
-            p.i_rfactor[2] = i_rf[2];
-        } else {
-            p.i_rfactor[scale * 3] = (uint32_t)(p.rfactor[scale * 3] * pow2_32);
-            p.i_rfactor[scale * 3 + 1] = (uint32_t)(p.rfactor[scale * 3 + 1] * pow2_32);
-            p.i_rfactor[scale * 3 + 2] = (uint32_t)(p.rfactor[scale * 3 + 2] * pow2_32);
-        }
+    AdmComputeContextHip ctx = {.s = s,
+                                .buf = buf,
+                                .w = (int)ref_pic->w[0],
+                                .h = (int)ref_pic->h[0],
+                                .buf_stride = buf->ind_size_x >> 2,
+                                .curr_ref_stride = ref_pic->w[0],
+                                .curr_dis_stride = ref_pic->w[0]};
+    init_adm_fixed_parameters(&ctx, adm_enhn_gain_limit, adm_norm_view_dist,
+                              adm_ref_display_height);
+    int err = hip_rc(hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str));
+    if (!err)
+        err = stage_adm_luma(&ctx, ref_pic, dis_pic);
+    for (unsigned scale = 0; !err && scale < 4; ++scale) {
+        err =
+            scale == 0 ? run_adm_scale0(&ctx, ref_pic, dis_pic) : run_adm_later_scale(&ctx, scale);
+        if (!err)
+            advance_adm_scale(&ctx);
     }
-    memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
-
-    /* Zero result accumulator */
-    hipError_t hip_err = hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str);
-    if (hip_err != hipSuccess)
-        return hip_rc(hip_err);
-
-    size_t curr_ref_stride;
-    size_t curr_dis_stride;
-    size_t buf_stride = buf->ind_size_x >> 2; /* bytes → int32 elements */
-
-    int32_t *i4_curr_ref_scale = NULL;
-    int32_t *i4_curr_dis_scale = NULL;
-
-    /* ADR-1211: stage the host-resident luma plane onto the device.
-     * `VmafPicture::data[]` is HOST memory under the host-pic HIP backend
-     * (ADR-0530), so handing it straight to the DWT2 kernel faults the GPU
-     * ("Memory access fault ... Page not present"). Copy it across first and
-     * point the kernel at the device buffer. Rows are tightly packed on the
-     * device side, so the element stride below is `w`, not the picture's. */
-    {
-        const size_t bpp = (ref_pic->bpc > 8) ? sizeof(uint16_t) : sizeof(uint8_t);
-        const size_t row_bytes = (size_t)w * bpp;
-        hipError_t crc = hipMemcpy2DAsync(s->d_ref_luma, s->luma_pitch, ref_pic->data[0],
-                                          (size_t)ref_pic->stride[0], row_bytes, (size_t)h,
-                                          hipMemcpyHostToDevice, s->str);
-        if (crc != hipSuccess)
-            return hip_rc(crc);
-        crc = hipMemcpy2DAsync(s->d_dis_luma, s->luma_pitch, dis_pic->data[0],
-                               (size_t)dis_pic->stride[0], row_bytes, (size_t)h,
-                               hipMemcpyHostToDevice, s->str);
-        if (crc != hipSuccess)
-            return hip_rc(crc);
-        crc = hipStreamSynchronize(s->str);
-        if (crc != hipSuccess)
-            return hip_rc(crc);
-    }
-
-    /* Strides are in ELEMENTS and refer to the staged, tightly-packed copy. */
-    curr_ref_stride = (size_t)w;
-    curr_dis_stride = (size_t)w;
-
-    int err = 0;
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        if (scale == 0) {
-            if (ref_pic->bpc == 8) {
-                err = dwt2_8_device_hip(s, (const uint8_t *)s->d_ref_luma, &buf->ref_dwt2,
-                                        buf->i4_ref_dwt2, w, h, (int)curr_ref_stride,
-                                        (int)buf_stride, &p, /* pic_stream */ 0);
-                if (err)
-                    return err;
-                err = dwt2_8_device_hip(s, (const uint8_t *)s->d_dis_luma, &buf->dis_dwt2,
-                                        buf->i4_dis_dwt2, w, h, (int)curr_dis_stride,
-                                        (int)buf_stride, &p, /* pic_stream */ 0);
-                if (err)
-                    return err;
-            } else {
-                err = dwt2_16_device_hip(s, (const uint16_t *)s->d_ref_luma, &buf->ref_dwt2,
-                                         buf->i4_ref_dwt2, w, h, (int)curr_ref_stride,
-                                         (int)buf_stride, (int)ref_pic->bpc, &p,
-                                         /* pic_stream */ 0);
-                if (err)
-                    return err;
-                err = dwt2_16_device_hip(s, (const uint16_t *)s->d_dis_luma, &buf->dis_dwt2,
-                                         buf->i4_dis_dwt2, w, h, (int)curr_dis_stride,
-                                         (int)buf_stride, (int)dis_pic->bpc, &p,
-                                         /* pic_stream */ 0);
-                if (err)
-                    return err;
-            }
-
-            /* Sync: record per-picture events, wait on the ADM stream */
-            hip_err = hipEventRecord(s->ref_event, /* pic stream */ 0);
-            if (hip_err != hipSuccess)
-                return hip_rc(hip_err);
-            hip_err = hipEventRecord(s->dis_event, /* pic stream */ 0);
-            if (hip_err != hipSuccess)
-                return hip_rc(hip_err);
-            hip_err = hipStreamWaitEvent(s->str, s->dis_event, 0);
-            if (hip_err != hipSuccess)
-                return hip_rc(hip_err);
-            hip_err = hipStreamWaitEvent(s->str, s->ref_event, 0);
-            if (hip_err != hipSuccess)
-                return hip_rc(hip_err);
-
-            w = (w + 1) / 2;
-            h = (h + 1) / 2;
-
-            err = adm_csf_den_scale_device_hip(s, buf, w, h, (int)buf_stride, s->str);
-            if (err)
-                return err;
-
-            err = adm_csf_device_hip(s, buf, w, h, (int)buf_stride, &p, s->str);
-            if (err)
-                return err;
-
-            err = adm_cm_device_hip(s, buf, w, h, (int)buf_stride, (int)buf_stride, &p, s->str);
-            if (err)
-                return err;
-        } else {
-            err = adm_dwt2_s123_combined_device_hip(s, i4_curr_ref_scale, (int32_t *)buf->tmp_ref,
-                                                    buf->i4_ref_dwt2, w, h, (int)curr_ref_stride,
-                                                    (int)buf_stride, (int)scale, &p, s->str);
-            if (err)
-                return err;
-            err = adm_dwt2_s123_combined_device_hip(s, i4_curr_dis_scale, (int32_t *)buf->tmp_dis,
-                                                    buf->i4_dis_dwt2, w, h, (int)curr_dis_stride,
-                                                    (int)buf_stride, (int)scale, &p, s->str);
-            if (err)
-                return err;
-
-            w = (w + 1) / 2;
-            h = (h + 1) / 2;
-
-            err = adm_csf_den_s123_device_hip(s, buf, (int)scale, w, h, (int)buf_stride, s->str);
-            if (err)
-                return err;
-
-            err = i4_adm_csf_device_hip(s, buf, (int)scale, w, h, (int)buf_stride, &p, s->str);
-            if (err)
-                return err;
-
-            err = i4_adm_cm_device_hip(s, buf, w, h, (int)buf_stride, (int)buf_stride, (int)scale,
-                                       &p, s->str);
-            if (err)
-                return err;
-        }
-
-        i4_curr_ref_scale = buf->i4_ref_dwt2.band_a;
-        i4_curr_dis_scale = buf->i4_dis_dwt2.band_a;
-        curr_ref_stride = buf_stride;
-        curr_dis_stride = buf_stride;
-    }
-
-    hip_err = hipMemcpyAsync(buf->results_host, buf->tmp_res, sizeof(int64_t) * RES_BUFFER_SIZE,
-                             hipMemcpyDeviceToHost, s->str);
-    if (hip_err != hipSuccess)
-        return hip_rc(hip_err);
-    hip_err = hipEventRecord(s->finished, s->str);
-    return hip_rc(hip_err);
+    if (!err)
+        err = hip_rc(hipMemcpyAsync(buf->results_host, buf->tmp_res,
+                                    sizeof(int64_t) * RES_BUFFER_SIZE, hipMemcpyDeviceToHost,
+                                    s->str));
+    if (!err)
+        err = hip_rc(hipEventRecord(s->finished, s->str));
+    return err;
 }
 
 #endif /* HAVE_HIPCC */
@@ -1145,30 +1059,15 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
 #define ADM_HIP_ALIGN 64
 #define ADM_ALIGN_CEIL(x) (((x) + ADM_HIP_ALIGN - 1) & ~(size_t)(ADM_HIP_ALIGN - 1))
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+static int init_adm_configuration(AdmStateHip *s)
 {
-    (void)pix_fmt;
-    (void)bpc;
-
-    AdmStateHip *s = fex->priv;
-
     if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
+        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT)
         return -EINVAL;
-    }
-
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
-    {
-        const int csf_err = adm_csf_config_check(s);
-        if (csf_err) {
-            return csf_err;
-        }
-    }
-
+    const int config_err = adm_csf_config_check(s);
+    if (config_err)
+        return config_err;
+    const double pow2_32 = pow(2, 32);
     for (unsigned scale = 0; scale < 4; scale++) {
         const AdmCsfFactors f =
             adm_csf_factors((int)scale, s->adm_norm_view_dist, s->adm_ref_display_height,
@@ -1176,8 +1075,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         s->rfactor[scale * 3 + 0] = f.factor1;
         s->rfactor[scale * 3 + 1] = f.factor1;
         s->rfactor[scale * 3 + 2] = f.factor2;
-
-        const double pow2_32 = pow(2, 32);
         if (scale == 0) {
             uint16_t i_rf[3];
             adm_csf_rfactor_scale0(&s->rfactor[0], s->adm_norm_view_dist, s->adm_ref_display_height,
@@ -1191,230 +1088,333 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
             s->i_rfactor[scale * 3 + 2] = (uint32_t)(s->rfactor[scale * 3 + 2] * pow2_32);
         }
     }
+    return 0;
+}
 
+#ifdef HAVE_HIPCC
+
+static void record_hip_cleanup_error(int *first_err, hipError_t rc, const char *operation)
+{
+    if (rc == hipSuccess)
+        return;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_hip %s failed with HIP error %d\n", operation, (int)rc);
+    if (*first_err == 0)
+        *first_err = hip_rc(rc);
+}
+
+static void release_hip_pointer(void **ptr, int *first_err, const char *name)
+{
+    if (!*ptr)
+        return;
+    record_hip_cleanup_error(first_err, hipFree(*ptr), name);
+    *ptr = NULL;
+}
+
+static void release_hip_module(hipModule_t *module, int *first_err, const char *name)
+{
+    if (!*module)
+        return;
+    record_hip_cleanup_error(first_err, hipModuleUnload(*module), name);
+    *module = NULL;
+}
+
+static void release_hip_event(hipEvent_t *event, int *first_err, const char *name)
+{
+    if (!*event)
+        return;
+    record_hip_cleanup_error(first_err, hipEventDestroy(*event), name);
+    *event = NULL;
+}
+
+static int release_adm_runtime(AdmStateHip *s, bool synchronize)
+{
+    int first_err = 0;
+    if (synchronize && s->str)
+        record_hip_cleanup_error(&first_err, hipStreamSynchronize(s->str), "stream synchronize");
+    release_hip_pointer(&s->d_ref_luma, &first_err, "reference luma free");
+    release_hip_pointer(&s->d_dis_luma, &first_err, "distorted luma free");
+    if (s->buf.results_host) {
+        record_hip_cleanup_error(&first_err, hipHostFree(s->buf.results_host), "host result free");
+        s->buf.results_host = NULL;
+    }
+    release_hip_pointer(&s->buf.tmp_res, &first_err, "result buffer free");
+    release_hip_pointer(&s->buf.tmp_accum_h, &first_err, "row accumulator free");
+    release_hip_pointer(&s->buf.tmp_accum, &first_err, "accumulator free");
+    release_hip_pointer(&s->buf.tmp_dis, &first_err, "distorted scratch free");
+    release_hip_pointer(&s->buf.tmp_ref, &first_err, "reference scratch free");
+    release_hip_pointer(&s->buf.data_buf, &first_err, "band buffer free");
+    release_hip_module(&s->adm_cm_module, &first_err, "CM module unload");
+    release_hip_module(&s->adm_csf_den_module, &first_err, "CSF denominator module unload");
+    release_hip_module(&s->adm_csf_module, &first_err, "CSF module unload");
+    release_hip_module(&s->adm_dwt_module, &first_err, "DWT module unload");
+    release_hip_event(&s->dis_event, &first_err, "distorted event destroy");
+    release_hip_event(&s->ref_event, &first_err, "reference event destroy");
+    release_hip_event(&s->finished, &first_err, "finished event destroy");
+    if (s->str) {
+        record_hip_cleanup_error(&first_err, hipStreamDestroy(s->str), "stream destroy");
+        s->str = NULL;
+    }
+    return first_err;
+}
+
+static int create_adm_control_resources(AdmStateHip *s)
+{
+    int err = hip_rc(hipStreamCreateWithFlags(&s->str, hipStreamNonBlocking));
+    if (!err)
+        err = hip_rc(hipEventCreateWithFlags(&s->finished, hipEventDefault));
+    if (!err)
+        err = hip_rc(hipEventCreateWithFlags(&s->ref_event, hipEventDefault));
+    if (!err)
+        err = hip_rc(hipEventCreateWithFlags(&s->dis_event, hipEventDefault));
+    return err;
+}
+
+static int load_adm_modules(AdmStateHip *s)
+{
+    int err = hip_rc(hipModuleLoadData(&s->adm_dwt_module, adm_dwt2_hsaco));
+    if (!err)
+        err = hip_rc(hipModuleLoadData(&s->adm_csf_module, adm_csf_hsaco));
+    if (!err)
+        err = hip_rc(hipModuleLoadData(&s->adm_csf_den_module, adm_csf_den_hsaco));
+    if (!err)
+        err = hip_rc(hipModuleLoadData(&s->adm_cm_module, adm_cm_hsaco));
+    return err;
+}
+
+static int get_adm_function(hipFunction_t *function, hipModule_t module, const char *name)
+{
+    return hip_rc(hipModuleGetFunction(function, module, name));
+}
+
+static int load_adm_dwt_functions(AdmStateHip *s)
+{
+    int err = get_adm_function(&s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
+                               s->adm_dwt_module, "dwt_s123_combined_vert_kernel_0_0_int32_t");
+    if (!err)
+        err = get_adm_function(&s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
+                               s->adm_dwt_module, "dwt_s123_combined_vert_kernel_32768_16_int32_t");
+    if (!err)
+        err = get_adm_function(&s->func_dwt_s123_combined_hori_kernel_16384_15, s->adm_dwt_module,
+                               "dwt_s123_combined_hori_kernel_16384_15");
+    if (!err)
+        err = get_adm_function(&s->func_dwt_s123_combined_hori_kernel_32768_16, s->adm_dwt_module,
+                               "dwt_s123_combined_hori_kernel_32768_16");
+    if (!err)
+        err = get_adm_function(&s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
+                               s->adm_dwt_module,
+                               "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t");
+    if (!err)
+        err = get_adm_function(&s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
+                               s->adm_dwt_module,
+                               "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t");
+    return err;
+}
+
+static int load_adm_filter_functions(AdmStateHip *s)
+{
+    int err =
+        get_adm_function(&s->func_adm_csf_kernel_1_4, s->adm_csf_module, "adm_csf_kernel_1_4");
+    if (!err)
+        err = get_adm_function(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
+                               "i4_adm_csf_kernel_1_4");
+    if (!err)
+        err = get_adm_function(&s->func_adm_csf_den_scale_line_kernel, s->adm_csf_den_module,
+                               "adm_csf_den_scale_line_kernel_8_128");
+    if (!err)
+        err = get_adm_function(&s->func_adm_csf_den_s123_line_kernel, s->adm_csf_den_module,
+                               "adm_csf_den_s123_line_kernel_8_128");
+    if (!err)
+        err = get_adm_function(&s->func_adm_cm_reduce_line_kernel_4, s->adm_cm_module,
+                               "adm_cm_reduce_line_kernel_4");
+    if (!err)
+        err = get_adm_function(&s->func_adm_cm_line_kernel_8, s->adm_cm_module,
+                               "adm_cm_line_kernel_8");
+    if (!err)
+        err = get_adm_function(&s->func_i4_adm_cm_line_kernel, s->adm_cm_module,
+                               "i4_adm_cm_line_kernel");
+    return err;
+}
+
+typedef struct AdmAllocationSizesHip {
+    size_t band;
+    size_t data;
+    size_t temp;
+    size_t accum;
+    size_t accum_h;
+    size_t result;
+    size_t luma;
+} AdmAllocationSizesHip;
+
+static int checked_size_mul(size_t left, size_t right, size_t *result)
+{
+    if (right != 0 && left > SIZE_MAX / right)
+        return -EOVERFLOW;
+    *result = left * right;
+    return 0;
+}
+
+static int get_adm_allocation_sizes(AdmStateHip *s, unsigned w, unsigned h, unsigned bpc,
+                                    AdmAllocationSizesHip *sizes)
+{
+    const size_t half_w = ((size_t)w + 1) / 2;
+    const size_t half_h = ((size_t)h + 1) / 2;
+    size_t row_bytes;
+    int err = checked_size_mul(w, sizeof(int32_t), &row_bytes);
+    if (err || row_bytes > SIZE_MAX - (ADM_HIP_ALIGN - 1))
+        return -EOVERFLOW;
+    s->integer_stride = ADM_ALIGN_CEIL(row_bytes);
+    err = checked_size_mul(half_w, sizeof(int32_t), &row_bytes);
+    if (err || row_bytes > SIZE_MAX - (ADM_HIP_ALIGN - 1))
+        return -EOVERFLOW;
+    s->buf.ind_size_x = ADM_ALIGN_CEIL(row_bytes);
+    err = checked_size_mul(half_h, sizeof(int32_t), &row_bytes);
+    if (err || row_bytes > SIZE_MAX - (ADM_HIP_ALIGN - 1))
+        return -EOVERFLOW;
+    s->buf.ind_size_y = ADM_ALIGN_CEIL(row_bytes);
+    if (checked_size_mul(s->buf.ind_size_x, half_h, &sizes->band) ||
+        checked_size_mul(sizes->band, 11, &sizes->data) ||
+        sizes->data > SIZE_MAX - (sizes->band / 2) * 11)
+        return -EOVERFLOW;
+    sizes->data += (sizes->band / 2) * 11;
+    if (checked_size_mul(s->integer_stride, 4, &sizes->temp) ||
+        checked_size_mul(sizes->temp, half_h, &sizes->temp) ||
+        checked_size_mul(sizeof(uint64_t) * 3, w, &sizes->accum) ||
+        checked_size_mul(sizes->accum, h, &sizes->accum) ||
+        checked_size_mul(sizeof(uint64_t) * 3, h, &sizes->accum_h))
+        return -EOVERFLOW;
+    sizes->result = sizeof(uint64_t) * RES_BUFFER_SIZE;
+    const size_t bytes_per_pixel = bpc > 8u ? sizeof(uint16_t) : sizeof(uint8_t);
+    if (checked_size_mul(w, bytes_per_pixel, &s->luma_pitch) ||
+        checked_size_mul(s->luma_pitch, h, &sizes->luma))
+        return -EOVERFLOW;
+    s->luma_h = h;
+    return 0;
+}
+
+static int allocate_adm_buffers(AdmStateHip *s, const AdmAllocationSizesHip *sizes)
+{
+    int err = hip_rc(hipMalloc(&s->buf.data_buf, sizes->data));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->buf.tmp_ref, sizes->temp));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->buf.tmp_dis, sizes->temp));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->buf.tmp_accum, sizes->accum));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->buf.tmp_accum_h, sizes->accum_h));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->buf.tmp_res, sizes->result));
+    if (!err)
+        err = hip_rc(hipHostMalloc(&s->buf.results_host, sizes->result, hipHostMallocDefault));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->d_ref_luma, sizes->luma));
+    if (!err)
+        err = hip_rc(hipMalloc(&s->d_dis_luma, sizes->luma));
+    return err;
+}
+
+static uint8_t *slice_adm_short_bands(AdmBufferHip *buf, uint8_t *top, size_t band_size)
+{
+    const size_t half = band_size / 2;
+    buf->ref_dwt2.band_a = (int16_t *)top;
+    buf->ref_dwt2.band_h = (int16_t *)(top + half);
+    buf->ref_dwt2.band_v = (int16_t *)(top + 2u * half);
+    buf->ref_dwt2.band_d = (int16_t *)(top + 3u * half);
+    top += 4u * half;
+    buf->dis_dwt2.band_a = (int16_t *)top;
+    buf->dis_dwt2.band_h = (int16_t *)(top + half);
+    buf->dis_dwt2.band_v = (int16_t *)(top + 2u * half);
+    buf->dis_dwt2.band_d = (int16_t *)(top + 3u * half);
+    top += 4u * half;
+    buf->csf_f.band_a = NULL;
+    buf->csf_f.band_h = (int16_t *)top;
+    buf->csf_f.band_v = (int16_t *)(top + half);
+    buf->csf_f.band_d = (int16_t *)(top + 2u * half);
+    return top + 3u * half;
+}
+
+static void slice_adm_integer_bands(AdmBufferHip *buf, uint8_t *top, size_t band_size)
+{
+    buf->i4_ref_dwt2.band_a = (int32_t *)top;
+    buf->i4_ref_dwt2.band_h = (int32_t *)(top + band_size);
+    buf->i4_ref_dwt2.band_v = (int32_t *)(top + 2u * band_size);
+    buf->i4_ref_dwt2.band_d = (int32_t *)(top + 3u * band_size);
+    top += 4u * band_size;
+    buf->i4_dis_dwt2.band_a = (int32_t *)top;
+    buf->i4_dis_dwt2.band_h = (int32_t *)(top + band_size);
+    buf->i4_dis_dwt2.band_v = (int32_t *)(top + 2u * band_size);
+    buf->i4_dis_dwt2.band_d = (int32_t *)(top + 3u * band_size);
+    top += 4u * band_size;
+    buf->i4_csf_f.band_a = NULL;
+    buf->i4_csf_f.band_h = (int32_t *)top;
+    buf->i4_csf_f.band_v = (int32_t *)(top + band_size);
+    buf->i4_csf_f.band_d = (int32_t *)(top + 2u * band_size);
+}
+
+static void slice_adm_results(AdmBufferHip *buf)
+{
+    const size_t cm_stride = 3u * sizeof(int64_t);
+    const size_t csf_stride = 3u * sizeof(uint64_t);
+    uint8_t *results = buf->tmp_res;
+    for (int i = 0; i < 4; ++i)
+        buf->adm_cm[i] = (int64_t *)(results + (size_t)i * cm_stride);
+    results += 4u * cm_stride;
+    for (int i = 0; i < 4; ++i)
+        buf->adm_csf_den[i] = (uint64_t *)(results + (size_t)i * csf_stride);
+}
+
+static int init_adm_runtime(AdmStateHip *s, unsigned w, unsigned h, unsigned bpc)
+{
+    AdmAllocationSizesHip sizes;
+    int err = create_adm_control_resources(s);
+    if (!err)
+        err = load_adm_modules(s);
+    if (!err)
+        err = load_adm_dwt_functions(s);
+    if (!err)
+        err = load_adm_filter_functions(s);
+    if (!err)
+        err = get_adm_allocation_sizes(s, w, h, bpc, &sizes);
+    if (!err)
+        err = allocate_adm_buffers(s, &sizes);
+    if (err)
+        return err;
+    uint8_t *top = slice_adm_short_bands(&s->buf, s->buf.data_buf, sizes.band);
+    slice_adm_integer_bands(&s->buf, top, sizes.band);
+    slice_adm_results(&s->buf);
+    return 0;
+}
+
+#endif /* HAVE_HIPCC */
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    AdmStateHip *const s = fex->priv;
+    int err = init_adm_configuration(s);
 #ifndef HAVE_HIPCC
+    (void)bpc;
     (void)w;
     (void)h;
-    /* Scaffold: no runtime available. */
-    return -ENOSYS;
+    return err ? err : -ENOSYS;
 #else
-    hipError_t hip_err;
-
-    /* Private stream */
-    hip_err = hipStreamCreateWithFlags(&s->str, hipStreamNonBlocking);
-    if (hip_err != hipSuccess)
-        return hip_rc(hip_err);
-
-    /* Events */
-    hip_err = hipEventCreateWithFlags(&s->finished, hipEventDefault);
-    if (hip_err != hipSuccess)
-        goto fail_stream;
-    hip_err = hipEventCreateWithFlags(&s->ref_event, hipEventDefault);
-    if (hip_err != hipSuccess)
-        goto fail_ev_finished;
-    hip_err = hipEventCreateWithFlags(&s->dis_event, hipEventDefault);
-    if (hip_err != hipSuccess)
-        goto fail_ev_ref;
-
-    /* Load HSACO modules */
-    hip_err = hipModuleLoadData(&s->adm_dwt_module, (const void *)adm_dwt2_hsaco);
-    if (hip_err != hipSuccess)
-        goto fail_ev_dis;
-    hip_err = hipModuleLoadData(&s->adm_csf_module, (const void *)adm_csf_hsaco);
-    if (hip_err != hipSuccess)
-        goto fail_mod_dwt;
-    hip_err = hipModuleLoadData(&s->adm_csf_den_module, (const void *)adm_csf_den_hsaco);
-    if (hip_err != hipSuccess)
-        goto fail_mod_csf;
-    hip_err = hipModuleLoadData(&s->adm_cm_module, (const void *)adm_cm_hsaco);
-    if (hip_err != hipSuccess)
-        goto fail_mod_csf_den;
-
-    /* Kernel function handles */
-#define GET_FN(mod, fn_ptr, name)                                                                  \
-    do {                                                                                           \
-        hip_err = hipModuleGetFunction((fn_ptr), (mod), (name));                                   \
-        if (hip_err != hipSuccess)                                                                 \
-            goto fail_mod_cm;                                                                      \
-    } while (0)
-
-    GET_FN(s->adm_dwt_module, &s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
-           "dwt_s123_combined_vert_kernel_0_0_int32_t");
-    GET_FN(s->adm_dwt_module, &s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
-           "dwt_s123_combined_vert_kernel_32768_16_int32_t");
-    GET_FN(s->adm_dwt_module, &s->func_dwt_s123_combined_hori_kernel_16384_15,
-           "dwt_s123_combined_hori_kernel_16384_15");
-    GET_FN(s->adm_dwt_module, &s->func_dwt_s123_combined_hori_kernel_32768_16,
-           "dwt_s123_combined_hori_kernel_32768_16");
-    GET_FN(s->adm_dwt_module, &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
-           "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t");
-    GET_FN(s->adm_dwt_module, &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
-           "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t");
-
-    GET_FN(s->adm_csf_module, &s->func_adm_csf_kernel_1_4, "adm_csf_kernel_1_4");
-    GET_FN(s->adm_csf_module, &s->func_i4_adm_csf_kernel_1_4, "i4_adm_csf_kernel_1_4");
-
-    GET_FN(s->adm_csf_den_module, &s->func_adm_csf_den_scale_line_kernel,
-           "adm_csf_den_scale_line_kernel_8_128");
-    GET_FN(s->adm_csf_den_module, &s->func_adm_csf_den_s123_line_kernel,
-           "adm_csf_den_s123_line_kernel_8_128");
-
-    GET_FN(s->adm_cm_module, &s->func_adm_cm_reduce_line_kernel_4, "adm_cm_reduce_line_kernel_4");
-    GET_FN(s->adm_cm_module, &s->func_adm_cm_line_kernel_8, "adm_cm_line_kernel_8");
-    GET_FN(s->adm_cm_module, &s->func_i4_adm_cm_line_kernel, "i4_adm_cm_line_kernel");
-#undef GET_FN
-
-    /* Buffer allocation — mirrors init_fex_cuda layout exactly */
-    s->integer_stride = ADM_ALIGN_CEIL(w * sizeof(int32_t));
-    s->buf.ind_size_x = ADM_ALIGN_CEIL(((w + 1) / 2) * sizeof(int32_t));
-    s->buf.ind_size_y = ADM_ALIGN_CEIL(((h + 1) / 2) * sizeof(int32_t));
-    const size_t buf_sz_one = s->buf.ind_size_x * ((h + 1) / 2);
-
-    hip_err = hipMalloc(&s->buf.data_buf, buf_sz_one * 11 + buf_sz_one / 2 * 11);
-    if (hip_err != hipSuccess)
-        goto fail_mod_cm;
-    hip_err = hipMalloc(&s->buf.tmp_ref, s->integer_stride * 4 * ((h + 1) / 2));
-    if (hip_err != hipSuccess)
-        goto fail_data_buf;
-    hip_err = hipMalloc(&s->buf.tmp_dis, s->integer_stride * 4 * ((h + 1) / 2));
-    if (hip_err != hipSuccess)
-        goto fail_tmp_ref;
-    hip_err = hipMalloc(&s->buf.tmp_accum, sizeof(uint64_t) * 3u * (size_t)w * (size_t)h);
-    if (hip_err != hipSuccess)
-        goto fail_tmp_dis;
-    hip_err = hipMalloc(&s->buf.tmp_accum_h, sizeof(uint64_t) * 3u * (size_t)h);
-    if (hip_err != hipSuccess)
-        goto fail_tmp_accum;
-    hip_err = hipMalloc(&s->buf.tmp_res, sizeof(uint64_t) * RES_BUFFER_SIZE);
-    if (hip_err != hipSuccess)
-        goto fail_tmp_accum_h;
-    hip_err = hipHostMalloc(&s->buf.results_host, sizeof(uint64_t) * RES_BUFFER_SIZE,
-                            hipHostMallocDefault);
-    if (hip_err != hipSuccess)
-        goto fail_tmp_res;
-
-    /* ADR-1211: staging buffers for the host-resident luma plane. Sized for the
-     * full frame at this bit depth; the staged rows are tightly packed, so the
-     * element stride handed to the kernel is `w`, not the picture's stride. */
-    s->luma_pitch = (size_t)w * ((bpc > 8u) ? sizeof(uint16_t) : sizeof(uint8_t));
-    s->luma_h = h;
-    hip_err = hipMalloc(&s->d_ref_luma, s->luma_pitch * (size_t)h);
-    if (hip_err != hipSuccess)
-        goto fail_host;
-    hip_err = hipMalloc(&s->d_dis_luma, s->luma_pitch * (size_t)h);
-    if (hip_err != hipSuccess)
-        goto fail_ref_luma;
-
-    /* Slice the backing buffer into band pointers — mirrors init_dwt_band_cuda logic */
-    {
-        uint8_t *top = (uint8_t *)s->buf.data_buf;
-        const size_t half = buf_sz_one / 2;
-
-        s->buf.ref_dwt2.band_a = (int16_t *)(top);
-        s->buf.ref_dwt2.band_h = (int16_t *)(top + half);
-        s->buf.ref_dwt2.band_v = (int16_t *)(top + 2u * half);
-        s->buf.ref_dwt2.band_d = (int16_t *)(top + 3u * half);
-        top += 4u * half;
-
-        s->buf.dis_dwt2.band_a = (int16_t *)(top);
-        s->buf.dis_dwt2.band_h = (int16_t *)(top + half);
-        s->buf.dis_dwt2.band_v = (int16_t *)(top + 2u * half);
-        s->buf.dis_dwt2.band_d = (int16_t *)(top + 3u * half);
-        top += 4u * half;
-
-        /* csf_f: band_a == NULL (hvd only) */
-        s->buf.csf_f.band_a = NULL;
-        s->buf.csf_f.band_h = (int16_t *)(top);
-        s->buf.csf_f.band_v = (int16_t *)(top + half);
-        s->buf.csf_f.band_d = (int16_t *)(top + 2u * half);
-        top += 3u * half;
-
-        /* i4 bands (full int32 size = buf_sz_one each) */
-        s->buf.i4_ref_dwt2.band_a = (int32_t *)(top);
-        s->buf.i4_ref_dwt2.band_h = (int32_t *)(top + buf_sz_one);
-        s->buf.i4_ref_dwt2.band_v = (int32_t *)(top + 2u * buf_sz_one);
-        s->buf.i4_ref_dwt2.band_d = (int32_t *)(top + 3u * buf_sz_one);
-        top += 4u * buf_sz_one;
-
-        s->buf.i4_dis_dwt2.band_a = (int32_t *)(top);
-        s->buf.i4_dis_dwt2.band_h = (int32_t *)(top + buf_sz_one);
-        s->buf.i4_dis_dwt2.band_v = (int32_t *)(top + 2u * buf_sz_one);
-        s->buf.i4_dis_dwt2.band_d = (int32_t *)(top + 3u * buf_sz_one);
-        top += 4u * buf_sz_one;
-
-        s->buf.i4_csf_f.band_a = NULL;
-        s->buf.i4_csf_f.band_h = (int32_t *)(top);
-        s->buf.i4_csf_f.band_v = (int32_t *)(top + buf_sz_one);
-        s->buf.i4_csf_f.band_d = (int32_t *)(top + 2u * buf_sz_one);
+    if (!err)
+        err = init_adm_runtime(s, w, h, bpc);
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
     }
-
-    /* Slice result accumulator */
-    {
-        const size_t cm_stride = 3u * sizeof(int64_t);
-        const size_t csf_stride = 3u * sizeof(uint64_t);
-        uint8_t *res = (uint8_t *)s->buf.tmp_res;
-        for (int i = 0; i < 4; ++i) {
-            s->buf.adm_cm[i] = (int64_t *)(res + (size_t)i * cm_stride);
-        }
-        res += 4u * cm_stride;
-        for (int i = 0; i < 4; ++i) {
-            s->buf.adm_csf_den[i] = (uint64_t *)(res + (size_t)i * csf_stride);
-        }
+    if (err) {
+        const int cleanup_err = release_adm_runtime(s, false);
+        if (cleanup_err)
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_hip initialization cleanup failed: %d\n",
+                     cleanup_err);
     }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL)
-        goto fail_host;
-
-    return 0;
-
-fail_ref_luma:
-    (void)hipFree(s->d_ref_luma);
-    s->d_ref_luma = NULL;
-fail_host:
-    (void)hipHostFree(s->buf.results_host);
-    s->buf.results_host = NULL;
-fail_tmp_res:
-    (void)hipFree(s->buf.tmp_res);
-    s->buf.tmp_res = NULL;
-fail_tmp_accum_h:
-    (void)hipFree(s->buf.tmp_accum_h);
-    s->buf.tmp_accum_h = NULL;
-fail_tmp_accum:
-    (void)hipFree(s->buf.tmp_accum);
-    s->buf.tmp_accum = NULL;
-fail_tmp_dis:
-    (void)hipFree(s->buf.tmp_dis);
-    s->buf.tmp_dis = NULL;
-fail_tmp_ref:
-    (void)hipFree(s->buf.tmp_ref);
-    s->buf.tmp_ref = NULL;
-fail_data_buf:
-    (void)hipFree(s->buf.data_buf);
-    s->buf.data_buf = NULL;
-fail_mod_cm:
-    (void)hipModuleUnload(s->adm_cm_module);
-    s->adm_cm_module = NULL;
-fail_mod_csf_den:
-    (void)hipModuleUnload(s->adm_csf_den_module);
-    s->adm_csf_den_module = NULL;
-fail_mod_csf:
-    (void)hipModuleUnload(s->adm_csf_module);
-    s->adm_csf_module = NULL;
-fail_mod_dwt:
-    (void)hipModuleUnload(s->adm_dwt_module);
-    s->adm_dwt_module = NULL;
-fail_ev_dis:
-    (void)hipEventDestroy(s->dis_event);
-fail_ev_ref:
-    (void)hipEventDestroy(s->ref_event);
-fail_ev_finished:
-    (void)hipEventDestroy(s->finished);
-fail_stream:
-    (void)hipStreamDestroy(s->str);
-    return hip_rc(hip_err);
-#endif /* HAVE_HIPCC */
+    return err;
+#endif
 }
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -1457,8 +1457,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         .w = s->submit_w,
         .h = s->submit_h,
     };
-    write_scores(&params);
-    return 0;
+    return write_scores(&params);
 #endif
 }
 
@@ -1479,84 +1478,16 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    AdmStateHip *s = fex->priv;
+    AdmStateHip *const s = fex->priv;
     int rc = 0;
-
 #ifdef HAVE_HIPCC
-    hipError_t hip_err = hipStreamSynchronize(s->str);
-    if (hip_err != hipSuccess)
-        rc = hip_rc(hip_err);
-    hip_err = hipStreamDestroy(s->str);
-    if (hip_err != hipSuccess && rc == 0)
-        rc = hip_rc(hip_err);
-    hip_err = hipEventDestroy(s->finished);
-    if (hip_err != hipSuccess && rc == 0)
-        rc = hip_rc(hip_err);
-    hip_err = hipEventDestroy(s->ref_event);
-    if (hip_err != hipSuccess && rc == 0)
-        rc = hip_rc(hip_err);
-    hip_err = hipEventDestroy(s->dis_event);
-    if (hip_err != hipSuccess && rc == 0)
-        rc = hip_rc(hip_err);
-
-    if (s->adm_cm_module != NULL) {
-        (void)hipModuleUnload(s->adm_cm_module);
-        s->adm_cm_module = NULL;
-    }
-    if (s->adm_csf_den_module != NULL) {
-        (void)hipModuleUnload(s->adm_csf_den_module);
-        s->adm_csf_den_module = NULL;
-    }
-    if (s->adm_csf_module != NULL) {
-        (void)hipModuleUnload(s->adm_csf_module);
-        s->adm_csf_module = NULL;
-    }
-    if (s->adm_dwt_module != NULL) {
-        (void)hipModuleUnload(s->adm_dwt_module);
-        s->adm_dwt_module = NULL;
-    }
-    if (s->d_ref_luma != NULL) {
-        (void)hipFree(s->d_ref_luma);
-        s->d_ref_luma = NULL;
-    }
-    if (s->d_dis_luma != NULL) {
-        (void)hipFree(s->d_dis_luma);
-        s->d_dis_luma = NULL;
-    }
-    if (s->buf.results_host != NULL) {
-        (void)hipHostFree(s->buf.results_host);
-        s->buf.results_host = NULL;
-    }
-    if (s->buf.tmp_res != NULL) {
-        (void)hipFree(s->buf.tmp_res);
-        s->buf.tmp_res = NULL;
-    }
-    if (s->buf.tmp_accum_h != NULL) {
-        (void)hipFree(s->buf.tmp_accum_h);
-        s->buf.tmp_accum_h = NULL;
-    }
-    if (s->buf.tmp_accum != NULL) {
-        (void)hipFree(s->buf.tmp_accum);
-        s->buf.tmp_accum = NULL;
-    }
-    if (s->buf.tmp_dis != NULL) {
-        (void)hipFree(s->buf.tmp_dis);
-        s->buf.tmp_dis = NULL;
-    }
-    if (s->buf.tmp_ref != NULL) {
-        (void)hipFree(s->buf.tmp_ref);
-        s->buf.tmp_ref = NULL;
-    }
-    if (s->buf.data_buf != NULL) {
-        (void)hipFree(s->buf.data_buf);
-        s->buf.data_buf = NULL;
-    }
+    rc = release_adm_runtime(s, true);
 #endif /* HAVE_HIPCC */
-
-    if (s->feature_name_dict != NULL) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
-        if (err != 0 && rc == 0)
-            rc = err;
+    const int dict_err = vmaf_dictionary_free(&s->feature_name_dict);
+    if (dict_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_hip feature dictionary free failed: %d\n", dict_err);
+        if (!rc)
+            rc = dict_err;
     }
     return rc;
 }

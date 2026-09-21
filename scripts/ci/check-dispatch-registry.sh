@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-dispatch-registry.sh — cross-reference vmaf_fex_*_<backend> symbols
-# defined in core/src/feature/<backend>/ against feature_extractor_list[]
-# in feature_extractor.c.
+# defined in core/src/feature/<backend>/ against the reachable extractor
+# registry in feature_extractor.cpp.
 #
 # Usage: scripts/ci/check-dispatch-registry.sh [repo-root]
 #
@@ -23,15 +23,39 @@ if [[ ! -f "$FEX" ]]; then
   exit 1
 fi
 
-# The registry is spelled `static VmafFeatureExtractor *feature_extractor_list[]`
-# in the C twin and, since the C++ TU moved its file-local symbols into an
-# anonymous namespace (misc-use-anonymous-namespace), plain
-# `VmafFeatureExtractor *feature_extractor_list[]` in feature_extractor.cpp.
-# Accept both spellings.
+# Preserve support for the historical monolithic list. The HISS-clean C++
+# implementation uses bounded `*_feature_extractors[]` arrays and a
+# `feature_extractor_groups[]` array; only groups reachable from the latter
+# count as registered.
 list_block=$(sed -n '/^\(static \)\?VmafFeatureExtractor \*feature_extractor_list\[\]/,/};/p' "$FEX")
 if [[ -z "$list_block" ]]; then
-  echo "ERROR: feature_extractor_list[] not found in $FEX" >&2
-  exit 1
+  group_block=$(sed -n \
+    '/^[[:space:]]*static VmafFeatureExtractor \*const \*const feature_extractor_groups\[\][[:space:]]*=/,/^[[:space:]]*};/p' \
+    "$FEX")
+  if [[ -z "$group_block" ]]; then
+    echo "ERROR: feature_extractor_list[] or feature_extractor_groups[] not found in $FEX" >&2
+    exit 1
+  fi
+
+  mapfile -t group_names < <(
+    grep -oE '[[:alnum:]_]+_feature_extractors[[:alnum:]_]*' <<<"$group_block" |
+      LC_ALL=C sort -u
+  )
+  if [[ "${#group_names[@]}" -eq 0 ]]; then
+    echo "ERROR: feature_extractor_groups[] has no extractor groups in $FEX" >&2
+    exit 1
+  fi
+
+  for group_name in "${group_names[@]}"; do
+    array_block=$(sed -n \
+      "\|^[[:space:]]*static VmafFeatureExtractor \\*const ${group_name}\\[\\][[:space:]]*=|,/};[[:space:]]*$/p" \
+      "$FEX")
+    if [[ -z "$array_block" ]]; then
+      echo "ERROR: reachable extractor group ${group_name}[] not found in $FEX" >&2
+      exit 1
+    fi
+    list_block+=$'\n'"$array_block"
+  done
 fi
 
 rc=0

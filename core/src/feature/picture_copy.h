@@ -26,8 +26,8 @@
 extern "C" {
 #endif
 
-void picture_copy(float *dst, ptrdiff_t dst_stride, VmafPicture *src, int offset, unsigned bpc,
-                  int channel);
+void picture_copy(float *dst, ptrdiff_t dst_stride, const VmafPicture *src, int offset,
+                  unsigned bpc, int channel);
 
 #ifdef __cplusplus
 }

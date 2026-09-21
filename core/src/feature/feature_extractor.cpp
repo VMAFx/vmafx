@@ -24,6 +24,7 @@
 
 #include "config.h"
 #include "feature_extractor.h"
+#include "fex_ctx_vector_internal.h"
 #include "log.h"
 #include "picture.h"
 
@@ -75,7 +76,10 @@ extern VmafFeatureExtractor vmaf_fex_integer_motion;
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2;
 extern VmafFeatureExtractor vmaf_fex_integer_vif;
 extern VmafFeatureExtractor vmaf_fex_cambi;
+} /* extern "C" */
+
 #if HAVE_CUDA
+extern "C" {
 extern VmafFeatureExtractor vmaf_fex_integer_adm_cuda;
 extern VmafFeatureExtractor vmaf_fex_integer_vif_cuda;
 extern VmafFeatureExtractor vmaf_fex_integer_motion_cuda;
@@ -105,8 +109,10 @@ extern VmafFeatureExtractor vmaf_fex_cambi_cuda;
  * vmaf_get_feature_extractor_by_name("speed_chroma_cuda") resolves. */
 extern VmafFeatureExtractor vmaf_fex_speed_chroma_cuda;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal_cuda;
+} /* extern "C" */
 #endif
 #if HAVE_SYCL
+extern "C" {
 extern VmafFeatureExtractor vmaf_fex_integer_vif_sycl;
 extern VmafFeatureExtractor vmaf_fex_integer_adm_sycl;
 extern VmafFeatureExtractor vmaf_fex_integer_motion_sycl;
@@ -134,8 +140,10 @@ extern VmafFeatureExtractor vmaf_fex_cambi_sycl;
  * .c→.cpp split orphaned them. */
 extern VmafFeatureExtractor vmaf_fex_speed_chroma_sycl;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal_sycl;
+} /* extern "C" */
 #endif
 #if HAVE_HIP
+extern "C" {
 /* HIP first-consumer kernel — T7-10 / ADR-0241. With `enable_hipcc=true`
  * the kernel runs on device; without it submit() returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_psnr_hip;
@@ -170,6 +178,9 @@ extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;
  * `feature/cuda/float_motion_cuda.c` and pins the temporal-extractor
  * shape with a raw-pixel cache + blurred-frame ping-pong slot pair. */
 extern VmafFeatureExtractor vmaf_fex_float_motion_hip;
+} /* extern "C" */
+
+extern "C" {
 /* HIP eighth-consumer kernel — T7-10b follow-up / ADR-0274. With
  * `enable_hipcc=true` the kernel runs on device; without it init()
  * returns -ENOSYS. Mirrors the CUDA twin
@@ -214,8 +225,10 @@ extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
  * Restored after the PR #875 .c→.cpp split orphaned them. */
 extern VmafFeatureExtractor vmaf_fex_speed_chroma_hip;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal_hip;
+} /* extern "C" */
 #endif
 #if HAVE_METAL
+extern "C" {
 /* Metal feature extractors — T8-1c through T8-1j / ADR-0421, plus
  * T8-2b (float_ms_ssim) per ADR-0490. All consumers below are fully
  * implemented as Obj-C++ .mm dispatch files in feature/metal/;
@@ -244,7 +257,9 @@ extern VmafFeatureExtractor vmaf_fex_integer_ciede_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_psnr_hvs_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
+} /* extern "C" */
 #endif
+extern "C" {
 /* SpEED-QA NR metric scaffold — ADR-0253. */
 extern VmafFeatureExtractor vmaf_fex_speed_qa;
 extern VmafFeatureExtractor vmaf_fex_lpips;
@@ -263,13 +278,9 @@ extern VmafFeatureExtractor vmaf_fex_tad;
 
 } /* extern "C" */
 
-/* The registry has internal linkage: it is only ever walked by the lookup
- * helpers in this TU.  An anonymous namespace (rather than `static`) is the
- * C++ spelling of that intent — the C twin keeps `static`. */
-namespace
-{
-
-VmafFeatureExtractor *feature_extractor_list[] = {
+/* The registry has internal linkage: it is only ever walked by lookup helpers
+ * in this translation unit. */
+static VmafFeatureExtractor *const cpu_feature_extractors[] = {
 #if VMAF_FLOAT_FEATURES
     &vmaf_fex_float_psnr, &vmaf_fex_float_adm, &vmaf_fex_float_vif, &vmaf_fex_float_motion,
     &vmaf_fex_float_moment, &vmaf_fex_speed_chroma, &vmaf_fex_speed_temporal,
@@ -279,8 +290,10 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_y_funque_plus, &vmaf_fex_niqe, &vmaf_fex_brisque, &vmaf_fex_ciede,
     &vmaf_fex_delta_e_itp, &vmaf_fex_pu21, &vmaf_fex_psnr, &vmaf_fex_psnr_hvs,
     &vmaf_fex_integer_adm, &vmaf_fex_integer_motion, &vmaf_fex_integer_motion_v2,
-    &vmaf_fex_integer_vif, &vmaf_fex_cambi,
+    &vmaf_fex_integer_vif, &vmaf_fex_cambi, nullptr};
+
 #if HAVE_SYCL
+static VmafFeatureExtractor *const sycl_feature_extractors[] = {
     /* SYCL before CUDA: when multiple GPU backends are compiled in,
      * the first matching extractor wins.  SYCL is the preferred backend
      * because it supports the widest range of Intel hardware.
@@ -306,9 +319,10 @@ VmafFeatureExtractor *feature_extractor_list[] = {
      * sycl/speed_{chroma,temporal}_sycl.cpp TUs so
      * vmaf_get_feature_extractor_by_name("speed_chroma_sycl") resolves.
      * Hybrid GPU/CPU split — see core/src/feature/speed_internal.h. */
-    &vmaf_fex_speed_chroma_sycl, &vmaf_fex_speed_temporal_sycl,
+    &vmaf_fex_speed_chroma_sycl, &vmaf_fex_speed_temporal_sycl, nullptr};
 #endif
 #if HAVE_CUDA
+static VmafFeatureExtractor *const cuda_feature_extractors[] = {
     &vmaf_fex_integer_adm_cuda, &vmaf_fex_integer_vif_cuda, &vmaf_fex_integer_motion_cuda,
     &vmaf_fex_integer_motion_v2_cuda, &vmaf_fex_psnr_cuda, &vmaf_fex_float_moment_cuda,
     /* ADR-0564: integer_ssim_cuda provides real bit-exact integer_ssim on CUDA.
@@ -323,9 +337,10 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     /* ADR-0965: speed_{chroma,temporal} CUDA twins — hybrid GPU/CPU split
      * (GPU means/cov/indterm/backward-sub/score; CPU eigendecomp + QR).
      * places=4 vs CPU reference (ADR-0214). */
-    &vmaf_fex_speed_chroma_cuda, &vmaf_fex_speed_temporal_cuda,
+    &vmaf_fex_speed_chroma_cuda, &vmaf_fex_speed_temporal_cuda, nullptr};
 #endif
 #if HAVE_HIP
+static VmafFeatureExtractor *const hip_feature_extractors_first[] = {
     /* T7-10 first consumer (ADR-0241): integer PSNR on HIP. With
      * `enable_hipcc=true` the kernel runs on device; without it
      * submit() returns -ENOSYS. */
@@ -363,7 +378,9 @@ VmafFeatureExtractor *feature_extractor_list[] = {
      * (`VMAF_feature_motion_score`, `VMAF_feature_motion2_score`).
      * Real on-device kernel under enable_hipcc=true; otherwise
      * submit() returns -ENOSYS. */
-    &vmaf_fex_float_motion_hip,
+    &vmaf_fex_float_motion_hip, nullptr};
+
+static VmafFeatureExtractor *const hip_feature_extractors_second[] = {
     /* Eighth consumer (ADR-0274): `float_ssim_hip` mirrors
      * `integer_ssim_cuda.c`'s call graph (two-dispatch separable
      * Gaussian, five intermediate float buffers, per-block
@@ -396,9 +413,10 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     /* ADR-0964 / ADR-0852: speed_{chroma,temporal} HIP twins. Real on-device
      * kernels under enable_hipcc=true; otherwise init() returns -ENOSYS.
      * CPU-side eigendecomp + QR via feature/speed_internal.c. */
-    &vmaf_fex_speed_chroma_hip, &vmaf_fex_speed_temporal_hip,
+    &vmaf_fex_speed_chroma_hip, &vmaf_fex_speed_temporal_hip, nullptr};
 #endif
 #if HAVE_METAL
+static VmafFeatureExtractor *const metal_feature_extractors[] = {
     /* T8-1 first consumer (ADR-0361 / ADR-0421): integer motion_v2 on Metal
      * with real MTLComputePipelineState dispatch. */
     &vmaf_fex_integer_motion_v2_metal,
@@ -431,8 +449,9 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     /* Metal standalone-metric kernels (parity sweep): ciede2000, psnr_hvs,
      * cambi (banding), ssimulacra2 — mirror the CUDA/SYCL twins + CPU refs. */
     &vmaf_fex_integer_ciede_metal, &vmaf_fex_integer_psnr_hvs_metal, &vmaf_fex_integer_cambi_metal,
-    &vmaf_fex_ssimulacra2_metal,
+    &vmaf_fex_ssimulacra2_metal, nullptr};
 #endif
+static VmafFeatureExtractor *const auxiliary_feature_extractors[] = {
     &vmaf_fex_speed_qa, &vmaf_fex_lpips, &vmaf_fex_dists_sq, &vmaf_fex_fastdvdnet_pre,
     &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2,
 #if HAVE_RUST_TAD
@@ -441,7 +460,35 @@ VmafFeatureExtractor *feature_extractor_list[] = {
 #endif
     &vmaf_fex_null, nullptr};
 
-} /* anonymous namespace */
+static VmafFeatureExtractor *const *const feature_extractor_groups[] = {
+    cpu_feature_extractors,
+#if HAVE_SYCL
+    sycl_feature_extractors,
+#endif
+#if HAVE_CUDA
+    cuda_feature_extractors,
+#endif
+#if HAVE_HIP
+    hip_feature_extractors_first, hip_feature_extractors_second,
+#endif
+#if HAVE_METAL
+    metal_feature_extractors,
+#endif
+    auxiliary_feature_extractors, nullptr,
+};
+
+static VmafFeatureExtractor *feature_extractor_at(unsigned index)
+{
+    for (unsigned group = 0; feature_extractor_groups[group]; group++) {
+        VmafFeatureExtractor *const *items = feature_extractor_groups[group];
+        for (unsigned item = 0; items[item]; item++) {
+            if (index == 0)
+                return items[item];
+            index--;
+        }
+    }
+    return nullptr;
+}
 
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
 {
@@ -449,7 +496,7 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
         return nullptr;
 
     VmafFeatureExtractor *fex = nullptr;
-    for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
+    for (unsigned i = 0; (fex = feature_extractor_at(i)); i++) {
         if (!strcmp(name, fex->name))
             return fex;
     }
@@ -466,12 +513,12 @@ int vmaf_feature_extractor_list_audit(void)
    * extractor objects that happen to publish the same name).  Either
    * is a registry bug. */
     int dup_count = 0;
-    for (unsigned i = 0; feature_extractor_list[i]; i++) {
-        const VmafFeatureExtractor *const a = feature_extractor_list[i];
+    for (unsigned i = 0; feature_extractor_at(i); i++) {
+        const VmafFeatureExtractor *const a = feature_extractor_at(i);
         if (!a->name)
             continue;
-        for (unsigned j = i + 1; feature_extractor_list[j]; j++) {
-            const VmafFeatureExtractor *const b = feature_extractor_list[j];
+        for (unsigned j = i + 1; feature_extractor_at(j); j++) {
+            const VmafFeatureExtractor *const b = feature_extractor_at(j);
             if (!b->name)
                 continue;
             if (a == b || !strcmp(a->name, b->name)) {
@@ -493,67 +540,45 @@ int vmaf_feature_extractor_list_audit(void)
     return 0;
 }
 
+static bool extractor_provides_feature(const VmafFeatureExtractor *fex, const char *name)
+{
+    if (!fex->provided_features)
+        return false;
+    for (unsigned i = 0; fex->provided_features[i]; i++) {
+        if (!strcmp(name, fex->provided_features[i]))
+            return true;
+    }
+    return false;
+}
+
+static bool extractor_matches_backend(const VmafFeatureExtractor *fex, unsigned flags)
+{
+    constexpr unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                  VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+    return flags ? (fex->flags & flags) != 0 : (fex->flags & gpu_mask) == 0;
+}
+
+static VmafFeatureExtractor *find_feature_extractor(const char *name, unsigned flags,
+                                                    bool filter_backend)
+{
+    for (unsigned i = 0; feature_extractor_at(i); i++) {
+        VmafFeatureExtractor *fex = feature_extractor_at(i);
+        if (filter_backend && !extractor_matches_backend(fex, flags))
+            continue;
+        if (extractor_provides_feature(fex, name))
+            return fex;
+    }
+    return nullptr;
+}
+
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *name, unsigned flags)
 {
     if (!name)
         return nullptr;
-
-    VmafFeatureExtractor *fex = nullptr;
-
-    /* First pass: prefer an extractor that matches one of the requested
-     * backend flags.
-     *
-     * When flags == 0 (no GPU context — CPU-only caller path such as
-     * vmaf_use_features_from_model without a GPU state), we must NOT
-     * return a GPU-flagged extractor even though the old "flags && ..."
-     * guard was always false for flags=0 and let every extractor through.
-     * In an all-backends build, GPU-flagged twins sort before the CPU twin
-     * in feature_extractor_list (e.g. integer_adm_sycl before integer_adm),
-     * so the SYCL variant was being returned; its init guard
-     * (!fex->sycl_state) then rejected every frame with -EINVAL.
-     * Fix (ADR-1100): when flags == 0, skip any GPU-flagged extractor so
-     * the CPU twin is selected instead.  When flags != 0, preserve the
-     * existing exact-match semantics. */
-    const unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
-                              VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
-    for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
-        if (!fex->provided_features)
-            continue;
-        if (flags == 0) {
-            if (fex->flags & gpu_mask)
-                continue;
-        } else if (!(fex->flags & flags)) {
-            continue;
-        }
-        const char *fname = nullptr;
-        for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
-            if (!strcmp(name, fname))
-                return fex;
-        }
-    }
-    /* ADR-0530 fallback: if no flagged extractor was found, fall back to
-   * any extractor providing the feature (including the CPU twin).
-   * This preserves the ADR-0519 posture that lets a partially-covered
-   * GPU backend (e.g. HIP, which has not yet promoted every kernel
-   * out of the -ENOSYS scaffold) run the requested model by routing
-   * the unflagged features through their CPU twins. Without this
-   * fallback, enabling the HIP flag mask in `compute_fex_flags()`
-   * would break the default VMAF model (only motion / vif / ssimu2
-   * have HIP-flagged registrations today; adm2 / motion2 / etc. would
-   * fail to resolve). The CUDA backend has full coverage so the
-   * fallback is a no-op for it. */
-    if (flags) {
-        for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
-            if (!fex->provided_features)
-                continue;
-            const char *fname = nullptr;
-            for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
-                if (!strcmp(name, fname))
-                    return fex;
-            }
-        }
-    }
-    return nullptr;
+    VmafFeatureExtractor *fex = find_feature_extractor(name, flags, true);
+    if (!fex && flags)
+        fex = find_feature_extractor(name, flags, false);
+    return fex;
 }
 
 bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
@@ -623,6 +648,16 @@ int vmaf_fex_ctx_parse_options(VmafFeatureExtractorContext *fex_ctx)
 
 } /* anonymous namespace */
 
+static int fail_context_create(VmafFeatureExtractorContext **fex_ctx,
+                               VmafFeatureExtractorContext *context,
+                               VmafFeatureExtractor *extractor, int error)
+{
+    free(extractor);
+    free(context);
+    *fex_ctx = nullptr;
+    return error ? error : -ENOMEM;
+}
+
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict)
@@ -636,14 +671,14 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
 
     VmafFeatureExtractor *x = static_cast<VmafFeatureExtractor *>(malloc(sizeof(*x)));
     if (!x)
-        goto free_f;
+        return fail_context_create(fex_ctx, f, nullptr, -ENOMEM);
     memcpy(x, fex, sizeof(*x));
 
     f->fex = x;
     if (f->fex->priv_size) {
         void *priv = malloc(f->fex->priv_size);
         if (!priv)
-            goto free_x;
+            return fail_context_create(fex_ctx, f, x, -ENOMEM);
         memset(priv, 0, f->fex->priv_size);
         f->fex->priv = priv;
     }
@@ -655,27 +690,19 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
             /* parse_options failure: tear down all allocations and NULL the
              * out-parameter so callers cannot dereference a freed pointer. */
             free(f->fex->priv);
-            goto free_x;
+            return fail_context_create(fex_ctx, f, x, err);
         }
     } else if (f->opts_dict && f->opts_dict->cnt > 0) {
         const char *missing_key = nullptr;
-        (void)vmaf_feature_extractor_supports_options(f->fex, f->opts_dict, &missing_key);
+        const bool options_supported =
+            vmaf_feature_extractor_supports_options(f->fex, f->opts_dict, &missing_key);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor '%s': unknown option '%s'\n",
-                 f->fex->name ? f->fex->name : "(unknown)", missing_key ? missing_key : "(null)");
-        err = -EINVAL;
-        goto free_x;
+                 f->fex->name ? f->fex->name : "(unknown)",
+                 !options_supported && missing_key ? missing_key : "(null)");
+        return fail_context_create(fex_ctx, f, x, -EINVAL);
     }
 
     return 0;
-
-free_x:
-    free(x);
-free_f:
-    free(f);
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * create call. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *fex_ctx = nullptr;
-    return err ? err : -ENOMEM;
 }
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
@@ -922,48 +949,41 @@ int vmaf_fex_ctx_pool_create(VmafFeatureExtractorContextPool **pool, unsigned n_
     if (!n_threads || n_threads > INT_MAX)
         return -EINVAL;
 
-    /* Hoist fex_list_sz before any goto to avoid C++ cross-initialisation
-     * error (jump over a const initialisation is ill-formed in C++). */
-    size_t fex_list_sz;
-    VmafFeatureExtractorContextPool *const p = *pool =
+    VmafFeatureExtractorContextPool *const p =
         static_cast<VmafFeatureExtractorContextPool *>(malloc(sizeof(*p)));
-    if (!p)
-        goto fail;
+    if (!p) {
+        *pool = nullptr;
+        return -ENOMEM;
+    }
     memset(p, 0, sizeof(*p));
 
     p->n_threads = n_threads;
 
     p->cnt = 0;
     p->capacity = 8;
-    fex_list_sz = sizeof(*(p->fex_list)) * p->capacity;
+    const size_t fex_list_sz = sizeof(*(p->fex_list)) * p->capacity;
     p->fex_list = static_cast<decltype(p->fex_list)>(malloc(fex_list_sz));
-    if (!p->fex_list)
-        goto free_p;
+    if (!p->fex_list) {
+        free(p);
+        *pool = nullptr;
+        return -ENOMEM;
+    }
 
-    if (pthread_mutex_init(&(p->lock), nullptr) != 0)
-        goto free_fex_list;
+    if (pthread_mutex_init(&(p->lock), nullptr) != 0) {
+        free(static_cast<void *>(p->fex_list));
+        free(p);
+        *pool = nullptr;
+        return -ENOMEM;
+    }
+    *pool = p;
     return 0;
-
-free_fex_list:
-    free(static_cast<void *>(p->fex_list));
-free_p:
-    free(p);
-    *pool = nullptr; /* prevent dangling pointer — mirrors feature_extractor.c:797 pattern */
-fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * pool create. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *pool = nullptr;
-    return -ENOMEM;
 }
-
-namespace
-{
 
 /* Look up the pool entry already registered for (fex->name, opts_dict).
  * Returns nullptr when that pair has not been registered yet. */
-struct fex_list_entry *find_fex_list_entry(VmafFeatureExtractorContextPool *pool,
-                                           const VmafFeatureExtractor *fex,
-                                           VmafDictionary *opts_dict)
+static struct fex_list_entry *find_fex_list_entry(VmafFeatureExtractorContextPool *pool,
+                                                  const VmafFeatureExtractor *fex,
+                                                  VmafDictionary *opts_dict)
 {
     for (unsigned i = 0; i < pool->cnt; i++) {
         struct fex_list_entry *entry = pool->fex_list[i];
@@ -978,7 +998,7 @@ struct fex_list_entry *find_fex_list_entry(VmafFeatureExtractorContextPool *pool
 /* Grow only the pointer table. Entries keep stable addresses for their
  * atomics and condition variables, including while an acquisition drops
  * pool->lock in pthread_cond_wait (ADR-0772; pool-growth research digest). */
-int grow_fex_list(VmafFeatureExtractorContextPool *pool)
+static int grow_fex_list(VmafFeatureExtractorContextPool *pool)
 {
     if (pool->cnt < pool->capacity)
         return 0;
@@ -990,9 +1010,9 @@ int grow_fex_list(VmafFeatureExtractorContextPool *pool)
      * assert() is compiled out under NDEBUG exactly where that matters. */
     if (pool->capacity == 0)
         return -EINVAL;
-    if (pool->capacity > UINT_MAX / 2 || pool->capacity > SIZE_MAX / sizeof(*pool->fex_list) / 2)
+    const unsigned capacity = vmaf_next_fex_capacity(pool->capacity);
+    if (capacity == 0)
         return -ENOMEM;
-    const unsigned capacity = pool->capacity * 2;
     struct fex_list_entry **fex_list = static_cast<struct fex_list_entry **>(
         realloc(static_cast<void *>(pool->fex_list), sizeof(*(pool->fex_list)) * capacity));
     if (!fex_list)
@@ -1006,8 +1026,8 @@ int grow_fex_list(VmafFeatureExtractorContextPool *pool)
  * per-thread context array and private copy of the option dictionary.
  * Returns 0, or a negative errno with the slot's partial allocations
  * already unwound. */
-int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, unsigned n_threads,
-                       VmafDictionary *opts_dict)
+static int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex,
+                              unsigned n_threads, VmafDictionary *opts_dict)
 {
     new (slot) fex_list_entry(); /* placement-new value-init (ADR-0772) */
 
@@ -1021,9 +1041,12 @@ int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, u
     slot->in_use.store(0, std::memory_order_relaxed);
     if (pthread_cond_init(&(slot->full), nullptr) != 0)
         return -ENOMEM;
-    if (n_threads > SIZE_MAX / sizeof(slot->ctx_list[0])) {
-        pthread_cond_destroy(&(slot->full));
-        return -ENOMEM;
+    constexpr size_t max_contexts = SIZE_MAX / sizeof(slot->ctx_list[0]);
+    if constexpr (max_contexts < UINT_MAX) {
+        if (n_threads > max_contexts) {
+            pthread_cond_destroy(&(slot->full));
+            return -ENOMEM;
+        }
     }
     const size_t ctx_array_sz = sizeof(slot->ctx_list[0]) * n_threads;
     slot->ctx_list = static_cast<decltype(slot->ctx_list)>(malloc(ctx_array_sz));
@@ -1053,8 +1076,9 @@ int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, u
 /* Return the pool entry for (fex, opts_dict), registering a new one on first
  * use.  Returns nullptr when the arguments are invalid or a registration
  * allocation failed; the caller turns that into -EINVAL. */
-struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool *pool,
-                                          VmafFeatureExtractor *fex, VmafDictionary *opts_dict)
+static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool *pool,
+                                                 VmafFeatureExtractor *fex,
+                                                 VmafDictionary *opts_dict)
 {
     if (!pool)
         return nullptr;
@@ -1093,8 +1117,8 @@ struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool *pool,
  * the pointer once under the pool lock and passing it in, we guarantee a
  * single read at a point where a happens-before relationship to the
  * registration write exists. */
-int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExtractor *fex,
-                             VmafDictionary *opts_dict, VmafFrameSyncContext *framesync)
+static int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExtractor *fex,
+                                    VmafDictionary *opts_dict, VmafFrameSyncContext *framesync)
 {
     /* fex is retained in the signature to document the caller's snapshot
      * contract (see comment above); the body uses entry->fex, so the
@@ -1107,14 +1131,20 @@ int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExt
     if (opts_dict) {
         const int err = vmaf_dictionary_copy(&opts_dict, &d);
         if (err) {
-            (void)vmaf_dictionary_free(&d);
+            const int cleanup_err = vmaf_dictionary_free(&d);
+            if (cleanup_err)
+                vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                         "feature extractor pool dictionary cleanup failed: %d\n", cleanup_err);
             return err;
         }
     }
     VmafFeatureExtractorContext *f = nullptr;
     const int err = vmaf_feature_extractor_context_create(&f, entry->fex, d);
     if (err) {
-        (void)vmaf_dictionary_free(&d);
+        const int cleanup_err = vmaf_dictionary_free(&d);
+        if (cleanup_err)
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool dictionary cleanup failed: %d\n",
+                     cleanup_err);
         return err;
     }
     entry->ctx_list[i].fex_ctx = f;
@@ -1127,9 +1157,9 @@ int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExt
     return 0;
 }
 
-int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtractor *fex,
-                        VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx,
-                        VmafFrameSyncContext *framesync)
+static int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtractor *fex,
+                               VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx,
+                               VmafFrameSyncContext *framesync)
 {
     for (int i = 0; i < entry->capacity.load(); i++) {
         const int err = ctx_pool_ensure_slot_ctx(entry, i, fex, opts_dict, framesync);
@@ -1145,7 +1175,17 @@ int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtractor *fex,
     return 0;
 }
 
-} /* anonymous namespace */
+static int unlock_fex_pool(VmafFeatureExtractorContextPool *pool, int primary_err)
+{
+    const int unlock_err = pthread_mutex_unlock(&(pool->lock));
+    if (unlock_err != 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool mutex unlock failed: %s\n",
+                 strerror(unlock_err));
+        if (primary_err == 0)
+            return -unlock_err;
+    }
+    return primary_err;
+}
 
 int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureExtractor *fex,
                              VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx)
@@ -1157,17 +1197,19 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
     if (!fex_ctx)
         return -EINVAL;
 
-    pthread_mutex_lock(&(pool->lock));
-    int err = 0;
+    const int lock_err = pthread_mutex_lock(&(pool->lock));
+    if (lock_err != 0)
+        return -lock_err;
 
     struct fex_list_entry *entry = get_fex_list_entry(pool, fex, opts_dict);
-    if (!entry) {
-        err = -EINVAL;
-        goto unlock;
-    }
+    if (!entry)
+        return unlock_fex_pool(pool, -EINVAL);
 
-    while (entry->capacity.load() == entry->in_use.load())
-        pthread_cond_wait(&(entry->full), &(pool->lock));
+    while (entry->capacity.load() == entry->in_use.load()) {
+        const int wait_err = pthread_cond_wait(&(entry->full), &(pool->lock));
+        if (wait_err != 0)
+            return unlock_fex_pool(pool, -wait_err);
+    }
 
     /* Snapshot fex->framesync once under the lock and pass it to
      * ctx_pool_claim_slot / ctx_pool_ensure_slot_ctx so neither function
@@ -1175,15 +1217,10 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
      * data race identified by iter9-tsan-race-deep finding #1 where a
      * concurrent set_fex_framesync() write on the main thread could race
      * with the memcpy inside vmaf_feature_extractor_context_create(). */
-    {
-        VmafFrameSyncContext *framesync =
-            (fex->flags & VMAF_FEATURE_FRAME_SYNC) ? fex->framesync : nullptr;
-        err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx, framesync);
-    }
-
-unlock:
-    pthread_mutex_unlock(&(pool->lock));
-    return err;
+    VmafFrameSyncContext *const framesync =
+        (fex->flags & VMAF_FEATURE_FRAME_SYNC) ? fex->framesync : nullptr;
+    const int err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx, framesync);
+    return unlock_fex_pool(pool, err);
 }
 
 int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
@@ -1194,37 +1231,24 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
     if (!fex_ctx)
         return -EINVAL;
 
-    pthread_mutex_lock(&(pool->lock));
-    int err = 0;
+    const int lock_err = pthread_mutex_lock(&(pool->lock));
+    if (lock_err != 0)
+        return -lock_err;
 
     const VmafFeatureExtractor *const fex = fex_ctx->fex;
-    struct fex_list_entry *entry = nullptr;
-    for (unsigned i = 0; i < pool->cnt; i++) {
-        if (!strcmp(fex->name, pool->fex_list[i]->fex->name) &&
-            !vmaf_dictionary_compare(fex_ctx->opts_dict, pool->fex_list[i]->opts_dict)) {
-            entry = pool->fex_list[i];
-            break;
-        }
-    }
-
-    if (!entry) {
-        err = -EINVAL;
-        goto unlock;
-    }
+    struct fex_list_entry *const entry = find_fex_list_entry(pool, fex, fex_ctx->opts_dict);
+    if (!entry)
+        return unlock_fex_pool(pool, -EINVAL);
 
     for (int i = 0; i < entry->capacity.load(); i++) {
         if (fex_ctx == entry->ctx_list[i].fex_ctx) {
             entry->ctx_list[i].in_use = false;
             entry->in_use.fetch_sub(1);
-            pthread_cond_signal(&(entry->full));
-            goto unlock;
+            const int signal_err = pthread_cond_signal(&(entry->full));
+            return unlock_fex_pool(pool, signal_err == 0 ? 0 : -signal_err);
         }
     }
-    err = -EINVAL;
-
-unlock:
-    pthread_mutex_unlock(&(pool->lock));
-    return err;
+    return unlock_fex_pool(pool, -EINVAL);
 }
 
 int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
@@ -1234,7 +1258,9 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
         return -EINVAL;
     if (!pool->fex_list)
         return -EINVAL;
-    pthread_mutex_lock(&(pool->lock));
+    const int lock_err = pthread_mutex_lock(&(pool->lock));
+    if (lock_err != 0)
+        return -lock_err;
 
     int first_err = 0;
     for (unsigned i = 0; i < pool->cnt; i++) {
@@ -1251,7 +1277,39 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
         }
     }
 
-    pthread_mutex_unlock(&(pool->lock));
+    return unlock_fex_pool(pool, first_err);
+}
+
+static void record_pool_error(int *first_err, int err, const char *operation)
+{
+    if (err == 0)
+        return;
+    const int error_number = err < 0 ? -err : err;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool %s failed: %s\n", operation,
+             strerror(error_number));
+    if (*first_err == 0)
+        *first_err = err < 0 ? err : -err;
+}
+
+static int destroy_fex_pool_entry(struct fex_list_entry *entry)
+{
+    int first_err = 0;
+    for (int i = 0; i < entry->capacity.load(); i++) {
+        VmafFeatureExtractorContext *const fex_ctx = entry->ctx_list[i].fex_ctx;
+        if (!fex_ctx)
+            continue;
+        if (fex_ctx->is_initialized) {
+            record_pool_error(&first_err, vmaf_feature_extractor_context_close(fex_ctx),
+                              "context close");
+        }
+        record_pool_error(&first_err, vmaf_feature_extractor_context_destroy(fex_ctx),
+                          "context destroy");
+    }
+    record_pool_error(&first_err, vmaf_dictionary_free(&entry->opts_dict), "dictionary free");
+    free(entry->ctx_list);
+    record_pool_error(&first_err, pthread_cond_destroy(&entry->full), "condition destroy");
+    entry->~fex_list_entry();
+    free(entry);
     return first_err;
 }
 
@@ -1259,39 +1317,21 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
 {
     if (!pool)
         return -EINVAL;
-    if (!pool->fex_list)
-        goto free_pool;
-    pthread_mutex_lock(&(pool->lock));
+    const int lock_err = pthread_mutex_lock(&(pool->lock));
+    if (lock_err != 0)
+        return -lock_err;
 
+    int first_err = 0;
     for (unsigned i = 0; i < pool->cnt; i++) {
-        if (!pool->fex_list[i]->ctx_list)
-            continue;
-        for (int j = 0; j < pool->fex_list[i]->capacity.load(); j++) {
-            VmafFeatureExtractorContext *fex_ctx = pool->fex_list[i]->ctx_list[j].fex_ctx;
-            if (!fex_ctx)
-                continue;
-            vmaf_feature_extractor_context_close(fex_ctx);
-            vmaf_feature_extractor_context_destroy(fex_ctx);
-        }
-        vmaf_dictionary_free(&pool->fex_list[i]->opts_dict);
-        free(pool->fex_list[i]->ctx_list);
-        /* Destroy the per-entry condvar initialised by ctx_pool_alloc_slot().
-         * POSIX requires destroy before the memory is freed; omitting it
-         * leaks POSIX TSD resources on glibc and is flagged by ASan/LeakSan. */
-        (void)pthread_cond_destroy(&pool->fex_list[i]->full);
-        pool->fex_list[i]->~fex_list_entry();
-        free(pool->fex_list[i]);
+        record_pool_error(&first_err, destroy_fex_pool_entry(pool->fex_list[i]), "entry destroy");
     }
     free(static_cast<void *>(pool->fex_list));
-    /* POSIX requires unlock + destroy before free; freeing a locked or
-     * un-destroyed mutex is undefined behaviour. Unlock first (we hold
-     * the lock from the pthread_mutex_lock above), then destroy.
-     * ASan/LeakSan: mutex state is embedded in pool — freeing the pool
-     * before destroying the mutex leaks POSIX TSD resources on glibc. */
-    (void)pthread_mutex_unlock(&(pool->lock));
-    (void)pthread_mutex_destroy(&(pool->lock));
-
-free_pool:
+    const int unlock_err = pthread_mutex_unlock(&(pool->lock));
+    if (unlock_err != 0)
+        return -unlock_err;
+    const int destroy_err = pthread_mutex_destroy(&(pool->lock));
+    if (destroy_err != 0)
+        return -destroy_err;
     free(pool);
-    return 0;
+    return first_err;
 }
