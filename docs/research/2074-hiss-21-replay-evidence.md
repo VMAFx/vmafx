@@ -63,12 +63,20 @@ an explicit, shared Ninja export of only `c_COMPILER` and `cpp_COMPILER`; its
 contract tests reject missing rules, empty or malformed output, non-compilation
 entries and failed Ninja calls while preserving the last valid database.
 
+The next guarded run exposed the adjacent tool-resolution defect. Make had
+exported an absolute venv path globally but each Meson recipe shadowed it with
+relative `.venv/bin`. Meson resolved and persisted that relative Ninja name,
+then tried to launch it from `core/build` during reconfiguration. The recipes
+now prepend the venv's `abspath`, and the real Make fixture rejects any return
+to a relative first `PATH` entry.
+
 ## Reproducer
 
 ```bash
 praetorctl hiss coverage --verify
 make hiss-coverage
 python3 -m unittest discover -s scripts/ci/tests -p test_write_compile_commands.py
+python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
 ```
 
 Deleting the catalog, replacing a positive fixture with clean code, or turning

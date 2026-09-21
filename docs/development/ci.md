@@ -495,6 +495,13 @@ empty result, or a failed Ninja command stops the gate without destroying the
 previous file. Never substitute unfiltered `ninja -t compdb`: that includes
 link, custom and phony entries which are not native compile commands.
 
+The Make entrypoints prepend the project virtual environment to `PATH` as an
+absolute path. Meson records the Ninja path it resolves and later invokes it
+with the build directory as its working directory; a relative `.venv/bin`
+prefix therefore becomes an invalid `core/build/.venv/bin/ninja` lookup during
+reconfiguration. Keep the absolute-path assertion in
+`test_lint_configured.py` when changing the build recipes.
+
 The configured lint driver then selects every tracked native source with a
 configured command,
 including top-level engine files, C++ CLI tools, tests and tracked vendored

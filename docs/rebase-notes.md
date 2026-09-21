@@ -51615,3 +51615,9 @@ including before the SYCL custom-command augmentation. The exporter must request
 exactly `c_COMPILER` and `cpp_COMPILER`; an unfiltered `ninja -t compdb` brings
 link, generator, and phony commands back into analyzer scope. Failed or partial
 exports must leave the last valid database intact and fail the lane.
+
+The top-level Makefile must also prepend `VIRTUAL_ENV_ABS`, never relative
+`.venv/bin`, when invoking Meson and Ninja. Meson persists the resolved Ninja
+name and launches it from the build directory during reconfiguration; restoring
+the relative recipe prefix makes that launch target
+`core/build/.venv/bin/ninja` and prevents the native lint gate from starting.

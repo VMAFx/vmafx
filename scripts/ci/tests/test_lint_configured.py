@@ -535,7 +535,9 @@ class ConfiguredLintTests(unittest.TestCase):
             f"#!{sys.executable}\n"
             "import os, sys\nfrom pathlib import Path\n"
             "assert sys.argv[1:] == ['setup', '--reconfigure', 'configured-build', 'core']\n"
-            "assert os.environ['PATH'].split(os.pathsep)[0] == 'fixture-venv/bin'\n"
+            "venv_bin = Path(os.environ['PATH'].split(os.pathsep)[0])\n"
+            "assert venv_bin == Path.cwd() / 'fixture-venv/bin'\n"
+            "assert venv_bin.is_absolute()\n"
             "Path('configured-build/compile_commands.json').write_bytes(Path('native-database.json').read_bytes())\n"
             "Path('configured-build/build.ninja').write_text('# fixture manifest\\n')\n"
             "Path('configured-build/configure-called.txt').write_text('same build options')\n",

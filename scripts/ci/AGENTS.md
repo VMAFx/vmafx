@@ -33,8 +33,12 @@ checker; neither local fixture pass nor aggregate score proves settings.
 
 `lint-configured.py` owns local `make lint-c` selection. Make first regenerates
 Meson metadata with `--reconfigure BUILD_DIR LIBVMAF_DIR`, without option
-overrides, then builds generated prerequisites. Because Meson 1.12 no longer
-materialises its native database, `write-compile-commands.py` must then export
+overrides, then builds generated prerequisites. Make must prepend the absolute
+`VIRTUAL_ENV_ABS` to `PATH`: Meson persists its resolved Ninja command and
+later launches it from the build directory, where relative `.venv/bin` is
+invalid. The real-Make fixture asserts this path stays absolute. Because Meson
+1.12 no longer materialises its native database, `write-compile-commands.py`
+must then export
 exactly Ninja's `c_COMPILER` and `cpp_COMPILER` rules. Keep that export
 validated, atomic and fail-closed; never accept an empty/partial rule set or
 replace a last-valid database after a failed export. Intersect the resulting

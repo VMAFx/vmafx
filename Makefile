@@ -4,6 +4,7 @@ SHELL := /bin/bash
 # Path and environment setup
 VENV := .venv
 VIRTUAL_ENV_PATH := $(VENV)/bin
+VIRTUAL_ENV_ABS := $(abspath $(VIRTUAL_ENV_PATH))
 
 # Build tools configured in the virtual environment
 PYTHON_INTERPRETER := python3
@@ -17,7 +18,7 @@ NINJA := $(VIRTUAL_ENV_PATH)/ninja
 # PATH. Without this, `make lint-py` / `make format-check` silently found no
 # ruff / black and reported success, so the local gate could pass while
 # CI's identical checks failed.
-export PATH := $(CURDIR)/$(VIRTUAL_ENV_PATH):$(PATH)
+export PATH := $(VIRTUAL_ENV_ABS):$(PATH)
 
 # require-tool,<binary>,<install hint>
 # A gate that cannot run is a gate that cannot fail. Every lint / format tool is
@@ -52,25 +53,25 @@ default: build
 all: build debug install test cythonize
 
 $(BUILD_DIR): $(MESON) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) $(BUILD_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_RELEASE) $(ENABLE_FLOAT) $(ENABLE_CUDA)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(BUILD_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_RELEASE) $(ENABLE_FLOAT) $(ENABLE_CUDA)
 
 $(DEBUG_DIR): $(MESON) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
 
 cythonize: cythonize-deps
 	pushd python && ../$(VENV_PYTHON) setup.py build_ext --build-lib . && popd || exit 1
 
 build: $(BUILD_DIR) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(BUILD_DIR)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR)
 
 test: build $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(BUILD_DIR) test
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) test
 
 debug: $(DEBUG_DIR) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(DEBUG_DIR)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(DEBUG_DIR)
 
 install: $(BUILD_DIR) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(BUILD_DIR) install
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) install
 
 clean:
 	rm -rf $(BUILD_DIR) $(DEBUG_DIR)
@@ -158,7 +159,7 @@ docs-fragments-write:
 LINT_JOBS ?= 4
 LINT_CONFIGURED_ARGS ?=
 lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) --reconfigure "$(BUILD_DIR)" "$(LIBVMAF_DIR)"
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) --reconfigure "$(BUILD_DIR)" "$(LIBVMAF_DIR)"
 	$(MAKE) build
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(BUILD_DIR)" --ninja "$(NINJA)"
@@ -338,7 +339,7 @@ test-sanitizers:
 	meson test -C build-san --print-errorlogs
 
 test-fast: build
-	PATH="$(VENV)/bin:$$PATH" meson test -C $(BUILD_DIR) --suite=fast
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" meson test -C $(BUILD_DIR) --suite=fast
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
