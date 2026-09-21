@@ -24171,6 +24171,22 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- HISS-21 burn-down, `core/src/feature/` top level: the cleanup `goto`
+  ladders are gone from `ciede`, `feature_collector`, `feature_dists`,
+  `feature_lpips`, `float_moment`, `float_ms_ssim`, `float_psnr`,
+  `float_ssim`, `motion` and `pu21` (29 HISS-01 findings), and the
+  `float_ms_ssim` extractor's optional per-scale luminance / contrast /
+  structure publication moved into its own helper so `extract` fits the
+  60-LOC bound (1 HISS-04 finding). Scores do not move: the change is
+  structural. Each former label ladder became one unwind helper that
+  releases the same resources in the same order from every error exit,
+  including the shallow early-error paths, and every arithmetic
+  expression was moved whole rather than split across a helper boundary,
+  so the compiler sees the same contraction opportunities it saw inline
+  (ADR-1253). Verified with the full `meson test` suite and the Netflix
+  CPU golden-data gate, assertions untouched.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so

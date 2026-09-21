@@ -140,17 +140,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);
     if (!s->ref)
-        goto fail;
+        return -ENOMEM;
     s->dist = aligned_malloc(s->float_stride * h, 32);
-    if (!s->dist)
-        goto free_ref;
+    if (!s->dist) {
+        free(s->ref);
+        return -ENOMEM;
+    }
 
     return 0;
-
-free_ref:
-    free(s->ref);
-fail:
-    return -ENOMEM;
 }
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))

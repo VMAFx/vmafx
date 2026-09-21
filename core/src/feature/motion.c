@@ -161,20 +161,17 @@ int compute_motion(const float *ref, const float *dis, int w, int h, int ref_str
         printf("error: ref_stride %% sizeof(float) != 0, ref_stride = %d, sizeof(float) = %zu.\n",
                ref_stride, sizeof(float));
         (void)fflush(stdout);
-        goto fail;
+        return 1;
     }
     if (dis_stride % sizeof(float) != 0) {
         printf("error: dis_stride %% sizeof(float) != 0, dis_stride = %d, sizeof(float) = %zu.\n",
                dis_stride, sizeof(float));
         (void)fflush(stdout);
-        goto fail;
+        return 1;
     }
     // stride for vmaf_image_sad_c is in terms of (sizeof(float) bytes)
     *score = vmaf_image_sad_c(ref, dis, w, h, ref_stride / sizeof(float),
                               dis_stride / sizeof(float), motion_decimate);
 
     return 0;
-
-fail:
-    return 1;
 }

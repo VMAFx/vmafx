@@ -51867,3 +51867,5 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+
+HISS-21 `core/src/feature/` top level (2026-09-21): `ciede`, `feature_collector`, `feature_dists`, `feature_lpips`, `float_moment`, `float_ms_ssim`, `float_psnr`, `float_ssim`, `motion` and `pu21` lost their cleanup `goto` ladders to `*_init_unwind` / `*_append_*` `static` helpers in the same TU — on conflict reapply the helper boundaries rather than restoring the label ladders, and keep every arithmetic expression whole across them (ADR-1253).
