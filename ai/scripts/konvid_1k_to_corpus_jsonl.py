@@ -15,7 +15,7 @@ and the ``KonViD1kIngest`` subclass.
 
 Pipeline shape::
 
-    .workingdir2/konvid-1k/
+    .corpus/konvid-1k/
       +-- KoNViD_1k_videos/                 # *.mp4 clips (1200)
       +-- KoNViD_1k_metadata/
           +-- KoNViD_1k_attributes.csv      # MOS table
@@ -23,7 +23,7 @@ Pipeline shape::
                   |
                   v  ai/scripts/konvid_1k_to_corpus_jsonl.py
                   v
-    .workingdir2/konvid-1k/konvid_1k.jsonl  # one row per clip
+    .corpus/konvid-1k/konvid_1k.jsonl  # one row per clip
 
 Schema (one JSON object per line)::
 
@@ -278,7 +278,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=_DEFAULT_KONVID_DIR,
         help=(
-            "Local KoNViD-1k extraction (default: .workingdir2/konvid-1k/). "
+            "Local KoNViD-1k extraction (default: .corpus/konvid-1k/). "
             "Must contain the videos and a metadata CSV."
         ),
     )
@@ -286,7 +286,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=_DEFAULT_OUTPUT,
-        help="Output JSONL path (default: .workingdir2/konvid-1k/konvid_1k.jsonl).",
+        help="Output JSONL path (default: .corpus/konvid-1k/konvid_1k.jsonl).",
     )
     ap.add_argument(
         "--manifest-out",

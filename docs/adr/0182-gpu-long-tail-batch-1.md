@@ -9,7 +9,7 @@
 
 PR #124 (T7-26 / ADR-0181) landed the global feature-characteristics
 registry + per-backend `dispatch_strategy` modules. The
-[`metrics-backends-matrix`](../../.workingdir2/analysis/metrics-backends-matrix.md)
+`metrics-backends-matrix`
 GPU columns now show that 14 of ~16 registered metrics are missing
 GPU coverage — only `vif`, `motion`, and `adm` ship on CUDA / SYCL
 / Vulkan today.
@@ -103,4 +103,4 @@ for deterministic reductions.
   kernel — closest pattern for psnr/moment reductions);
   [ADR-0178](0178-vulkan-adm-kernel.md) (Vulkan ADM kernel —
   pattern for multi-dispatch features when batch 2 lands ssim).
-- Matrix: [`.workingdir2/analysis/metrics-backends-matrix.md`](../../.workingdir2/analysis/metrics-backends-matrix.md).
+- Matrix: `.workingdir2/analysis/metrics-backends-matrix.md`.

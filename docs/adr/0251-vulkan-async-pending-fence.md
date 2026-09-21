@@ -124,7 +124,7 @@ destroying any handle.
   v2 keeps the public signatures byte-identical so this PR
   does **not** modify the patch.
 - Source: T7-29 part 4 in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
+  `.workingdir2/BACKLOG.md`.
 - Per-PR rule: ADR-0108 deep-dive deliverables checklist.
 
 ### Status update 2026-05-08: Accepted

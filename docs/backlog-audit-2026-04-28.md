@@ -4,8 +4,8 @@
 > Audit of in-tree follow-up mentions (TODO / FIXME / "deferred" /
 > "scaffold only" / "v2" / etc.) cross-referenced against the
 > canonical backlog tracking surfaces:
-> [`.workingdir2/OPEN.md`](../.workingdir2/OPEN.md),
-> [`.workingdir2/BACKLOG.md`](../.workingdir2/BACKLOG.md),
+> `.workingdir2/OPEN.md`,
+> `.workingdir2/BACKLOG.md`,
 > [`docs/state.md`](state.md), [`docs/rebase-notes.md`](rebase-notes.md),
 > ADR Decision/Consequences blocks, and open GitHub issues / PRs.
 >

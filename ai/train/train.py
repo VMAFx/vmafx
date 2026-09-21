@@ -10,7 +10,7 @@ sibling modules. This file is also the smoke-testable harness:
 CLI args:
 
 * ``--data-root``        directory with ``ref/`` and ``dis/`` (default
-                         ``.workingdir2/netflix/``)
+                         ``.corpus/netflix/``)
 * ``--model-arch``       one of ``mlp_small`` / ``mlp_medium`` / ``linear``
 * ``--epochs``           training epochs (``0`` runs harness setup only)
 * ``--batch-size``       SGD batch size (default 256)
@@ -31,7 +31,7 @@ metrics from the first canonical run. CI smoke-tests this script
 with ``--epochs 0`` against a mock fixture; full training runs are
 invoked directly via ``python ai/train/train.py …`` or the wrapper
 ``bash ai/scripts/run_training.sh …`` against the local corpus at
-``.workingdir2/netflix/``.
+``.corpus/netflix/``.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ if __package__ in (None, ""):
     __package__ = "ai.train"  # required for the relative imports below
 
 
-_DEFAULT_DATA_ROOT = Path(".workingdir2/netflix")
+_DEFAULT_DATA_ROOT = Path(".corpus/netflix")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

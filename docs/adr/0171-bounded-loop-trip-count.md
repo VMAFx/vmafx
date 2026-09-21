@@ -183,7 +183,7 @@ of Loops within Loops" attack purely from wire-format observation.
 
 ## References
 
-- [BACKLOG T6-5b](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T6-5b — backlog row.
 - [ADR-0169](0169-onnx-allowlist-loop-if.md) — sibling ADR that
   deferred this guard.
 - [ADR-0167](0167-doc-drift-enforcement.md) — same two-layer

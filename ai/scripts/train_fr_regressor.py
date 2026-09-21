@@ -4,7 +4,7 @@
 """Train ``fr_regressor_v1`` (Wave-1 C1 baseline).
 
 T6-1a unblocked: the Netflix Public Dataset is locally available at
-``.workingdir2/netflix/`` (lawrence's drop, 9 ref + 70 dis YUVs).
+``.corpus/netflix/`` (lawrence's drop, 9 ref + 70 dis YUVs).
 Per-frame full-feature parquet is already produced by
 ``ai/scripts/extract_full_features.py`` and lives at
 ``runs/full_features_netflix.parquet`` (11 040 rows × 25 cols).

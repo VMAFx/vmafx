@@ -197,5 +197,5 @@ this PR, validation is **contract-level**:
   `vmaf_sycl_wait_compute` / `vmaf_read_pictures_sycl`)
   in [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h).
 - Source: T7-29 in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
+  `.workingdir2/BACKLOG.md`.
 - Per-PR rule: ADR-0108 deep-dive deliverables checklist.

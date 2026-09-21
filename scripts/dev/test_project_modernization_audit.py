@@ -211,7 +211,7 @@ def test_marker_scan_ignores_non_implementation_stub_terms(tmp_path: Path) -> No
 
 def test_blocked_state_row_is_classified(tmp_path: Path) -> None:
     state = _write(
-        tmp_path / ".workingdir2" / "OPEN.md",
+        tmp_path / ".workingdir" / "OPEN.md",
         "- **T-HDR-VMAF-MODEL** — blocked on upstream Netflix releases.\n",
     )
 
@@ -351,7 +351,7 @@ def test_state_closed_date_stamp_row_is_skipped(tmp_path: Path) -> None:
         "| **T-STILL-OPEN** | Active issue. |\n"
         "| **T-INLINE-CLOSED** | Was fixed. | (2026-05-30) |\n"
     )
-    state = _write(tmp_path / ".workingdir2" / "OPEN.md", content)
+    state = _write(tmp_path / ".workingdir" / "OPEN.md", content)
 
     findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
     evidence_list = [f.evidence for f in findings]
@@ -372,7 +372,7 @@ def test_state_closed_marker_row_is_skipped(tmp_path: Path) -> None:
         "- **T-OPEN-ITEM** — active.\n"
         "- closed: **T-CLOSED-ITEM** — resolved in PR #99.\n"
     )
-    state = _write(tmp_path / ".workingdir2" / "BACKLOG.md", content)
+    state = _write(tmp_path / ".workingdir" / "BACKLOG.md", content)
 
     findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
     evidence_list = [f.evidence for f in findings]
@@ -538,7 +538,7 @@ def test_dedupe_findings_sorts_by_descending_severity(tmp_path: Path) -> None:
 
 def test_summarize_findings_counts_total_and_blocked(tmp_path: Path) -> None:
     source_blocked = _write(
-        tmp_path / ".workingdir2" / "OPEN.md",
+        tmp_path / ".workingdir" / "OPEN.md",
         "- **T-HDR-VMAF** — blocked on upstream Netflix releases.\n",
     )
     source_open = _write(
@@ -623,7 +623,7 @@ def test_render_markdown_shows_modernization_clusters(tmp_path: Path) -> None:
 
 def test_render_markdown_shows_blocked_findings(tmp_path: Path) -> None:
     state = _write(
-        tmp_path / ".workingdir2" / "OPEN.md",
+        tmp_path / ".workingdir" / "OPEN.md",
         "- **T-HDR-VMAF** — blocked on upstream Netflix releases.\n",
     )
     report = audit.run_audit(tmp_path, roots=(), state_files=(str(state.relative_to(tmp_path)),))

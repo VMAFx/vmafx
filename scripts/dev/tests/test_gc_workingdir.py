@@ -23,7 +23,7 @@ class GcWorkingdirTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = TemporaryDirectory()
         self.repo = Path(self.tmp.name)
-        self.state = self.repo / ".workingdir2"
+        self.state = self.repo / ".workingdir"
         run = self.state / "cache" / "gate-20260908"
         (run / "go-cache" / "49").mkdir(parents=True)
         (run / "go-cache" / "49" / "blob-d").write_bytes(b"x" * 4096)
@@ -100,7 +100,7 @@ class GcWorkingdirTests(unittest.TestCase):
     def test_apply_removes_and_records_a_manifest(self) -> None:
         code = GC.main(
             [
-                ".workingdir2",
+                ".workingdir",
                 "--repo-root",
                 str(self.repo),
                 "--no-citations",
@@ -121,7 +121,7 @@ class GcWorkingdirTests(unittest.TestCase):
 
     def test_a_second_apply_is_a_no_op(self) -> None:
         args = [
-            ".workingdir2",
+            ".workingdir",
             "--repo-root",
             str(self.repo),
             "--no-citations",

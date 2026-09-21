@@ -9,8 +9,8 @@ starting a broad cleanup branch:
 
 ```bash
 python3 scripts/dev/project_modernization_audit.py \
-  --out-json .workingdir2/modernization/audit.json \
-  --out-md .workingdir2/modernization/audit.md
+  --out-json .workingdir/evidence/modernization/audit.json \
+  --out-md .workingdir/evidence/modernization/audit.md
 ```
 
 The default scan covers curated source and human-facing docs roots, local state
@@ -64,8 +64,8 @@ pin disabled-build stub signatures to the real implementation ABI.
 That flag is a triage hint only. Revalidate the dependency before deleting or
 deferring the row.
 
-The audit intentionally does not update `.workingdir2/OPEN.md` or
-`.workingdir2/BACKLOG.md`. Those files remain the editorial state of record:
+The audit intentionally does not update `.workingdir/OPEN.md` or
+`.workingdir/BACKLOG.md`. Those files remain the editorial state of record:
 run the audit, copy the real findings into the state files, then pick the next
 PR from that cleaned list.
 
@@ -77,14 +77,14 @@ Limit the scan to one area while preparing a focused branch:
 python3 scripts/dev/project_modernization_audit.py \
   --scan-root tools/vmaf-tune \
   --scan-root docs/usage \
-  --out-md .workingdir2/modernization/vmaf-tune.md
+  --out-md .workingdir/evidence/modernization/vmaf-tune.md
 ```
 
 Override state files when reviewing an archived planning note:
 
 ```bash
 python3 scripts/dev/project_modernization_audit.py \
-  --state-file .workingdir2/OPEN.md \
+  --state-file .workingdir/OPEN.md \
   --state-file docs/state.md
 ```
 

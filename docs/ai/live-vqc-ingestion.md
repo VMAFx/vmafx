@@ -38,7 +38,7 @@ conversion script ships in tree.
 Expected local layout after extraction:
 
 ```text
-.workingdir2/live-vqc/
+.corpus/live-vqc/
   ├── manifest.csv        # MOS table (operator drops — see Manifest below)
   └── clips/              # video files (operator extraction)
         ├── 001.mp4
@@ -50,11 +50,11 @@ Expected local layout after extraction:
 ```bash
 # Laptop-class smoke run (200 clips, requires manifest + clips on disk):
 python ai/scripts/live_vqc_to_corpus_jsonl.py
-#    → .workingdir2/live-vqc/live_vqc.jsonl
+#    → .corpus/live-vqc/live_vqc.jsonl
 
 # Full-corpus ingestion (all 585 clips):
 python ai/scripts/live_vqc_to_corpus_jsonl.py --full
-#    → .workingdir2/live-vqc/live_vqc.jsonl
+#    → .corpus/live-vqc/live_vqc.jsonl
 
 # Custom directory:
 python ai/scripts/live_vqc_to_corpus_jsonl.py \
@@ -111,7 +111,7 @@ via curl (resumable, with a 120-second per-clip timeout).
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--live-vqc-dir` | `.workingdir2/live-vqc/` | Local working directory |
+| `--live-vqc-dir` | `.corpus/live-vqc/` | Local working directory |
 | `--manifest-csv` | `<dir>/manifest.csv` | MOS manifest path |
 | `--clips-subdir` | `clips` | Sub-directory for video files |
 | `--output` | `<dir>/live_vqc.jsonl` | Output JSONL path |
@@ -164,10 +164,10 @@ common axis before the trainer consumes it. See
 
 ```bash
 python ai/scripts/aggregate_corpora.py \
-    --inputs .workingdir2/konvid-150k/konvid_150k.jsonl \
-             .workingdir2/lsvq/lsvq.jsonl \
-             .workingdir2/live-vqc/live_vqc.jsonl \
-    --output .workingdir2/aggregated/unified_corpus.jsonl
+    --inputs .corpus/konvid-150k/konvid_150k.jsonl \
+             .corpus/lsvq/lsvq.jsonl \
+             .corpus/live-vqc/live_vqc.jsonl \
+    --output .corpus/aggregated/unified_corpus.jsonl
 ```
 
 ## License and redistribution

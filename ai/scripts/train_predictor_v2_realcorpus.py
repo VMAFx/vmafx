@@ -14,9 +14,9 @@ Pipeline shape
 --------------
 
 1. Discover available real corpora under user-configured roots.
-   Defaults: ``~/.workingdir2/netflix/`` (canonical-6 JSONL),
-   ``~/.workingdir2/konvid-150k/`` (when present),
-   ``~/.workingdir2/bvi-dvc-raw/`` (when present). Each root may
+   Defaults: ``~/.corpus/netflix/`` (canonical-6 JSONL),
+   ``~/.corpus/konvid-150k/`` (when present),
+   ``~/.corpus/bvi-dvc-raw/`` (when present). Each root may
    contribute rows; mixed-corpus runs are explicit in the per-codec
    report.
 2. Filter rows per codec adapter; reject codecs with insufficient
@@ -52,7 +52,7 @@ Usage
 
     # Point at a specific corpus.
     python ai/scripts/train_predictor_v2_realcorpus.py \\
-        --corpus ~/.workingdir2/netflix/canonical6.jsonl
+        --corpus ~/.corpus/netflix/canonical6.jsonl
 
     # Restrict to a single codec for debugging.
     python ai/scripts/train_predictor_v2_realcorpus.py --codec libx264

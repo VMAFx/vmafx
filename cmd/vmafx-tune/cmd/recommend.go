@@ -121,7 +121,7 @@ Examples:
 		"Encoder preset (repeatable); required unless --from-corpus is used")
 	cmd.Flags().StringVar(&flags.output, "output", "corpus.jsonl",
 		"JSONL destination for the visited points")
-	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/encodes",
+	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir/cache/vmafx-tune/encodes",
 		"Scratch directory for the probe encodes")
 	cmd.Flags().BoolVar(&flags.keepEncodes, "keep-encodes", false,
 		"Keep the encoded artefacts instead of deleting them after scoring")
