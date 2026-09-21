@@ -34,7 +34,7 @@ func WriteRowLine(row map[string]any) (string, error) {
 
 // WriteJSONL writes rows to path, one JSON object per line, and returns the
 // row count. Parent directories are created as needed.
-func WriteJSONL(rows []map[string]any, path string) (int, error) {
+func WriteJSONL(rows []map[string]any, path string) (written int, err error) {
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return 0, fmt.Errorf("create corpus output dir: %w", err)
@@ -46,7 +46,14 @@ func WriteJSONL(rows []map[string]any, path string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open corpus output: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		// Close is a write handle's last chance to report a failed flush, so
+		// it is propagated rather than dropped — unless a more specific
+		// failure is already on its way to the caller.
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close corpus output: %w", closeErr)
+		}
+	}()
 
 	w := bufio.NewWriter(f)
 	n := 0
