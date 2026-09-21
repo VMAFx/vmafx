@@ -268,8 +268,11 @@ intercepts `git diff --name-only`.
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
 the `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
 [pre-push]`). The omnibus `pre-push` hook delegates to same
-validator logic. Both skip gracefully when `gh` absent or no open PR
-exists for current branch.
+validator logic. Its `gh` lookup is time-bounded; unavailable credentials fall
+back to the public PR list and page. Only a confirmed no-open-PR result skips
+validation. Indeterminate metadata fails closed. Preserve
+`test-pre-push-pr-body-lint.py` in both commit and push hooks so a locked keyring
+cannot restore the unbounded hang or an authentication failure bypass.
 
 **Invariant — single parser source of truth**: do not fork or
 re-implement deliverables-check parsing logic in any other

@@ -51649,6 +51649,12 @@ failure returns the negated pthread error and frees only initialized state.
 pthread init/destroy symbols are mapped to test wrappers. Do not replace it
 with a production injection hook, textual `.c` include, NOLINT, or
 platform-specific linker interposition.
+
+The PR-body pre-push guard must bound `gh pr view` because a locked desktop
+keyring can otherwise hang every push. Preserve the public-page fallback, raw
+Markdown body extraction, schema validation, confirmed-no-PR-only skip, and
+fail-closed behavior when both metadata sources are unavailable. Do not map an
+authentication, network, or markup failure to “no open PR.”
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 

@@ -508,10 +508,19 @@ repos:
         stages: [pre-push]
         # Always runs regardless of which files changed — the check is
         # about the PR description, not the code under review. Skip if
-        # gh CLI is absent or no open PR exists (both handled gracefully
-        # inside the script). See docs/development/pr-body-sentinel-guide.md.
+        # no open PR exists. A bounded gh lookup falls back to the public
+        # PR page and fails closed if neither source is readable. See
+        # docs/development/pr-body-sentinel-guide.md.
         always_run: true
         pass_filenames: false
+
+      - id: test-pr-body-lookup
+        name: PR-body metadata lookup fails closed without hanging
+        entry: python3 scripts/git-hooks/test-pre-push-pr-body-lint.py
+        language: system
+        files: '^(scripts/git-hooks/(?:pre-push-pr-body-lint\.sh|test-pre-push-pr-body-lint\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: mkdocs-strict
         name: Build changed documentation with MkDocs strict validation

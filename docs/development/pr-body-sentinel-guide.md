@@ -10,7 +10,9 @@ fails the gate. Each retry costs a 3–10 minute CI cycle.
 The pre-push hook (`scripts/git-hooks/pre-push-pr-body-lint.sh`,
 wired by `make hooks-install`) and the standalone validator
 (`scripts/ci/validate-pr-body.sh`) run the same parser locally
-before the push so failures are caught in under 5 seconds.
+before the push. The hook bounds `gh` lookup time, falls back to the
+repository's public pull-request pages when local credentials are unavailable,
+and blocks the push if neither source can establish the PR state and body.
 
 ## Quick start
 
@@ -132,16 +134,13 @@ Exit codes:
 | 1 | PR body would fail (same `::error` lines as CI emits) |
 | 2 | Usage error — missing body, unreadable diff file, etc. |
 
-## Bypassing the pre-push hook
+## Metadata lookup failures
 
-The standard escape hatch skips **all** pre-push checks:
-
-```bash
-git push --no-verify
-```
-
-Use this only when the PR body is correct but the hook cannot validate
-it (for example, `gh` authentication is broken on the current machine).
+A locked keyring or broken `gh` authentication must not hang the push and must
+not turn validation off. After the bounded authenticated lookup, the hook reads
+the public pull-request list and page for this public repository. If both paths
+are unavailable or GitHub's page shape cannot be validated, the hook fails
+closed. Restore connectivity or credentials and retry; do not skip the hook.
 
 ## See also
 

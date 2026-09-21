@@ -100,6 +100,17 @@ interposition, executable-source include, or analyzer suppression. It also pins
 the header's existing null-context destroy contract, whose implementation had
 previously dereferenced the null pointer.
 
+The subsequent push exposed another local-gate blind spot: `gh pr view` waited
+indefinitely for a locked desktop keyring, so a valid commit could never reach
+the remote. Treating an authentication error as “no PR” would have hidden the
+required body check. The hook now terminates the authenticated lookup after a
+bounded interval, discovers the branch's open PR from GitHub's public PR list,
+extracts the raw Markdown body and draft state from the public PR page, and
+validates the resulting schema before deciding whether to run the parser. A
+confirmed empty result retains first-push behavior; network, markup, or parsing
+ambiguity blocks the push. Regression fixtures cover both the hung-keyring
+fallback and the fail-closed double-failure path.
+
 ## Reproducer
 
 ```bash
@@ -108,6 +119,7 @@ make hiss-coverage
 python3 -m unittest discover -s scripts/ci/tests -p test_write_compile_commands.py
 python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
 python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
+python3 scripts/git-hooks/test-pre-push-pr-body-lint.py
 meson test -C core/build test_framesync test_framesync_init_failure --print-errorlogs
 ```
 
