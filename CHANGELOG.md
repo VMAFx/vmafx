@@ -23360,6 +23360,11 @@ is addressed.
   being cancelled). Final scoreboard: nilness 0, staticcheck 0, gosec 0.
 
 
+- Refactor the Go `recommend` and corpus orchestrators into bounded helpers,
+  report source-hash and encode-cleanup failures, and preserve their existing
+  CLI output and schema behavior without HISS exceptions.
+
+
 - **fix(controller)**: `PullWork` UPDATE now includes `AND status=?` with
   `StatusPending` — prevents a concurrent `Cancel` from being silently
   overwritten when it races with the job assignment (ADR-1012).

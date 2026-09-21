@@ -51728,3 +51728,10 @@ The warning gate is load-bearing too: root `pyproject.toml` and
 `python/tox.ini` promote warnings to errors, and tox no longer disables the
 warnings plugin. Do not restore `-p no:warnings` or add `ignore` filters when an
 upstream sync starts warning; fix the emitting code or dependency usage.
+
+## Go recommend and corpus orchestrator warning cleanup (2026-09-21)
+
+no rebase impact: `cmd/vmafx-tune/cmd/recommend.go` and `pkg/corpus/corpus.go`
+are fork-only Go surfaces. The helper boundaries only enforce the 60-line
+limit; preserve existing CLI flags/output, corpus row order/schema, the
+distorted-decode fallback, and explicit source-hash/encode-cleanup errors.
