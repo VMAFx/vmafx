@@ -12340,15 +12340,6 @@ Bump pinned CUDA version from 13.2.0 to 13.3.0 across Dockerfile, dev/Containerf
 
 ### Chore
 
-- Promote `coverage-gpu` CI job from advisory to required: the two-week
-  stability window (2026-05-19 → 2026-06-02) elapsed with no advisory-fail
-  runs on the self-hosted `gpu-full` runner. Removed `continue-on-error: true`
-  and renamed the job display name from `(Advisory)` to required. Closes
-  T-GPU-COVERAGE-STABLE-WEEKS.
-
-
-### Chore
-
 - Add `TestGRPCScore_ScorerError` to `cmd/vmafx-server/grpc_server_handler_test.go`:
   covers the scorer-failure → `codes.Internal` branch in `grpcServer.Score`
   (grpc_server.go:74–78), which was previously exercised only for the HTTP path
@@ -20048,21 +20039,6 @@ introduced by PR #908 (aiutils refactor).  Also adds `pythonpath = ["ai/src",
 without a pip-editable install.
 
 
-- **`Build — Ubuntu ARM clang (CPU)` false-positive CI failure on every
-  PR.** The ARM runner (`ubuntu-24.04-arm`) only has Python 3.14 available
-  (installed via `actions/setup-python`), so the `py311` tox env is skipped
-  for lack of a `python3.11` interpreter. With no tests having run, no
-  `.coverage.<env>` files are produced; the subsequent `coverage` tox env
-  then executes `coverage combine` on an empty set and exits 1 with "No data
-  to combine", failing the step. This has silently failed every PR that
-  touches non-doc paths, drowning out any real ARM-specific regression. Fix
-  adds `ignore_outcome = true` to `[testenv:coverage]` in `python/tox.ini`.
-  Coverage aggregation is purely informational — real test failures surface
-  through the `py311`/`py3xx` testenv exit code, not through the aggregation
-  step. On non-ARM runners where `python3.11` is present the coverage env
-  still runs and reports normally.
-
-
 - **`Build — Ubuntu ARM clang (CPU)` CI failure: typedef redefinition
   `atomic_int` (`_Atomic(int)` vs `atomic<int>`) on aarch64 clang-18 +
   GCC-14 headers.** `framesync.h` included `<stdatomic.h>` unconditionally.
@@ -20738,6 +20714,15 @@ filter as the push trigger), surfacing doc-substance gaps before merge rather th
 after. The `deploy` job and `pages: write` permission remain push-only. Resolves
 approximately 38 of the last 50 master-push failures caused by post-merge doc
 build errors. See [ADR-0986](../docs/adr/0986-ci-docs-pr-trigger.md).
+
+
+- **CI test and scan failures no longer become green results.** Python tox
+  coverage errors, CPU coverage pytest failures, nightly Netflix benchmark
+  failures, advisory Semgrep registry failures, and sanitizer test-discovery
+  errors now preserve their real exit status. Coverage artifacts are still
+  uploaded after a pytest failure before the job reasserts that failure. A
+  permanently disabled, misleading cross-backend placeholder job was removed,
+  and the previously reverted required GPU coverage status was restored.
 
 
 - Hardened the CI test-fixture cache against poisoning by cancelled or failing runs.

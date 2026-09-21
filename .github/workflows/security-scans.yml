@@ -82,7 +82,7 @@ jobs:
             --config=p/cwe-top-25 \
             --config=p/c \
             --config=p/python \
-            --sarif --output=semgrep-registry.sarif || true
+            --sarif --output=semgrep-registry.sarif
       - name: Upload local-rules SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
