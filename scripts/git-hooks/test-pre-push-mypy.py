@@ -54,6 +54,8 @@ class MypyScope(unittest.TestCase):
         binary = self.directory / "bin"
         binary.mkdir()
         self.checker = binary / "mypy"
+        self.checker_python = binary / "python"
+        self.checker_python.symlink_to(sys.executable)
         self.calls = self.directory / "calls.jsonl"
         self.checker.write_text(
             f"#!{sys.executable}\n"
@@ -131,6 +133,7 @@ class MypyScope(unittest.TestCase):
         calls = self.calls_checked()
         self.assertEqual(len(calls), 3)
         self.assertTrue(all("--explicit-package-bases" in call for call in calls))
+        self.assertTrue(all(f"--python-executable={self.checker_python}" in call for call in calls))
         self.assertEqual(
             [[argument for argument in call if not argument.startswith("--")] for call in calls],
             [
@@ -152,6 +155,12 @@ class MypyScope(unittest.TestCase):
         result = self.run_hook()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mypy is required", result.stderr)
+
+    def test_invalid_python_override_blocks(self) -> None:
+        self.environment["MYPY_PYTHON_EXECUTABLE"] = "missing-python"
+        result = self.run_hook()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("MYPY_PYTHON_EXECUTABLE is not executable", result.stderr)
 
     def test_filename_arguments_cannot_narrow_the_scope(self) -> None:
         result = self.run_hook("scripts/check.py")

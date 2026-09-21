@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from torch import nn
@@ -50,7 +51,7 @@ if TYPE_CHECKING:
     from ..data.netflix_loader import NetflixPair
     from .dataset import NetflixFrameDataset
 
-FloatArray = np.ndarray[Any, np.dtype[np.float32]]
+FloatArray = NDArray[np.float32]
 ArrayPair = tuple[FloatArray, FloatArray]
 PayloadProvider = Callable[["NetflixPair"], dict[str, Any]]
 

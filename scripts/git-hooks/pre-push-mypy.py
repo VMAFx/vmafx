@@ -108,12 +108,29 @@ def check_groups(paths: list[str]) -> tuple[CheckGroup, ...]:
     return tuple(groups)
 
 
-def run_mypy(executable: str, root: Path, paths: list[str]) -> int:
+def python_for_mypy(executable: str) -> str:
+    """Return the dependency environment paired with the mypy executable."""
+    override = os.environ.get("MYPY_PYTHON_EXECUTABLE")
+    if override:
+        resolved = shutil.which(override)
+        if resolved is None:
+            raise RuntimeError(f"MYPY_PYTHON_EXECUTABLE is not executable: {override}")
+        return resolved
+    executable_dir = Path(executable).parent
+    names = ("python.exe", "python3.exe") if os.name == "nt" else ("python", "python3")
+    for name in names:
+        candidate = executable_dir / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return sys.executable
+
+
+def run_mypy(executable: str, python_executable: str, root: Path, paths: list[str]) -> int:
     """Check each package root once under its canonical import identity."""
     common = [
         executable,
         f"--config-file={root / 'pyproject.toml'}",
-        f"--python-executable={sys.executable}",
+        f"--python-executable={python_executable}",
         "--explicit-package-bases",
     ]
     status = 0
@@ -150,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         executable = shutil.which("mypy")
         if executable is None:
             raise RuntimeError("mypy is required; run `make lint-tools`")
-        return run_mypy(executable, root, paths)
+        return run_mypy(executable, python_for_mypy(executable), root, paths)
     except (OSError, RuntimeError, subprocess.CalledProcessError, ValueError) as exc:
         print(f"mypy scope check failed: {exc}", file=sys.stderr)
         return 2
