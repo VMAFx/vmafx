@@ -72,6 +72,13 @@ without carrying forward any warning or error exposed by that build?
   deliberate consequence recorded by ADR-1056, but are no longer accepted.
   ADR-1273 replaces them with ordered built-in standard preferences and keeps
   an explicit `std::expected` compile probe.
+- The exact-head `make lint` gate exposed a separate relative-path defect in
+  its own bootstrap: it placed `.venv/bin` ahead of `PATH`, so Meson persisted
+  `.venv/bin/ninja` and later tried that path from `core/build`. The native
+  build completed, but Meson could not generate `compile_commands.json` and
+  `lint-configured.py` failed closed. The Makefile now resolves project-venv
+  tools to absolute paths, including the Python invocation after `cd python`;
+  a single-source contract test rejects either relative spelling.
 - The first complete FFmpeg build emitted 70 GCC 14 diagnostics across
   array-bound proofs, implicit fallthroughs, possible format truncation, and
   stack frames as large as 327 KiB. Patch 0019 fixes each root cause: VVC stays
@@ -152,6 +159,7 @@ without carrying forward any warning or error exposed by that build?
 | FFmpeg full target build: 11 GCC 16 warnings | Tool path truncation/no-return metadata and oversized swresample/snow test stacks | Use checked dynamic paths and heap test buffers; compile every production, tool, example, and test program |
 | Git: annotated tag is not a commit | Direct shallow clone asked BuildKit Git to check out the annotated tag object | Resolve and verify the peeled commit, then recreate the local tag with the shared checkout helper |
 | `make`: no rule for `GEN tests/pixfmts.mak` | First `fate-list` invocation mixed generated-file progress with target names | Capture successful output, select only `fate-*`, and reject an empty target set |
+| `make lint`: missing `core/build/compile_commands.json` | Meson persisted relative `.venv/bin/ninja` and could not invoke it from the build directory | Resolve every project-venv tool path absolutely and guard the invariant with a contract test |
 | `Dockerfile.ffmpeg`: deleted one-off patch input | Compatibility image never migrated to the canonical patch stack | Replay `ffmpeg-patches/series.txt` and fail on the exact unapplied patch |
 | CMake `Performing Test ... - Failed` during SVT-AV1 configure | Negative capability probes whose results select supported compiler features; configure and build continue by design | Inspected as probes, not suppressed diagnostics; no repository failure to patch |
 

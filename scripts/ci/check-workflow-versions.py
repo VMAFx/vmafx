@@ -39,6 +39,11 @@ by 2026-09 the hook ran ruff 0.16.8 while `make lint-tools` installed 0.16.5
 and a hint still said 0.15.17. `check_formatter_pins` compares the two files
 and rejects a literal `ruff==` / `black==` in the Makefile.
 
+The Makefile's project-venv tools must also resolve to absolute paths. Meson
+records the Ninja executable during setup and later invokes it from the build
+directory; a relative `.venv/bin/ninja` therefore prevents Meson from writing
+`compile_commands.json` and makes the canonical `make lint` gate unusable.
+
 Exit: 0 clean, 1 a literal disagrees with the config, 2 the config is missing.
 """
 
@@ -214,6 +219,48 @@ def precommit_rev(text: str, repo: str) -> str | None:
     return match.group(1) if match else None
 
 
+def check_makefile_venv_paths(root: Path) -> list[str]:
+    """The Meson-facing project-venv path must be absolute.
+
+    Meson invokes Ninja from inside the build directory, so a PATH entry
+    spelled relative to the repository root resolves against the wrong
+    directory and the tool is simply not found. Two spellings satisfy this and
+    both are accepted, because the property is what matters, not the name:
+
+        VIRTUAL_ENV_PATH := $(abspath $(VENV))/bin      # absolute in one step
+        VIRTUAL_ENV_ABS  := $(abspath $(VIRTUAL_ENV_PATH))   # absolute alias
+
+    What is rejected is a recipe prepending the relative `$(VENV)/bin` to PATH,
+    and `../$(VENV_PYTHON)`, which only works from one directory depth.
+    """
+    makefile = root / "Makefile"
+    if not makefile.is_file():
+        return []
+    text = makefile.read_text(encoding="utf-8")
+    problems: list[str] = []
+    absolute_bin = re.search(
+        r"(?m)^VIRTUAL_ENV_PATH\s*:?=\s*\$\(abspath \$\(VENV\)\)/bin\s*$", text
+    ) or re.search(r"(?m)^VIRTUAL_ENV_ABS\s*:?=\s*\$\(abspath .*\)\s*$", text)
+    if not absolute_bin:
+        problems.append(
+            "Makefile must define an absolute project-venv bin path -- either "
+            "VIRTUAL_ENV_PATH := $(abspath $(VENV))/bin or VIRTUAL_ENV_ABS := "
+            "$(abspath $(VIRTUAL_ENV_PATH)) -- so Meson can invoke Ninja from "
+            "the build directory"
+        )
+    for relative_path in re.finditer(r'PATH="\$\(VENV\)/bin:', text):
+        line_no = text[: relative_path.start()].count("\n") + 1
+        problems.append(
+            f"Makefile:{line_no} prepends relative $(VENV)/bin; use the absolute "
+            "$(VIRTUAL_ENV_ABS) (or $(VIRTUAL_ENV_PATH) where that is itself absolute)"
+        )
+    if "../$(VENV_PYTHON)" in text:
+        problems.append(
+            "Makefile must invoke the absolute $(VENV_PYTHON) after changing directories"
+        )
+    return problems
+
+
 def check_formatter_pins(root: Path) -> list[str]:
     """The Makefile installs the formatters at the versions pre-commit runs."""
     makefile = root / "Makefile"
@@ -349,6 +396,7 @@ def main() -> int:
     problems.extend(check_workflows(root, lz_want, py_want))
     problems.extend(check_vmafx_version(root, ver_want))
     problems.extend(check_formatter_pins(root))
+    problems.extend(check_makefile_venv_paths(root))
     problems.extend(check_mypy_python_version(root, py_want))
 
     for problem in problems:

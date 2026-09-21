@@ -594,6 +594,13 @@ does not invoke them. Markdown defaults to changed files against
 `origin/master`; use `MDLINT_SCOPE=all` for the configured whole-document
 scope.
 
+The root Makefile resolves its project-venv executables to absolute paths
+before calling Meson. This is load-bearing: Meson records the selected Ninja
+executable and later invokes it from inside `core/build` while generating
+`compile_commands.json`. Replacing `$(VIRTUAL_ENV_PATH)` with a relative
+`$(VENV)/bin` recipe prefix makes the native build succeed but leaves the lint
+database absent, so the single-source contract test rejects that spelling.
+
 Configure the intended profile before linting. `lint-c` asks Meson to
 reconfigure the existing build with no option overrides, then runs the
 existing `build` target so generated headers and sources exist. For a CPU

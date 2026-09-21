@@ -183,6 +183,11 @@ in `.pre-commit-config.yaml`, and a recipe may not spell `ruff==<n>` or
 `pre-commit hooks` group (two regex managers on `Makefile`); keep the group
 name identical on both rules or the bumps split into two pull requests and the
 first one fails this gate. Fixture: `tests/test_formatter_pins_single_source.py`.
+The same checker keeps `VIRTUAL_ENV_PATH` absolute and rejects recipe-local
+`$(VENV)/bin` prefixes: Meson persists the Ninja path and invokes it from the
+build directory while generating `compile_commands.json`, so a relative path
+breaks the canonical `make lint` gate. Cython likewise invokes the absolute
+`$(VENV_PYTHON)` after changing into `python/`.
 
 `check_mypy_python_version` owns the third pairing (ADR-1282): `pyproject.toml`'s
 `[tool.mypy] python_version` must equal the `major.minor` floor of

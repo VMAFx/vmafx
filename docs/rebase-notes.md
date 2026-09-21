@@ -326,6 +326,11 @@ See [ADR-1270](adr/1270-bounded-process-execution.md) and
   do not restore direct standard flags from ADR-1056. `core/src/model.c` keeps
   the built-in table behind `VMAF_BUILT_IN_MODELS`, and
   `core/test/test_model.c` must continue passing with that option disabled.
+- The root Makefile resolves `VIRTUAL_ENV_PATH` with `$(abspath $(VENV))` and
+  passes that absolute directory to Meson/Ninja recipes. Meson invokes its
+  recorded Ninja path from `core/build` to create `compile_commands.json`;
+  restoring a relative `$(VENV)/bin` prefix makes `make lint` fail after the
+  build. Keep `check_makefile_venv_paths()` and its fixture in sync.
 
 See [Research-2073](research/2073-ffmpeg-n9-0-2-stable-refresh.md) and
 [ADR-1273](adr/1273-warning-clean-meson-language-standards.md).

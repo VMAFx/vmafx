@@ -13656,7 +13656,10 @@ No code changes in this PR — research only.
   LTO retains parallel workers, SONAME symlinks survive staging, and FFmpeg
   consumes Meson's interface-versioned `libvmaf.pc` instead of the product tag.
   The no-built-in-model configuration now compiles with warnings-as-errors and
-  has a passing model test.
+  has a passing model test. The root Makefile now passes absolute project-venv
+  tool paths to Meson, so a clean `make lint` reliably generates and consumes
+  `core/build/compile_commands.json` instead of failing after a successful
+  native build.
 - Replaced warning-producing manual C/C++ standard flags with Meson's ordered
   built-in preferences while retaining the `std::expected` library probe.
 
