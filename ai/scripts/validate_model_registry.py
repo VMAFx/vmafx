@@ -25,16 +25,20 @@ Exit status: 0 = pass, 1 = validation failed, 2 = bad invocation.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -50,7 +54,7 @@ DEFAULT_SCHEMA = REPO_ROOT / "model" / "tiny" / "registry.schema.json"
 def _try_jsonschema_validate(reg: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     """Run jsonschema if available; return a list of error strings (empty = ok)."""
     try:
-        import jsonschema  # type: ignore[import-not-found]
+        import jsonschema
     except ImportError:
         return ["__skipped__"]
     validator = jsonschema.Draft202012Validator(schema)
@@ -111,7 +115,7 @@ def graph_bakes_scaler(onnx_path: Path) -> bool:
         return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)
 
     try:
-        import onnx  # type: ignore[import-not-found]
+        import onnx
     except ImportError:
         return _byte_scan()
 
@@ -148,6 +152,42 @@ def sidecar_for(onnx_path: Path) -> Path:
     return direct
 
 
+def _check_quantized_entry(mid: object, model: dict[str, Any], onnx_path: Path) -> list[str]:
+    errors: list[str] = []
+    quant_mode = model.get("quant_mode", "fp32")
+    if quant_mode == "fp32":
+        return errors
+    int8_sha = model.get("int8_sha256")
+    if not int8_sha:
+        return [f"{mid}: quant_mode={quant_mode} requires int8_sha256"]
+    int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
+    if not int8_path.is_file():
+        return errors
+    got8 = hashlib.sha256(int8_path.read_bytes()).hexdigest()
+    if got8 != int8_sha:
+        errors.append(f"{mid}: int8_sha256 mismatch (file={got8}, registry={int8_sha})")
+    if not graph_bakes_scaler(int8_path):
+        return errors
+    sidecar8 = sidecar_for(int8_path)
+    if not sidecar8.is_file():
+        errors.append(
+            f"{mid}: {int8_path.name} bakes the scaler but no companion "
+            f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
+        )
+        return errors
+    try:
+        sdata8 = json.loads(sidecar8.read_text(encoding="utf-8"))
+    except ValueError as err:
+        errors.append(f"{mid}: {sidecar8.name} JSON parse error: {err}")
+    else:
+        if sdata8.get("onnx_has_scaler") is not True:
+            errors.append(
+                f"{mid}: {int8_path.name} bakes scaler ops but "
+                f"{sidecar8.name} does not declare onnx_has_scaler: true"
+            )
+    return errors
+
+
 def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
     """Cross-file invariants the schema cannot express (file existence, sha match)."""
     errors: list[str] = []
@@ -175,37 +215,7 @@ def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
             if not sidecar.is_file():
                 errors.append(f"{mid}: missing sidecar {sidecar.name}")
 
-        quant_mode = m.get("quant_mode", "fp32")
-        if quant_mode != "fp32":
-            int8_sha = m.get("int8_sha256")
-            if not int8_sha:
-                errors.append(f"{mid}: quant_mode={quant_mode} requires int8_sha256")
-            else:
-                int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
-                if int8_path.is_file():
-                    got8 = hashlib.sha256(int8_path.read_bytes()).hexdigest()
-                    if got8 != int8_sha:
-                        errors.append(
-                            f"{mid}: int8_sha256 mismatch (file={got8}, registry={int8_sha})"
-                        )
-                    if graph_bakes_scaler(int8_path):
-                        sidecar8 = sidecar_for(int8_path)
-                        if not sidecar8.is_file():
-                            errors.append(
-                                f"{mid}: {int8_path.name} bakes the scaler but no companion "
-                                f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
-                            )
-                        else:
-                            try:
-                                sdata8 = json.loads(sidecar8.read_text(encoding="utf-8"))
-                            except ValueError as err:
-                                errors.append(f"{mid}: {sidecar8.name} JSON parse error: {err}")
-                            else:
-                                if sdata8.get("onnx_has_scaler") is not True:
-                                    errors.append(
-                                        f"{mid}: {int8_path.name} bakes scaler ops but "
-                                        f"{sidecar8.name} does not declare onnx_has_scaler: true"
-                                    )
+        errors.extend(_check_quantized_entry(mid, m, onnx_path))
 
         bundle_rel = m.get("sigstore_bundle")
         # Bundle file presence is checked at runtime by --tiny-model-verify,
@@ -243,8 +253,7 @@ def validate(registry_path: Path, schema_path: Path) -> tuple[int, list[str]]:
     return (0 if not errors else 1, errors)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "registry",
@@ -265,9 +274,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON validation report with ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
 
-    rc, errors = validate(args.registry, args.schema)
+
+def _print_validation_result(
+    args: argparse.Namespace, rc: int, errors: list[str]
+) -> tuple[int, list[str], int]:
     model_count = 0
     if rc != 0:
         for e in errors:
@@ -286,24 +298,42 @@ def main(argv: list[str] | None = None) -> int:
             )
             rc = 1
             errors = [f"registry count read failed: {exc}"]
+    return rc, errors, model_count
+
+
+def _write_validation_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    rc: int,
+    errors: list[str],
+    model_count: int,
+) -> None:
+    write_manifest_json(
+        args.out_json,
+        {
+            "ok": rc == 0,
+            "error_count": len(errors),
+            "errors": errors,
+            "model_count": model_count,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"registry": args.registry, "schema": args.schema},
+                outputs={"report": args.out_json},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    rc, errors = validate(args.registry, args.schema)
+    rc, errors, model_count = _print_validation_result(args, rc, errors)
     if args.out_json is not None:
-        write_manifest_json(
-            args.out_json,
-            {
-                "ok": rc == 0,
-                "error_count": len(errors),
-                "errors": errors,
-                "model_count": model_count,
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"registry": args.registry, "schema": args.schema},
-                    outputs={"report": args.out_json},
-                ),
-            },
-        )
+        _write_validation_report(args, raw_argv, rc, errors, model_count)
     return rc
 
 

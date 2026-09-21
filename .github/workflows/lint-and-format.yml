@@ -637,11 +637,8 @@ jobs:
   python-lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # T7-CI-DEDUP — mypy-only. Ruff/Black already run in the
-    # `pre-commit` job above (over `--all-files`), so duplicating them
-    # here just doubled the maintenance surface (two pip-pin sources of
-    # truth) without catching anything new. mypy stays because no
-    # pre-commit hook runs it; advisory exit because numpy/torch stubs
-    # are gappy on first run.
+    # `pre-commit` job above (over `--all-files`). The same complete-scope
+    # runner is used by Make and pre-push; any finding blocks this job.
     # Job display name kept verbatim so branch-protection's required-
     # status-checks list doesn't need an admin update in lockstep with
     # this dedup. Body is mypy-only per T7-CI-DEDUP; the rename to
@@ -650,7 +647,7 @@ jobs:
     # required-aggregator
     name: Python Lint
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -659,8 +656,8 @@ jobs:
         with:
           python-version: "3.14.7"
       - name: Install
-        run: pip install mypy
-      - run: mypy ai/ scripts/ || echo "mypy advisory only on first run"
+        run: pip install -e './ai[dev]' -e ./tools/vmaf-tune
+      - run: python3 scripts/git-hooks/pre-push-mypy.py
 
   registry-validate:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false

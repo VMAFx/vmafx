@@ -46,14 +46,19 @@ import json
 import math
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import onnxruntime as ort
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -138,7 +143,9 @@ def _z_for_coverage(coverage: float) -> float:
     )
 
 
-def _load_ensemble(manifest_path: Path):  # type: ignore[no-untyped-def]
+def _load_ensemble(
+    manifest_path: Path,
+) -> tuple[dict[str, Any], list["ort.InferenceSession"]]:
     """Load an ensemble manifest + open one ORT session per member.
 
     Returns ``(manifest, sessions)``.
@@ -158,7 +165,7 @@ def _load_ensemble(manifest_path: Path):  # type: ignore[no-untyped-def]
 
 
 def _predict_ensemble(
-    sessions: list,  # type: ignore[type-arg]
+    sessions: list["ort.InferenceSession"],
     features_norm: np.ndarray,
     codec_onehot: np.ndarray,
 ) -> np.ndarray:
@@ -219,7 +226,7 @@ def _synthesize_smoke_corpus(
     n_rows: int = 100,
     num_codecs: int = 6,
     seed: int = 4321,
-):  # type: ignore[no-untyped-def]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Match the trainer smoke distribution but with a different seed
     so we evaluate on out-of-training rows."""
     rng = np.random.default_rng(seed)
@@ -242,8 +249,7 @@ def _synthesize_smoke_corpus(
     return features, codec_onehot, target
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> Any:
     ap = make_argument_parser(
         prog="eval_probabilistic_proxy.py",
         description=__doc__,
@@ -256,56 +262,61 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--parquet", type=Path, default=None)
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--metrics-out", type=Path, default=None)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
-    if not args.manifest.is_file():
-        print(f"error: manifest missing at {args.manifest}", file=sys.stderr)
-        print(
-            "hint: run train_fr_regressor_v2_ensemble.py --smoke first.",
-            file=sys.stderr,
-        )
-        return 2
 
-    manifest, sessions = _load_ensemble(args.manifest)
-    feature_mean = np.asarray(manifest["feature_mean"], dtype=np.float32)
-    feature_std = np.asarray(manifest["feature_std"], dtype=np.float32)
-    conformal_q = manifest.get("confidence", {}).get("conformal_q_residual")
-
-    # Ground truth: read codec dim from the first member's ONNX model.
-    # Using the manifest's codec_vocab length would silently mismatch if the
-    # vocab list and the trained model weight dimensions drift (e.g. the
-    # manifest records 6 codecs but the ONNX was trained with 14). Deriving
-    # the dimension from the live ONNX input shape is authoritative.
+def _codec_count(sessions: list["ort.InferenceSession"]) -> int | None:
     codec_input = next((i for i in sessions[0].get_inputs() if i.name == "codec_onehot"), None)
     if codec_input is None:
         print("error: ONNX missing codec_onehot input", file=sys.stderr)
-        return 2
-    num_codecs = codec_input.shape[1]
+        return None
+    raw_num_codecs = codec_input.shape[1]
+    if not isinstance(raw_num_codecs, int) or raw_num_codecs <= 0:
+        print(
+            f"error: ONNX codec_onehot width must be a positive integer, got {raw_num_codecs!r}",
+            file=sys.stderr,
+        )
+        return None
+    return raw_num_codecs
 
+
+def _load_eval_data(args: Any, num_codecs: int) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
     if args.smoke or args.parquet is None:
-        features, codec_onehot, target = _synthesize_smoke_corpus(num_codecs=num_codecs)
-    else:
-        if not args.parquet.is_file():
-            print(f"error: parquet missing at {args.parquet}", file=sys.stderr)
-            return 2
-        import pandas as pd
+        return _synthesize_smoke_corpus(num_codecs=num_codecs)
+    if not args.parquet.is_file():
+        print(f"error: parquet missing at {args.parquet}", file=sys.stderr)
+        return None
+    import pandas as pd
 
-        df = pd.read_parquet(args.parquet)
-        missing = [c for c in CANONICAL_6 if c not in df.columns]
-        if missing:
-            print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
-            return 2
-        if "vmaf" not in df.columns or "codec" not in df.columns:
-            print("error: parquet missing 'vmaf' or 'codec' column", file=sys.stderr)
-            return 2
+    df = pd.read_parquet(args.parquet)
+    missing = [column for column in CANONICAL_6 if column not in df.columns]
+    if missing:
+        print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
+        return None
+    if "vmaf" not in df.columns or "codec" not in df.columns:
+        print("error: parquet missing 'vmaf' or 'codec' column", file=sys.stderr)
+        return None
+    from vmaf_train.codec import codec_index
 
-        from vmaf_train.codec import codec_index
+    features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
+    target = df["vmaf"].to_numpy(dtype=np.float32)
+    codec_idx = np.array([codec_index(codec) for codec in df["codec"].astype(str)], dtype=np.int64)
+    codec_onehot = np.eye(num_codecs, dtype=np.float32)[codec_idx]
+    return features, codec_onehot, target
 
-        features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
-        target = df["vmaf"].to_numpy(dtype=np.float32)
-        codec_idx = np.array([codec_index(c) for c in df["codec"].astype(str)], dtype=np.int64)
-        codec_onehot = np.eye(num_codecs, dtype=np.float32)[codec_idx]
 
+def _build_report(
+    *,
+    args: Any,
+    raw_argv: list[str],
+    manifest: dict[str, Any],
+    sessions: list["ort.InferenceSession"],
+    features: np.ndarray,
+    codec_onehot: np.ndarray,
+    target: np.ndarray,
+) -> dict[str, Any]:
+    feature_mean = np.asarray(manifest["feature_mean"], dtype=np.float32)
+    feature_std = np.asarray(manifest["feature_std"], dtype=np.float32)
     features_norm = (
         (features - feature_mean) / np.where(feature_std < 1e-8, 1.0, feature_std)
     ).astype(np.float32)
@@ -316,9 +327,9 @@ def main(argv: list[str] | None = None) -> int:
 
     plcc = float(np.corrcoef(mu, target)[0, 1]) if len(mu) >= 2 else float("nan")
     rmse = float(np.sqrt(np.mean((mu - target) ** 2)))
+    conformal_q = manifest.get("confidence", {}).get("conformal_q_residual")
     coverage = _coverage_metrics(mu, sigma, target, conformal_q=conformal_q)
-
-    report: dict[str, Any] = {
+    return {
         "manifest": str(args.manifest),
         "ensemble_size": int(member_preds.shape[0]),
         "n_rows": len(target),
@@ -336,13 +347,34 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
-    print(json.dumps(report, indent=2))
 
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    if not args.manifest.is_file():
+        print(f"error: manifest missing at {args.manifest}", file=sys.stderr)
+        print("hint: run train_fr_regressor_v2_ensemble.py --smoke first.", file=sys.stderr)
+        return 2
+    manifest, sessions = _load_ensemble(args.manifest)
+    num_codecs = _codec_count(sessions)
+    if num_codecs is None:
+        return 2
+    data = _load_eval_data(args, num_codecs)
+    if data is None:
+        return 2
+    report = _build_report(
+        args=args,
+        raw_argv=raw_argv,
+        manifest=manifest,
+        sessions=sessions,
+        features=data[0],
+        codec_onehot=data[1],
+        target=data[2],
+    )
+    print(json.dumps(report, indent=2))
     if args.metrics_out is not None:
         write_manifest_json(args.metrics_out, report)
-
-    # Sanity: empirical 95% coverage should be in [0, 1].
-    g95 = coverage["gaussian"]["95"]["empirical_coverage"]
+    g95 = report["coverage"]["gaussian"]["95"]["empirical_coverage"]
     if not (0.0 <= g95 <= 1.0):
         print(f"error: implausible coverage {g95}", file=sys.stderr)
         return 1

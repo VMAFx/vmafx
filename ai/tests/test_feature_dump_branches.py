@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 
-from vmaf_train.data import feature_dump
 from vmaf_train.data.feature_dump import (
     DEFAULT_FEATURES,
     DEFAULT_VMAF_BINARY,
@@ -99,14 +99,15 @@ def test_entry_is_frozen() -> None:
     import dataclasses
 
     e = Entry(key="k", ref=Path("r"), dis=Path("d"), width=16, height=16)
+    frozen_field = "key"
     with pytest.raises(dataclasses.FrozenInstanceError):
-        e.key = "other"  # type: ignore[misc]
+        setattr(e, frozen_field, "other")
 
 
-def _fake_subprocess_run_writing_json(features: list[str], frames: int = 2):
+def _fake_subprocess_run_writing_json(features: list[str], frames: int = 2) -> Any:
     """Build a fake subprocess.run that writes a JSON doc to the ``-o`` path."""
 
-    def _run(cmd, **_kwargs):
+    def _run(cmd: Any, **_kwargs: Any) -> Any:
         # Locate the -o argument and write a synthetic JSON doc there.
         out_idx = cmd.index("-o") + 1
         out_path = Path(cmd[out_idx])
@@ -135,7 +136,8 @@ def test_dump_features_writes_parquet_with_expected_columns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        feature_dump.subprocess, "run", _fake_subprocess_run_writing_json(list(DEFAULT_FEATURES), 3)
+        "vmaf_train.data.feature_dump.subprocess.run",
+        _fake_subprocess_run_writing_json(list(DEFAULT_FEATURES), 3),
     )
     entries = [
         Entry(
@@ -167,7 +169,7 @@ def test_dump_features_with_explicit_features_subset(
     """Custom feature tuple is honoured both in CLI args and in the output schema."""
     captured: dict[str, list[str]] = {}
 
-    def _run(cmd, **_kwargs):
+    def _run(cmd: Any, **_kwargs: Any) -> Any:
         captured["cmd"] = list(cmd)
         out_idx = cmd.index("-o") + 1
         out_path = Path(cmd[out_idx])
@@ -178,7 +180,7 @@ def test_dump_features_with_explicit_features_subset(
 
         return _R()
 
-    monkeypatch.setattr(feature_dump.subprocess, "run", _run)
+    monkeypatch.setattr("vmaf_train.data.feature_dump.subprocess.run", _run)
     entries = [Entry(key="k", ref=tmp_path / "r", dis=tmp_path / "d", width=16, height=16)]
     out_parquet = tmp_path / "out.parquet"
     dump_features(entries, out_parquet, features=("adm2",))
@@ -193,7 +195,7 @@ def test_dump_features_uses_integer_fallback_lookup(
 ) -> None:
     """When the metric appears only as ``integer_<name>`` we still record it."""
 
-    def _run(cmd, **_kwargs):
+    def _run(cmd: Any, **_kwargs: Any) -> Any:
         out_idx = cmd.index("-o") + 1
         Path(cmd[out_idx]).write_text(
             json.dumps({"frames": [{"frameNum": 0, "metrics": {"integer_adm2": 0.42}}]})
@@ -204,7 +206,7 @@ def test_dump_features_uses_integer_fallback_lookup(
 
         return _R()
 
-    monkeypatch.setattr(feature_dump.subprocess, "run", _run)
+    monkeypatch.setattr("vmaf_train.data.feature_dump.subprocess.run", _run)
     entries = [Entry(key="k", ref=tmp_path / "r", dis=tmp_path / "d", width=16, height=16)]
     out_parquet = tmp_path / "out.parquet"
     dump_features(entries, out_parquet, features=("adm2",))
@@ -217,7 +219,7 @@ def test_dump_features_pixfmt_is_normalised_in_cli(
 ) -> None:
     captured: dict[str, list[str]] = {}
 
-    def _run(cmd, **_kwargs):
+    def _run(cmd: Any, **_kwargs: Any) -> Any:
         captured["cmd"] = list(cmd)
         out_idx = cmd.index("-o") + 1
         Path(cmd[out_idx]).write_text(json.dumps({"frames": []}))
@@ -227,7 +229,7 @@ def test_dump_features_pixfmt_is_normalised_in_cli(
 
         return _R()
 
-    monkeypatch.setattr(feature_dump.subprocess, "run", _run)
+    monkeypatch.setattr("vmaf_train.data.feature_dump.subprocess.run", _run)
     entries = [
         Entry(
             key="k",

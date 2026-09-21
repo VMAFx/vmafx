@@ -38,14 +38,19 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -58,7 +63,7 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 OPSET = 17
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -70,7 +75,9 @@ def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-class _BundledScalerMLP:
+def _bundled_scaler_mlp(
+    mlp: "torch.nn.Module", mean: np.ndarray, std: np.ndarray
+) -> "torch.nn.Module":
     """Pure-PyTorch wrapper that prepends ``(x - mean) / std`` to the MLP.
 
     ``torch.onnx.export`` traces the wrapper to a single graph in
@@ -79,24 +86,26 @@ class _BundledScalerMLP:
     covers the calibration values too.
     """
 
-    def __new__(cls, mlp, mean, std):  # type: ignore[no-untyped-def]
-        import torch
-        from torch import nn
+    import torch
+    from torch import nn
 
-        class _Wrap(nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.mlp = mlp
-                self.register_buffer("mean", torch.from_numpy(mean.astype(np.float32)))
-                self.register_buffer("std", torch.from_numpy(std.astype(np.float32)))
+    class _Wrap(nn.Module):
+        mean: torch.Tensor
+        std: torch.Tensor
 
-            def forward(self, features):  # type: ignore[no-untyped-def]
-                # broadcast (N, 6) - (6,) and / (6,)
-                normed = (features - self.mean) / self.std
-                out = self.mlp(normed)
-                return out.squeeze(-1)
+        def __init__(self) -> None:
+            super().__init__()
+            self.mlp = mlp
+            self.register_buffer("mean", torch.from_numpy(mean.astype(np.float32)))
+            self.register_buffer("std", torch.from_numpy(std.astype(np.float32)))
 
-        return _Wrap().eval()
+        def forward(self, features: "torch.Tensor") -> "torch.Tensor":
+            # broadcast (N, 6) - (6,) and / (6,)
+            normed = (features - self.mean) / self.std
+            out: torch.Tensor = self.mlp(normed)
+            return out.squeeze(-1)
+
+    return _Wrap().eval()
 
 
 def _write_sidecar(
@@ -136,8 +145,7 @@ def _write_sidecar(
     return sidecar
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> Any:
     ap = make_argument_parser(prog="export_vmaf_tiny_v2.py", description=__doc__)
     ap.add_argument(
         "--ckpt",
@@ -157,8 +165,10 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Sidecar JSON (input/output names + opset, mirrors v1 format).",
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _load_checkpoint(args: Any) -> tuple[Any, list[str], int, np.ndarray, np.ndarray]:
     import torch
 
     # nosec B614: weights_only=False is required because the .pt also stores
@@ -166,21 +176,18 @@ def main(argv: list[str] | None = None) -> int:
     # rejects those with UnpicklingError. Trust boundary: the checkpoint is
     # produced by our own train_predictor_v2.py run under runs/ — path is a
     # required CLI arg from the developer, not network input.
-    state = torch.load(args.ckpt, map_location="cpu", weights_only=False)  # nosec B614
-    features = state["features"]
+    state: dict[str, Any] = torch.load(  # nosec B614
+        args.ckpt, map_location="cpu", weights_only=False
+    )
+    features = list(state["features"])
     in_dim = len(features)
     mean = np.asarray(state["input_mean"], dtype=np.float64)
     std = np.asarray(state["input_std"], dtype=np.float64)
+    return state, features, in_dim, mean, std
 
-    if in_dim != 6:
-        print(f"[export-v2] expected 6 features, got {in_dim}", file=sys.stderr)
-        return 2
 
-    mlp = _build_mlp_small(in_dim)
-    mlp.load_state_dict(state["state_dict"])
-    mlp.eval()
-
-    wrapper = _BundledScalerMLP(mlp, mean, std)
+def _export_graph(args: Any, wrapper: "torch.nn.Module", in_dim: int) -> None:
+    import torch
 
     dummy = torch.zeros(1, in_dim, dtype=torch.float32)
     args.out_onnx.parent.mkdir(parents=True, exist_ok=True)
@@ -196,15 +203,29 @@ def main(argv: list[str] | None = None) -> int:
         do_constant_folding=True,
     )
 
-    # Force inline storage so the sha256 covers the entire model.
+
+def _inline_graph(path: Path) -> None:
     import onnx
 
-    proto = onnx.load(str(args.out_onnx))
-    onnx.save(proto, str(args.out_onnx), save_as_external_data=False)
-    sidecar_data = args.out_onnx.with_suffix(".onnx.data")
+    proto = onnx.load(str(path))
+    onnx.save(proto, str(path), save_as_external_data=False)
+    sidecar_data = path.with_suffix(".onnx.data")
     if sidecar_data.exists():
         sidecar_data.unlink()
 
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    state, features, in_dim, mean, std = _load_checkpoint(args)
+    if in_dim != 6:
+        print(f"[export-v2] expected 6 features, got {in_dim}", file=sys.stderr)
+        return 2
+    mlp = _build_mlp_small(in_dim)
+    mlp.load_state_dict(state["state_dict"])
+    mlp.eval()
+    _export_graph(args, _bundled_scaler_mlp(mlp, mean, std), in_dim)
+    _inline_graph(args.out_onnx)
     digest = sha256(args.out_onnx)
     print(f"[export-v2] sha256={digest}")
     print(f"[export-v2] size  ={args.out_onnx.stat().st_size} bytes")

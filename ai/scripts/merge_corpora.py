@@ -32,12 +32,15 @@ import json
 import sys
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
@@ -51,7 +54,7 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 _REQUIRED_KEYS: frozenset[str] = frozenset(CORPUS_ROW_KEYS)
 
 
-def _validate_row(path: Path, line_no: int, row: dict) -> None:
+def _validate_row(path: Path, line_no: int, row: dict[str, Any]) -> None:
     """Assert ``row`` carries every key in :data:`CORPUS_ROW_KEYS`.
 
     Hard-fails the run on first violation. The training pipeline cannot
@@ -68,13 +71,13 @@ def _validate_row(path: Path, line_no: int, row: dict) -> None:
     missing = _REQUIRED_KEYS - row.keys()
     if missing:
         print(
-            f"error: {path}:{line_no}: missing required keys: " f"{sorted(missing)}",
+            f"error: {path}:{line_no}: missing required keys: {sorted(missing)}",
             file=sys.stderr,
         )
         raise SystemExit(1)
 
 
-def _dedup_key(row: dict) -> tuple[str, str, str | int, str | int]:
+def _dedup_key(row: dict[str, Any]) -> tuple[str, str, str | int, str | int]:
     """Compose a per-encode identity tuple.
 
     A ``src_sha256`` collision alone is not a duplicate — the same

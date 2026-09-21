@@ -16,6 +16,7 @@ import pathlib
 import socket
 import threading
 import time
+from typing import Any
 
 import pytest
 
@@ -331,7 +332,7 @@ def _make_trainer(tmp_path: pathlib.Path) -> OnlineTrainer:
     )
 
 
-def _send_recv(sock: socket.socket, payload: dict) -> dict:
+def _send_recv(sock: socket.socket, payload: dict[str, object]) -> dict[str, Any]:
     """Send a newline-delimited JSON message and read the ACK."""
     sock.sendall((json.dumps(payload) + "\n").encode())
     buf = b""
@@ -340,7 +341,10 @@ def _send_recv(sock: socket.socket, payload: dict) -> dict:
         if not chunk:
             raise ConnectionError("socket closed before ACK")
         buf += chunk
-    return json.loads(buf.split(b"\n", 1)[0])
+    response = json.loads(buf.split(b"\n", 1)[0])
+    if not isinstance(response, dict):
+        raise TypeError("server ACK must be a JSON object")
+    return response
 
 
 class TestHandleConnection:
@@ -501,7 +505,7 @@ class TestIngestFeatureValidation:
     def test_non_numeric_score_raises_before_buffer_push(self, tmp_path: pathlib.Path) -> None:
         trainer = self._trainer(tmp_path)
         with pytest.raises(ValueError):
-            trainer.ingest([1.0] * N_FEATURES, "abc")  # type: ignore[arg-type]
+            trainer.ingest([1.0] * N_FEATURES, "abc")
         assert trainer.status()["buffer_size"] == 0
 
 
@@ -631,7 +635,7 @@ class TestRunServer:
 
             # Called just before the first accept() — record start time.
             @property
-            def _start(self):
+            def _start(self) -> float:
                 if not hasattr(self, "_t0"):
                     self._t0 = time.monotonic()
                 return self._t0

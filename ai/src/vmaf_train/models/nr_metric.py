@@ -35,6 +35,16 @@ def _dw_sep(in_c: int, out_c: int, stride: int = 1) -> nn.Sequential:
     )
 
 
+def _tensor_pair(batch: object) -> tuple[torch.Tensor, torch.Tensor]:
+    """Validate Lightning's dynamically supplied two-tensor batch."""
+    if not isinstance(batch, (tuple, list)) or len(batch) != 2:
+        raise TypeError("NRMetric expects a two-item (frame, score) batch")
+    x, y = batch
+    if not isinstance(x, torch.Tensor) or not isinstance(y, torch.Tensor):
+        raise TypeError("NRMetric batch items must both be torch.Tensor instances")
+    return x, y
+
+
 class NRMetric(L.LightningModule):
     """MobileNet-tiny-ish backbone → global pool → scalar MOS.
 
@@ -79,14 +89,16 @@ class NRMetric(L.LightningModule):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.head(self.body(self.stem(x)))
+        stem: torch.Tensor = self.stem(x)
+        body: torch.Tensor = self.body(stem)
+        out: torch.Tensor = self.head(body)
         if self._hp["emit_variance"]:
             return out  # (N, 2): [:, 0] = score, [:, 1] = logvar
         return out.squeeze(-1)
 
     def _step(self, batch: object, tag: str) -> torch.Tensor:
-        x, y = batch  # type: ignore[misc]
-        out = self(x)
+        x, y = _tensor_pair(batch)
+        out = self.forward(x)
         if self._hp["emit_variance"]:
             pred = out[..., 0]
             logvar = out[..., 1]

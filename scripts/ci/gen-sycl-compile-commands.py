@@ -28,7 +28,23 @@ import sys
 from pathlib import Path
 
 
-def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
+def _clang_tidy_command(raw_command: str) -> str:
+    """Translate an icpx command into the analyzer's clang++ command."""
+    command = re.sub(
+        r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
+        "clang++",
+        raw_command,
+    )
+    command = re.sub(r"\s+-fsycl-targets=\S+", "", command)
+    command = re.sub(r"\s+-fsycl\b", "", command)
+    command = re.sub(r"\s+-Xs\s+'[^']*'", "", command)
+    command = re.sub(r"\s+-Xs\s+\S+", "", command)
+    command = re.sub(r"\s+-fp-model=\S+", "", command)
+    command = re.sub(r"\s+-pedantic\b", "", command)
+    return re.sub(r"\s+-o\s+\S+", "", command)
+
+
+def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict[str, str]]:
     """Extract CUSTOM_COMMAND entries for SYCL .cpp files from build.ninja.
 
     Returns a list of dicts matching the compile_commands.json schema:
@@ -38,7 +54,7 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
 
     content = build_ninja_path.read_text(encoding="utf-8")
 
-    entries = []
+    entries: list[dict[str, str]] = []
     # Match lines of the form:
     #   build <out>: CUSTOM_COMMAND <src.cpp> | <compiler>
     #    COMMAND = <icpx flags ...> <src.cpp> -o <out>
@@ -73,20 +89,7 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         #
         # We still keep the -I include paths and -D defines from the original
         # icpx command so clang-tidy can resolve project headers.
-        cmd = re.sub(
-            r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
-            "clang++",
-            raw_command,
-        )
-        cmd = re.sub(r"\s+-fsycl-targets=\S+", "", cmd)
-        cmd = re.sub(r"\s+-fsycl\b", "", cmd)
-        cmd = re.sub(r"\s+-Xs\s+'[^']*'", "", cmd)
-        cmd = re.sub(r"\s+-Xs\s+\S+", "", cmd)
-        cmd = re.sub(r"\s+-fp-model=\S+", "", cmd)
-        cmd = re.sub(r"\s+-pedantic\b", "", cmd)
-        # Replace the output argument -o <obj> with nothing (clang-tidy
-        # ignores compilation output).
-        cmd = re.sub(r"\s+-o\s+\S+", "", cmd)
+        cmd = _clang_tidy_command(raw_command)
 
         entries.append(
             {

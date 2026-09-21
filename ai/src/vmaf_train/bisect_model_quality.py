@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -44,7 +45,7 @@ class BisectResult:
     steps: list[BisectStep] = field(default_factory=list)
     verdict: str = ""  # free-form human-readable summary
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["first_bad_model"] = str(self.first_bad_model) if self.first_bad_model else None
         d["last_good_model"] = str(self.last_good_model) if self.last_good_model else None

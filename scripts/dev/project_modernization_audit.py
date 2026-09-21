@@ -18,7 +18,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -234,13 +234,28 @@ class Finding:
     blocked_reason: str
 
 
+class FindingSummary(TypedDict):
+    total: int
+    actionable: int
+    blocked: int
+    by_kind: dict[str, int]
+    by_area: dict[str, int]
+
+
+class AuditReportJson(TypedDict):
+    repo_root: str
+    summary: FindingSummary
+    findings: list[dict[str, object]]
+    clusters: list[dict[str, object]]
+
+
 @dataclass(frozen=True)
 class AuditReport:
     repo_root: str
     findings: list[Finding]
     clusters: list[Finding]
 
-    def to_json(self) -> dict:
+    def to_json(self) -> AuditReportJson:
         return {
             "repo_root": self.repo_root,
             "summary": summarize_findings(self.findings + self.clusters),
@@ -555,7 +570,7 @@ def dedupe_findings(findings: Iterable[Finding]) -> list[Finding]:
     )
 
 
-def summarize_findings(findings: Sequence[Finding]) -> dict[str, object]:
+def summarize_findings(findings: Sequence[Finding]) -> FindingSummary:
     by_kind = Counter(finding.kind for finding in findings)
     by_area = Counter(finding.area for finding in findings)
     blocked = sum(1 for finding in findings if finding.blocked)
@@ -600,6 +615,51 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     return "\n".join(out)
 
 
+def _finding_location(finding: Finding) -> str:
+    return f"`{finding.path}`" + (f":{finding.line}" if finding.line else "")
+
+
+def _actionable_rows(findings: Sequence[Finding]) -> list[list[str]]:
+    return [
+        [
+            str(finding.severity),
+            finding.area,
+            finding.kind,
+            _finding_location(finding),
+            finding.evidence,
+            finding.action,
+        ]
+        for finding in findings
+    ]
+
+
+def _cluster_rows(findings: Sequence[Finding]) -> list[list[str]]:
+    return [
+        [
+            str(finding.severity),
+            finding.area,
+            finding.title,
+            finding.evidence,
+            finding.action,
+        ]
+        for finding in sorted(findings, key=lambda finding: -finding.severity)
+    ]
+
+
+def _blocked_rows(findings: Sequence[Finding]) -> list[list[str]]:
+    return [
+        [
+            str(finding.severity),
+            finding.area,
+            finding.kind,
+            _finding_location(finding),
+            finding.blocked_reason,
+            finding.evidence,
+        ]
+        for finding in findings
+    ]
+
+
 def render_markdown(report: AuditReport, *, max_findings: int = 30) -> str:
     all_findings = report.findings + report.clusters
     summary = summarize_findings(all_findings)
@@ -635,50 +695,21 @@ def render_markdown(report: AuditReport, *, max_findings: int = 30) -> str:
         "",
         _table(
             ["Score", "Area", "Kind", "Location", "Evidence", "Action"],
-            [
-                [
-                    str(finding.severity),
-                    finding.area,
-                    finding.kind,
-                    f"`{finding.path}`" + (f":{finding.line}" if finding.line else ""),
-                    finding.evidence,
-                    finding.action,
-                ]
-                for finding in top
-            ],
+            _actionable_rows(top),
         ),
         "",
         "## Modernization Clusters",
         "",
         _table(
             ["Score", "Area", "Cluster", "Evidence", "Action"],
-            [
-                [
-                    str(finding.severity),
-                    finding.area,
-                    finding.title,
-                    finding.evidence,
-                    finding.action,
-                ]
-                for finding in sorted(report.clusters, key=lambda finding: -finding.severity)
-            ],
+            _cluster_rows(report.clusters),
         ),
         "",
         "## Blocked Or Deferred Findings",
         "",
         _table(
             ["Score", "Area", "Kind", "Location", "Reason", "Evidence"],
-            [
-                [
-                    str(finding.severity),
-                    finding.area,
-                    finding.kind,
-                    f"`{finding.path}`" + (f":{finding.line}" if finding.line else ""),
-                    finding.blocked_reason,
-                    finding.evidence,
-                ]
-                for finding in blocked_top
-            ],
+            _blocked_rows(blocked_top),
         ),
         "",
         "## Operating Notes",

@@ -18,7 +18,7 @@ import math
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
@@ -67,6 +67,23 @@ from .prefilter import (
 )
 from .resolution import neg_model_for
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
+
+if TYPE_CHECKING:
+    from threading import Semaphore
+
+    from .compare import PredicateFn as ComparePredicateFn
+    from .compare import RecommendResult as CompareRecommendResult
+    from .encode import EncodeRequest, EncodeResult
+    from .encoder_runtime import EncoderRuntimeSpec
+    from .predictor import ShotFeatures
+    from .report import CodecRow, CodecSweepPoint, SourceInfo
+    from .score_backend import NRProxyBackend
+    from .sidecar import SidecarPredictor
+
+
+JsonRow = dict[str, Any]
+FastSampleExtractor = Callable[[Path, int, str], tuple[list[float], float]]
+FastEncodeRunner = Callable[[Path, str, int, str], tuple[float, float]]
 
 
 class _TrackedDefaultAction(argparse.Action):
@@ -331,7 +348,9 @@ def _add_corpus_hdr_args(corpus: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_corpus_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_corpus_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune corpus`` flags onto the subparser group."""
     corpus = sub.add_parser("corpus", help="run the Phase A grid sweep + emit JSONL")
     _add_corpus_source_args(corpus)
@@ -471,7 +490,9 @@ def _add_predict_uncertainty_args(predict: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_predict_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_predict_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune predict`` flags onto the subparser group."""
     predict = sub.add_parser(
         "predict",
@@ -707,7 +728,9 @@ def _add_per_shot_output_args(per_shot: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_per_shot_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_per_shot_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune tune-per-shot`` flags onto the subparser group."""
     per_shot = sub.add_parser(
         "tune-per-shot",
@@ -810,7 +833,9 @@ def _add_saliency_tuning_args(rec_sal: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_recommend_saliency_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_recommend_saliency_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune recommend-saliency`` flags onto the subparser group."""
     rec_sal = sub.add_parser(
         "recommend-saliency",
@@ -1010,7 +1035,9 @@ def _add_ladder_backend_args(ladder: argparse.ArgumentParser) -> None:
     _add_neg_flag(ladder)
 
 
-def _add_ladder_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_ladder_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune ladder`` flags onto the subparser group."""
     ladder = sub.add_parser(
         "ladder",
@@ -1319,7 +1346,9 @@ def _add_compare_device_args(compare: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_compare_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_compare_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune compare`` flags onto the subparser group."""
     compare = sub.add_parser(
         "compare",
@@ -1431,7 +1460,9 @@ def _add_auto_execute_args(auto: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_auto_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_auto_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune auto`` flags onto the subparser group."""
     auto = sub.add_parser(
         "auto",
@@ -1516,7 +1547,9 @@ def _add_report_output_args(report: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_report_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_report_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune report`` flags onto the subparser group."""
     report = sub.add_parser(
         "report",
@@ -1608,7 +1641,9 @@ def _add_encode_profile_runtime_args(encode_profile: argparse.ArgumentParser) ->
     )
 
 
-def _add_encode_profile_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_encode_profile_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune encode-profile`` flags onto the subparser group."""
     encode_profile = sub.add_parser(
         "encode-profile",
@@ -1620,7 +1655,9 @@ def _add_encode_profile_subparser(sub: argparse._SubParsersAction) -> None:
     _add_encode_profile_runtime_args(encode_profile)
 
 
-def _add_recommend_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_recommend_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune recommend`` onto the subparser group."""
     recommend = sub.add_parser(
         "recommend",
@@ -1632,7 +1669,9 @@ def _add_recommend_subparser(sub: argparse._SubParsersAction) -> None:
     _add_recommend_args(recommend)
 
 
-def _add_benchmark_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_benchmark_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune benchmark`` onto the subparser group."""
     benchmark = sub.add_parser(
         "benchmark",
@@ -1673,7 +1712,9 @@ def _add_benchmark_subparser(sub: argparse._SubParsersAction) -> None:
     )
 
 
-def _add_fast_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_fast_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune fast`` onto the subparser group."""
     fast = sub.add_parser(
         "fast",
@@ -1686,7 +1727,9 @@ def _add_fast_subparser(sub: argparse._SubParsersAction) -> None:
     _add_fast_args(fast)
 
 
-def _add_prefilter_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_prefilter_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune prefilter`` onto the subparser group."""
     prefilter = sub.add_parser(
         "prefilter",
@@ -1701,7 +1744,9 @@ def _add_prefilter_subparser(sub: argparse._SubParsersAction) -> None:
     _add_prefilter_args(prefilter)
 
 
-def _add_sidecar_subparser(sub: argparse._SubParsersAction) -> None:
+def _add_sidecar_subparser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Wire ``vmaf-tune sidecar`` onto the subparser group."""
     sidecar = sub.add_parser(
         "sidecar",
@@ -1713,7 +1758,9 @@ def _add_sidecar_subparser(sub: argparse._SubParsersAction) -> None:
     _add_sidecar_args(sidecar)
 
 
-def _register_subparsers(sub: argparse._SubParsersAction) -> None:
+def _register_subparsers(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     """Register every public vmaf-tune subcommand in canonical order."""
     _add_corpus_subparser(sub)
     _add_recommend_subparser(sub)
@@ -2011,7 +2058,11 @@ def _build_opts(args: argparse.Namespace) -> CorpusOptions:
     )
 
 
-def _build_job(args: argparse.Namespace, src: Path, cells: tuple) -> CorpusJob:
+def _build_job(
+    args: argparse.Namespace,
+    src: Path,
+    cells: tuple[tuple[str, int], ...],
+) -> CorpusJob:
     return CorpusJob(
         source=src,
         width=args.width,
@@ -2039,7 +2090,7 @@ def _run_corpus(args: argparse.Namespace) -> int:
             return 2
         sentinel_cells = tuple((p, 0) for p in args.preset)
 
-        def _all_rows():
+        def _coarse_rows() -> Iterator[JsonRow]:
             for src in args.source:
                 job = _build_job(args, src, sentinel_cells)
                 yield from coarse_to_fine_search(
@@ -2051,7 +2102,7 @@ def _run_corpus(args: argparse.Namespace) -> int:
                     fine_step=args.fine_step,
                 )
 
-        n = write_jsonl(_all_rows(), opts.output)
+        n = write_jsonl(_coarse_rows(), opts.output)
         sys.stderr.write(f"coarse-to-fine: wrote {n} rows -> {opts.output}\n")
         return 0
 
@@ -2060,19 +2111,19 @@ def _run_corpus(args: argparse.Namespace) -> int:
         return 2
     cells = tuple(iter_grid(args.preset, args.crf))
 
-    def _all_rows():
+    def _grid_rows() -> Iterator[JsonRow]:
         for src in args.source:
             job = _build_job(args, src, cells)
             yield from iter_rows(job, opts)
 
-    n = write_jsonl(_all_rows(), opts.output)
+    n = write_jsonl(_grid_rows(), opts.output)
     sys.stderr.write(f"wrote {n} rows -> {opts.output}\n")
     return 0
 
 
 def _read_corpus_rows(corpus_path: Path) -> list[dict[str, Any]]:
     """Read non-empty JSONL rows from a corpus path."""
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     with corpus_path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -2083,6 +2134,8 @@ def _read_corpus_rows(corpus_path: Path) -> list[dict[str, Any]]:
 
 def _float_or_nan(value: object) -> float:
     """Coerce one display value, retaining infinities and mapping errors to NaN."""
+    if not isinstance(value, (str, int, float)):
+        return math.nan
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -2204,7 +2257,7 @@ def _collect_live_recommend_rows(
     sentinel_cells = tuple((preset, 0) for preset in args.preset)
     visited: list[dict[str, Any]] = []
 
-    def _capture():
+    def _capture() -> Iterator[JsonRow]:
         for src in args.source:
             job = _build_job(args, src, sentinel_cells)
             for row in coarse_to_fine_search(
@@ -2289,7 +2342,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
 
 
 def _smallest_passing_crf(
-    rows: list[dict], target_vmaf: float
+    rows: list[JsonRow], target_vmaf: float
 ) -> tuple[str, str, int, float] | None:
     """Return (src, preset, crf, vmaf) for the highest-quality passing encode.
 
@@ -2302,8 +2355,11 @@ def _smallest_passing_crf(
     """
     best: dict[tuple[str, str], tuple[int, float]] = {}
     for r in rows:
+        raw_score = r.get("vmaf_score")
+        if raw_score is None:
+            continue
         try:
-            score = float(r.get("vmaf_score"))
+            score = float(raw_score)
         except (TypeError, ValueError):
             continue
         if score < target_vmaf:
@@ -2376,11 +2432,13 @@ def _detect_predict_shots(args: argparse.Namespace, geometry: _PredictGeometry) 
     )
 
 
-def _build_predict_feature_extractor(args: argparse.Namespace, feat_cfg: Any) -> Callable:
+def _build_predict_feature_extractor(
+    args: argparse.Namespace, feat_cfg: Any
+) -> Callable[[Shot], ShotFeatures]:
     """Bind the source, codec, and feature config for predictor validation."""
     from .predictor_features import extract_features
 
-    def _features(shot):
+    def _features(shot: Shot) -> ShotFeatures:
         return extract_features(
             shot=shot,
             source=args.source,
@@ -2513,7 +2571,9 @@ def _predict_interval(
     }
 
 
-def _predict_residual_row(args: argparse.Namespace, calibration: Any | None, residual: Any) -> dict:
+def _predict_residual_row(
+    args: argparse.Namespace, calibration: Any | None, residual: Any
+) -> dict[str, Any]:
     """Serialize one validation residual with optional interval."""
     row = {
         "shot_start": residual.shot.start_frame,
@@ -2670,7 +2730,7 @@ def _detect_tuning_shots(args: argparse.Namespace, total_frames: int | None) -> 
     )
 
 
-def _configure_per_shot_decode_semaphore(args: argparse.Namespace) -> object:
+def _configure_per_shot_decode_semaphore(args: argparse.Namespace) -> Semaphore:
     """Install and return the shared decode concurrency semaphore."""
     import threading
 
@@ -2681,7 +2741,7 @@ def _configure_per_shot_decode_semaphore(args: argparse.Namespace) -> object:
     return threading.Semaphore(max_decodes)
 
 
-def _build_per_shot_nr_proxy(args: argparse.Namespace) -> object | None:
+def _build_per_shot_nr_proxy(args: argparse.Namespace) -> NRProxyBackend | None:
     """Build the opt-in NR early-elimination backend."""
     if not getattr(args, "fast_nr", False):
         return None
@@ -2773,7 +2833,9 @@ def _shot_bitrate_json(bitrate: float) -> float | None:
     return round(bitrate, 2)
 
 
-def _per_shot_plan_document(args: argparse.Namespace, plan: Any, predicate_label: str) -> dict:
+def _per_shot_plan_document(
+    args: argparse.Namespace, plan: Any, predicate_label: str
+) -> dict[str, Any]:
     """Build the strict JSON-serializable shot plan document."""
     return {
         "encoder": plan.encoder,
@@ -2795,7 +2857,7 @@ def _per_shot_plan_document(args: argparse.Namespace, plan: Any, predicate_label
     }
 
 
-def _write_per_shot_outputs(args: argparse.Namespace, plan: Any, plan_doc: dict) -> None:
+def _write_per_shot_outputs(args: argparse.Namespace, plan: Any, plan_doc: dict[str, Any]) -> None:
     """Write plan JSON and optional shell script."""
     rendered = json.dumps(plan_doc, indent=2, sort_keys=True)
     if args.plan_out is None:
@@ -2869,8 +2931,8 @@ def _build_per_shot_bisect_predicate(
     *,
     scratch: Path,
     crf_range: tuple[int, int] | None,
-    decode_semaphore: object | None = None,
-    nr_proxy_backend: object | None = None,
+    decode_semaphore: Semaphore | None = None,
+    nr_proxy_backend: NRProxyBackend | None = None,
 ) -> tuple[PerShotPredicateFn, dict[tuple[int, int], float]]:
     """Build the Phase-B bisect predicate and its measured-bitrate sidecar."""
     if args.width <= 0 or args.height <= 0:
@@ -2992,7 +3054,7 @@ def _saliency_output_paths(output: Path) -> tuple[Path, Path | None]:
     return output, None
 
 
-def _build_saliency_request(args: argparse.Namespace, output: Path) -> Any:
+def _build_saliency_request(args: argparse.Namespace, output: Path) -> EncodeRequest:
     """Build one saliency or plain encode request."""
     from .encode import EncodeRequest
 
@@ -3011,7 +3073,7 @@ def _build_saliency_request(args: argparse.Namespace, output: Path) -> Any:
     )
 
 
-def _run_saliency_encode(args: argparse.Namespace, request: Any) -> Any:
+def _run_saliency_encode(args: argparse.Namespace, request: EncodeRequest) -> EncodeResult:
     """Run the requested plain or saliency-aware encode path."""
     if not args.saliency_aware:
         from .encode import run_encode
@@ -3211,7 +3273,7 @@ def _resolve_compare_source_geometry(
     duration_s: float,
     framerate_was_default: bool,
     duration_was_default: bool,
-    probe_fn: Callable[[Path], Any] | None = None,
+    probe_fn: Callable[[Path], SourceInfo] | None = None,
     warn_stream: TextIO | None = None,
 ) -> tuple[int | None, int | None, float, float]:
     """Merge explicit geometry with best-effort container probe values."""
@@ -3264,9 +3326,9 @@ class _CompareRuntime:
     """Resolved encoder runtime labels and per-token binaries."""
 
     vaapi_device: str
-    specs: list[Any]
+    specs: tuple[EncoderRuntimeSpec, ...]
     encoders: list[str]
-    by_token: dict[str, Any]
+    by_token: dict[str, EncoderRuntimeSpec]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -3280,8 +3342,8 @@ class _CompareBisectConfig:
     crf_range: tuple[int, int] | None
     score_backend: str | None
     workdir: Path | None
-    decode_semaphore: object
-    nr_proxy: object | None
+    decode_semaphore: Semaphore
+    nr_proxy: NRProxyBackend | None
 
 
 def _resolve_compare_runtime(args: argparse.Namespace) -> _CompareRuntime:
@@ -3313,7 +3375,9 @@ def _resolve_compare_runtime(args: argparse.Namespace) -> _CompareRuntime:
     )
 
 
-def _annotate_compare_runtime(result: Any, spec: Any) -> Any:
+def _annotate_compare_runtime(
+    result: CompareRecommendResult, spec: EncoderRuntimeSpec
+) -> CompareRecommendResult:
     """Attach runtime identity fields to one comparison result."""
     return dataclasses.replace(
         result,
@@ -3386,7 +3450,7 @@ def _parse_compare_targets(args: argparse.Namespace) -> list[float]:
     return targets
 
 
-def _build_compare_nr_proxy(args: argparse.Namespace) -> object | None:
+def _build_compare_nr_proxy(args: argparse.Namespace) -> NRProxyBackend | None:
     """Build and announce the opt-in compare NR proxy backend."""
     if not getattr(args, "fast_nr", False):
         return None
@@ -3441,13 +3505,13 @@ def _resolve_compare_bisect_config(args: argparse.Namespace) -> _CompareBisectCo
 
 def _build_real_compare_dispatcher(
     args: argparse.Namespace, runtime: _CompareRuntime, config: _CompareBisectConfig
-) -> Callable[[str, Path, float], Any]:
+) -> ComparePredicateFn:
     """Build a target-aware, memoized real-bisect dispatcher."""
     from .bisect import make_bisect_predicate
 
-    cache: dict[tuple[str, float], Callable[[str, Path, float], Any]] = {}
+    cache: dict[tuple[str, float], ComparePredicateFn] = {}
 
-    def _dispatcher(codec: str, src: Path, target: float) -> Any:
+    def _dispatcher(codec: str, src: Path, target: float) -> CompareRecommendResult:
         spec = runtime.by_token[codec]
         target_value = float(target)
         key = (spec.ffmpeg_bin, target_value)
@@ -3479,7 +3543,7 @@ def _build_real_compare_dispatcher(
 
 def _build_compare_predicates(
     args: argparse.Namespace, runtime: _CompareRuntime
-) -> tuple[Callable, Callable, float]:
+) -> tuple[ComparePredicateFn, ComparePredicateFn, float]:
     """Build custom or production compare predicates and resolved duration."""
     if args.predicate_module:
         try:
@@ -3487,7 +3551,7 @@ def _build_compare_predicates(
         except (AttributeError, ImportError, ValueError) as exc:
             raise ValueError(f"invalid --predicate-module: {exc}") from exc
 
-        def _dispatcher(codec: str, src: Path, target: float) -> Any:
+        def _dispatcher(codec: str, src: Path, target: float) -> CompareRecommendResult:
             spec = runtime.by_token[codec]
             return _annotate_compare_runtime(loaded(codec, src, target), spec)
 
@@ -3583,7 +3647,7 @@ def _run_compare_sweep_result(
     args: argparse.Namespace,
     runtime: _CompareRuntime,
     targets: list[float],
-    predicate: Callable,
+    predicate: ComparePredicateFn,
     decoded_ref: Path | None,
 ) -> int:
     """Run and emit a multi-target comparison sweep."""
@@ -3614,7 +3678,7 @@ def _run_compare_sweep_result(
 def _run_compare_single_result(
     args: argparse.Namespace,
     runtime: _CompareRuntime,
-    predicate: Callable,
+    predicate: ComparePredicateFn,
     decoded_ref: Path | None,
 ) -> int:
     """Run and emit the legacy single-target comparison."""
@@ -3645,8 +3709,8 @@ def _execute_compare(
     args: argparse.Namespace,
     runtime: _CompareRuntime,
     targets: list[float],
-    predicate: Callable,
-    sweep_predicate: Callable,
+    predicate: ComparePredicateFn,
+    sweep_predicate: ComparePredicateFn,
     decoded_ref: Path | None,
 ) -> int:
     """Dispatch the single-target or multi-target comparison path."""
@@ -3685,7 +3749,7 @@ def _run_compare(args: argparse.Namespace) -> int:
         _cleanup_shared_compare_reference(decoded_ref)
 
 
-def _compare_source_info(args: argparse.Namespace):
+def _compare_source_info(args: argparse.Namespace) -> SourceInfo:
     """Return source metadata for inline compare profile rendering."""
     from .report import SourceInfo, probe_source
 
@@ -4093,7 +4157,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_compare_predicate(spec: str):
+def _load_compare_predicate(spec: str) -> ComparePredicateFn:
     """Load ``MODULE:CALLABLE`` for ``vmaf-tune compare``."""
     if ":" not in spec:
         raise ValueError("expected MODULE:CALLABLE")
@@ -4104,7 +4168,16 @@ def _load_compare_predicate(spec: str):
     predicate = getattr(module, attr_name)
     if not callable(predicate):
         raise ValueError(f"{spec!r} is not callable")
-    return predicate
+
+    def _checked(codec: str, src: Path, target_vmaf: float) -> CompareRecommendResult:
+        from .compare import RecommendResult
+
+        result = predicate(codec, src, target_vmaf)
+        if not isinstance(result, RecommendResult):
+            raise TypeError(f"{spec!r} returned {type(result).__name__}; expected RecommendResult")
+        return result
+
+    return _checked
 
 
 def _load_per_shot_predicate(spec: str) -> PerShotPredicateFn:
@@ -4118,7 +4191,15 @@ def _load_per_shot_predicate(spec: str) -> PerShotPredicateFn:
     predicate = getattr(module, attr_name)
     if not callable(predicate):
         raise ValueError(f"{spec!r} is not callable")
-    return predicate
+
+    def _checked(shot: Shot, target_vmaf: float, encoder: str) -> tuple[int, float]:
+        result = predicate(shot, target_vmaf, encoder)
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise TypeError(f"{spec!r} must return a (crf, vmaf) pair")
+        crf, vmaf = result
+        return int(crf), float(vmaf)
+
+    return _checked
 
 
 def _run_auto(args: argparse.Namespace) -> int:
@@ -4425,7 +4506,7 @@ def _score_fast_sample(
 def _build_fast_sample_extractor(
     args: argparse.Namespace,
     workdir: Path,
-) -> Callable[[Path, int, str], tuple[list[float], float]]:
+) -> FastSampleExtractor:
     """Build the production fast-path sample extractor."""
     workdir.mkdir(parents=True, exist_ok=True)
 
@@ -4447,7 +4528,7 @@ _CANONICAL_6_KEYS: tuple[str, ...] = (
 
 
 def _parse_canonical6_means(
-    payload: dict,
+    payload: JsonRow,
     *,
     normalise: bool = False,
     model_id: str | None = None,
@@ -4583,7 +4664,7 @@ def _build_fast_encode_runner(
     args: argparse.Namespace,
     workdir: Path,
     backend: str,
-) -> Callable[[Path, str, int, str], tuple[float, float]]:
+) -> FastEncodeRunner:
     """Build the mandatory production verify-pass callable."""
     workdir.mkdir(parents=True, exist_ok=True)
 
@@ -4599,7 +4680,7 @@ def _build_fast_encode_runner(
 
 def _prepare_fast_runtime(
     args: argparse.Namespace,
-) -> tuple[Callable | None, Callable | None, str | None]:
+) -> tuple[FastSampleExtractor | None, FastEncodeRunner | None, str | None]:
     """Validate production inputs and construct live fast-path callables."""
     if args.crf_min < 0 or args.crf_max < args.crf_min:
         raise ValueError(f"invalid CRF range [{args.crf_min}, {args.crf_max}]")
@@ -4979,7 +5060,21 @@ def _read_json_object(path: Path) -> dict[str, object]:
     return doc
 
 
-def _sidecar_features_from_mapping(row: dict[str, object]):
+def _json_float(value: object) -> float:
+    """Convert a JSON scalar to float without accepting containers/null."""
+    if not isinstance(value, (str, int, float)):
+        raise ValueError(f"expected a numeric JSON scalar, got {value!r}")
+    return float(value)
+
+
+def _json_int(value: object) -> int:
+    """Convert a JSON scalar to int without accepting containers/null."""
+    if not isinstance(value, (str, int, float)):
+        raise ValueError(f"expected an integer JSON scalar, got {value!r}")
+    return int(value)
+
+
+def _sidecar_features_from_mapping(row: dict[str, object]) -> ShotFeatures:
     """Build ``ShotFeatures`` from a JSON object or a ``features`` wrapper."""
     from .predictor import ShotFeatures
 
@@ -4990,41 +5085,38 @@ def _sidecar_features_from_mapping(row: dict[str, object]):
     if missing:
         raise ValueError(f"features missing required keys: {', '.join(missing)}")
 
-    kwargs: dict[str, object] = {}
-    for field in dataclasses.fields(ShotFeatures):
-        if field.name in raw:
-            kwargs[field.name] = raw[field.name]
     try:
         return ShotFeatures(
-            probe_bitrate_kbps=float(kwargs["probe_bitrate_kbps"]),
-            probe_i_frame_avg_bytes=float(kwargs["probe_i_frame_avg_bytes"]),
-            probe_p_frame_avg_bytes=float(kwargs["probe_p_frame_avg_bytes"]),
-            probe_b_frame_avg_bytes=float(kwargs["probe_b_frame_avg_bytes"]),
-            saliency_mean=float(kwargs.get("saliency_mean", 0.0)),
-            saliency_var=float(kwargs.get("saliency_var", 0.0)),
-            frame_diff_mean=float(kwargs.get("frame_diff_mean", 0.0)),
-            y_avg=float(kwargs.get("y_avg", 0.0)),
-            y_var=float(kwargs.get("y_var", 0.0)),
-            shot_length_frames=int(kwargs.get("shot_length_frames", 0)),
-            fps=float(kwargs.get("fps", 0.0)),
-            width=int(kwargs.get("width", 0)),
-            height=int(kwargs.get("height", 0)),
+            probe_bitrate_kbps=_json_float(raw["probe_bitrate_kbps"]),
+            probe_i_frame_avg_bytes=_json_float(raw["probe_i_frame_avg_bytes"]),
+            probe_p_frame_avg_bytes=_json_float(raw["probe_p_frame_avg_bytes"]),
+            probe_b_frame_avg_bytes=_json_float(raw["probe_b_frame_avg_bytes"]),
+            saliency_mean=_json_float(raw.get("saliency_mean", 0.0)),
+            saliency_var=_json_float(raw.get("saliency_var", 0.0)),
+            frame_diff_mean=_json_float(raw.get("frame_diff_mean", 0.0)),
+            y_avg=_json_float(raw.get("y_avg", 0.0)),
+            y_var=_json_float(raw.get("y_var", 0.0)),
+            shot_length_frames=_json_int(raw.get("shot_length_frames", 0)),
+            fps=_json_float(raw.get("fps", 0.0)),
+            width=_json_int(raw.get("width", 0)),
+            height=_json_int(raw.get("height", 0)),
         )
     except (TypeError, ValueError, KeyError) as exc:
         raise ValueError(f"invalid sidecar feature value: {exc}") from exc
 
 
-def _build_sidecar_predictor(args: argparse.Namespace):
+def _build_sidecar_predictor(args: argparse.Namespace) -> SidecarPredictor:
     """Construct the configured ``SidecarPredictor`` for CLI handlers."""
     from .predictor import Predictor
     from .sidecar import SidecarConfig, SidecarPredictor
 
-    cfg_kwargs: dict[str, object] = {
-        "predictor_version": args.predictor_version,
-    }
     if args.cache_dir is not None:
-        cfg_kwargs["cache_dir"] = args.cache_dir
-    cfg = SidecarConfig(**cfg_kwargs)
+        cfg = SidecarConfig(
+            cache_dir=args.cache_dir,
+            predictor_version=args.predictor_version,
+        )
+    else:
+        cfg = SidecarConfig(predictor_version=args.predictor_version)
     predictor = Predictor(model_path=args.model)
     if predictor.is_stub:
         print(
@@ -5035,7 +5127,7 @@ def _build_sidecar_predictor(args: argparse.Namespace):
     return SidecarPredictor.for_codec(predictor, codec=args.codec, config=cfg)
 
 
-def _sidecar_status_payload(sp) -> dict[str, object]:
+def _sidecar_status_payload(sp: SidecarPredictor) -> dict[str, object]:
     """Return the machine-readable status payload for a sidecar."""
     return {
         "schema": "vmaf-tune-sidecar-status/v1",
@@ -5054,10 +5146,14 @@ def _emit_sidecar_status(payload: dict[str, object], as_json: bool) -> None:
     if as_json:
         sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
+    codec = str(payload.get("codec", ""))
+    predictor_version = str(payload.get("predictor_version", ""))
+    updates = _json_int(payload.get("n_updates", 0))
+    residual_rms = _json_float(payload.get("recent_residual_rms", 0.0))
+    state_path = str(payload.get("state_path", ""))
     sys.stdout.write(
-        "codec={codec} predictor_version={predictor_version} "
-        "updates={n_updates} residual_rms={recent_residual_rms:.6f} "
-        "state={state_path}\n".format(**payload)
+        f"codec={codec} predictor_version={predictor_version} "
+        f"updates={updates} residual_rms={residual_rms:.6f} state={state_path}\n"
     )
 
 
@@ -5120,10 +5216,10 @@ def _run_sidecar_record(args: argparse.Namespace, sidecar: Any) -> int:
     if args.json:
         sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
-        sys.stdout.write(
-            "recorded updates={n_updates} residual={residual:.6f} "
-            "state={state_path}\n".format(**payload)
-        )
+        updates = _json_int(payload.get("n_updates", 0))
+        residual = _json_float(payload.get("residual", 0.0))
+        state_path = str(payload.get("state_path", ""))
+        sys.stdout.write(f"recorded updates={updates} residual={residual:.6f} state={state_path}\n")
     return 0
 
 
@@ -5230,6 +5326,16 @@ def _coerce_finite_float(value: Any, default: float = math.nan) -> float:
     return v
 
 
+def _coerce_int(value: Any, default: int = -1) -> int:
+    """Parse an integer-like JSON field, falling back on invalid or null input."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:
     """Build a :class:`vmaftune.report.CodecSweepPoint` from a v2 row.
 
@@ -5258,7 +5364,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:
             try:
                 parsed.append(
                     BisectSamplePoint(
-                        crf=int(s.get("crf") if s.get("crf") is not None else -1),
+                        crf=_coerce_int(s.get("crf")),
                         bitrate_kbps=_coerce_finite_float(s.get("bitrate_kbps")),
                         vmaf_score=_coerce_finite_float(s.get("vmaf_score")),
                         encode_time_ms=_coerce_finite_float(s.get("encode_time_ms")),
@@ -5272,7 +5378,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:
         codec=str(r.get("codec", "")),
         encoder_version=str(r.get("encoder_version", "")),
         target_vmaf=float(r.get("target_vmaf") or 0.0),
-        best_crf=int(r.get("best_crf") if r.get("best_crf") is not None else -1),
+        best_crf=_coerce_int(r.get("best_crf")),
         bitrate_kbps=_coerce_finite_float(r.get("bitrate_kbps")),
         encode_time_ms=_coerce_finite_float(r.get("encode_time_ms")),
         vmaf_score=_coerce_finite_float(r.get("vmaf_score")),
@@ -5295,7 +5401,7 @@ def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:
     return CodecRow(
         codec=str(r.get("codec", "")),
         encoder_version=str(r.get("encoder_version", "")),
-        best_crf=int(r.get("best_crf") if r.get("best_crf") is not None else -1),
+        best_crf=_coerce_int(r.get("best_crf")),
         bitrate_kbps=_coerce_finite_float(r.get("bitrate_kbps")),
         encode_time_ms=_coerce_finite_float(r.get("encode_time_ms")),
         vmaf_score=_coerce_finite_float(r.get("vmaf_score")),

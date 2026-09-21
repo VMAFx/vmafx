@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import numpy as np
+from numpy.typing import DTypeLike
 
 # Order is load-bearing — index 0..N-1 matches the one-hot column index
 # baked into trained ONNX. Do not reorder; append new entries at the
@@ -75,14 +76,14 @@ def codec_index(name: str | None) -> int:
     return CODEC_VOCAB.index(name)
 
 
-def codec_one_hot(name: str | None, dtype: np.dtype = np.float32) -> np.ndarray:
+def codec_one_hot(name: str | None, dtype: DTypeLike = np.float32) -> np.ndarray:
     """One-hot ``(NUM_CODECS,)`` vector for a single codec label."""
     out = np.zeros(NUM_CODECS, dtype=dtype)
     out[codec_index(name)] = 1.0
     return out
 
 
-def codec_one_hot_batch(names: Iterable[str | None], dtype: np.dtype = np.float32) -> np.ndarray:
+def codec_one_hot_batch(names: Iterable[str | None], dtype: DTypeLike = np.float32) -> np.ndarray:
     """One-hot ``(N, NUM_CODECS)`` matrix for a sequence of codec labels."""
     names = list(names)
     out = np.zeros((len(names), NUM_CODECS), dtype=dtype)

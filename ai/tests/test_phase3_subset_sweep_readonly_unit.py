@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -36,7 +37,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "phase3_subset_sweep.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("p3ss_readonly_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -114,14 +115,14 @@ def test_loso_sweep_standardize_survives_readonly_pandas_view(
     original_df_to_numpy = pd.DataFrame.to_numpy
     original_series_to_numpy = pd.Series.to_numpy
 
-    def readonly_df_to_numpy(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+    def readonly_df_to_numpy(self: pd.DataFrame, *args: Any, **kwargs: Any) -> Any:
         arr = original_df_to_numpy(self, *args, **kwargs)
         if not kwargs.get("copy", False):
             arr = arr.view()
             arr.setflags(write=False)
         return arr
 
-    def readonly_series_to_numpy(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+    def readonly_series_to_numpy(self: pd.Series[Any], *args: Any, **kwargs: Any) -> Any:
         arr = original_series_to_numpy(self, *args, **kwargs)
         if not kwargs.get("copy", False):
             arr = arr.view()

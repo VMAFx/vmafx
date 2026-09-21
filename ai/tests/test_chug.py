@@ -9,15 +9,17 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_to_corpus_jsonl.py"
 _FEATURE_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("chug_to_corpus_jsonl", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -59,13 +61,13 @@ def test_parse_manifest_maps_chug_mos_to_one_to_five(tmp_path: Path) -> None:
 
 
 class _FakeRunner:
-    def __call__(self, cmd, **_kwargs):
+    def __call__(self, cmd: Any, **_kwargs: Any) -> Any:
         argv0 = Path(cmd[0]).name
         if argv0 == "curl":
             output_path = Path(cmd[cmd.index("--output") + 1])
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"fake mp4")
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess[str](args=cmd, returncode=0, stdout="", stderr="")
         if argv0 == "ffprobe":
             payload = {
                 "streams": [
@@ -81,7 +83,7 @@ class _FakeRunner:
                 ],
                 "format": {"duration": "10.0"},
             }
-            return subprocess.CompletedProcess(
+            return subprocess.CompletedProcess[str](
                 args=cmd,
                 returncode=0,
                 stdout=json.dumps(payload),
@@ -114,10 +116,10 @@ def test_run_writes_chug_jsonl_with_hdr_metadata(tmp_path: Path) -> None:
     assert row["chug_bitladder"] == "360p_0.2M_"
 
 
-def test_main_writes_replay_manifest(tmp_path: Path, monkeypatch) -> None:
+def test_main_writes_replay_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output = tmp_path / "chug.jsonl"
 
-    def fake_run(**kwargs):
+    def fake_run(**kwargs: Any) -> Any:
         kwargs["output"].parent.mkdir(parents=True, exist_ok=True)
         kwargs["output"].write_text("{}\n", encoding="utf-8")
         stats = CHUG.RunStats()
@@ -157,7 +159,7 @@ def _chug_row(
     width: int,
     height: int,
     sha: str,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "src": src,
         "src_sha256": sha,
@@ -281,7 +283,7 @@ def test_chug_split_manifest_records_run_provenance(tmp_path: Path) -> None:
 
 
 class _FakeAuditRunner:
-    def __call__(self, cmd, **_kwargs):
+    def __call__(self, cmd: Any, **_kwargs: Any) -> Any:
         src = Path(cmd[-1]).name
         if src == "bad.mp4":
             stream = {
@@ -305,7 +307,7 @@ class _FakeAuditRunner:
                 "color_space": "bt2020nc",
                 "color_range": "tv",
             }
-        return subprocess.CompletedProcess(
+        return subprocess.CompletedProcess[str](
             args=cmd,
             returncode=0,
             stdout=json.dumps({"streams": [stream]}),
@@ -367,7 +369,7 @@ def test_chug_hdr_audit_flags_malformed_hdr_metadata(tmp_path: Path) -> None:
 
 
 class _FakeFeatureRunner:
-    def __call__(self, cmd, **_kwargs):
+    def __call__(self, cmd: Any, **_kwargs: Any) -> Any:
         argv0 = Path(cmd[0]).name
         if argv0 == "ffprobe":
             src = Path(cmd[-1]).name
@@ -388,7 +390,7 @@ class _FakeFeatureRunner:
                     }
                 ],
             }
-            return subprocess.CompletedProcess(
+            return subprocess.CompletedProcess[str](
                 args=cmd,
                 returncode=0,
                 stdout=json.dumps({"streams": [stream]}),
@@ -409,7 +411,35 @@ class _FakeFeatureRunner:
             luma = np.full((height, width), 512, dtype="<u2")
         chroma = np.full((height // 2, width // 2), 512, dtype="<u2")
         output.write_bytes(luma.tobytes() + chroma.tobytes() + chroma.tobytes())
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        return subprocess.CompletedProcess[str](args=cmd, returncode=0)
+
+
+def _assert_materialized_chug_row(row: dict[str, Any]) -> None:
+    assert row["feature_source"] == "chug-fr-ref-aligned"
+    assert row["feature_alignment"] == "distorted_scaled_to_reference"
+    assert row["feature_ref_src"] == "ref.mp4"
+    assert row["feature_width"] == 32
+    assert row["feature_height"] == 18
+    assert row["split"] in {"train", "val", "test"}
+    assert row["chug_split_key"] == "content-a.mp4"
+    assert row["chug_split_policy"] == "content-name-blake2s-80-10-10"
+    assert row["n_feature_frames"] == 2
+    assert row["feature_ref_color_transfer"] == "smpte2084"
+    assert row["feature_ref_transfer_class"] == "pq"
+    assert row["feature_dis_color_transfer"] == "arib-std-b67"
+    assert row["feature_dis_transfer_class"] == "hlg"
+    assert row["feature_ref_color_primaries"] == "bt2020"
+    assert row["feature_dis_color_space"] == "bt2020nc"
+    assert row["feature_ref_max_content_nits"] == 1000.0
+    assert row["feature_dis_max_average_nits"] == 400.0
+    assert row["feature_ref_luma_std"] == 0.0
+    assert row["feature_ref_sharpness_laplacian_var"] == 0.0
+    assert row["feature_dis_luma_std"] > 0.0
+    assert row["feature_dis_sharpness_laplacian_var"] > 0.0
+    assert row["feature_delta_luma_std"] > 0.0
+    assert row["feature_delta_noise_lap_mad"] > 0.0
+    assert row["adm2"] == 2.0
+    assert row["adm2_mean"] == 2.0
 
 
 def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
@@ -439,7 +469,7 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
     ]
     chug_jsonl.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
-    def fake_extract(*_args, **kwargs):
+    def fake_extract(*_args: Any, **kwargs: Any) -> Any:
         names = kwargs["features"]
         data = np.ones((2, len(names)), dtype=np.float32)
         data[1, :] = 3.0
@@ -461,31 +491,7 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
 
     assert written == 1
     row = json.loads(output.read_text(encoding="utf-8"))
-    assert row["feature_source"] == "chug-fr-ref-aligned"
-    assert row["feature_alignment"] == "distorted_scaled_to_reference"
-    assert row["feature_ref_src"] == "ref.mp4"
-    assert row["feature_width"] == 32
-    assert row["feature_height"] == 18
-    assert row["split"] in {"train", "val", "test"}
-    assert row["chug_split_key"] == "content-a.mp4"
-    assert row["chug_split_policy"] == "content-name-blake2s-80-10-10"
-    assert row["n_feature_frames"] == 2
-    assert row["feature_ref_color_transfer"] == "smpte2084"
-    assert row["feature_ref_transfer_class"] == "pq"
-    assert row["feature_dis_color_transfer"] == "arib-std-b67"
-    assert row["feature_dis_transfer_class"] == "hlg"
-    assert row["feature_ref_color_primaries"] == "bt2020"
-    assert row["feature_dis_color_space"] == "bt2020nc"
-    assert row["feature_ref_max_content_nits"] == 1000.0
-    assert row["feature_dis_max_average_nits"] == 400.0
-    assert row["feature_ref_luma_std"] == 0.0
-    assert row["feature_ref_sharpness_laplacian_var"] == 0.0
-    assert row["feature_dis_luma_std"] > 0.0
-    assert row["feature_dis_sharpness_laplacian_var"] > 0.0
-    assert row["feature_delta_luma_std"] > 0.0
-    assert row["feature_delta_noise_lap_mad"] > 0.0
-    assert row["adm2"] == 2.0
-    assert row["adm2_mean"] == 2.0
+    _assert_materialized_chug_row(row)
 
 
 def test_chug_visual_signal_helper_reads_yuv10_luma(tmp_path: Path) -> None:

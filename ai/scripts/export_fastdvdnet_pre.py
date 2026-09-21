@@ -59,20 +59,26 @@ Provenance (license attribution required by upstream MIT license):
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -118,8 +124,8 @@ def _load_upstream_class(upstream_dir: Path) -> type[nn.Module]:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     cls = getattr(module, "FastDVDnet", None)
-    if cls is None:
-        sys.exit(f"{models_py} has no FastDVDnet class")
+    if not isinstance(cls, type) or not issubclass(cls, nn.Module):
+        sys.exit(f"{models_py} has no torch.nn.Module FastDVDnet class")
     return cls
 
 
@@ -163,11 +169,11 @@ def _replace_pixel_shuffle(module: nn.Module) -> None:
             _replace_pixel_shuffle(child)
 
 
-def _strip_data_parallel(state_dict: dict) -> dict:
+def _strip_data_parallel(state_dict: dict[str, Any]) -> dict[str, Any]:
     """Upstream ships the checkpoint inside an ``nn.DataParallel``
     wrapper, so every key is prefixed with ``module.``.  Strip the
     prefix so a plain ``FastDVDnet`` instance can ``load_state_dict``."""
-    out = {}
+    out: dict[str, Any] = {}
     for k, v in state_dict.items():
         out[k[7:] if k.startswith("module.") else k] = v
     return out
@@ -200,6 +206,8 @@ class LumaAdapter(nn.Module):
     # round-trip when the upstream RGB weights were trained on
     # natural-colour tristimulus inputs.
     _LUMA_W = (0.299, 0.587, 0.114)
+    sigma: torch.Tensor
+    luma_w: torch.Tensor
 
     def __init__(self, upstream: nn.Module, sigma: float = DEFAULT_SIGMA_8BIT) -> None:
         super().__init__()
@@ -226,7 +234,10 @@ class LumaAdapter(nn.Module):
         # dynamic-shape sigma scalars).
         ones_like_centre = torch.ones_like(frames[:, CENTRE : CENTRE + 1])
         noise_map = ones_like_centre * self.sigma
-        out_rgb = self.upstream(rgb, noise_map)
+        upstream_output = self.upstream(rgb, noise_map)
+        if not isinstance(upstream_output, torch.Tensor):
+            raise TypeError("FastDVDnet forward must return a Tensor")
+        out_rgb = upstream_output
         # Clamp to [0, 1] (upstream's test_fastdvdnet.py does the same
         # before colourspace conversion).
         out_rgb = torch.clamp(out_rgb, 0.0, 1.0)
@@ -273,7 +284,7 @@ def _export(adapter: nn.Module, onnx_path: Path, height: int, width: int, opset:
     # Conv biases at export time.
     torch.onnx.export(
         adapter,
-        dummy,
+        (dummy,),
         str(onnx_path),
         input_names=["frames"],
         output_names=["denoised"],
@@ -287,7 +298,7 @@ def _export(adapter: nn.Module, onnx_path: Path, height: int, width: int, opset:
     )
 
 
-def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None = None) -> Path:
+def _write_sidecar(onnx_path: Path, *, run_provenance: Mapping[str, object] | None = None) -> Path:
     sidecar = onnx_path.with_suffix(".json")
     payload = {
         "id": "fastdvdnet_pre",
@@ -301,9 +312,7 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
         "smoke": False,
         "name": "vmaf_tiny_fastdvdnet_pre_v1",
         "license": "MIT",
-        "license_url": (
-            "https://github.com/m-tassano/fastdvdnet/blob/" f"{UPSTREAM_COMMIT}/LICENSE"
-        ),
+        "license_url": (f"https://github.com/m-tassano/fastdvdnet/blob/{UPSTREAM_COMMIT}/LICENSE"),
         "upstream_repo": UPSTREAM_REPO,
         "upstream_commit": UPSTREAM_COMMIT,
         "upstream_weights_sha256": UPSTREAM_WEIGHTS_SHA256,
@@ -326,7 +335,7 @@ def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
         sys.exit(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
-    models: list[dict] = doc.get("models", [])
+    models: list[dict[str, Any]] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
     digest = sha256(onnx_path)
     entry = {
@@ -337,9 +346,7 @@ def _update_registry(onnx_path: Path) -> None:
         "sha256": digest,
         "smoke": False,
         "license": "MIT",
-        "license_url": (
-            "https://github.com/m-tassano/fastdvdnet/blob/" f"{UPSTREAM_COMMIT}/LICENSE"
-        ),
+        "license_url": (f"https://github.com/m-tassano/fastdvdnet/blob/{UPSTREAM_COMMIT}/LICENSE"),
         "description": (
             "FastDVDnet temporal pre-filter (5-frame luma window) — "
             "upstream m-tassano/fastdvdnet weights wrapped for the fork's "
@@ -363,7 +370,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def _parse_args(argv: list[str] | None) -> tuple[argparse.Namespace, list[str]]:
     parser = make_argument_parser(description=__doc__)
     scratch_root = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
     default_upstream_dir = scratch_root / "fastdvdnet_upstream"
@@ -402,7 +409,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Skip registry.json + sidecar update (dry-run)",
     )
     raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv), raw_argv
+
+
+def main(argv: list[str] | None = None) -> None:
+    args, raw_argv = _parse_args(argv)
 
     adapter = _build_adapter(args.upstream_dir, args.sigma)
     _export(adapter, args.output, args.height, args.width, args.opset)

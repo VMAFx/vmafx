@@ -41,7 +41,13 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
 
 import numpy as np
 
@@ -59,7 +65,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_medium(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_medium(in_dim: int) -> "torch.nn.Module":
     """v3 architecture — 6 → 32 → 16 → 1 (vendored from train_vmaf_tiny_v3.py)."""
     from torch import nn
 
@@ -72,7 +78,7 @@ def _build_mlp_medium(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-def _build_mlp_large(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_large(in_dim: int) -> "torch.nn.Module":
     """v4 architecture — 6 → 64 → 32 → 16 → 1 (vendored from train_vmaf_tiny_v4.py)."""
     from torch import nn
 
@@ -87,7 +93,7 @@ def _build_mlp_large(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-_BUILDERS = {
+_BUILDERS: dict[str, Callable[[int], "torch.nn.Module"]] = {
     "mlp_medium": _build_mlp_medium,
     "mlp_large": _build_mlp_large,
 }
@@ -102,7 +108,7 @@ def _train(
     batch_size: int,
     lr: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train @p arch on the standardised feature matrix.
 
     Identical loop to v3/v4 — only the model factory differs.
@@ -147,7 +153,11 @@ def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
 
 
 def _eval_fold(
-    model, mean: np.ndarray, std: np.ndarray, x_val: np.ndarray, y_val: np.ndarray
+    model: "torch.nn.Module",
+    mean: np.ndarray,
+    std: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
 ) -> dict[str, float]:
     import torch
 
@@ -158,7 +168,7 @@ def _eval_fold(
 
 
 def _run_one_seed(
-    df,
+    df: "pd.DataFrame",
     *,
     arch: str,
     sources: list[str],
@@ -202,7 +212,7 @@ def _run_one_seed(
     return fold_metrics
 
 
-def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict:
+def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict[str, Any]:
     seeds = sorted(per_seed.keys())
     sources = sorted(per_seed[seeds[0]].keys())
 
@@ -252,7 +262,7 @@ def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict:
     }
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--arch",
@@ -282,29 +292,26 @@ def main() -> int:
         default="",
         help="Free-form label for the output JSON (e.g. 'netflix-loso', 'konvid-5fold').",
     )
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
+def _validate_dataframe(df: Any) -> bool:
     if "source" not in df.columns:
         print("error: parquet missing 'source' column", file=sys.stderr)
-        return 2
-    missing = [c for c in CANONICAL_6 if c not in df.columns]
+        return False
+    missing = [column for column in CANONICAL_6 if column not in df.columns]
     if missing:
         print(f"error: parquet missing feature columns: {missing}", file=sys.stderr)
-        return 2
+        return False
     if "vmaf" not in df.columns:
         print("error: parquet missing 'vmaf' target column", file=sys.stderr)
-        return 2
+        return False
+    return True
 
-    sources = sorted(df["source"].unique().tolist())
-    print(
-        f"[ms-{args.arch}] parquet={args.parquet} rows={len(df)} "
-        f"sources={sources} seeds={args.seeds}",
-        flush=True,
-    )
 
+def _evaluate_seeds(
+    df: Any, args: argparse.Namespace, sources: list[str]
+) -> tuple[dict[int, dict[str, dict[str, float]]], dict[str, Any], float]:
     per_seed: dict[int, dict[str, dict[str, float]]] = {}
     t_start = time.monotonic()
     for seed in args.seeds:
@@ -318,20 +325,30 @@ def main() -> int:
             batch_size=args.batch_size,
             lr=args.lr,
         )
+    return per_seed, _aggregate(per_seed), time.monotonic() - t_start
 
-    agg = _aggregate(per_seed)
+
+def _print_overall(args: argparse.Namespace, aggregate: dict[str, Any], elapsed: float) -> None:
+    overall = aggregate["overall"]
     print(
         f"[ms-{args.arch}] === overall across {len(args.seeds)} seeds ===\n"
-        f"[ms-{args.arch}]  mean PLCC = {agg['overall']['mean_plcc']:.4f} "
-        f"± {agg['overall']['std_plcc']:.4f}\n"
-        f"[ms-{args.arch}]  mean SROCC= {agg['overall']['mean_srocc']:.4f} "
-        f"± {agg['overall']['std_srocc']:.4f}\n"
-        f"[ms-{args.arch}]  mean RMSE = {agg['overall']['mean_rmse']:.3f} "
-        f"± {agg['overall']['std_rmse']:.3f}\n"
-        f"[ms-{args.arch}] total wall {time.monotonic() - t_start:.1f}s",
+        f"[ms-{args.arch}]  mean PLCC = {overall['mean_plcc']:.4f} "
+        f"± {overall['std_plcc']:.4f}\n"
+        f"[ms-{args.arch}]  mean SROCC= {overall['mean_srocc']:.4f} "
+        f"± {overall['std_srocc']:.4f}\n"
+        f"[ms-{args.arch}]  mean RMSE = {overall['mean_rmse']:.3f} "
+        f"± {overall['std_rmse']:.3f}\n"
+        f"[ms-{args.arch}] total wall {elapsed:.1f}s",
         flush=True,
     )
 
+
+def _write_report(
+    args: argparse.Namespace,
+    sources: list[str],
+    per_seed: dict[int, dict[str, dict[str, float]]],
+    aggregate: dict[str, Any],
+) -> None:
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = {
@@ -344,8 +361,8 @@ def main() -> int:
         "epochs": args.epochs,
         "lr": args.lr,
         "batch_size": args.batch_size,
-        "per_seed_per_fold": {str(s): per_seed[s] for s in args.seeds},
-        **agg,
+        "per_seed_per_fold": {str(seed): per_seed[seed] for seed in args.seeds},
+        **aggregate,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
@@ -357,6 +374,25 @@ def main() -> int:
     }
     write_manifest_json(args.out_json, report)
     print(f"[ms-{args.arch}] wrote {args.out_json}")
+
+
+def main() -> int:
+    args = _parse_args()
+
+    import pandas as pd
+
+    df = pd.read_parquet(args.parquet)
+    if not _validate_dataframe(df):
+        return 2
+    sources = sorted(df["source"].unique().tolist())
+    print(
+        f"[ms-{args.arch}] parquet={args.parquet} rows={len(df)} "
+        f"sources={sources} seeds={args.seeds}",
+        flush=True,
+    )
+    per_seed, aggregate, elapsed = _evaluate_seeds(df, args, sources)
+    _print_overall(args, aggregate, elapsed)
+    _write_report(args, sources, per_seed, aggregate)
     return 0
 
 

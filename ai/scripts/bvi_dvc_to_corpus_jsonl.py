@@ -38,8 +38,15 @@ import math
 import sys
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -72,7 +79,7 @@ def _row_from_cache(
     encoder: str,
     pix_fmt: str,
     vmaf_model: str = DEFAULT_MODEL,
-) -> dict:
+) -> dict[str, Any]:
     """Build one :data:`CORPUS_ROW_KEYS`-shaped row from a cached vmaf JSON."""
     payload = json.loads(cache_path.read_text())
     pooled = payload.get("pooled_metrics", {}).get("vmaf", {})
@@ -97,7 +104,7 @@ def _row_from_cache(
         canonical_aggs[f"{feature}_mean"] = float(pooled_feature.get("mean", math.nan))
         canonical_aggs[f"{feature}_std"] = float(pooled_feature.get("stddev", math.nan))
 
-    row: dict = {
+    row: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": uuid.uuid4().hex,
         "timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(),
@@ -152,8 +159,8 @@ def _row_from_cache(
     return row
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> Any:
+    """Build the cache-to-corpus adapter parser."""
     ap = make_argument_parser(prog="bvi_dvc_to_corpus_jsonl.py")
     ap.add_argument(
         "--cache-dir",
@@ -189,18 +196,11 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the JSONL."
         ),
     )
-    args = ap.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.output.with_suffix(".manifest.json")
+    return ap
 
-    if not args.cache_dir.is_dir():
-        print(f"error: cache dir not found: {args.cache_dir}", file=sys.stderr)
-        return 2
-    caches = sorted(args.cache_dir.glob("*.json"))
-    if not caches:
-        print(f"error: no .json files under {args.cache_dir}", file=sys.stderr)
-        return 2
 
+def _write_corpus_rows(args: Any, caches: list[Path]) -> int:
+    """Transform every cache document and return the emitted row count."""
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with args.output.open("w", encoding="utf-8") as fp:
@@ -215,6 +215,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             fp.write(json.dumps(row, sort_keys=True) + "\n")
             rows += 1
+    return rows
+
+
+def _write_corpus_manifest(args: Any, raw_argv: list[str], caches: list[Path], rows: int) -> None:
+    """Write the deterministic cache-adapter replay manifest."""
     write_manifest_json(
         args.manifest_out,
         {
@@ -236,6 +241,23 @@ def main(argv: list[str] | None = None) -> int:
             ),
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+
+    if not args.cache_dir.is_dir():
+        print(f"error: cache dir not found: {args.cache_dir}", file=sys.stderr)
+        return 2
+    caches = sorted(args.cache_dir.glob("*.json"))
+    if not caches:
+        print(f"error: no .json files under {args.cache_dir}", file=sys.stderr)
+        return 2
+    rows = _write_corpus_rows(args, caches)
+    _write_corpus_manifest(args, raw_argv, caches, rows)
     print(
         f"[bvi-dvc-jsonl] wrote {rows} rows to {args.output}; manifest {args.manifest_out}",
         file=sys.stderr,

@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Cross-backend feature diff — gates GPU compute kernels (CUDA, SYCL,
-Vulkan) against the CPU scalar reference. Runs `vmaf` twice on the
+"""Cross-backend feature diff — gates CUDA and SYCL compute kernels
+against the CPU scalar reference. Runs `vmaf` twice on the
 same (ref, dist) pair: once with the CPU integer extractor, once with
-the chosen GPU backend's named twin (e.g. ``adm_cuda`` /
-``adm_sycl`` / ``adm_vulkan``). Compares per-frame scores at
+the chosen GPU backend's named twin (for example ``adm_cuda`` or
+``adm_sycl``). Compares per-frame scores at
 ``places=4`` and prints a per-metric verdict.
 
-The script's filename is historical (it started life as the
-VIF-only Vulkan gate from PR #118 / ADR-0176); the broader scope is
-controlled by ``--feature {vif,motion,adm}`` and
-``--backend {cuda,sycl,vulkan}``.
+The script's filename is historical; the broader scope is controlled
+by ``--feature`` and ``--backend {cuda,sycl}``.
 
 Default tolerance is ``places=4`` (matches the fork's GPU-vs-CPU
 snapshot contract — see ``docs/principles.md`` and the user's "GPU is
-NOT bit-exact" invariant). Empirically the GLSL kernels under
-``core/src/feature/vulkan/shaders/`` are essentially bit-exact
-with the scalar reference because both sides use deterministic
-``int64`` accumulators. CUDA / SYCL kernels have their own histories.
+NOT bit-exact" invariant). CUDA and SYCL kernels retain their measured
+per-feature tolerance histories.
 
 The gate uses an absolute-tolerance check
 (``abs(cpu - gpu) <= 0.5e-places``) rather than Python's
@@ -39,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 # The calibration loader lives next to this script; ensure the
 # script directory is on sys.path so ``python3 scripts/ci/<this>.py``
@@ -82,15 +79,12 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "integer_adm_scale3",
     ),
     # GPU long-tail batch 1 (T7-23 / ADR-0182): PSNR. T3-15(b) /
-    # ADR-0210 extended the Vulkan extractor with chroma — the host
-    # loop now runs three dispatches per frame (Y, Cb, Cr) against
-    # per-plane SSBOs. CPU and Vulkan both emit psnr_y/cb/cr at
-    # places=4 byte-exact agreement on integer YUV (int64 SSE
-    # accumulators on both sides).
+    # ADR-0210 extended GPU PSNR with chroma. CPU and GPU twins emit
+    # psnr_y/cb/cr under the same places=4 integer-YUV contract.
     "psnr": ("psnr_y", "psnr_cb", "psnr_cr"),
     # GPU long-tail batch 1d (T7-23 / ADR-0182): float_moment.
-    # The CPU extractor is registered as `float_moment`; its GPU twin
-    # is `float_moment_vulkan` (etc.). The 4 emitted metrics — 1st and
+    # The CPU extractor is registered as `float_moment`; GPU twins use
+    # the selected backend suffix. The 4 emitted metrics — 1st and
     # 2nd raw moment of ref + dis luma — match byte-for-byte at JSON
     # precision (int64 sum is exact on integer YUV inputs).
     "float_moment": (
@@ -101,12 +95,12 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     ),
     # GPU long-tail batch 1c (T7-23 / ADR-0182 / ADR-0187):
     # ciede2000 ΔE. The CPU extractor is registered as `ciede`; the
-    # GPU twin is `ciede_vulkan` (etc.). Per-pixel transcendentals
+    # GPU twins use the selected backend suffix. Per-pixel transcendentals
     # (pow / sqrt / sin / atan2) — places=2 contract, NOT bit-exact.
     "ciede": ("ciede2000",),
     # GPU long-tail batch 2 part 1 (T7-23 / ADR-0188 / ADR-0189):
     # float_ssim. Active CPU extractor is `float_ssim`; GPU twin
-    # is `float_ssim_vulkan` (etc.). Single emitted metric;
+    # uses the selected backend suffix. Single emitted metric;
     # places=4 contract per ADR-0189 (measure-then-set-the-contract,
     # relax to places=3 if the gate exceeds 5e-5 max_abs).
     "float_ssim": ("float_ssim",),
@@ -121,7 +115,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # GPU kernels already produce l_means / c_means / s_means per
     # scale (the vert pass's "_lcs" suffix); this entry gates the
     # bit-identical-vs-CPU promise on the extra metrics. Use
-    # `--feature float_ms_ssim_lcs --backend {vulkan,cuda}` and
+    # `--feature float_ms_ssim_lcs --backend {cuda,sycl}` and
     # pass `enable_lcs=true` via the build_command's option-pass
     # path. places=4 contract per ADR-0215.
     "float_ms_ssim_lcs": (
@@ -145,7 +139,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # GPU long-tail batch 2 part 3 (T7-23 / ADR-0188 / ADR-0191):
     # float_psnr_hvs. DCT-based perceptual PSNR; emits 3 plane scores
     # + the combined `psnr_hvs`. CPU extractor is `psnr_hvs`; GPU
-    # twin is `float_psnr_hvs_vulkan`. The CPU and GPU paths both
+    # twins use the selected backend suffix. The CPU and GPU paths both
     # emit identical metric names — the suffix-renaming logic in
     # build_command takes care of routing. Precision target
     # places=2 per ADR-0188 (DCT integer-exact, but per-block float
@@ -182,7 +176,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # GPU long-tail batch 3 part 6 (T7-23 / ADR-0192 / ADR-0199):
     # float_adm. CDF 9/7 (DB2) wavelet + decouple + CSF + Contrast
     # Measure pipeline (4 scales, 4 stages each). CPU extractor is
-    # `float_adm`; GPU twin is `float_adm_vulkan`. Emits the combined
+    # `float_adm`; GPU twins use the selected backend suffix. Emits the combined
     # `adm2` and 4 per-scale ratios. places=4 contract.
     "float_adm": (
         "adm2",
@@ -197,8 +191,8 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # 6-scale pyramid; tighten if the kernel actually achieves
     # places>=3).
     "ssimulacra2": ("ssimulacra2",),
-    # GPU long-tail batch 3 terminus (T7-36 / ADR-0205): cambi
-    # Vulkan twin (Strategy II hybrid). GPU runs the integer phases
+    # GPU long-tail batch 3 terminus (T7-36 / ADR-0205): cambi.
+    # GPU twins run the integer phases
     # (preprocess, derivative, 7x7 SAT mask, decimate, mode filter);
     # the precision-sensitive sliding-histogram c_values + top-K
     # pool stay on the host. By construction the GPU output buffers
@@ -217,17 +211,7 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
 }
 
-BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
-    # ADR-0586: Vulkan's integer ADM extractor was renamed to the
-    # canonical "integer_adm_vulkan"; the CPU/CUDA/SYCL names stayed
-    # "adm", "adm_cuda", and "adm_sycl" for compatibility.
-    ("adm", "vulkan"): "integer_adm_vulkan",
-    # ADR-0662: lavapipe is stable with the canonical integer-motion
-    # Vulkan twin. The legacy "motion_vulkan" compatibility extractor
-    # remains explicit-name only because Mesa llvmpipe can crash inside
-    # that older two-buffer implementation.
-    ("motion", "vulkan"): "integer_motion_vulkan",
-}
+BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {}
 
 # Per-backend extractor-name suffix and the device-selection flag the
 # CLI uses to actually route to it. CPU is the implicit baseline (no
@@ -236,12 +220,10 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
 BACKEND_SUFFIX: dict[str, str] = {
     "cuda": "_cuda",
     "sycl": "_sycl",
-    "vulkan": "_vulkan",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
-    "vulkan": "--vulkan_device",
 }
 
 
@@ -298,8 +280,7 @@ def run_vmaf(
         "--json",
     ]
     if backend is not None:
-        # --backend forces backend exclusivity (no_cuda / no_sycl /
-        # no_vulkan) so a build with multiple backends doesn't try
+        # --backend forces backend exclusivity so a multi-backend build doesn't try
         # to init the unselected ones (which can hang on SYCL when
         # the device map differs between backends). The device flag
         # still pins the index for the chosen backend.
@@ -315,14 +296,22 @@ def run_vmaf(
         raise SystemExit(2)
 
 
-def load_frames(path: Path) -> list[dict]:
+def load_frames(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
-        return json.load(f)["frames"]
+        payload: object = json.load(f)
+    if not isinstance(payload, dict) or not isinstance(payload.get("frames"), list):
+        raise ValueError(f"{path} must contain a JSON object with a frames array")
+    frames: list[dict[str, Any]] = []
+    for frame in payload["frames"]:
+        if not isinstance(frame, dict) or not all(isinstance(key, str) for key in frame):
+            raise ValueError(f"{path} contains a non-object frame")
+        frames.append({key: value for key, value in frame.items() if isinstance(key, str)})
+    return frames
 
 
 def diff(
-    cpu: list[dict],
-    gpu: list[dict],
+    cpu: list[dict[str, Any]],
+    gpu: list[dict[str, Any]],
     metrics: tuple[str, ...],
     places: int,
     tolerance_override: float | None = None,
@@ -372,7 +361,52 @@ def diff(
     return 1 if fail else 0
 
 
-def main() -> int:
+def _add_calibration_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--gpu-id",
+        type=str,
+        default=None,
+        help=(
+            "runtime GPU identifier (Research-0041 schema, e.g. "
+            "'cuda:8.6' for Ampere "
+            "RTX 30). When supplied, the per-feature tolerance is "
+            "looked up in the ADR-0234 calibration table; otherwise "
+            "--places remains authoritative."
+        ),
+    )
+    parser.add_argument(
+        "--calibration-table",
+        type=Path,
+        default=DEFAULT_CALIBRATION_PATH,
+        help=(f"path to the ADR-0234 calibration YAML (default: {DEFAULT_CALIBRATION_PATH})"),
+    )
+
+
+def _add_backend_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--feature",
+        choices=tuple(FEATURE_METRICS),
+        default="vif",
+        help="extractor to gate (vif | motion | adm)",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=tuple(BACKEND_SUFFIX),
+        default="cuda",
+        help="GPU backend to compare against CPU (cuda | sycl)",
+    )
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=None,
+        help=(
+            "device index for the chosen backend. SYCL: 0+. "
+            "CUDA: gpumask (e.g. 1 = first GPU). Defaults: sycl=0, cuda=1."
+        ),
+    )
+
+
+def _build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--vmaf-binary", type=Path, required=True, help="path to core/build/tools/vmaf")
     ap.add_argument("--reference", type=Path, required=True)
@@ -382,132 +416,98 @@ def main() -> int:
     ap.add_argument("--pixel-format", default="420")
     ap.add_argument("--bitdepth", type=int, default=8)
     ap.add_argument("--places", type=int, default=4)
-    ap.add_argument(
-        "--gpu-id",
-        type=str,
-        default=None,
-        help=(
-            "runtime GPU identifier (Research-0041 schema, e.g. "
-            "'vulkan:0x10005:0x0' for lavapipe, 'cuda:8.6' for Ampere "
-            "RTX 30). When supplied, the per-feature tolerance is "
-            "looked up in the ADR-0234 calibration table; otherwise "
-            "--places remains authoritative."
-        ),
-    )
-    ap.add_argument(
-        "--calibration-table",
-        type=Path,
-        default=DEFAULT_CALIBRATION_PATH,
-        help=(f"path to the ADR-0234 calibration YAML (default: {DEFAULT_CALIBRATION_PATH})"),
-    )
-    ap.add_argument(
-        "--feature",
-        choices=tuple(FEATURE_METRICS),
-        default="vif",
-        help="extractor to gate (vif | motion | adm)",
-    )
-    ap.add_argument(
-        "--backend",
-        choices=tuple(BACKEND_SUFFIX),
-        default="vulkan",
-        help="GPU backend to compare against CPU (cuda | sycl | vulkan)",
-    )
-    ap.add_argument(
-        "--device",
-        type=int,
-        default=None,
-        help=(
-            "device index for the chosen backend. Vulkan/SYCL: 0+. "
-            "CUDA: gpumask (e.g. 1 = first GPU). Defaults: vulkan=0, "
-            "sycl=0, cuda=1."
-        ),
-    )
-    # Back-compat alias for the existing CI lane that was wired before
-    # --backend / --device existed. If --vulkan-device is passed, use
-    # it as the Vulkan device index.
-    ap.add_argument("--vulkan-device", type=int, default=None, help=argparse.SUPPRESS)
+    _add_calibration_arguments(ap)
+    _add_backend_arguments(ap)
     ap.add_argument(
         "--workdir",
         type=Path,
         default=Path(tempfile.gettempdir()) / "vmaf_cross_backend",
     )
-    args = ap.parse_args()
+    return ap
 
-    if args.vulkan_device is not None:
-        args.backend = "vulkan"
-        args.device = args.vulkan_device
+
+def _normalize_device(args: argparse.Namespace) -> None:
     if args.device is None:
-        # Per-backend defaults: gpumask=1 picks the first GPU on CUDA;
-        # device 0 is the first compute-capable on SYCL/Vulkan.
         args.device = 1 if args.backend == "cuda" else 0
 
+
+def _inputs_exist(args: argparse.Namespace) -> bool:
     if not args.vmaf_binary.exists():
         print(f"vmaf binary not found: {args.vmaf_binary}")
-        return 2
-    for p in (args.reference, args.distorted):
-        if not p.exists():
-            print(f"fixture not found: {p}")
-            return 2
+        return False
+    for path in (args.reference, args.distorted):
+        if not path.exists():
+            print(f"fixture not found: {path}")
+            return False
+    return True
 
+
+def _run_from_args(
+    args: argparse.Namespace,
+    output: Path,
+    *,
+    backend: str | None,
+    device: int | None,
+) -> None:
+    run_vmaf(
+        args.vmaf_binary,
+        args.reference,
+        args.distorted,
+        args.width,
+        args.height,
+        args.pixel_format,
+        args.bitdepth,
+        args.feature,
+        output,
+        backend=backend,
+        device=device,
+    )
+
+
+def _run_backend_pair(args: argparse.Namespace) -> tuple[Path, Path]:
     args.workdir.mkdir(parents=True, exist_ok=True)
     cpu_json = args.workdir / f"cpu_{args.feature}.json"
     gpu_json = args.workdir / f"{args.backend}_{args.feature}.json"
-
     print(f"running CPU {args.feature} → {cpu_json}")
-    run_vmaf(
-        args.vmaf_binary,
-        args.reference,
-        args.distorted,
-        args.width,
-        args.height,
-        args.pixel_format,
-        args.bitdepth,
-        args.feature,
-        cpu_json,
-        backend=None,
-        device=None,
-    )
-
+    _run_from_args(args, cpu_json, backend=None, device=None)
     print(f"running {args.backend} {args.feature} (device {args.device}) → {gpu_json}")
-    run_vmaf(
-        args.vmaf_binary,
-        args.reference,
-        args.distorted,
-        args.width,
-        args.height,
-        args.pixel_format,
-        args.bitdepth,
-        args.feature,
-        gpu_json,
-        backend=args.backend,
-        device=args.device,
-    )
+    _run_from_args(args, gpu_json, backend=args.backend, device=args.device)
+    return cpu_json, gpu_json
 
-    # ADR-0234: when ``--gpu-id`` is supplied, look up the per-arch
-    # tolerance for this feature. Falls back to ``--places`` when:
-    #  - no --gpu-id was given (legacy callers, default behaviour);
-    #  - pyyaml is unavailable (loader returns None);
-    #  - the gpu_id matches no row;
-    #  - the matched row has no override for ``args.feature``
-    #    (placeholder rows: registered arch, no calibration data).
+
+def _resolve_tolerance(args: argparse.Namespace) -> tuple[float | None, str]:
     tolerance_override: float | None = None
     tolerance_source = f"places={args.places}"
-    if args.gpu_id is not None:
-        table = load_calibration_table(args.calibration_table)
-        if table is not None:
-            entry = table.lookup(args.gpu_id)
-            if entry is not None and args.feature in entry.features:
-                tolerance_override = float(entry.features[args.feature])
-                tolerance_source = f"calibration {entry.gpu_id_pattern} ({entry.status})"
-            elif entry is not None:
-                tolerance_source = (
-                    f"calibration {entry.gpu_id_pattern} "
-                    f"(no per-feature override; places={args.places} fallback)"
-                )
-            else:
-                tolerance_source = (
-                    f"no calibration entry for {args.gpu_id}; places={args.places} fallback"
-                )
+    if args.gpu_id is None:
+        return tolerance_override, tolerance_source
+    table = load_calibration_table(args.calibration_table)
+    if table is None:
+        return tolerance_override, tolerance_source
+    entry = table.lookup(args.gpu_id)
+    if entry is not None and args.feature in entry.features:
+        return (
+            float(entry.features[args.feature]),
+            f"calibration {entry.gpu_id_pattern} ({entry.status})",
+        )
+    if entry is not None:
+        return (
+            tolerance_override,
+            f"calibration {entry.gpu_id_pattern} "
+            f"(no per-feature override; places={args.places} fallback)",
+        )
+    return (
+        tolerance_override,
+        f"no calibration entry for {args.gpu_id}; places={args.places} fallback",
+    )
+
+
+def main() -> int:
+    args = _build_argparser().parse_args()
+    _normalize_device(args)
+    if not _inputs_exist(args):
+        return 2
+    cpu_json, gpu_json = _run_backend_pair(args)
+    tolerance_override, tolerance_source = _resolve_tolerance(args)
 
     return diff(
         load_frames(cpu_json),

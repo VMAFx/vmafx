@@ -38,10 +38,21 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from torch import nn
+
+    from ..data.netflix_loader import NetflixPair
+    from .dataset import NetflixFrameDataset
+
+FloatArray = np.ndarray[Any, np.dtype[np.float32]]
+ArrayPair = tuple[FloatArray, FloatArray]
+PayloadProvider = Callable[["NetflixPair"], dict[str, Any]]
 
 # Support both ``python ai/train/train.py`` (script) and
 # ``python -m ai.train.train`` (module) invocations. When run as a
@@ -103,7 +114,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _build_model(arch: str, feature_dim: int):  # type: ignore[no-untyped-def]
+def _build_model(arch: str, feature_dim: int) -> nn.Module:
     from torch import nn
 
     if arch == "linear":
@@ -127,12 +138,12 @@ def _build_model(arch: str, feature_dim: int):  # type: ignore[no-untyped-def]
     raise ValueError(f"unknown arch: {arch}")
 
 
-def count_params(module) -> int:  # type: ignore[no-untyped-def]
+def count_params(module: nn.Module) -> int:
     return int(sum(p.numel() for p in module.parameters() if p.requires_grad))
 
 
-def export_onnx(  # type: ignore[no-untyped-def]
-    module,
+def export_onnx(
+    module: nn.Module,
     feature_dim: int,
     out_path: Path,
     *,
@@ -146,7 +157,7 @@ def export_onnx(  # type: ignore[no-untyped-def]
     module.eval()
     torch.onnx.export(
         module,
-        dummy,
+        (dummy,),
         str(out_path),
         input_names=["input"],
         output_names=["score"],
@@ -156,10 +167,10 @@ def export_onnx(  # type: ignore[no-untyped-def]
     return out_path
 
 
-def _train_loop(  # type: ignore[no-untyped-def]
-    module,
-    train_xy: tuple[np.ndarray, np.ndarray],
-    val_xy: tuple[np.ndarray, np.ndarray],
+def _train_loop(
+    module: nn.Module,
+    train_xy: tuple[FloatArray, FloatArray],
+    val_xy: tuple[FloatArray, FloatArray],
     *,
     epochs: int,
     batch_size: int,
@@ -241,11 +252,16 @@ def _parse_assume_dims(raw: str | None) -> "tuple[int, int] | int | None":
     return (w, h)
 
 
-def _load_train_val(args, feature_dim, assume_dims, payload_provider):  # type: ignore[no-untyped-def]
+def _load_train_val(
+    args: argparse.Namespace,
+    feature_dim: int,
+    assume_dims: tuple[int, int] | None,
+    payload_provider: PayloadProvider | None,
+) -> tuple["NetflixFrameDataset", "NetflixFrameDataset"]:
     """Build and return (train_ds, val_ds) NetflixFrameDataset objects."""
     from .dataset import NetflixFrameDataset
 
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         max_pairs=args.max_pairs,
         assume_dims=assume_dims,
         payload_provider=payload_provider,
@@ -258,12 +274,12 @@ def _load_train_val(args, feature_dim, assume_dims, payload_provider):  # type: 
     return train_ds, val_ds
 
 
-def _run_train_loop(  # type: ignore[no-untyped-def]
-    module,
-    train_xy,
-    val_xy,
+def _run_train_loop(
+    module: "nn.Module",
+    train_xy: ArrayPair,
+    val_xy: ArrayPair,
     *,
-    args,
+    args: argparse.Namespace,
     feature_dim: int,
 ) -> Path | None:
     """Run the training loop; return the last checkpoint path, or None."""

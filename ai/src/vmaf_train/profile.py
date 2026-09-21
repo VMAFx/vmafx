@@ -15,6 +15,7 @@ import resource
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import onnx
@@ -40,7 +41,7 @@ class ProfileReport:
     model_path: Path
     results: list[ProfileResult] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model": str(self.model_path),
             "results": [r.__dict__ | {"shape": list(r.shape)} for r in self.results],
@@ -64,7 +65,7 @@ def _infer_input_shape(model_path: Path) -> tuple[int, ...]:
 
 
 def _available_providers(requested: list[str] | None) -> list[str]:
-    all_eps = ort.get_available_providers()
+    all_eps = list(ort.get_available_providers())
     if requested is None:
         return all_eps
     missing = [p for p in requested if p not in all_eps]

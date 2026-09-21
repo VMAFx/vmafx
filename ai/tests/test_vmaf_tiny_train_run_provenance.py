@@ -15,10 +15,10 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "ai" / "scripts"))
 
-import train_vmaf_tiny_v2 as train_v2  # noqa: E402
-import train_vmaf_tiny_v3 as train_v3  # noqa: E402
-import train_vmaf_tiny_v4 as train_v4  # noqa: E402
-import train_vmaf_tiny_v5 as train_v5  # noqa: E402
+from ai.scripts import train_vmaf_tiny_v2 as train_v2  # noqa: E402
+from ai.scripts import train_vmaf_tiny_v3 as train_v3  # noqa: E402
+from ai.scripts import train_vmaf_tiny_v4 as train_v4  # noqa: E402
+from ai.scripts import train_vmaf_tiny_v5 as train_v5  # noqa: E402
 
 CANONICAL_6 = (
     "adm2",

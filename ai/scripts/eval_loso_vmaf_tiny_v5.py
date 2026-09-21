@@ -24,7 +24,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -33,7 +33,13 @@ REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train  # noqa: E402
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
+
+    from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train
+else:
+    from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -47,7 +53,13 @@ def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"n": len(y), "plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _eval_fold(model, mean, std, x_val, y_val):  # type: ignore[no-untyped-def]
+def _eval_fold(
+    model: "torch.nn.Module",
+    mean: np.ndarray,
+    std: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+) -> dict[str, float]:
     import torch
 
     x_std = (x_val - mean) / std
@@ -56,11 +68,13 @@ def _eval_fold(model, mean, std, x_val, y_val):  # type: ignore[no-untyped-def]
     return _metrics(pred, y_val)
 
 
-def _run_loso(df, label: str, epochs: int, batch_size: int, lr: float, seed: int) -> dict:
+def _run_loso(
+    df: "pd.DataFrame", label: str, epochs: int, batch_size: int, lr: float, seed: int
+) -> dict[str, Any]:
     nf = df[df["corpus"] == "netflix"]
     sources = sorted(nf["source"].unique().tolist())
     print(f"[{label}] Netflix sources={sources} total_rows={len(df)} nf_rows={len(nf)}", flush=True)
-    fold_metrics: dict[str, dict] = {}
+    fold_metrics: dict[str, dict[str, float]] = {}
     plccs, sroccs, rmses = [], [], []
     for held_out in sources:
         train_mask = ~((df["corpus"] == "netflix") & (df["source"] == held_out))
@@ -137,7 +151,7 @@ def _validate_and_stamp_teacher(df: Any, name: str, assume_teacher: str | None) 
     return teacher
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--parquet-base", type=Path, required=True, help="4-corpus parquet (NF+KV+BVI A+B+C+D)."
@@ -155,8 +169,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(argv)
+    return ap.parse_args(argv)
 
+
+def _load_corpora(args: argparse.Namespace) -> tuple[Any, Any, str]:
     import pandas as pd
 
     base = pd.read_parquet(args.parquet_base)
@@ -182,13 +198,16 @@ def main(argv: list[str] | None = None) -> int:
         .reset_index(drop=True)
     )
     combined = pd.concat([base, extra], ignore_index=True, sort=False)
-
     print(
-        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} "
-        f"combined_rows={len(combined)}",
+        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} combined_rows={len(combined)}",
         flush=True,
     )
+    return base, combined, teacher_base
 
+
+def _run_comparison(
+    args: argparse.Namespace, base: Any, combined: Any
+) -> tuple[dict[str, Any], dict[str, Any], float, float, str]:
     t0 = time.monotonic()
     print("\n=== v2 baseline (mlp_small on 4-corpus) ===", flush=True)
     v2_result = _run_loso(base, "v2", args.epochs, args.batch_size, args.lr, args.seed)
@@ -205,11 +224,22 @@ def main(argv: list[str] | None = None) -> int:
         f"(v2_sigma={sigma:.4f}) -> {decision}",
         flush=True,
     )
+    return v2_result, v5_result, delta_plcc, sigma, decision
 
+
+def _write_report(
+    args: argparse.Namespace,
+    teacher_model: str,
+    v2_result: dict[str, Any],
+    v5_result: dict[str, Any],
+    delta_plcc: float,
+    sigma: float,
+    decision: str,
+) -> None:
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = {
-        "teacher_model": teacher_base,
+        "teacher_model": teacher_model,
         "arch": "mlp_small",
         "epochs": args.epochs,
         "lr": args.lr,
@@ -234,6 +264,21 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_manifest_json(args.out_json, report)
     print(f"[loso-v5] wrote {args.out_json}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    base, combined, teacher_model = _load_corpora(args)
+    v2_result, v5_result, delta_plcc, sigma, decision = _run_comparison(args, base, combined)
+    _write_report(
+        args,
+        teacher_model,
+        v2_result,
+        v5_result,
+        delta_plcc,
+        sigma,
+        decision,
+    )
     return 0
 
 

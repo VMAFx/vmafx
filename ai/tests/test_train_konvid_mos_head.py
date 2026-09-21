@@ -43,7 +43,7 @@ sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
-import train_konvid_mos_head as trainer  # noqa: E402
+from ai.scripts import train_konvid_mos_head as trainer  # noqa: E402
 
 _CHUG_SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "train_chug_hdr_mos_head.py"
 _CHUG_SPEC = importlib.util.spec_from_file_location("train_chug_hdr_mos_head", _CHUG_SCRIPT_PATH)
@@ -552,7 +552,9 @@ def test_load_corpus_accepts_full_features_parquet(tmp_path: Path) -> None:
 def test_heldout_split_indices_prefer_validation_split() -> None:
     splits = np.asarray(["train", "train", "val", "test", ""], dtype="<U5")
 
-    train_idx, val_idx = trainer._heldout_split_indices(splits)
+    indices = trainer._heldout_split_indices(splits)
+    assert indices is not None
+    train_idx, val_idx = indices
 
     np.testing.assert_array_equal(train_idx, [0, 1])
     np.testing.assert_array_equal(val_idx, [2])
@@ -561,7 +563,9 @@ def test_heldout_split_indices_prefer_validation_split() -> None:
 def test_heldout_split_indices_falls_back_to_test_split() -> None:
     splits = np.asarray(["train", "train", "test", ""], dtype="<U5")
 
-    train_idx, val_idx = trainer._heldout_split_indices(splits)
+    indices = trainer._heldout_split_indices(splits)
+    assert indices is not None
+    train_idx, val_idx = indices
 
     np.testing.assert_array_equal(train_idx, [0, 1])
     np.testing.assert_array_equal(val_idx, [2])

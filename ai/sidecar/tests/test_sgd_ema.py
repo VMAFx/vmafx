@@ -11,13 +11,17 @@
 import os
 import pathlib
 import tempfile
+from typing import TYPE_CHECKING
 
 import pytest
 
-torch = pytest.importorskip("torch", reason="PyTorch not installed — skipping SGD+EMA tests")
-import torch.nn as nn  # noqa: E402 — after pytest.importorskip guard
+if TYPE_CHECKING:
+    import torch
+else:
+    torch = pytest.importorskip("torch", reason="PyTorch not installed — skipping SGD+EMA tests")
+import torch.nn as nn
 
-from ai.sidecar.sgd_ema import SGDEMAConfig, SGDEMATrainer  # noqa: E402
+from ai.sidecar.sgd_ema import SGDEMAConfig, SGDEMATrainer
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -30,7 +34,7 @@ def _tiny_model() -> nn.Module:
     return nn.Sequential(nn.Linear(N_FEATURES, 8), nn.ReLU(), nn.Linear(8, 1))
 
 
-def _batch(n: int = 8):
+def _batch(n: int = 8) -> tuple[torch.Tensor, torch.Tensor]:
     feats = torch.randn(n, N_FEATURES)
     scores = torch.rand(n) * 100.0
     return feats, scores
@@ -42,26 +46,26 @@ def _batch(n: int = 8):
 
 
 class TestSGDEMAConfig:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         cfg = SGDEMAConfig()
         assert cfg.lr == pytest.approx(1e-4)
         assert cfg.ema_decay == pytest.approx(0.999)
         assert cfg.max_grad_norm == pytest.approx(1.0)
         assert cfg.warmup_steps == 100
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
         cfg = SGDEMAConfig(lr=0.01, optimizer="adam", ema_decay=0.99)
         assert cfg.lr == pytest.approx(0.01)
         assert cfg.optimizer == "adam"
 
 
 class TestSGDEMATrainerInit:
-    def test_constructs_without_error(self):
+    def test_constructs_without_error(self) -> None:
         model = _tiny_model()
         trainer = SGDEMATrainer(model)
         assert trainer.step_count == 0
 
-    def test_ema_starts_equal_to_live(self):
+    def test_ema_starts_equal_to_live(self) -> None:
         model = _tiny_model()
         trainer = SGDEMATrainer(model)
         for p_live, p_ema in zip(
@@ -69,7 +73,7 @@ class TestSGDEMATrainerInit:
         ):
             assert torch.allclose(p_live.data, p_ema.data)
 
-    def test_ema_params_have_no_grad(self):
+    def test_ema_params_have_no_grad(self) -> None:
         model = _tiny_model()
         trainer = SGDEMATrainer(model)
         for p in trainer.ema_model.parameters():
@@ -82,7 +86,7 @@ class TestSGDEMATrainerInit:
 
 
 class TestSGDEMAStep:
-    def test_step_returns_scalar_loss(self):
+    def test_step_returns_scalar_loss(self) -> None:
         model = _tiny_model()
         trainer = SGDEMATrainer(model)
         feats, scores = _batch()
@@ -90,14 +94,14 @@ class TestSGDEMAStep:
         assert isinstance(loss, float)
         assert loss >= 0.0
 
-    def test_step_increments_counter(self):
+    def test_step_increments_counter(self) -> None:
         model = _tiny_model()
         trainer = SGDEMATrainer(model)
         for _i in range(5):
             trainer.step(*_batch())
         assert trainer.step_count == 5
 
-    def test_ema_diverges_from_live_after_steps(self):
+    def test_ema_diverges_from_live_after_steps(self) -> None:
         """After gradient steps the live weights change; EMA lags behind."""
         cfg = SGDEMAConfig(lr=0.1, ema_decay=0.9, warmup_steps=0)
         model = _tiny_model()
@@ -119,7 +123,7 @@ class TestSGDEMAStep:
             max_diff > 1e-6
         ), "EMA and live weights are identical after 50 steps — EMA update likely broken"
 
-    def test_ema_update_formula(self):
+    def test_ema_update_formula(self) -> None:
         """Verify the EMA formula θ_ema ← β·θ_ema + (1−β)·θ_live numerically."""
         cfg = SGDEMAConfig(lr=1.0, ema_decay=0.9, warmup_steps=0, max_grad_norm=1e9)
         model = nn.Linear(4, 1, bias=False)
@@ -127,6 +131,8 @@ class TestSGDEMAStep:
         with torch.no_grad():
             model.weight.fill_(1.0)
         trainer = SGDEMATrainer(model, cfg)
+        assert isinstance(trainer.ema_model, nn.Linear)
+        assert isinstance(trainer.model, nn.Linear)
         # Record EMA weight before the step.
         ema_before = trainer.ema_model.weight.data.clone()
 
@@ -148,7 +154,7 @@ class TestSGDEMAStep:
 
 
 class TestWarmup:
-    def test_lr_is_zero_at_step_zero(self):
+    def test_lr_is_zero_at_step_zero(self) -> None:
         """Before any step, warmup has not yet applied — first step uses scale=1/warmup."""
         cfg = SGDEMAConfig(lr=1.0, warmup_steps=10, optimizer="sgd")
         model = _tiny_model()
@@ -158,7 +164,7 @@ class TestWarmup:
         for pg in trainer._opt.param_groups:
             assert abs(pg["lr"] - 0.1) < 1e-6
 
-    def test_lr_reaches_full_after_warmup(self):
+    def test_lr_reaches_full_after_warmup(self) -> None:
         cfg = SGDEMAConfig(lr=0.5, warmup_steps=5, optimizer="sgd")
         model = _tiny_model()
         trainer = SGDEMATrainer(model, cfg)
@@ -174,12 +180,12 @@ class TestWarmup:
 
 
 class TestCheckpoint:
-    def test_should_checkpoint_false_initially(self):
+    def test_should_checkpoint_false_initially(self) -> None:
         cfg = SGDEMAConfig(checkpoint_interval_s=3600, min_samples_per_checkpoint=1000)
         trainer = SGDEMATrainer(_tiny_model(), cfg)
         assert not trainer.should_checkpoint()
 
-    def test_export_onnx_writes_file(self):
+    def test_export_onnx_writes_file(self) -> None:
         cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=0)
         trainer = SGDEMATrainer(_tiny_model(), cfg)
         # Force a step so there are no untrained parameters issues.
@@ -190,7 +196,7 @@ class TestCheckpoint:
             assert pathlib.Path(path).exists()
             assert pathlib.Path(path).stat().st_size > 0
 
-    def test_export_onnx_is_loadable(self):
+    def test_export_onnx_is_loadable(self) -> None:
         """The exported ONNX file should be parseable by onnx."""
         onnx = pytest.importorskip("onnx", reason="onnx not installed")
         cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=0)
@@ -202,7 +208,7 @@ class TestCheckpoint:
             model_proto = onnx.load(path)
             onnx.checker.check_model(model_proto)
 
-    def test_state_dict_round_trip(self):
+    def test_state_dict_round_trip(self) -> None:
         """state_dict / load_state_dict preserves step count and weights."""
         cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=0)
         trainer = SGDEMATrainer(_tiny_model(), cfg)
@@ -225,7 +231,7 @@ class TestCheckpoint:
 
 
 class TestAdamVariant:
-    def test_adam_optimizer_steps_without_error(self):
+    def test_adam_optimizer_steps_without_error(self) -> None:
         cfg = SGDEMAConfig(lr=1e-3, optimizer="adam")
         trainer = SGDEMATrainer(_tiny_model(), cfg)
         for _ in range(10):

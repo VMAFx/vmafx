@@ -1,0 +1,1 @@
+- Made strict Python 3.14 type checking a required, fail-closed whole-scope gate for every tracked Python source under `ai/` and `scripts/`, removing the merge-base baseline and advisory-CI bypass.

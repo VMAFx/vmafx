@@ -163,7 +163,7 @@ def build_encode_request(
     # plain path string rather than a metadata dict.  Normalise before use so
     # callers get an AttributeError-free dict regardless of the stored type.
     if isinstance(_source_field, str):
-        source_meta: dict = {"path": _source_field}
+        source_meta: dict[str, Any] = {"path": _source_field}
     else:
         source_meta = dict(_source_field) if _source_field else {}
     run_meta = profile.get("run") or {}

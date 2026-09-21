@@ -33,7 +33,7 @@ class GcWorkingdirTests(unittest.TestCase):
         (run / "objects" / "motion.o").write_bytes(b"z" * 1024)
         (run / "receipt.json").write_text("{}", encoding="utf-8")
         (run / "clang-tidy-help.txt").write_text("help", encoding="utf-8")
-        self.run = run
+        self.run_dir = run
         self.addCleanup(self.tmp.cleanup)
 
     def victims(self, citations: set[str] | None = None) -> set[str]:
@@ -84,7 +84,7 @@ class GcWorkingdirTests(unittest.TestCase):
 
     def test_symlinks_are_skipped(self) -> None:
         link = self.state / "cache" / "gate-20260908" / "alias.o"
-        link.symlink_to(self.run / "objects" / "motion.o")
+        link.symlink_to(self.run_dir / "objects" / "motion.o")
         self.assertNotIn("cache/gate-20260908/alias.o", self.victims())
 
     def test_refuses_a_state_tree_outside_the_repository(self) -> None:
@@ -110,10 +110,10 @@ class GcWorkingdirTests(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
-        self.assertFalse((self.run / "go-cache").exists())
-        self.assertFalse((self.run / "objects" / "motion.o").exists())
-        self.assertTrue((self.run / "receipt.json").exists())
-        manifest = self.run / GC.MANIFEST
+        self.assertFalse((self.run_dir / "go-cache").exists())
+        self.assertFalse((self.run_dir / "objects" / "motion.o").exists())
+        self.assertTrue((self.run_dir / "receipt.json").exists())
+        manifest = self.run_dir / GC.MANIFEST
         self.assertTrue(manifest.is_file())
         body = manifest.read_text(encoding="utf-8")
         self.assertIn("Reclaimed", body)

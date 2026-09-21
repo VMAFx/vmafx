@@ -178,98 +178,58 @@ def _resolve_codec_args(req: EncodeRequest) -> list[str]:
     return args
 
 
-def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list[str]:
-    """Compose the ffmpeg argv for a single encode.
-
-    Pure function — no I/O — so tests can pin the exact command line.
-
-    When ``req.sample_clip_seconds > 0``, ``-ss <start> -t <N>`` are
-    inserted as **input-side** options (before ``-i``) so FFmpeg fast-
-    seeks the raw YUV by skipping ``start * framerate`` frame-sized
-    byte chunks. Output-side seeking would still decode (and the
-    rawvideo demuxer would still read) the full source, defeating the
-    speedup.
-
-    Phase F (ADR-0333): when ``req.pass_number != 0`` the adapter's
-    ``two_pass_args`` argv is spliced in before ``extra_params``; pass
-    1 redirects the encoded output to ``-f null -`` (avoiding writing
-    a useless pass-1 mp4) while pass 2 keeps the requested
-    ``req.output`` destination.
-
-    The codec-specific argv slice (``-c:v ...``) is delegated to the
-    codec adapter's ``ffmpeg_codec_args`` per HP-1 / ADR-0326 so
-    non-x264 codecs get their correct flags (e.g. ``-cpu-used`` for
-    libaom-av1, ``-cq`` for NVENC, ``-global_quality`` for QSV). The
-    legacy ``-c:v <enc> -preset <p> -crf <q>`` shape stays available
-    as a fallback for unregistered encoders.
-    """
-    cmd: list[str] = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
-    # BBB e2e v6 Bug #V6-1 (ADR-0506): when the caller didn't opt into
-    # sample-clip mode but did bind ``duration_s`` (via the ladder /
-    # corpus ``--duration`` flag), honour it as an input-side ``-t``
-    # so the encode is bounded to the analysed window. The reference
-    # leg is already clipped by ``_maybe_decode_reference``; without
-    # this guard the encode would process the full source (9 min of
-    # BBB instead of 10 s) burning ~9x wall time per cell on long
-    # sources.
+def _bounded_duration_args(req: EncodeRequest) -> list[str]:
+    if req.sample_clip_seconds > 0.0:
+        return ["-ss", f"{req.sample_clip_start_s}", "-t", f"{req.sample_clip_seconds}"]
     fallback_duration = (
         float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
     )
+    return ["-t", f"{fallback_duration}"] if fallback_duration > 0.0 else []
+
+
+def _source_args(req: EncodeRequest) -> list[str]:
+    bounded_args = _bounded_duration_args(req)
     if req.source_is_container:
-        # Container source (mkv/mp4/…): let ffmpeg auto-detect format.
-        # -ss/-t go before -i for fast input-seek on compressed streams.
-        if req.sample_clip_seconds > 0.0:
-            cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
-            cmd.extend(["-t", f"{req.sample_clip_seconds}"])
-        elif fallback_duration > 0.0:
-            cmd.extend(["-t", f"{fallback_duration}"])
-        cmd.extend(["-i", str(req.source)])
-    else:
-        # Raw YUV source: must tell ffmpeg the format explicitly.
-        cmd.extend(
-            [
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                req.pix_fmt,
-                "-s",
-                f"{req.width}x{req.height}",
-                "-r",
-                f"{req.framerate}",
-            ]
+        return [*bounded_args, "-i", str(req.source)]
+    return [
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        req.pix_fmt,
+        "-s",
+        f"{req.width}x{req.height}",
+        "-r",
+        f"{req.framerate}",
+        *bounded_args,
+        "-i",
+        str(req.source),
+    ]
+
+
+def _two_pass_args(req: EncodeRequest) -> list[str]:
+    if req.pass_number == 0:
+        return []
+    if req.stats_path is None:
+        raise ValueError("build_ffmpeg_command: pass_number != 0 requires stats_path")
+    from .codec_adapters import get_adapter
+
+    adapter = get_adapter(req.encoder)
+    if not getattr(adapter, "supports_two_pass", False):
+        raise ValueError(
+            f"build_ffmpeg_command: encoder {req.encoder!r} does not "
+            "support 2-pass encoding (supports_two_pass = False)"
         )
-        if req.sample_clip_seconds > 0.0:
-            # Input-side -ss / -t — fast-seek for raw YUV.
-            cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
-            cmd.extend(["-t", f"{req.sample_clip_seconds}"])
-        elif fallback_duration > 0.0:
-            cmd.extend(["-t", f"{fallback_duration}"])
-        cmd.extend(["-i", str(req.source)])
+    return list(adapter.two_pass_args(req.pass_number, req.stats_path))
+
+
+def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list[str]:
+    """Compose the deterministic ffmpeg argv for one bounded encode."""
+    cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
+    cmd.extend(_source_args(req))
     cmd.extend(_resolve_codec_args(req))
-
-    # Phase F: 2-pass argv from the codec adapter, when requested.
-    if req.pass_number != 0:
-        if req.stats_path is None:
-            raise ValueError("build_ffmpeg_command: pass_number != 0 requires stats_path")
-        # Lazy import to avoid the codec_adapters import cost on
-        # plain single-pass paths and to keep the module import
-        # graph identical for the legacy fast path.
-        from .codec_adapters import get_adapter
-
-        adapter = get_adapter(req.encoder)
-        if not getattr(adapter, "supports_two_pass", False):
-            raise ValueError(
-                f"build_ffmpeg_command: encoder {req.encoder!r} does not "
-                "support 2-pass encoding (supports_two_pass = False)"
-            )
-        cmd.extend(adapter.two_pass_args(req.pass_number, req.stats_path))
-
+    cmd.extend(_two_pass_args(req))
     cmd.extend(req.extra_params)
-
     if req.pass_number == 1:
-        # Pass 1 only writes the stats file; the encoded bitstream is
-        # discarded via the null muxer. Saves I/O + disk space (some
-        # codecs emit hundreds of MB on long sources).
         cmd.extend(["-f", "null", "-"])
     else:
         cmd.append(str(req.output))
@@ -308,80 +268,47 @@ _LIBVVENC_VERSION_RE = re.compile(
     r"\[libvvenc\s*@\s*[^\]]+\]\s+(?:Fraunhofer\s+VVC/H\.266\s+Encoder\s+)?VVenC\s+v(\S+)",
     re.IGNORECASE,
 )
+_HW_ENCODER_TOKENS = ("_nvenc", "_amf", "_qsv", "_videotoolbox")
+
+
+def _matched_version(stderr: str, pattern: re.Pattern[str], prefix: str, fallback: str) -> str:
+    match = pattern.search(stderr)
+    return f"{prefix}{match.group(1)}" if match else fallback
+
+
+def _default_encoder_version(stderr: str) -> str:
+    for pattern, prefix in (
+        (_X264_VERSION_RE, "libx264-"),
+        (_X265_VERSION_RE, "libx265-"),
+        (_SVTAV1_VERSION_RE, "libsvtav1-"),
+    ):
+        match = pattern.search(stderr)
+        if match:
+            return f"{prefix}{match.group(1)}"
+    return "unknown"
+
+
+def _encoder_version(stderr: str, encoder: str) -> str:
+    if encoder == "libx264" or not encoder:
+        return _default_encoder_version(stderr)
+    if encoder == "libx265":
+        return _matched_version(stderr, _X265_VERSION_RE, "libx265-", "unknown")
+    if encoder in ("libsvtav1", "libsvtav1-vbr"):
+        return _matched_version(stderr, _SVTAV1_VERSION_RE, "libsvtav1-", "unknown")
+    if encoder == "libvpx-vp9":
+        return _matched_version(stderr, _LIBVPX_VP9_VERSION_RE, "libvpx-vp9-", "unknown")
+    if encoder == "libaom-av1":
+        return _matched_version(stderr, _LIBAOM_VERSION_RE, "libaom-av1-", "libaom-av1")
+    if encoder == "libvvenc":
+        return _matched_version(stderr, _LIBVVENC_VERSION_RE, "libvvenc-", "libvvenc")
+    return encoder if any(token in encoder for token in _HW_ENCODER_TOKENS) else "unknown"
 
 
 def parse_versions(stderr: str, encoder: str = "libx264") -> tuple[str, str]:
-    """Return (ffmpeg_version, encoder_version) extracted from stderr.
-
-    ``encoder`` selects the per-codec version regex. Supported values
-    match the codec_adapters registry: ``libx264`` (default), ``libx265``,
-    ``libsvtav1``, ``libvpx-vp9``, ``libaom-av1``, ``libvvenc``, and any
-    HW encoder token (h264_nvenc, hevc_amf, …).
-    HW encoders don't advertise a version in stderr; the encoder token
-    string is returned verbatim so corpus rows carry a stable identifier.
-    ``libaom-av1`` and ``libvvenc`` emit a version banner when available;
-    the encoder name is used as the stable fallback when the banner is
-    absent (e.g. builds that suppress per-encoder output).
-
-    Returns ``("unknown", "unknown")`` for missing matches rather than
-    raising — corpus rows record what we can detect and move on.
-    """
-    ffm = _FFMPEG_VERSION_RE.search(stderr)
-    ffm_str = ffm.group(1) if ffm else "unknown"
-
-    enc_str: str
-    _DEFAULT_ENCODER = "libx264"
-    if encoder == _DEFAULT_ENCODER or not encoder:
-        # Auto-detect from stderr when the caller didn't pass an explicit
-        # encoder override (i.e. still at default "libx264"): x264 banner
-        # takes priority (it appears first in multi-codec logs), then x265,
-        # then SVT-AV1. If no banner is found, return "unknown".
-        m_x4 = _X264_VERSION_RE.search(stderr)
-        if m_x4:
-            enc_str = f"libx264-{m_x4.group(1)}"
-        else:
-            m_x5 = _X265_VERSION_RE.search(stderr)
-            if m_x5:
-                enc_str = f"libx265-{m_x5.group(1)}"
-            else:
-                m_sv = _SVTAV1_VERSION_RE.search(stderr)
-                enc_str = f"libsvtav1-{m_sv.group(1)}" if m_sv else "unknown"
-    elif encoder == "libx265":
-        m = _X265_VERSION_RE.search(stderr)
-        enc_str = f"libx265-{m.group(1)}" if m else "unknown"
-    elif encoder in ("libsvtav1", "libsvtav1-vbr"):
-        m = _SVTAV1_VERSION_RE.search(stderr)
-        enc_str = f"libsvtav1-{m.group(1)}" if m else "unknown"
-    elif encoder == "libvpx-vp9":
-        m = _LIBVPX_VP9_VERSION_RE.search(stderr)
-        enc_str = f"libvpx-vp9-{m.group(1)}" if m else "unknown"
-    elif encoder == "libaom-av1":
-        # libaom emits a version banner in the per-run stderr when FFmpeg
-        # is built with verbose encoder logging. Fall back to the stable
-        # adapter name when the banner is absent (quiet builds).
-        m = _LIBAOM_VERSION_RE.search(stderr)
-        enc_str = f"libaom-av1-{m.group(1)}" if m else "libaom-av1"
-    elif encoder == "libvvenc":
-        # VVenC emits "VVenC v<version>" via the FFmpeg libvvenc wrapper.
-        # Fall back to the stable adapter name when the banner is absent.
-        m = _LIBVVENC_VERSION_RE.search(stderr)
-        enc_str = f"libvvenc-{m.group(1)}" if m else "libvvenc"
-    else:
-        # Known HW encoder tokens (nvenc/amf/qsv/videotoolbox): no version
-        # string in stderr; return the token as the stable identifier.
-        # Completely unknown names return "unknown".
-        _HW_TOKENS = (
-            "_nvenc",
-            "_amf",
-            "_qsv",
-            "_videotoolbox",
-        )
-        if any(tok in encoder for tok in _HW_TOKENS):
-            enc_str = encoder
-        else:
-            enc_str = "unknown"
-
-    return ffm_str, enc_str
+    """Extract stable FFmpeg and encoder versions, using ``unknown`` when absent."""
+    ffmpeg_match = _FFMPEG_VERSION_RE.search(stderr)
+    ffmpeg_version = ffmpeg_match.group(1) if ffmpeg_match else "unknown"
+    return ffmpeg_version, _encoder_version(stderr, encoder)
 
 
 def run_encode(
@@ -400,10 +327,10 @@ def run_encode(
     """
     cmd = build_ffmpeg_command(req, ffmpeg_bin=ffmpeg_bin)
     runner_fn = encoder_runner or runner or subprocess.run
+    if not callable(runner_fn):
+        raise TypeError("runner must be callable")
     started = time.monotonic()
-    completed = runner_fn(  # type: ignore[operator]
-        cmd, capture_output=True, text=True, check=False
-    )
+    completed = runner_fn(cmd, capture_output=True, text=True, check=False)
     elapsed_ms = (time.monotonic() - started) * 1000.0
 
     stderr = getattr(completed, "stderr", "") or ""
@@ -465,7 +392,7 @@ _PROBE_CACHE: dict[tuple[str, str], str] = {}
 # encoder was compiled in. ADR-0498 follow-up #7 extends this set to
 # cover x265 and libvpx so the ``EncoderInfo.codec_detected`` field is
 # populated for all three software encoder families.
-_VERSION_PROBE_PATTERNS: dict[str, re.Pattern] = {
+_VERSION_PROBE_PATTERNS: dict[str, re.Pattern[str]] = {
     "libx264": re.compile(r"--enable-libx264"),
     "libsvtav1": re.compile(r"--enable-libsvtav1"),
     "libx265": re.compile(r"--enable-libx265"),
@@ -517,10 +444,10 @@ def _probe_encoder_version_from_ffmpeg(ffmpeg_bin: str, encoder: str, runner_fn:
     key = (ffmpeg_bin, encoder)
     if key in _PROBE_CACHE:
         return _PROBE_CACHE[key]
+    if not callable(runner_fn):
+        raise TypeError("runner must be callable")
     try:
-        completed = runner_fn(  # type: ignore[operator]
-            [ffmpeg_bin, "-version"], capture_output=True, text=True, check=False
-        )
+        completed = runner_fn([ffmpeg_bin, "-version"], capture_output=True, text=True, check=False)
     except (OSError, ValueError):
         _PROBE_CACHE[key] = ""
         return ""
@@ -686,7 +613,9 @@ def run_encode_with_stats(
     try:
         cmd = build_pass1_stats_command(req, prefix, ffmpeg_bin=ffmpeg_bin)
         runner_fn = runner or subprocess.run
-        runner_fn(cmd, capture_output=True, text=True, check=False)  # type: ignore[operator]
+        if not callable(runner_fn):
+            raise TypeError("runner must be callable")
+        runner_fn(cmd, capture_output=True, text=True, check=False)
         stats_path = _stats_file_for(prefix)
         frames = tuple(parse_stats_file(stats_path))
         cleanup.append(stats_path)

@@ -42,14 +42,20 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import torch
+
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -57,14 +63,64 @@ REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # Reuse the LOSO trainer's corpus loader + canonical constants so the
 # codec block layout is identical to what was gate-validated.
-from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[import-not-found]
-    CANONICAL_6,
-    CODEC_BLOCK_DIM,
-    ENCODER_VOCAB,
-    ENCODER_VOCAB_VERSION,
-    _load_corpus,
-    _set_seed_all,
-)
+if TYPE_CHECKING:
+    from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+        CANONICAL_6 as CANONICAL_6,
+    )
+    from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+        CODEC_BLOCK_DIM as CODEC_BLOCK_DIM,
+    )
+    from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+        ENCODER_VOCAB as ENCODER_VOCAB,
+    )
+    from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+        ENCODER_VOCAB_VERSION as ENCODER_VOCAB_VERSION,
+    )
+    from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+        _load_corpus as _load_corpus,
+    )
+    from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+        _set_seed_all as _set_seed_all,
+    )
+else:
+    try:
+        from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+            CANONICAL_6 as CANONICAL_6,
+        )
+        from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+            CODEC_BLOCK_DIM as CODEC_BLOCK_DIM,
+        )
+        from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+            ENCODER_VOCAB as ENCODER_VOCAB,
+        )
+        from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+            ENCODER_VOCAB_VERSION as ENCODER_VOCAB_VERSION,
+        )
+        from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+            _load_corpus as _load_corpus,
+        )
+        from ai.scripts.train_fr_regressor_v2_ensemble_loso import (
+            _set_seed_all as _set_seed_all,
+        )
+    except ModuleNotFoundError:
+        from train_fr_regressor_v2_ensemble_loso import (
+            CANONICAL_6 as CANONICAL_6,
+        )
+        from train_fr_regressor_v2_ensemble_loso import (
+            CODEC_BLOCK_DIM as CODEC_BLOCK_DIM,
+        )
+        from train_fr_regressor_v2_ensemble_loso import (
+            ENCODER_VOCAB as ENCODER_VOCAB,
+        )
+        from train_fr_regressor_v2_ensemble_loso import (
+            ENCODER_VOCAB_VERSION as ENCODER_VOCAB_VERSION,
+        )
+        from train_fr_regressor_v2_ensemble_loso import (
+            _load_corpus as _load_corpus,
+        )
+        from train_fr_regressor_v2_ensemble_loso import (
+            _set_seed_all as _set_seed_all,
+        )
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.file_utils import sha256  # noqa: E402
@@ -86,7 +142,7 @@ def _train_full_corpus(
     batch_size: int,
     lr: float,
     weight_decay: float,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train one FRRegressor on the FULL corpus for the production checkpoint.
 
     Mirrors ``_train_one_fold`` from the LOSO trainer (ADR-0319) — same
@@ -123,13 +179,13 @@ def _train_full_corpus(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
-def _export_onnx(model, onnx_path: Path) -> str:  # type: ignore[no-untyped-def]
+def _export_onnx(model: "torch.nn.Module", onnx_path: Path) -> str:
     """Export the trained FRRegressor as a two-input ONNX (features + codec).
 
     Input contract mirrors ``train_fr_regressor_v2_ensemble.py::_export_member``:
@@ -258,7 +314,7 @@ def _build_sidecar(
     return sidecar
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(raw_argv: list[str]) -> Any:
     ap = make_argument_parser(prog="export_ensemble_v2_seeds")
     ap.add_argument(
         "--corpus",
@@ -291,10 +347,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Patch sha256 + smoke=false on the 5 seed rows in registry.json.",
     )
-    raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
-    seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+
+def _validate_inputs(args: Any, seeds: list[int]) -> int:
     if not seeds:
         print("error: --seeds must be non-empty", file=sys.stderr)
         return 2
@@ -304,78 +360,68 @@ def main(argv: list[str] | None = None) -> int:
     if not args.promote_json.is_file():
         print(f"error: PROMOTE.json not found at {args.promote_json}", file=sys.stderr)
         return 2
+    return 0
 
-    promote = json.loads(args.promote_json.read_text())
-    if promote.get("verdict") != "PROMOTE":
-        print(
-            f"error: PROMOTE.json verdict is {promote.get('verdict')!r}, refusing "
-            "to flip non-PROMOTE seeds to production.",
-            file=sys.stderr,
-        )
-        return 3
 
+def _load_export_inputs(args: Any) -> tuple[dict[str, Any], np.ndarray, np.ndarray, str]:
     print(f"[export-ens] loading corpus from {args.corpus}", flush=True)
     corpus_sha = sha256(args.corpus)
-    corpus = _load_corpus(args.corpus)
+    corpus: dict[str, Any] = _load_corpus(args.corpus)
     df = corpus["df"]
     feat_full = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
     target = df["vmaf"].to_numpy(dtype=np.float64)
-    feature_mean = corpus["feature_mean"]
-    feature_std = corpus["feature_std"]
-    feat_norm = ((feat_full - feature_mean) / feature_std).astype(np.float32)
-    codec_block = corpus["codec_block"]
-
+    feat_norm = ((feat_full - corpus["feature_mean"]) / corpus["feature_std"]).astype(np.float32)
     print(
         f"[export-ens] n_rows={corpus['n_rows']} corpus_sha256={corpus_sha[:16]}... "
         f"cq=[{corpus['cq_min']}, {corpus['cq_max']}]",
         flush=True,
     )
+    return corpus, feat_norm, target, corpus_sha
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    new_shas: dict[int, str] = {}
-    output_targets: dict[str, str | None] = {}
+
+def _output_targets(args: Any, seeds: list[int]) -> dict[str, str | None]:
+    targets: dict[str, str | None] = {}
     for seed in seeds:
-        output_targets[f"seed{seed}_onnx"] = str(
-            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
-        )
-        output_targets[f"seed{seed}_sidecar"] = str(
-            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
-        )
-    output_targets["registry"] = (
-        str(args.out_dir / "registry.json") if args.update_registry else None
-    )
-    run_provenance = build_run_provenance(
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        inputs={"corpus": args.corpus, "promote_json": args.promote_json},
-        outputs=output_targets,
-    )
+        stem = f"fr_regressor_v2_ensemble_v1_seed{seed}"
+        targets[f"seed{seed}_onnx"] = str(args.out_dir / f"{stem}.onnx")
+        targets[f"seed{seed}_sidecar"] = str(args.out_dir / f"{stem}.json")
+    targets["registry"] = str(args.out_dir / "registry.json") if args.update_registry else None
+    return targets
+
+
+def _export_seeds(
+    args: Any,
+    seeds: list[int],
+    promote: dict[str, Any],
+    corpus: dict[str, Any],
+    feat_norm: np.ndarray,
+    target: np.ndarray,
+    corpus_sha: str,
+    run_provenance: dict[str, Any],
+) -> dict[int, str]:
+    new_shas: dict[int, str] = {}
     for seed in seeds:
         t0 = time.time()
         print(f"[export-ens] seed={seed} training full-corpus model...", flush=True)
         model = _train_full_corpus(
             seed,
             feat_norm,
-            codec_block,
+            corpus["codec_block"],
             target,
             epochs=args.epochs,
             batch_size=args.batch_size,
             lr=args.lr,
             weight_decay=args.weight_decay,
         )
-
         onnx_name = f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
-        onnx_path = args.out_dir / onnx_name
-        sha = _export_onnx(model, onnx_path)
+        sha = _export_onnx(model, args.out_dir / onnx_name)
         new_shas[seed] = sha
         sidecar = _build_sidecar(
             seed,
             onnx_name=onnx_name,
             onnx_sha256=sha,
-            feature_mean=feature_mean.astype(float).tolist(),
-            feature_std=feature_std.astype(float).tolist(),
+            feature_mean=corpus["feature_mean"].astype(float).tolist(),
+            feature_std=corpus["feature_std"].astype(float).tolist(),
             cq_min=corpus["cq_min"],
             cq_max=corpus["cq_max"],
             n_rows=corpus["n_rows"],
@@ -390,26 +436,59 @@ def main(argv: list[str] | None = None) -> int:
         )
         sidecar_path = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
         write_manifest_json(sidecar_path, sidecar)
-        elapsed = time.time() - t0
         print(
             f"[export-ens] seed={seed} wrote {onnx_name} sha={sha[:16]}... "
-            f"+ sidecar ({elapsed:.1f}s)",
+            f"+ sidecar ({time.time() - t0:.1f}s)",
             flush=True,
         )
+    return new_shas
 
+
+def _patch_registry(out_dir: Path, new_shas: dict[int, str]) -> None:
+    reg_path = out_dir / "registry.json"
+    reg = json.loads(reg_path.read_text())
+    for entry in reg.get("models", []):
+        model_id = entry.get("id", "")
+        if model_id.startswith("fr_regressor_v2_ensemble_v1_seed"):
+            seed = int(model_id.rsplit("seed", 1)[-1])
+            if seed in new_shas:
+                entry["sha256"] = new_shas[seed]
+                entry["smoke"] = False
+    write_manifest_json(reg_path, reg)
+    print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    seeds = [int(seed) for seed in args.seeds.split(",") if seed.strip()]
+    status = _validate_inputs(args, seeds)
+    if status:
+        return status
+
+    promote = json.loads(args.promote_json.read_text())
+    if promote.get("verdict") != "PROMOTE":
+        print(
+            f"error: PROMOTE.json verdict is {promote.get('verdict')!r}, refusing "
+            "to flip non-PROMOTE seeds to production.",
+            file=sys.stderr,
+        )
+        return 3
+    corpus, feat_norm, target, corpus_sha = _load_export_inputs(args)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"corpus": args.corpus, "promote_json": args.promote_json},
+        outputs=_output_targets(args, seeds),
+    )
+    new_shas = _export_seeds(
+        args, seeds, promote, corpus, feat_norm, target, corpus_sha, run_provenance
+    )
     if args.update_registry:
-        reg_path = args.out_dir / "registry.json"
-        reg = json.loads(reg_path.read_text())
-        for entry in reg.get("models", []):
-            mid = entry.get("id", "")
-            if mid.startswith("fr_regressor_v2_ensemble_v1_seed"):
-                seed = int(mid.rsplit("seed", 1)[-1])
-                if seed in new_shas:
-                    entry["sha256"] = new_shas[seed]
-                    entry["smoke"] = False
-        write_manifest_json(reg_path, reg)
-        print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
-
+        _patch_registry(args.out_dir, new_shas)
     print("[export-ens] done. New sha256 per seed:")
     for seed, sha in sorted(new_shas.items()):
         print(f"  seed{seed}: {sha}")

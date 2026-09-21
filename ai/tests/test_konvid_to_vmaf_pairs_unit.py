@@ -12,6 +12,7 @@ import importlib.util
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -20,7 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "konvid_to_vmaf_pairs.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("kvp_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -53,11 +54,11 @@ def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
 
     calls: list[list[str]] = []
 
-    def fake_run(cmd, check=True, **kw):
+    def fake_run(cmd: Any, check: Any = True, **kw: Any) -> Any:
         calls.append(list(cmd))
         if cmd[0] == "ffprobe":
-            return subprocess.CompletedProcess(cmd, 0, stdout="320\n240\n5\n", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess[str](cmd, 0, stdout="320\n240\n5\n", stderr="")
+        return subprocess.CompletedProcess[str](cmd, 0, stdout="", stderr="")
 
     with patch.object(KVP.subprocess, "run", side_effect=fake_run):
         w, h, n = KVP._decode_yuv(src, out_yuv)
@@ -78,13 +79,13 @@ def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
 
     calls: list[list[str]] = []
 
-    def fake_run(cmd, check=True, **kw):
+    def fake_run(cmd: Any, check: Any = True, **kw: Any) -> Any:
         calls.append(list(cmd))
         # The first ffmpeg call writes the .dis.mp4 intermediate.
         if "-c:v" in cmd:
             inter = out_yuv.with_suffix(".dis.mp4")
             inter.write_bytes(b"\x00")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, 0, stdout="", stderr="")
 
     with patch.object(KVP.subprocess, "run", side_effect=fake_run):
         KVP._encode_dis(src, out_yuv, crf=28)
@@ -112,9 +113,9 @@ def test_run_vmaf_argv(tmp_path: Path) -> None:
 
     captured: list[list[str]] = []
 
-    def fake_run(cmd, check=True, **kw):
+    def fake_run(cmd: Any, check: Any = True, **kw: Any) -> Any:
         captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, 0, stdout="", stderr="")
 
     with patch.object(KVP.subprocess, "run", side_effect=fake_run):
         KVP._run_vmaf(binary, ref, dis, 320, 240, out_json, model)
@@ -135,8 +136,8 @@ def test_run_vmaf_argv(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _vmaf_json(frames: int = 3) -> dict:
-    out = {"frames": []}
+def _vmaf_json(frames: int = 3) -> dict[str, Any]:
+    out: dict[str, Any] = {"frames": []}
     for i in range(frames):
         m = {f"integer_{f}": 10.0 + i for f in KVP.DEFAULT_FEATURES}
         m["vmaf"] = 80.0 + i

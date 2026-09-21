@@ -36,11 +36,15 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 # Hoist the gate evaluator from scripts/ci/ so we share a single
 # source of truth for the threshold constants. ADR-0303 forbids
@@ -50,13 +54,22 @@ _SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
 sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 
-from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]  (sys.path edit above)
-    DEFAULT_ENSEMBLE_SIZE,
-    SHIP_GATE_MEAN_PLCC,
-    SHIP_GATE_PLCC_SPREAD_MAX,
-    evaluate_gate,
-    load_seed_jsons,
-)
+if TYPE_CHECKING:
+    from scripts.ci.ensemble_prod_gate import (
+        DEFAULT_ENSEMBLE_SIZE,
+        SHIP_GATE_MEAN_PLCC,
+        SHIP_GATE_PLCC_SPREAD_MAX,
+        evaluate_gate,
+        load_seed_jsons,
+    )
+else:
+    from ensemble_prod_gate import (
+        DEFAULT_ENSEMBLE_SIZE,
+        SHIP_GATE_MEAN_PLCC,
+        SHIP_GATE_PLCC_SPREAD_MAX,
+        evaluate_gate,
+        load_seed_jsons,
+    )
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
@@ -116,7 +129,7 @@ def _parse_seed_list(raw: str) -> list[int]:
     return out
 
 
-def snapshot_corpus(corpus_root: Path) -> dict:
+def snapshot_corpus(corpus_root: Path) -> dict[str, Any]:
     """Compute a deterministic sha256 over the corpus YUV file list.
 
     We hash the *sorted relative paths and sizes*, not the YUV bytes
@@ -159,15 +172,15 @@ def snapshot_corpus(corpus_root: Path) -> dict:
 
 
 def _build_verdict(
-    report: dict,
-    corpus_snapshot: dict,
+    report: dict[str, Any],
+    corpus_snapshot: dict[str, Any],
     seeds: list[int],
     loso_dir: Path,
     corpus_root: Path,
     mean_threshold: float,
     spread_max: float,
     argv: list[str],
-) -> dict:
+) -> dict[str, Any]:
     """Assemble the verdict payload written to PROMOTE.json / HOLD.json."""
     verdict_kind = "PROMOTE" if report["passed"] else "HOLD"
     out_path = loso_dir / f"{verdict_kind}.json"
@@ -211,22 +224,18 @@ def _build_verdict(
     }
 
 
-def _failure_aspects(report: dict) -> list[str]:
+def _failure_aspects(report: dict[str, Any]) -> list[str]:
     aspects: list[str] = []
     if not report["mean_plcc_pass"]:
-        aspects.append(
-            f"mean_plcc {report['mean_plcc']:.4f} < " f"{report['mean_plcc_threshold']:.4f}"
-        )
+        aspects.append(f"mean_plcc {report['mean_plcc']:.4f} < {report['mean_plcc_threshold']:.4f}")
     if not report["plcc_spread_pass"]:
-        aspects.append(
-            f"plcc_spread {report['plcc_spread']:.4f} > " f"{report['plcc_spread_max']:.4f}"
-        )
+        aspects.append(f"plcc_spread {report['plcc_spread']:.4f} > {report['plcc_spread_max']:.4f}")
     if not report["per_seed_pass"]:
         aspects.append(f"failing seeds {report['failing_seeds']}")
     return aspects or ["unknown"]
 
 
-def write_verdict(verdict: dict, loso_dir: Path) -> Path:
+def write_verdict(verdict: dict[str, Any], loso_dir: Path) -> Path:
     """Write the verdict to PROMOTE.json or HOLD.json under ``loso_dir``."""
     out_path = loso_dir / f"{verdict['verdict']}.json"
     write_manifest_json(out_path, verdict)
@@ -240,7 +249,7 @@ def run_validation(
     mean_threshold: float = SHIP_GATE_MEAN_PLCC,
     spread_max: float = SHIP_GATE_PLCC_SPREAD_MAX,
     argv: list[str] | None = None,
-) -> tuple[dict, Path]:
+) -> tuple[dict[str, Any], Path]:
     """Run the full validate flow; returns ``(verdict, written_path)``.
 
     Pure-function entry point so tests can drive it without argv.
@@ -280,8 +289,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.loso_dir.exists() or not args.loso_dir.is_dir():
         print(
-            f"[validate-ensemble] error: loso_dir not found or not a "
-            f"directory: {args.loso_dir}",
+            f"[validate-ensemble] error: loso_dir not found or not a directory: {args.loso_dir}",
             file=sys.stderr,
         )
         return 2

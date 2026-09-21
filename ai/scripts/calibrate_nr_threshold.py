@@ -46,12 +46,15 @@ import sys
 import tempfile
 from datetime import date
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -717,18 +720,7 @@ def calibrate(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = make_argument_parser(
-        prog="calibrate_nr_threshold.py",
-        description=(
-            "Calibrate the δ_fast threshold for NR early-elimination "
-            "(ADR-0615 / ADR-0624). "
-            "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
-            "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
-            "calibration_slope/intercept and calibration_threshold = 2σ "
-            "to model/tiny/nr_metric_v1.json."
-        ),
-    )
+def _add_calibration_data_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--corpus",
         type=Path,
@@ -760,6 +752,9 @@ def _build_parser() -> argparse.ArgumentParser:
             f"comma-separated CRF values to sweep (default: {','.join(str(c) for c in _DEFAULT_CRFS)})"
         ),
     )
+
+
+def _add_calibration_encoder_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--codec",
         default=_DEFAULT_CODEC,
@@ -795,6 +790,9 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="limit to the first N YUV files (useful for quick smoke runs)",
     )
+
+
+def _add_calibration_tool_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--vmaf-bin",
         default="vmaf",
@@ -833,6 +831,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "(default: auto)"
         ),
     )
+
+
+def _add_calibration_quality_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--min-calibration-samples",
         type=int,
@@ -875,6 +876,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="verbose logging",
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = make_argument_parser(
+        prog="calibrate_nr_threshold.py",
+        description=(
+            "Calibrate the δ_fast threshold for NR early-elimination "
+            "(ADR-0615 / ADR-0624). "
+            "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
+            "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
+            "calibration_slope/intercept and calibration_threshold = 2σ "
+            "to model/tiny/nr_metric_v1.json."
+        ),
+    )
+    _add_calibration_data_arguments(p)
+    _add_calibration_encoder_arguments(p)
+    _add_calibration_tool_arguments(p)
+    _add_calibration_quality_arguments(p)
     return p
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "export_ensemble_v2_seeds.py"
@@ -17,7 +18,7 @@ sys.modules["export_ensemble_v2_seeds"] = export_ensemble
 _SPEC.loader.exec_module(export_ensemble)
 
 
-def _sidecar(*, run_provenance: dict | None = None) -> dict:
+def _sidecar(*, run_provenance: dict[str, Any] | None = None) -> dict[str, Any]:
     promote = {
         "verdict": "PROMOTE",
         "gate": {
@@ -30,7 +31,7 @@ def _sidecar(*, run_provenance: dict | None = None) -> dict:
             "passed": True,
         },
     }
-    return export_ensemble._build_sidecar(
+    sidecar = export_ensemble._build_sidecar(
         0,
         onnx_name="fr_regressor_v2_ensemble_v1_seed0.onnx",
         onnx_sha256="0" * 64,
@@ -48,6 +49,8 @@ def _sidecar(*, run_provenance: dict | None = None) -> dict:
         promote=promote,
         run_provenance=run_provenance,
     )
+    assert isinstance(sidecar, dict)
+    return sidecar
 
 
 def test_build_sidecar_records_run_provenance_when_supplied() -> None:

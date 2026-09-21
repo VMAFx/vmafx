@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import onnx
 from onnx import TensorProto, helper
@@ -22,7 +23,7 @@ from vmaf_train.audit import EXPECTED_FR_FEATURE_COUNT, audit_model
 # ---------------------------------------------- shared helpers
 
 
-def _write_sidecar(onnx_path: Path, **over) -> None:
+def _write_sidecar(onnx_path: Path, **over: Any) -> None:
     doc = {
         "schema_version": 1,
         "name": onnx_path.stem,

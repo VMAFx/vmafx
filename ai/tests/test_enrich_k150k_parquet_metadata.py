@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,7 @@ _SCRIPT_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT_PATH = _SCRIPT_DIR / "enrich_k150k_parquet_metadata.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     sys.path.insert(0, str(_SCRIPT_DIR))
     spec = importlib.util.spec_from_file_location("enrich_k150k_parquet_metadata", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
@@ -78,10 +79,9 @@ def test_enrich_frame_overwrite_replaces_existing_metadata() -> None:
     assert stats["updated_cells"] == 1
 
 
-def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
+def _write_enrichment_inputs(tmp_path: Path) -> tuple[Path, Path]:
     features = tmp_path / "features.parquet"
     metadata = tmp_path / "chug.jsonl"
-    out = tmp_path / "enriched.parquet"
     pd.DataFrame(
         [
             {"clip_name": "clip-a.mp4", "mos": 3.0, "adm2_mean": 1.0},
@@ -110,6 +110,12 @@ def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+    return features, metadata
+
+
+def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
+    features, metadata = _write_enrichment_inputs(tmp_path)
+    out = tmp_path / "enriched.parquet"
 
     proc = subprocess.run(
         [

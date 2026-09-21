@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 STICKY_HEADER = "<!-- bisect-tracker -->"
 
@@ -85,7 +86,7 @@ def _format_wiring_broke_body(error_log: str, run_url: str) -> str:
     )
 
 
-def _format_body(report: dict, run_url: str) -> str:
+def _format_body(report: dict[str, Any], run_url: str) -> str:
     threshold = f"{report['threshold_kind']} = {report['threshold_value']:g}"
     n_models = report["n_models"]
     n_visited = len(report["steps"])

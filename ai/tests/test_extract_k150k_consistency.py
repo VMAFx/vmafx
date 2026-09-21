@@ -26,6 +26,7 @@ import argparse
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -34,7 +35,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_k150k_features.py"
 
 
-def _load_script_module():
+def _load_script_module() -> Any:
     """Import ``extract_k150k_features.py`` as a module despite its dashed dir.
 
     Returns the cached entry from sys.modules when the module was already loaded
@@ -57,7 +58,7 @@ def _load_script_module():
 
 
 @pytest.fixture()
-def k150k_module():
+def k150k_module() -> Any:
     return _load_script_module()
 
 
@@ -81,7 +82,9 @@ def _build_args(out_path: Path) -> argparse.Namespace:
     )
 
 
-def test_consistency_check_raises_on_done_parquet_mismatch(k150k_module, tmp_path: Path) -> None:
+def test_consistency_check_raises_on_done_parquet_mismatch(
+    k150k_module: Any, tmp_path: Path
+) -> None:
     """Restart no-op branch must raise when ``.done`` > parquet rows.
 
     Reproduces Bug-3 by hand:
@@ -151,7 +154,7 @@ def test_consistency_check_raises_on_done_parquet_mismatch(k150k_module, tmp_pat
     assert "parquet has only 50" in msg
 
 
-def test_consistency_check_passes_when_counts_match(k150k_module, tmp_path: Path) -> None:
+def test_consistency_check_passes_when_counts_match(k150k_module: Any, tmp_path: Path) -> None:
     """No-op branch must NOT raise when ``.done`` == parquet rows.
 
     Negative control for the test above: when accounting balances,
@@ -182,7 +185,7 @@ def test_consistency_check_passes_when_counts_match(k150k_module, tmp_path: Path
 
 
 def test_load_staging_rows_warns_on_malformed_lines(
-    k150k_module, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    k150k_module: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Fix 1: ``_load_staging_rows`` surfaces a count of skipped lines.
 
@@ -208,7 +211,7 @@ def test_load_staging_rows_warns_on_malformed_lines(
     assert "skipped 2 malformed line(s)" in captured.err
 
 
-def test_fsync_path_no_raise_on_missing(k150k_module, tmp_path: Path) -> None:
+def test_fsync_path_no_raise_on_missing(k150k_module: Any, tmp_path: Path) -> None:
     """``_fsync_path`` must tolerate missing files / unsupported FS."""
     # Missing file: the function should be a no-op (the parent dir fsync
     # still runs and succeeds on tmpfs/ext4/xfs).

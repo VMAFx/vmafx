@@ -600,7 +600,9 @@ def probe_encoder_available(
     encoder_spec = parse_encoder_runtime_token(encoder, ffmpeg_bin=ffmpeg_bin)
     adapter_encoder = encoder_spec.adapter
 
-    def _default_runner(argv: Sequence[str], timeout: float = 30.0):
+    def _default_runner(
+        argv: Sequence[str], timeout: float = 30.0
+    ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             argv,
             stdout=subprocess.PIPE,
@@ -752,7 +754,7 @@ def compare_codecs_sweep(
 
     # Build the work list, substituting unavailable rows before dispatch.
     pairs: list[tuple[str, float]] = [(c, float(t)) for c in encoders for t in target_vmafs]
-    results: list[RecommendResult] = [None] * len(pairs)  # type: ignore[list-item]
+    results: list[RecommendResult | None] = [None] * len(pairs)
     target_track: list[float] = [t for _, t in pairs]
 
     dispatch_pairs: list[tuple[int, str, float]] = []
@@ -823,12 +825,15 @@ def compare_codecs_sweep(
                     row_metadata,
                 )
 
+    if any(result is None for result in results):
+        raise RuntimeError("codec sweep left an undispatched result slot")
+    complete_results = tuple(result for result in results if result is not None)
     return SweepReport(
         src=str(src_path),
         target_vmafs=tuple(float(t) for t in target_vmafs),
         tool_version=TOOL_VERSION,
         wall_time_ms=(time.monotonic() - t0) * 1000.0,
-        rows=tuple(results),
+        rows=complete_results,
         row_targets=tuple(target_track),
     )
 
@@ -868,6 +873,47 @@ def emit_sweep_csv(report: SweepReport) -> str:
     return buf.getvalue()
 
 
+def _markdown_result_rows(report: SweepReport) -> list[str]:
+    lines: list[str] = []
+    for target, result in zip(report.row_targets, report.rows, strict=True):
+        status = "ok" if result.ok else f"fail: {result.error}"
+        lines.append(
+            f"| {result.codec} | {result.encoder_version or '—'} | {target:g} | "
+            f"{result.best_crf if result.best_crf >= 0 else '—'} | "
+            f"{result.bitrate_kbps:.1f} | {result.encode_time_ms:.1f} | "
+            f"{result.vmaf_score:.2f} | {status} |"
+        )
+    return lines
+
+
+def _markdown_summary_rows(report: SweepReport) -> list[str]:
+    by_codec: dict[str, dict[float, RecommendResult]] = {}
+    for target, result in zip(report.row_targets, report.rows, strict=True):
+        by_codec.setdefault(result.codec, {})[target] = result
+    lines = [
+        "",
+        "## Summary table",
+        "",
+        "| Codec | Encoder | "
+        + " | ".join(f"@ VMAF {target:g}" for target in report.target_vmafs)
+        + " | best preset |",
+        "|---|---|" + "|".join("---:" for _ in report.target_vmafs) + "|---|",
+    ]
+    for codec, per_target in by_codec.items():
+        first_row = next(iter(per_target.values()))
+        cells = [
+            f"{row.bitrate_kbps:.0f} kbps" if row is not None and row.ok else "—"
+            for target in report.target_vmafs
+            for row in [per_target.get(target)]
+        ]
+        lines.append(
+            f"| {codec} | {first_row.encoder_version or '—'} | "
+            + " | ".join(cells)
+            + " | adapter default |"
+        )
+    return lines
+
+
 def emit_sweep_markdown(report: SweepReport) -> str:
     """Render a :class:`SweepReport` as a markdown rate-quality table.
 
@@ -889,47 +935,8 @@ def emit_sweep_markdown(report: SweepReport) -> str:
         ),
         "|---|---|---:|---:|---:|---:|---:|---|",
     ]
-    for target, r in zip(report.row_targets, report.rows, strict=True):
-        if r.ok:
-            status = "ok"
-        else:
-            status = f"fail: {r.error}"
-        lines.append(
-            f"| {r.codec} | {r.encoder_version or '—'} | {target:g} | "
-            f"{r.best_crf if r.best_crf >= 0 else '—'} | "
-            f"{r.bitrate_kbps:.1f} | {r.encode_time_ms:.1f} | "
-            f"{r.vmaf_score:.2f} | {status} |"
-        )
-    # Summary table: bitrate at each target per codec.
-    by_codec: dict[str, dict[float, RecommendResult]] = {}
-    for target, r in zip(report.row_targets, report.rows, strict=True):
-        by_codec.setdefault(r.codec, {})[target] = r
-
-    lines.extend(
-        [
-            "",
-            "## Summary table",
-            "",
-            "| Codec | Encoder | "
-            + " | ".join(f"@ VMAF {t:g}" for t in report.target_vmafs)
-            + " | best preset |",
-            "|---|---|" + "|".join("---:" for _ in report.target_vmafs) + "|---|",
-        ]
-    )
-    for codec, per_target in by_codec.items():
-        cells: list[str] = []
-        first_row = next(iter(per_target.values()))
-        for t in report.target_vmafs:
-            r = per_target.get(t)
-            if r is None or not r.ok:
-                cells.append("—")
-            else:
-                cells.append(f"{r.bitrate_kbps:.0f} kbps")
-        lines.append(
-            f"| {codec} | {first_row.encoder_version or '—'} | "
-            + " | ".join(cells)
-            + " | adapter default |"
-        )
+    lines.extend(_markdown_result_rows(report))
+    lines.extend(_markdown_summary_rows(report))
     return "\n".join(lines) + "\n"
 
 

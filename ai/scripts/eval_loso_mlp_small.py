@@ -22,6 +22,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import onnx
@@ -105,7 +106,7 @@ def _load_clip(data_root: Path, clip: str) -> tuple[np.ndarray, np.ndarray]:
     return x, y
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--data-root",
@@ -138,40 +139,32 @@ def main() -> int:
         default=REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v1_medium.onnx",
     )
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "loso_eval")
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    args.out.mkdir(parents=True, exist_ok=True)
 
-    if not args.data_root.is_dir():
-        print(f"error: data-root not found: {args.data_root}", file=sys.stderr)
-        return 2
-
-    fold_models = {clip: args.loso_dir / f"fold_{clip}" / "mlp_small_final.onnx" for clip in CLIPS}
+def _validate_models(args: argparse.Namespace, fold_models: dict[str, Path]) -> bool:
     missing = [str(p) for p in fold_models.values() if not p.is_file()]
     if missing:
         print("error: missing fold ONNX:\n  " + "\n  ".join(missing), file=sys.stderr)
-        return 2
+        return False
     for tag, p in (
         ("mlp_small (baseline)", args.mlp_small_baseline),
         ("mlp_medium (baseline)", args.mlp_medium_baseline),
     ):
         if not p.is_file():
             print(f"error: missing {tag} ONNX: {p}", file=sys.stderr)
-            return 2
+            return False
+    return True
 
-    clip_xy: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for clip in CLIPS:
-        clip_xy[clip] = _load_clip(args.data_root, clip)
 
-    x_all = np.concatenate([clip_xy[c][0] for c in CLIPS], axis=0)
-    y_all = np.concatenate([clip_xy[c][1] for c in CLIPS], axis=0)
+def _load_clips(data_root: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    return {clip: _load_clip(data_root, clip) for clip in CLIPS}
 
-    json_out = args.out / "loso_mlp_small_eval.json"
-    md_out = args.out / "loso_mlp_small_eval.md"
 
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+def _build_report(args: argparse.Namespace, json_out: Path, md_out: Path) -> dict[str, Any]:
+    from aiutils.run_manifest import build_run_provenance
 
-    report: dict[str, object] = {
+    return {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "corpus": str(args.data_root),
         "loso_per_fold": {},
@@ -192,21 +185,28 @@ def main() -> int:
         ),
     }
 
+
+def _evaluate_loso(
+    report: dict[str, Any],
+    fold_models: dict[str, Path],
+    clip_xy: dict[str, tuple[np.ndarray, np.ndarray]],
+) -> None:
     print("[eval] === LOSO per-fold (each fold's mlp_small on its held-out clip) ===", flush=True)
-    plccs, sroccs, rmses = [], [], []
+    plccs: list[float] = []
+    sroccs: list[float] = []
+    rmses: list[float] = []
     for clip in CLIPS:
-        sess = _load_session(fold_models[clip])
-        x, y = clip_xy[clip]
-        m = _eval(sess, x, y)
-        report["loso_per_fold"][clip] = m  # type: ignore[index]
-        plccs.append(m["plcc"])
-        sroccs.append(m["srocc"])
-        rmses.append(m["rmse"])
+        metrics = _eval(_load_session(fold_models[clip]), *clip_xy[clip])
+        report["loso_per_fold"][clip] = metrics
+        plccs.append(metrics["plcc"])
+        sroccs.append(metrics["srocc"])
+        rmses.append(metrics["rmse"])
         print(
-            f"[eval]   fold={clip:14s} n={m['n']:4d} PLCC={m['plcc']:.4f} SROCC={m['srocc']:.4f} RMSE={m['rmse']:.3f}",
+            f"[eval]   fold={clip:14s} n={metrics['n']:4.0f} "
+            f"PLCC={metrics['plcc']:.4f} SROCC={metrics['srocc']:.4f} "
+            f"RMSE={metrics['rmse']:.3f}",
             flush=True,
         )
-
     report["loso_aggregate"] = {
         "mean_plcc": float(np.mean(plccs)),
         "mean_srocc": float(np.mean(sroccs)),
@@ -216,64 +216,108 @@ def main() -> int:
         "std_rmse": float(np.std(rmses, ddof=1)),
     }
     agg = report["loso_aggregate"]
-    print(f"[eval]   LOSO mean    PLCC={agg['mean_plcc']:.4f} SROCC={agg['mean_srocc']:.4f} RMSE={agg['mean_rmse']:.3f}", flush=True)  # type: ignore[index]
-    print(f"[eval]   LOSO std     PLCC={agg['std_plcc']:.4f} SROCC={agg['std_srocc']:.4f} RMSE={agg['std_rmse']:.3f}", flush=True)  # type: ignore[index]
+    print(
+        f"[eval]   LOSO mean    PLCC={agg['mean_plcc']:.4f} "
+        f"SROCC={agg['mean_srocc']:.4f} RMSE={agg['mean_rmse']:.3f}\n"
+        f"[eval]   LOSO std     PLCC={agg['std_plcc']:.4f} "
+        f"SROCC={agg['std_srocc']:.4f} RMSE={agg['std_rmse']:.3f}",
+        flush=True,
+    )
 
+
+def _evaluate_baselines(
+    report: dict[str, Any],
+    args: argparse.Namespace,
+    clip_xy: dict[str, tuple[np.ndarray, np.ndarray]],
+) -> None:
+    x_all = np.concatenate([clip_xy[clip][0] for clip in CLIPS], axis=0)
+    y_all = np.concatenate([clip_xy[clip][1] for clip in CLIPS], axis=0)
     print("[eval] === Baselines (per-clip + all-clips concat) ===", flush=True)
     for tag, path in (
         ("mlp_small_v1", args.mlp_small_baseline),
         ("mlp_medium_v1", args.mlp_medium_baseline),
     ):
-        sess = _load_session(path)
-        per_clip: dict[str, dict[str, float]] = {}
-        for clip in CLIPS:
-            x, y = clip_xy[clip]
-            per_clip[clip] = _eval(sess, x, y)
-        all_metrics = _eval(sess, x_all, y_all)
-        report["baselines"][tag] = {  # type: ignore[index]
+        session = _load_session(path)
+        per_clip = {clip: _eval(session, *clip_xy[clip]) for clip in CLIPS}
+        all_metrics = _eval(session, x_all, y_all)
+        report["baselines"][tag] = {
             "model_path": str(path),
             "per_clip": per_clip,
             "all_clips_concat": all_metrics,
         }
-        ac = all_metrics
         print(
-            f"[eval]   baseline={tag:14s} all-concat n={ac['n']:5d} PLCC={ac['plcc']:.4f} SROCC={ac['srocc']:.4f} RMSE={ac['rmse']:.3f}",
+            f"[eval]   baseline={tag:14s} all-concat n={all_metrics['n']:5.0f} "
+            f"PLCC={all_metrics['plcc']:.4f} SROCC={all_metrics['srocc']:.4f} "
+            f"RMSE={all_metrics['rmse']:.3f}",
             flush=True,
         )
 
+
+def _markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# LOSO evaluation — `mlp_small` on Netflix corpus\n",
+        f"Generated: {report['generated']}\n",
+        "## Per-fold (each fold's `mlp_small_final.onnx` on its held-out clip)\n",
+        "| fold | n | PLCC | SROCC | RMSE |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for clip in CLIPS:
+        metrics = report["loso_per_fold"][clip]
+        lines.append(
+            f"| {clip} | {metrics['n']} | {metrics['plcc']:.4f} | "
+            f"{metrics['srocc']:.4f} | {metrics['rmse']:.3f} |"
+        )
+    agg = report["loso_aggregate"]
+    lines.append(
+        f"| **LOSO mean ± std** | — | {agg['mean_plcc']:.4f} ± {agg['std_plcc']:.4f} | "
+        f"{agg['mean_srocc']:.4f} ± {agg['std_srocc']:.4f} | "
+        f"{agg['mean_rmse']:.3f} ± {agg['std_rmse']:.3f} |\n"
+    )
+    lines.append("## Baselines (single-split `val=Tennis` models, evaluated on every clip)\n")
+    for tag in ("mlp_small_v1", "mlp_medium_v1"):
+        baseline = report["baselines"][tag]
+        lines.extend(
+            [
+                f"### `{tag}` ({baseline['model_path']})\n",
+                "| split | n | PLCC | SROCC | RMSE |",
+                "|---|---:|---:|---:|---:|",
+            ]
+        )
+        for clip in CLIPS:
+            metrics = baseline["per_clip"][clip]
+            lines.append(
+                f"| {clip} | {metrics['n']} | {metrics['plcc']:.4f} | "
+                f"{metrics['srocc']:.4f} | {metrics['rmse']:.3f} |"
+            )
+        metrics = baseline["all_clips_concat"]
+        lines.append(
+            f"| **all-clips concat** | {metrics['n']} | {metrics['plcc']:.4f} | "
+            f"{metrics['srocc']:.4f} | {metrics['rmse']:.3f} |\n"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    args = _parse_args()
+    args.out.mkdir(parents=True, exist_ok=True)
+    if not args.data_root.is_dir():
+        print(f"error: data-root not found: {args.data_root}", file=sys.stderr)
+        return 2
+    fold_models = {clip: args.loso_dir / f"fold_{clip}" / "mlp_small_final.onnx" for clip in CLIPS}
+    if not _validate_models(args, fold_models):
+        return 2
+
+    clip_xy = _load_clips(args.data_root)
+    json_out = args.out / "loso_mlp_small_eval.json"
+    md_out = args.out / "loso_mlp_small_eval.md"
+    report = _build_report(args, json_out, md_out)
+    _evaluate_loso(report, fold_models, clip_xy)
+    _evaluate_baselines(report, args, clip_xy)
+    from aiutils.run_manifest import write_manifest_json
+
     write_manifest_json(json_out, report)
     print(f"[eval] wrote {json_out}", flush=True)
-
-    with md_out.open("w", encoding="utf-8") as f:
-        f.write("# LOSO evaluation — `mlp_small` on Netflix corpus\n\n")
-        f.write(f"Generated: {report['generated']}\n\n")
-        f.write("## Per-fold (each fold's `mlp_small_final.onnx` on its held-out clip)\n\n")
-        f.write("| fold | n | PLCC | SROCC | RMSE |\n|---|---:|---:|---:|---:|\n")
-        for clip in CLIPS:
-            m = report["loso_per_fold"][clip]  # type: ignore[index]
-            f.write(
-                f"| {clip} | {m['n']} | {m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |\n"
-            )
-        a = report["loso_aggregate"]
-        f.write(
-            f"| **LOSO mean ± std** | — | "
-            f"{a['mean_plcc']:.4f} ± {a['std_plcc']:.4f} | "  # type: ignore[index]
-            f"{a['mean_srocc']:.4f} ± {a['std_srocc']:.4f} | "  # type: ignore[index]
-            f"{a['mean_rmse']:.3f} ± {a['std_rmse']:.3f} |\n\n"  # type: ignore[index]
-        )
-        f.write("## Baselines (single-split `val=Tennis` models, evaluated on every clip)\n\n")
-        for tag in ("mlp_small_v1", "mlp_medium_v1"):
-            f.write(f"### `{tag}` ({report['baselines'][tag]['model_path']})\n\n")  # type: ignore[index]
-            f.write("| split | n | PLCC | SROCC | RMSE |\n|---|---:|---:|---:|---:|\n")
-            for clip in CLIPS:
-                m = report["baselines"][tag]["per_clip"][clip]  # type: ignore[index]
-                f.write(
-                    f"| {clip} | {m['n']} | {m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |\n"
-                )
-            ac = report["baselines"][tag]["all_clips_concat"]  # type: ignore[index]
-            f.write(
-                f"| **all-clips concat** | {ac['n']} | {ac['plcc']:.4f} | {ac['srocc']:.4f} | {ac['rmse']:.3f} |\n\n"
-            )
+    md_out.write_text(_markdown(report), encoding="utf-8")
     print(f"[eval] wrote {md_out}", flush=True)
     return 0
 

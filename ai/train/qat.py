@@ -48,9 +48,10 @@ the `vmaf-train qat` subcommand.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 
@@ -80,7 +81,9 @@ class QatConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
-def _example_input_for(model: Any, default_shape: tuple[int, ...] = (1, 1, 32, 32)):
+def _example_input_for(
+    model: Any, default_shape: tuple[int, ...] = (1, 1, 32, 32)
+) -> tuple[Any, ...]:
     """Best-effort example-input synthesis for FX trace.
 
     Each shipped tiny-AI Lightning module has a documented input
@@ -98,7 +101,7 @@ def _example_input_for(model: Any, default_shape: tuple[int, ...] = (1, 1, 32, 3
     return (torch.zeros(default_shape, dtype=torch.float32),)
 
 
-def _build_qconfig_mapping():
+def _build_qconfig_mapping() -> Any:
     """Default QAT qconfig: symmetric per-tensor act + per-channel weight.
 
     Uses `get_default_qat_qconfig_mapping("x86")` per
@@ -197,7 +200,7 @@ def _ort_static_quantize(
         def __init__(self, samples: list[dict[str, np.ndarray]]) -> None:
             self._iter = iter(samples)
 
-        def get_next(self):  # type: ignore[override]
+        def get_next(self) -> dict[str, np.ndarray] | None:
             return next(self._iter, None)
 
     int8_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,7 +221,7 @@ def _qat_fine_tune(
     *,
     epochs: int,
     lr: float,
-    loss_fn,
+    loss_fn: Callable[[Any, Any], Any],
     device: str,
 ) -> None:
     """Minimal QAT fine-tune loop.
@@ -272,14 +275,14 @@ class QatResult:
 
 def run_qat(
     *,
-    model_factory,
+    model_factory: Callable[[], Any],
     qat_cfg: QatConfig,
     example_inputs: tuple[Any, ...] | None = None,
     input_names: list[str] | None = None,
     output_names: list[str] | None = None,
     dynamic_axes: dict[str, dict[int, str]] | None = None,
-    train_loader_factory=None,
-    loss_fn=None,
+    train_loader_factory: Callable[[], Iterable[tuple[Any, Any]]] | None = None,
+    loss_fn: Callable[[Any, Any], Any] | None = None,
     calibration_samples: list[dict[str, np.ndarray]] | None = None,
     device: str | None = None,
     opset: int = 17,
@@ -384,8 +387,11 @@ def run_qat(
             "for top-level Sequentials or untraceable control flow."
         )
 
-    fp32_onnx = qat_cfg.output_fp32_onnx or qat_cfg.output_int8_onnx.with_name(
-        qat_cfg.output_int8_onnx.stem.replace(".int8", "") + ".qat.fp32.onnx"
+    int8_onnx = qat_cfg.output_int8_onnx
+    if int8_onnx is None:
+        raise ValueError("qat_cfg.output_int8_onnx must be set")
+    fp32_onnx = qat_cfg.output_fp32_onnx or int8_onnx.with_name(
+        int8_onnx.stem.replace(".int8", "") + ".qat.fp32.onnx"
     )
     _export_fp32_onnx(
         fp32_export_target,
@@ -404,9 +410,6 @@ def run_qat(
             input_names[0], shape, qat_cfg.n_calibration, seed=qat_cfg.seed
         )
 
-    int8_onnx = qat_cfg.output_int8_onnx
-    if int8_onnx is None:
-        raise ValueError("qat_cfg.output_int8_onnx must be set")
     _ort_static_quantize(fp32_onnx, int8_onnx, calibration_samples)
 
     return QatResult(

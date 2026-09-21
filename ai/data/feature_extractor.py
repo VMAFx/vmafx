@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -172,7 +173,7 @@ class FeatureExtractionResult:
     per_frame: np.ndarray  # shape (n_frames, n_features), float32
     n_frames: int
 
-    def to_jsonable(self) -> dict:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "feature_names": list(self.feature_names),
             "per_frame": self.per_frame.tolist(),
@@ -180,7 +181,7 @@ class FeatureExtractionResult:
         }
 
     @classmethod
-    def from_jsonable(cls, payload: dict) -> "FeatureExtractionResult":
+    def from_jsonable(cls, payload: dict[str, Any]) -> "FeatureExtractionResult":
         per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
         return cls(
             feature_names=tuple(payload["feature_names"]),
@@ -215,16 +216,18 @@ def _extractors_for(metrics: tuple[str, ...]) -> list[str]:
     return seen
 
 
-def _lookup(metrics: dict, name: str):
+def _lookup(metrics: dict[str, Any], name: str) -> int | float | None:
     """libvmaf may emit ``integer_<name>`` for fixed-point kernels."""
-    if name in metrics:
-        return metrics[name]
-    val = metrics.get(f"integer_{name}")
-    if val is not None:
-        return val
+    value = metrics.get(name, metrics.get(f"integer_{name}"))
+    if value is not None:
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"feature {name!r} must be numeric")
+        return value
     prefix = f"integer_{name}_"
     for k, v in metrics.items():
         if k.startswith(prefix) and v is not None:
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                raise ValueError(f"feature {k!r} must be numeric")
             return v
     return None
 
@@ -240,7 +243,7 @@ def _run_vmaf_json(
     bitdepth: int = 8,
     features: tuple[str, ...] = DEFAULT_FEATURES,
     extra_args: tuple[str, ...] = (),
-) -> dict:
+) -> dict[str, Any]:
     feat_args: list[str] = []
     for f in _extractors_for(features):
         feat_args += ["--feature", f]
@@ -268,7 +271,10 @@ def _run_vmaf_json(
             *extra_args,
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return json.loads(out_path.read_text())
+        payload: object = json.loads(out_path.read_text())
+        if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
+            raise ValueError("vmaf output must be a string-keyed JSON object")
+        return {key: value for key, value in payload.items() if isinstance(key, str)}
     finally:
         out_path.unlink(missing_ok=True)
 
@@ -306,8 +312,15 @@ def extract_features(
         features=features,
     )
     rows: list[list[float]] = []
-    for frame in doc.get("frames", []):
+    frames = doc.get("frames", [])
+    if not isinstance(frames, list):
+        raise ValueError("vmaf frames field must be a list")
+    for frame in frames:
+        if not isinstance(frame, dict):
+            raise ValueError("vmaf frame entries must be objects")
         fmetrics = frame.get("metrics", {})
+        if not isinstance(fmetrics, dict) or not all(isinstance(key, str) for key in fmetrics):
+            raise ValueError("vmaf frame metrics must be a string-keyed object")
         row = []
         for f in features:
             v = _lookup(fmetrics, f)

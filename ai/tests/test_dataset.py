@@ -9,6 +9,7 @@ runs without a built ``vmaf`` binary or the real corpus.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -20,13 +21,13 @@ from ai.data.scores import resolve_teacher_model  # noqa: E402
 from ai.train.dataset import DEFAULT_VAL_SOURCE, NetflixFrameDataset  # noqa: E402
 
 
-def _make_payload(pair, n_frames=3, seed=0):  # type: ignore[no-untyped-def]
+def _make_payload(pair: Any, n_frames: Any = 3, seed: Any = 0) -> Any:
     rng = np.random.default_rng(seed)
     feat = rng.standard_normal((n_frames, len(DEFAULT_FEATURES))).astype(np.float32)
     score = rng.uniform(0, 100, size=n_frames).astype(np.float32)
     return {
         "features": {
-            "feature_names": list(DEFAULT_FEATURES),
+            "feature_names": list[Any](DEFAULT_FEATURES),
             "per_frame": feat.tolist(),
             "n_frames": int(n_frames),
         },
@@ -39,7 +40,7 @@ def _make_payload(pair, n_frames=3, seed=0):  # type: ignore[no-untyped-def]
 
 
 def test_dataset_train_split_excludes_val_source(
-    mock_corpus: Path, tmp_path: Path, monkeypatch
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     ds = NetflixFrameDataset(
@@ -54,7 +55,9 @@ def test_dataset_train_split_excludes_val_source(
     assert sources == {"AlphaSrc"}
 
 
-def test_dataset_val_split_only_val_source(mock_corpus: Path, tmp_path: Path, monkeypatch) -> None:
+def test_dataset_val_split_only_val_source(
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     ds = NetflixFrameDataset(
         mock_corpus,
@@ -73,7 +76,7 @@ def test_dataset_default_val_source_is_tennis() -> None:
 
 
 def test_dataset_returns_tensor_with_correct_shape(
-    mock_corpus: Path, tmp_path: Path, monkeypatch
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     ds = NetflixFrameDataset(
@@ -89,7 +92,9 @@ def test_dataset_returns_tensor_with_correct_shape(
     assert y.dtype == torch.float32
 
 
-def test_dataset_numpy_arrays_round_trip(mock_corpus: Path, tmp_path: Path, monkeypatch) -> None:
+def test_dataset_numpy_arrays_round_trip(
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     ds = NetflixFrameDataset(
         mock_corpus,
@@ -105,11 +110,13 @@ def test_dataset_numpy_arrays_round_trip(mock_corpus: Path, tmp_path: Path, monk
     assert y.dtype == np.float32
 
 
-def test_dataset_caches_payloads(mock_corpus: Path, tmp_path: Path, monkeypatch) -> None:
+def test_dataset_caches_payloads(
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     calls = {"n": 0}
 
-    def provider(p):
+    def provider(p: Any) -> Any:
         calls["n"] += 1
         return _make_payload(p, n_frames=2, seed=0)
 
@@ -132,18 +139,18 @@ def test_dataset_caches_payloads(mock_corpus: Path, tmp_path: Path, monkeypatch)
 
 
 def test_dataset_recomputes_cache_from_other_or_unknown_teacher(
-    mock_corpus: Path, tmp_path: Path, monkeypatch
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ADR-1173: a cache entry stamped with another teacher, or a legacy entry
     with no stamp at all, is stale -- it is recomputed, never relabelled."""
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     calls = {"n": 0}
 
-    def provider(p):
+    def provider(p: Any) -> Any:
         calls["n"] += 1
         return _make_payload(p, n_frames=2, seed=0)
 
-    def build():
+    def build() -> Any:
         return NetflixFrameDataset(
             mock_corpus,
             split="train",

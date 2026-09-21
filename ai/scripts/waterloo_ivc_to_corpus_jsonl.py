@@ -31,11 +31,17 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -268,8 +274,8 @@ def run(
     ffprobe_bin: str = "ffprobe",
     curl_bin: str = "curl",
     corpus_version: str = _DEFAULT_CORPUS_VERSION,
-    runner=subprocess.run,
-    now_fn=utc_now_iso,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    now_fn: Callable[[], str] = utc_now_iso,
     attrition_warn_threshold: float = 0.10,
     download_timeout_s: int = 120,
     min_csv_rows: int = _WATERLOO_IVC_MIN_ROWS,
@@ -356,47 +362,29 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    args = _build_parser().parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.output.with_suffix(".manifest.json")
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+def _run_with_args(args: argparse.Namespace, max_rows: int | None) -> RunStats:
+    return run(
+        waterloo_ivc_dir=args.waterloo_ivc_dir,
+        output=args.output,
+        manifest_csv=args.manifest_csv,
+        progress_path=args.progress_path,
+        clips_subdir=args.clips_subdir,
+        clip_suffix=args.clip_suffix,
+        ffprobe_bin=args.ffprobe_bin,
+        curl_bin=args.curl_bin,
+        corpus_version=args.corpus_version,
+        attrition_warn_threshold=args.attrition_warn_threshold,
+        download_timeout_s=args.download_timeout_s,
+        max_rows=max_rows,
     )
-    if shutil.which(args.curl_bin) is None:
-        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
-    max_rows: int | None = None if args.full else args.max_rows
-    try:
-        stats = run(
-            waterloo_ivc_dir=args.waterloo_ivc_dir,
-            output=args.output,
-            manifest_csv=args.manifest_csv,
-            progress_path=args.progress_path,
-            clips_subdir=args.clips_subdir,
-            clip_suffix=args.clip_suffix,
-            ffprobe_bin=args.ffprobe_bin,
-            curl_bin=args.curl_bin,
-            corpus_version=args.corpus_version,
-            attrition_warn_threshold=args.attrition_warn_threshold,
-            download_timeout_s=args.download_timeout_s,
-            max_rows=max_rows,
-        )
-    except FileNotFoundError as exc:
-        msg = str(exc)
-        # Append acquisition hint when the corpus root is missing so
-        # operators know where to get the data (test asserts on the hint).
-        if "corpus directory not found" in msg.lower():
-            msg += (
-                "\n  Obtain the dataset from https://ivc.uwaterloo.ca/database/4KVQA.html"
-                " and drop scores.txt at <waterloo-ivc-dir>/manifest.csv."
-            )
-        print(f"error: {msg}", file=sys.stderr)
-        return 2
-    except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+
+
+def _write_run_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    stats: RunStats,
+    max_rows: int | None,
+) -> None:
     write_ingest_manifest(
         args.manifest_out,
         schema="waterloo-ivc-corpus-jsonl-manifest-v1",
@@ -422,6 +410,37 @@ def main(argv: list[str] | None = None) -> int:
             "attrition_warn_threshold": args.attrition_warn_threshold,
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    if shutil.which(args.curl_bin) is None:
+        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
+    max_rows: int | None = None if args.full else args.max_rows
+    try:
+        stats = _run_with_args(args, max_rows)
+    except FileNotFoundError as exc:
+        msg = str(exc)
+        # Append acquisition hint when the corpus root is missing so
+        # operators know where to get the data (test asserts on the hint).
+        if "corpus directory not found" in msg.lower():
+            msg += (
+                "\n  Obtain the dataset from https://ivc.uwaterloo.ca/database/4KVQA.html"
+                " and drop scores.txt at <waterloo-ivc-dir>/manifest.csv."
+            )
+        print(f"error: {msg}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    _write_run_manifest(args, raw_argv, stats, max_rows)
     return 0
 
 

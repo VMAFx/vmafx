@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Exercise merge-base ownership and fail-closed pre-push selection with real Git."""
+"""Pin the fail-closed, complete-scope mypy contract with a disposable Git tree."""
 
 from __future__ import annotations
 
@@ -15,13 +15,16 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("pre-push-mypy.py").resolve()
-CONFIG = SCRIPT.parents[2] / ".pre-commit-config.yaml"
+ROOT = SCRIPT.parents[2]
+CONFIG = ROOT / ".pre-commit-config.yaml"
+MAKEFILE = ROOT / "Makefile"
+WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
+MYPY_CONFIG = ROOT / "pyproject.toml"
 GIT = shutil.which("git") or "/usr/bin/git"
-PRE_COMMIT = shutil.which("pre-commit") or "/usr/bin/pre-commit"
 
 
 def hook_config(identifier: str) -> str:
-    """Extract one hook for execution with the actual installed framework."""
+    """Extract one local hook from the shipped pre-commit configuration."""
     return CONFIG.read_text().split(f"      - id: {identifier}\n", 1)[1].split("      - id:", 1)[0]
 
 
@@ -33,52 +36,42 @@ class MypyScope(unittest.TestCase):
         self.root = self.directory / "repo"
         self.root.mkdir()
         self.environment = {
-            k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "PRE_COMMIT_"))
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_", "PRE_COMMIT_", "MYPY_"))
         }
         self.environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         self.git("init", "-q", "--initial-branch=master")
         self.git("config", "user.name", "Fixture")
         self.git("config", "user.email", "fixture@example.invalid")
-        self.write("scripts/api.py", "def value() -> int:\n    return 1\n")
-        # Present at the merge base and never touched: the inherited finding.
-        self.write("scripts/debt.py", 'unchanged: int = "debt"  # BAD\n')
-        self.commit("base")
-        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
-        self.git("switch", "-qc", "feature")
+        self.write("ai/src/vmaf_train/model.py")
+        self.write("ai/scripts/train.py")
+        self.write("scripts/check.py")
+        self.write("tools/outside.py", "outside: int = 1  # BAD\n")
+        self.write("scripts/note.txt", "BAD\n")
+        self.commit("fixture")
+
         binary = self.directory / "bin"
         binary.mkdir()
         self.checker = binary / "mypy"
-        self.receipt = self.directory / "checked.json"
         self.calls = self.directory / "calls.jsonl"
-        # A stand-in for mypy: it records its argument vector, and reports a
-        # finding for every file whose content carries the BAD marker. Findings
-        # therefore follow file content, so the same stand-in produces the
-        # branch's findings at HEAD and the inherited ones at the merge base.
         self.checker.write_text(
             f"#!{sys.executable}\n"
             "import json, os, pathlib, sys\n"
-            "args = [a for a in sys.argv[1:] if not a.startswith('--')]\n"
-            'pathlib.Path(os.environ["CHECKED_PATH"]).write_text(json.dumps(args))\n'
-            "with open(os.environ['CHECKED_CALLS'], 'a') as handle:\n"
+            "with open(os.environ['MYPY_CALLS'], 'a') as handle:\n"
             "    handle.write(json.dumps(sys.argv[1:]) + chr(10))\n"
             "found = 0\n"
-            "for name in args:\n"
-            "    text = pathlib.Path(name).read_text()\n"
-            "    for number, line in enumerate(text.splitlines(), start=1):\n"
+            "for name in (a for a in sys.argv[1:] if not a.startswith('--')):\n"
+            "    for number, line in enumerate(pathlib.Path(name).read_text().splitlines(), 1):\n"
             "        if 'BAD' in line:\n"
             "            found += 1\n"
-            "            message = line.split('BAD', 1)[1].strip(': ') or 'planted finding'\n"
-            "            print(f'{name}:{number}: error: {message}  [assignment]')\n"
-            'print("CHECKED", *args)\n'
-            "status = int(os.environ.get('CHECKER_STATUS', '0'))\n"
-            "raise SystemExit(status or (1 if found else 0))\n"
+            "            print(f'{name}:{number}: error: planted finding  [assignment]')\n"
+            "status = int(os.environ.get('MYPY_STATUS', '0'))\n"
+            "raise SystemExit(status or bool(found))\n"
         )
         self.checker.chmod(0o700)
         self.environment["PATH"] = str(binary) + os.pathsep + self.environment["PATH"]
-        self.environment["CHECKED_PATH"] = str(self.receipt)
-        self.environment["CHECKED_CALLS"] = str(self.calls)
-        # Keep the baseline worktree the hook creates inside the fixture.
-        self.environment["XDG_CACHE_HOME"] = str(self.directory / "cache")
+        self.environment["MYPY_CALLS"] = str(self.calls)
 
     def git(self, *args: str) -> str:
         return subprocess.check_output(  # noqa: S603 -- disposable Git fixture
@@ -108,229 +101,100 @@ class MypyScope(unittest.TestCase):
             check=False,
         )
 
-    def run_framework(self, from_ref: str, to_ref: str) -> subprocess.CompletedProcess[str]:
-        """Drive the shipped hook configuration through the installed framework."""
-        return subprocess.run(  # noqa: S603 -- installed framework, disposable Git fixture
+    def calls_checked(self) -> list[list[str]]:
+        return [json.loads(line) for line in self.calls.read_text().splitlines()]
+
+    def test_every_tracked_owned_python_file_is_checked_on_every_run(self) -> None:
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        checked = {
+            argument
+            for call in self.calls_checked()
+            for argument in call
+            if not argument.startswith("--")
+        }
+        self.assertEqual(
+            checked,
+            {"ai/scripts/train.py", "ai/src/vmaf_train/model.py", "scripts/check.py"},
+        )
+
+    def test_inherited_finding_blocks_without_a_baseline_exemption(self) -> None:
+        self.write("scripts/check.py", 'owned: int = "debt"  # BAD\n')
+        self.commit("existing finding")
+        result = self.run_hook()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("scripts/check.py", result.stdout + result.stderr)
+
+    def test_each_import_root_has_an_explicit_package_base_invocation(self) -> None:
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.calls_checked()
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all("--explicit-package-bases" in call for call in calls))
+        self.assertEqual(
+            [[argument for argument in call if not argument.startswith("--")] for call in calls],
             [
-                PRE_COMMIT,
-                "run",
-                "mypy-local",
-                "--hook-stage",
-                "pre-push",
-                "--from-ref",
-                from_ref,
-                "--to-ref",
-                to_ref,
+                ["ai/src/vmaf_train/model.py"],
+                ["ai/scripts/train.py"],
+                ["scripts/check.py"],
             ],
-            cwd=self.root,
-            env=self.environment,
-            capture_output=True,
-            text=True,
-            check=False,
         )
 
-    def assert_checked(self, expected: list[str], status: int = 0) -> None:
+    def test_checker_failure_without_diagnostics_blocks(self) -> None:
+        self.environment["MYPY_STATUS"] = "7"
         result = self.run_hook()
-        self.assertEqual(result.returncode, status, result.stderr)
-        self.assertEqual(json.loads(self.receipt.read_text()), expected)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_complete_owned_scope_excludes_master_and_other_packages(self) -> None:
-        for filename in (
-            "ai/owned.py",
-            "scripts/owned.py",
-            "tools/other.py",
-            "root.py",
-            "ai/note.txt",
-        ):
-            self.write(filename)
-        self.commit("owned files")
-        self.assert_checked(["ai/owned.py", "scripts/owned.py"])
-        self.assertEqual(self.run_hook("ai/owned.py").returncode, 0)
-        self.assertEqual(json.loads(self.receipt.read_text()), ["ai/owned.py", "scripts/owned.py"])
-
-    def test_rebase_rechecks_unchanged_owned_file_through_real_pre_commit(self) -> None:
-        self.write("scripts/owned.py", "from api import value\nowned: int = value()  # BAD\n")
-        # Use the shipped hook configuration so missing always_run or restored
-        # filename intersection is caught by the framework, not just unit calls.
-        hook = hook_config("mypy-local")
-        self.write("scripts/git-hooks/pre-push-mypy.py", SCRIPT.read_text())
-        self.write(
-            ".pre-commit-config.yaml",
-            "repos:\n  - repo: local\n    hooks:\n      - id: mypy-local\n" + hook,
-        )
-        self.commit("feature with integer consumer")
-        old_tip = self.git("rev-parse", "HEAD")
-        self.git("switch", "-q", "master")
-        self.write("scripts/api.py", 'def value() -> str:\n    return "changed"\n')
-        self.commit("master changes dependency type")
-        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
-        self.git("switch", "-q", "feature")
-        self.git("rebase", "master")
-        self.assertEqual(self.git("diff", "--name-only", old_tip, "HEAD"), "scripts/api.py")
-        self.assertEqual(self.git("diff", old_tip, "HEAD", "--", "scripts/owned.py"), "")
-        result = self.run_framework(old_tip, "HEAD")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertEqual(
-            json.loads(self.receipt.read_text()),
-            ["scripts/git-hooks/pre-push-mypy.py", "scripts/owned.py"],
-        )
-        # An empty old-tip/new-tip file list must still recheck the owned set.
-        result = self.run_framework("HEAD", "HEAD")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("scripts/owned.py", result.stdout)
-
-    def test_type_change_from_symlink_is_checked(self) -> None:
-        link = self.root / "scripts/owned.py"
-        link.symlink_to("api.py")
-        self.commit("base symlink")
-        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
-        link.unlink()
-        self.write("scripts/owned.py", 'owned: int = "invalid"  # BAD\n')
-        self.commit("replace link with source")
-        self.assertEqual(
-            self.git("diff", "--name-status", "origin/master", "HEAD"), "T\tscripts/owned.py"
-        )
-        self.assert_checked(["scripts/owned.py"], 1)
-
-    def test_symlink_keeps_lexical_identity(self) -> None:
-        (self.root / "scripts/owned.py").symlink_to("debt.py")
-        self.commit("new link to unchanged debt")
-        # The finding is inherited content, but `scripts/owned.py` is a new path:
-        # it has nothing at the merge base, so the finding counts as introduced.
-        self.assert_checked(["scripts/owned.py"], 1)
-
-    def test_unsafe_or_missing_symlink_target_fails_before_mypy(self) -> None:
-        outside = self.directory / "outside.py"
-        outside.write_text("outside: int = 1\n")
-        link = self.root / "scripts/owned.py"
-        for target in (str(outside), "missing.py", ".", "owned.py"):
-            with self.subTest(target=target):
-                link.symlink_to(target)
-                self.commit("link target")
-                result = self.run_hook()
-                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-                self.assertFalse(self.receipt.exists())
-                link.unlink()
-
-    def test_renamed_destination_checked_and_deletion_omitted(self) -> None:
-        self.git("mv", "scripts/api.py", "scripts/renamed.py")
-        self.git("rm", "scripts/debt.py")
-        self.commit("rename and delete")
-        self.assert_checked(["scripts/renamed.py"])
-
-    def test_missing_selected_file_fails_before_mypy(self) -> None:
-        path = self.write("scripts/owned.py")
-        self.commit("owned source")
-        path.unlink()
-        self.assertEqual(self.run_hook().returncode, 2)
-        self.assertFalse(self.receipt.exists())
-
-    def test_outgoing_target_must_match_head(self) -> None:
-        self.write("scripts/owned.py")
-        self.commit("owned source")
-        other = self.git("rev-parse", "HEAD")
-        self.git("switch", "-q", "master")
-        for variable in ("PRE_COMMIT_TO_REF", "PRE_COMMIT_LOCAL_BRANCH"):
-            for target in (other, "missing-target", ""):
-                with self.subTest(variable=variable, target=target):
-                    self.environment[variable] = target
-                    self.assertEqual(self.run_hook().returncode, 2)
-                    self.assertFalse(self.receipt.exists())
-            self.environment.pop(variable)
-
-    def test_checker_failing_without_a_finding_fails_closed(self) -> None:
-        """An exit code we cannot attribute to a file is mypy breaking, not a pass."""
-        self.write("scripts/owned.py")
-        self.commit("owned source")
-        self.environment["PRE_COMMIT_TO_REF"] = self.git("rev-parse", "HEAD")
-        self.environment["CHECKER_STATUS"] = "7"
-        result = self.run_hook()
-        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertIn("without reporting a finding", result.stderr)
-
-    def test_missing_master_or_checker_fails_closed(self) -> None:
-        self.git("update-ref", "-d", "refs/remotes/origin/master")
-        self.assertEqual(self.run_hook().returncode, 2)
-        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+    def test_missing_checker_blocks(self) -> None:
         self.checker.unlink()
         (self.checker.parent / "git").symlink_to(GIT)
         self.environment["PATH"] = str(self.checker.parent)
-        self.assertEqual(self.run_hook().returncode, 2)
-        self.assertFalse(self.receipt.exists())
-
-    def test_no_owned_files_is_truthful_noop(self) -> None:
         result = self.run_hook()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("no ai/scripts Python files", result.stdout)
-        self.assertFalse(self.receipt.exists())
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("mypy is required", result.stderr)
 
-    def test_inherited_finding_is_not_the_branch_bug(self) -> None:
-        """Editing a file that already had a finding must not fail the push."""
-        self.write("scripts/debt.py", 'unchanged: int = "debt"  # BAD\nadded: int = 1\n')
-        self.commit("append a clean line to a file that already had a finding")
+    def test_filename_arguments_cannot_narrow_the_scope(self) -> None:
+        result = self.run_hook("scripts/check.py")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("does not accept filenames", result.stderr)
+
+    def test_untracked_owned_python_is_not_silently_validated(self) -> None:
+        self.write("ai/untracked.py", "bad: int = 'value'  # BAD\n")
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("1 inherited", result.stdout)
+        self.assertNotIn("ai/untracked.py", json.dumps(self.calls_checked()))
 
-    def test_finding_that_only_moved_lines_is_still_inherited(self) -> None:
-        """A line number is not part of a finding's identity."""
-        self.write("scripts/debt.py", 'added: int = 1\nunchanged: int = "debt"  # BAD\n')
-        self.commit("insert a line above the existing finding")
-        result = self.run_hook()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("1 inherited", result.stdout)
+    def test_all_entry_points_use_the_same_blocking_runner(self) -> None:
+        makefile = MAKEFILE.read_text()
+        workflow = WORKFLOW.read_text()
+        self.assertIn("python3 scripts/git-hooks/pre-push-mypy.py", makefile)
+        self.assertIn("python3 scripts/git-hooks/pre-push-mypy.py", workflow)
+        for forbidden in (
+            "mypy advisory",
+            "skipping advisory check",
+            '|| echo "mypy',
+            "\n\t-mypy ",
+        ):
+            self.assertNotIn(forbidden, makefile + workflow)
 
-    def test_introduced_finding_fails_and_is_named(self) -> None:
-        self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
-        self.commit("add a file with a finding")
-        result = self.run_hook()
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("scripts/owned.py", result.stderr)
-        self.assertIn("[assignment]", result.stderr)
-        self.assertNotIn("scripts/debt.py", result.stderr)
+    def test_mypy_config_has_no_error_suppressions(self) -> None:
+        config = MYPY_CONFIG.read_text()
+        self.assertIn('python_version = "3.14"', config)
+        for forbidden in (
+            "ignore_errors",
+            "ignore_missing_imports",
+            "disable_error_code",
+            'follow_imports = "skip"',
+        ):
+            self.assertNotIn(forbidden, config)
 
-    def test_second_finding_in_an_already_failing_file_is_reported(self) -> None:
-        """Inheritance is per finding, not per file: a file may already fail."""
-        self.write(
-            "scripts/debt.py",
-            'unchanged: int = "debt"  # BAD\nother: int = 2  # BAD: a different problem\n',
-        )
-        self.commit("add a second, different finding to a file that already had one")
-        result = self.run_hook()
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("a different problem", result.stderr)
-        self.assertNotIn("planted finding", result.stderr)
-
-    def test_package_base_files_are_checked_with_explicit_bases(self) -> None:
-        """ai/src is a mypy_path base: without the flag mypy refuses the file."""
-        self.write("ai/src/aiutils/mod.py", "value: int = 1\n")
-        self.write("scripts/owned.py", "value: int = 1\n")
-        self.commit("touch one file under the package base and one outside it")
-        self.assertEqual(self.run_hook().returncode, 0)
-        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
-        based = [call for call in calls if "--explicit-package-bases" in call]
-        plain = [call for call in calls if "--explicit-package-bases" not in call]
-        self.assertEqual([c[1:] for c in based], [["ai/src/aiutils/mod.py"]])
-        self.assertEqual(plain, [["scripts/owned.py"]])
-
-    def test_baseline_worktree_is_always_removed(self) -> None:
-        self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
-        self.commit("add a file with a finding")
-        self.assertEqual(self.run_hook().returncode, 1)
-        self.assertNotIn("vmafx-mypy-baseline", self.git("worktree", "list"))
-        cache = self.directory / "cache"
-        leftovers = [p.name for p in cache.iterdir()] if cache.exists() else []
-        self.assertEqual(leftovers, [], f"baseline worktree left behind: {leftovers}")
-
-    def test_regression_hook_is_registered_for_local_and_ci_checks(self) -> None:
-        hook = hook_config("mypy-scope-contract")
-        self.assertIn("entry: python3 scripts/git-hooks/test-pre-push-mypy.py", hook)
-        self.assertIn("stages: [pre-commit, pre-push]", hook)
-        self.assertIn("pass_filenames: false", hook)
+    def test_pre_commit_runs_complete_scope_and_contract(self) -> None:
         scope = hook_config("mypy-local")
         self.assertIn("always_run: true", scope)
         self.assertIn("pass_filenames: false", scope)
-        self.assertNotIn("\n        files:", scope)
+        contract = hook_config("mypy-scope-contract")
+        self.assertIn("entry: python3 scripts/git-hooks/test-pre-push-mypy.py", contract)
+        self.assertIn("stages: [pre-commit, pre-push]", contract)
 
 
 if __name__ == "__main__":

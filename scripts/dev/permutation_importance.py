@@ -27,30 +27,33 @@ SAMPLE_N = 5000
 N_SEEDS = 5
 
 
+def _load_sample(feats: list[str]) -> tuple[np.ndarray, np.ndarray, int]:
+    rng = np.random.default_rng(20260503)
+    columns = [*feats, "vmaf"]
+    frame = pq.read_table(PARQUET, columns=columns).to_pandas()
+    frame = frame.dropna(subset=columns).reset_index(drop=True)
+    sample_size = min(SAMPLE_N, len(frame))
+    indices = rng.choice(len(frame), size=sample_size, replace=False)
+    sample = frame.iloc[indices].reset_index(drop=True)
+    print(f"Sample: {sample_size} rows from {len(frame)} total", flush=True)
+    features = sample[feats].to_numpy(dtype=np.float32)
+    targets = sample["vmaf"].to_numpy(dtype=np.float32)
+    return features, targets, sample_size
+
+
 def main() -> int:
     sidecar = json.loads(SIDECAR.read_text())
     feats: list[str] = sidecar["features"]
     print(f"Model: {MODEL.name}  features: {feats}", flush=True)
 
-    rng = np.random.default_rng(20260503)
-    cols = [*feats, "vmaf"]
-    table = pq.read_table(PARQUET, columns=cols)
-    df = table.to_pandas()
-    df = df.dropna(subset=cols).reset_index(drop=True)
-    n = min(SAMPLE_N, len(df))
-    idx = rng.choice(len(df), size=n, replace=False)
-    sample = df.iloc[idx].reset_index(drop=True)
-    print(f"Sample: {n} rows from {len(df)} total", flush=True)
-
-    X = sample[feats].to_numpy(dtype=np.float32)
-    y = sample["vmaf"].to_numpy(dtype=np.float32)
+    X, y, n = _load_sample(feats)
 
     sess = ort.InferenceSession(str(MODEL), providers=["CPUExecutionProvider"])
     in_name = sess.get_inputs()[0].name
     out_name = sess.get_outputs()[0].name
 
     def predict(arr: np.ndarray) -> np.ndarray:
-        return sess.run([out_name], {in_name: arr})[0].reshape(-1)
+        return np.asarray(sess.run([out_name], {in_name: arr})[0]).reshape(-1)
 
     base_pred = predict(X)
     base_plcc, _ = pearsonr(base_pred, y)

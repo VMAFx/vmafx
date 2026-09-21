@@ -41,6 +41,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 # Per ADR-0303 §Decision — the two parts of the production ship gate.
 # Centralising the constants here means the workflow + the trainer's
@@ -52,6 +53,40 @@ SHIP_GATE_PLCC_SPREAD_MAX: float = 0.005
 # ADR-0303 / Research-0075. Configurable in case a future ADR
 # supersedes with a larger ensemble.
 DEFAULT_ENSEMBLE_SIZE: int = 5
+
+
+def _add_threshold_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--mean-plcc-threshold",
+        type=float,
+        default=SHIP_GATE_MEAN_PLCC,
+        help=(
+            "Override the mean-PLCC ship gate (default "
+            f"{SHIP_GATE_MEAN_PLCC} — DO NOT lower without superseding "
+            "ADR-0303)."
+        ),
+    )
+    parser.add_argument(
+        "--plcc-spread-max",
+        type=float,
+        default=SHIP_GATE_PLCC_SPREAD_MAX,
+        help=(
+            "Override the PLCC spread bound (default "
+            f"{SHIP_GATE_PLCC_SPREAD_MAX} — DO NOT raise without "
+            "superseding ADR-0303; the bound is load-bearing for the "
+            "ensemble's predictive-distribution semantics)."
+        ),
+    )
+    parser.add_argument(
+        "--per-seed-min",
+        type=float,
+        default=SHIP_GATE_MEAN_PLCC,
+        help=(
+            "Per-seed minimum PLCC threshold; defaults to the same "
+            f"{SHIP_GATE_MEAN_PLCC} ship gate. A seed below this "
+            "threshold blocks even an otherwise-passing ensemble."
+        ),
+    )
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -79,37 +114,7 @@ def build_argparser() -> argparse.ArgumentParser:
         default="0,1,2,3,4",
         help=("Comma-separated seed list expected to be present " "(default: 0,1,2,3,4)."),
     )
-    p.add_argument(
-        "--mean-plcc-threshold",
-        type=float,
-        default=SHIP_GATE_MEAN_PLCC,
-        help=(
-            "Override the mean-PLCC ship gate (default "
-            f"{SHIP_GATE_MEAN_PLCC} — DO NOT lower without superseding "
-            "ADR-0303)."
-        ),
-    )
-    p.add_argument(
-        "--plcc-spread-max",
-        type=float,
-        default=SHIP_GATE_PLCC_SPREAD_MAX,
-        help=(
-            "Override the PLCC spread bound (default "
-            f"{SHIP_GATE_PLCC_SPREAD_MAX} — DO NOT raise without "
-            "superseding ADR-0303; the bound is load-bearing for the "
-            "ensemble's predictive-distribution semantics)."
-        ),
-    )
-    p.add_argument(
-        "--per-seed-min",
-        type=float,
-        default=SHIP_GATE_MEAN_PLCC,
-        help=(
-            "Per-seed minimum PLCC threshold; defaults to the same "
-            f"{SHIP_GATE_MEAN_PLCC} ship gate. A seed below this "
-            "threshold blocks even an otherwise-passing ensemble."
-        ),
-    )
+    _add_threshold_arguments(p)
     p.add_argument(
         "--json",
         action="store_true",
@@ -130,13 +135,13 @@ def _parse_seed_list(raw: str) -> list[int]:
     return out
 
 
-def load_seed_jsons(loso_dir: Path, seeds: list[int]) -> dict[int, dict]:
+def load_seed_jsons(loso_dir: Path, seeds: list[int]) -> dict[int, dict[str, Any]]:
     """Load every ``loso_seed{N}.json`` under ``loso_dir`` for the given seeds.
 
     Raises ``FileNotFoundError`` if any expected file is missing, or
     ``ValueError`` if a JSON is malformed.
     """
-    out: dict[int, dict] = {}
+    out: dict[int, dict[str, Any]] = {}
     for seed in seeds:
         path = loso_dir / f"loso_seed{seed}.json"
         if not path.exists():
@@ -146,7 +151,10 @@ def load_seed_jsons(loso_dir: Path, seeds: list[int]) -> dict[int, dict]:
                 f"first (see ADR-0303)."
             )
         with path.open("r", encoding="utf-8") as fh:
-            payload = json.load(fh)
+            decoded: object = json.load(fh)
+        if not isinstance(decoded, dict) or not all(isinstance(key, str) for key in decoded):
+            raise ValueError(f"{path} must contain a string-keyed JSON object")
+        payload = {key: value for key, value in decoded.items() if isinstance(key, str)}
         if "mean_plcc" not in payload:
             raise ValueError(
                 f"{path} is missing required 'mean_plcc' key. Schema is "
@@ -158,11 +166,11 @@ def load_seed_jsons(loso_dir: Path, seeds: list[int]) -> dict[int, dict]:
 
 
 def evaluate_gate(
-    seed_payloads: dict[int, dict],
+    seed_payloads: dict[int, dict[str, Any]],
     mean_plcc_threshold: float,
     plcc_spread_max: float,
     per_seed_min: float,
-) -> dict:
+) -> dict[str, Any]:
     """Apply the two-part gate to the loaded per-seed payloads.
 
     Returns a structured summary with ``passed: bool`` and the
@@ -196,7 +204,7 @@ def evaluate_gate(
     }
 
 
-def _format_human(report: dict) -> str:
+def _format_human(report: dict[str, Any]) -> str:
     lines = [
         "=== fr_regressor_v2 ensemble production-flip gate (ADR-0303) ===",
         f"Per-seed PLCC: {report['per_seed_plccs']}",

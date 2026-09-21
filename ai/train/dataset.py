@@ -29,26 +29,35 @@ The split is deterministic: the hold-out source name is the only knob.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-
-try:  # torch is a heavy dep; tests can skip when unavailable.
-    import torch
-    from torch.utils.data import Dataset
-
-    _HAS_TORCH = True
-except ImportError:  # pragma: no cover - exercised only on stripped CI envs
-    _HAS_TORCH = False
-
-    class Dataset:  # type: ignore[no-redef]
-        pass
-
 
 from ..data.feature_extractor import DEFAULT_FEATURES, FeatureExtractionResult, extract_features
 from ..data.netflix_loader import NetflixPair, iter_pairs, load_or_compute
 from ..data.scores import TeacherScores, resolve_teacher_model, teacher_scores
+
+_HAS_TORCH: bool
+if TYPE_CHECKING:
+    import torch
+    from torch.utils.data import Dataset
+else:
+    try:  # torch is a heavy dep; tests can skip when unavailable.
+        import torch
+        from torch.utils.data import Dataset
+
+        _HAS_TORCH = True
+    except ImportError:  # pragma: no cover - exercised only on stripped CI envs
+        _HAS_TORCH = False
+
+        class Dataset:
+            @classmethod
+            def __class_getitem__(cls, _item: object) -> type[Dataset]:
+                return cls
+
 
 _LOG = logging.getLogger(__name__)
 
@@ -60,7 +69,7 @@ _FRAME_COUNT_TOLERANCE = 2
 DEFAULT_VAL_SOURCE = "Tennis"
 
 
-def _make_zero_payload(pair: NetflixPair) -> dict:
+def _make_zero_payload(pair: NetflixPair) -> dict[str, Any]:
     """Tiny zero-feature payload for ``--epochs 0`` smoke runs.
 
     Used by :func:`ai.train.train.main` when a fake corpus is supplied
@@ -95,7 +104,7 @@ def _compute_pair_payload(
     *,
     features: tuple[str, ...],
     vmaf_binary: Path | None,
-) -> dict:
+) -> dict[str, Any]:
     """Compute features + teacher scores for one pair (cache-miss path)."""
     feats: FeatureExtractionResult = extract_features(
         pair.ref_path,
@@ -118,7 +127,7 @@ def _compute_pair_payload(
     }
 
 
-def _cache_payload_matches_teacher(payload: dict, teacher_name: str) -> bool:
+def _cache_payload_matches_teacher(payload: dict[str, Any], teacher_name: str) -> bool:
     """True when a cached payload was produced by ``teacher_name``.
 
     Legacy caches written before ADR-1173 carry no ``teacher_model`` and
@@ -137,7 +146,7 @@ def _cache_payload_matches_teacher(payload: dict, teacher_name: str) -> bool:
 
 
 def _payload_to_arrays(
-    payload: dict,
+    payload: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
     feats = FeatureExtractionResult.from_jsonable(payload["features"])
     teacher = TeacherScores.from_jsonable(payload["scores"])
@@ -155,7 +164,7 @@ def _payload_to_arrays(
     return feats.per_frame[:n], teacher.per_frame[:n]
 
 
-class NetflixFrameDataset(Dataset):  # type: ignore[misc]
+class NetflixFrameDataset(Dataset[Any]):
     """One sample per frame across all eligible (ref, dis) pairs.
 
     Parameters
@@ -192,7 +201,7 @@ class NetflixFrameDataset(Dataset):  # type: ignore[misc]
         features: tuple[str, ...] = DEFAULT_FEATURES,
         vmaf_binary: Path | None = None,
         use_cache: bool = True,
-        payload_provider=None,  # type: ignore[no-untyped-def]
+        payload_provider: Callable[[NetflixPair], dict[str, Any]] | None = None,
         assume_dims: tuple[int, int] | None = None,
     ) -> None:
         if split not in ("train", "val"):
@@ -240,7 +249,7 @@ class NetflixFrameDataset(Dataset):  # type: ignore[misc]
     def __len__(self) -> int:
         return len(self._samples)
 
-    def __getitem__(self, idx: int):  # type: ignore[no-untyped-def]
+    def __getitem__(self, idx: int) -> tuple[Any, Any]:
         s = self._samples[idx]
         if _HAS_TORCH:
             x = torch.from_numpy(np.ascontiguousarray(s.features))

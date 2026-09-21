@@ -46,6 +46,11 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
 
 from . import _gop_common
 
@@ -351,11 +356,11 @@ class VVenCAdapter:
 
     def roi_from_saliency(
         self,
-        block_offsets: object,
-        out_path: object,
+        block_offsets: npt.NDArray[np.int32],
+        out_path: Path,
         *,
         duration_frames: int = 1,
-    ) -> object:
+    ) -> Path:
         """Write a VVenC ROI-map CSV file from a per-CTU-block offset array.
 
         Delegates to :func:`vmaftune.saliency.write_vvenc_roi_csv`.
@@ -366,11 +371,9 @@ class VVenCAdapter:
         :func:`vmaftune.saliency.reduce_qp_map_to_blocks` with
         ``block=VVENC_CTU_SIDE`` (ADR-0370).
         """
-        from pathlib import Path as _Path
-
         from vmaftune.saliency import write_vvenc_roi_csv  # local import
 
-        return write_vvenc_roi_csv(block_offsets, _Path(out_path), duration_frames=duration_frames)
+        return write_vvenc_roi_csv(block_offsets, out_path, duration_frames=duration_frames)
 
 
 def native_presets() -> tuple[str, ...]:

@@ -36,17 +36,20 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 # Optuna is an optional dependency, gated behind the ``[fast]`` install
 # extra. Importing it lazily lets the rest of vmaftune import cleanly on
 # hosts that never run the fast path.
+optuna: ModuleType | None
 try:  # pragma: no cover - import-guarded
-    import optuna  # type: ignore[import-not-found]
+    import optuna as optuna_module
 
+    optuna = optuna_module
     _OPTUNA_AVAILABLE = True
 except ImportError:  # pragma: no cover - import-guarded
-    optuna = None  # type: ignore[assignment]
+    optuna = None
     _OPTUNA_AVAILABLE = False
 
 
@@ -369,84 +372,78 @@ def _build_production_sample_extractor(
     """
     from . import CANONICAL6_FEATURES
     from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .predictor_features import _probe_video_geometry
+    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry
     from .proxy import normalise_features
     from .score import ScoreRequest, maybe_decode_distorted, run_score
 
-    class _Cfg:
-        ffprobe_bin: str = "ffprobe"
-
-    cfg = _Cfg()
+    cfg = FeatureExtractorConfig(ffprobe_bin="ffprobe")
     _score_backend: str | None = None if (backend is None or backend == "auto") else backend
+
+    def _encode_sample(
+        src: Path, crf: int, encoder: str, tmpdir: Path
+    ) -> tuple[Path, int, int, float, Any, float]:
+        dist = tmpdir / "dist.mp4"
+        width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)
+        if width == 0 or height == 0 or fps == 0.0:
+            raise RuntimeError(f"fast sample_extractor: ffprobe failed for {src}")
+        enc_req = EncodeRequest(
+            source=src,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+            framerate=fps,
+            encoder=encoder,
+            preset=preset,
+            crf=crf,
+            output=dist,
+            sample_clip_seconds=SAMPLE_CHUNK_SECONDS,
+            source_is_container=src.suffix.lower() not in {".yuv", ".y4m", ""},
+        )
+        enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
+        if enc_result.exit_status != 0 or not dist.exists():
+            raise RuntimeError(
+                f"fast sample_extractor: encode failed (CRF {crf}, "
+                f"encoder {encoder}): {enc_result.stderr_tail[-300:]}"
+            )
+        kbps = bitrate_kbps(enc_result.encode_size_bytes, SAMPLE_CHUNK_SECONDS)
+        return dist, width, height, fps, enc_req, kbps
+
+    def _score_sample(
+        src: Path, dist: Path, tmpdir: Path, width: int, height: int, fps: float, enc_req: Any
+    ) -> list[float]:
+        score_req = ScoreRequest(
+            reference=src,
+            distorted=dist,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+            frame_skip_ref=int(
+                enc_req.sample_clip_start_s * fps if enc_req.sample_clip_start_s > 0 else 0
+            ),
+            frame_cnt=int(SAMPLE_CHUNK_SECONDS * fps),
+            duration_s=SAMPLE_CHUNK_SECONDS,
+        )
+        score_req, decode_rc = maybe_decode_distorted(
+            score_req, workdir=tmpdir, ffmpeg_bin=ffmpeg_bin
+        )
+        if decode_rc != 0:
+            raise RuntimeError(
+                f"fast sample_extractor: failed to decode distorted container {dist} "
+                f"to raw YUV (rc={decode_rc})"
+            )
+        score_result = run_score(score_req, vmaf_bin=vmaf_bin, backend=_score_backend)
+        if score_result.exit_status != 0:
+            raise RuntimeError(
+                f"fast sample_extractor: score failed: {score_result.stderr_tail[-300:]}"
+            )
+        raw = [score_result.feature_means.get(name, float("nan")) for name in CANONICAL6_FEATURES]
+        return normalise_features(raw)
 
     def _extract(src: Path, crf: int, encoder: str) -> tuple[list[float], float]:
         with tempfile.TemporaryDirectory(prefix="vmaftune-fast-sample-") as td:
             tmpdir = Path(td)
-            dist = tmpdir / "dist.mp4"
-
-            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
-            if width == 0 or height == 0 or fps == 0.0:
-                raise RuntimeError(f"fast sample_extractor: ffprobe failed for {src}")
-
-            # Locate the centre window; clip to source length if shorter.
-            duration_s = SAMPLE_CHUNK_SECONDS
-            is_container = src.suffix.lower() not in {".yuv", ".y4m", ""}
-            enc_req = EncodeRequest(
-                source=src,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                framerate=fps,
-                encoder=encoder,
-                preset=preset,
-                crf=crf,
-                output=dist,
-                sample_clip_seconds=duration_s,
-                source_is_container=is_container,
-            )
-            enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
-            if enc_result.exit_status != 0 or not dist.exists():
-                raise RuntimeError(
-                    f"fast sample_extractor: encode failed (CRF {crf}, "
-                    f"encoder {encoder}): {enc_result.stderr_tail[-300:]}"
-                )
-
-            observed_kbps = bitrate_kbps(enc_result.encode_size_bytes, duration_s)
-
-            score_req = ScoreRequest(
-                reference=src,
-                distorted=dist,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                # Mirror the same centre window the encoder used.
-                frame_skip_ref=int(
-                    enc_req.sample_clip_start_s * fps if enc_req.sample_clip_start_s > 0 else 0
-                ),
-                frame_cnt=int(duration_s * fps),
-                duration_s=duration_s,
-            )
-            score_req, decode_rc = maybe_decode_distorted(
-                score_req,
-                workdir=tmpdir,
-                ffmpeg_bin=ffmpeg_bin,
-            )
-            if decode_rc != 0:
-                raise RuntimeError(
-                    f"fast sample_extractor: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
-                )
-
-            score_result = run_score(score_req, vmaf_bin=vmaf_bin, backend=_score_backend)
-            if score_result.exit_status != 0:
-                raise RuntimeError(
-                    f"fast sample_extractor: score failed: {score_result.stderr_tail[-300:]}"
-                )
-
-            raw_features = [
-                score_result.feature_means.get(f, float("nan")) for f in CANONICAL6_FEATURES
-            ]
-            features = normalise_features(raw_features)
-            return features, observed_kbps
+            dist, width, height, fps, enc_req, kbps = _encode_sample(src, crf, encoder, tmpdir)
+            return _score_sample(src, dist, tmpdir, width, height, fps, enc_req), kbps
 
     return _extract
 
@@ -465,76 +462,72 @@ def _build_production_encode_runner(
     libvmaf score so the caller can compute the proxy/verify gap.
     """
     from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .predictor_features import _probe_video_geometry
+    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry
     from .score import ScoreRequest, maybe_decode_distorted, run_score
 
-    class _Cfg:
-        ffprobe_bin: str = "ffprobe"
+    cfg = FeatureExtractorConfig(ffprobe_bin="ffprobe")
 
-    cfg = _Cfg()
+    def _encode_full(src: Path, encoder: str, crf: int, tmpdir: Path) -> tuple[Any, Path, int, int]:
+        dist = tmpdir / "dist.mp4"
+        width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)
+        if width == 0 or height == 0 or fps == 0.0:
+            raise RuntimeError(f"fast encode_runner: ffprobe failed for {src}")
+        enc_req = EncodeRequest(
+            source=src,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+            framerate=fps,
+            encoder=encoder,
+            preset=preset,
+            crf=crf,
+            output=dist,
+            source_is_container=src.suffix.lower() not in {".yuv", ".y4m", ""},
+        )
+        enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
+        if enc_result.exit_status != 0 or not dist.exists():
+            raise RuntimeError(
+                f"fast encode_runner: encode failed (CRF {crf}): "
+                f"{enc_result.stderr_tail[-300:]}"
+            )
+        return enc_result, dist, width, height
+
+    def _score_full(
+        src: Path, dist: Path, tmpdir: Path, width: int, height: int, backend: str
+    ) -> float:
+        score_req = ScoreRequest(
+            reference=src,
+            distorted=dist,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+        )
+        score_req, decode_rc = maybe_decode_distorted(
+            score_req, workdir=tmpdir, ffmpeg_bin=ffmpeg_bin
+        )
+        if decode_rc != 0:
+            raise RuntimeError(
+                f"fast encode_runner: failed to decode distorted container {dist} "
+                f"to raw YUV (rc={decode_rc})"
+            )
+        score_result = run_score(
+            score_req,
+            vmaf_bin=vmaf_bin,
+            backend=backend if backend != "auto" else None,
+        )
+        if score_result.exit_status != 0:
+            raise RuntimeError(
+                f"fast encode_runner: score failed: {score_result.stderr_tail[-300:]}"
+            )
+        return score_result.vmaf_score
 
     def _run(src: Path, encoder: str, crf: int, backend: str) -> tuple[float, float]:
         with tempfile.TemporaryDirectory(prefix="vmaftune-fast-verify-") as td:
             tmpdir = Path(td)
-            dist = tmpdir / "dist.mp4"
-
-            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
-            if width == 0 or height == 0 or fps == 0.0:
-                raise RuntimeError(f"fast encode_runner: ffprobe failed for {src}")
-
-            is_container = src.suffix.lower() not in {".yuv", ".y4m", ""}
-            enc_req = EncodeRequest(
-                source=src,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                framerate=fps,
-                encoder=encoder,
-                preset=preset,
-                crf=crf,
-                output=dist,
-                source_is_container=is_container,
-            )
-            enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
-            if enc_result.exit_status != 0 or not dist.exists():
-                raise RuntimeError(
-                    f"fast encode_runner: encode failed (CRF {crf}): "
-                    f"{enc_result.stderr_tail[-300:]}"
-                )
-
-            # Approximate duration from frame count; good enough for kbps.
-            size_bytes = dist.stat().st_size
-            score_req = ScoreRequest(
-                reference=src,
-                distorted=dist,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-            )
-            score_req, decode_rc = maybe_decode_distorted(
-                score_req,
-                workdir=tmpdir,
-                ffmpeg_bin=ffmpeg_bin,
-            )
-            if decode_rc != 0:
-                raise RuntimeError(
-                    f"fast encode_runner: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
-                )
-
-            score_result = run_score(
-                score_req,
-                vmaf_bin=vmaf_bin,
-                backend=backend if backend != "auto" else None,
-            )
-            if score_result.exit_status != 0:
-                raise RuntimeError(
-                    f"fast encode_runner: score failed: {score_result.stderr_tail[-300:]}"
-                )
-
-            # Duration from encoder stats if available, else encode time proxy.
-            enc_duration_s = enc_result.encode_time_ms / 1000.0 or 1.0
-            kbps = bitrate_kbps(size_bytes, enc_duration_s)
-            return kbps, score_result.vmaf_score
+            enc_result, dist, width, height = _encode_full(src, encoder, crf, tmpdir)
+            score = _score_full(src, dist, tmpdir, width, height, backend)
+            duration_s = enc_result.encode_time_ms / 1000.0 or 1.0
+            return bitrate_kbps(dist.stat().st_size, duration_s), score
 
     return _run
 

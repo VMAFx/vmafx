@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ _SCRIPTS_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT = _SCRIPTS_DIR / "batch_materialize_mos_labels.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     # ``_script_bootstrap`` lives in ai/scripts/; make it importable before
     # executing the script module so the bootstrap import does not fail when
     # pytest is invoked from the repo root without PYTHONPATH=ai/scripts.
@@ -42,20 +43,8 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def test_batch_manifest_materializes_multiple_tables(tmp_path: Path) -> None:
-    module = _load_module()
-    _write_jsonl(tmp_path / "features-a.jsonl", [{"video_id": "a"}, {"video_id": "b"}])
-    _write_jsonl(tmp_path / "features-b.jsonl", [{"video_id": "c"}])
-    _write_jsonl(
-        tmp_path / "labels-a.jsonl",
-        [
-            {"video_id": "a", "mos": 3.5, "n_ratings": 5},
-            {"video_id": "b", "mos": 4.0, "n_ratings": 6},
-        ],
-    )
-    _write_jsonl(tmp_path / "labels-b.jsonl", [{"video_id": "c", "mos_raw_0_100": 50.0}])
-    manifest = tmp_path / "batch.json"
-    manifest.write_text(
+def _write_batch_manifest(path: Path) -> None:
+    path.write_text(
         json.dumps(
             {
                 "defaults": {"min_match_rate": 1.0},
@@ -78,6 +67,22 @@ def test_batch_manifest_materializes_multiple_tables(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_batch_manifest_materializes_multiple_tables(tmp_path: Path) -> None:
+    module = _load_module()
+    _write_jsonl(tmp_path / "features-a.jsonl", [{"video_id": "a"}, {"video_id": "b"}])
+    _write_jsonl(tmp_path / "features-b.jsonl", [{"video_id": "c"}])
+    _write_jsonl(
+        tmp_path / "labels-a.jsonl",
+        [
+            {"video_id": "a", "mos": 3.5, "n_ratings": 5},
+            {"video_id": "b", "mos": 4.0, "n_ratings": 6},
+        ],
+    )
+    _write_jsonl(tmp_path / "labels-b.jsonl", [{"video_id": "c", "mos_raw_0_100": 50.0}])
+    manifest = tmp_path / "batch.json"
+    _write_batch_manifest(manifest)
     report_json = tmp_path / "report.json"
     report_md = tmp_path / "report.md"
 

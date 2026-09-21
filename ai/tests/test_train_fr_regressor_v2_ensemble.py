@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-import train_fr_regressor_v2_ensemble as ensemble
+from ai.scripts import train_fr_regressor_v2_ensemble as ensemble
 
 
 def test_build_manifest_records_run_provenance_when_supplied() -> None:

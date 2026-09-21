@@ -66,12 +66,17 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -138,29 +143,32 @@ def _wrap_to_savedmodel(upstream_dir: Path, wrapped_dir: Path) -> None:
     base_model = tf.saved_model.load(str(upstream_dir))
 
     class Wrapper(tf.Module):
-        def __init__(self, base):
+        def __init__(self, base: Any) -> None:
             super().__init__()
             self.base = base
 
-        @tf.function(
-            input_signature=[
-                tf.TensorSpec(
-                    shape=[1, WINDOW, CHANNELS, HEIGHT, WIDTH],
-                    dtype=tf.float32,
-                    name="frames",
-                )
-            ]
-        )
-        def __call__(self, frames):
+        def __call__(self, frames: "tf.Tensor") -> "tf.Tensor":
             # NTCHW -> NTHWC: axes 0,1,2,3,4 -> 0,1,3,4,2
             x = tf.transpose(frames, perm=[0, 1, 3, 4, 2])
             out = self.base.signatures["serving_default"](input_1=x)
             logits = out["output_1"]  # (1, 100, 1)
-            return tf.squeeze(logits, axis=-1)  # (1, 100)
+            result: tf.Tensor = tf.squeeze(logits, axis=-1)
+            return result  # (1, 100)
 
     if wrapped_dir.exists():
         shutil.rmtree(wrapped_dir)
-    tf.saved_model.save(Wrapper(base_model), str(wrapped_dir))
+    wrapper = Wrapper(base_model)
+    serving = tf.function(
+        wrapper.__call__,
+        input_signature=[
+            tf.TensorSpec(
+                shape=[1, WINDOW, CHANNELS, HEIGHT, WIDTH],
+                dtype=tf.float32,
+                name="frames",
+            )
+        ],
+    )
+    tf.saved_model.save(wrapper, str(wrapped_dir), signatures={"serving_default": serving})
 
 
 def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
@@ -191,78 +199,54 @@ def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
-def _replace_segmentsum(onnx_path: Path) -> None:
-    """Splice ColorHistograms/UnsortedSegmentSum -> ScatterND.
+def _find_segmentsum(graph: Any) -> tuple[Any, int] | None:
+    for index, node in enumerate(graph.node):
+        if node.op_type == "SegmentSum":
+            return node, index
+    return None
 
-    Original semantics (rank-2 segment IDs, num_segments=51200):
 
-        output[51200] = zeros
-        for i in range(100):
-            for j in range(1296):
-                output[ids[i, j]] += data[i, j]
+def _segment_count(graph: Any, initializer_name: str) -> int:
+    from onnx import numpy_helper
 
-    Equivalent ONNX rewrite:
+    for initializer in graph.initializer:
+        if initializer.name == initializer_name:
+            count = int(numpy_helper.to_array(initializer))
+            if count != NUM_HISTOGRAM_BINS:
+                sys.exit(
+                    f"unexpected num_segments {count}; "
+                    f"expected {NUM_HISTOGRAM_BINS} (100 frames * 512 bins)"
+                )
+            return count
+    sys.exit(f"SegmentSum num_segments {initializer_name!r} not in initializers")
 
-        flat_ids   = Reshape(ids,  [-1, 1])
-        flat_data  = Reshape(data, [-1])
-        zeros      = ConstantOfShape([51200])
-        output     = ScatterND(zeros, flat_ids, flat_data, reduction='add')
 
-    onnxruntime CPU EP supports ScatterND with ``reduction='add'`` since
-    opset 16; we target opset 17 here.
-    """
+def _segmentsum_replacement(
+    data_input: str, ids_input: str, output_name: str, segment_count: int
+) -> tuple[list[Any], list[Any]]:
     import numpy as np
-    import onnx
     from onnx import TensorProto, helper, numpy_helper
-
-    m = onnx.load(str(onnx_path))
-    g = m.graph
-
-    seg_node = None
-    seg_idx = -1
-    for i, n in enumerate(g.node):
-        if n.op_type == "SegmentSum":
-            seg_node = n
-            seg_idx = i
-            break
-    if seg_node is None:
-        # Already rewritten; idempotent re-run.
-        return
-
-    data_in, ids_in, num_seg_in = seg_node.input
-    out_name = seg_node.output[0]
-
-    num_seg = None
-    for init in g.initializer:
-        if init.name == num_seg_in:
-            num_seg = int(numpy_helper.to_array(init))
-            break
-    if num_seg is None:
-        sys.exit(f"SegmentSum num_segments {num_seg_in!r} not in initializers")
-    if num_seg != NUM_HISTOGRAM_BINS:
-        sys.exit(
-            f"unexpected num_segments {num_seg}; "
-            f"expected {NUM_HISTOGRAM_BINS} (100 frames * 512 bins)"
-        )
 
     prefix = "fork_segmentsum_"
     new_inits = [
         numpy_helper.from_array(np.array([-1], dtype=np.int64), name=prefix + "neg1"),
         numpy_helper.from_array(np.array([-1, 1], dtype=np.int64), name=prefix + "neg1_1"),
-        numpy_helper.from_array(np.array([num_seg], dtype=np.int64), name=prefix + "zeros_shape"),
+        numpy_helper.from_array(
+            np.array([segment_count], dtype=np.int64), name=prefix + "zeros_shape"
+        ),
     ]
     zero_int32_value = helper.make_tensor(prefix + "zero_int32_value", TensorProto.INT32, [1], [0])
 
     new_nodes = [
         helper.make_node(
             "Reshape",
-            inputs=[data_in, prefix + "neg1"],
+            inputs=[data_input, prefix + "neg1"],
             outputs=[prefix + "flat_data"],
             name=prefix + "flat_data_node",
         ),
         helper.make_node(
             "Reshape",
-            inputs=[ids_in, prefix + "neg1_1"],
+            inputs=[ids_input, prefix + "neg1_1"],
             outputs=[prefix + "flat_ids"],
             name=prefix + "flat_ids_node",
         ),
@@ -283,37 +267,58 @@ def _replace_segmentsum(onnx_path: Path) -> None:
         helper.make_node(
             "ScatterND",
             inputs=[prefix + "zeros", prefix + "flat_ids_i64", prefix + "flat_data"],
-            outputs=[out_name],
+            outputs=[output_name],
             reduction="add",
             name=prefix + "scatter",
         ),
     ]
+    return new_inits, new_nodes
 
-    final_nodes = list(g.node)
-    final_nodes.pop(seg_idx)
-    final_nodes[seg_idx:seg_idx] = new_nodes
+
+def _replace_segmentsum(onnx_path: Path) -> None:
+    """Splice the rank-2 SegmentSum into an equivalent ScatterND reduction."""
+    import onnx
+    from onnx import helper
+
+    model = onnx.load(str(onnx_path))
+    graph = model.graph
+    found = _find_segmentsum(graph)
+    if found is None:
+        return
+    segment_node, segment_index = found
+    data_input, ids_input, count_input = segment_node.input
+    new_inits, new_nodes = _segmentsum_replacement(
+        data_input,
+        ids_input,
+        segment_node.output[0],
+        _segment_count(graph, count_input),
+    )
+
+    final_nodes = list(graph.node)
+    final_nodes.pop(segment_index)
+    final_nodes[segment_index:segment_index] = new_nodes
 
     new_graph = helper.make_graph(
         final_nodes,
-        g.name,
-        list(g.input),
-        list(g.output),
-        list(g.initializer) + new_inits,
-        value_info=list(g.value_info),
+        graph.name,
+        list(graph.input),
+        list(graph.output),
+        list(graph.initializer) + new_inits,
+        value_info=list(graph.value_info),
     )
     new_model = helper.make_model(
         new_graph,
-        opset_imports=list(m.opset_import),
+        opset_imports=list(model.opset_import),
         producer_name="vmafx-transnet-v2-export",
     )
-    new_model.ir_version = m.ir_version
+    new_model.ir_version = model.ir_version
     onnx.checker.check_model(new_model)
     onnx.save(new_model, str(onnx_path))
 
 
 def _verify_op_allowlist(onnx_path: Path) -> None:
     """Cross-check the exported graph against libvmaf's op allowlist."""
-    from vmaf_train.op_allowlist import check_model  # type: ignore
+    from vmaf_train.op_allowlist import check_model
 
     report = check_model(onnx_path)
     if not report.ok:
@@ -346,7 +351,7 @@ def _verify_parity(onnx_path: Path, wrapped_sm_dir: Path, *, trials: int = 3) ->
     print(f"[parity] worst max-abs-diff {worst:.3e} < 1e-4 -> OK")
 
 
-def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None = None) -> Path:
+def _write_sidecar(onnx_path: Path, *, run_provenance: Mapping[str, object] | None = None) -> Path:
     sidecar = onnx_path.with_suffix(".json")
     payload = {
         "id": "transnet_v2",
@@ -388,7 +393,7 @@ def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
         sys.exit(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
-    models: list[dict] = doc.get("models", [])
+    models: list[dict[str, Any]] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
     digest = sha256(onnx_path)
     entry = {
@@ -423,7 +428,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def _parse_args(argv: list[str] | None) -> tuple[Any, list[str]]:
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--upstream-dir",
@@ -459,8 +464,10 @@ def main(argv: list[str] | None = None) -> None:
         help="Skip op-allowlist + TF parity verification",
     )
     raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv), raw_argv
 
+
+def _run_export_pipeline(args: Any) -> None:
     _verify_upstream(args.upstream_dir)
     print(f"[upstream] verified saved_model.pb + variables under {args.upstream_dir}")
 
@@ -477,9 +484,8 @@ def main(argv: list[str] | None = None) -> None:
         _verify_op_allowlist(args.output)
         _verify_parity(args.output, args.wrapped_savedmodel)
 
-    if args.no_registry:
-        return
 
+def _record_export(args: Any, raw_argv: list[str]) -> None:
     sidecar = _write_sidecar(
         args.output,
         run_provenance=build_run_provenance(
@@ -503,6 +509,13 @@ def main(argv: list[str] | None = None) -> None:
     print(f"[sidecar] wrote {sidecar}")
     _update_registry(args.output)
     print(f"[registry] updated {REGISTRY}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args, raw_argv = _parse_args(argv)
+    _run_export_pipeline(args)
+    if not args.no_registry:
+        _record_export(args, raw_argv)
 
 
 if __name__ == "__main__":

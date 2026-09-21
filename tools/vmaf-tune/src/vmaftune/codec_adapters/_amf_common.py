@@ -102,7 +102,7 @@ def ensure_amf_available(
     Tests inject a stubbed ``runner`` to exercise both branches.
     """
     runner_fn = runner or subprocess.run
-    completed = runner_fn(  # type: ignore[operator]
+    completed = runner_fn(
         [ffmpeg_bin, "-hide_banner", "-encoders"],
         capture_output=True,
         text=True,
@@ -132,6 +132,7 @@ class _AMFAdapterBase:
 
     name: str = "amf"
     encoder: str = "h264_amf"
+    adapter_version: str = "1"
     quality_knob: str = "qp"
     # AMF cqp accepts 0..51; surface the Phase A informative window
     # so the search loop's grid generator stays aligned with x264.
@@ -200,7 +201,11 @@ class _AMFAdapterBase:
             str(quality),
         ]
 
-    def extra_params(self, preset: str, qp: int) -> tuple[str, ...]:
+    def extra_params(
+        self,
+        preset: str | None = None,
+        qp: int | None = None,
+    ) -> tuple[str, ...]:
         """FFmpeg argv tail covering AMF-specific switches.
 
         Returns the full ``-quality / -rc / -qp_i / -qp_p`` block
@@ -210,6 +215,10 @@ class _AMFAdapterBase:
         ``encode.build_ffmpeg_command`` can pass these via
         ``EncodeRequest.extra_params``.
         """
+        if preset is None and qp is None:
+            return ()
+        if preset is None or qp is None:
+            raise ValueError("AMF extra_params requires both preset and qp")
         return (
             "-quality",
             self.amf_quality(preset),

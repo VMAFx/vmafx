@@ -26,6 +26,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -36,12 +37,20 @@ sys.path.insert(0, str(REPO_ROOT))
 
 # Reuse the existing helpers — same constants, same load_session
 # external-data workaround, same per-clip cache loader.
-from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session  # noqa: E402
+if TYPE_CHECKING:
+    from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
+else:
+    try:
+        from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
+    except ModuleNotFoundError:
+        from eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
 
 ARCHS = ("mlp_small", "mlp_medium", "linear")
 
 
-def _eval_arch(arch: str, loso_dir: Path, clip_xy: dict) -> dict:
+def _eval_arch(
+    arch: str, loso_dir: Path, clip_xy: dict[str, tuple[np.ndarray, np.ndarray]]
+) -> dict[str, Any]:
     """Score @p arch's 9 fold ONNXs on their respective held-out clips."""
     per_fold: dict[str, dict[str, float]] = {}
     plccs, sroccs, rmses = [], [], []
@@ -82,7 +91,7 @@ def _eval_arch(arch: str, loso_dir: Path, clip_xy: dict) -> dict:
     return {"per_fold": per_fold, "aggregate": aggregate}
 
 
-def _markdown(report: dict) -> str:
+def _markdown(report: dict[str, Any]) -> str:
     lines = ["# 3-arch LOSO evaluation — Netflix corpus\n"]
     lines.append(f"Generated: {report['generated']}\n")
     lines.append(f"Corpus: `{report['corpus']}`\n")
@@ -114,12 +123,12 @@ def _markdown(report: dict) -> str:
                 lines.append(f"| {clip} | — | — | — | — |")
                 continue
             lines.append(
-                f"| {clip} | {m['n']} | " f"{m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
+                f"| {clip} | {m['n']} | {m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
             )
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--data-root",
@@ -147,23 +156,22 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "runs" / "loso_eval",
     )
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    if not args.data_root.is_dir():
-        print(f"error: data-root not found: {args.data_root}", file=sys.stderr)
-        return 2
 
-    clip_xy: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for clip in CLIPS:
-        clip_xy[clip] = _load_clip(args.data_root, clip)
+def _load_clips(data_root: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    return {clip: _load_clip(data_root, clip) for clip in CLIPS}
 
-    json_out = args.out / "loso_3arch_eval.json"
-    md_out = args.out / "loso_3arch_eval.md"
 
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+def _build_report(
+    args: argparse.Namespace,
+    clip_xy: dict[str, tuple[np.ndarray, np.ndarray]],
+    json_out: Path,
+    md_out: Path,
+) -> dict[str, Any]:
+    from aiutils.run_manifest import build_run_provenance
 
-    report: dict = {
+    report: dict[str, Any] = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "corpus": str(args.data_root),
         "archs": {},
@@ -182,6 +190,20 @@ def main() -> int:
     for arch in ARCHS:
         loso_dir = args.training_runs_dir / f"loso_{arch}"
         report["archs"][arch] = _eval_arch(arch, loso_dir, clip_xy)
+    return report
+
+
+def main() -> int:
+    args = _parse_args()
+    args.out.mkdir(parents=True, exist_ok=True)
+    if not args.data_root.is_dir():
+        print(f"error: data-root not found: {args.data_root}", file=sys.stderr)
+        return 2
+    clip_xy = _load_clips(args.data_root)
+    json_out = args.out / "loso_3arch_eval.json"
+    md_out = args.out / "loso_3arch_eval.md"
+    report = _build_report(args, clip_xy, json_out, md_out)
+    from aiutils.run_manifest import write_manifest_json
 
     write_manifest_json(json_out, report)
     print(f"[eval] wrote {json_out}", flush=True)

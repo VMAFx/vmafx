@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "phase3_subset_sweep.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("p3ss_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -147,7 +148,17 @@ def test_loso_sweep_runs_one_fold_per_source(monkeypatch: pytest.MonkeyPatch) ->
 
     calls = []
 
-    def fake_train(x_train, y_train, x_val, y_val, *, epochs, batch_size, lr, seed):
+    def fake_train(
+        x_train: Any,
+        y_train: Any,
+        x_val: Any,
+        y_val: Any,
+        *,
+        epochs: Any,
+        batch_size: Any,
+        lr: Any,
+        seed: Any,
+    ) -> Any:
         calls.append({"n_train": len(x_train), "n_val": len(x_val), "seed": seed})
         return {"plcc": 0.9, "srocc": 0.88, "rmse": 3.0}
 
@@ -183,7 +194,7 @@ def test_loso_sweep_standardize_path_invokes_standardiser(
     # verify it's invoked on every (train, val) pair.
     calls: list[tuple[int, int]] = []
 
-    def fake_standardize(x_train, x_val):
+    def fake_standardize(x_train: Any, x_val: Any) -> None:
         calls.append((x_train.shape[0], x_val.shape[0]))
 
     monkeypatch.setattr(P3, "_standardize_inplace", fake_standardize)
@@ -304,7 +315,17 @@ def test_main_supports_seeds_list(
 
     seed_observed = []
 
-    def fake_train(x_train, y_train, x_val, y_val, *, epochs, batch_size, lr, seed):
+    def fake_train(
+        x_train: Any,
+        y_train: Any,
+        x_val: Any,
+        y_val: Any,
+        *,
+        epochs: Any,
+        batch_size: Any,
+        lr: Any,
+        seed: Any,
+    ) -> Any:
         seed_observed.append(seed)
         return {"plcc": 0.9, "srocc": 0.88, "rmse": 3.0}
 

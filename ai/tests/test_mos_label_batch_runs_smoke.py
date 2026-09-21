@@ -31,6 +31,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -42,7 +43,7 @@ _KONVID_MANIFEST = _CONFIGS_DIR / "mos-label-batch-konvid.json"
 _CHUG_MANIFEST = _CONFIGS_DIR / "mos-label-batch-chug.json"
 
 
-def _load_module():
+def _load_module() -> Any:
     # ``_script_bootstrap`` lives in ai/scripts/; make it importable before
     # executing the script module so the bootstrap import does not fail when
     # pytest is invoked from the repo root without PYTHONPATH=ai/scripts.
@@ -56,12 +57,30 @@ def _load_module():
     return module
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> None:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",
         encoding="utf-8",
     )
+
+
+def _run_synthetic_batch(
+    module: Any,
+    tmp_path: Path,
+    *,
+    manifest_name: str,
+    defaults: dict[str, object],
+    table: dict[str, object],
+) -> tuple[int, Path]:
+    report_json = tmp_path / f"{manifest_name}-report.json"
+    manifest = tmp_path / f"{manifest_name}-batch.json"
+    manifest.write_text(
+        json.dumps({"defaults": defaults, "tables": [table]}),
+        encoding="utf-8",
+    )
+    rc = module.main(["--manifest", str(manifest), "--report-json", str(report_json)])
+    return rc, report_json
 
 
 # ---------------------------------------------------------------------------
@@ -199,33 +218,25 @@ def test_konvid_batch_synthetic_run(tmp_path: Path) -> None:
     _write_jsonl(labels_path, label_rows)
 
     out_path = tmp_path / "out" / "konvid_with_mos.jsonl"
-    report_json = tmp_path / "report.json"
-    manifest = tmp_path / "konvid_batch.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "defaults": {
-                    "min_match_rate": 1.0,
-                    "key_normalize": "basename",
-                    "feature_key_regex": "([0-9]{6,})",
-                    "label_key_regex": "([0-9]{6,})",
-                },
-                "tables": [
-                    {
-                        "id": "konvid-1k",
-                        "features": str(features_path),
-                        "labels": [str(labels_path)],
-                        "feature_key_column": "key",
-                        "label_key_column": "src",
-                        "out": str(out_path),
-                    },
-                ],
-            }
-        ),
-        encoding="utf-8",
+    rc, report_json = _run_synthetic_batch(
+        module,
+        tmp_path,
+        manifest_name="konvid",
+        defaults={
+            "min_match_rate": 1.0,
+            "key_normalize": "basename",
+            "feature_key_regex": "([0-9]{6,})",
+            "label_key_regex": "([0-9]{6,})",
+        },
+        table={
+            "id": "konvid-1k",
+            "features": str(features_path),
+            "labels": [str(labels_path)],
+            "feature_key_column": "key",
+            "label_key_column": "src",
+            "out": str(out_path),
+        },
     )
-
-    rc = module.main(["--manifest", str(manifest), "--report-json", str(report_json)])
     assert rc == 0, f"batch runner exited {rc}"
 
     out_rows = [
@@ -271,31 +282,20 @@ def test_chug_batch_synthetic_run(tmp_path: Path) -> None:
     _write_jsonl(labels_path, label_rows)
 
     out_path = tmp_path / "out" / "chug_with_mos.jsonl"
-    report_json = tmp_path / "chug_report.json"
-    manifest = tmp_path / "chug_batch.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "defaults": {
-                    "min_match_rate": 1.0,
-                    "key_normalize": "raw",
-                },
-                "tables": [
-                    {
-                        "id": "chug-hdr",
-                        "features": str(features_path),
-                        "labels": [str(labels_path)],
-                        "feature_key_column": "chug_video_id",
-                        "label_key_column": "chug_video_id",
-                        "out": str(out_path),
-                    },
-                ],
-            }
-        ),
-        encoding="utf-8",
+    rc, report_json = _run_synthetic_batch(
+        module,
+        tmp_path,
+        manifest_name="chug",
+        defaults={"min_match_rate": 1.0, "key_normalize": "raw"},
+        table={
+            "id": "chug-hdr",
+            "features": str(features_path),
+            "labels": [str(labels_path)],
+            "feature_key_column": "chug_video_id",
+            "label_key_column": "chug_video_id",
+            "out": str(out_path),
+        },
     )
-
-    rc = module.main(["--manifest", str(manifest), "--report-json", str(report_json)])
     assert rc == 0, f"batch runner exited {rc}"
 
     out_rows = [

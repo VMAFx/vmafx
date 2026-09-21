@@ -17,6 +17,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -29,8 +30,36 @@ from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
 
 _MERGE_PATH = _REPO_ROOT / "ai" / "scripts" / "merge_corpora.py"
 
+_CANONICAL_AGGREGATE_DEFAULTS: dict[str, float] = {
+    "vif_scale0_mean": 0.0,
+    "vif_scale1_mean": 0.0,
+    "vif_scale2_mean": 0.0,
+    "vif_scale3_mean": 0.0,
+    "motion2_mean": 0.0,
+    "adm2_mean": 0.0,
+    "vif_scale0_std": 0.0,
+    "vif_scale1_std": 0.0,
+    "vif_scale2_std": 0.0,
+    "vif_scale3_std": 0.0,
+    "motion2_std": 0.0,
+    "adm2_std": 0.0,
+}
 
-def _load_merge_module():
+_ENCODER_INTERNAL_DEFAULTS: dict[str, float] = {
+    "enc_internal_qp_mean": 0.0,
+    "enc_internal_qp_std": 0.0,
+    "enc_internal_bits_mean": 0.0,
+    "enc_internal_bits_std": 0.0,
+    "enc_internal_mv_mean": 0.0,
+    "enc_internal_mv_std": 0.0,
+    "enc_internal_itex_mean": 0.0,
+    "enc_internal_ptex_mean": 0.0,
+    "enc_internal_intra_ratio": 0.0,
+    "enc_internal_skip_ratio": 0.0,
+}
+
+
+def _load_merge_module() -> Any:
     spec = importlib.util.spec_from_file_location("merge_corpora", _MERGE_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -38,7 +67,7 @@ def _load_merge_module():
     return module
 
 
-def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:
+def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict[str, Any]:
     """Build a minimal :data:`CORPUS_ROW_KEYS`-complete row."""
     base = {
         "schema_version": 2,
@@ -77,39 +106,15 @@ def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:
         "shot_count": 0,
         "shot_avg_duration_sec": 0.0,
         "shot_duration_std_sec": 0.0,
-        # CANONICAL6_AGGREGATE_KEYS: canonical-6 per-feature mean+std
-        # aggregates. Zeros are fine for fixture rows.
-        "vif_scale0_mean": 0.0,
-        "vif_scale1_mean": 0.0,
-        "vif_scale2_mean": 0.0,
-        "vif_scale3_mean": 0.0,
-        "motion2_mean": 0.0,
-        "adm2_mean": 0.0,
-        "vif_scale0_std": 0.0,
-        "vif_scale1_std": 0.0,
-        "vif_scale2_std": 0.0,
-        "vif_scale3_std": 0.0,
-        "motion2_std": 0.0,
-        "adm2_std": 0.0,
-        # ADR-0332: per-frame encoder-internal stats aggregates.
-        # Default zeros for hardware/non-internal-stats codecs.
-        "enc_internal_qp_mean": 0.0,
-        "enc_internal_qp_std": 0.0,
-        "enc_internal_bits_mean": 0.0,
-        "enc_internal_bits_std": 0.0,
-        "enc_internal_mv_mean": 0.0,
-        "enc_internal_mv_std": 0.0,
-        "enc_internal_itex_mean": 0.0,
-        "enc_internal_ptex_mean": 0.0,
-        "enc_internal_intra_ratio": 0.0,
-        "enc_internal_skip_ratio": 0.0,
+        **_CANONICAL_AGGREGATE_DEFAULTS,
+        **_ENCODER_INTERNAL_DEFAULTS,
     }
     # Sanity: every fixture row must satisfy the schema we test against.
     assert set(base.keys()) >= set(CORPUS_ROW_KEYS)
     return base
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> None:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:
         for row in rows:

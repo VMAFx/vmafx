@@ -357,20 +357,18 @@ repos:
         pass_filenames: false
 
       - id: mypy-local
-        name: mypy (ai/ + scripts/, fork-added Python)
+        name: mypy complete scope (ai/ + scripts/)
         entry: python3 scripts/git-hooks/pre-push-mypy.py
         language: system
-        # The wrapper owns the unchanged ai/scripts *.py policy. Incoming
-        # old-tip/new-tip filenames omit owned files after a rebase.
+        # The wrapper owns every tracked Python path below ai/ and scripts/.
+        # Pre-commit filenames must never narrow that complete scope.
         always_run: true
         pass_filenames: false
         verbose: true
         require_serial: true
-        # Pre-push only — running mypy on every commit doubles a
-        # 1-line edit's commit time. Check the complete branch-owned set
-        # against the master merge base on every push, including rebases.
-        # Contributors need `pip install mypy` (system tool, not in
-        # pyproject.toml — same posture as CI's lint-and-format job).
+        # Pre-push only — running the whole-tree gate on every commit adds
+        # avoidable latency. Contributors install the pinned dev dependencies
+        # with `pip install -e './ai[dev]' -e ./tools/vmaf-tune`.
         stages: [pre-push]
 
       - id: scorecard-policy-contract
@@ -398,7 +396,7 @@ repos:
         stages: [pre-commit, pre-push]
 
       - id: mypy-scope-contract
-        name: Check pre-push mypy merge-base scope
+        name: Check fail-closed complete mypy scope
         entry: python3 scripts/git-hooks/test-pre-push-mypy.py
         language: system
         files: '^(scripts/git-hooks/(pre-push-mypy|test-pre-push-mypy)\.py|\.pre-commit-config\.yaml)$'

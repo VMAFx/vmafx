@@ -98,7 +98,7 @@ def _write_synth_yuv(path: Path, seed: int) -> None:
 
 
 @pytest.fixture(scope="session")
-def mock_corpus(tmp_path_factory) -> Path:
+def mock_corpus(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Build a 2 ref + 4 dis synthetic corpus at a session-scoped tmp dir.
 
     The synthetic YUV is **not** valid for libvmaf (16x16 is below the

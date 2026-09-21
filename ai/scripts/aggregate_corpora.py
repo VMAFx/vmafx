@@ -161,7 +161,7 @@ import math
 import os
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -243,7 +243,7 @@ _REQUIRED_INPUT_KEYS: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_corpus_source(row: dict, override: str | None) -> str | None:
+def _resolve_corpus_source(row: dict[str, Any], override: str | None) -> str | None:
     """Pick the canonical ``corpus_source`` label for ``row``.
 
     The CLI ``--corpus-source`` override takes priority (so an
@@ -291,7 +291,7 @@ def convert_mos(native_mos: float, corpus_source: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _validate_input_row(path: Path, line_no: int, row: dict) -> None:
+def _validate_input_row(path: Path, line_no: int, row: dict[str, Any]) -> None:
     """Hard-fail on rows missing required keys."""
     if not isinstance(row, dict):
         raise SystemExit(f"error: {path}:{line_no}: expected JSON object, got {type(row).__name__}")
@@ -301,7 +301,7 @@ def _validate_input_row(path: Path, line_no: int, row: dict) -> None:
 
 
 def transform_row(
-    row: dict,
+    row: dict[str, Any],
     *,
     corpus_source: str,
     aggregated_at_utc: str,
@@ -342,7 +342,7 @@ def transform_row(
 # ---------------------------------------------------------------------------
 
 
-def resolve_duplicate(existing: dict, candidate: dict) -> dict:
+def resolve_duplicate(existing: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     """Pick the row with tighter MOS uncertainty.
 
     Returns the row to *keep*. Ties keep ``existing`` (first-seen),
@@ -352,7 +352,7 @@ def resolve_duplicate(existing: dict, candidate: dict) -> dict:
     and ties with another unknown.
     """
 
-    def _uncertainty(r: dict) -> float:
+    def _uncertainty(r: dict[str, Any]) -> float:
         v = r.get("mos_std_dev", 0.0)
         try:
             f = float(v)
@@ -375,7 +375,7 @@ def aggregate(
     output: Path,
     *,
     corpus_source_overrides: dict[Path, str] | None = None,
-    now_fn: callable = now_iso_8601,  # type: ignore[valid-type]
+    now_fn: Callable[[], str] = now_iso_8601,
 ) -> dict[str, int]:
     """Stream-aggregate ``inputs`` into ``output``.
 

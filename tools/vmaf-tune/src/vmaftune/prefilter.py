@@ -37,17 +37,20 @@ import math
 import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from .filter_adapters import FilterAdapter, get_filter_adapter
 
 # Optuna is the optional ``[fast]`` extra (same gate as fast.py).
+optuna: ModuleType | None
 try:  # pragma: no cover - import-guarded
-    import optuna  # type: ignore[import-not-found]
+    import optuna as optuna_module
 
+    optuna = optuna_module
     _OPTUNA_AVAILABLE = True
 except ImportError:  # pragma: no cover - import-guarded
-    optuna = None  # type: ignore[assignment]
+    optuna = None
     _OPTUNA_AVAILABLE = False
 
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
@@ -64,7 +65,7 @@ def test_probe_encoder_info_detected() -> None:
         stdout = _configure_line
         stderr = ""
 
-    def _runner(argv, **_kw):
+    def _runner(_argv: object, **_kw: object) -> _FakeCompleted:
         return _FakeCompleted()
 
     for enc in ("libx264", "libsvtav1", "libx265", "libvpx-vp9"):
@@ -85,7 +86,7 @@ def test_probe_encoder_info_not_detected() -> None:
         stdout = "ffmpeg version n6.0\nconfiguration: --prefix=/usr\n"
         stderr = ""
 
-    def _runner(argv, **_kw):
+    def _runner(_argv: object, **_kw: object) -> _FakeCompleted:
         return _FakeCompleted()
 
     for enc in ("libx264", "libx265", "libvpx-vp9"):
@@ -106,7 +107,7 @@ def test_probe_encoder_info_unknown_encoder() -> None:
         stdout = "ffmpeg version n6.0\nconfiguration: --enable-libx264\n"
         stderr = ""
 
-    def _runner(argv, **_kw):
+    def _runner(_argv: object, **_kw: object) -> _FakeCompleted:
         return _FakeCompleted()
 
     info = probe_encoder_info("ffmpeg", "libfooav99", _runner)
@@ -213,15 +214,25 @@ def test_gpu_verify_no_dead_backend_assignment() -> None:
     )
 
 
+def _probe_geometry_stub(_src: Path, _cfg: Any, _runner: Any) -> tuple[int, int, float]:
+    return 64, 64, 24.0
+
+
+def _decode_stub(req: Any, *, workdir: Path, ffmpeg_bin: str) -> tuple[Any, int]:
+    return req, 0
+
+
 def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> None:
     """Backend kwarg must reach the run_score call inside the sample extractor."""
     import unittest.mock
 
     from vmaftune.fast import _build_production_sample_extractor
 
-    calls: list[dict] = []
+    calls: list[dict[str, object]] = []
 
-    def _fake_run_score(req, *, vmaf_bin="vmaf", backend=None, **kw):
+    def _fake_run_score(
+        req: Any, *, vmaf_bin: str = "vmaf", backend: str | None = None, **_kw: Any
+    ) -> Any:
         calls.append({"backend": backend})
         # Return a minimal fake ScoreResult.
 
@@ -230,13 +241,14 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
         return ScoreResult(
             request=req,
             vmaf_score=85.0,
+            score_time_ms=1.0,
+            vmaf_binary_version="test",
             feature_means={},
             exit_status=0,
             stderr_tail="",
         )
 
-    def _fake_run_encode(req, *, ffmpeg_bin="ffmpeg", runner=None):
-
+    def _fake_run_encode(req: Any, *, ffmpeg_bin: str = "ffmpeg", runner: Any = None) -> Any:
         from vmaftune.encode import EncodeResult
 
         # Create a fake output file.
@@ -252,9 +264,6 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
             stderr_tail="",
         )
 
-    def _fake_probe_geometry(src, cfg, runner):
-        return 64, 64, 24.0
-
     src = tmp_path / "src.yuv"
     src.write_bytes(b"\x80" * (64 * 64 * 3 // 2 * 5 * 24))  # ~5 s
 
@@ -262,15 +271,12 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
         unittest.mock.patch("vmaftune.score.run_score", _fake_run_score),
         unittest.mock.patch("vmaftune.encode.run_encode", _fake_run_encode),
         unittest.mock.patch(
-            "vmaftune.predictor_features._probe_video_geometry", _fake_probe_geometry
+            "vmaftune.predictor_features._probe_video_geometry", _probe_geometry_stub
         ),
+        unittest.mock.patch("vmaftune.score.maybe_decode_distorted", _decode_stub),
     ):
         extractor = _build_production_sample_extractor(backend="cuda")
-        # Call the extractor directly; it should forward backend="cuda" to run_score.
-        try:
-            extractor(src, 23, "libx264")
-        except Exception:
-            pass  # Only care that run_score was called with the right backend.
+        extractor(src, 23, "libx264")
 
     assert calls, "run_score was never called"
     assert (

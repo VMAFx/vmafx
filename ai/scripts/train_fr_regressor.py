@@ -50,7 +50,11 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
 
 import numpy as np
 
@@ -116,7 +120,7 @@ def _fit_predict(
     lr: float,
     weight_decay: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> tuple["torch.nn.Module", np.ndarray]:
     """Train an :class:`FRRegressor` and return ``(model, val_preds)``."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -189,7 +193,7 @@ def _standardize(
 
 
 def _loso_sweep(
-    df,
+    df: "pd.DataFrame",
     feature_cols: tuple[str, ...],
     *,
     epochs: int,
@@ -197,7 +201,7 @@ def _loso_sweep(
     lr: float,
     weight_decay: float,
     seed: int,
-) -> dict:
+) -> dict[str, Any]:
     sources = sorted(df["source"].unique())
     per_fold: dict[str, dict[str, float]] = {}
     for held_out in sources:
@@ -246,7 +250,7 @@ def _loso_sweep(
 
 
 def _train_final(
-    df,
+    df: "pd.DataFrame",
     feature_cols: tuple[str, ...],
     *,
     epochs: int,
@@ -254,7 +258,7 @@ def _train_final(
     lr: float,
     weight_decay: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> tuple["torch.nn.Module", dict[str, list[float]], dict[str, float]]:
     """Train on all 9 sources; this is the shipped checkpoint."""
     x = df[list(feature_cols)].to_numpy(dtype=np.float64)
     y = df["vmaf"].to_numpy(dtype=np.float64)
@@ -278,12 +282,12 @@ def _train_final(
 
 
 def _export_and_register(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     *,
     feature_cols: tuple[str, ...],
-    standardisation: dict,
-    loso_summary: dict,
-    in_sample: dict,
+    standardisation: dict[str, list[float]],
+    loso_summary: dict[str, float],
+    in_sample: dict[str, float],
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,
@@ -416,7 +420,7 @@ def _run_fr_loso(
     df: Any,
     feature_cols: tuple[str, ...],
     args: argparse.Namespace,
-) -> dict:
+) -> dict[str, Any]:
     """Run LOSO sweep and print per-fold + summary lines."""
     t0 = time.time()
     print("[fr-v1] running 9-fold LOSO sweep ...", flush=True)
@@ -443,9 +447,9 @@ def _run_fr_loso(
 def _emit_fr_metrics(
     args: argparse.Namespace,
     feature_cols: tuple[str, ...],
-    loso: dict,
-    in_sample: dict,
-    run_provenance: dict,
+    loso: dict[str, Any],
+    in_sample: dict[str, float],
+    run_provenance: dict[str, Any],
 ) -> None:
     """Write the metrics JSON to disk."""
     metrics_out = {
@@ -513,7 +517,7 @@ def _train_fr_final(
     df: Any,
     feature_cols: tuple[str, ...],
     args: argparse.Namespace,
-) -> tuple[Any, dict, dict]:
+) -> tuple[Any, dict[str, list[float]], dict[str, float]]:
     """Train the all-source checkpoint and report its in-sample metrics."""
     print("[fr-v1] training final all-source checkpoint ...", flush=True)
     model, standardisation, in_sample = _train_final(
@@ -537,9 +541,9 @@ def _export_fr_checkpoint(
     args: argparse.Namespace,
     model: Any,
     feature_cols: tuple[str, ...],
-    standardisation: dict,
-    loso_summary: dict,
-    in_sample: dict,
+    standardisation: dict[str, list[float]],
+    loso_summary: dict[str, float],
+    in_sample: dict[str, float],
     run_provenance: dict[str, Any],
 ) -> None:
     """Export the trained checkpoint and update its registry metadata."""

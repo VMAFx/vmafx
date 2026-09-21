@@ -51724,6 +51724,19 @@ helper boundaries are structural only: extractor selection, pending indices,
 error propagation, and score output remain unchanged. No new public surface or
 rebase-sensitive policy was introduced.
 
+## Complete Python type-check gate (ADR-1279)
+
+`scripts/git-hooks/pre-push-mypy.py` checks every tracked `.py` and `.pyi`
+below `ai/` and `scripts/` under strict Python 3.14 semantics. Preserve the
+package-root grouping and `--explicit-package-bases`: `ai/src` maps to the
+top-level `vmaf_train` / `aiutils` / `corpus` packages, while scripts and tests
+map through `ai.scripts` / `ai.tests`. Do not reintroduce ADR-1261's merge-base
+fingerprint subtraction, touched-file scope, advisory exit, ignored module, or
+missing-import override while resolving an upstream conflict.
+
+Optional dependencies without published typing use narrow contracts under
+`ai/typings/`; extend those contracts when a new API is consumed. Make,
+pre-push, and hosted `Python Lint` must continue calling the same runner.
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 

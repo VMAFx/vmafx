@@ -14,13 +14,14 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "validate_model_registry.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("vmr_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)

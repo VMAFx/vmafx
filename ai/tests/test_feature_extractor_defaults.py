@@ -6,11 +6,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ai.data import feature_extractor
 from vmaf_train.data import feature_dump
 
 
-def test_default_vmaf_binary_uses_fork_cpu_build(monkeypatch) -> None:
+def test_default_vmaf_binary_uses_fork_cpu_build(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VMAF_BIN", raising=False)
 
     assert feature_extractor.default_vmaf_binary() == (
@@ -18,7 +20,7 @@ def test_default_vmaf_binary_uses_fork_cpu_build(monkeypatch) -> None:
     )
 
 
-def test_default_vmaf_binary_respects_env(monkeypatch, tmp_path: Path) -> None:
+def test_default_vmaf_binary_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     custom = tmp_path / "custom-vmaf"
     monkeypatch.setenv("VMAF_BIN", str(custom))
 

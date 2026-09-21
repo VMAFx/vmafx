@@ -34,28 +34,36 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 
-try:
+from ..data.feature_extractor import DEFAULT_FEATURES
+
+_HAS_TORCH: bool
+if TYPE_CHECKING:
     import torch
     from torch.utils.data import Dataset
+else:
+    try:
+        import torch
+        from torch.utils.data import Dataset
 
-    _HAS_TORCH = True
-except ImportError:  # pragma: no cover
-    _HAS_TORCH = False
+        _HAS_TORCH = True
+    except ImportError:  # pragma: no cover
+        _HAS_TORCH = False
 
-    class Dataset:  # type: ignore[no-redef]
-        pass
+        class Dataset:
+            @classmethod
+            def __class_getitem__(cls, _item: object) -> type[Dataset]:
+                return cls
 
-
-from ..data.feature_extractor import DEFAULT_FEATURES
 
 __all__ = ["KoNViDPairDataset"]
 
 
-class KoNViDPairDataset(Dataset):  # type: ignore[misc]
+class KoNViDPairDataset(Dataset[Any]):
     """LOSO-trainer-compatible KoNViD-1k VMAF-pair dataset.
 
     Drops into the same trainer as :class:`NetflixFrameDataset` —
@@ -116,7 +124,7 @@ class KoNViDPairDataset(Dataset):  # type: ignore[misc]
     def __len__(self) -> int:
         return len(self._df)
 
-    def __getitem__(self, idx: int):  # type: ignore[no-untyped-def]
+    def __getitem__(self, idx: int) -> tuple[Any, Any]:
         row = self._df.iloc[idx]
         feats = np.asarray(
             [float(row[f]) for f in self.features],

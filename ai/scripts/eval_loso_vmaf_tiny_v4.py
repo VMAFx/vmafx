@@ -23,6 +23,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -31,7 +32,12 @@ REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train  # noqa: E402
+if TYPE_CHECKING:
+    import torch
+
+    from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train
+else:
+    from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -46,7 +52,11 @@ def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
 
 
 def _eval_fold(
-    model, mean: np.ndarray, std: np.ndarray, x_val: np.ndarray, y_val: np.ndarray
+    model: "torch.nn.Module",
+    mean: np.ndarray,
+    std: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
 ) -> dict[str, float]:
     import torch
 
@@ -56,7 +66,7 @@ def _eval_fold(
     return _metrics(pred, y_val)
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--parquet",
@@ -74,19 +84,16 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
-    if "source" not in df.columns:
-        print("error: parquet missing 'source' column", file=sys.stderr)
-        return 2
-    sources = sorted(df["source"].unique().tolist())
-    print(f"[loso-v4] sources={sources} total_rows={len(df)}", flush=True)
-
+def _evaluate_folds(
+    df: Any, args: argparse.Namespace, sources: list[str]
+) -> tuple[dict[str, dict[str, float]], dict[str, float], float]:
     fold_metrics: dict[str, dict[str, float]] = {}
-    plccs, sroccs, rmses = [], [], []
+    plccs: list[float] = []
+    sroccs: list[float] = []
+    rmses: list[float] = []
     t_start = time.monotonic()
     for held_out in sources:
         train_mask = df["source"] != held_out
@@ -95,38 +102,41 @@ def main() -> int:
         y_tr = df.loc[train_mask, "vmaf"].to_numpy(dtype=np.float64)
         x_va = df.loc[val_mask, list(CANONICAL_6)].to_numpy(dtype=np.float64)
         y_va = df.loc[val_mask, "vmaf"].to_numpy(dtype=np.float64)
-
         mean = x_tr.mean(axis=0)
         std = x_tr.std(axis=0, ddof=0)
         std = np.where(std < 1e-8, 1.0, std)
-        x_tr_std = (x_tr - mean) / std
-
         print(
             f"[loso-v4] fold={held_out}  train_rows={len(x_tr)}  val_rows={len(x_va)}",
             flush=True,
         )
         t0 = time.monotonic()
         model = _train(
-            x_tr_std,
+            (x_tr - mean) / std,
             y_tr,
             epochs=args.epochs,
             batch_size=args.batch_size,
             lr=args.lr,
             seed=args.seed,
         )
-        m = _eval_fold(model, mean, std, x_va, y_va)
-        fold_metrics[held_out] = m
-        plccs.append(m["plcc"])
-        sroccs.append(m["srocc"])
-        rmses.append(m["rmse"])
+        metrics = _eval_fold(model, mean, std, x_va, y_va)
+        fold_metrics[held_out] = metrics
+        plccs.append(metrics["plcc"])
+        sroccs.append(metrics["srocc"])
+        rmses.append(metrics["rmse"])
         print(
-            f"[loso-v4]   {held_out:14s} n={m['n']:4d} "
-            f"PLCC={m['plcc']:.4f} SROCC={m['srocc']:.4f} RMSE={m['rmse']:.3f} "
-            f"({time.monotonic() - t0:.1f}s)",
+            f"[loso-v4]   {held_out:14s} n={metrics['n']:4.0f} "
+            f"PLCC={metrics['plcc']:.4f} SROCC={metrics['srocc']:.4f} "
+            f"RMSE={metrics['rmse']:.3f} ({time.monotonic() - t0:.1f}s)",
             flush=True,
         )
+    aggregate = _aggregate_metrics(plccs, sroccs, rmses)
+    return fold_metrics, aggregate, time.monotonic() - t_start
 
-    aggregate = {
+
+def _aggregate_metrics(
+    plccs: list[float], sroccs: list[float], rmses: list[float]
+) -> dict[str, float]:
+    return {
         "mean_plcc": float(np.mean(plccs)),
         "mean_srocc": float(np.mean(sroccs)),
         "mean_rmse": float(np.mean(rmses)),
@@ -134,15 +144,25 @@ def main() -> int:
         "std_srocc": float(np.std(sroccs, ddof=1)),
         "std_rmse": float(np.std(rmses, ddof=1)),
     }
+
+
+def _print_aggregate(aggregate: dict[str, float], folds: int, elapsed: float) -> None:
     print(
-        f"[loso-v4] === aggregate over {len(plccs)} folds ===\n"
+        f"[loso-v4] === aggregate over {folds} folds ===\n"
         f"[loso-v4]  mean PLCC={aggregate['mean_plcc']:.4f} ± {aggregate['std_plcc']:.4f}\n"
         f"[loso-v4]  mean SROCC={aggregate['mean_srocc']:.4f} ± {aggregate['std_srocc']:.4f}\n"
         f"[loso-v4]  mean RMSE={aggregate['mean_rmse']:.3f} ± {aggregate['std_rmse']:.3f}\n"
-        f"[loso-v4] total wall {time.monotonic() - t_start:.1f}s",
+        f"[loso-v4] total wall {elapsed:.1f}s",
         flush=True,
     )
 
+
+def _write_report(
+    args: argparse.Namespace,
+    sources: list[str],
+    fold_metrics: dict[str, dict[str, float]],
+    aggregate: dict[str, float],
+) -> None:
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = {
@@ -167,6 +187,22 @@ def main() -> int:
     }
     write_manifest_json(args.out_json, report)
     print(f"[loso-v4] wrote {args.out_json}")
+
+
+def main() -> int:
+    args = _parse_args()
+
+    import pandas as pd
+
+    df = pd.read_parquet(args.parquet)
+    if "source" not in df.columns:
+        print("error: parquet missing 'source' column", file=sys.stderr)
+        return 2
+    sources = sorted(df["source"].unique().tolist())
+    print(f"[loso-v4] sources={sources} total_rows={len(df)}", flush=True)
+    fold_metrics, aggregate, elapsed = _evaluate_folds(df, args, sources)
+    _print_aggregate(aggregate, len(sources), elapsed)
+    _write_report(args, sources, fold_metrics, aggregate)
     return 0
 
 

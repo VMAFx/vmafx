@@ -2,7 +2,7 @@
 
 # ADR-1261: The local type-check hook fails on findings a branch introduces, not on ones it inherits
 
-- **Status**: Proposed
+- **Status**: Superseded by [ADR-1279](1279-mypy-fail-closed.md)
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: ci, hooks, python, tooling, fork-local

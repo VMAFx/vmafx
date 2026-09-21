@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -15,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 
 
-def _load_script(name: str):
+def _load_script(name: str) -> Any:
     spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / f"{name}.py")
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)

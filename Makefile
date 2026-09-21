@@ -98,11 +98,16 @@ $(NINJA): $(VENV_PIP)
 # cannot disagree about what counts as a violation.
 RUFF_VERSION  := 0.16.8
 BLACK_VERSION := 26.5.1
+MYPY_VERSION  := 2.3.1
 
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
 	$(VENV_PIP) install --quiet \
-	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' mypy
+	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' 'mypy==$(MYPY_VERSION)' \
+	    'types-PyYAML>=6.0.12.20260906' 'pandas-stubs>=3.0.5.260914' \
+	    'pyarrow-stubs>=20.0.0.20260819' 'scipy-stubs>=1.18.1.1' \
+	    'scikit-learn-stubs>=0.0.3' 'types-jsonschema>=4.26.0.20260518' \
+	    'types-tensorflow>=2.18.0.20260827'
 	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
 	@command -v shfmt >/dev/null || { \
 	   echo "note: shfmt is not a Python package and was not installed."; \
@@ -218,13 +223,8 @@ lint-py:
 	ruff check python/ ai/ scripts/
 	$(call require-tool,black,pip install black==$(BLACK_VERSION))
 	black --check python/ ai/ scripts/
-# mypy is advisory (leading `-`): it currently reports ~295 module-resolution
-# errors ("duplicate module", "adding __init__.py somewhere") that stop it
-# before it type-checks anything real. That is a mypy-configuration gap
-# (needs --explicit-package-bases / a mypy_path), not type debt, and fixing it
-# is tracked separately. Kept running so the output stays visible.
-	@command -v mypy >/dev/null || { echo "note: mypy not installed, skipping advisory check"; exit 0; }
-	-mypy ai/scripts/ ai/tests/ ai/train/ ai/lpips_export.py scripts/
+	$(call require-tool,mypy,make lint-tools)
+	python3 scripts/git-hooks/pre-push-mypy.py
 
 lint-sh:
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)

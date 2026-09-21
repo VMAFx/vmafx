@@ -25,17 +25,20 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, Any
 
 import pytorch_lightning as L
 import torch
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Dataset, Subset
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -46,12 +49,18 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 from vmaf_train.data.frame_dataset import FrameMOSDataset, PairedFrameDataset  # noqa: E402
 from vmaf_train.data.splits import split_keys  # noqa: E402
 from vmaf_train.models import LearnedFilter, NRMetric  # noqa: E402
+from vmaf_train.train import PrecisionStr  # noqa: E402
 
 C2_PARQUET = REPO_ROOT / "ai" / "data" / "konvid_frames_nr.parquet"
 C3_PARQUET = REPO_ROOT / "ai" / "data" / "konvid_pairs_filter.parquet"
 
 
-def _split_dataset(ds, val_frac: float, test_frac: float, seed: int):
+def _split_dataset(
+    ds: FrameMOSDataset | PairedFrameDataset,
+    val_frac: float,
+    test_frac: float,
+    seed: int,
+) -> tuple[Subset[Any], Subset[Any], Subset[Any]]:
     keys = ds.keys
     if keys and len(set(keys)) > 1:
         splits = split_keys(sorted(set(keys)), val_frac, test_frac)
@@ -83,13 +92,13 @@ def _split_dataset(ds, val_frac: float, test_frac: float, seed: int):
 def _train_one(
     *,
     model: L.LightningModule,
-    train_set,
-    val_set,
+    train_set: Dataset[Any],
+    val_set: Dataset[Any],
     epochs: int,
     batch_size: int,
     output_dir: Path,
     monitor: str,
-    precision: str = "16-mixed",
+    precision: PrecisionStr = "16-mixed",
     seed: int = 0,
 ) -> Path:
     L.seed_everything(seed, workers=True)
@@ -112,7 +121,7 @@ def _train_one(
         callbacks=[ckpt_cb, early_cb],
         default_root_dir=output_dir,
         log_every_n_steps=10,
-        precision=cast(object, precision),  # type: ignore[arg-type]  # argparse gives str
+        precision=precision,
         deterministic=True,
         accelerator="auto",
     )
@@ -127,9 +136,7 @@ def train_c2(args: argparse.Namespace) -> Path:
     tr, va, _te = _split_dataset(ds, args.val_frac, args.test_frac, args.seed)
     model = NRMetric(in_channels=1, width=args.c2_width)
     output = Path(args.output_c2)
-    print(
-        f"[c2] training NRMetric on {len(tr)}/{len(va)} train/val frames; " f"width={args.c2_width}"
-    )
+    print(f"[c2] training NRMetric on {len(tr)}/{len(va)} train/val frames; width={args.c2_width}")
     return _train_one(
         model=model,
         train_set=tr,
@@ -167,8 +174,7 @@ def train_c3(args: argparse.Namespace) -> Path:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=("c2", "c3", "both"), default="both")
 
@@ -196,7 +202,12 @@ def main(argv: list[str] | None = None) -> int:
             "when --model includes c2, else <output-c3>/train_konvid.manifest.json)."
         ),
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     checkpoints: dict[str, Path] = {}
     if args.model in ("c2", "both"):

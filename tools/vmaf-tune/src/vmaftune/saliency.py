@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    import numpy as np
+    import numpy.typing as npt
 
     from .encode import EncodeRequest, EncodeResult
 
@@ -165,7 +165,7 @@ def _yuv420p_frame_size(width: int, height: int) -> int:
 
 def _read_yuv420p_planes(
     path: Path, frame_index: int, width: int, height: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
     """Read one yuv420p frame as ``uint8`` Y, U, V planes."""
     np = _import_numpy()
     frame_bytes = _yuv420p_frame_size(width, height)
@@ -188,7 +188,11 @@ def _read_yuv420p_planes(
     return y, u, v
 
 
-def _yuv420p_to_rgb_imagenet(y: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+def _yuv420p_to_rgb_imagenet(
+    y: npt.NDArray[Any],
+    u: npt.NDArray[Any],
+    v: npt.NDArray[Any],
+) -> npt.NDArray[Any]:
     """Convert yuv420p BT.709-limited planes to ImageNet-normalised RGB.
 
     Returns ``float32 [1, 3, H, W]`` — the NCHW tensor
@@ -209,7 +213,8 @@ def _yuv420p_to_rgb_imagenet(y: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.
     mean = np.asarray(_IMAGENET_MEAN, dtype=np.float32).reshape(3, 1, 1)
     std = np.asarray(_IMAGENET_STD, dtype=np.float32).reshape(3, 1, 1)
     rgb = (rgb - mean) / std
-    return rgb[None, ...]  # [1, 3, H, W]
+    batched: npt.NDArray[Any] = rgb[None, ...]
+    return batched  # [1, 3, H, W]
 
 
 def _sample_frame_indices(total: int, n: int) -> list[int]:
@@ -241,7 +246,7 @@ def _validate_temporal_aggregator(temporal_aggregator: str, ema_alpha: float) ->
         raise ValueError(f"ema_alpha must be in (0, 1], got {ema_alpha!r}")
 
 
-def _motion_weight(prev_y: np.ndarray | None, y: np.ndarray) -> float:
+def _motion_weight(prev_y: npt.NDArray[Any] | None, y: npt.NDArray[Any]) -> float:
     """Return a non-zero saliency weight from luma motion energy."""
     if prev_y is None:
         return 1.0
@@ -250,7 +255,9 @@ def _motion_weight(prev_y: np.ndarray | None, y: np.ndarray) -> float:
     return max(float(delta.mean() / 255.0), 1.0e-6)
 
 
-def _pad_to_multiple(tensor: np.ndarray, multiple: int = 32) -> tuple[np.ndarray, int, int]:
+def _pad_to_multiple(
+    tensor: npt.NDArray[Any], multiple: int = 32
+) -> tuple[npt.NDArray[Any], int, int]:
     """Pad a ``[1, 3, H, W]`` float32 tensor to the next multiple of ``multiple``.
 
     The ``saliency_student_v1`` UNet encoder-decoder uses skip connections
@@ -285,7 +292,7 @@ def compute_saliency_map(
     temporal_aggregator: str = DEFAULT_SALIENCY_AGGREGATOR,
     ema_alpha: float = DEFAULT_SALIENCY_EMA_ALPHA,
     session_factory: Any = None,
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """Run ``saliency_student_v1`` over a sampled subset of frames.
 
     Returns a ``float32 [H, W]`` aggregate saliency mask in ``[0, 1]``.
@@ -340,9 +347,9 @@ def compute_saliency_map(
 
     accum = np.zeros((height, width), dtype=np.float32)
     max_mask = np.zeros((height, width), dtype=np.float32)
-    ema_mask: np.ndarray | None = None
+    ema_mask: npt.NDArray[Any] | None = None
     weight_sum = 0.0
-    prev_y: np.ndarray | None = None
+    prev_y: npt.NDArray[Any] | None = None
     for fi in indices:
         y, u, v = _read_yuv420p_planes(video_path, fi, width, height)
         tensor = _yuv420p_to_rgb_imagenet(y, u, v)
@@ -379,14 +386,15 @@ def compute_saliency_map(
     else:
         accum /= weight_sum
     # Numerically pin to [0, 1] in case of FP drift on the boundary.
-    return np.clip(accum, 0.0, 1.0)
+    clipped: npt.NDArray[Any] = np.clip(accum, 0.0, 1.0)
+    return clipped
 
 
 def saliency_to_qp_map(
-    mask: np.ndarray,
+    mask: npt.NDArray[Any],
     baseline_qp: int,
     foreground_offset: int = -4,
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """Map a saliency mask to a per-pixel QP offset map.
 
     Convention (matches ``vmaf-roi`` ADR-0247):
@@ -415,10 +423,13 @@ def saliency_to_qp_map(
     # Clamp to the encoder-accepted band.
     offsets = np.clip(np.round(offsets), QP_OFFSET_MIN, QP_OFFSET_MAX)
     # Bound the API to a known dtype.
-    return offsets.astype(np.int32)
+    result: npt.NDArray[Any] = offsets.astype(np.int32)
+    return result
 
 
-def reduce_qp_map_to_blocks(qp_map: np.ndarray, block: int = X264_MB_SIDE) -> np.ndarray:
+def reduce_qp_map_to_blocks(
+    qp_map: npt.NDArray[Any], block: int = X264_MB_SIDE
+) -> npt.NDArray[Any]:
     """Reduce a per-pixel QP-offset map to per-block (mean-rounded).
 
     x264's ``--qpfile`` is per-MB (16x16). Block-mean keeps offsets
@@ -433,11 +444,14 @@ def reduce_qp_map_to_blocks(qp_map: np.ndarray, block: int = X264_MB_SIDE) -> np
     cropped = qp_map[: bh * block, : bw * block]
     reshaped = cropped.reshape(bh, block, bw, block).astype(np.float32)
     means = reshaped.mean(axis=(1, 3))
-    return np.clip(np.round(means), QP_OFFSET_MIN, QP_OFFSET_MAX).astype(np.int32)
+    result: npt.NDArray[Any] = np.clip(np.round(means), QP_OFFSET_MIN, QP_OFFSET_MAX).astype(
+        np.int32
+    )
+    return result
 
 
 def write_x264_qpfile(
-    block_offsets: np.ndarray,
+    block_offsets: npt.NDArray[Any],
     out_path: Path,
     *,
     duration_frames: int = 1,
@@ -497,7 +511,7 @@ def augment_extra_params_with_libaom_qpfile(base: Sequence[str], qpfile: Path) -
 
 
 def write_x265_zones_arg(
-    block_offsets: np.ndarray,
+    block_offsets: npt.NDArray[Any],
     *,
     duration_frames: int = 1,
     fps: float = 24.0,
@@ -551,7 +565,7 @@ SVTAV1_SB_SIDE = 64
 
 
 def write_svtav1_qpoffset_map(
-    block_offsets: np.ndarray,
+    block_offsets: npt.NDArray[Any],
     out_path: Path,
     *,
     duration_frames: int = 1,
@@ -611,7 +625,7 @@ VVENC_CTU_SIDE = 64
 
 
 def write_vvenc_roi_csv(
-    block_offsets: np.ndarray,
+    block_offsets: npt.NDArray[Any],
     out_path: Path,
     *,
     duration_frames: int = 1,
@@ -657,7 +671,7 @@ def augment_extra_params_with_vvenc_roi(base: Sequence[str], roi_csv: Path) -> t
 
 def _saliency_augment_x264(
     request: EncodeRequest,
-    qp_map: np.ndarray,
+    qp_map: npt.NDArray[Any],
     *,
     duration_frames: int,
     persist: bool,
@@ -689,7 +703,7 @@ def _saliency_augment_x264(
 
 def _saliency_augment_libaom(
     request: EncodeRequest,
-    qp_map: np.ndarray,
+    qp_map: npt.NDArray[Any],
     *,
     duration_frames: int,
     persist: bool,
@@ -719,7 +733,7 @@ def _saliency_augment_libaom(
 
 def _saliency_augment_x265(
     request: EncodeRequest,
-    qp_map: np.ndarray,
+    qp_map: npt.NDArray[Any],
     *,
     duration_frames: int,
     persist: bool,
@@ -742,7 +756,7 @@ def _saliency_augment_x265(
 
 def _saliency_augment_svtav1(
     request: EncodeRequest,
-    qp_map: np.ndarray,
+    qp_map: npt.NDArray[Any],
     *,
     duration_frames: int,
     persist: bool,
@@ -774,7 +788,7 @@ def _saliency_augment_svtav1(
 
 def _saliency_augment_vvenc(
     request: EncodeRequest,
-    qp_map: np.ndarray,
+    qp_map: npt.NDArray[Any],
     *,
     duration_frames: int,
     persist: bool,

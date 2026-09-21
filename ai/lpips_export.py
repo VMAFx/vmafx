@@ -46,12 +46,17 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import onnx
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    import lpips
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -64,6 +69,10 @@ class _LpipsImagenetWrapper(nn.Module):
     The C side only has to produce ImageNet-normalised tensors (it does,
     via :c:func:`vmaf_tensor_from_rgb_imagenet`).
     """
+
+    core: "lpips.LPIPS"
+    in_mean: torch.Tensor
+    in_std: torch.Tensor
 
     def __init__(self, net: str = "squeeze") -> None:
         super().__init__()
@@ -89,7 +98,7 @@ class _LpipsImagenetWrapper(nn.Module):
         ref_m11 = self._denorm(ref)
         dist_m11 = self._denorm(dist)
         # LPIPS returns [N,1,1,1] — squeeze trailing dims to a scalar per item.
-        d = self.core(ref_m11, dist_m11, normalize=False, retPerLayer=False)
+        d: torch.Tensor = self.core(ref_m11, dist_m11, normalize=False, retPerLayer=False)
         return d.reshape(-1)
 
 
@@ -185,10 +194,10 @@ def _write_sidecar(
     opset: int,
     *,
     sidecar_path: Path | None = None,
-    run_provenance: dict | None = None,
+    run_provenance: Mapping[str, object] | None = None,
 ) -> Path:
     sidecar = sidecar_path if sidecar_path is not None else onnx_path.with_suffix(".json")
-    payload: dict = {
+    payload: dict[str, object] = {
         "input_name": "ref",
         "kind": "fr",
         "name": "vmaf_tiny_lpips_sq_v1",
@@ -215,11 +224,8 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def main(argv: list[str] | None = None) -> int:
-    script_path = Path(__file__).resolve()
-    repo_root = script_path.parent.parent
-    default_out = repo_root / "model" / "tiny" / "lpips_sq.onnx"
-
+def _build_parser(default_out: Path) -> argparse.ArgumentParser:
+    """Build the LPIPS exporter command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output", "--out", dest="output", type=Path, default=default_out)
     parser.add_argument(
@@ -230,7 +236,47 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--skip-parity", action="store_true")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _build_export_provenance(
+    args: argparse.Namespace,
+    script_path: Path,
+    repo_root: Path,
+    argv: list[str] | None,
+) -> Mapping[str, object]:
+    """Build the replay record after making the local aiutils package importable."""
+    ai_src = str(script_path.parent / "src")
+    if ai_src not in sys.path:
+        sys.path.insert(0, ai_src)
+    from aiutils.run_manifest import build_run_provenance
+
+    return build_run_provenance(
+        entrypoint=script_path,
+        repo_root=repo_root,
+        argv=sys.argv[1:] if argv is None else list(argv),
+        args=vars(args),
+        outputs={"onnx": args.output},
+    )
+
+
+def _report_export(output: Path, repo_root: Path) -> None:
+    """Print the generated model path, size, and registry digest."""
+    digest = _sha256(output)
+    size = output.stat().st_size
+    try:
+        display_path = output.relative_to(repo_root)
+    except ValueError:
+        display_path = output
+    print(f"[ok] wrote {display_path} ({size} bytes)")
+    print(f"     sha256 {digest}")
+    print("     add this digest to model/tiny/registry.json")
+
+
+def main(argv: list[str] | None = None) -> int:
+    script_path = Path(__file__).resolve()
+    repo_root = script_path.parent.parent
+    args = _build_parser(repo_root / "model" / "tiny" / "lpips_sq.onnx").parse_args(argv)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     effective_opset = _export(args.output, args.opset)
@@ -240,42 +286,15 @@ def main(argv: list[str] | None = None) -> int:
             "sidecar + registry should use the emitted value",
             file=sys.stderr,
         )
-    # Build run_provenance lazily so aiutils import errors surface only when
-    # the sidecar is actually written (keeps the module importable without aiutils).
-    run_provenance: dict | None = None
-    try:
-        _ai_src = str(script_path.parent / "src")
-        if _ai_src not in sys.path:
-            sys.path.insert(0, _ai_src)
-        from aiutils.run_manifest import build_run_provenance
-
-        run_provenance = build_run_provenance(
-            entrypoint=script_path,
-            repo_root=repo_root,
-            argv=sys.argv[1:] if argv is None else list(argv),
-            args=vars(args),
-            outputs={"onnx": args.output},
-        )
-    except ImportError:
-        pass
     _write_sidecar(
         args.output,
         effective_opset,
         sidecar_path=args.sidecar,
-        run_provenance=run_provenance,
+        run_provenance=_build_export_provenance(args, script_path, repo_root, argv),
     )
     if not args.skip_parity:
         _parity_check(args.output)
-
-    sha = _sha256(args.output)
-    size = args.output.stat().st_size
-    try:
-        display_path = args.output.relative_to(repo_root)
-    except ValueError:
-        display_path = args.output
-    print(f"[ok] wrote {display_path} ({size} bytes)")
-    print(f"     sha256 {sha}")
-    print("     add this digest to model/tiny/registry.json")
+    _report_export(args.output, repo_root)
     return 0
 
 

@@ -73,7 +73,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, SupportsFloat, SupportsIndex
 
 if TYPE_CHECKING:
     from .hdr import HdrInfo
@@ -258,6 +258,27 @@ def _find_calibrated_recipes_path() -> Path | None:
     return None
 
 
+def _placeholder_recipes() -> dict[str, dict[str, object]]:
+    return {
+        content_class: dict(recipe) for content_class, recipe in _F4_PLACEHOLDER_RECIPES.items()
+    }
+
+
+def _merge_calibrated_recipes(raw_recipes: dict[object, object]) -> dict[str, dict[str, object]]:
+    merged = _placeholder_recipes()
+    for content_class, recipe in raw_recipes.items():
+        if content_class not in merged or not isinstance(recipe, dict):
+            continue
+        clean = {
+            str(key): value
+            for key, value in recipe.items()
+            if isinstance(key, str) and not key.startswith("_") and key in _RECIPE_KEYS
+        }
+        if clean:
+            merged[str(content_class)] = clean
+    return merged
+
+
 def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
     """Load the F.5-calibrated overrides, falling back to F.4 placeholders.
 
@@ -290,7 +311,7 @@ def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
             "Run 'vmaf-tune auto --calibrate' or supply a recipes JSON to "
             "suppress this warning.",
         )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
+        return _placeholder_recipes()
     try:
         with path.open("rt", encoding="utf-8") as fh:
             payload = json.load(fh)
@@ -300,7 +321,7 @@ def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
             path,
             exc,
         )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
+        return _placeholder_recipes()
 
     raw_recipes = payload.get("recipes")
     if not isinstance(raw_recipes, dict):
@@ -308,23 +329,8 @@ def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
             "%s missing 'recipes' object; falling back to F.4 placeholders",
             path,
         )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
-
-    merged: dict[str, dict[str, object]] = {
-        cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()
-    }
-    for cls, rec in raw_recipes.items():
-        if cls not in merged or not isinstance(rec, dict):
-            continue
-        clean: dict[str, object] = {}
-        for key, value in rec.items():
-            if key.startswith("_"):
-                continue
-            if key in _RECIPE_KEYS:
-                clean[key] = value
-        if clean:
-            merged[cls] = clean
-    return merged
+        return _placeholder_recipes()
+    return _merge_calibrated_recipes(raw_recipes)
 
 
 # Resolved at module import — a single load, snapshotted into the
@@ -515,7 +521,7 @@ class SourceMeta:
     baseline_vmaf: float = 0.0
 
 
-def _default_hdr_info_for_auto():
+def _default_hdr_info_for_auto() -> HdrInfo:
     """Return conservative PQ HDR metadata for metadata-only auto runs.
 
     `SourceMeta` intentionally carries only the boolean `is_hdr` signal.
@@ -871,7 +877,9 @@ def _apply_recipe_override(
     effective_thresholds = confidence_thresholds
     tight_override = recipe.get("tight_interval_max_width")
     if tight_override is not None:
-        new_tight = float(tight_override)  # type: ignore[arg-type]
+        new_tight = _finite_float(tight_override)
+        if new_tight is None:
+            raise ValueError("recipe tight_interval_max_width must be a finite number")
         wide = float(confidence_thresholds.wide_interval_min_width)
         # Clamp so we never violate the constructor invariant
         # (tight <= wide). A recipe that asks for a tight wider than
@@ -894,8 +902,8 @@ class AutoPlan:
     the schema is stable from F.1 onwards.
     """
 
-    cells: list[dict]
-    metadata: dict
+    cells: list[dict[str, Any]]
+    metadata: dict[str, Any]
 
 
 def _predictor_features_from_meta(meta: SourceMeta) -> ShotFeatures:
@@ -949,14 +957,16 @@ def _estimate_cell_bitrate_kbps(features: ShotFeatures, codec: str, crf: int) ->
 
     adapter = get_adapter(codec)
     probe_quality = int(getattr(adapter, "probe_quality", getattr(adapter, "quality_default", crf)))
-    scale = 2.0 ** ((float(probe_quality) - float(crf)) / 6.0)
+    scale = math.pow(2.0, (float(probe_quality) - float(crf)) / 6.0)
     return max(1.0, float(features.probe_bitrate_kbps) * scale)
 
 
 def _finite_float(value: object) -> float | None:
     """Return ``value`` as a finite float, or ``None`` when unusable."""
+    if not isinstance(value, (str, SupportsFloat, SupportsIndex)):
+        return None
     try:
-        out = float(value)  # type: ignore[arg-type]
+        out = float(value)
     except (TypeError, ValueError):
         return None
     if not math.isfinite(out):
@@ -965,7 +975,7 @@ def _finite_float(value: object) -> float | None:
 
 
 def pick_auto_winner(
-    cells: Sequence[dict],
+    cells: Sequence[dict[str, Any]],
     *,
     target_vmaf: float,
     max_budget_kbps: float,
@@ -983,7 +993,7 @@ def pick_auto_winner(
     Ties favour lower bitrate, then higher VMAF, then a higher rung, then a
     stable codec/name ordering.
     """
-    scored: list[tuple[int, dict, float, float]] = []
+    scored: list[tuple[int, dict[str, Any], float, float]] = []
     for index, cell in enumerate(cells):
         estimated_vmaf = _finite_float(cell.get("estimated_vmaf"))
         estimated_bitrate = _finite_float(cell.get("estimated_bitrate_kbps"))
@@ -1054,7 +1064,7 @@ def pick_auto_winner(
     }
 
 
-def _mark_selected_cell(cells: list[dict], winner: dict[str, object]) -> None:
+def _mark_selected_cell(cells: list[dict[str, Any]], winner: dict[str, object]) -> None:
     """Annotate cells in-place with the winner selected by ``pick_auto_winner``."""
     selected_index = winner.get("cell_index")
     for index, cell in enumerate(cells):
@@ -1150,7 +1160,9 @@ def run_auto(
     recipe_class, recipe, effective_thresholds = _apply_recipe_override(
         meta, plan_state, base_thresholds
     )
-    target_vmaf_offset = float(recipe.get("target_vmaf_offset", 0.0))  # type: ignore[arg-type]
+    target_vmaf_offset = _finite_float(recipe.get("target_vmaf_offset", 0.0))
+    if target_vmaf_offset is None:
+        raise ValueError("recipe target_vmaf_offset must be a finite number")
     effective_predictor_target_vmaf = float(target_vmaf) + target_vmaf_offset
     force_single_rung = bool(recipe.get("force_single_rung", False))
     saliency_intensity = str(recipe.get("saliency_intensity", "default"))
@@ -1221,8 +1233,8 @@ def run_auto(
                 float(width_in),
             )
 
-    confidence_aware_escalations: list[dict] = []
-    cells: list[dict] = []
+    confidence_aware_escalations: list[dict[str, Any]] = []
+    cells: list[dict[str, Any]] = []
     predictor = None
     predictor_features = None
     if not smoke:
@@ -1260,7 +1272,7 @@ def run_auto(
                 cell_verdict = plan_state.predictor_verdict
                 cell_width = 1.0 if smoke else float("nan")
             decision = _confidence_aware_escalation(cell_verdict, cell_width, thresholds)
-            cell_hdr_args = ()
+            cell_hdr_args: tuple[str, ...] = ()
             if hdr_info is not None and _hdr_codec_args is not None:
                 cell_hdr_args = _hdr_codec_args(str(codec), hdr_info)
             confidence_aware_escalations.append(

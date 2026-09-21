@@ -8,12 +8,13 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "batch_materialize_second_opinion_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location(
         "batch_materialize_second_opinion_features", _SCRIPT
     )
@@ -36,22 +37,8 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def test_batch_manifest_joins_multiple_tables(tmp_path: Path) -> None:
-    module = _load_module()
-    _write_jsonl(tmp_path / "features-a.jsonl", [{"video_id": "a"}, {"video_id": "b"}])
-    _write_jsonl(tmp_path / "features-b.jsonl", [{"video_id": "c"}])
-    _write_jsonl(
-        tmp_path / "scores-a.jsonl",
-        [
-            {"video_id": "a", "competitor": "fork-nr", "score": 71.0},
-            {"video_id": "b", "competitor": "fork-nr", "score": 72.0},
-        ],
-    )
-    _write_jsonl(
-        tmp_path / "scores-b.jsonl", [{"video_id": "c", "competitor": "fork-nr", "score": 73.0}]
-    )
-    manifest = tmp_path / "batch.json"
-    manifest.write_text(
+def _write_batch_manifest(path: Path) -> None:
+    path.write_text(
         json.dumps(
             {
                 "defaults": {"missing_policy": "fail"},
@@ -74,6 +61,24 @@ def test_batch_manifest_joins_multiple_tables(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_batch_manifest_joins_multiple_tables(tmp_path: Path) -> None:
+    module = _load_module()
+    _write_jsonl(tmp_path / "features-a.jsonl", [{"video_id": "a"}, {"video_id": "b"}])
+    _write_jsonl(tmp_path / "features-b.jsonl", [{"video_id": "c"}])
+    _write_jsonl(
+        tmp_path / "scores-a.jsonl",
+        [
+            {"video_id": "a", "competitor": "fork-nr", "score": 71.0},
+            {"video_id": "b", "competitor": "fork-nr", "score": 72.0},
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "scores-b.jsonl", [{"video_id": "c", "competitor": "fork-nr", "score": 73.0}]
+    )
+    manifest = tmp_path / "batch.json"
+    _write_batch_manifest(manifest)
     report_json = tmp_path / "report.json"
     report_md = tmp_path / "report.md"
 

@@ -163,53 +163,14 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.14"
 strict = true
-# ai/src/ is the vmaf_train package source root. Declaring it via mypy_path lets
-# mypy resolve `vmaf_train.*` imports in ai/scripts/ and ai/tests/ without the
-# package being pip-installed. ai/src/ itself is excluded from the file-scan list
-# to prevent the duplicate-module-name error (mypy would otherwise see each module
-# twice: once as "ai.src.vmaf_train.X" from the ai/ argument and once as
-# "vmaf_train.X" from mypy_path).
-mypy_path = "ai/src"
-exclude = [
-  "build/",
-  "subprojects/",
-  "python/test/resource/",
-  "ai/src/",
+# These are repository source roots, not installed third-party packages. The
+# canonical runner checks ai/src files separately with --explicit-package-bases,
+# so each file has exactly one module identity while imports from the other
+# owned trees resolve to the same source.
+mypy_path = [
+  "ai/src",
+  "ai/typings",
+  "tools/vmaf-tune/src",
 ]
-
-[[tool.mypy.overrides]]
-module = "vmaf.*"
-ignore_errors = true   # upstream library — not our type stubs to maintain
-
-[[tool.mypy.overrides]]
-# Suppress "Source file found twice" errors for the ai.src.vmaf_train.* namespace.
-# This fires when a script imports vmaf_train.X (resolved via mypy_path → ai/src/)
-# and mypy also sees the same file in the ai.src namespace via the legacy ai/ scan.
-# The ai.src namespace is never used at runtime; only vmaf_train.* is.
-module = ["ai.src.*", "ai.src.vmaf_train.*"]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-# Packages that ship no py.typed marker and have no usable third-party stubs.
-# Call sites are already type-safe at the boundary (explicit casts / guards).
-module = [
-  "onnxruntime",
-  "onnxruntime.*",
-  "lpips",
-  "openvino",
-  "openvino.*",
-  "jsonschema",
-  "sklearn",
-  "sklearn.*",
-  "tensorflow",
-  "tensorflow.*",
-  "pyarrow",
-  "pyarrow.*",
-  "scipy",
-  "scipy.*",
-  "transformers",
-  "transformers.*",
-]
-ignore_missing_imports = true

@@ -37,7 +37,10 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .auto import AutoPlan
 
 from .defaultmodel import DEFAULT_MODEL
 from .encode import EncodeRequest, EncodeResult, run_encode
@@ -135,7 +138,7 @@ def _write_jsonl_row(fh: Any, row: dict[str, Any]) -> None:
 
 
 def run_plan(
-    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,
     src: Path,
     out_dir: Path,
     *,
@@ -301,7 +304,7 @@ class PerShotPlanResult:
 
 
 def run_plan_per_shot(
-    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,
     src: Path,
     out_dir: Path,
     *,
@@ -488,7 +491,7 @@ class SaliencyExecuteResult:
 
 
 def run_plan_saliency(
-    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,
     src: Path,
     out_dir: Path,
     *,

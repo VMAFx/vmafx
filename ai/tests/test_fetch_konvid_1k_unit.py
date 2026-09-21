@@ -13,6 +13,7 @@ import io
 import json
 import zipfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,7 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "fetch_konvid_1k.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("fetch_konvid_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -85,17 +86,19 @@ class _FakeResponse:
         self._stream = io.BytesIO(payload)
         self.headers = {"Content-Length": str(len(payload))}
 
-    def __enter__(self):
+    def __enter__(self) -> Any:
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: Any) -> Any:
         return False
 
     def read(self, n: int) -> bytes:
         return self._stream.read(n)
 
 
-def test_download_skips_when_already_present(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_download_skips_when_already_present(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     dst = tmp_path / "already.zip"
     dst.write_bytes(b"\x00" * 1024)
     result = FK._download("https://example/", dst, min_bytes=100)
@@ -219,7 +222,7 @@ def test_main_skips_extraction_if_dirs_already_present(
     (root / "KoNViD_1k_videos").mkdir()
     (root / "KoNViD_1k_metadata").mkdir()
 
-    calls: list[tuple] = []
+    calls: list[tuple[Any, ...]] = []
     monkeypatch.setattr(FK, "_extract", lambda *a, **kw: calls.append(a))
     monkeypatch.setattr("sys.argv", ["fetch_konvid_1k.py", "--root", str(root), "--keep-zips"])
 

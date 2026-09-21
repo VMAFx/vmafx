@@ -14,30 +14,30 @@ from ai.sidecar.replay_buffer import ReplayBuffer, Sample
 
 
 class TestReplayBufferBasic:
-    def test_empty_on_construction(self):
+    def test_empty_on_construction(self) -> None:
         buf = ReplayBuffer(capacity=100)
         assert len(buf) == 0
 
-    def test_invalid_capacity_raises(self):
+    def test_invalid_capacity_raises(self) -> None:
         with pytest.raises(ValueError):
             ReplayBuffer(capacity=0)
         with pytest.raises(ValueError):
             ReplayBuffer(capacity=-1)
 
-    def test_push_and_len(self):
+    def test_push_and_len(self) -> None:
         buf = ReplayBuffer(capacity=5)
         for i in range(3):
             buf.push([float(i)], float(i))
         assert len(buf) == 3
 
-    def test_push_returns_eviction_flag(self):
+    def test_push_returns_eviction_flag(self) -> None:
         buf = ReplayBuffer(capacity=2)
         assert buf.push([1.0], 1.0) is False
         assert buf.push([2.0], 2.0) is False
         # Third push evicts oldest — capacity is full.
         assert buf.push([3.0], 3.0) is True
 
-    def test_fifo_eviction_oldest_dropped(self):
+    def test_fifo_eviction_oldest_dropped(self) -> None:
         """The oldest sample is evicted when capacity is exceeded."""
         buf = ReplayBuffer(capacity=3)
         for i in range(5):
@@ -47,18 +47,18 @@ class TestReplayBufferBasic:
         # Last 3 pushed: 2, 3, 4
         assert [s.true_score for s in contents] == [2.0, 3.0, 4.0]
 
-    def test_as_list_returns_copy(self):
+    def test_as_list_returns_copy(self) -> None:
         buf = ReplayBuffer(capacity=10)
         buf.push([1.0], 1.0)
         lst = buf.as_list()
         lst.clear()
         assert len(buf) == 1  # original unaffected
 
-    def test_sample_empty_buffer(self):
+    def test_sample_empty_buffer(self) -> None:
         buf = ReplayBuffer(capacity=10)
         assert buf.sample(5) == []
 
-    def test_sample_with_replacement_capped_at_len(self):
+    def test_sample_with_replacement_capped_at_len(self) -> None:
         buf = ReplayBuffer(capacity=10)
         buf.push([1.0], 1.0)
         buf.push([2.0], 2.0)
@@ -66,7 +66,7 @@ class TestReplayBufferBasic:
         # sample() caps at len when n > len and no explicit replacement
         assert len(result) == 2
 
-    def test_sample_deterministic_with_seeded_rng(self):
+    def test_sample_deterministic_with_seeded_rng(self) -> None:
         buf = ReplayBuffer(capacity=20)
         for i in range(10):
             buf.push([float(i)], float(i))
@@ -74,7 +74,7 @@ class TestReplayBufferBasic:
         rng2 = random.Random(42)
         assert buf.sample(5, rng=rng1) == buf.sample(5, rng=rng2)
 
-    def test_features_stored_as_tuple(self):
+    def test_features_stored_as_tuple(self) -> None:
         buf = ReplayBuffer(capacity=5)
         buf.push([1.0, 2.0, 3.0], 50.0)
         s = buf.as_list()[0]
@@ -85,13 +85,13 @@ class TestReplayBufferBasic:
 
 
 class TestReplayBufferStats:
-    def test_stats_dict_keys(self):
+    def test_stats_dict_keys(self) -> None:
         buf = ReplayBuffer(capacity=100)
         stats = buf.stats
         for key in ("capacity", "current_size", "total_pushed", "total_evicted"):
             assert key in stats
 
-    def test_stats_eviction_count(self):
+    def test_stats_eviction_count(self) -> None:
         buf = ReplayBuffer(capacity=3)
         for i in range(7):
             buf.push([float(i)], float(i))
@@ -100,7 +100,7 @@ class TestReplayBufferStats:
         assert stats["total_evicted"] == 4  # 7 - 3
         assert stats["current_size"] == 3
 
-    def test_repr_contains_capacity(self):
+    def test_repr_contains_capacity(self) -> None:
         buf = ReplayBuffer(capacity=42)
         assert "42" in repr(buf)
 
@@ -108,7 +108,7 @@ class TestReplayBufferStats:
 class TestReplayBufferConcurrency:
     """Stress-test the thread-safety of push/sample."""
 
-    def test_concurrent_push(self):
+    def test_concurrent_push(self) -> None:
         buf = ReplayBuffer(capacity=1000)
         errors: list[Exception] = []
 
@@ -129,7 +129,7 @@ class TestReplayBufferConcurrency:
         # 5 threads × 200 pushes = 1000 total; capacity == 1000 so no eviction.
         assert len(buf) == 1000
 
-    def test_concurrent_push_sample(self):
+    def test_concurrent_push_sample(self) -> None:
         buf = ReplayBuffer(capacity=500)
         errors: list[Exception] = []
 

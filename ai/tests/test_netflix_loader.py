@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -89,12 +90,14 @@ def test_probe_yuv_dims_falls_through_when_size_doesnt_match(mock_corpus: Path) 
     ), "Synth 16x16 must not be reported as 1920x1080."
 
 
-def test_load_or_compute_caches(mock_corpus: Path, tmp_path: Path, monkeypatch) -> None:
+def test_load_or_compute_caches(
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     pair = next(iter(netflix_loader.iter_pairs(mock_corpus, assume_dims=(16, 16))))
     calls = {"n": 0}
 
-    def compute(_p):
+    def compute(_p: Any) -> Any:
         calls["n"] += 1
         return {"hello": "world"}
 
@@ -111,7 +114,7 @@ def test_load_or_compute_caches(mock_corpus: Path, tmp_path: Path, monkeypatch) 
 
 
 def test_load_or_compute_recovers_from_corrupt_cache(
-    mock_corpus: Path, tmp_path: Path, monkeypatch
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     pair = next(iter(netflix_loader.iter_pairs(mock_corpus, assume_dims=(16, 16))))
@@ -119,7 +122,7 @@ def test_load_or_compute_recovers_from_corrupt_cache(
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text("{not valid json")
 
-    def compute(_p):
+    def compute(_p: Any) -> Any:
         return {"hello": "world"}
 
     out = netflix_loader.load_or_compute(pair, compute)
@@ -127,7 +130,7 @@ def test_load_or_compute_recovers_from_corrupt_cache(
 
 
 def test_load_or_compute_cache_valid_predicate_forces_recompute(
-    mock_corpus: Path, tmp_path: Path, monkeypatch
+    mock_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
     pair = next(iter(netflix_loader.iter_pairs(mock_corpus, assume_dims=(16, 16))))
@@ -136,11 +139,11 @@ def test_load_or_compute_cache_valid_predicate_forces_recompute(
     cache_file.write_text(json.dumps({"scores": {"teacher_model": "vmaf_v0.6.1"}}))
     calls = {"n": 0}
 
-    def compute(_p):
+    def compute(_p: Any) -> Any:
         calls["n"] += 1
         return {"scores": {"teacher_model": "current"}}
 
-    def valid(payload):
+    def valid(payload: Any) -> Any:
         return payload.get("scores", {}).get("teacher_model") == "current"
 
     out = netflix_loader.load_or_compute(pair, compute, cache_valid=valid)

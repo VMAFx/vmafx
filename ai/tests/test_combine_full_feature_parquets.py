@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -18,7 +19,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "combine_full_feature_parquets.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("combine_full_feature_parquets", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -27,7 +28,7 @@ def _load_module():
     return module
 
 
-def _write_parquet(path: Path, rows: list[dict]) -> Path:
+def _write_parquet(path: Path, rows: list[dict[str, Any]]) -> Path:
     pd.DataFrame(rows).to_parquet(path, index=False)
     return path
 
@@ -106,7 +107,9 @@ def test_normalise_shard_refuses_mixed_teacher_within_shard(tmp_path: Path) -> N
         mod._normalise_shard("mixed", parquet)
 
 
-def test_main_combines_multiple_labeled_inputs(tmp_path: Path, monkeypatch) -> None:
+def test_main_combines_multiple_labeled_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module()
     first = {
         "source": "netflix-src",
@@ -157,7 +160,9 @@ def test_main_combines_multiple_labeled_inputs(tmp_path: Path, monkeypatch) -> N
     assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
 
 
-def test_main_refuses_conflicting_teachers_across_shards(tmp_path: Path, monkeypatch) -> None:
+def test_main_refuses_conflicting_teachers_across_shards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module()
     p1 = _write_parquet(
         tmp_path / "shard1.parquet",
@@ -186,7 +191,9 @@ def test_main_refuses_conflicting_teachers_across_shards(tmp_path: Path, monkeyp
         mod.main()
 
 
-def test_main_accepts_legacy_with_assume_teacher_flag(tmp_path: Path, monkeypatch) -> None:
+def test_main_accepts_legacy_with_assume_teacher_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module()
     p1 = _write_parquet(
         tmp_path / "shard1.parquet",

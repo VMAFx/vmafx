@@ -49,6 +49,7 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # Number of `|`-separated cells before the title cell in a parsed
 # BACKLOG.md row: cells[0] is the leading empty string before the
@@ -325,7 +326,20 @@ class GitHubTracker:
 
     # -- Public API --------------------------------------------------
 
-    def merged_prs_since(self, ts: datetime) -> list[dict]:
+    @staticmethod
+    def _decode_object_list(payload: str) -> list[dict[str, Any]]:
+        """Decode a GitHub JSON array while enforcing string-keyed objects."""
+        decoded: object = json.loads(payload)
+        if not isinstance(decoded, list):
+            raise ValueError("GitHub CLI response must be a JSON array")
+        result: list[dict[str, Any]] = []
+        for item in decoded:
+            if not isinstance(item, dict) or not all(isinstance(key, str) for key in item):
+                raise ValueError("GitHub CLI array entries must be string-keyed objects")
+            result.append({key: value for key, value in item.items() if isinstance(key, str)})
+        return result
+
+    def merged_prs_since(self, ts: datetime) -> list[dict[str, Any]]:
         """Return merged PRs whose ``mergedAt >= ts``.
 
         Uses ``gh pr list --state merged`` with a search filter. The
@@ -347,9 +361,9 @@ class GitHubTracker:
             "--limit",
             "200",
         )
-        return json.loads(out)
+        return self._decode_object_list(out)
 
-    def search_prs(self, query: str, state: str = "all", limit: int = 30) -> list[dict]:
+    def search_prs(self, query: str, state: str = "all", limit: int = 30) -> list[dict[str, Any]]:
         """Free-form ``gh pr list --search`` wrapper.
 
         Returns a list of dicts with ``number / title / body /
@@ -370,7 +384,7 @@ class GitHubTracker:
             "--limit",
             str(limit),
         )
-        return json.loads(out)
+        return self._decode_object_list(out)
 
     def open_agent_branches(self) -> list[str]:
         """List head-branch names of open PRs that look like agent runs.

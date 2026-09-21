@@ -72,18 +72,24 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+
 from ai.data.feature_extractor import FULL_FEATURES, _extractors_for  # noqa: E402
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -118,7 +124,7 @@ def _tier_from_resolution(w: int, h: int) -> str | None:
     return _RES_TO_TIER.get((w, h))
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -255,7 +261,7 @@ def _run_vmaf_full(
     )
 
 
-def _lookup(metrics: dict, name: str) -> float | None:
+def _lookup(metrics: dict[str, Any], name: str) -> float | None:
     """libvmaf may emit ``integer_<name>`` for fixed-point kernels.
 
     Returns None when the key is absent OR when libvmaf emits a JSON null
@@ -277,13 +283,13 @@ def _lookup(metrics: dict, name: str) -> float | None:
 
 def _frames_to_rows(
     key: str, vmaf_json: Path, codec: str, teacher_model: str = DEFAULT_MODEL
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     with vmaf_json.open() as f:
         d = json.load(f)
     rows = []
     for fr in d["frames"]:
         m = fr["metrics"]
-        row: dict = {
+        row: dict[str, Any] = {
             "key": key,
             "frame_index": int(fr["frameNum"]),
             "codec": codec,
@@ -308,7 +314,7 @@ def _process_clip(
     scratch: Path,
     codec: str,
     teacher_model: str = DEFAULT_MODEL,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
@@ -345,7 +351,7 @@ def _process_clip_yuv(
     scratch: Path,
     codec: str,
     teacher_model: str = DEFAULT_MODEL,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Process a pre-decoded YUV clip from ``--bvi-dir`` mode.
 
     The caller has already parsed ``w``, ``h``, ``fps``, and ``depth``
@@ -468,10 +474,7 @@ def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> P
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zf.open(info) as src, dest.open("wb") as out:
         # 4 MiB chunks — keeps RAM bounded for the 372 MB A-tier clips.
-        while True:
-            chunk = src.read(4 * 1024 * 1024)
-            if not chunk:
-                break
+        for chunk in iter(lambda: src.read(4 * 1024 * 1024), b""):
             out.write(chunk)
     return dest
 
@@ -512,7 +515,7 @@ def _run_zip_mode(
             flush=True,
         )
 
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         t0 = time.time()
         for i, info in enumerate(entries):
             base = info.filename.rsplit("/", 1)[-1]
@@ -593,7 +596,7 @@ def _run_dir_mode(
         flush=True,
     )
 
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     t0 = time.time()
     for i, entry in enumerate(entries):
         key = entry.path.stem
@@ -650,7 +653,7 @@ def _run_dir_mode(
     return 0, stats
 
 
-def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> dict[str, object]:
+def _write_parquet(rows: list[dict[str, Any]], n_clips: int, out_path: Path) -> dict[str, object]:
     df = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     write_parquet_atomic(df, out_path)
@@ -710,41 +713,36 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
-        prog="bvi_dvc_to_full_features.py",
-        description=__doc__,
-    )
-
-    # Mutually exclusive input-source group (ADR-0524).
-    src_group = ap.add_mutually_exclusive_group()
-    src_group.add_argument(
+def _add_bvi_source_arguments(ap: argparse.ArgumentParser) -> None:
+    """Register mutually exclusive input selection and tier flags."""
+    source = ap.add_mutually_exclusive_group()
+    source.add_argument(
         "--bvi-zip",
         type=Path,
         default=None,
         help="Path to BVI-DVC Part 1.zip. Mutually exclusive with --bvi-dir.",
     )
-    src_group.add_argument(
+    source.add_argument(
         "--bvi-dir",
         type=Path,
         default=None,
         help=(
-            "Path to a directory containing already-extracted BVI-DVC "
-            ".mp4, .mkv, or .yuv files. Files matching the BVI-DVC naming "
-            "convention (e.g. ``Clip_480x272_30fps_8bit_420.yuv``) are "
-            "enumerated and processed without extraction. "
-            "Mutually exclusive with --bvi-zip."
+            "Directory of extracted BVI-DVC .mp4, .mkv, or .yuv files. "
+            "Matching files are processed in place; mutually exclusive with --bvi-zip."
         ),
     )
-
     ap.add_argument(
         "--tier",
         choices=("A", "B", "C", "D", "all"),
         default="D",
-        help="Resolution tier to process (A=3840x2176, B=1920x1088, "
-        "C=960x544, D=480x272, all=every tier in sorted order).",
+        help=(
+            "Resolution tier (A=3840x2176, B=1920x1088, C=960x544, " "D=480x272, all=every tier)."
+        ),
     )
+
+
+def _add_bvi_model_arguments(ap: argparse.ArgumentParser) -> None:
+    """Register model and output-path flags."""
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
@@ -756,8 +754,8 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default=None,
         help=(
-            "Teacher model version string or JSON path. Defaults to fork "
-            f"default ({DEFAULT_MODEL} via ADR-1168/ADR-1173)."
+            "Teacher model version or JSON path. Defaults to fork default "
+            f"({DEFAULT_MODEL} via ADR-1168/ADR-1173)."
         ),
     )
     ap.add_argument(
@@ -772,10 +770,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=(
             "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
-            "records BVI input mode, tier, cache/model inputs, FULL_FEATURES "
-            "schema, row counts, and exact CLI args."
+            "records inputs, feature schema, row counts, and exact CLI args."
         ),
     )
+
+
+def _add_bvi_runtime_arguments(ap: argparse.ArgumentParser) -> None:
+    """Register scratch, cache, and encode controls."""
     ap.add_argument(
         "--scratch",
         type=Path,
@@ -803,41 +804,49 @@ def main(argv: list[str] | None = None) -> int:
         "--codec",
         type=str,
         default="x264",
-        help="Codec label baked into the parquet's `codec` column. Must "
-        "match an entry in ai/src/vmaf_train/codec.py CODEC_VOCAB (or it "
-        "will bucket to 'unknown' at training time). The script always "
-        "encodes via libx264 today; this flag exists so a future "
-        "multi-codec sweep can reuse the same harness.",
+        help=(
+            "Codec label stored in parquet. It must match "
+            "ai/src/vmaf_train/codec.py CODEC_VOCAB."
+        ),
     )
-    args = ap.parse_args(raw_argv)
 
-    # Resolve the default input source: if neither flag was given, fall
-    # back to the legacy VMAF_BVI_DVC_ZIP env-var / hard-coded path so
-    # existing callers that omit --bvi-zip keep working.
-    if args.bvi_zip is None and args.bvi_dir is None:
-        args.bvi_zip = Path(
-            os.environ.get(
-                "VMAF_BVI_DVC_ZIP",
-                str(REPO_ROOT / ".corpus" / "bvi-dvc-raw" / "BVI-DVC Part 1.zip"),
-            )
+
+def _build_bvi_parser() -> argparse.ArgumentParser:
+    """Build the BVI-DVC full-feature extraction parser."""
+    ap = make_argument_parser(prog="bvi_dvc_to_full_features.py", description=__doc__)
+    _add_bvi_source_arguments(ap)
+    _add_bvi_model_arguments(ap)
+    _add_bvi_runtime_arguments(ap)
+    return ap
+
+
+def _resolve_default_bvi_source(args: argparse.Namespace) -> None:
+    """Preserve the legacy archive fallback when no source flag is passed."""
+    if args.bvi_zip is not None or args.bvi_dir is not None:
+        return
+    args.bvi_zip = Path(
+        os.environ.get(
+            "VMAF_BVI_DVC_ZIP",
+            str(REPO_ROOT / ".corpus" / "bvi-dvc-raw" / "BVI-DVC Part 1.zip"),
         )
+    )
 
-    if not args.vmaf_bin.is_file():
-        print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
-        return 2
 
-    resolved_teacher = resolve_teacher_model(args.model)
-    if resolved_teacher.is_path:
-        p_str = (
-            resolved_teacher.arg[5:]
-            if resolved_teacher.arg.startswith("path=")
-            else resolved_teacher.arg
-        )
-        if not Path(p_str).is_file():
-            print(f"error: model not found at {p_str}", file=sys.stderr)
-            return 2
+def _resolve_bvi_teacher(args: argparse.Namespace) -> Any | None:
+    """Resolve and validate the optional teacher-model file."""
+    teacher = resolve_teacher_model(args.model)
+    if not teacher.is_path:
+        return teacher
+    model_path = teacher.arg[5:] if teacher.arg.startswith("path=") else teacher.arg
+    if Path(model_path).is_file():
+        return teacher
+    print(f"error: model not found at {model_path}", file=sys.stderr)
+    return None
 
-    out_path = args.out or (REPO_ROOT / "runs" / f"full_features_bvi_dvc_{args.tier}.parquet")
+
+def _prepare_bvi_outputs(args: argparse.Namespace) -> tuple[Path, Path | None]:
+    """Create output/cache directories and return their resolved paths."""
+    out_path = args.out or REPO_ROOT / "runs" / f"full_features_bvi_dvc_{args.tier}.parquet"
     args.out = out_path
     if args.manifest_out is None:
         args.manifest_out = out_path.with_suffix(".manifest.json")
@@ -845,31 +854,48 @@ def main(argv: list[str] | None = None) -> int:
     cache_dir = None if args.no_cache else args.cache_dir
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
+    return out_path, cache_dir
 
-    if args.bvi_dir is not None:
-        if not args.bvi_dir.is_dir():
-            print(f"error: --bvi-dir path is not a directory: {args.bvi_dir}", file=sys.stderr)
-            return 2
-        rc, stats = _run_dir_mode(
-            args, out_path, cache_dir, resolved_teacher.arg, resolved_teacher.name
-        )
-    else:
-        # --bvi-zip path (original behaviour).
-        rc, stats = _run_zip_mode(
-            args, out_path, cache_dir, resolved_teacher.arg, resolved_teacher.name
-        )
 
-    if rc == 0:
-        _write_manifest(
-            args.manifest_out,
-            args=args,
-            argv=raw_argv,
-            out_path=out_path,
-            cache_dir=cache_dir,
-            stats=stats,
-        )
-        print(f"[bvi-dvc-full] wrote manifest {args.manifest_out}", flush=True)
-    return rc
+def _run_bvi_mode(
+    args: argparse.Namespace,
+    out_path: Path,
+    cache_dir: Path | None,
+    teacher: Any,
+) -> tuple[int, dict[str, object]]:
+    """Dispatch the selected archive or extracted-directory mode."""
+    if args.bvi_dir is None:
+        return _run_zip_mode(args, out_path, cache_dir, teacher.arg, teacher.name)
+    if not args.bvi_dir.is_dir():
+        print(f"error: --bvi-dir path is not a directory: {args.bvi_dir}", file=sys.stderr)
+        return 2, {}
+    return _run_dir_mode(args, out_path, cache_dir, teacher.arg, teacher.name)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_bvi_parser().parse_args(raw_argv)
+    _resolve_default_bvi_source(args)
+    if not args.vmaf_bin.is_file():
+        print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
+        return 2
+    teacher = _resolve_bvi_teacher(args)
+    if teacher is None:
+        return 2
+    out_path, cache_dir = _prepare_bvi_outputs(args)
+    rc, stats = _run_bvi_mode(args, out_path, cache_dir, teacher)
+    if rc != 0:
+        return rc
+    _write_manifest(
+        args.manifest_out,
+        args=args,
+        argv=raw_argv,
+        out_path=out_path,
+        cache_dir=cache_dir,
+        stats=stats,
+    )
+    print(f"[bvi-dvc-full] wrote manifest {args.manifest_out}", flush=True)
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -49,7 +50,7 @@ class NormReport:
     def ok(self) -> bool:
         return not self.warnings
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "sidecar": str(self.sidecar),
             "n_samples": self.n_samples,
@@ -59,7 +60,7 @@ class NormReport:
         }
 
 
-def _load_sidecar(onnx_or_sidecar: Path) -> tuple[Path, dict]:
+def _load_sidecar(onnx_or_sidecar: Path) -> tuple[Path, dict[str, Any]]:
     sidecar = (
         onnx_or_sidecar
         if onnx_or_sidecar.suffix == ".json"

@@ -13,9 +13,11 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from ai.data.feature_extractor import FULL_FEATURES
 
@@ -23,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "konvid_to_full_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("konvid_to_full_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -41,7 +43,7 @@ def _make_fake_vmaf_json(n_frames: int = 2) -> str:
     return json.dumps({"frames": frames})
 
 
-def _mock_subprocess_run(cmd, **kwargs):
+def _mock_subprocess_run(cmd: Any, **kwargs: Any) -> Any:
     result = MagicMock()
     result.returncode = 0
     result.stderr = ""
@@ -79,11 +81,13 @@ def test_assign_folds_is_deterministic_and_balanced() -> None:
     second = mod._assign_folds(list(reversed(keys)), 5)
 
     assert first == second
-    counts = {fold: list(first.values()).count(fold) for fold in set(first.values())}
+    counts = {fold: list[Any](first.values()).count(fold) for fold in set(first.values())}
     assert counts == {"fold0": 4, "fold1": 4, "fold2": 4, "fold3": 4, "fold4": 4}
 
 
-def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> None:
+def test_main_writes_full_and_folded_parquets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module()
     root = tmp_path / "konvid-1k"
     videos = root / "KoNViD_1k_videos"

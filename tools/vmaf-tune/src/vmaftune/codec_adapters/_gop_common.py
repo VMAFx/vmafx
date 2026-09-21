@@ -24,6 +24,20 @@ that need no special handling delegate to ``default_gop_args`` /
 
 from __future__ import annotations
 
+from typing import Protocol
+
+
+class ProbeAdapter(Protocol):
+    """Adapter surface required to build a probe-encode argument list."""
+
+    @property
+    def probe_preset(self) -> str: ...
+
+    @property
+    def probe_quality(self) -> int: ...
+
+    def ffmpeg_codec_args(self, preset: str, quality: int) -> list[str]: ...
+
 
 def default_gop_args(keyint: int, min_keyint: int | None = None) -> tuple[str, ...]:
     """FFmpeg-generic GOP knobs honoured by libx264, libx265, libsvtav1,
@@ -53,7 +67,7 @@ def default_force_keyframes_args(timestamps: tuple[float, ...]) -> tuple[str, ..
     return ("-force_key_frames", formatted)
 
 
-def default_probe_args(adapter: object) -> list[str]:
+def default_probe_args(adapter: ProbeAdapter) -> list[str]:
     """Default probe-encode argv: delegates to
     ``adapter.ffmpeg_codec_args(probe_preset, probe_quality)``.
 
@@ -61,12 +75,7 @@ def default_probe_args(adapter: object) -> list[str]:
     ultrafast preset doesn't expose a usable bitrate signal) override
     this method directly rather than calling here.
     """
-    # adapter is duck-typed (CodecAdapter Protocol); attribute + return-type
-    # checks deferred to the call site (the dispatcher validates the registry).
-    result: list[str] = adapter.ffmpeg_codec_args(  # type: ignore[attr-defined]
-        adapter.probe_preset,  # type: ignore[attr-defined]
-        adapter.probe_quality,  # type: ignore[attr-defined]
-    )
+    result = adapter.ffmpeg_codec_args(adapter.probe_preset, adapter.probe_quality)
     return result
 
 

@@ -25,11 +25,11 @@ torch = pytest.importorskip("torch")
 onnx = pytest.importorskip("onnx")
 onnxruntime = pytest.importorskip("onnxruntime")
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 
-from train_fr_regressor_v3 import (  # noqa: E402
+from ai.scripts.train_fr_regressor_v3 import (  # noqa: E402
     CANONICAL_6,
     CODEC_BLOCK_DIM,
     ENCODER_VOCAB_V3,
