@@ -13895,9 +13895,9 @@ See `docs/research/0755-hip-backend-audit-20260529.md`.
 
 
 - Refactored the Python feature-extractor, asset, quality-runner, BD-rate, VMAFx CLI, reader,
-  bootstrap-model, and MCP regression tests into bounded helpers so every touched test function
-  satisfies HISS without changing test discovery, fixtures, or any golden assertion, expected
-  value, or tolerance.
+  bootstrap-model, MCP, cross-backend parity, and Git-isolation regression harnesses into bounded
+  helpers so every touched function satisfies HISS without changing test discovery, fixtures,
+  CLI behavior, or any golden assertion, expected value, or tolerance.
 
 
 docs(research): hardware backend audit recommends dropping Vulkan backend (#733)

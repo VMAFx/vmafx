@@ -1,4 +1,4 @@
 - Refactored the Python feature-extractor, asset, quality-runner, BD-rate, VMAFx CLI, reader,
-  bootstrap-model, and MCP regression tests into bounded helpers so every touched test function
-  satisfies HISS without changing test discovery, fixtures, or any golden assertion, expected
-  value, or tolerance.
+  bootstrap-model, MCP, cross-backend parity, and Git-isolation regression harnesses into bounded
+  helpers so every touched function satisfies HISS without changing test discovery, fixtures,
+  CLI behavior, or any golden assertion, expected value, or tolerance.
