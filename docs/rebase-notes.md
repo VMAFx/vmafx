@@ -51631,9 +51631,9 @@ logging changes.
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
-No rebase impact on product behavior: seven Python test files only split existing setup and
-assertion blocks into private helpers; the CLI PTY reader also replaces `while True` with the
-same EOF/error termination expressed as a conditional loop. Test names, execution order,
-fixtures, assertion expressions, expected values, and tolerances stay unchanged. An upstream
-textual conflict may take the upstream test body, then reapply the helper boundaries needed by
-HISS.
+No rebase impact on product behavior: eleven Python and MCP test files only split existing setup,
+fixture data, and assertion blocks into class constants or private helpers. The CLI PTY reader and
+manual YUV-reader tests also replace `while True` with bounded loops that preserve the same
+EOF/error checks. Test names, execution order, fixtures, assertion expressions, expected values,
+and tolerances stay unchanged. An upstream textual conflict may take the upstream test body, then
+reapply the helper boundaries needed by HISS.
