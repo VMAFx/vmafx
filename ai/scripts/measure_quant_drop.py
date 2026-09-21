@@ -50,7 +50,10 @@ DEFAULT_BUDGET_PLCC = 0.01
 
 
 def _load_registry() -> dict[str, Any]:
-    return json.loads(REGISTRY.read_text())
+    payload: object = json.loads(REGISTRY.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError(f"registry root must be an object: {REGISTRY}")
+    return {str(key): value for key, value in payload.items()}
 
 
 def _onnx_paths_for(entry: dict[str, Any]) -> tuple[Path, Path]:
@@ -178,8 +181,7 @@ def _gate_pair(fp32: Path, int8: Path, budget: float, model_id: str) -> dict[str
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("onnx", nargs="?", type=Path, help="Path to fp32 ONNX (default: --all)")
     parser.add_argument(
@@ -222,7 +224,75 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON gate report with ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
+
+
+def _write_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    gate_pass: bool,
+    results: list[dict[str, Any]],
+    inputs: dict[str, Any],
+) -> None:
+    if args.out_json is None:
+        return
+    write_manifest_json(
+        args.out_json,
+        {
+            "gate_pass": gate_pass,
+            "models": results,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs=inputs,
+                outputs={"report": args.out_json},
+            ),
+        },
+    )
+
+
+def _run_override(args: argparse.Namespace, raw_argv: list[str]) -> int:
+    fp32 = args.fp32.resolve()
+    int8 = args.int8.resolve()
+    stem = fp32.name[: -len(".onnx")] if fp32.name.endswith(".onnx") else fp32.name
+    model_id = args.model_id or stem
+    result = _gate_pair(fp32, int8, float(args.budget), model_id)
+    _write_report(args, raw_argv, bool(result["ok"]), [result], {"fp32": fp32, "int8": int8})
+    return 0 if result["ok"] else 1
+
+
+def _run_registry(args: argparse.Namespace, raw_argv: list[str], registry: dict[str, Any]) -> int:
+    if args.all or args.onnx is None:
+        results = [_gate_one(model) for model in registry["models"]]
+        ok = all(bool(result["ok"]) for result in results)
+        _write_report(args, raw_argv, ok, results, {"registry": REGISTRY})
+        return 0 if ok else 1
+    try:
+        target = str(args.onnx.resolve().relative_to(REPO_ROOT / "model" / "tiny"))
+    except ValueError:
+        print(f"input must live under {REPO_ROOT / 'model' / 'tiny'}: {args.onnx}", file=sys.stderr)
+        return 2
+    for model in registry["models"]:
+        if model["onnx"] != target:
+            continue
+        result = _gate_one(model)
+        _write_report(
+            args,
+            raw_argv,
+            bool(result["ok"]),
+            [result],
+            {"registry": REGISTRY, "model": args.onnx.resolve()},
+        )
+        return 0 if result["ok"] else 1
+    print(f"no registry entry for {target}", file=sys.stderr)
+    return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
 
     if (args.fp32 is None) != (args.int8 is None):
         print("--fp32 and --int8 must be given together", file=sys.stderr)
@@ -234,83 +304,14 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        fp32 = args.fp32.resolve()
-        int8 = args.int8.resolve()
-        stem = fp32.name[: -len(".onnx")] if fp32.name.endswith(".onnx") else fp32.name
-        model_id = args.model_id or stem
-        result = _gate_pair(fp32, int8, float(args.budget), model_id)
-        if args.out_json is not None:
-            write_manifest_json(
-                args.out_json,
-                {
-                    "gate_pass": bool(result["ok"]),
-                    "models": [result],
-                    "run_provenance": build_run_provenance(
-                        entrypoint=SCRIPT_PATH,
-                        repo_root=REPO_ROOT,
-                        argv=raw_argv,
-                        args=args,
-                        inputs={"fp32": fp32, "int8": int8},
-                        outputs={"report": args.out_json},
-                    ),
-                },
-            )
-        return 0 if result["ok"] else 1
+        return _run_override(args, raw_argv)
 
     try:
-        reg = _load_registry()
+        registry = _load_registry()
     except Exception as exc:
         print(f"failed to load registry: {exc}", file=sys.stderr)
         return 2
-
-    if args.all or args.onnx is None:
-        results = [_gate_one(m) for m in reg["models"]]
-        ok = all(bool(result["ok"]) for result in results)
-        if args.out_json is not None:
-            write_manifest_json(
-                args.out_json,
-                {
-                    "gate_pass": ok,
-                    "models": results,
-                    "run_provenance": build_run_provenance(
-                        entrypoint=SCRIPT_PATH,
-                        repo_root=REPO_ROOT,
-                        argv=raw_argv,
-                        args=args,
-                        inputs={"registry": REGISTRY},
-                        outputs={"report": args.out_json},
-                    ),
-                },
-            )
-        return 0 if ok else 1
-
-    try:
-        target = str(args.onnx.resolve().relative_to(REPO_ROOT / "model" / "tiny"))
-    except ValueError:
-        print(f"input must live under {REPO_ROOT / 'model' / 'tiny'}: {args.onnx}", file=sys.stderr)
-        return 2
-    for m in reg["models"]:
-        if m["onnx"] == target:
-            result = _gate_one(m)
-            if args.out_json is not None:
-                write_manifest_json(
-                    args.out_json,
-                    {
-                        "gate_pass": bool(result["ok"]),
-                        "models": [result],
-                        "run_provenance": build_run_provenance(
-                            entrypoint=SCRIPT_PATH,
-                            repo_root=REPO_ROOT,
-                            argv=raw_argv,
-                            args=args,
-                            inputs={"registry": REGISTRY, "model": args.onnx.resolve()},
-                            outputs={"report": args.out_json},
-                        ),
-                    },
-                )
-            return 0 if result["ok"] else 1
-    print(f"no registry entry for {target}", file=sys.stderr)
-    return 2
+    return _run_registry(args, raw_argv, registry)
 
 
 if __name__ == "__main__":

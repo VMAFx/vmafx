@@ -17,13 +17,17 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -89,7 +93,7 @@ def _write_report(
     write_manifest_json(args.out_json, payload)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -108,8 +112,39 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional v1 ONNX path; if provided, diff v2 vs v1 predictions.",
     )
     ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    return ap.parse_args(raw_argv)
+
+
+def _compare_v1(
+    args: argparse.Namespace, x: np.ndarray, predictions: np.ndarray
+) -> dict[str, float | str] | None:
+    if args.v1_onnx is None or not args.v1_onnx.exists():
+        return None
+    try:
+        mean = x.mean(axis=0)
+        deviation = x.std(axis=0)
+        standardized = (x - mean) / np.where(deviation < 1e-8, 1.0, deviation)
+        import onnxruntime as ort
+
+        session = ort.InferenceSession(str(args.v1_onnx), providers=["CPUExecutionProvider"])
+        input_name = session.get_inputs()[0].name
+        v1_predictions = session.run(None, {input_name: standardized.astype(np.float32)})[
+            0
+        ].reshape(-1)
+        delta = predictions.astype(np.float64) - v1_predictions.astype(np.float64)
+        delta_mean = float(delta.mean())
+        max_abs = float(np.max(np.abs(delta)))
+        result: dict[str, float | str] = {"mean": delta_mean, "max_abs": max_abs}
+        print(f"[validate-v2] v2-v1 delta: mean={delta_mean:+.3f} " f"max_abs={max_abs:.3f}")
+        return result
+    except Exception as exc:
+        print(f"[validate-v2] v1 diff skipped: {exc}")
+        return {"error": str(exc)}
+
+
+def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    args = _parse_args(raw_argv)
 
     import pandas as pd
 
@@ -131,35 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[validate-v2] sample preds: {pred[:5].round(3).tolist()}")
     print(f"[validate-v2] sample truth: {y[:5].round(3).tolist()}")
 
-    if args.v1_onnx is not None and args.v1_onnx.exists():
-        # v1 graph layout differs (input name, no scaler). We feed the
-        # standardised features the v1 trainer expects (z-score on the
-        # parquet slice itself) — best-effort diff just to confirm the
-        # two models live on the same scale.
-        try:
-            mu = x.mean(axis=0)
-            sd = x.std(axis=0)
-            sd = np.where(sd < 1e-8, 1.0, sd)
-            x_z = (x - mu) / sd
-            import onnxruntime as ort
-
-            sess1 = ort.InferenceSession(str(args.v1_onnx), providers=["CPUExecutionProvider"])
-            v1_in = sess1.get_inputs()[0].name
-            v1_pred = sess1.run(None, {v1_in: x_z.astype(np.float32)})[0].reshape(-1)
-            delta = pred.astype(np.float64) - v1_pred.astype(np.float64)
-            diff = {
-                "mean": float(delta.mean()),
-                "max_abs": float(np.max(np.abs(delta))),
-            }
-            print(
-                f"[validate-v2] v2-v1 delta: mean={diff['mean']:+.3f} "
-                f"max_abs={diff['max_abs']:.3f}"
-            )
-        except Exception as exc:
-            diff = {"error": str(exc)}
-            print(f"[validate-v2] v1 diff skipped: {exc}")
-    else:
-        diff = None
+    diff = _compare_v1(args, x, pred)
 
     if args.out_json is not None:
         _write_report(

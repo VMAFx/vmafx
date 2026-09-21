@@ -31,6 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -41,12 +42,14 @@ if str(REPO_ROOT) not in sys.path:
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+
 from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 SCHEMA_COLS = (*FULL_FEATURES, "teacher_model", "vmaf")
 
@@ -71,7 +74,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _ffprobe(path: Path) -> dict:
+def _ffprobe(path: Path) -> dict[str, Any]:
     cmd = [
         "ffprobe",
         "-v",
@@ -84,7 +87,13 @@ def _ffprobe(path: Path) -> dict:
         str(path),
     ]
     out = subprocess.check_output(cmd)
-    return json.loads(out)["streams"][0]
+    payload: object = json.loads(out)
+    if not isinstance(payload, dict) or not isinstance(payload.get("streams"), list):
+        raise ValueError("ffprobe output must contain a streams list")
+    streams = payload["streams"]
+    if not streams or not isinstance(streams[0], dict):
+        raise ValueError("ffprobe output contains no stream object")
+    return {str(key): value for key, value in streams[0].items()}
 
 
 def _decode_to_yuv(src: Path, dest: Path, w: int, h: int, max_frames: int) -> int:
@@ -128,8 +137,8 @@ def _run_vmaf(
     w: int,
     h: int,
     n_threads: int,
-    model: Path,
-) -> list[dict]:
+    model: Path | str,
+) -> list[dict[str, Any]]:
     """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
     if not isinstance(w, int) or isinstance(w, bool) or w <= 0:
         raise ValueError(f"w must be a positive integer, got {w!r}")
@@ -221,12 +230,15 @@ def _run_vmaf(
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with out.open() as f:
             doc = json.load(f)
-        return doc.get("frames", [])
+        frames = doc.get("frames", [])
+        if not isinstance(frames, list) or not all(isinstance(frame, dict) for frame in frames):
+            raise ValueError("vmaf output frames must be a list of objects")
+        return [{str(key): value for key, value in frame.items()} for frame in frames]
     finally:
         out.unlink(missing_ok=True)
 
 
-def _frame_row(metrics: dict, teacher_model: str = DEFAULT_MODEL) -> dict:
+def _frame_row(metrics: dict[str, Any], teacher_model: str = DEFAULT_MODEL) -> dict[str, Any]:
     """Translate libvmaf JSON metric names to our parquet schema."""
 
     def m(name: str) -> float:
@@ -241,7 +253,7 @@ def _frame_row(metrics: dict, teacher_model: str = DEFAULT_MODEL) -> dict:
                 return float(val)
         return float("nan")
 
-    row = {feature: m(feature) for feature in FULL_FEATURES}
+    row: dict[str, Any] = {feature: m(feature) for feature in FULL_FEATURES}
     row["teacher_model"] = teacher_model
     row["vmaf"] = m("vmaf")
     return row
@@ -296,8 +308,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument(
@@ -330,121 +341,164 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Replay manifest JSON sidecar (default: <out-parquet>.manifest.json).",
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
+
+
+def _environment_is_valid(args: argparse.Namespace, resolved_teacher: Any) -> bool:
+    if not args.vmaf_bin.is_file():
+        print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
+        return False
+    if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
+        print(f"error: model not found: {resolved_teacher.resolved}", file=sys.stderr)
+        return False
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        print("error: ffmpeg/ffprobe not on PATH", file=sys.stderr)
+        return False
+    return True
+
+
+def _prepare_reference(
+    args: argparse.Namespace, stem: str, files: dict[str, Any]
+) -> tuple[Path | None, int, int, bool]:
+    original = Path(files["orig"])
+    if not original.is_file():
+        print(f"  [{stem}] missing orig, skip", flush=True)
+        return None, 0, 0, False
+    try:
+        probe = _ffprobe(original)
+        source_width = int(probe["width"])
+        source_height = int(probe["height"])
+        if source_width <= 0 or source_height <= 0:
+            raise ValueError(f"degenerate geometry {source_width}x{source_height}")
+        target_height = min(source_height, args.max_height)
+        target_width = (source_width * target_height) // source_height
+        target_width -= target_width & 1
+        target_height -= target_height & 1
+        if target_width < 2 or target_height < 2:
+            raise ValueError(
+                f"degenerate scaled geometry {source_width}x{source_height} -> "
+                f"{target_width}x{target_height}"
+            )
+        reference = args.yuv_dir / f"{stem}_orig_{target_width}x{target_height}.yuv"
+        _decode_to_yuv(original, reference, target_width, target_height, args.max_frames)
+    except Exception as exc:
+        print(f"  [{stem}] ffprobe/decode-orig failed: {exc}", flush=True)
+        return None, 0, 0, True
+    return reference, target_width, target_height, False
+
+
+def _extract_variant(
+    args: argparse.Namespace,
+    stem: str,
+    suffix: str,
+    source: Path,
+    reference: Path,
+    width: int,
+    height: int,
+    resolved_teacher: Any,
+    row_offset: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    distorted = args.yuv_dir / f"{stem}_{suffix}_{width}x{height}.yuv"
+    try:
+        _decode_to_yuv(source, distorted, width, height, args.max_frames)
+        frames = _run_vmaf(
+            args.vmaf_bin,
+            reference,
+            distorted,
+            width,
+            height,
+            args.threads,
+            resolved_teacher.arg,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"  [{stem}/{suffix}] decode/vmaf failed: {exc}", flush=True)
+        if not args.keep_yuv:
+            distorted.unlink(missing_ok=True)
+        return [], True
+    rows: list[dict[str, Any]] = []
+    source_name = f"ugc-{stem}-{suffix}"
+    for frame in frames:
+        row = _frame_row(frame.get("metrics", {}), teacher_model=resolved_teacher.name)
+        frame_index = int(frame.get("frameNum", row_offset + len(rows)))
+        row.update(corpus="ugc", source=source_name, frame_index=frame_index)
+        rows.append(row)
+    if not args.keep_yuv:
+        distorted.unlink(missing_ok=True)
+    return rows, False
+
+
+def _process_stem(
+    args: argparse.Namespace,
+    stem: str,
+    files: dict[str, Any],
+    resolved_teacher: Any,
+    started_at: float,
+    row_offset: int,
+) -> tuple[list[dict[str, Any]], int, int]:
+    reference, width, height, failed = _prepare_reference(args, stem, files)
+    if reference is None:
+        return [], 0, int(failed)
+    rows: list[dict[str, Any]] = []
+    pairs = failures = 0
+    for suffix in ("cbr", "vod", "vodlb"):
+        source = Path(files[suffix]) if suffix in files else Path()
+        if suffix not in files or not source.is_file():
+            continue
+        variant_rows, variant_failed = _extract_variant(
+            args,
+            stem,
+            suffix,
+            source,
+            reference,
+            width,
+            height,
+            resolved_teacher,
+            row_offset + len(rows),
+        )
+        failures += int(variant_failed)
+        if variant_failed:
+            continue
+        rows.extend(variant_rows)
+        pairs += 1
+        print(
+            f"  [{stem}/{suffix}] {width}x{height} frames={len(variant_rows)} "
+            f"({time.monotonic() - started_at:.0f}s)",
+            flush=True,
+        )
+    if not args.keep_yuv:
+        reference.unlink(missing_ok=True)
+    return rows, pairs, failures
+
+
+def _extract_manifest(
+    args: argparse.Namespace, manifest: dict[str, dict[str, Any]], resolved_teacher: Any
+) -> tuple[list[dict[str, Any]], int, int, float]:
+    rows: list[dict[str, Any]] = []
+    pair_count = fail_count = 0
+    started_at = time.monotonic()
+    for stem, files in sorted(manifest.items()):
+        stem_rows, stem_pairs, stem_failures = _process_stem(
+            args, stem, files, resolved_teacher, started_at, len(rows)
+        )
+        rows.extend(stem_rows)
+        pair_count += stem_pairs
+        fail_count += stem_failures
+    return rows, pair_count, fail_count, started_at
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out_parquet.with_suffix(".manifest.json")
 
     resolved_teacher = resolve_teacher_model(args.model)
-
-    if not args.vmaf_bin.is_file():
-        print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
-        return 2
-    if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
-        print(f"error: model not found: {resolved_teacher.resolved}", file=sys.stderr)
-        return 2
-    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
-        print("error: ffmpeg/ffprobe not on PATH", file=sys.stderr)
+    if not _environment_is_valid(args, resolved_teacher):
         return 2
 
-    manifest = json.loads(args.manifest.read_text())
+    manifest: dict[str, dict[str, Any]] = json.loads(args.manifest.read_text())
     print(f"[ugc-extract] manifest stems={len(manifest)}", flush=True)
-
-    rows: list[dict] = []
-    pair_count = 0
-    fail_count = 0
-    t0 = time.monotonic()
-    for stem, files in sorted(manifest.items()):
-        orig = Path(files["orig"])
-        if not orig.is_file():
-            print(f"  [{stem}] missing orig, skip", flush=True)
-            continue
-        try:
-            probe = _ffprobe(orig)
-            ow = int(probe["width"])
-            oh = int(probe["height"])
-            if ow <= 0 or oh <= 0:
-                raise ValueError(f"degenerate geometry {ow}x{oh}")
-        except Exception as exc:  # pragma: no cover
-            # A missing/zero width|height (KeyError / ValueError) or any ffprobe
-            # failure must skip just this clip, not abort the whole run with an
-            # uncaught ZeroDivisionError/KeyError (R3-18).
-            print(f"  [{stem}] ffprobe/geometry failed: {exc}", flush=True)
-            fail_count += 1
-            continue
-        # Down-scale to max_height keeping aspect (oh > 0 guaranteed above).
-        target_h = min(oh, args.max_height)
-        target_w = (ow * target_h) // oh
-        # Make even
-        target_w -= target_w & 1
-        target_h -= target_h & 1
-        if target_w < 2 or target_h < 2:
-            # The integer aspect down-scale rounded a dimension below ffmpeg's
-            # minimum (e.g. a 1px-wide source: (1 * 576) // 720 == 0). Skip the
-            # clip rather than emit a `scale=0:...` error or a ZeroDivisionError
-            # in _decode_to_yuv on resume (R3-18 follow-up).
-            print(
-                f"  [{stem}] degenerate scaled geometry {ow}x{oh} -> "
-                f"{target_w}x{target_h}; skip",
-                flush=True,
-            )
-            fail_count += 1
-            continue
-        ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
-        try:
-            _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)
-        except subprocess.CalledProcessError as exc:
-            print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
-            fail_count += 1
-            continue
-
-        for sfx in ("cbr", "vod", "vodlb"):
-            if sfx not in files:
-                continue
-            dis_src = Path(files[sfx])
-            if not dis_src.is_file():
-                continue
-            dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
-            try:
-                _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
-            except subprocess.CalledProcessError as exc:
-                print(f"  [{stem}/{sfx}] decode-dis failed: {exc}", flush=True)
-                fail_count += 1
-                continue
-            try:
-                frames = _run_vmaf(
-                    args.vmaf_bin,
-                    ref_yuv,
-                    dis_yuv,
-                    target_w,
-                    target_h,
-                    args.threads,
-                    resolved_teacher.arg,
-                )
-            except subprocess.CalledProcessError as exc:
-                print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
-                fail_count += 1
-                if not args.keep_yuv:
-                    dis_yuv.unlink(missing_ok=True)
-                continue
-            source_name = f"ugc-{stem}-{sfx}"
-            for frame in frames:
-                m = frame.get("metrics", {})
-                row = _frame_row(m, teacher_model=resolved_teacher.name)
-                row["corpus"] = "ugc"
-                row["source"] = source_name
-                row["frame_index"] = int(frame.get("frameNum", len(rows)))
-                rows.append(row)
-            pair_count += 1
-            print(
-                f"  [{stem}/{sfx}] {target_w}x{target_h} frames={len(frames)} "
-                f"vmaf~{frames[0].get('metrics', {}).get('vmaf', '-') if frames else '-'} "
-                f"({time.monotonic() - t0:.0f}s)",
-                flush=True,
-            )
-            if not args.keep_yuv:
-                dis_yuv.unlink(missing_ok=True)
-        if not args.keep_yuv:
-            ref_yuv.unlink(missing_ok=True)
+    rows, pair_count, fail_count, t0 = _extract_manifest(args, manifest, resolved_teacher)
 
     if not rows:
         print("error: no rows extracted", file=sys.stderr)

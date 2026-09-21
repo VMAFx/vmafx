@@ -33,22 +33,28 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+
 from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -57,7 +63,7 @@ from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -211,7 +217,7 @@ def _run_vmaf_full(
     )
 
 
-def _lookup(metrics: dict, name: str) -> float | None:
+def _lookup(metrics: dict[str, Any], name: str) -> float | None:
     value = metrics.get(name)
     if value is not None:
         return float(value)
@@ -227,12 +233,12 @@ def _lookup(metrics: dict, name: str) -> float | None:
 
 def _frames_to_rows(
     key: str, vmaf_json: Path, codec: str, teacher_model: str = DEFAULT_MODEL
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     doc = json.loads(vmaf_json.read_text())
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for frame in doc.get("frames", []):
         metrics = frame.get("metrics", {})
-        row: dict = {
+        row: dict[str, Any] = {
             "key": key,
             "frame_index": int(frame["frameNum"]),
             "codec": codec,
@@ -264,7 +270,7 @@ def _process_clip(
     scratch: Path,
     codec_label: str,
     codec_from_source: bool,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     if cache_dir is not None:
         cache_path = _cache_path(cache_dir, key, crf, teacher_name)
         if cache_path.is_file():
@@ -299,7 +305,7 @@ def _assign_folds(keys: list[str], fold_count: int) -> dict[str, str]:
 
 
 def _write_outputs(
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     out_path: Path,
     folds_out: Path | None,
     fold_count: int,
@@ -339,7 +345,7 @@ def _write_manifest(
     argv: list[str] | None,
     videos_dir: Path,
     clips_selected: int,
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     folds_out: Path | None,
     elapsed_s: float,
     teacher_model: str,
@@ -391,12 +397,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(
-        prog="konvid_to_full_features.py",
-        description=__doc__,
-    )
+def _add_path_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--konvid-root",
         type=Path,
@@ -438,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
             "fold output, row counts, and exact CLI args."
         ),
     )
+
+
+def _add_runtime_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--scratch",
         type=Path,
@@ -472,44 +476,53 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use ffprobe's source codec_name as the codec label instead of --codec.",
     )
-    args = parser.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
 
-    resolved_teacher = resolve_teacher_model(args.model)
 
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
+    parser = make_argument_parser(
+        prog="konvid_to_full_features.py",
+        description=__doc__,
+    )
+    _add_path_arguments(parser)
+    _add_runtime_arguments(parser)
+    return parser.parse_args(raw_argv)
+
+
+def _prepare_inputs(
+    args: argparse.Namespace, resolved_teacher: Any
+) -> tuple[Path, list[Path]] | None:
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
-        return 2
+        return None
     if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
         print(f"error: model not found at {resolved_teacher.resolved}", file=sys.stderr)
-        return 2
-
+        return None
     try:
         videos_dir = _resolve_videos_dir(args.konvid_root)
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
-
+        return None
     clips = sorted(videos_dir.glob("*.mp4"))
     if args.max_clips is not None:
         clips = clips[: args.max_clips]
     if not clips:
         print(f"error: no .mp4 clips found in {videos_dir}", file=sys.stderr)
-        return 2
-
+        return None
     args.scratch.mkdir(parents=True, exist_ok=True)
-    cache_dir = None if args.no_cache else args.cache_dir
-    if cache_dir is not None:
-        cache_dir.mkdir(parents=True, exist_ok=True)
+    if not args.no_cache:
+        args.cache_dir.mkdir(parents=True, exist_ok=True)
+    return videos_dir, clips
 
-    print(
-        f"[konvid-full] processing {len(clips)} clips from {videos_dir} -> {args.out}",
-        flush=True,
-    )
-    rows: list[dict] = []
-    t0 = time.monotonic()
-    for idx, clip in enumerate(clips):
+
+def _process_clips(
+    args: argparse.Namespace,
+    clips: list[Path],
+    resolved_teacher: Any,
+    started_at: float,
+) -> list[dict[str, Any]]:
+    cache_dir = None if args.no_cache else args.cache_dir
+    rows: list[dict[str, Any]] = []
+    for index, clip in enumerate(clips):
         key = clip.stem
         try:
             rows.extend(
@@ -530,19 +543,34 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[konvid-full] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
             continue
         except Exception as exc:
-            # An audio-only / no-video clip raises IndexError on the
-            # ffprobe streams[0] lookup, and a corrupt cache raises a
-            # JSON / value error — neither is a CalledProcessError, so
-            # without this broader catch one bad clip aborts the whole
-            # run. Log the key and continue.
             print(f"[konvid-full] {key} FAILED: {exc}", file=sys.stderr)
             continue
-        if (idx + 1) % 10 == 0 or idx + 1 == len(clips):
+        if (index + 1) % 10 == 0 or index + 1 == len(clips):
             print(
-                f"[konvid-full] {idx + 1}/{len(clips)} clips, {len(rows)} frames, "
-                f"{time.monotonic() - t0:.1f}s",
+                f"[konvid-full] {index + 1}/{len(clips)} clips, {len(rows)} frames, "
+                f"{time.monotonic() - started_at:.1f}s",
                 flush=True,
             )
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    resolved_teacher = resolve_teacher_model(args.model)
+    prepared = _prepare_inputs(args, resolved_teacher)
+    if prepared is None:
+        return 2
+    videos_dir, clips = prepared
+    print(
+        f"[konvid-full] processing {len(clips)} clips from {videos_dir} -> {args.out}",
+        flush=True,
+    )
+    t0 = time.monotonic()
+    rows = _process_clips(args, clips, resolved_teacher, t0)
 
     folds_out = None if args.no_folds_out else args.folds_out
     _write_outputs(rows, args.out, folds_out, args.fold_count)

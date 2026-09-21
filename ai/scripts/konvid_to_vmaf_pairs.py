@@ -42,6 +42,7 @@ idempotent if `--cache-dir` is set — per-clip JSON caches under
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shlex
@@ -49,19 +50,24 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
 
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
@@ -76,7 +82,7 @@ DEFAULT_FEATURES = (
 )
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -205,7 +211,7 @@ def _run_vmaf(
     )
 
 
-def _lookup(metrics: dict, name: str) -> float:
+def _lookup(metrics: dict[str, Any], name: str) -> float:
     for key in (name, f"integer_{name}"):
         val = metrics.get(key)
         if val is not None:
@@ -217,7 +223,9 @@ def _lookup(metrics: dict, name: str) -> float:
     raise KeyError(f"Metric {name!r} not found in frame metrics")
 
 
-def _frames_to_rows(key: str, vmaf_json: Path, teacher_model: str = DEFAULT_MODEL) -> list[dict]:
+def _frames_to_rows(
+    key: str, vmaf_json: Path, teacher_model: str = DEFAULT_MODEL
+) -> list[dict[str, Any]]:
     """Extract one (key, frame, teacher_model, *features, vmaf) row per frame from libvmaf JSON."""
     with vmaf_json.open() as f:
         d = json.load(f)
@@ -244,13 +252,16 @@ def _process_clip(
     crf: int,
     cache_dir: Path | None,
     scratch: Path,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     resolved = resolve_teacher_model(model)
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
             with cache_path.open() as f:
-                return json.load(f)
+                cached: object = json.load(f)
+            if not isinstance(cached, list) or not all(isinstance(row, dict) for row in cached):
+                raise ValueError(f"{cache_path}: cache must be a list of objects")
+            return [{str(field): value for field, value in row.items()} for row in cached]
     ref_yuv = scratch / f"{key}_ref.yuv"
     dis_yuv = scratch / f"{key}_dis.yuv"
     vmaf_json = scratch / f"{key}_vmaf.json"
@@ -270,12 +281,7 @@ def _process_clip(
     return rows
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
-        prog="konvid_to_vmaf_pairs.py",
-        description=__doc__,
-    )
+def _add_path_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--konvid-root",
         type=Path,
@@ -299,6 +305,9 @@ def main(argv: list[str] | None = None) -> int:
         default=REPO_ROOT / "ai" / "data" / "konvid_vmaf_pairs.parquet",
         help="Output parquet path.",
     )
+
+
+def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--scratch",
         type=Path,
@@ -328,12 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         help="libx264 CRF for the synthetic distortion (default 35; matches "
         "the Netflix-corpus dis-pair recipe in docs/benchmarks.md).",
     )
-    ap.add_argument(
-        "--max-clips",
-        type=int,
-        default=None,
-        help="Cap number of clips processed (smoke / dry-run).",
-    )
+    ap.add_argument("--max-clips", type=int, default=None, help="Cap clips (smoke / dry-run).")
     ap.add_argument(
         "--manifest-out",
         type=Path,
@@ -344,41 +348,51 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the parquet."
         ),
     )
-    args = ap.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
 
-    resolved_teacher = resolve_teacher_model(args.model)
 
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
+    ap = make_argument_parser(
+        prog="konvid_to_vmaf_pairs.py",
+        description=__doc__,
+    )
+    _add_path_arguments(ap)
+    _add_runtime_arguments(ap)
+    return ap.parse_args(raw_argv)
+
+
+def _prepare_inputs(
+    args: argparse.Namespace, resolved_teacher: Any
+) -> tuple[Path, list[Path]] | None:
     videos_dir = args.konvid_root / "KoNViD_1k_videos"
     if not videos_dir.is_dir():
         print(f"error: KoNViD videos not found at {videos_dir}", file=sys.stderr)
-        return 2
+        return None
     if not args.vmaf_bin.is_file() or not os.access(args.vmaf_bin, os.X_OK):
         print(f"error: libvmaf CLI not executable: {args.vmaf_bin}", file=sys.stderr)
-        return 2
+        return None
     if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
         print(f"error: model not found at {resolved_teacher.resolved}", file=sys.stderr)
-        return 2
-
-    cache_dir = None if args.no_cache else args.cache_dir
+        return None
     args.scratch.mkdir(parents=True, exist_ok=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-
     clips = sorted(videos_dir.glob("*.mp4"))
     if args.max_clips is not None:
         clips = clips[: args.max_clips]
-    print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
+    return videos_dir, clips
 
-    all_rows: list[dict] = []
+
+def _process_clips(
+    args: argparse.Namespace, clips: list[Path], resolved_teacher: Any, started_at: float
+) -> tuple[list[dict[str, Any]], list[str]]:
+    cache_dir = None if args.no_cache else args.cache_dir
+    all_rows: list[dict[str, Any]] = []
     failed_clips: list[str] = []
-    t0 = time.monotonic()
-    for i, src_mp4 in enumerate(clips):
-        key = f"KoNViD_1k_videos_{src_mp4.stem}"
+    for index, source in enumerate(clips):
+        key = f"KoNViD_1k_videos_{source.stem}"
         try:
             rows = _process_clip(
                 key,
-                src_mp4,
+                source,
                 args.vmaf_bin,
                 resolved_teacher.arg,
                 args.crf,
@@ -390,15 +404,26 @@ def main(argv: list[str] | None = None) -> int:
             failed_clips.append(key)
             continue
         all_rows.extend(rows)
-        if (i + 1) % 10 == 0 or i == len(clips) - 1:
+        if (index + 1) % 10 == 0 or index == len(clips) - 1:
             print(
-                f"[konvid] {i + 1}/{len(clips)} clips, {len(all_rows)} frames, "
-                f"{time.monotonic() - t0:.1f}s",
+                f"[konvid] {index + 1}/{len(clips)} clips, {len(all_rows)} frames, "
+                f"{time.monotonic() - started_at:.1f}s",
                 flush=True,
             )
+    return all_rows, failed_clips
 
-    df = pd.DataFrame(all_rows)
-    df.to_parquet(args.out, index=False)
+
+def _write_run_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    resolved_teacher: Any,
+    videos_dir: Path,
+    clips: list[Path],
+    failed_clips: list[str],
+    frame_count: int,
+    elapsed_s: float,
+) -> None:
+    cache_dir = None if args.no_cache else args.cache_dir
     write_manifest_json(
         args.manifest_out,
         {
@@ -409,8 +434,8 @@ def main(argv: list[str] | None = None) -> int:
                 "clips_selected": len(clips),
                 "clips_failed": len(failed_clips),
                 "clips_processed": len(clips) - len(failed_clips),
-                "frames": len(df),
-                "elapsed_s": round(time.monotonic() - t0, 6),
+                "frames": frame_count,
+                "elapsed_s": round(elapsed_s, 6),
             },
             "failed_clips": failed_clips,
             "crf": args.crf,
@@ -430,6 +455,36 @@ def main(argv: list[str] | None = None) -> int:
                 outputs={"parquet": args.out, "manifest": args.manifest_out},
             ),
         },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    resolved_teacher = resolve_teacher_model(args.model)
+    prepared = _prepare_inputs(args, resolved_teacher)
+    if prepared is None:
+        return 2
+    videos_dir, clips = prepared
+    print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
+
+    t0 = time.monotonic()
+    all_rows, failed_clips = _process_clips(args, clips, resolved_teacher, t0)
+
+    df = pd.DataFrame(all_rows)
+    df.to_parquet(args.out, index=False)
+    _write_run_manifest(
+        args,
+        raw_argv,
+        resolved_teacher,
+        videos_dir,
+        clips,
+        failed_clips,
+        len(df),
+        time.monotonic() - t0,
     )
     print(
         f"[konvid] wrote {args.out} ({len(df)} frames, {len(clips)} clips); "

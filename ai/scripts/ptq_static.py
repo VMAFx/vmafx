@@ -30,6 +30,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -39,8 +40,7 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("onnx", type=Path, help="Path to fp32 ONNX file")
     parser.add_argument(
@@ -59,7 +59,67 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON report with calibration stats and ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
+
+
+def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
+    source = args.onnx.resolve()
+    if not source.is_file():
+        sys.exit(f"input not found: {source}")
+    calibration = args.calibration.resolve()
+    if not calibration.is_file():
+        sys.exit(f"calibration set not found: {calibration}")
+    destination = args.output or source.with_name(source.stem + ".int8.onnx")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not os.access(destination.parent, os.W_OK):
+        sys.exit(
+            f"error: destination directory is not writable: {destination.parent}\n"
+            f"hint: pass --output /path/to/writable/dir/{destination.name}"
+        )
+    return source, calibration, destination
+
+
+def _write_quantization_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    source: Path,
+    calibration: Path,
+    destination: Path,
+    arrays: Any,
+    input_bytes: int,
+    output_bytes: int,
+) -> None:
+    if args.report_out is None:
+        return
+    first_input = next(iter(arrays.keys()))
+    write_run_manifest(
+        args.report_out,
+        schema="ptq-static-report-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"model": source, "calibration": calibration},
+        outputs={"model": destination, "report": args.report_out},
+        sections={
+            "mode": "static",
+            "input_bytes": input_bytes,
+            "output_bytes": output_bytes,
+            "size_ratio": output_bytes / input_bytes,
+            "per_channel": bool(args.per_channel),
+            "calibration_samples": int(arrays[first_input].shape[0]),
+            "calibration_inputs": sorted(arrays.keys()),
+        },
+    )
+
+
+def _quantize(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    source: Path,
+    calibration: Path,
+    destination: Path,
+) -> None:
 
     try:
         import numpy as np
@@ -72,24 +132,13 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as exc:
         sys.exit(f"onnxruntime.quantization / numpy not available: {exc}")
 
-    src = args.onnx.resolve()
-    if not src.is_file():
-        sys.exit(f"input not found: {src}")
-    cal = args.calibration.resolve()
-    if not cal.is_file():
-        sys.exit(f"calibration set not found: {cal}")
-    dst = args.output or src.with_name(src.stem + ".int8.onnx")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if not os.access(dst.parent, os.W_OK):
-        sys.exit(
-            f"error: destination directory is not writable: {dst.parent}\n"
-            f"hint: pass --output /path/to/writable/dir/{dst.name}"
-        )
-
-    print(f"[ptq_static] {src}  ->  {dst}  cal={cal}  per-channel={args.per_channel}")
+    print(
+        f"[ptq_static] {source}  ->  {destination}  "
+        f"cal={calibration}  per-channel={args.per_channel}"
+    )
 
     # Build a CalibrationDataReader from the .npz on the fly.
-    arrays = np.load(cal, allow_pickle=False)
+    arrays = np.load(calibration, allow_pickle=False)
 
     class _NpzReader(CalibrationDataReader):
         def __init__(self, npz: "np.lib.npyio.NpzFile") -> None:
@@ -98,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             self._cursor = 0
             self._npz = npz
 
-        def get_next(self):
+        def get_next(self) -> dict[str, "np.ndarray[Any, Any]"] | None:
             if self._cursor >= self._n:
                 return None
             sample = {n: self._npz[n][self._cursor : self._cursor + 1] for n in self._names}
@@ -106,8 +155,8 @@ def main(argv: list[str] | None = None) -> int:
             return sample
 
     quantize_static(
-        model_input=str(src),
-        model_output=str(dst),
+        model_input=str(source),
+        model_output=str(destination),
         calibration_data_reader=_NpzReader(arrays),
         # QDQ only: core/src/dnn/op_allowlist.c has no QLinear* ops; mirrors ai/src/vmaf_train/quantize.py
         quant_format=QuantFormat.QDQ,
@@ -115,31 +164,27 @@ def main(argv: list[str] | None = None) -> int:
         activation_type=QuantType.QInt8,
         per_channel=args.per_channel,
     )
-    sz_in = src.stat().st_size
-    sz_out = dst.stat().st_size
-    ratio = sz_out / sz_in
-    print(f"[ptq_static] done — {sz_in:,} -> {sz_out:,} bytes ({ratio:.2f}×)")
-    if args.report_out is not None:
-        first_input = next(iter(arrays.keys()))
-        write_run_manifest(
-            args.report_out,
-            schema="ptq-static-report-v1",
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"model": src, "calibration": cal},
-            outputs={"model": dst, "report": args.report_out},
-            sections={
-                "mode": "static",
-                "input_bytes": sz_in,
-                "output_bytes": sz_out,
-                "size_ratio": ratio,
-                "per_channel": bool(args.per_channel),
-                "calibration_samples": int(arrays[first_input].shape[0]),
-                "calibration_inputs": sorted(arrays.keys()),
-            },
-        )
+    input_bytes = source.stat().st_size
+    output_bytes = destination.stat().st_size
+    ratio = output_bytes / input_bytes
+    print(f"[ptq_static] done — {input_bytes:,} -> {output_bytes:,} bytes ({ratio:.2f}×)")
+    _write_quantization_report(
+        args,
+        raw_argv,
+        source,
+        calibration,
+        destination,
+        arrays,
+        input_bytes,
+        output_bytes,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
+    source, calibration, destination = _resolve_paths(args)
+    _quantize(args, raw_argv, source, calibration, destination)
     return 0
 
 

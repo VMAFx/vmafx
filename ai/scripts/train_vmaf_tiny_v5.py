@@ -22,14 +22,22 @@ exporter can be reused.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -47,7 +55,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -59,7 +67,15 @@ def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-def _train(x, y, *, epochs, batch_size, lr, seed):  # type: ignore[no-untyped-def]
+def _train(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    seed: int,
+) -> "torch.nn.Module":
     import torch
     from torch import nn
 
@@ -96,7 +112,7 @@ def _train(x, y, *, epochs, batch_size, lr, seed):  # type: ignore[no-untyped-de
     return model.eval()
 
 
-def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
+def _train_metrics(model: "torch.nn.Module", x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     import torch
 
     with torch.no_grad():
@@ -111,7 +127,7 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _load(parquet: Path, name: str, assume_teacher: str | None = None):  # type: ignore[no-untyped-def]
+def _load(parquet: Path, name: str, assume_teacher: str | None = None) -> "pd.DataFrame":
     import pandas as pd
 
     df = pd.read_parquet(parquet)
@@ -154,8 +170,7 @@ def _load(parquet: Path, name: str, assume_teacher: str | None = None):  # type:
     return df[keep]
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="train_vmaf_tiny_v5.py", description=__doc__)
     ap.add_argument(
         "--parquet-base",
@@ -180,12 +195,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _combine_frames(args: argparse.Namespace) -> "pd.DataFrame":
     import pandas as pd
-    import torch
-
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     base = _load(args.parquet_base, "base", assume_teacher=args.assume_teacher)
     extra = _load(args.parquet_extra, "extra", assume_teacher=args.assume_teacher)
@@ -204,31 +218,39 @@ def main(argv: list[str] | None = None) -> int:
         f"corpora={df.get('corpus', pd.Series(['<none>'])).value_counts().to_dict()}",
         flush=True,
     )
+    return df
 
-    x = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    y = df["vmaf"].to_numpy(dtype=np.float64)
 
+def _prepare_training_arrays(
+    frame: "pd.DataFrame",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    x = frame[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    y = frame["vmaf"].to_numpy(dtype=np.float64)
     mean = x.mean(axis=0)
     std = x.std(axis=0, ddof=0)
     std = np.where(std < 1e-8, 1.0, std)
-    x_std = (x - mean) / std
-    print(f"[train-v5] mean={mean.round(4).tolist()}\n           std ={std.round(4).tolist()}")
-    print(f"[train-v5] training mlp_small for {args.epochs} epochs (lr={args.lr})", flush=True)
-    model = _train(
-        x_std, y, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr, seed=args.seed
-    )
-    metrics = _train_metrics(model, x_std, y)
-    print(
-        f"[train-v5] train metrics: PLCC={metrics['plcc']:.4f} "
-        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}",
-        flush=True,
-    )
+    return (x - mean) / std, y, mean, std
+
+
+def _write_outputs(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    model: "torch.nn.Module",
+    metrics: dict[str, float],
+    mean: np.ndarray,
+    std: np.ndarray,
+    teacher_model: str,
+    n_rows: int,
+) -> None:
+    import torch
+
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "state_dict": model.state_dict(),
-            "teacher_model": base["teacher_model"].iloc[0],
+            "teacher_model": teacher_model,
             "features": list(CANONICAL_6),
             "input_mean": mean.tolist(),
             "input_std": std.tolist(),
@@ -241,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out_ckpt,
     )
     stats_payload = {
-        "teacher_model": base["teacher_model"].iloc[0],
+        "teacher_model": teacher_model,
         "features": list(CANONICAL_6),
         "input_mean": mean.tolist(),
         "input_std": std.tolist(),
@@ -250,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         "lr": args.lr,
         "batch_size": args.batch_size,
         "seed": args.seed,
-        "n_train_rows": len(df),
+        "n_train_rows": n_rows,
         "parquet_base": str(args.parquet_base),
         "parquet_extra": str(args.parquet_extra),
         "run_provenance": build_run_provenance(
@@ -270,6 +292,26 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_manifest_json(args.out_stats, stats_payload)
     print(f"[train-v5] wrote {args.out_ckpt} and {args.out_stats}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    frame = _combine_frames(args)
+    x_std, y, mean, std = _prepare_training_arrays(frame)
+    print(f"[train-v5] mean={mean.round(4).tolist()}\n           std ={std.round(4).tolist()}")
+    print(f"[train-v5] training mlp_small for {args.epochs} epochs (lr={args.lr})", flush=True)
+    model = _train(
+        x_std, y, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr, seed=args.seed
+    )
+    metrics = _train_metrics(model, x_std, y)
+    print(
+        f"[train-v5] train metrics: PLCC={metrics['plcc']:.4f} "
+        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}",
+        flush=True,
+    )
+    teacher_model = str(frame["teacher_model"].iloc[0])
+    _write_outputs(args, raw_argv, model, metrics, mean, std, teacher_model, len(frame))
     return 0
 
 

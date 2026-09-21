@@ -16,10 +16,22 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+from typing import TYPE_CHECKING
 
 import numpy as np
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -283,7 +295,7 @@ def _parse_input(value: str) -> tuple[str | None, Path]:
     return None, Path(value)
 
 
-def _read_table(path: Path):
+def _read_table(path: Path) -> "pd.DataFrame":
     import pandas as pd
 
     suffix = path.suffix.lower()
@@ -321,7 +333,7 @@ def _is_signal_numeric(column: str, target: str | None) -> bool:
     return not METADATA_EXCLUDE_RE.search(column)
 
 
-def _finite_stats(series) -> dict[str, float]:
+def _finite_stats(series: "pd.Series[Any]") -> dict[str, float]:
     values = series.to_numpy(dtype=np.float64, na_value=np.nan)
     finite = values[np.isfinite(values)]
     if finite.size == 0:
@@ -341,14 +353,14 @@ def _finite_stats(series) -> dict[str, float]:
     }
 
 
-def _is_numeric_series(series) -> bool:
+def _is_numeric_series(series: "pd.Series[Any]") -> bool:
     from pandas.api.types import is_numeric_dtype
 
     dtype = series.dropna().infer_objects().dtype
     return bool(is_numeric_dtype(dtype))
 
 
-def _pearson_corr(a, b) -> float:
+def _pearson_corr(a: "pd.Series[Any]", b: "pd.Series[Any]") -> float:
     ax = a.to_numpy(dtype=np.float64, na_value=np.nan)
     bx = b.to_numpy(dtype=np.float64, na_value=np.nan)
     mask = np.isfinite(ax) & np.isfinite(bx)
@@ -361,7 +373,7 @@ def _pearson_corr(a, b) -> float:
     return float(np.corrcoef(x, y)[0, 1])
 
 
-def _spearman_corr(a, b) -> float:
+def _spearman_corr(a: "pd.Series[Any]", b: "pd.Series[Any]") -> float:
     ranked_a = a.rank(method="average")
     ranked_b = b.rank(method="average")
     return _pearson_corr(ranked_a, ranked_b)
@@ -547,25 +559,23 @@ def _format_float(value: float) -> str:
     return f"{value:.3f}"
 
 
-def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
-    lines: list[str] = [
-        "# Signal-mix audit",
-        "",
-        "This report audits extracted VQA tables for signal-family coverage,",
-        "target correlation, redundancy, complementary intersections, and blind spots.",
-        "It is advisory: use it to choose the next metrics/models to wire or retrain.",
-        "",
-        "## Inputs",
-        "",
-        "| Table | Rows | Columns | Target | Signal columns |",
-        "|---|---:|---:|---|---:|",
-    ]
+def _append_inputs(lines: list[str], audits: list[TableAudit]) -> None:
+    lines.extend(
+        [
+            "## Inputs",
+            "",
+            "| Table | Rows | Columns | Target | Signal columns |",
+            "|---|---:|---:|---|---:|",
+        ]
+    )
     for audit in audits:
         lines.append(
             f"| `{audit.label}` | {audit.rows} | {len(audit.columns)} | "
             f"`{audit.target or 'none'}` | {len(audit.signal_columns)} |"
         )
 
+
+def _append_coverage(lines: list[str], audits: list[TableAudit]) -> None:
     lines.extend(
         [
             "",
@@ -587,14 +597,11 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             f"{', '.join(family.candidate_metrics)} |"
         )
 
+
+def _append_target_signals(lines: list[str], audits: list[TableAudit], top_k: int) -> None:
     lines.extend(["", "## Strongest Target Signals", ""])
     for audit in audits:
-        lines.extend(
-            [
-                f"### `{audit.label}`",
-                "",
-            ]
-        )
+        lines.extend([f"### `{audit.label}`", ""])
         if not audit.target:
             lines.extend(
                 ["No target column found; pass `--target` if this table uses a custom name.", ""]
@@ -611,12 +618,14 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             )
         lines.append("")
 
+
+def _append_intersections(lines: list[str], audits: list[TableAudit], top_k: int) -> None:
     lines.extend(["## Complementary Intersections", ""])
-    any_intersection = False
+    found = False
     for audit in audits:
         if not audit.intersections:
             continue
-        any_intersection = True
+        found = True
         lines.extend(
             [
                 f"### `{audit.label}`",
@@ -634,7 +643,7 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
                 f"{_format_float(row['right_target_abs_pearson'])} |"
             )
         lines.append("")
-    if not any_intersection:
+    if not found:
         lines.extend(
             [
                 "No cross-family low-correlation/high-target pairs met the current thresholds.",
@@ -644,19 +653,16 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
             ]
         )
 
+
+def _append_redundancy(lines: list[str], audits: list[TableAudit], top_k: int) -> None:
     lines.extend(["## Redundant Pairs", ""])
-    any_redundant = False
+    found = False
     for audit in audits:
         if not audit.redundant_pairs:
             continue
-        any_redundant = True
+        found = True
         lines.extend(
-            [
-                f"### `{audit.label}`",
-                "",
-                "| Pair | Families | Pearson |",
-                "|---|---|---:|",
-            ]
+            [f"### `{audit.label}`", "", "| Pair | Families | Pearson |", "|---|---|---:|"]
         )
         for row in audit.redundant_pairs[:top_k]:
             lines.append(
@@ -665,24 +671,30 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
                 f"{_format_float(row['pearson'])} |"
             )
         lines.append("")
-    if not any_redundant:
+    if not found:
         lines.extend(["No redundant pairs crossed the configured threshold.", ""])
 
+
+def _append_blind_spots(lines: list[str], audits: list[TableAudit]) -> None:
     lines.extend(["## Blind Spots", ""])
     for audit in audits:
         missing = [_family_label(key) for key in audit.missing_families]
         weak = [_family_label(key) for key in audit.weak_families]
         lines.append(f"### `{audit.label}`")
-        if missing:
-            lines.append(f"- Missing signal families: {', '.join(missing)}.")
-        else:
-            lines.append("- Missing signal families: none.")
-        if weak:
-            lines.append(f"- Weak signal families: {', '.join(weak)}.")
-        else:
-            lines.append("- Weak signal families: none.")
+        lines.append(
+            f"- Missing signal families: {', '.join(missing)}."
+            if missing
+            else "- Missing signal families: none."
+        )
+        lines.append(
+            f"- Weak signal families: {', '.join(weak)}."
+            if weak
+            else "- Weak signal families: none."
+        )
         lines.append("")
 
+
+def _append_actions(lines: list[str], audits: list[TableAudit]) -> None:
     lines.extend(["## Recommended Next Actions", ""])
     seen: set[str] = set()
     for audit in audits:
@@ -695,6 +707,24 @@ def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
     if not seen:
         lines.append("- No missing or weak signal families detected at the configured thresholds.")
     lines.append("")
+
+
+def render_markdown(audits: list[TableAudit], *, top_k: int = 12) -> str:
+    lines: list[str] = [
+        "# Signal-mix audit",
+        "",
+        "This report audits extracted VQA tables for signal-family coverage,",
+        "target correlation, redundancy, complementary intersections, and blind spots.",
+        "It is advisory: use it to choose the next metrics/models to wire or retrain.",
+        "",
+    ]
+    _append_inputs(lines, audits)
+    _append_coverage(lines, audits)
+    _append_target_signals(lines, audits, top_k)
+    _append_intersections(lines, audits, top_k)
+    _append_redundancy(lines, audits, top_k)
+    _append_blind_spots(lines, audits)
+    _append_actions(lines, audits)
     return "\n".join(lines)
 
 

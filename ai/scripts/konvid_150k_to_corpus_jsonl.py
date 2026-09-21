@@ -42,11 +42,17 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -304,8 +310,8 @@ def run(
     ffprobe_bin: str = "ffprobe",
     curl_bin: str = "curl",
     corpus_version: str = _DEFAULT_CORPUS_VERSION,
-    runner=subprocess.run,
-    now_fn=utc_now_iso,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    now_fn: Callable[[], str] = utc_now_iso,
     attrition_warn_threshold: float = 0.10,
     download_timeout_s: int = 120,
     min_csv_rows: int = _KONVID_150K_MIN_ROWS,
@@ -335,16 +341,7 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    ap = make_argument_parser(
-        prog="konvid_150k_to_corpus_jsonl.py",
-        description=(
-            "Phase 2 of ADR-0325: walk a local KonViD-150k extraction "
-            "(or build one via resumable downloads), probe each clip via "
-            "ffprobe, join with the manifest CSV's MOS scores, and emit "
-            "one JSONL row per clip."
-        ),
-    )
+def _add_path_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--konvid-dir",
         type=Path,
@@ -377,6 +374,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
     )
+
+
+def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--ffprobe-bin", default=os.environ.get("FFPROBE_BIN", "ffprobe"), help="ffprobe binary."
     )
@@ -399,6 +399,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Per-clip curl --max-time seconds (default: 120).",
     )
     ap.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = make_argument_parser(
+        prog="konvid_150k_to_corpus_jsonl.py",
+        description=(
+            "Phase 2 of ADR-0325: walk a local KonViD-150k extraction "
+            "(or build one via resumable downloads), probe each clip via "
+            "ffprobe, join with the manifest CSV's MOS scores, and emit "
+            "one JSONL row per clip."
+        ),
+    )
+    _add_path_arguments(ap)
+    _add_runtime_arguments(ap)
     return ap
 
 

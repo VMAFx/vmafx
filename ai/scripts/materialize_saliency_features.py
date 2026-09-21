@@ -22,9 +22,15 @@ import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(
     __file__,
@@ -97,7 +103,10 @@ def read_table(path: Path) -> list[dict[str, Any]]:
             import pandas as pd
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("pandas is required to read parquet tables") from exc
-        return list(pd.read_parquet(path).to_dict(orient="records"))
+        return [
+            {str(key): value for key, value in row.items()}
+            for row in pd.read_parquet(path).to_dict(orient="records")
+        ]
     raise ValueError(f"unsupported input extension {path.suffix!r}; expected .jsonl or .parquet")
 
 
@@ -414,8 +423,7 @@ def _mean_var(mask: Any) -> tuple[float, float]:
     return (float(arr.mean()), float(arr.var()))
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = make_argument_parser(description=__doc__)
+def _add_io_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--input", type=Path, required=True, help="Input .jsonl or .parquet table")
     parser.add_argument(
         "--output", type=Path, required=True, help="Output .jsonl or .parquet table"
@@ -429,6 +437,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=None, help="Root for relative source paths")
     parser.add_argument("--ffmpeg-bin", default="ffmpeg")
     parser.add_argument("--ffprobe-bin", default="ffprobe")
+
+
+def _add_model_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument(
         "--model-id",
@@ -440,6 +451,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--max-frames", type=int, default=8)
     parser.add_argument("--frame-samples", type=int, default=8)
+
+
+def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--temporal-aggregator",
         default="mean",
@@ -493,13 +507,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "cannot determine it (e.g. raw YUV corpora). 0 = no fallback."
         ),
     )
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = make_argument_parser(description=__doc__)
+    _add_io_arguments(parser)
+    _add_model_arguments(parser)
+    _add_output_arguments(parser)
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    args = _parse_args(raw_argv)
-    cfg = SaliencyMaterializeConfig(
+def _config_from_args(args: argparse.Namespace) -> SaliencyMaterializeConfig:
+    return SaliencyMaterializeConfig(
         path_column=args.path_column,
         width_column=args.width_column,
         height_column=args.height_column,
@@ -520,38 +539,46 @@ def main(argv: list[str] | None = None) -> int:
         default_width=args.default_width,
         default_height=args.default_height,
     )
-    rows = read_table(args.input)
-    enriched, summary = materialize_rows(rows, cfg)
+
+
+def _write_audit(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    cfg: SaliencyMaterializeConfig,
+    summary: MaterializeSummary,
+) -> None:
+    if args.audit_json is None:
+        return
+    config = asdict(cfg)
+    for key in ("root", "model_path"):
+        if config[key] is not None:
+            config[key] = str(config[key])
+    write_manifest_json(
+        args.audit_json,
+        {
+            "input": str(args.input),
+            "output": str(args.output),
+            "config": config,
+            "summary": asdict(summary),
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"input": args.input, "root": args.root, "model_path": args.model_path},
+                outputs={"output": str(args.output), "audit_json": str(args.audit_json)},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    cfg = _config_from_args(args)
+    enriched, summary = materialize_rows(read_table(args.input), cfg)
     write_table(args.output, enriched)
-    if args.audit_json is not None:
-        config = asdict(cfg)
-        for key in ("root", "model_path"):
-            if config[key] is not None:
-                config[key] = str(config[key])
-        write_manifest_json(
-            args.audit_json,
-            {
-                "input": str(args.input),
-                "output": str(args.output),
-                "config": config,
-                "summary": asdict(summary),
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={
-                        "input": args.input,
-                        "root": args.root,
-                        "model_path": args.model_path,
-                    },
-                    outputs={
-                        "output": str(args.output),
-                        "audit_json": str(args.audit_json),
-                    },
-                ),
-            },
-        )
+    _write_audit(args, raw_argv, cfg, summary)
     print(
         "saliency materialize: "
         f"total={summary.total} ok={summary.ok} "

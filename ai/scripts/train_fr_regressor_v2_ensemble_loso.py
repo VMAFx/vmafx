@@ -52,7 +52,13 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -141,21 +147,12 @@ def _parse_seed_list(raw: str) -> list[int]:
         out.append(int(token))
     if not out:
         raise argparse.ArgumentTypeError(
-            "--seeds must be a non-empty comma-separated list of ints " "(e.g. --seeds 0,1,2,3,4)"
+            "--seeds must be a non-empty comma-separated list of ints (e.g. --seeds 0,1,2,3,4)"
         )
     return out
 
 
-def build_argparser() -> argparse.ArgumentParser:
-    """Build the CLI argparser. Exposed as a function so tests can import it."""
-    p = argparse.ArgumentParser(
-        prog="train_fr_regressor_v2_ensemble_loso",
-        description=(
-            "9-fold LOSO trainer for fr_regressor_v2 deep ensemble seeds "
-            "(ADR-0303 / ADR-0319). Emits loso_seed{N}.json per seed; the "
-            "CI gate scripts/ci/ensemble_prod_gate.py consumes the JSONs."
-        ),
-    )
+def _add_data_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--seeds",
         type=_parse_seed_list,
@@ -181,6 +178,9 @@ def build_argparser() -> argparse.ArgumentParser:
         default=Path("runs/ensemble_loso"),
         help="Output directory for loso_seed{N}.json artefacts.",
     )
+
+
+def _add_training_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--epochs",
         type=int,
@@ -224,7 +224,70 @@ def build_argparser() -> argparse.ArgumentParser:
             "Useful for CI smoke."
         ),
     )
-    return p
+
+
+def build_argparser() -> argparse.ArgumentParser:
+    """Build the CLI argparser. Exposed as a function so tests can import it."""
+    parser = argparse.ArgumentParser(
+        prog="train_fr_regressor_v2_ensemble_loso",
+        description=(
+            "9-fold LOSO trainer for fr_regressor_v2 deep ensemble seeds "
+            "(ADR-0303 / ADR-0319). Emits loso_seed{N}.json per seed; the "
+            "CI gate scripts/ci/ensemble_prod_gate.py consumes the JSONs."
+        ),
+    )
+    _add_data_arguments(parser)
+    _add_training_arguments(parser)
+    return parser
+
+
+def _read_corpus(corpus_path: Path) -> "pd.DataFrame":
+    import pandas as pd
+
+    if not corpus_path.is_file():
+        raise FileNotFoundError(
+            f"Corpus JSONL not found at {corpus_path}. Generate it via "
+            f"scripts/dev/hw_encoder_corpus.py over the 9 Netflix ref "
+            f"YUVs (see docs/ai/ensemble-v2-real-corpus-retrain-runbook.md "
+            f"§Step 0)."
+        )
+    frame = pd.read_json(corpus_path, lines=True)
+    required = [*CANONICAL_6, "vmaf", "src", "encoder", "cq", "frame_index"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(
+            f"Corpus {corpus_path} is missing required columns: {missing}. "
+            f"Expected canonical-6 ({list(CANONICAL_6)}) + vmaf + src + "
+            f"encoder + cq + frame_index."
+        )
+    if len(frame) == 0:
+        raise ValueError(f"Corpus {corpus_path} has zero rows.")
+    return frame
+
+
+def _encoder_index(encoder: str) -> int:
+    try:
+        return ENCODER_VOCAB.index(encoder)
+    except ValueError:
+        return UNKNOWN_ENCODER_INDEX
+
+
+def _build_codec_block(frame: "pd.DataFrame") -> tuple[np.ndarray, float, float]:
+    codec_indices = np.array(
+        [_encoder_index(str(encoder)) for encoder in frame["encoder"].tolist()],
+        dtype=np.int64,
+    )
+    codec_onehot = np.eye(N_ENCODERS, dtype=np.float32)[codec_indices]
+    preset_norm = np.full((len(frame),), 0.5, dtype=np.float32)
+    cqs = frame["cq"].to_numpy(dtype=np.float32)
+    cq_min, cq_max = float(cqs.min()), float(cqs.max())
+    crf_norm = (
+        np.full_like(cqs, 0.5) if cq_max - cq_min < 1e-6 else (cqs - cq_min) / (cq_max - cq_min)
+    )
+    codec_block = np.concatenate(
+        [codec_onehot, preset_norm[:, None], crf_norm[:, None]], axis=1
+    ).astype(np.float32)
+    return codec_block, cq_min, cq_max
 
 
 def _load_corpus(corpus_path: Path) -> dict[str, Any]:
@@ -244,74 +307,20 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
     column 13 = crf_norm = (cq - cq.min()) / (cq.max() - cq.min()).
     """
     import numpy as np
-    import pandas as pd
 
-    if not corpus_path.is_file():
-        raise FileNotFoundError(
-            f"Corpus JSONL not found at {corpus_path}. Generate it via "
-            f"scripts/dev/hw_encoder_corpus.py over the 9 Netflix ref "
-            f"YUVs (see docs/ai/ensemble-v2-real-corpus-retrain-runbook.md "
-            f"§Step 0)."
-        )
-
-    df = pd.read_json(corpus_path, lines=True)
-
-    required = [*CANONICAL_6, "vmaf", "src", "encoder", "cq", "frame_index"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(
-            f"Corpus {corpus_path} is missing required columns: {missing}. "
-            f"Expected canonical-6 ({list(CANONICAL_6)}) + vmaf + src + "
-            f"encoder + cq + frame_index."
-        )
-    if len(df) == 0:
-        raise ValueError(f"Corpus {corpus_path} has zero rows.")
-
-    # Fit corpus-wide StandardScaler on canonical-6 (ADR-0291 recipe).
-    feat = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    frame = _read_corpus(corpus_path)
+    feat = frame[list(CANONICAL_6)].to_numpy(dtype=np.float64)
     feat_mean = feat.mean(axis=0)
     feat_std = feat.std(axis=0, ddof=0)
     feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)
-
-    # Build codec one-hot via ENCODER_VOCAB lookup; rows with an
-    # encoder string outside the vocab fall back to the "unknown" slot.
-    def _enc_idx(enc: str) -> int:
-        try:
-            return ENCODER_VOCAB.index(enc)
-        except ValueError:
-            return UNKNOWN_ENCODER_INDEX
-
-    codec_idx = np.array([_enc_idx(str(e)) for e in df["encoder"].tolist()], dtype=np.int64)
-    codec_onehot = np.eye(N_ENCODERS, dtype=np.float32)[codec_idx]
-
-    # preset_norm — hw_encoder_corpus.py rows do not record preset, so
-    # we materialise 0.5 (median of the 0..9 ordinal range). Documented
-    # in the sidecar; revisit if a future corpus emits explicit preset.
-    preset_norm = np.full((len(df),), 0.5, dtype=np.float32)
-
-    # crf_norm — normalise the cq column to [0, 1] over the corpus's
-    # observed cq range. Falls back to 0.5 for a degenerate single-cq
-    # corpus to avoid a div-by-zero (the column then carries no signal,
-    # which is still a valid pass-through).
-    cqs = df["cq"].to_numpy(dtype=np.float32)
-    cq_min, cq_max = float(cqs.min()), float(cqs.max())
-    if cq_max - cq_min < 1e-6:
-        crf_norm = np.full_like(cqs, 0.5)
-    else:
-        crf_norm = (cqs - cq_min) / (cq_max - cq_min)
-
-    codec_block = np.concatenate(
-        [codec_onehot, preset_norm[:, None], crf_norm[:, None]],
-        axis=1,
-    ).astype(np.float32)
-
+    codec_block, cq_min, cq_max = _build_codec_block(frame)
     codec_block_cols = [f"encoder_onehot[{e}]" for e in ENCODER_VOCAB] + [
         "preset_norm",
         "crf_norm",
     ]
 
     return {
-        "df": df,
+        "df": frame,
         "feature_cols": list(CANONICAL_6),
         "codec_block_cols": codec_block_cols,
         "target_col": "vmaf",
@@ -325,7 +334,7 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
         "feature_std": feat_std,
         "cq_min": cq_min,
         "cq_max": cq_max,
-        "n_rows": len(df),
+        "n_rows": len(frame),
     }
 
 
@@ -341,7 +350,7 @@ def _set_seed_all(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _plcc(pred, target) -> float:
+def _plcc(pred: np.ndarray, target: np.ndarray) -> float:
     """Pearson PLCC. Returns NaN for n<2 or constant inputs."""
     import numpy as np
 
@@ -354,7 +363,7 @@ def _plcc(pred, target) -> float:
     return float(np.corrcoef(p, t)[0, 1])
 
 
-def _srocc(pred, target) -> float:
+def _srocc(pred: np.ndarray, target: np.ndarray) -> float:
     import numpy as np
 
     p = np.asarray(pred, dtype=np.float64).reshape(-1)
@@ -369,9 +378,9 @@ def _srocc(pred, target) -> float:
 
 
 def _train_one_fold(
-    x_feat,
-    x_codec,
-    y,
+    x_feat: np.ndarray,
+    x_codec: np.ndarray,
+    y: np.ndarray,
     *,
     epochs: int,
     batch_size: int,
@@ -379,7 +388,7 @@ def _train_one_fold(
     weight_decay: float,
     seed: int,
     num_codecs: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train a single FRRegressor for one LOSO fold; return the fitted model."""
     import numpy as np
     import torch
@@ -416,13 +425,13 @@ def _train_one_fold(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
-def _predict_fold(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
+def _predict_fold(model: "torch.nn.Module", x_feat: np.ndarray, x_codec: np.ndarray) -> np.ndarray:
     import numpy as np
     import torch
 
@@ -431,7 +440,7 @@ def _predict_fold(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
             torch.from_numpy(np.asarray(x_feat, dtype=np.float32)),
             torch.from_numpy(np.asarray(x_codec, dtype=np.float32)),
         )
-    return out.cpu().numpy().reshape(-1)
+    return np.asarray(out.cpu().numpy(), dtype=np.float32).reshape(-1)
 
 
 def _train_one_seed(

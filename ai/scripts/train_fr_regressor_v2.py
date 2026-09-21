@@ -70,9 +70,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
@@ -290,7 +293,7 @@ def _encoder_onehot(idx: int) -> np.ndarray:
 
 
 def _row_to_features(
-    row: dict, *, warn_missing: bool = True
+    row: dict[str, Any], *, warn_missing: bool = True
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Materialise one (canonical6, codec_block, target) tuple from a corpus row.
 
@@ -356,8 +359,8 @@ def _row_to_features(
     return canon, codec_block, target
 
 
-def _load_jsonl(path: Path) -> list[dict]:
-    rows: list[dict] = []
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -367,7 +370,7 @@ def _load_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
+def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict[str, Any]]:
     """Synthesise ``n`` fake corpus rows.
 
     Generates rows that look like Phase A's schema and embed plausible
@@ -377,7 +380,7 @@ def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
     accuracy.
     """
     rng = np.random.default_rng(seed)
-    rows = []
+    rows: list[dict[str, Any]] = []
     encoders = ["libx264", "libx265", "libsvtav1", "libvvenc", "libvpx-vp9"]
     presets_for = {
         "libx264": ["fast", "medium", "slow"],
@@ -426,7 +429,7 @@ def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
     return rows
 
 
-def _materialise(rows: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _materialise(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Stack rows into ``(X_canon (N, 6), X_codec (N, N_ENCODERS+2), y (N,))``.
 
     Rows whose materialised canonical features, codec block, or target are
@@ -470,7 +473,7 @@ def _train(
     seed: int,
     hidden: int,
     depth: int,
-):  # type: ignore[no-untyped-def]
+) -> tuple["torch.nn.Module", dict[str, list[float]]]:
     """Train an FRRegressor with codec conditioning. Returns (model, scaler)."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -512,7 +515,7 @@ def _train(
             opt.zero_grad()
             pred = model(xb, kb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
             ep_loss += float(loss.item())
         if ep == 0 or (ep + 1) % max(1, epochs // 5) == 0:
@@ -523,7 +526,7 @@ def _train(
 
 
 def _export_onnx_combined(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     *,
     num_codec_dims: int,
     onnx_path: Path,
@@ -600,7 +603,7 @@ def _write_sidecar_and_registry(
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,
-    scaler: dict,
+    scaler: dict[str, list[float]],
     in_sample: dict[str, float],
     n_rows: int,
     smoke: bool,
@@ -673,7 +676,7 @@ def _write_sidecar_and_registry(
     return sidecar
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(prog="train_fr_regressor_v2.py")
     ap.add_argument(
         "--corpus",
@@ -725,33 +728,36 @@ def main() -> int:
     ap.add_argument(
         "--no-export", action="store_true", help="Skip ONNX export + registry update (dev mode)."
     )
-    args = ap.parse_args()
+    return ap.parse_args()
 
+
+def _validate_args(args: argparse.Namespace) -> bool:
     if args.smoke and args.corpus is not None:
         print("error: --smoke and --corpus are mutually exclusive", file=sys.stderr)
-        return 2
+        return False
     if not args.smoke and args.corpus is None:
         print("error: provide --corpus PATH or use --smoke", file=sys.stderr)
-        return 2
+        return False
+    return True
 
-    # Resolve --metrics-out: smoke mode writes to a temp file so read-only
-    # workspaces (e.g. the container /workspace mount) are not written to.
-    # Production mode respects $VMAFX_RUNS_DIR or falls back to <repo>/runs/.
-    if args.metrics_out is None:
-        if args.smoke:
-            args.metrics_out = Path(tempfile.gettempdir()) / "fr_regressor_v2_smoke_metrics.json"
-        else:
-            _runs_root = Path(os.environ.get("VMAFX_RUNS_DIR", str(REPO_ROOT / "runs")))
-            args.metrics_out = _runs_root / "fr_regressor_v2_metrics.json"
 
-    run_provenance = build_run_provenance(
+def _resolve_metrics_out(args: argparse.Namespace) -> None:
+    if args.metrics_out is not None:
+        return
+    if args.smoke:
+        args.metrics_out = Path(tempfile.gettempdir()) / "fr_regressor_v2_smoke_metrics.json"
+        return
+    runs_root = Path(os.environ.get("VMAFX_RUNS_DIR", str(REPO_ROOT / "runs")))
+    args.metrics_out = runs_root / "fr_regressor_v2_metrics.json"
+
+
+def _run_provenance(args: argparse.Namespace) -> dict[str, Any]:
+    return build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,
         argv=sys.argv[1:],
         args=args,
-        inputs={
-            "corpus": args.corpus if args.corpus is not None else "synthetic-smoke",
-        },
+        inputs={"corpus": args.corpus if args.corpus is not None else "synthetic-smoke"},
         outputs={
             "onnx_target": str(args.out_onnx),
             "sidecar_target": str(args.out_sidecar),
@@ -760,22 +766,107 @@ def main() -> int:
         },
     )
 
+
+def _load_training_rows(args: argparse.Namespace) -> tuple[list[dict[str, Any]], int] | None:
     if args.smoke:
         print("[fr-v2] SMOKE mode — synthesising 100 fake corpus rows", flush=True)
-        rows = _synth_smoke_corpus(n=100, seed=args.seed)
-        epochs = 1
-    else:
-        if not args.corpus.is_file():
-            print(f"error: corpus not found at {args.corpus}", file=sys.stderr)
-            return 2
-        print(f"[fr-v2] loading corpus {args.corpus}", flush=True)
-        rows = _load_jsonl(args.corpus)
-        epochs = args.epochs
+        return _synth_smoke_corpus(n=100, seed=args.seed), 1
+    if not args.corpus.is_file():
+        print(f"error: corpus not found at {args.corpus}", file=sys.stderr)
+        return None
+    print(f"[fr-v2] loading corpus {args.corpus}", flush=True)
+    return _load_jsonl(args.corpus), args.epochs
 
+
+def _in_sample_metrics(
+    model: "torch.nn.Module",
+    scaler: dict[str, list[float]],
+    canonical: np.ndarray,
+    codec: np.ndarray,
+    target: np.ndarray,
+) -> dict[str, float]:
+    import torch
+
+    model.eval()
+    with torch.no_grad():
+        normalized = (
+            canonical - np.asarray(scaler["feature_mean"], dtype=np.float32)
+        ) / np.asarray(scaler["feature_std"], dtype=np.float32)
+        predictions = (
+            model(
+                torch.from_numpy(normalized.astype(np.float32)),
+                torch.from_numpy(codec.astype(np.float32)),
+            )
+            .cpu()
+            .numpy()
+        )
+    return _metrics(predictions, target)
+
+
+def _write_training_metrics(
+    args: argparse.Namespace,
+    row_count: int,
+    epochs: int,
+    in_sample: dict[str, float],
+    run_provenance: dict[str, Any],
+) -> None:
+    payload = {
+        "feature_subset": "canonical6+codec",
+        "canonical6": list(CANONICAL6),
+        "encoder_vocab": list(ENCODER_VOCAB),
+        "n_rows": row_count,
+        "in_sample": in_sample,
+        "epochs": epochs,
+        "batch_size": args.batch_size,
+        "lr": args.lr,
+        "weight_decay": args.weight_decay,
+        "seed": args.seed,
+        "smoke": args.smoke,
+        "run_provenance": run_provenance,
+    }
+    args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
+    write_manifest_json(args.metrics_out, payload)
+    print(f"[fr-v2] wrote metrics to {args.metrics_out}")
+
+
+def _export_artifacts(
+    args: argparse.Namespace,
+    model: "torch.nn.Module",
+    scaler: dict[str, list[float]],
+    in_sample: dict[str, float],
+    codec_width: int,
+    row_count: int,
+    run_provenance: dict[str, Any],
+) -> None:
+    print(f"[fr-v2] exporting ONNX -> {args.out_onnx}", flush=True)
+    _export_onnx_combined(model, num_codec_dims=codec_width, onnx_path=args.out_onnx)
+    _write_sidecar_and_registry(
+        onnx_path=args.out_onnx,
+        sidecar_path=args.out_sidecar,
+        registry_path=args.registry,
+        scaler=scaler,
+        in_sample=in_sample,
+        n_rows=row_count,
+        smoke=args.smoke,
+        run_provenance=run_provenance,
+    )
+    print(f"[fr-v2] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
+
+
+def main() -> int:
+    args = _parse_args()
+
+    if not _validate_args(args):
+        return 2
+    _resolve_metrics_out(args)
+    provenance = _run_provenance(args)
+    training_data = _load_training_rows(args)
+    if training_data is None:
+        return 2
+    rows, epochs = training_data
     if not rows:
         print("error: corpus has zero rows", file=sys.stderr)
         return 2
-
     print(f"[fr-v2] materialising {len(rows)} rows -> 9-D feature space", flush=True)
     x_canon, x_codec, y = _materialise(rows)
     print(
@@ -798,69 +889,18 @@ def main() -> int:
         depth=args.depth,
     )
     print(f"[fr-v2] training done in {time.time() - t0:.1f}s", flush=True)
-
-    # In-sample sanity prediction.
-    import torch
-
-    model.eval()
-    with torch.no_grad():
-        x_canon_norm = (
-            x_canon - np.asarray(scaler["feature_mean"], dtype=np.float32)
-        ) / np.asarray(scaler["feature_std"], dtype=np.float32)
-        preds = (
-            model(
-                torch.from_numpy(x_canon_norm.astype(np.float32)),
-                torch.from_numpy(x_codec.astype(np.float32)),
-            )
-            .cpu()
-            .numpy()
-        )
-    in_sample = _metrics(preds, y)
+    in_sample = _in_sample_metrics(model, scaler, x_canon, x_codec, y)
     print(
         f"[fr-v2] in-sample: PLCC={in_sample['plcc']:.4f} "
         f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
         flush=True,
     )
 
-    metrics_out = {
-        "feature_subset": "canonical6+codec",
-        "canonical6": list(CANONICAL6),
-        "encoder_vocab": list(ENCODER_VOCAB),
-        "n_rows": len(rows),
-        "in_sample": in_sample,
-        "epochs": epochs,
-        "batch_size": args.batch_size,
-        "lr": args.lr,
-        "weight_decay": args.weight_decay,
-        "seed": args.seed,
-        "smoke": args.smoke,
-        "run_provenance": run_provenance,
-    }
-    args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-    write_manifest_json(args.metrics_out, metrics_out)
-    print(f"[fr-v2] wrote metrics to {args.metrics_out}")
-
+    _write_training_metrics(args, len(rows), epochs, in_sample, provenance)
     if args.no_export:
         print("[fr-v2] --no-export set; skipping ONNX export.")
         return 0
-
-    print(f"[fr-v2] exporting ONNX -> {args.out_onnx}", flush=True)
-    _export_onnx_combined(
-        model,
-        num_codec_dims=x_codec.shape[1],
-        onnx_path=args.out_onnx,
-    )
-    _write_sidecar_and_registry(
-        onnx_path=args.out_onnx,
-        sidecar_path=args.out_sidecar,
-        registry_path=args.registry,
-        scaler=scaler,
-        in_sample=in_sample,
-        n_rows=len(rows),
-        smoke=args.smoke,
-        run_provenance=run_provenance,
-    )
-    print(f"[fr-v2] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
+    _export_artifacts(args, model, scaler, in_sample, x_codec.shape[1], len(rows), provenance)
     return 0
 
 

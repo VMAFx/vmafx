@@ -17,13 +17,17 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -94,7 +98,7 @@ def _write_report(
     write_manifest_json(args.out_json, payload)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -119,8 +123,32 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional v3 ONNX path; if provided, diff v4 vs v3 predictions on the same slice.",
     )
     ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    return ap.parse_args(raw_argv)
+
+
+def _compare_models(
+    args: argparse.Namespace, x: np.ndarray, predictions: np.ndarray
+) -> dict[str, dict[str, float | str]]:
+    diffs: dict[str, dict[str, float | str]] = {}
+    for label, onnx_path in (("v2", args.v2_onnx), ("v3", args.v3_onnx)):
+        if onnx_path is None or not onnx_path.exists():
+            continue
+        try:
+            other_predictions = _ort_predict(onnx_path, x, args.input_name)
+            delta = predictions.astype(np.float64) - other_predictions.astype(np.float64)
+            mean = float(delta.mean())
+            max_abs = float(np.max(np.abs(delta)))
+            diffs[label] = {"mean": mean, "max_abs": max_abs}
+            print(f"[validate-v4] v4-{label} delta: mean={mean:+.3f} max_abs={max_abs:.3f}")
+        except Exception as exc:
+            diffs[label] = {"error": str(exc)}
+            print(f"[validate-v4] {label} diff skipped: {exc}")
+    return diffs
+
+
+def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    args = _parse_args(raw_argv)
 
     import pandas as pd
 
@@ -142,23 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[validate-v4] sample preds: {pred[:5].round(3).tolist()}")
     print(f"[validate-v4] sample truth: {y[:5].round(3).tolist()}")
 
-    diffs: dict[str, dict[str, float | str]] = {}
-    for label, onnx_path in (("v2", args.v2_onnx), ("v3", args.v3_onnx)):
-        if onnx_path is not None and onnx_path.exists():
-            try:
-                other_pred = _ort_predict(onnx_path, x, args.input_name)
-                delta = pred.astype(np.float64) - other_pred.astype(np.float64)
-                diffs[label] = {
-                    "mean": float(delta.mean()),
-                    "max_abs": float(np.max(np.abs(delta))),
-                }
-                print(
-                    f"[validate-v4] v4-{label} delta: mean={diffs[label]['mean']:+.3f} "
-                    f"max_abs={diffs[label]['max_abs']:.3f}"
-                )
-            except Exception as exc:
-                diffs[label] = {"error": str(exc)}
-                print(f"[validate-v4] {label} diff skipped: {exc}")
+    diffs = _compare_models(args, x, pred)
 
     if args.out_json is not None:
         _write_report(

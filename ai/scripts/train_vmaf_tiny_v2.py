@@ -21,15 +21,22 @@ statistics, both consumed by ``export_vmaf_tiny_v2.py``.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -47,7 +54,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -67,7 +74,7 @@ def _train(
     batch_size: int,
     lr: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train mlp_small on the standardised feature matrix.
 
     Returns the trained ``torch.nn.Module``. Standardisation must be
@@ -115,7 +122,7 @@ def _train(
     return model.eval()
 
 
-def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
+def _train_metrics(model: "torch.nn.Module", x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     """Compute PLCC / SROCC / RMSE on the standardised training set."""
     import torch
 
@@ -131,8 +138,7 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="train_vmaf_tiny_v2.py", description=__doc__)
     ap.add_argument(
         "--parquet",
@@ -159,51 +165,42 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _load_training_data(
+    args: argparse.Namespace,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int] | None:
     import pandas as pd
+
+    frame = pd.read_parquet(args.parquet)
+    missing = [column for column in CANONICAL_6 if column not in frame.columns]
+    if missing:
+        print(f"[train-v2] parquet missing columns: {missing}", file=sys.stderr)
+        return None
+    if "vmaf" not in frame.columns:
+        print("[train-v2] parquet missing 'vmaf' target column", file=sys.stderr)
+        return None
+    print(f"[train-v2] parquet={args.parquet} rows={len(frame)} " f"features={list(CANONICAL_6)}")
+    x = frame[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    y = frame["vmaf"].to_numpy(dtype=np.float64)
+    mean = x.mean(axis=0)
+    std = np.where(x.std(axis=0, ddof=0) < 1e-8, 1.0, x.std(axis=0, ddof=0))
+    return (x - mean) / std, y, mean, std, len(frame)
+
+
+def _write_outputs(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    model: "torch.nn.Module",
+    metrics: dict[str, float],
+    mean: np.ndarray,
+    std: np.ndarray,
+    n_rows: int,
+) -> None:
     import torch
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
-
-    df = pd.read_parquet(args.parquet)
-    missing = [c for c in CANONICAL_6 if c not in df.columns]
-    if missing:
-        print(f"[train-v2] parquet missing columns: {missing}", file=sys.stderr)
-        return 2
-    if "vmaf" not in df.columns:
-        print("[train-v2] parquet missing 'vmaf' target column", file=sys.stderr)
-        return 2
-
-    print(f"[train-v2] parquet={args.parquet} rows={len(df)} features={list(CANONICAL_6)}")
-    x = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    y = df["vmaf"].to_numpy(dtype=np.float64)
-
-    # Fit StandardScaler on the FULL corpus (production model — no
-    # holdout). Per-fold standardisation is what gave us the validated
-    # +0.018 PLCC over the Subset-B baseline; for the shipped model we
-    # bake the corpus-wide statistics directly into the ONNX graph
-    # (see export_vmaf_tiny_v2.py).
-    mean = x.mean(axis=0)
-    std = x.std(axis=0, ddof=0)
-    std = np.where(std < 1e-8, 1.0, std)
-    x_std = (x - mean) / std
-
-    print(f"[train-v2] mean={mean.round(4).tolist()}\n" f"           std ={std.round(4).tolist()}")
-    print(f"[train-v2] training mlp_small for {args.epochs} epochs (lr={args.lr})")
-    model = _train(
-        x_std,
-        y,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        seed=args.seed,
-    )
-    metrics = _train_metrics(model, x_std, y)
-    print(
-        f"[train-v2] train metrics: PLCC={metrics['plcc']:.4f} "
-        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
-    )
 
     args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -230,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         "lr": args.lr,
         "batch_size": args.batch_size,
         "seed": args.seed,
-        "n_train_rows": len(df),
+        "n_train_rows": n_rows,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
@@ -245,6 +242,31 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_manifest_json(args.out_stats, stats_payload)
     print(f"[train-v2] wrote {args.out_ckpt} and {args.out_stats}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    training_data = _load_training_data(args)
+    if training_data is None:
+        return 2
+    x_std, y, mean, std, n_rows = training_data
+    print(f"[train-v2] mean={mean.round(4).tolist()}\n           std ={std.round(4).tolist()}")
+    print(f"[train-v2] training mlp_small for {args.epochs} epochs (lr={args.lr})")
+    model = _train(
+        x_std,
+        y,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        seed=args.seed,
+    )
+    metrics = _train_metrics(model, x_std, y)
+    print(
+        f"[train-v2] train metrics: PLCC={metrics['plcc']:.4f} "
+        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
+    )
+    _write_outputs(args, raw_argv, model, metrics, mean, std, n_rows)
     return 0
 
 

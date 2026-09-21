@@ -23,15 +23,22 @@ statistics, both consumed by ``export_vmaf_tiny_v4.py``.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -49,7 +56,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_large(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_large(in_dim: int) -> "torch.nn.Module":
     """v4 architecture — 6 → 64 → 32 → 16 → 1, ~2 705 params.
 
     ~3.5x the hidden capacity of ``_build_mlp_medium`` (v3). Linear-1
@@ -80,7 +87,7 @@ def _train(
     batch_size: int,
     lr: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train mlp_large on the standardised feature matrix.
 
     Identical loop to v2/v3 — only the model factory differs.
@@ -123,7 +130,7 @@ def _train(
     return model.eval()
 
 
-def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
+def _train_metrics(model: "torch.nn.Module", x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     """Compute PLCC / SROCC / RMSE on the standardised training set."""
     import torch
 
@@ -139,12 +146,11 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _count_params(model) -> int:  # type: ignore[no-untyped-def]
+def _count_params(model: "torch.nn.Module") -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="train_vmaf_tiny_v4.py", description=__doc__)
     ap.add_argument(
         "--parquet",
@@ -171,51 +177,44 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _load_training_data(
+    args: argparse.Namespace,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int] | None:
     import pandas as pd
-    import torch
 
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
-
-    df = pd.read_parquet(args.parquet)
-    missing = [c for c in CANONICAL_6 if c not in df.columns]
+    frame = pd.read_parquet(args.parquet)
+    missing = [column for column in CANONICAL_6 if column not in frame.columns]
     if missing:
         print(f"[train-v4] parquet missing columns: {missing}", file=sys.stderr)
-        return 2
-    if "vmaf" not in df.columns:
+        return None
+    if "vmaf" not in frame.columns:
         print("[train-v4] parquet missing 'vmaf' target column", file=sys.stderr)
-        return 2
-
-    print(f"[train-v4] parquet={args.parquet} rows={len(df)} features={list(CANONICAL_6)}")
-    x = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    y = df["vmaf"].to_numpy(dtype=np.float64)
-
-    # Fit StandardScaler on the FULL corpus (production model — no
-    # holdout). v2/v3 train docstring rationale applies verbatim: the
-    # corpus-wide statistics get baked into the exported ONNX graph.
+        return None
+    print(f"[train-v4] parquet={args.parquet} rows={len(frame)} " f"features={list(CANONICAL_6)}")
+    x = frame[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    y = frame["vmaf"].to_numpy(dtype=np.float64)
     mean = x.mean(axis=0)
     std = x.std(axis=0, ddof=0)
     std = np.where(std < 1e-8, 1.0, std)
-    x_std = (x - mean) / std
+    return (x - mean) / std, y, mean, std, len(frame)
 
-    print(f"[train-v4] mean={mean.round(4).tolist()}\n" f"           std ={std.round(4).tolist()}")
-    print(f"[train-v4] training mlp_large for {args.epochs} epochs (lr={args.lr})")
-    model = _train(
-        x_std,
-        y,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        seed=args.seed,
-    )
-    n_params = _count_params(model)
-    metrics = _train_metrics(model, x_std, y)
-    print(
-        f"[train-v4] arch=mlp_large n_params={n_params}  "
-        f"train metrics: PLCC={metrics['plcc']:.4f} "
-        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
-    )
+
+def _write_outputs(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    model: "torch.nn.Module",
+    metrics: dict[str, float],
+    mean: np.ndarray,
+    std: np.ndarray,
+    n_rows: int,
+    n_params: int,
+) -> None:
+    import torch
+
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -246,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         "lr": args.lr,
         "batch_size": args.batch_size,
         "seed": args.seed,
-        "n_train_rows": len(df),
+        "n_train_rows": n_rows,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
@@ -261,6 +260,33 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_manifest_json(args.out_stats, stats_payload)
     print(f"[train-v4] wrote {args.out_ckpt} and {args.out_stats}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    training_data = _load_training_data(args)
+    if training_data is None:
+        return 2
+    x_std, y, mean, std, n_rows = training_data
+    print(f"[train-v4] mean={mean.round(4).tolist()}\n           std ={std.round(4).tolist()}")
+    print(f"[train-v4] training mlp_large for {args.epochs} epochs (lr={args.lr})")
+    model = _train(
+        x_std,
+        y,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        seed=args.seed,
+    )
+    n_params = _count_params(model)
+    metrics = _train_metrics(model, x_std, y)
+    print(
+        f"[train-v4] arch=mlp_large n_params={n_params}  "
+        f"train metrics: PLCC={metrics['plcc']:.4f} "
+        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
+    )
+    _write_outputs(args, raw_argv, model, metrics, mean, std, n_rows, n_params)
     return 0
 
 

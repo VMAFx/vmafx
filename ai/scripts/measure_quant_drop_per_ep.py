@@ -52,7 +52,11 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+    import onnx
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -80,7 +84,7 @@ SUPPORTED_EPS = (EP_CPU, EP_CUDA, EP_OPENVINO)
 # ---------------------------------------------------------------------------
 
 
-def _load_proto(model_path: Path):
+def _load_proto(model_path: Path) -> "onnx.ModelProto":
     """Load an ONNX proto, fixing the ``mlp_*_final`` location-rename bug.
 
     Returns the in-memory ``onnx.ModelProto`` with all external initialisers
@@ -101,7 +105,7 @@ def _load_proto(model_path: Path):
     return proto
 
 
-def _save_inlined(proto, dest: Path) -> None:
+def _save_inlined(proto: "onnx.ModelProto", dest: Path) -> None:
     """Save a proto with all initialisers inlined (no external data).
 
     Also strips ``value_info`` entries whose names collide with
@@ -151,7 +155,13 @@ class _Runner(abc.ABC):
         self.name = name
 
     @abc.abstractmethod
-    def infer(self, x: Any) -> Any:  # pragma: no cover
+    def infer(self, x: "np.ndarray[Any, Any]") -> "np.ndarray[Any, Any]":  # pragma: no cover
+        ...
+
+    @property
+    @abc.abstractmethod
+    def static_shape(self) -> tuple[int, ...]:
+        """Return the concrete input shape used for deterministic probes."""
         ...
 
 
@@ -175,21 +185,24 @@ class _OrtRunner(_Runner):
         wanted = providers[0]
         if wanted not in used or used[0] != wanted:
             raise RuntimeError(
-                f"requested EP {wanted!r} not engaged for {model_path.name}; "
-                f"providers used: {used}"
+                f"requested EP {wanted!r} not engaged for {model_path.name}; providers used: {used}"
             )
 
-    def infer(self, x):
-        return self._sess.run([self._out_name], {self._in_name: x})[0]
+    def infer(self, x: "np.ndarray[Any, Any]") -> "np.ndarray[Any, Any]":
+        import numpy as np
+
+        return np.asarray(self._sess.run([self._out_name], {self._in_name: x})[0])
 
     @property
-    def static_shape(self):
+    def static_shape(self) -> tuple[int, ...]:
         return self._static_shape
 
 
 class _OpenVinoRunner(_Runner):
     def __init__(self, name: str, model_path: Path, device: str) -> None:
-        import openvino as ov
+        import importlib
+
+        ov = importlib.import_module("openvino")
 
         super().__init__(name)
         # Materialise the proto first to dodge the location-rename bug.
@@ -211,12 +224,14 @@ class _OpenVinoRunner(_Runner):
         in_shape = in_port.partial_shape
         self._static_shape = tuple(d.get_length() if d.is_static else 1 for d in in_shape)
 
-    def infer(self, x):
+    def infer(self, x: "np.ndarray[Any, Any]") -> "np.ndarray[Any, Any]":
+        import numpy as np
+
         result = self._compiled([x])
-        return result[self._out_port]
+        return np.asarray(result[self._out_port])
 
     @property
-    def static_shape(self):
+    def static_shape(self) -> tuple[int, ...]:
         return self._static_shape
 
 
@@ -390,7 +405,14 @@ def _registry_targets(reg: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def main() -> int:
+def _default_output_dir() -> Path:
+    runs_value = os.environ.get("VMAFX_RUNS_DIR")
+    runs_root = Path(runs_value) if runs_value else None
+    name = f"quant-eps-{time.strftime('%Y-%m-%d')}"
+    return runs_root / name if runs_root is not None else Path(tempfile.gettempdir()) / name
+
+
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--eps",
@@ -419,18 +441,10 @@ def main() -> int:
         default="GPU.0",
         help="OpenVINO device string (default: GPU.0 = first dGPU).",
     )
-    _runs_root = (
-        Path(os.environ.get("VMAFX_RUNS_DIR", "")) if os.environ.get("VMAFX_RUNS_DIR") else None
-    )
-    _out_default = (
-        _runs_root / f"quant-eps-{time.strftime('%Y-%m-%d')}"
-        if _runs_root is not None
-        else Path(tempfile.gettempdir()) / f"quant-eps-{time.strftime('%Y-%m-%d')}"
-    )
     parser.add_argument(
         "--out",
         type=Path,
-        default=_out_default,
+        default=_default_output_dir(),
         help="Output directory for results.{json,md}. "
         "(default: $VMAFX_RUNS_DIR/quant-eps-<date> or /tmp/quant-eps-<date>)",
     )
@@ -444,98 +458,101 @@ def main() -> int:
         action="store_true",
         help="Exit non-zero if any (model, EP) drop exceeds its budget.",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def _new_report(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "hw": args.hw,
+        "eps": args.eps,
+        "n_samples": N_SAMPLES,
+        "seed": SEED,
+        "models": [],
+    }
+
+
+def _append_registry_models(
+    report: dict[str, Any], registry: dict[str, Any], args: argparse.Namespace
+) -> None:
+    for model in _registry_targets(registry):
+        fp32 = REPO_ROOT / "model" / "tiny" / model["onnx"]
+        int8 = fp32.with_name(fp32.stem + ".int8.onnx")
+        if not fp32.is_file() or not int8.is_file():
+            print(f"[skip] {model['id']} — missing fp32 or int8 sibling", file=sys.stderr)
+            continue
+        budget = float(model.get("quant_accuracy_budget_plcc", 0.01))
+        row = _run_model(model["id"], fp32, int8, args.eps, budget, args.openvino_device)
+        row["source"] = "registry"
+        report["models"].append(row)
+
+
+def _append_extra_models(report: dict[str, Any], args: argparse.Namespace, work_dir: Path) -> None:
+    for relative_path in args.extra_fp32:
+        fp32 = REPO_ROOT / "model" / "tiny" / relative_path
+        if not fp32.is_file():
+            print(f"[skip] extra fp32 not found: {fp32}", file=sys.stderr)
+            continue
+        try:
+            int8 = _dynamic_quantise(fp32, work_dir)
+        except Exception as exc:
+            print(f"[skip] failed to dynamic-quantise {relative_path}: {exc}", file=sys.stderr)
+            continue
+        row = _run_model(fp32.stem, fp32, int8, args.eps, args.extra_budget, args.openvino_device)
+        row["source"] = "extra_fp32_dynamic_ptq"
+        report["models"].append(row)
+
+
+def _write_reports(report: dict[str, Any], args: argparse.Namespace) -> None:
+    json_out = args.out / "results.json"
+    markdown_out = args.out / "results.md"
+    report["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={
+            "registry": REGISTRY,
+            "extra_fp32": [REPO_ROOT / "model" / "tiny" / rel for rel in args.extra_fp32],
+        },
+        outputs={"json_report": json_out, "markdown_report": markdown_out},
+    )
+    _write_json(report, json_out)
+    _write_markdown(report, markdown_out)
+    print(f"[ok] wrote {json_out}")
+    print(f"[ok] wrote {markdown_out}")
+
+
+def _gate_result(report: dict[str, Any], gate: bool) -> int:
+    if not gate:
+        return 0
+    failed = [
+        (model["model_id"], ep)
+        for model in report["models"]
+        for ep, result in model["per_ep"].items()
+        if not result.get("pass", False)
+    ]
+    for model_id, ep in failed:
+        print(f"[FAIL] {model_id} on {ep}", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def main() -> int:
+    args = _parse_args()
 
     try:
-        reg = json.loads(REGISTRY.read_text())
+        registry = json.loads(REGISTRY.read_text())
     except Exception as exc:
         print(f"failed to load registry: {exc}", file=sys.stderr)
         return 2
 
     work_dir = Path(tempfile.mkdtemp(prefix="quant_eps_"))
     try:
-        report: dict[str, Any] = {
-            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "hw": args.hw,
-            "eps": args.eps,
-            "n_samples": N_SAMPLES,
-            "seed": SEED,
-            "models": [],
-        }
-
-        # 1. Registry-shipped quantised models.
-        for m in _registry_targets(reg):
-            fp32 = REPO_ROOT / "model" / "tiny" / m["onnx"]
-            int8 = fp32.with_name(fp32.stem + ".int8.onnx")
-            if not fp32.is_file() or not int8.is_file():
-                print(
-                    f"[skip] {m['id']} — missing fp32 or int8 sibling",
-                    file=sys.stderr,
-                )
-                continue
-            budget = float(m.get("quant_accuracy_budget_plcc", 0.01))
-            row = _run_model(m["id"], fp32, int8, args.eps, budget, args.openvino_device)
-            row["source"] = "registry"
-            report["models"].append(row)
-
-        # 2. Extra fp32-only baselines (dynamic PTQ on the fly).
-        for rel in args.extra_fp32:
-            fp32 = REPO_ROOT / "model" / "tiny" / rel
-            if not fp32.is_file():
-                print(f"[skip] extra fp32 not found: {fp32}", file=sys.stderr)
-                continue
-            try:
-                int8 = _dynamic_quantise(fp32, work_dir)
-            except Exception as exc:
-                print(
-                    f"[skip] failed to dynamic-quantise {rel}: {exc}",
-                    file=sys.stderr,
-                )
-                continue
-            row = _run_model(
-                fp32.stem,
-                fp32,
-                int8,
-                args.eps,
-                args.extra_budget,
-                args.openvino_device,
-            )
-            row["source"] = "extra_fp32_dynamic_ptq"
-            report["models"].append(row)
-
-        json_out = args.out / "results.json"
-        md_out = args.out / "results.md"
-        report["run_provenance"] = build_run_provenance(
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
-            args=args,
-            inputs={
-                "registry": REGISTRY,
-                "extra_fp32": [REPO_ROOT / "model" / "tiny" / rel for rel in args.extra_fp32],
-            },
-            outputs={
-                "json_report": json_out,
-                "markdown_report": md_out,
-            },
-        )
-        _write_json(report, json_out)
-        _write_markdown(report, md_out)
-        print(f"[ok] wrote {json_out}")
-        print(f"[ok] wrote {md_out}")
-
-        if args.gate:
-            failed = [
-                (m["model_id"], ep)
-                for m in report["models"]
-                for ep, r in m["per_ep"].items()
-                if not r.get("pass", False)
-            ]
-            if failed:
-                for mid, ep in failed:
-                    print(f"[FAIL] {mid} on {ep}", file=sys.stderr)
-                return 1
-        return 0
+        report = _new_report(args)
+        _append_registry_models(report, registry, args)
+        _append_extra_models(report, args, work_dir)
+        _write_reports(report, args)
+        return _gate_result(report, args.gate)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

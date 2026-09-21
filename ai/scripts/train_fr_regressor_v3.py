@@ -69,7 +69,13 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
@@ -83,7 +89,13 @@ if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
 
 # Import the v3 vocab from the v2 trainer where it's documented as a
 # parallel constant (per ADR-0302's scaffold landed in PR #401).
-from train_fr_regressor_v2 import ENCODER_VOCAB_V3  # noqa: E402  # type: ignore[import-not-found]
+if TYPE_CHECKING:
+    from ai.scripts.train_fr_regressor_v2 import ENCODER_VOCAB_V3 as ENCODER_VOCAB_V3
+else:
+    try:
+        from ai.scripts.train_fr_regressor_v2 import ENCODER_VOCAB_V3 as ENCODER_VOCAB_V3
+    except ModuleNotFoundError:
+        from train_fr_regressor_v2 import ENCODER_VOCAB_V3 as ENCODER_VOCAB_V3
 
 # Canonical-6 libvmaf feature columns (ADR-0291 / ADR-0319).
 CANONICAL_6: tuple[str, ...] = (
@@ -123,6 +135,93 @@ def _enc_idx_v3(name: str) -> int:
         return FALLBACK_ENCODER_INDEX
 
 
+def _read_corpus(corpus_path: Path) -> "pd.DataFrame":
+    import pandas as pd
+
+    if not corpus_path.is_file():
+        raise FileNotFoundError(
+            f"Corpus JSONL not found at {corpus_path}. Generate it via "
+            "`vmaf-tune corpus ...` (schema v3 per ADR-0366)."
+        )
+    frame = pd.read_json(corpus_path, lines=True)
+    if len(frame) == 0:
+        raise ValueError(f"Corpus {corpus_path} has zero rows.")
+    return frame
+
+
+def _project_v3_schema(frame: "pd.DataFrame", corpus_path: Path) -> "pd.DataFrame":
+    feature_mean_columns = [f"{feature}_mean" for feature in CANONICAL_6]
+    required = [*feature_mean_columns, "vmaf_score", "src", "encoder", "crf"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(
+            f"Corpus {corpus_path} is missing required v3 columns: {missing}. "
+            f"Expected canonical-6 means ({feature_mean_columns}) + vmaf_score + "
+            "src + encoder + crf. Re-emit via `vmaf-tune corpus` after "
+            "ADR-0366 (schema v3)."
+        )
+    finite = np.isfinite(frame[feature_mean_columns].to_numpy(dtype=np.float64)).all(axis=1)
+    finite &= np.isfinite(frame["vmaf_score"].to_numpy(dtype=np.float64))
+    frame = frame.loc[finite].reset_index(drop=True)
+    if len(frame) == 0:
+        raise ValueError(
+            f"Corpus {corpus_path} has zero rows after dropping NaN-feature rows. "
+            "Verify the libvmaf model exposes the canonical-6 features."
+        )
+    for feature, column in zip(CANONICAL_6, feature_mean_columns, strict=True):
+        frame[feature] = frame[column]
+    if "vmaf" not in frame.columns:
+        frame = frame.assign(vmaf=frame["vmaf_score"])
+    if "cq" not in frame.columns:
+        frame = frame.assign(cq=frame["crf"])
+    return frame
+
+
+def _validate_legacy_schema(frame: "pd.DataFrame", corpus_path: Path) -> None:
+    required = [*CANONICAL_6, "vmaf", "src", "encoder", "cq"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(
+            f"Corpus {corpus_path} is missing required legacy columns: {missing}. "
+            f"Expected canonical-6 ({list(CANONICAL_6)}) + vmaf + src + encoder + cq."
+        )
+
+
+def _normalise_corpus_schema(frame: "pd.DataFrame", corpus_path: Path) -> "pd.DataFrame":
+    feature_mean_columns = [f"{feature}_mean" for feature in CANONICAL_6]
+    if all(column in frame.columns for column in feature_mean_columns):
+        return _project_v3_schema(frame, corpus_path)
+    if all(column in frame.columns for column in CANONICAL_6):
+        _validate_legacy_schema(frame, corpus_path)
+        return frame
+    raise ValueError(
+        f"Corpus {corpus_path} is missing required v3 columns: {feature_mean_columns}. "
+        "Expected either schema-v3 (vmaf-tune corpus, ADR-0366) with "
+        "`<feature>_mean` columns + vmaf_score + crf, or the legacy "
+        f"shape with bare {list(CANONICAL_6)} + vmaf + cq columns."
+    )
+
+
+def _build_codec_block(frame: "pd.DataFrame") -> tuple[np.ndarray, float, float]:
+    codec_indices = np.array(
+        [_enc_idx_v3(str(encoder)) for encoder in frame["encoder"].tolist()], dtype=np.int64
+    )
+    codec_onehot = np.eye(N_ENCODERS_V3, dtype=np.float32)[codec_indices]
+    preset_norm = np.full((len(frame),), 0.5, dtype=np.float32)
+    quality_column = "crf" if "crf" in frame.columns else "cq"
+    quality = frame[quality_column].to_numpy(dtype=np.float32)
+    cq_min, cq_max = float(quality.min()), float(quality.max())
+    crf_norm = (
+        np.full_like(quality, 0.5)
+        if cq_max - cq_min < 1e-6
+        else (quality - cq_min) / (cq_max - cq_min)
+    )
+    block = np.concatenate([codec_onehot, preset_norm[:, None], crf_norm[:, None]], axis=1).astype(
+        np.float32
+    )
+    return block, cq_min, cq_max
+
+
 def _load_corpus(corpus_path: Path) -> dict[str, Any]:
     """Load the Phase A canonical-6 JSONL corpus into a structured dict.
 
@@ -146,117 +245,20 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
     misleading models that did not predict on real data.
     """
     import numpy as np
-    import pandas as pd
 
-    if not corpus_path.is_file():
-        raise FileNotFoundError(
-            f"Corpus JSONL not found at {corpus_path}. Generate it via "
-            "`vmaf-tune corpus ...` (schema v3 per ADR-0366)."
-        )
-
-    df = pd.read_json(corpus_path, lines=True)
-    if len(df) == 0:
-        raise ValueError(f"Corpus {corpus_path} has zero rows.")
-
-    feature_mean_cols = [f"{f}_mean" for f in CANONICAL_6]
-    has_v3_means = all(c in df.columns for c in feature_mean_cols)
-    has_legacy_bare = all(c in df.columns for c in CANONICAL_6)
-
-    if has_v3_means:
-        # Schema-v3 ``vmaf-tune corpus`` shape (ADR-0366). The means
-        # come from libvmaf's ``pooled_metrics.<feature>`` block; drop
-        # rows where libvmaf did not expose the feature (NaN cells).
-        required = [*feature_mean_cols, "vmaf_score", "src", "encoder", "crf"]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(
-                f"Corpus {corpus_path} is missing required v3 columns: {missing}. "
-                f"Expected canonical-6 means ({feature_mean_cols}) + vmaf_score + "
-                f"src + encoder + crf. Re-emit via `vmaf-tune corpus` after "
-                "ADR-0366 (schema v3); legacy schema-v2 corpora carry only "
-                "aggregate vmaf_score and cannot train this regressor."
-            )
-        finite_mask = np.isfinite(df[feature_mean_cols].to_numpy(dtype=np.float64)).all(axis=1)
-        finite_mask &= np.isfinite(df["vmaf_score"].to_numpy(dtype=np.float64))
-        if not finite_mask.all():
-            df = df.loc[finite_mask].reset_index(drop=True)
-        if len(df) == 0:
-            raise ValueError(
-                f"Corpus {corpus_path} has zero rows after dropping NaN-feature rows. "
-                "Verify the libvmaf model exposes the canonical-6 features."
-            )
-        # Project the ``_mean`` columns into bare-named ones and rename
-        # ``vmaf_score`` -> ``vmaf`` so the rest of the module stays
-        # positional.
-        for feat, col in zip(CANONICAL_6, feature_mean_cols, strict=True):
-            df[feat] = df[col]
-        if "vmaf" not in df.columns:
-            df = df.assign(vmaf=df["vmaf_score"])
-        if "cq" not in df.columns:
-            df = df.assign(cq=df["crf"])
-    elif has_legacy_bare:
-        # Legacy ``hw_encoder_corpus.py`` per-frame shape — bare canonical-6
-        # column names, ``vmaf`` target, ``cq`` quality knob. Kept for
-        # backward compatibility with existing on-disk corpora; new
-        # corpora should be emitted in v3 shape via ``vmaf-tune corpus``.
-        required = [*CANONICAL_6, "vmaf", "src", "encoder", "cq"]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(
-                f"Corpus {corpus_path} is missing required legacy columns: {missing}. "
-                f"Expected canonical-6 ({list(CANONICAL_6)}) + vmaf + src + "
-                f"encoder + cq."
-            )
-    else:
-        # Neither shape — surface the v3 error first since it's the
-        # forward path; mention the legacy shape for older corpora.
-        raise ValueError(
-            f"Corpus {corpus_path} is missing required v3 columns: {feature_mean_cols}. "
-            "Expected either schema-v3 (vmaf-tune corpus, ADR-0366) "
-            f"with `<feature>_mean` columns + vmaf_score + crf, or the legacy "
-            f"hw_encoder_corpus.py per-frame shape with bare {list(CANONICAL_6)} "
-            "+ vmaf + cq columns. Re-emit via `vmaf-tune corpus` for the "
-            "preferred path."
-        )
-
-    feat = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    feat_mean = feat.mean(axis=0)
-    feat_std = feat.std(axis=0, ddof=0)
+    frame = _normalise_corpus_schema(_read_corpus(corpus_path), corpus_path)
+    feature_array = frame[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    feat_mean = feature_array.mean(axis=0)
+    feat_std = feature_array.std(axis=0, ddof=0)
     feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)
-
-    codec_idx = np.array([_enc_idx_v3(str(e)) for e in df["encoder"].tolist()], dtype=np.int64)
-    codec_onehot = np.eye(N_ENCODERS_V3, dtype=np.float32)[codec_idx]
-
-    # The schema-v3 corpus records ``preset`` per row but its ordinal
-    # value is encoder-specific. We default to the 0.5 median to match
-    # ADR-0319's choice — switching to the encoder-aware ordinal table
-    # is tracked as a follow-up so this PR stays focused on schema.
-    preset_norm = np.full((len(df),), 0.5, dtype=np.float32)
-
-    # ``crf`` (schema-v3 corpus) and ``cq`` (legacy hw-encoder corpus)
-    # are interchangeable as the codec-block normalisation knob.
-    if "crf" in df.columns:
-        crfs = df["crf"].to_numpy(dtype=np.float32)
-    else:
-        crfs = df["cq"].to_numpy(dtype=np.float32)
-    cq_min, cq_max = float(crfs.min()), float(crfs.max())
-    if cq_max - cq_min < 1e-6:
-        crf_norm = np.full_like(crfs, 0.5)
-    else:
-        crf_norm = (crfs - cq_min) / (cq_max - cq_min)
-
-    codec_block = np.concatenate(
-        [codec_onehot, preset_norm[:, None], crf_norm[:, None]],
-        axis=1,
-    ).astype(np.float32)
-
+    codec_block, cq_min, cq_max = _build_codec_block(frame)
     codec_block_cols = [f"encoder_onehot[{e}]" for e in ENCODER_VOCAB_V3] + [
         "preset_norm",
         "crf_norm",
     ]
 
     return {
-        "df": df,
+        "df": frame,
         "feature_cols": list(CANONICAL_6),
         "codec_block_cols": codec_block_cols,
         "target_col": "vmaf",
@@ -270,7 +272,7 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
         "feature_std": feat_std,
         "cq_min": cq_min,
         "cq_max": cq_max,
-        "n_rows": len(df),
+        "n_rows": len(frame),
     }
 
 
@@ -287,7 +289,7 @@ def _set_seed_all(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _plcc(pred, target) -> float:
+def _plcc(pred: np.ndarray, target: np.ndarray) -> float:
     import numpy as np
 
     p = np.asarray(pred, dtype=np.float64).reshape(-1)
@@ -299,7 +301,7 @@ def _plcc(pred, target) -> float:
     return float(np.corrcoef(p, t)[0, 1])
 
 
-def _srocc(pred, target) -> float:
+def _srocc(pred: np.ndarray, target: np.ndarray) -> float:
     import numpy as np
 
     p = np.asarray(pred, dtype=np.float64).reshape(-1)
@@ -314,9 +316,9 @@ def _srocc(pred, target) -> float:
 
 
 def _train_fold(
-    x_feat,
-    x_codec,
-    y,
+    x_feat: np.ndarray,
+    x_codec: np.ndarray,
+    y: np.ndarray,
     *,
     epochs: int,
     batch_size: int,
@@ -324,7 +326,7 @@ def _train_fold(
     weight_decay: float,
     seed: int,
     num_codecs: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train a single FRRegressor for one LOSO fold; return the fitted model."""
     import numpy as np
     import torch
@@ -358,13 +360,13 @@ def _train_fold(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
-def _predict(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
+def _predict(model: "torch.nn.Module", x_feat: np.ndarray, x_codec: np.ndarray) -> np.ndarray:
     import numpy as np
     import torch
 
@@ -373,11 +375,12 @@ def _predict(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
             torch.from_numpy(np.asarray(x_feat, dtype=np.float32)),
             torch.from_numpy(np.asarray(x_codec, dtype=np.float32)),
         )
-    return out.cpu().numpy().reshape(-1)
+    return np.asarray(out.cpu().numpy(), dtype=np.float32).reshape(-1)
 
 
-def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
-    """Run 9-fold LOSO over the corpus's unique sources; return summary dict."""
+def _run_loso_fold(
+    corpus: dict[str, Any], args: argparse.Namespace, held_out: str
+) -> dict[str, Any]:
     import numpy as np
 
     df = corpus["df"]
@@ -385,79 +388,72 @@ def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]
     target_col = corpus["target_col"]
     source_col = corpus["source_col"]
     codec_block = corpus["codec_block"]
+    train_mask = (df[source_col] != held_out).to_numpy()
+    validation_mask = (df[source_col] == held_out).to_numpy()
+    train_features = df.loc[train_mask, feat_cols].to_numpy(dtype=np.float64)
+    train_target = df.loc[train_mask, target_col].to_numpy(dtype=np.float64)
+    validation_features = df.loc[validation_mask, feat_cols].to_numpy(dtype=np.float64)
+    validation_target = df.loc[validation_mask, target_col].to_numpy(dtype=np.float64)
+    mean = train_features.mean(axis=0)
+    std = train_features.std(axis=0, ddof=0)
+    std = np.where(std < 1e-8, 1.0, std)
+    model = _train_fold(
+        (train_features - mean) / std,
+        codec_block[train_mask],
+        train_target,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+        num_codecs=CODEC_BLOCK_DIM,
+    )
+    predictions = _predict(model, (validation_features - mean) / std, codec_block[validation_mask])
+    return {
+        "held_out": held_out,
+        "n_train": int(train_mask.sum()),
+        "n_val": int(validation_mask.sum()),
+        "plcc": _plcc(predictions, validation_target),
+        "srocc": _srocc(predictions, validation_target),
+        "rmse": (
+            float(np.sqrt(np.mean((predictions - validation_target) ** 2)))
+            if len(validation_target)
+            else float("nan")
+        ),
+    }
 
-    sources = sorted(df[source_col].unique().tolist())
-    folds: list[dict[str, Any]] = []
-    plccs: list[float] = []
-    sroccs: list[float] = []
-    rmses: list[float] = []
 
-    t_start = time.monotonic()
-    for held_out in sources:
-        train_mask = (df[source_col] != held_out).to_numpy()
-        val_mask = (df[source_col] == held_out).to_numpy()
-
-        x_feat_tr = df.loc[train_mask, feat_cols].to_numpy(dtype=np.float64)
-        y_tr = df.loc[train_mask, target_col].to_numpy(dtype=np.float64)
-        x_codec_tr = codec_block[train_mask]
-
-        x_feat_va = df.loc[val_mask, feat_cols].to_numpy(dtype=np.float64)
-        y_va = df.loc[val_mask, target_col].to_numpy(dtype=np.float64)
-        x_codec_va = codec_block[val_mask]
-
-        mean = x_feat_tr.mean(axis=0)
-        std = x_feat_tr.std(axis=0, ddof=0)
-        std = np.where(std < 1e-8, 1.0, std)
-        x_feat_tr_norm = (x_feat_tr - mean) / std
-        x_feat_va_norm = (x_feat_va - mean) / std
-
-        model = _train_fold(
-            x_feat_tr_norm,
-            x_codec_tr,
-            y_tr,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            seed=args.seed,
-            num_codecs=CODEC_BLOCK_DIM,
-        )
-        pred_va = _predict(model, x_feat_va_norm, x_codec_va)
-        plcc = _plcc(pred_va, y_va)
-        srocc = _srocc(pred_va, y_va)
-        rmse = float(np.sqrt(np.mean((pred_va - y_va) ** 2))) if len(y_va) else float("nan")
-        folds.append(
-            {
-                "held_out": held_out,
-                "n_train": int(train_mask.sum()),
-                "n_val": int(val_mask.sum()),
-                "plcc": plcc,
-                "srocc": srocc,
-                "rmse": rmse,
-            }
-        )
-        plccs.append(plcc)
-        sroccs.append(srocc)
-        rmses.append(rmse)
-
-    plccs_arr = np.asarray([p for p in plccs if not np.isnan(p)], dtype=np.float64)
-    mean_plcc = float(plccs_arr.mean()) if plccs_arr.size > 0 else float("nan")
-    std_plcc = float(plccs_arr.std(ddof=1)) if plccs_arr.size >= 2 else float("nan")
+def _summarize_folds(folds: list[dict[str, Any]], wall_time: float) -> dict[str, Any]:
+    plccs = [float(fold["plcc"]) for fold in folds]
+    sroccs = [float(fold["srocc"]) for fold in folds]
+    rmses = [float(fold["rmse"]) for fold in folds]
+    finite_plccs = np.asarray([value for value in plccs if not np.isnan(value)], dtype=np.float64)
 
     return {
         "n_folds": len(folds),
         "folds": folds,
-        "mean_plcc": mean_plcc,
-        "std_plcc": std_plcc,
+        "mean_plcc": float(finite_plccs.mean()) if finite_plccs.size else float("nan"),
+        "std_plcc": (float(finite_plccs.std(ddof=1)) if finite_plccs.size >= 2 else float("nan")),
         "min_plcc": float(min(plccs)) if plccs else float("nan"),
         "max_plcc": float(max(plccs)) if plccs else float("nan"),
         "mean_srocc": float(np.nanmean(sroccs)) if sroccs else float("nan"),
         "mean_rmse": float(np.nanmean(rmses)) if rmses else float("nan"),
-        "wall_time_s": float(time.monotonic() - t_start),
+        "wall_time_s": wall_time,
     }
 
 
-def fit_full_corpus(corpus: dict[str, Any], args: argparse.Namespace):  # type: ignore[no-untyped-def]
+def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """Run 9-fold LOSO over the corpus's unique sources; return summary dict."""
+    frame = corpus["df"]
+    sources = sorted(frame[corpus["source_col"]].unique().tolist())
+    started_at = time.monotonic()
+    folds = [_run_loso_fold(corpus, args, held_out) for held_out in sources]
+    return _summarize_folds(folds, time.monotonic() - started_at)
+
+
+def fit_full_corpus(
+    corpus: dict[str, Any], args: argparse.Namespace
+) -> tuple["torch.nn.Module", dict[str, list[float]]]:
     """Fit one FRRegressor on the entire corpus; return (model, scaler)."""
     import numpy as np
 
@@ -488,7 +484,7 @@ def fit_full_corpus(corpus: dict[str, Any], args: argparse.Namespace):  # type: 
     return model, scaler
 
 
-def export_onnx(model, onnx_path: Path) -> None:  # type: ignore[no-untyped-def]
+def export_onnx(model: "torch.nn.Module", onnx_path: Path) -> None:
     """Export the v3 FRRegressor to ONNX (opset 17, two named inputs)."""
     import numpy as np
     import onnx
@@ -547,7 +543,7 @@ def write_sidecar_and_registry(
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,
-    scaler: dict,
+    scaler: dict[str, list[float]],
     loso_summary: dict[str, Any],
     corpus_path: Path,
     n_rows: int,
@@ -733,29 +729,29 @@ def build_argparser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_argparser()
-    args = parser.parse_args(argv)
-
+def _validate_args(args: argparse.Namespace) -> bool:
     if args.smoke and args.corpus is not None:
         print("error: --smoke and --corpus are mutually exclusive", file=sys.stderr)
-        return 2
+        return False
     if not args.smoke and args.corpus is None:
         print("error: provide --corpus PATH or use --smoke", file=sys.stderr)
-        return 2
+        return False
+    return True
 
-    if args.smoke:
-        # Synthesise into a temp file then load via the real path.
-        import tempfile
 
-        tmp = Path(tempfile.mkdtemp(prefix="fr_v3_smoke_")) / "synth.jsonl"
-        _write_smoke_corpus(tmp)
-        args.corpus = tmp
-        args.epochs = 1
+def _prepare_smoke_corpus(args: argparse.Namespace) -> None:
+    if not args.smoke:
+        return
+    import tempfile
 
-    print(f"[fr-v3] loading corpus {args.corpus}", flush=True)
-    corpus = _load_corpus(args.corpus)
-    run_provenance = build_run_provenance(
+    corpus_path = Path(tempfile.mkdtemp(prefix="fr_v3_smoke_")) / "synth.jsonl"
+    _write_smoke_corpus(corpus_path)
+    args.corpus = corpus_path
+    args.epochs = 1
+
+
+def _run_provenance(args: argparse.Namespace, argv: list[str] | None) -> dict[str, Any]:
+    return build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,
         argv=sys.argv[1:] if argv is None else argv,
@@ -767,6 +763,79 @@ def main(argv: list[str] | None = None) -> int:
             "registry_target": str(args.registry),
         },
     )
+
+
+def _print_loso_summary(summary: dict[str, Any]) -> None:
+    print(
+        f"[fr-v3] LOSO mean_plcc={summary['mean_plcc']:.4f} "
+        f"std={summary['std_plcc']:.4f} min={summary['min_plcc']:.4f} "
+        f"max={summary['max_plcc']:.4f} ({summary['wall_time_s']:.1f}s)",
+        flush=True,
+    )
+    for fold in summary["folds"]:
+        print(
+            f"  fold[{fold['held_out']:24s}] n_train={fold['n_train']:>5d} "
+            f"n_val={fold['n_val']:>5d} plcc={fold['plcc']:.4f} "
+            f"srocc={fold['srocc']:.4f} rmse={fold['rmse']:.3f}",
+            flush=True,
+        )
+
+
+def _write_model_artifacts(
+    corpus: dict[str, Any],
+    args: argparse.Namespace,
+    summary: dict[str, Any],
+    run_provenance: dict[str, object],
+    *,
+    gate_passed: bool,
+    scaffold: bool,
+) -> None:
+    training_args = argparse.Namespace(**vars(args)) if scaffold else args
+    if scaffold:
+        training_args.epochs = 1
+    model, scaler = fit_full_corpus(corpus, training_args)
+    export_onnx(model, args.out_onnx)
+    write_sidecar_and_registry(
+        onnx_path=args.out_onnx,
+        sidecar_path=args.out_sidecar,
+        registry_path=args.registry,
+        scaler=scaler,
+        loso_summary=summary,
+        corpus_path=args.corpus,
+        n_rows=corpus["n_rows"],
+        smoke=args.smoke if not scaffold else False,
+        gate_passed=gate_passed,
+        run_provenance=run_provenance,
+    )
+
+
+def _handle_gate_failure(
+    corpus: dict[str, Any],
+    args: argparse.Namespace,
+    summary: dict[str, Any],
+    run_provenance: dict[str, object],
+) -> int:
+    print(
+        f"[fr-v3] GATE FAIL: mean LOSO PLCC {summary['mean_plcc']:.4f} "
+        f"< {SHIP_GATE_MEAN_PLCC} (ADR-0302). Refusing to export.",
+        file=sys.stderr,
+        flush=True,
+    )
+    if args.no_export:
+        return 1
+    print("[fr-v3] gate-fail: shipping scaffold ONNX (smoke=true)", flush=True)
+    _write_model_artifacts(corpus, args, summary, run_provenance, gate_passed=False, scaffold=True)
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_argparser().parse_args(argv)
+    if not _validate_args(args):
+        return 2
+    _prepare_smoke_corpus(args)
+    print(f"[fr-v3] loading corpus {args.corpus}", flush=True)
+    corpus = _load_corpus(args.corpus)
+    provenance = _run_provenance(args, argv)
     print(
         f"[fr-v3] loaded {corpus['n_rows']} rows; sources="
         f"{sorted(corpus['df'][corpus['source_col']].unique().tolist())} "
@@ -780,75 +849,21 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
     summary = run_loso(corpus, args)
-    print(
-        f"[fr-v3] LOSO mean_plcc={summary['mean_plcc']:.4f} "
-        f"std={summary['std_plcc']:.4f} "
-        f"min={summary['min_plcc']:.4f} max={summary['max_plcc']:.4f} "
-        f"({summary['wall_time_s']:.1f}s)",
-        flush=True,
-    )
-    for f in summary["folds"]:
-        print(
-            f"  fold[{f['held_out']:24s}] n_train={f['n_train']:>5d} "
-            f"n_val={f['n_val']:>5d} plcc={f['plcc']:.4f} srocc={f['srocc']:.4f} "
-            f"rmse={f['rmse']:.3f}",
-            flush=True,
-        )
+    _print_loso_summary(summary)
 
     gate_passed = not args.smoke and summary["mean_plcc"] >= SHIP_GATE_MEAN_PLCC
     if args.smoke:
         print("[fr-v3] smoke mode — skipping ship gate", flush=True)
     elif not gate_passed:
-        print(
-            f"[fr-v3] GATE FAIL: mean LOSO PLCC {summary['mean_plcc']:.4f} "
-            f"< {SHIP_GATE_MEAN_PLCC} (ADR-0302). Refusing to export.",
-            file=sys.stderr,
-            flush=True,
-        )
-        # Still write the sidecar + registry-with-smoke-true row so the
-        # PR ships scaffold + sidecar + registry stub for the follow-up.
-        if args.no_export:
-            return 1
-        # Need an ONNX file on disk for the registry sha256 contract.
-        # Train a 1-epoch full-corpus model so the file exists; the
-        # registry row is `smoke: true` with the gate-fail note.
-        print("[fr-v3] gate-fail: shipping scaffold ONNX (smoke=true)", flush=True)
-        scaffold_args = argparse.Namespace(**vars(args))
-        scaffold_args.epochs = 1
-        scaffold_model, scaffold_scaler = fit_full_corpus(corpus, scaffold_args)
-        export_onnx(scaffold_model, args.out_onnx)
-        write_sidecar_and_registry(
-            onnx_path=args.out_onnx,
-            sidecar_path=args.out_sidecar,
-            registry_path=args.registry,
-            scaler=scaffold_scaler,
-            loso_summary=summary,
-            corpus_path=args.corpus,
-            n_rows=corpus["n_rows"],
-            smoke=False,
-            gate_passed=False,
-            run_provenance=run_provenance,
-        )
-        return 1
+        return _handle_gate_failure(corpus, args, summary, provenance)
 
     if args.no_export:
         print("[fr-v3] --no-export set; skipping ONNX export.")
         return 0
 
     print("[fr-v3] gate PASS — fitting full-corpus checkpoint", flush=True)
-    model, scaler = fit_full_corpus(corpus, args)
-    export_onnx(model, args.out_onnx)
-    write_sidecar_and_registry(
-        onnx_path=args.out_onnx,
-        sidecar_path=args.out_sidecar,
-        registry_path=args.registry,
-        scaler=scaler,
-        loso_summary=summary,
-        corpus_path=args.corpus,
-        n_rows=corpus["n_rows"],
-        smoke=args.smoke,
-        gate_passed=gate_passed,
-        run_provenance=run_provenance,
+    _write_model_artifacts(
+        corpus, args, summary, provenance, gate_passed=gate_passed, scaffold=False
     )
     print(
         f"[fr-v3] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})",

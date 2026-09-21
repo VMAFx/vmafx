@@ -37,13 +37,17 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
@@ -53,7 +57,7 @@ from ai.data.feature_extractor import (  # noqa: E402
     FULL_FEATURES,
     extract_features,
 )
-from ai.data.netflix_loader import iter_pairs  # noqa: E402
+from ai.data.netflix_loader import NetflixPair, iter_pairs  # noqa: E402
 from ai.data.scores import resolve_teacher_model, teacher_scores  # noqa: E402
 
 # isort: split
@@ -75,11 +79,11 @@ def _per_clip_cache_path(
 
 
 def _load_or_compute(
-    pair,
+    pair: NetflixPair,
     cache_dir: Path,
     vmaf_binary: Path,
     vmaf_model: str | Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     resolved = resolve_teacher_model(vmaf_model)
     src = pair.source
     stem = pair.dis_path.stem
@@ -93,7 +97,7 @@ def _load_or_compute(
             list(payload.get("feature_names", [])) == list(FULL_FEATURES)
             and payload.get("teacher_model", resolved.name) == resolved.name
         ):
-            return payload
+            return {str(key): value for key, value in payload.items()}
 
     feats = extract_features(
         pair.ref_path,
@@ -157,12 +161,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
-        prog="extract_full_features.py",
-        description=__doc__,
-    )
+def _add_input_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--data-root",
         type=Path,
@@ -182,16 +181,11 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path.home() / ".cache" / "vmaf-tiny-ai-full",
     )
-    ap.add_argument(
-        "--vmaf-bin",
-        type=Path,
-        default=DEFAULT_VMAF_BINARY,
-    )
-    ap.add_argument(
-        "--out",
-        type=Path,
-        default=Path("runs/full_features_netflix.parquet"),
-    )
+    ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
+
+
+def _add_output_arguments(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("--out", type=Path, default=Path("runs/full_features_netflix.parquet"))
     ap.add_argument("--max-pairs", type=int, default=None)
     ap.add_argument(
         "--codec",
@@ -222,7 +216,67 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the parquet."
         ),
     )
-    args = ap.parse_args(raw_argv)
+
+
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
+    ap = make_argument_parser(
+        prog="extract_full_features.py",
+        description=__doc__,
+    )
+    _add_input_arguments(ap)
+    _add_output_arguments(ap)
+    return ap.parse_args(raw_argv)
+
+
+def _payload_rows(
+    pair: NetflixPair, payload: dict[str, Any], codec: str, fallback_teacher: str
+) -> list[dict[str, Any]]:
+    feature_names = list(payload.get("feature_names") or FULL_FEATURES)
+    per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
+    teacher_per_frame = np.asarray(payload["teacher_per_frame"], dtype=np.float32)
+    teacher_model_name = payload.get("teacher_model", fallback_teacher)
+    frame_count = min(per_frame.shape[0], teacher_per_frame.shape[0])
+    rows: list[dict[str, Any]] = []
+    for frame_index in range(frame_count):
+        row = {
+            "source": pair.source,
+            "dis_basename": pair.dis_path.name,
+            "frame_index": frame_index,
+            "codec": codec,
+            "teacher_model": teacher_model_name,
+            "vmaf": float(teacher_per_frame[frame_index]),
+        }
+        for column, value in zip(feature_names, per_frame[frame_index], strict=True):
+            row[column] = float(value)
+        rows.append(row)
+    return rows
+
+
+def _extract_rows(
+    args: argparse.Namespace, pairs: list[NetflixPair], teacher_name: str, started_at: float
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, pair in enumerate(pairs):
+        elapsed = time.time() - started_at
+        print(
+            f"[extract] {index + 1}/{len(pairs)} {pair.source}/{pair.dis_path.name} "
+            f"(elapsed {elapsed:.0f}s)"
+        )
+        try:
+            payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin, args.vmaf_model)
+            rows.extend(_payload_rows(pair, payload, args.codec, teacher_name))
+        except Exception as exc:
+            print(
+                f"[extract] WARNING: skipping {pair.source}/{pair.dis_path.name}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -231,52 +285,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     resolved_teacher = resolve_teacher_model(args.vmaf_model)
-    rows: list[dict] = []
     pairs = list(iter_pairs(args.data_root, max_pairs=args.max_pairs))
     print(
         f"[extract] {len(pairs)} pairs; FULL_FEATURES = {len(FULL_FEATURES)} features; "
         f"teacher = {resolved_teacher.name}"
     )
     t0 = time.time()
-    for i, pair in enumerate(pairs):
-        wt = time.time() - t0
-        print(
-            f"[extract] {i + 1}/{len(pairs)} {pair.source}/{pair.dis_path.name} (elapsed {wt:.0f}s)"
-        )
-        try:
-            payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin, args.vmaf_model)
-            # Use the payload's own feature_names (not the global FULL_FEATURES)
-            # so columns line up with the values that were actually computed;
-            # _load_or_compute guarantees they equal FULL_FEATURES, so strict=True
-            # turns any future drift into a hard error instead of silent
-            # truncation (R3-8).
-            feature_names = list(payload.get("feature_names") or FULL_FEATURES)
-            per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
-            teacher_per_frame = np.asarray(payload["teacher_per_frame"], dtype=np.float32)
-            teacher_model_name = payload.get("teacher_model", resolved_teacher.name)
-            n = min(per_frame.shape[0], teacher_per_frame.shape[0])
-            for fi in range(n):
-                row = {
-                    "source": pair.source,
-                    "dis_basename": pair.dis_path.name,
-                    "frame_index": fi,
-                    "codec": args.codec,
-                    "teacher_model": teacher_model_name,
-                    "vmaf": float(teacher_per_frame[fi]),
-                }
-                for col, val in zip(feature_names, per_frame[fi], strict=True):
-                    row[col] = float(val)
-                rows.append(row)
-        except Exception as exc:
-            # One bad pair (corrupt cache, vmaf/ffmpeg failure, malformed
-            # payload) must not abort a multi-hour corpus extraction —
-            # log a warning and continue with the next pair.
-            print(
-                f"[extract] WARNING: skipping {pair.source}/{pair.dis_path.name}: {exc}",
-                file=sys.stderr,
-                flush=True,
-            )
-            continue
+    rows = _extract_rows(args, pairs, resolved_teacher.name, t0)
 
     import pandas as pd  # local import — pandas optional for non-Phase-2 paths
 

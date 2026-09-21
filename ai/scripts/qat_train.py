@@ -49,8 +49,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import torch
+
+    from ai.train.qat import QatConfig
 
 # Allow this script to run both as ``python ai/scripts/qat_train.py``
 # (where the ai/ package needs to be importable) and as
@@ -125,7 +131,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace):
+def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace) -> "QatConfig":
     """Build a QatConfig from YAML + CLI overrides."""
     from ai.train.qat import QatConfig
 
@@ -160,29 +166,31 @@ def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace):
     )
 
 
-def _build_model_factory(cfg_doc: dict[str, Any]):
+def _build_model_factory(cfg_doc: dict[str, Any]) -> Callable[[], Any]:
     """Return a zero-arg callable that constructs the configured model.
 
     Importing the model registry here keeps the driver lightweight
     when ``--help`` is requested.
     """
-    from ai.src.vmaf_train.train import MODEL_REGISTRY  # type: ignore[import]
+    from vmaf_train.train import MODEL_REGISTRY
 
     model_kind = cfg_doc.get("model")
     if model_kind not in MODEL_REGISTRY:
         raise SystemExit(
-            f"unknown model kind in config: {model_kind!r}; " f"valid: {sorted(MODEL_REGISTRY)}"
+            f"unknown model kind in config: {model_kind!r}; valid: {sorted(MODEL_REGISTRY)}"
         )
     model_cls = MODEL_REGISTRY[model_kind]
     model_args = cfg_doc.get("model_args", {}) or {}
 
-    def factory():
+    def factory() -> Any:
         return model_cls(**model_args)
 
     return factory
 
 
-def _build_example_inputs(cfg_doc: dict[str, Any], qat_cfg) -> tuple[Any, ...]:
+def _build_example_inputs(
+    cfg_doc: dict[str, Any], qat_cfg: "QatConfig"
+) -> tuple["torch.Tensor", ...]:
     import torch
 
     qat_block = cfg_doc.get("qat", {}) or {}
@@ -199,7 +207,7 @@ IMAGE_CACHE_INPUT_KEYS = ("x", "images", "degraded", "input")
 IMAGE_CACHE_TARGET_KEYS = ("y", "targets", "clean", "reference", "output")
 
 
-def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg) -> int:
+def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg: "QatConfig") -> int:
     """Tensor rank the configured model expects on its single input.
 
     Read from ``qat.input_shape`` — the same value
@@ -215,7 +223,9 @@ def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg) -> int:
     return len(shape)
 
 
-def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
+def _build_image_loader_factory(
+    cfg_doc: dict[str, Any], cache: Path
+) -> Callable[[], Iterable[tuple[Any, Any]]]:
     """Batch iterator over NCHW image tensors for rank-4 QAT models.
 
     Research-2029 gap 4: ``VmafTrainDataModule`` materialises rank-2 tabular
@@ -262,7 +272,7 @@ def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
 
     batch_size = max(1, int(cfg_doc.get("batch_size", 32)))
 
-    def factory():
+    def factory() -> Iterable[tuple[Any, Any]]:
         import torch
         from torch.utils.data import DataLoader, TensorDataset
 
@@ -272,7 +282,9 @@ def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
     return factory
 
 
-def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
+def _build_train_loader_factory(
+    cfg_doc: dict[str, Any], qat_cfg: "QatConfig"
+) -> Callable[[], Iterable[tuple[Any, Any]]] | None:
     """Best-effort training data loader for the QAT phases.
 
     For the smoke path this returns ``None`` — the pipeline skips both
@@ -317,9 +329,9 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
 
     # Wrap the existing Lightning data module into an iterable of (x, y)
     # tensor pairs for the minimal QAT loop.
-    from ai.src.vmaf_train.datamodule import VmafTrainDataModule  # type: ignore[import]
+    from vmaf_train.datamodule import VmafTrainDataModule
 
-    def factory():
+    def factory() -> Iterable[tuple[Any, Any]]:
         dm = VmafTrainDataModule(
             cache,
             batch_size=int(cfg_doc.get("batch_size", 32)),
@@ -332,21 +344,20 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
     return factory
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    args = _parse_args(raw_argv)
-
+def _require_torch() -> bool:
     try:
         import torch  # noqa: F401
     except ImportError as exc:
         print(f"torch not available: {exc}", file=sys.stderr)
-        return 2
+        return False
+    return True
 
+
+def _load_qat_context(args: argparse.Namespace) -> tuple[Path, dict[str, Any], QatConfig] | None:
     cfg_path = args.config.resolve()
     if not cfg_path.is_file():
         print(f"config not found: {cfg_path}", file=sys.stderr)
-        return 2
-
+        return None
     cfg_doc = _load_config(cfg_path)
     qat_cfg = _resolve_qat_config(cfg_doc, args)
     print(
@@ -354,7 +365,10 @@ def main(argv: list[str] | None = None) -> int:
         f"epochs_fp32={qat_cfg.epochs_fp32} epochs_qat={qat_cfg.epochs_qat} "
         f"smoke={qat_cfg.smoke}"
     )
+    return cfg_path, cfg_doc, qat_cfg
 
+
+def _execute_qat(cfg_doc: dict[str, Any], qat_cfg: QatConfig) -> Any:
     model_factory = _build_model_factory(cfg_doc)
     example_inputs = _build_example_inputs(cfg_doc, qat_cfg)
     train_loader_factory = _build_train_loader_factory(cfg_doc, qat_cfg)
@@ -365,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from ai.train.qat import run_qat
 
-    result = run_qat(
+    return run_qat(
         model_factory=model_factory,
         qat_cfg=qat_cfg,
         example_inputs=example_inputs,
@@ -375,36 +389,59 @@ def main(argv: list[str] | None = None) -> int:
         train_loader_factory=train_loader_factory,
     )
 
+
+def _write_qat_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    cfg_path: Path,
+    cfg_doc: dict[str, Any],
+    qat_cfg: QatConfig,
+    result: Any,
+) -> None:
+    if args.report_out is None:
+        return
+    write_run_manifest(
+        args.report_out,
+        schema="qat-train-report-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=_REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"config": cfg_path},
+        outputs={
+            "fp32_model": result.fp32_onnx,
+            "int8_model": result.int8_onnx,
+            "report": args.report_out,
+        },
+        sections={
+            "mode": "qat",
+            "model": cfg_doc.get("model"),
+            "smoke": bool(qat_cfg.smoke),
+            "epochs_fp32": int(result.epochs_fp32),
+            "epochs_qat": int(result.epochs_qat),
+            "n_calibration": int(qat_cfg.n_calibration),
+            "n_params": int(result.n_params),
+            "fp32_onnx": str(result.fp32_onnx),
+            "int8_onnx": str(result.int8_onnx),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
+    if not _require_torch():
+        return 2
+    context = _load_qat_context(args)
+    if context is None:
+        return 2
+    cfg_path, cfg_doc, qat_cfg = context
+    result = _execute_qat(cfg_doc, qat_cfg)
     print(
         f"[qat_train] done — fp32_onnx={result.fp32_onnx} "
         f"int8_onnx={result.int8_onnx} params={result.n_params}"
     )
-    if args.report_out is not None:
-        write_run_manifest(
-            args.report_out,
-            schema="qat-train-report-v1",
-            entrypoint=SCRIPT_PATH,
-            repo_root=_REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"config": cfg_path},
-            outputs={
-                "fp32_model": result.fp32_onnx,
-                "int8_model": result.int8_onnx,
-                "report": args.report_out,
-            },
-            sections={
-                "mode": "qat",
-                "model": cfg_doc.get("model"),
-                "smoke": bool(qat_cfg.smoke),
-                "epochs_fp32": int(result.epochs_fp32),
-                "epochs_qat": int(result.epochs_qat),
-                "n_calibration": int(qat_cfg.n_calibration),
-                "n_params": int(result.n_params),
-                "fp32_onnx": str(result.fp32_onnx),
-                "int8_onnx": str(result.int8_onnx),
-            },
-        )
+    _write_qat_report(args, raw_argv, cfg_path, cfg_doc, qat_cfg, result)
     return 0
 
 

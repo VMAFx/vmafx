@@ -16,11 +16,20 @@ Output goes to a JSON report + a text summary printed to stdout.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -30,7 +39,7 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
-def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
+def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict[str, dict[str, float]]:
     n = len(names)
     out = {names[i]: {names[j]: 0.0 for j in range(n)} for i in range(n)}
     corr = np.corrcoef(x, rowvar=False)
@@ -40,10 +49,10 @@ def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
     return out
 
 
-def _redundant_pairs(x: np.ndarray, names: list[str], threshold: float) -> list[dict]:
+def _redundant_pairs(x: np.ndarray, names: list[str], threshold: float) -> list[dict[str, Any]]:
     """Pairs with |Pearson r| ≥ threshold — redundant signal."""
     corr = np.corrcoef(x, rowvar=False)
-    pairs: list[dict] = []
+    pairs: list[dict[str, Any]] = []
     n = len(names)
     for i in range(n):
         for j in range(i + 1, n):
@@ -108,8 +117,7 @@ def _top_k_consensus(importances: dict[str, dict[str, float]], k: int) -> list[s
     return sorted(consensus)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="feature_correlation.py")
     ap.add_argument("--parquet", type=Path, required=True)
     ap.add_argument(
@@ -126,61 +134,76 @@ def main(argv: list[str] | None = None) -> int:
         help="|Pearson r| above which pairs are flagged as redundant.",
     )
     ap.add_argument("--top-k", type=int, default=8)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _load_feature_arrays(args: argparse.Namespace) -> tuple[list[str], np.ndarray, np.ndarray, int]:
     import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
+    frame = pd.read_parquet(args.parquet)
     drop_cols = {"source", "dis_basename", "frame_index", "key", args.target}
-    feat_cols = [c for c in df.columns if c not in drop_cols]
+    feature_columns = [column for column in frame.columns if column not in drop_cols]
     print(
-        f"[corr] parquet={args.parquet} rows={len(df)} features={len(feat_cols)} "
+        f"[corr] parquet={args.parquet} rows={len(frame)} features={len(feature_columns)} "
         f"target={args.target}"
     )
+    clean = frame.dropna(subset=[*feature_columns, args.target])
+    print(f"[corr] dropped NaN rows: {len(frame) - len(clean)}; clean rows={len(clean)}")
+    x = clean[feature_columns].to_numpy(dtype=np.float64)
+    y = clean[args.target].to_numpy(dtype=np.float64)
+    return feature_columns, x, y, len(clean)
 
-    df_clean = df.dropna(subset=[*feat_cols, args.target])
-    print(f"[corr] dropped NaN rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
-    x = df_clean[feat_cols].to_numpy(dtype=np.float64)
-    y = df_clean[args.target].to_numpy(dtype=np.float64)
+
+def _calculate_importances(
+    x: np.ndarray,
+    y: np.ndarray,
+    feature_columns: list[str],
+) -> dict[str, dict[str, float]]:
+    print("[corr] mutual information vs target...")
+    mutual_information = _mutual_information_to_target(x, y, feature_columns)
+    print("[corr] LASSO importance...")
+    lasso = _lasso_importance(x, y, feature_columns)
+    print("[corr] random forest importance...")
+    random_forest = _random_forest_importance(x, y, feature_columns)
+    return {"mi": mutual_information, "lasso": lasso, "rf": random_forest}
+
+
+def _rank_importances(
+    importances: dict[str, dict[str, float]], top_k: int
+) -> dict[str, list[tuple[str, float]]]:
+    rankings: dict[str, list[tuple[str, float]]] = {}
+    for method, scores in importances.items():
+        finite = {name: value for name, value in scores.items() if not np.isnan(value)}
+        rankings[method] = sorted(finite.items(), key=lambda item: -item[1])[:top_k]
+    return rankings
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    feature_columns, x, y, clean_rows = _load_feature_arrays(args)
 
     print("[corr] Pearson matrix...")
-    pearson = _pearson_matrix(x, feat_cols)
-    redundant = _redundant_pairs(x, feat_cols, args.redundancy_threshold)
-    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): " f"{len(redundant)}")
-    for p in redundant[:5]:
-        print(f"        {p['a']:<22} ↔ {p['b']:<22} r={p['r']:+.4f}")
+    pearson = _pearson_matrix(x, feature_columns)
+    redundant = _redundant_pairs(x, feature_columns, args.redundancy_threshold)
+    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): {len(redundant)}")
+    for pair in redundant[:5]:
+        print(f"        {pair['a']:<22} ↔ {pair['b']:<22} r={pair['r']:+.4f}")
 
-    print("[corr] mutual information vs target...")
-    mi = _mutual_information_to_target(x, y, feat_cols)
-
-    print("[corr] LASSO importance...")
-    lasso = _lasso_importance(x, y, feat_cols)
-
-    print("[corr] random forest importance...")
-    rf = _random_forest_importance(x, y, feat_cols)
-
-    importances = {"mi": mi, "lasso": lasso, "rf": rf}
+    importances = _calculate_importances(x, y, feature_columns)
     consensus = _top_k_consensus(importances, args.top_k)
     print(f"[corr] top-{args.top_k} consensus ({len(consensus)}): {consensus}")
-
-    # Per-method top-k for the report
-    per_method_topk = {}
-    for method, scores in importances.items():
-        finite = {n: v for n, v in scores.items() if not np.isnan(v)}
-        ranked = sorted(finite.items(), key=lambda kv: -kv[1])[: args.top_k]
-        per_method_topk[method] = ranked
-
     report = {
         "parquet": str(args.parquet),
         "target": args.target,
-        "n_rows_clean": len(df_clean),
-        "feature_cols": feat_cols,
+        "n_rows_clean": clean_rows,
+        "feature_cols": feature_columns,
         "pearson": pearson,
         "redundant_pairs": redundant,
         "redundancy_threshold": args.redundancy_threshold,
         "importances": importances,
         "top_k": args.top_k,
-        "per_method_topk": per_method_topk,
+        "per_method_topk": _rank_importances(importances, args.top_k),
         "consensus_topk": consensus,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,

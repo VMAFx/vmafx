@@ -29,15 +29,23 @@ metrics + summary table. Stdout pretty-prints the comparison.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -99,7 +107,7 @@ SUBSETS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -195,7 +203,7 @@ def _standardize_inplace(x_train: np.ndarray, x_val: np.ndarray) -> None:
 
 
 def _loso_sweep(
-    df,  # type: ignore[no-untyped-def]
+    df: "pd.DataFrame",
     feature_cols: tuple[str, ...],
     *,
     epochs: int,
@@ -255,8 +263,7 @@ def _summary(per_fold: dict[str, dict[str, float]]) -> dict[str, float]:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(
         prog="phase3_subset_sweep.py",
         description=__doc__,
@@ -293,7 +300,95 @@ def main(argv: list[str] | None = None) -> int:
             "Research-0028 §'Decision'."
         ),
     )
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
+
+
+def _summarize_seeds(
+    per_seed: dict[int, dict[str, dict[str, float]]], seeds: list[int]
+) -> dict[str, float | int]:
+    flat = [metrics for fold_map in per_seed.values() for metrics in fold_map.values()]
+    plccs = [metrics["plcc"] for metrics in flat]
+    sroccs = [metrics["srocc"] for metrics in flat]
+    rmses = [metrics["rmse"] for metrics in flat]
+    seed_means = [
+        float(np.mean([metrics["plcc"] for metrics in fold_map.values()]))
+        for fold_map in per_seed.values()
+    ]
+    return {
+        "mean_plcc": float(np.mean(plccs)),
+        "std_plcc": float(np.std(plccs, ddof=1)) if len(plccs) > 1 else 0.0,
+        "mean_srocc": float(np.mean(sroccs)),
+        "std_srocc": float(np.std(sroccs, ddof=1)) if len(sroccs) > 1 else 0.0,
+        "mean_rmse": float(np.mean(rmses)),
+        "std_rmse": float(np.std(rmses, ddof=1)) if len(rmses) > 1 else 0.0,
+        "n_folds": len(plccs),
+        "seed_mean_plcc_std": float(np.std(seed_means, ddof=1)) if len(seed_means) > 1 else 0.0,
+        "n_seeds": len(seeds),
+    }
+
+
+def _run_subset(
+    frame: "pd.DataFrame", name: str, args: argparse.Namespace, seeds: list[int]
+) -> dict[str, Any] | None:
+    if name not in SUBSETS:
+        print(f"[phase3] unknown subset {name!r}; valid: {sorted(SUBSETS)}", file=sys.stderr)
+        return None
+    feature_columns = SUBSETS[name]
+    missing = [column for column in feature_columns if column not in frame.columns]
+    if missing:
+        print(f"[phase3] subset {name}: parquet missing cols {missing}", file=sys.stderr)
+        return None
+    print(f"\n=== Subset {name} ({len(feature_columns)} features) ===")
+    print(f"  features: {list(feature_columns)}")
+    per_seed: dict[int, dict[str, dict[str, float]]] = {}
+    for seed in seeds:
+        print(f"  --- seed={seed} ---")
+        per_seed[seed] = _loso_sweep(
+            frame,
+            feature_columns,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            seed=seed,
+            standardize=args.standardize,
+        )
+    summary = _summarize_seeds(per_seed, seeds)
+    print(
+        f"  → mean PLCC={summary['mean_plcc']:.4f}"
+        f" (fold-std {summary['std_plcc']:.4f}, "
+        f"seed-mean-std {summary['seed_mean_plcc_std']:.4f})  "
+        f"SROCC={summary['mean_srocc']:.4f}±{summary['std_srocc']:.4f}  "
+        f"RMSE={summary['mean_rmse']:.3f}±{summary['std_rmse']:.3f}"
+    )
+    return {
+        "features": list(feature_columns),
+        "per_seed": {str(key): value for key, value in per_seed.items()},
+        "summary": summary,
+    }
+
+
+def _print_comparison(results: dict[str, dict[str, Any]]) -> None:
+    print(f"\n{'=' * 64}")
+    print(
+        f"{'Subset':<14} {'Features':>10} {'Mean PLCC':>12} {'± std':>10} "
+        f"{'Δ vs canonical6':>18}"
+    )
+    print("-" * 64)
+    baseline = results.get("canonical6", {}).get("summary", {}).get("mean_plcc", 0.0)
+    for name, result in results.items():
+        summary = result["summary"]
+        delta = summary["mean_plcc"] - baseline if name != "canonical6" else 0.0
+        delta_text = "—" if name == "canonical6" else f"{delta:+.4f}"
+        print(
+            f"{name:<14} {len(result['features']):>10} "
+            f"{summary['mean_plcc']:>12.4f} {summary['std_plcc']:>10.4f} "
+            f"{delta_text:>18}"
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     import pandas as pd
 
@@ -302,82 +397,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[phase3] sources: {sorted(df['source'].unique())}")
 
     requested = [s.strip() for s in args.subsets.split(",")]
-    results: dict[str, dict] = {}
+    results: dict[str, dict[str, Any]] = {}
     seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else [args.seed]
     for name in requested:
-        if name not in SUBSETS:
-            print(f"[phase3] unknown subset {name!r}; valid: {sorted(SUBSETS)}", file=sys.stderr)
+        result = _run_subset(df, name, args, seeds)
+        if result is None:
             return 2
-        feat_cols = SUBSETS[name]
-        missing = [c for c in feat_cols if c not in df.columns]
-        if missing:
-            print(f"[phase3] subset {name}: parquet missing cols {missing}", file=sys.stderr)
-            return 2
-        print(f"\n=== Subset {name} ({len(feat_cols)} features) ===")
-        print(f"  features: {list(feat_cols)}")
-        per_seed: dict[int, dict[str, dict[str, float]]] = {}
-        for s in seeds:
-            print(f"  --- seed={s} ---")
-            per_fold = _loso_sweep(
-                df,
-                feat_cols,
-                epochs=args.epochs,
-                batch_size=args.batch_size,
-                lr=args.lr,
-                seed=s,
-                standardize=args.standardize,
-            )
-            per_seed[s] = per_fold
-        # Aggregate: mean PLCC etc. across all (seed, fold) pairs.
-        flat = [m for fold_map in per_seed.values() for m in fold_map.values()]
-        plccs = [m["plcc"] for m in flat]
-        sroccs = [m["srocc"] for m in flat]
-        rmses = [m["rmse"] for m in flat]
-        # Per-seed mean PLCC for seed-only variance.
-        seed_means = [
-            float(np.mean([m["plcc"] for m in fold_map.values()])) for fold_map in per_seed.values()
-        ]
-        summary = {
-            "mean_plcc": float(np.mean(plccs)),
-            "std_plcc": float(np.std(plccs, ddof=1)) if len(plccs) > 1 else 0.0,
-            "mean_srocc": float(np.mean(sroccs)),
-            "std_srocc": float(np.std(sroccs, ddof=1)) if len(sroccs) > 1 else 0.0,
-            "mean_rmse": float(np.mean(rmses)),
-            "std_rmse": float(np.std(rmses, ddof=1)) if len(rmses) > 1 else 0.0,
-            "n_folds": len(plccs),
-            "seed_mean_plcc_std": (
-                float(np.std(seed_means, ddof=1)) if len(seed_means) > 1 else 0.0
-            ),
-            "n_seeds": len(seeds),
-        }
-        results[name] = {
-            "features": list(feat_cols),
-            "per_seed": {str(k): v for k, v in per_seed.items()},
-            "summary": summary,
-        }
-        print(
-            f"  → mean PLCC={summary['mean_plcc']:.4f}"
-            f" (fold-std {summary['std_plcc']:.4f}, "
-            f"seed-mean-std {summary['seed_mean_plcc_std']:.4f})  "
-            f"SROCC={summary['mean_srocc']:.4f}±{summary['std_srocc']:.4f}  "
-            f"RMSE={summary['mean_rmse']:.3f}±{summary['std_rmse']:.3f}"
-        )
+        results[name] = result
 
-    # Comparison table
-    print(f"\n{'=' * 64}")
-    print(
-        f"{'Subset':<14} {'Features':>10} {'Mean PLCC':>12} {'± std':>10} {'Δ vs canonical6':>18}"
-    )
-    print("-" * 64)
-    base = results.get("canonical6", {}).get("summary", {}).get("mean_plcc", 0.0)
-    for name, r in results.items():
-        s = r["summary"]
-        delta = s["mean_plcc"] - base if name != "canonical6" else 0.0
-        delta_str = "—" if name == "canonical6" else f"{delta:+.4f}"
-        print(
-            f"{name:<14} {len(r['features']):>10} "
-            f"{s['mean_plcc']:>12.4f} {s['std_plcc']:>10.4f} {delta_str:>18}"
-        )
+    _print_comparison(results)
 
     results["run_provenance"] = build_run_provenance(
         entrypoint=SCRIPT_PATH,

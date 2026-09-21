@@ -70,9 +70,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -104,7 +107,7 @@ def _synthesize_smoke_corpus(
     n_features: int = 6,
     num_codecs: int = 6,
     seed: int = 1234,
-):  # type: ignore[no-untyped-def]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Synthesise a tiny smoke corpus that mimics the v2 input shape.
 
     Returns (features, codec_onehot, vmaf, codec_idx). Values are
@@ -145,7 +148,7 @@ def _train_one_member(
     weight_decay: float,
     seed: int,
     num_codecs: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train one ``FRRegressor`` ensemble member; return the model."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -176,14 +179,14 @@ def _train_one_member(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
 def _predict_member(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     x_features: np.ndarray,
     x_codec: np.ndarray,
 ) -> np.ndarray:
@@ -194,7 +197,7 @@ def _predict_member(
             torch.from_numpy(x_features.astype(np.float32)),
             torch.from_numpy(x_codec.astype(np.float32)),
         )
-    return out.cpu().numpy().reshape(-1)
+    return np.asarray(out.cpu().numpy(), dtype=np.float32).reshape(-1)
 
 
 def _ensemble_stats(member_preds: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -236,7 +239,7 @@ def _split_conformal_q(
 
 
 def _export_member(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     *,
     onnx_path: Path,
     num_codecs: int,
@@ -359,7 +362,7 @@ def _update_registry(
     registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> tuple[argparse.Namespace, list[str]]:
     ap = argparse.ArgumentParser(prog="train_fr_regressor_v2_ensemble.py")
     ap.add_argument(
         "--corpus",
@@ -411,165 +414,253 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip ONNX export + registry update (dev mode).",
     )
     raw_argv = list(sys.argv[1:] if argv is None else argv)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv), raw_argv
+
+
+def _resolve_output_dir(args: argparse.Namespace) -> None:
+    if args.out_dir is not None:
+        return
+    args.out_dir = (
+        Path(tempfile.mkdtemp(prefix="ens_smoke_")) if args.smoke else REPO_ROOT / "model" / "tiny"
+    )
+
+
+def _load_training_arrays(
+    args: argparse.Namespace, num_codecs: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int] | None:
+    if args.smoke:
+        features, codec_onehot, target, _ = _synthesize_smoke_corpus(
+            num_codecs=num_codecs, seed=args.base_seed + 1234
+        )
+        return features, codec_onehot, target, 1
+    if args.corpus is None or not args.corpus.is_file():
+        print(
+            f"error: --corpus required (got {args.corpus}); use --smoke for a pipeline-only run.",
+            file=sys.stderr,
+        )
+        return None
+    import pandas as pd
+
+    from vmaf_train.codec import codec_index
+
+    frame = pd.read_parquet(args.corpus)
+    missing = [column for column in CANONICAL_6 if column not in frame.columns]
+    if missing:
+        print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
+        return None
+    for column in ("vmaf", "codec"):
+        if column not in frame.columns:
+            print(f"error: parquet missing '{column}' column", file=sys.stderr)
+            return None
+    features = frame[list(CANONICAL_6)].to_numpy(dtype=np.float32)
+    target = frame["vmaf"].to_numpy(dtype=np.float32)
+    codec_indices = np.array(
+        [codec_index(codec) for codec in frame["codec"].astype(str)], dtype=np.int64
+    )
+    return features, np.eye(num_codecs, dtype=np.float32)[codec_indices], target, args.epochs
+
+
+def _prepare_splits(
+    args: argparse.Namespace,
+    features: np.ndarray,
+    codec_onehot: np.ndarray,
+    target: np.ndarray,
+) -> dict[str, Any]:
+    mean = features.mean(axis=0)
+    std = features.std(axis=0, ddof=0)
+    std = np.where(std < 1e-8, 1.0, std)
+    normalized = ((features - mean) / std).astype(np.float32)
+    sample_count = normalized.shape[0]
+    calibration_indices = np.array([], dtype=np.int64)
+    training_indices = np.arange(sample_count, dtype=np.int64)
+    calibration_fraction = args.conformal_calibration_frac
+    if calibration_fraction > 0.0 and sample_count < 10:
+        print(
+            "[fr-v2-ens] warning: corpus too small for conformal split; disabling.", file=sys.stderr
+        )
+    elif calibration_fraction > 0.0:
+        permutation = np.random.default_rng(args.base_seed + 9999).permutation(sample_count)
+        calibration_count = max(1, round(sample_count * calibration_fraction))
+        calibration_indices = permutation[:calibration_count]
+        training_indices = permutation[calibration_count:]
+    has_calibration = len(calibration_indices) > 0
+    return {
+        "mean": mean,
+        "std": std,
+        "feat_train": normalized[training_indices],
+        "codec_train": codec_onehot[training_indices],
+        "target_train": target[training_indices],
+        "feat_cal": normalized[calibration_indices] if has_calibration else None,
+        "codec_cal": codec_onehot[calibration_indices] if has_calibration else None,
+        "target_cal": target[calibration_indices] if has_calibration else None,
+    }
+
+
+def _train_members(
+    args: argparse.Namespace, splits: dict[str, Any], epochs: int, num_codecs: int
+) -> tuple[list[np.ndarray], list[np.ndarray], list[dict[str, Any]], float]:
+    train_predictions: list[np.ndarray] = []
+    calibration_predictions: list[np.ndarray] = []
+    records: list[dict[str, Any]] = []
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    started_at = time.time()
+    for member_index in range(args.ensemble_size):
+        seed = args.base_seed + member_index
+        print(
+            f"[fr-v2-ens] training member {member_index + 1}/{args.ensemble_size} "
+            f"(seed={seed}) ...",
+            flush=True,
+        )
+        model = _train_one_member(
+            splits["feat_train"],
+            splits["codec_train"],
+            splits["target_train"],
+            epochs=epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            seed=seed,
+            num_codecs=num_codecs,
+        )
+        train_predictions.append(
+            _predict_member(model, splits["feat_train"], splits["codec_train"])
+        )
+        if splits["feat_cal"] is not None and splits["codec_cal"] is not None:
+            calibration_predictions.append(
+                _predict_member(model, splits["feat_cal"], splits["codec_cal"])
+            )
+        if not args.no_export:
+            name = f"{args.ensemble_id}_seed{member_index}.onnx"
+            path = args.out_dir / name
+            records.append(
+                {
+                    "id": f"{args.ensemble_id}_seed{member_index}",
+                    "onnx": name,
+                    "seed": seed,
+                    "sha256": _export_member(model, onnx_path=path, num_codecs=num_codecs),
+                }
+            )
+    return train_predictions, calibration_predictions, records, time.time() - started_at
+
+
+def _evaluate_members(
+    args: argparse.Namespace,
+    splits: dict[str, Any],
+    train_predictions: list[np.ndarray],
+    calibration_predictions: list[np.ndarray],
+) -> tuple[dict[str, Any], float | None]:
+    train_mean, train_sigma = _ensemble_stats(np.vstack(train_predictions))
+    target_train = splits["target_train"]
+    metrics: dict[str, Any] = {
+        "in_sample_plcc": (
+            float(np.corrcoef(train_mean, target_train)[0, 1])
+            if len(train_mean) >= 2
+            else float("nan")
+        ),
+        "in_sample_rmse": float(np.sqrt(np.mean((train_mean - target_train) ** 2))),
+        "mean_sigma_train": float(train_sigma.mean()),
+    }
+    conformal_q: float | None = None
+    if splits["target_cal"] is not None and calibration_predictions:
+        calibration_mean, calibration_sigma = _ensemble_stats(np.vstack(calibration_predictions))
+        alpha = max(1e-6, 1.0 - args.nominal_coverage)
+        conformal_q = _split_conformal_q(
+            calibration_mean, calibration_sigma, splits["target_cal"], alpha
+        )
+        metrics["calibration"] = {
+            "n_calibration": len(splits["target_cal"]),
+            "alpha": alpha,
+            "nominal_coverage": args.nominal_coverage,
+            "conformal_q_residual": conformal_q,
+            "mean_sigma_cal": float(calibration_sigma.mean()),
+        }
+    return metrics, conformal_q
+
+
+def _write_ensemble_artifacts(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    records: list[dict[str, Any]],
+    splits: dict[str, Any],
+    eval_metrics: dict[str, Any],
+    conformal_q: float | None,
+    codec_vocab: tuple[str, ...],
+    codec_vocab_version: int,
+) -> None:
+    manifest_path = args.out_dir / f"{args.ensemble_id}.json"
+    provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"corpus": args.corpus},
+        outputs={
+            "manifest": manifest_path,
+            "member_onnx": [args.out_dir / member["onnx"] for member in records],
+            "registry": args.registry,
+        },
+    )
+    standardisation = {
+        "feature_mean": splits["mean"].astype(float).tolist(),
+        "feature_std": splits["std"].astype(float).tolist(),
+    }
+    manifest = _build_manifest(
+        args.ensemble_id,
+        records,
+        standardisation=standardisation,
+        codec_vocab=codec_vocab,
+        codec_vocab_version=codec_vocab_version,
+        encoder_vocab=codec_vocab,
+        nominal_coverage=args.nominal_coverage,
+        conformal_q=conformal_q,
+        smoke=args.smoke,
+        eval_metrics=eval_metrics,
+        run_provenance=provenance,
+    )
+    write_manifest_json(manifest_path, manifest)
+    print(f"[fr-v2-ens] wrote manifest to {manifest_path}")
+    if args.smoke:
+        print(f"[fr-v2-ens] smoke mode: skipping registry update (manifest {manifest_path})")
+        return
+    _update_registry(args.registry, ensemble_id=args.ensemble_id, members=records, smoke=False)
+    print(f"[fr-v2-ens] updated registry {args.registry.name} ({len(records)} members)")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args, raw_argv = _parse_args(argv)
 
     if args.ensemble_size < 1:
         print("error: --ensemble-size must be >= 1", file=sys.stderr)
         return 2
     if args.smoke and args.corpus is not None:
         print("warning: --smoke overrides --corpus; using synthetic data", file=sys.stderr)
-
-    # Resolve out_dir: smoke defaults to a temp directory so read-only
-    # workspaces (e.g. the container /workspace mount) are not written to
-    # inadvertently. Production defaults to model/tiny/.
-    if args.out_dir is None:
-        if args.smoke:
-            args.out_dir = Path(tempfile.mkdtemp(prefix="ens_smoke_"))
-        else:
-            args.out_dir = REPO_ROOT / "model" / "tiny"
+    _resolve_output_dir(args)
 
     from vmaf_train.codec import CODEC_VOCAB, CODEC_VOCAB_VERSION, NUM_CODECS
 
-    epochs = 1 if args.smoke else args.epochs
+    training_arrays = _load_training_arrays(args, NUM_CODECS)
+    if training_arrays is None:
+        return 2
+    features, codec_onehot, target, epochs = training_arrays
     print(
         f"[fr-v2-ens] mode={'smoke' if args.smoke else 'production'} "
         f"ensemble_size={args.ensemble_size} epochs/member={epochs} "
         f"num_codecs={NUM_CODECS}",
         flush=True,
     )
-
-    if args.smoke:
-        features, codec_onehot, target, _codec_idx = _synthesize_smoke_corpus(
-            num_codecs=NUM_CODECS,
-            seed=args.base_seed + 1234,
-        )
-    else:
-        if args.corpus is None or not args.corpus.is_file():
-            print(
-                f"error: --corpus required (got {args.corpus}); "
-                "use --smoke for a pipeline-only run.",
-                file=sys.stderr,
-            )
-            return 2
-        import pandas as pd
-
-        df = pd.read_parquet(args.corpus)
-        missing = [c for c in CANONICAL_6 if c not in df.columns]
-        if missing:
-            print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
-            return 2
-        if "vmaf" not in df.columns:
-            print("error: parquet missing 'vmaf' column", file=sys.stderr)
-            return 2
-        if "codec" not in df.columns:
-            print("error: parquet missing 'codec' column", file=sys.stderr)
-            return 2
-        from vmaf_train.codec import codec_index
-
-        features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
-        target = df["vmaf"].to_numpy(dtype=np.float32)
-        codec_idx = np.array([codec_index(c) for c in df["codec"].astype(str)], dtype=np.int64)
-        codec_onehot = np.eye(NUM_CODECS, dtype=np.float32)[codec_idx]
-
-    # Standardise features (fit on the FULL training set; baked into manifest,
-    # so the runtime applies the same (x - mean) / std before inference).
-    mean = features.mean(axis=0)
-    std = features.std(axis=0, ddof=0)
-    std = np.where(std < 1e-8, 1.0, std)
-    features_norm = ((features - mean) / std).astype(np.float32)
-
-    # Optional split-conformal calibration split.
-    n = features_norm.shape[0]
-    cal_frac = args.conformal_calibration_frac
-    cal_idx = np.array([], dtype=np.int64)
-    train_idx = np.arange(n, dtype=np.int64)
-    if cal_frac > 0.0:
-        if n < 10:
-            print(
-                "[fr-v2-ens] warning: corpus too small for conformal split; " "disabling.",
-                file=sys.stderr,
-            )
-            cal_frac = 0.0
-        else:
-            rng = np.random.default_rng(args.base_seed + 9999)
-            perm = rng.permutation(n)
-            n_cal = max(1, round(n * cal_frac))
-            cal_idx = perm[:n_cal]
-            train_idx = perm[n_cal:]
-
-    feat_train = features_norm[train_idx]
-    cod_train = codec_onehot[train_idx]
-    y_train = target[train_idx]
-    feat_cal = features_norm[cal_idx] if len(cal_idx) > 0 else None
-    cod_cal = codec_onehot[cal_idx] if len(cal_idx) > 0 else None
-    y_cal = target[cal_idx] if len(cal_idx) > 0 else None
-
-    # Train ensemble.
-    member_preds_train: list[np.ndarray] = []
-    member_preds_cal: list[np.ndarray] = []
-    member_records: list[dict[str, Any]] = []
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    t0 = time.time()
-    for k in range(args.ensemble_size):
-        seed = args.base_seed + k
-        print(
-            f"[fr-v2-ens] training member {k + 1}/{args.ensemble_size} (seed={seed}) ...",
-            flush=True,
-        )
-        model = _train_one_member(
-            feat_train,
-            cod_train,
-            y_train,
-            epochs=epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            seed=seed,
-            num_codecs=NUM_CODECS,
-        )
-        member_preds_train.append(_predict_member(model, feat_train, cod_train))
-        if feat_cal is not None:
-            member_preds_cal.append(_predict_member(model, feat_cal, cod_cal))
-
-        if not args.no_export:
-            onnx_name = f"{args.ensemble_id}_seed{k}.onnx"
-            onnx_path = args.out_dir / onnx_name
-            sha = _export_member(model, onnx_path=onnx_path, num_codecs=NUM_CODECS)
-            member_records.append(
-                {
-                    "id": f"{args.ensemble_id}_seed{k}",
-                    "onnx": onnx_name,
-                    "seed": seed,
-                    "sha256": sha,
-                }
-            )
-
-    elapsed = time.time() - t0
-    member_preds_train_arr = np.vstack(member_preds_train)
-    mu_train, sigma_train = _ensemble_stats(member_preds_train_arr)
-    train_rmse = float(np.sqrt(np.mean((mu_train - y_train) ** 2)))
-    train_plcc = float(np.corrcoef(mu_train, y_train)[0, 1]) if len(mu_train) >= 2 else float("nan")
-    mean_sigma = float(sigma_train.mean())
-
-    conformal_q: float | None = None
-    cal_summary: dict[str, Any] | None = None
-    if feat_cal is not None and len(member_preds_cal) > 0:
-        member_preds_cal_arr = np.vstack(member_preds_cal)
-        mu_cal, sigma_cal = _ensemble_stats(member_preds_cal_arr)
-        alpha = max(1e-6, 1.0 - args.nominal_coverage)
-        conformal_q = _split_conformal_q(mu_cal, sigma_cal, y_cal, alpha)
-        cal_summary = {
-            "n_calibration": len(y_cal),
-            "alpha": alpha,
-            "nominal_coverage": args.nominal_coverage,
-            "conformal_q_residual": conformal_q,
-            "mean_sigma_cal": float(sigma_cal.mean()),
-        }
+    splits = _prepare_splits(args, features, codec_onehot, target)
+    train_predictions, calibration_predictions, records, elapsed = _train_members(
+        args, splits, epochs, NUM_CODECS
+    )
+    eval_metrics, conformal_q = _evaluate_members(
+        args, splits, train_predictions, calibration_predictions
+    )
 
     print(
         f"[fr-v2-ens] trained {args.ensemble_size} members in {elapsed:.1f}s; "
-        f"in-sample mu PLCC={train_plcc:.4f} RMSE={train_rmse:.3f} "
-        f"mean_sigma={mean_sigma:.3f} "
+        f"in-sample mu PLCC={eval_metrics['in_sample_plcc']:.4f} "
+        f"RMSE={eval_metrics['in_sample_rmse']:.3f} "
+        f"mean_sigma={eval_metrics['mean_sigma_train']:.3f} "
         f"conformal_q={conformal_q if conformal_q is not None else 'n/a'}",
         flush=True,
     )
@@ -577,63 +668,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_export:
         print("[fr-v2-ens] --no-export set; skipping ONNX export + registry update.")
         return 0
-
-    eval_metrics: dict[str, Any] = {
-        "in_sample_plcc": train_plcc,
-        "in_sample_rmse": train_rmse,
-        "mean_sigma_train": mean_sigma,
-    }
-    if cal_summary is not None:
-        eval_metrics["calibration"] = cal_summary
-
-    standardisation = {
-        "feature_mean": mean.astype(float).tolist(),
-        "feature_std": std.astype(float).tolist(),
-    }
-    manifest_path = args.out_dir / f"{args.ensemble_id}.json"
-    run_provenance = build_run_provenance(
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        inputs={
-            "corpus": args.corpus,
-        },
-        outputs={
-            "manifest": manifest_path,
-            "member_onnx": [args.out_dir / member["onnx"] for member in member_records],
-            "registry": args.registry,
-        },
+    _write_ensemble_artifacts(
+        args,
+        raw_argv,
+        records,
+        splits,
+        eval_metrics,
+        conformal_q,
+        CODEC_VOCAB,
+        CODEC_VOCAB_VERSION,
     )
-    manifest = _build_manifest(
-        args.ensemble_id,
-        member_records,
-        standardisation=standardisation,
-        codec_vocab=CODEC_VOCAB,
-        codec_vocab_version=CODEC_VOCAB_VERSION,
-        encoder_vocab=CODEC_VOCAB,
-        nominal_coverage=args.nominal_coverage,
-        conformal_q=conformal_q,
-        smoke=args.smoke,
-        eval_metrics=eval_metrics,
-        run_provenance=run_provenance,
-    )
-    write_manifest_json(manifest_path, manifest)
-    print(f"[fr-v2-ens] wrote manifest to {manifest_path}")
-
-    if not args.smoke:
-        _update_registry(
-            args.registry,
-            ensemble_id=args.ensemble_id,
-            members=member_records,
-            smoke=args.smoke,
-        )
-        print(f"[fr-v2-ens] updated registry {args.registry.name} ({len(member_records)} members)")
-    else:
-        print(
-            f"[fr-v2-ens] smoke mode: skipping registry update "
-            f"(manifest written to {manifest_path})"
-        )
     return 0
 
 
