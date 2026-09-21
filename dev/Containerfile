@@ -1141,13 +1141,13 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     # shared dependency (numpy in particular).
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/python \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/ai[dev]' \
-    # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
-    # Without this pin, pip may resolve torchvision 0.26.0 (built against
-    # torch 2.11) which raises ``RuntimeError: operator torchvision::nms does
-    # not exist`` when pytorch-lightning → torchmetrics eagerly imports
-    # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
+    # Keep the explicit image pin aligned with ai/pyproject.toml: torchvision
+    # 0.29.x is the ABI-compatible release for the torch 2.14.x floor.
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.29.0,<0.29.1' \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]' \
+    # pip may report dependency conflicts without failing an install. Make
+    # the final resolved environment, rather than pip's exit code, the gate.
+    && /opt/vmaf-venv/bin/pip check
 
 # The seven Go binaries from the go-build stage (ADR-0702), on PATH beside the
 # C `vmaf` CLI at /usr/local/bin/vmaf.

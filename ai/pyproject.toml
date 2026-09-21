@@ -13,9 +13,9 @@ dependencies = [
   # torchvision must be pinned as a direct dep to enforce ABI compatibility with
   # the torch floor declared above.  pytorch-lightning → torchmetrics 1.9+
   # eagerly imports `torchvision.transforms` for its arniqa metric; an older
-  # torchvision 0.26.0 wheel against torch 2.12.0 raises
+  # torchvision 0.26.0 wheel against a newer torch release raises
   # ``RuntimeError: operator torchvision::nms does not exist`` at module-load
-  # time.  torchvision 0.27.0 is the wheel that pairs with torch 2.12.x.
+  # time.  torchvision 0.29.x is the wheel that pairs with torch 2.14.x.
   # When that ABI mismatch is detected at run-time (e.g. in a pre-existing
   # venv), ``ai/tests/conftest.py`` skips the affected tests cleanly via
   # ``requires_pytorch_lightning()`` — see AGENTS.md invariant note.
