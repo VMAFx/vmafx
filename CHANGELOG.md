@@ -24171,6 +24171,33 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- HISS-21 burn-down for the Python harness, the MCP server, the CI/dev
+  scripts and the MATLAB MEX sources: 60 baselined invariant violations
+  (59 HISS-04 oversized functions, 5 HISS-02 unbounded `while True`
+  loops) are discharged by extraction, not by suppression. No baseline
+  file, `# noqa`, `NOLINT` or ignore-list entry was touched, and no
+  package, CLI flag, tool or public entry point was removed.
+  - `compat/python-vmaf/`: the `VmafFeatureExtractor` /
+    `VmafIntegerFeatureExtractor` option chains become lookup tables,
+    the Krasula AUC and resolving-power routines in `perf_metric.py`
+    split into per-stage helpers, `quality_runner.py` grows an
+    `_optional()` accessor plus `_resolve_vmafexec_options()`,
+    `result.py` shares one `_ordered_score_lists()` between `to_xml()`
+    and `to_dict()`, and `routine.read_dataset()` resolves each asset
+    field through a named helper. `scanf.py` and the PyPSNR frame loop
+    now carry real loop conditions (the YUV loop is bounded by
+    `YuvReader.num_frms`, which the reader already validates).
+  - `mcp-server/vmaf-mcp/`: `_list_tools()` is assembled from per-tool
+    declarations and `_scoring_extra_properties()` from per-section
+    helpers; both emit a byte-identical catalogue, as the ADR-1117
+    Go↔Python parity contract requires.
+  - `compat/python-vmaf/matlab/`: the matlabPyrTools and STMAD MEX
+    sources keep every index expression; the nine-section convolution
+    bands, the `Extend()` reduce/expand halves and the mexFunction
+    argument parsers move into `static` helpers, and the banned
+    `strcpy()` default-edge copy becomes a bounded one.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so
