@@ -88,7 +88,7 @@ yet — that's an L-sized follow-up needing new
   this ADR closes T7-28.
 - Backlog rows: T7-28 (this ADR — closed),
   T7-29 (Vulkan VkImage import — still open) in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
+  `.workingdir2/BACKLOG.md`.
 - Pairs with: [`ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch`](../../ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch)
   (sycl_device option on the regular libvmaf filter).
 - Companion C-API: [`core/include/libvmaf/libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h)

@@ -178,7 +178,12 @@ Former [CLAUDE.md §5](CLAUDE.md) layout, merged here:
 - `dev/` — dev-MCP Docker container (`Containerfile`, `docker-compose.yml`, `scripts/`)
 - `docs/` — all documentation, upstream-mirrored + fork-added; `docs/principles.md` — canonical engineering standards
 - `.claude/` — Claude Code config: skills, agents, hooks
-- `.workingdir/` — live session state: OPEN, BACKLOG, BUGS, QUESTIONS (gitignored); `.workingdir2/` — historical planning dossier (gitignored)
+- `.workingdir/` — private session state, bounded cache, local evidence, and
+  recovery material (gitignored); never use it as public documentation authority
+- `.corpus/` — local datasets, extracted media, reusable encodes, and derived
+  feature tables (gitignored); do not mix corpora into `.workingdir/`
+- Public documentation links only to tracked files. It may show either local
+  root as a command example, but must never hyperlink into an ignored directory.
 
 ## 6. Coding standards
 
@@ -189,7 +194,7 @@ Read [docs/principles.md](docs/principles.md) before writing C. All C code confo
 - SEI CERT C & CERT C++ (mandatory)
 - MISRA C:2012 (informative subset)
 
-Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks codifying them: [docs/principles.md](docs/principles.md). Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2 rule 30). Every non-void return value checked or explicitly `(void)`-discarded.
+Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks codifying them: [docs/principles.md](docs/principles.md). Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2 rule 30). Every non-void return value must be checked and handled; casting it to `void` does not handle an error.
 
 Style: K&R, 4-space indent, 100-char line budget (see `.clang-format`).
 

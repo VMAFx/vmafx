@@ -10,7 +10,7 @@ Development branches, snapshots and prerelease tags are outside this channel.
 
 ```bash
 python3 scripts/ci/ffmpeg_patch_stack.py --check \
-  --output-dir .workingdir2/cache/ffmpeg-patch-stack/manual-check
+  --output-dir .workingdir/cache/ffmpeg-patch-stack/manual-check
 ```
 
 The check fetches the configured release and replays the complete patch series
@@ -33,7 +33,7 @@ installation procedure is described in
 
 ```bash
 python3 scripts/ci/ffmpeg_patch_stack.py --refresh \
-  --output-dir .workingdir2/cache/ffmpeg-patch-stack/manual-refresh
+  --output-dir .workingdir/cache/ffmpeg-patch-stack/manual-refresh
 ```
 
 The refresh regenerates the series only after every patch replays successfully.

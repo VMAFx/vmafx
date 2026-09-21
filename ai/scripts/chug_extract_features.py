@@ -12,7 +12,7 @@ matching reference clip.
 The distorted side is spatially scaled to the reference geometry before
 feature extraction.  CHUG's ladder rows intentionally differ in
 resolution, while libvmaf's raw-YUV CLI path expects equal geometry.
-The output rows remain local-only under ``.workingdir2/chug/``.
+The output rows remain local-only under ``.corpus/chug/``.
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@
 """Train the KonViD MOS head v1 — Phase 3 of ADR-0325.
 
 Phases 1 + 2 of ADR-0325 land the KonViD-1k / KonViD-150k corpora as
-JSONL drops under ``.workingdir2/konvid-{1k,150k}/`` (PRs #440 / #447).
+JSONL drops under ``.corpus/konvid-{1k,150k}/`` (PRs #440 / #447).
 Phase 3 — this script — trains a small MLP that maps the canonical-6
 libvmaf features + saliency mean/var + 3 TransNet shot-metadata
 columns + a UGC-mixed encoder one-hot to a scalar MOS prediction in
@@ -42,8 +42,8 @@ Reproducer (smoke — no real corpus on disk; deterministic seed)::
 Production (real KonViD JSONL drops)::
 
 python ai/scripts/train_konvid_mos_head.py \
-    --konvid-1k .workingdir2/konvid-1k/konvid_1k.jsonl \
-    --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
+    --konvid-1k .corpus/konvid-1k/konvid_1k.jsonl \
+    --konvid-150k .corpus/konvid-150k/konvid_150k.jsonl
 
 Full-feature parquet runs must already carry ``mos`` or ``mos_raw_0_100``.
 Use ``ai/scripts/materialize_mos_labels.py`` to join MOS labels before

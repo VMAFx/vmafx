@@ -10,6 +10,16 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Local data-root separation (ADR-1277)
+
+`check-local-data-contract.sh` separates three authorities: private state and
+bounded cache under `.workingdir/`, datasets and reusable derived data under
+`.corpus/`, and public evidence in tracked files. The retired numbered state
+root stays unignored so accidental recreation is visible. Tracked Markdown may
+show local paths in commands but never link into ignored data. Preserve the
+hermetic shell suite, always-run pre-commit hook, and
+`rule-enforcement.yml` invocation together.
+
 ### Exact-source Scorecard reports (ADR-1247)
 
 `scorecard_gate.py` validates complete reviewed check sets and tool identity,
@@ -148,7 +158,7 @@ until master fixed.
 | `test_security_workflow_contract.py` | `rule-enforcement.yml` — `Verify Security Scans concurrency contract` | The Security Scans group must include workflow, event name, and ref. This keeps same-event cancellation while preventing a schedule on `refs/heads/master` from canceling a master-push CodeQL run (or vice versa). |
 | `test_fail_closed_ci.py` | `rule-enforcement.yml` — `Verify fail-closed CI contract`; `.pre-commit-config.yaml` — `fail-closed-ci-contract` | Protects real exit propagation for tox coverage, CPU coverage pytest, nightly benchmarks, advisory Semgrep, and sanitizer test discovery. Diagnostic continuation is valid only when a final `if: always()` step reasserts the recorded raw outcome. Keep both callers wired. |
 
-| `agent-eligibility-precheck.py` | (no workflow lane today; called manually from `.claude/workflows/*.md` per [ADR-0355](../../docs/adr/0355-symphony-agent-dispatch-infra.md)) | Imports `scripts/lib/backlog_tracker.py` via `sys.path.insert(0, …)`. The two files move together. The exit-code contract (0 = eligible, 1 = block, 2 = bad CLI usage) and the `::error title=...::...` stderr format are **the** dispatcher contract; never change without updating `.claude/workflows/_template.md` in the same PR. |
+| `agent-eligibility-precheck.py` | (no workflow lane today; called manually from `.claude/workflows/*.md` per [ADR-0355](../../docs/adr/0355-symphony-agent-dispatch-infra.md)) | Loads `scripts/lib/backlog_tracker.py`; the two files move together. The exit-code contract (0 = eligible, 1 = block, 2 = bad CLI usage) and the `::error title=...::...` stderr format are **the** dispatcher contract. Missing rows, unreadable task files, and unavailable or failed GitHub queries block dispatch unless the operator selected the corresponding explicit `--skip-*` flag. Never change the contract without updating `.claude/workflows/_template.md` and `docs/development/agent-dispatch.md` in the same PR. |
 
 | `state-md-touch-check.sh` | `rule-enforcement.yml` — `state-md-touch-check` job (ADR-0334) | Reads `$PR_TITLE`, `$PR_BODY`, `$BASE_SHA`, `$HEAD_SHA` from the workflow env. The trigger predicate (Conventional-Commit `fix:`, bare `bug` token, GitHub close-keywords, unchecked Bug-status checkbox) and opt-out sentinel (`no state delta: REASON`) are coupled to the `## Bug-status hygiene` row in `.github/PULL_REQUEST_TEMPLATE.md` — keep them in sync. |
 

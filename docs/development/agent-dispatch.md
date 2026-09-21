@@ -70,10 +70,17 @@ touching tooling.
 
 The script lives at
 [`scripts/ci/agent-eligibility-precheck.py`](../../scripts/ci/agent-eligibility-precheck.py).
+
+The gate fails closed. A missing backlog row, unreadable harness task, failed
+GitHub query, missing `gh`, or unavailable authentication produces a blocking
+verdict. Use `--task-tag` for deliberately untracked work. The two `--skip-*`
+flags are explicit offline overrides; without one, an incomplete check never
+becomes an eligible dispatch.
+
 It runs three checks:
 
 1. **BACKLOG row not closed.** Parses
-   `.workingdir2/BACKLOG.md` via
+   `.workingdir/BACKLOG.md` via
    [`scripts/lib/backlog_tracker.py`](../../scripts/lib/backlog_tracker.py).
    If the row's status is DONE / CLOSED / REMOVED / BLOCKED /
    DEFERRED, exit 1.
@@ -136,7 +143,7 @@ through a typed module rather than re-grepping the file:
 ```python
 from lib.backlog_tracker import BacklogTracker, GitHubTracker, BacklogItem
 
-bk = BacklogTracker()                    # autodetects .workingdir2/BACKLOG.md
+bk = BacklogTracker()                    # autodetects .workingdir/BACKLOG.md
 
 bk.list_open()                           # -> list[BacklogItem]
 bk.list_in_flight()                      # -> list[BacklogItem]
@@ -164,7 +171,7 @@ class BacklogItem:
 
 The module is read-only — **never** writes to BACKLOG.md. Edits
 remain a manual editorial task per the global "Read AND update local
-state files" rule. If `.workingdir2/` ever migrates off Markdown
+state files" rule. If `.workingdir/` ever migrates off Markdown
 (JSON, SQLite, Linear), this module is the only file that needs to
 change.
 

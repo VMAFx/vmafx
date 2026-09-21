@@ -2,9 +2,9 @@
 # Upstream-backlog re-audit — 2026-04-29 (T7-4)
 
 > Quarterly upstream-backlog re-audit per
-> [`.workingdir2/BACKLOG.md`](../.workingdir2/BACKLOG.md) row T7-4.
+> `.workingdir2/BACKLOG.md` row T7-4.
 > Companion to the 2026-04-18 snapshot in
-> [`.workingdir2/analysis/upstream-backlog-audit.md`](../.workingdir2/analysis/upstream-backlog-audit.md)
+> `.workingdir2/analysis/upstream-backlog-audit.md`
 > (local-only). Doubles as the deep-dive **research digest** for this
 > PR per [ADR-0108](adr/0108-deep-dive-deliverables-rule.md). Next
 > re-audit due **2026-07-29**.
@@ -69,7 +69,7 @@
 ## Recommended new T-rows
 
 The following follow-up entries are recommended for the next
-[`.workingdir2/BACKLOG.md`](../.workingdir2/BACKLOG.md) refresh:
+`.workingdir2/BACKLOG.md` refresh:
 
 - **T-NEW-1 — port `feature/speed`** (`d3647c73` `speed_chroma` +
   `speed_temporal`, `9dac0a59` alias-map for speed). The fork does
@@ -96,7 +96,7 @@ The following follow-up entries are recommended for the next
 ## What this audit did *not* cover
 
 - **Open Netflix issues / PRs.** The 2026-04-18 dossier in
-  [`.workingdir2/analysis/upstream-backlog-audit.md`](../.workingdir2/analysis/upstream-backlog-audit.md)
+  `.workingdir2/analysis/upstream-backlog-audit.md`
   triages every open upstream issue and PR (66 + 35 at that
   snapshot). This re-audit is scoped to **landed upstream commits
   since the last fork-side port boundary**, not the open queue.

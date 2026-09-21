@@ -14457,7 +14457,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -25072,7 +25072,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -35518,7 +35518,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -51768,3 +51768,21 @@ and the hook fixture are fork-only governance tooling. Preserve the regular
 linked-worktree mirror, common-Git exclusive lock, active-worktree Git
 identity, cache preservation, symlink refusal, and the rule that only derived
 `STATE.md` is copied back to canonical private state.
+## Local data roots are separated by lifecycle (ADR-1277)
+
+Do not restore the retired numbered workspace path during an upstream sync.
+Local state, bounded cache, evidence, and recovery material use `.workingdir/`;
+datasets, extracted media, reusable encodes, and derived feature tables use
+`.corpus/`. A mechanical substitution of every legacy path with `.workingdir/`
+is incorrect because it recreates the former mixed-lifecycle tree.
+
+Public Markdown may show these paths in operator commands but must not link
+into either ignored directory. Durable claims must cite tracked docs, ADRs,
+research, or manifests. Preserve historically accurate prose in old ADRs and
+changelog entries, while keeping it non-clickable and non-authoritative.
+
+The same cleanup makes `scripts/ci/agent-eligibility-precheck.py` and
+`scripts/dev/hw_encoder_corpus.py` fail closed. These are fork-only tools with
+no Netflix merge-conflict surface. Preserve non-zero outcomes for unavailable
+eligibility evidence and for every failed corpus quality point; explicit
+offline `--skip-*` flags remain deliberate operator choices.

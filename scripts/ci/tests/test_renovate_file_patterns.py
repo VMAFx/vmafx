@@ -66,7 +66,7 @@ class RenovateFilePatterns(unittest.TestCase):
                     selected = [path for path in self.files if pattern.search(path)]
                     self.assertTrue(selected, "Pattern selects no tracked files")
                     for path in selected:
-                        self.assertIsNone(pattern.search(f".workingdir2/archive/{path}"))
+                        self.assertIsNone(pattern.search(f"archive/{path}"))
                         self.assertIsNone(pattern.search(f"{path}.bak"))
 
     def test_base_image_manager_selects_config_and_all_mirrors(self) -> None:

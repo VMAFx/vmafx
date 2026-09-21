@@ -293,7 +293,7 @@
   follow-up items captured in
   [`docs/backlog-audit-2026-04-28.md`](docs/backlog-audit-2026-04-28.md)
   §A and the user direction frozen in
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`
   into actual `.workingdir2/BACKLOG.md` rows. New rows: **T3-17**
   (motion3 GPU coverage on Vulkan + CUDA + SYCL), **T3-18** (GPU
   chroma upload + chroma metrics on Vulkan + CUDA), **T5-3e** (PTQ
@@ -14007,6 +14007,14 @@ is present.
     stable-string list (was listing `"OpenVINO:CPU"` and
     `"OpenVINO:GPU"` twice).
   No ABI / behaviour change.
+
+
+- Separate machine-local data by lifecycle: agent state and bounded cache use
+  `.workingdir/`, datasets and reusable derived data use `.corpus/`, and public
+  evidence links only to tracked artifacts. Retire active references to the
+  former numbered workspace and add a CI contract preventing its return.
+- Make the agent-dispatch eligibility check and hardware-corpus producer fail
+  closed instead of reporting incomplete GitHub/task/corpus checks as success.
 
 
 ### Changed

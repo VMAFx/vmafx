@@ -7,7 +7,7 @@
 
 ## Context
 
-[BACKLOG T6-1](../../.workingdir2/BACKLOG.md) calls for shipping
+BACKLOG T6-1 calls for shipping
 "baseline C1/C2/C3 ONNX checkpoints in `model/tiny/`". The
 [Wave 1 roadmap](../ai/roadmap.md) defines the three baselines:
 
@@ -227,7 +227,7 @@ filter consumes them by path.
 
 ## References
 
-- [BACKLOG T6-1](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T6-1 — backlog row.
 - [Wave 1 roadmap](../ai/roadmap.md) — model definitions + targets.
 - [ADR-0036](0036-tinyai-wave1-scope-expansion.md) /
   [ADR-0107](0107-tinyai-wave1-scope-expansion.md) — Wave 1 scope.

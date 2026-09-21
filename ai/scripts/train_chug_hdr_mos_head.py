@@ -38,7 +38,7 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 
 DEFAULT_CHUG_DIR = Path(os.environ.get("VMAF_CHUG_DIR", str(REPO_ROOT / ".corpus" / "chug")))
 DEFAULT_CHUG_OUTPUT_DIR = Path(
-    os.environ.get("VMAF_CHUG_OUTPUT_DIR", str(REPO_ROOT / ".workingdir2" / "chug"))
+    os.environ.get("VMAF_CHUG_OUTPUT_DIR", str(REPO_ROOT / ".corpus" / "chug"))
 )
 DEFAULT_SHARD_DIR = DEFAULT_CHUG_DIR / "training" / "fr_canonical_shards" / "output"
 DEFAULT_MODEL_ID = "chug_hdr_mos_head_v1"

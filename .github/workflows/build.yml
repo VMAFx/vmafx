@@ -39,7 +39,6 @@ on:
       - '**/*.md'
       - 'changelog.d/**'
       - 'CHANGELOG.md'
-      - '.workingdir2/**'
   workflow_dispatch:
 
 permissions:

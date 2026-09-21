@@ -1,7 +1,7 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
-"""Tracker abstraction for `.workingdir2/BACKLOG.md` and GitHub PRs.
+"""Tracker abstraction for `.workingdir/BACKLOG.md` and GitHub PRs.
 
 Symphony §3.1 / §4.1.1 normalises the issue tracker behind a typed
 interface so downstream tooling (eligibility precheck, agent
@@ -60,29 +60,29 @@ _TITLE_CELL_INDEX = 2
 # ---------------------------------------------------------------------------
 
 
-# `.workingdir2/` is git-ignored and lives in the **main** working
+# `.workingdir/` is git-ignored and lives in the **main** working
 # tree, not inside per-agent worktrees. Walk parents until we find a
-# directory that contains `.workingdir2/BACKLOG.md`; if none exists,
-# fall back to `<repo-root>/.workingdir2/BACKLOG.md` (returns a path
+# directory that contains `.workingdir/BACKLOG.md`; if none exists,
+# fall back to `<repo-root>/.workingdir/BACKLOG.md` (returns a path
 # even if the file is absent so callers can detect that explicitly).
 def _find_backlog(start: Path | None = None) -> Path:
     here = (start or Path(__file__).resolve()).parent
     for candidate in [here, *here.parents]:
-        target = candidate / ".workingdir2" / "BACKLOG.md"
+        target = candidate / ".workingdir" / "BACKLOG.md"
         if target.is_file():
             return target
         # Worktree case: the per-agent tree lives under
         # `<main-repo>/.claude/worktrees/<id>/`. The main repo's
-        # `.workingdir2/` is `<main-repo>/.workingdir2/`, i.e. up
+        # `.workingdir/` is `<main-repo>/.workingdir/`, i.e. up
         # three directories from here.
         if candidate.name.startswith("agent-") and candidate.parent.name == "worktrees":
             main_repo = candidate.parent.parent.parent
-            target2 = main_repo / ".workingdir2" / "BACKLOG.md"
+            target2 = main_repo / ".workingdir" / "BACKLOG.md"
             if target2.is_file():
                 return target2
     # Last-ditch fallback: assume the script is being run from the
     # repo root and BACKLOG.md is sibling to scripts/.
-    return Path.cwd() / ".workingdir2" / "BACKLOG.md"
+    return Path.cwd() / ".workingdir" / "BACKLOG.md"
 
 
 DEFAULT_BACKLOG_PATH: Path = _find_backlog()
@@ -196,7 +196,7 @@ def _classify_status(row: str) -> str:
 
 
 class BacklogTracker:
-    """Parse `.workingdir2/BACKLOG.md` into typed `BacklogItem` rows.
+    """Parse `.workingdir/BACKLOG.md` into typed `BacklogItem` rows.
 
     Lazy: parses on first call to :meth:`_rows` and caches the
     result. Re-construct the tracker to pick up edits.

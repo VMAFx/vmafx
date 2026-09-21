@@ -86,7 +86,7 @@ ADR-0249 PLCC gate.
 
 ## Provenance
 
-The training corpus (`.workingdir2/netflix/`) is the Netflix Public
+The training corpus (`.corpus/netflix/`) is the Netflix Public
 Dataset, distributed by Netflix under a license that forbids
 redistribution. The shipped ONNX is a derivative: parameters were
 fitted to per-frame `vmaf_v0.6.1` teacher scores computed locally on
@@ -144,7 +144,7 @@ scores = sess.run(["score"], {"features": x.astype(np.float32)})[0]
 ```bash
 # 1. Make sure a fresh Netflix feature table exists. Regenerate via:
 python ai/scripts/extract_full_features.py \
-    --data-root .workingdir2/netflix \
+    --data-root .corpus/netflix \
     --vmaf-bin core/build-cpu/tools/vmaf \
     --out runs/full_features_netflix_refresh_YYYYMMDD.parquet
 

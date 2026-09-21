@@ -37,8 +37,8 @@ installed.
 ```bash
 python3 tools/external-bench/compare.py \
   --competitors fork-fr-regressor fork-nr-metric dover-mobile \
-  --bvi-dvc-root ~/.workingdir2/bvi-dvc \
-  --netflix-public-root .workingdir2/netflix \
+  --bvi-dvc-root ~/.corpus/bvi-dvc \
+  --netflix-public-root .corpus/netflix \
   --out-json /tmp/external-bench.json
 ```
 

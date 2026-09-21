@@ -84,7 +84,10 @@ backlog_id: null                       # set to "T3-9", "T7-10b", etc. for the p
 > ```
 >
 > If it exits non-zero, do **not** dispatch. The script prints the
-> closing PR / colliding agent task to stderr.
+> closing PR, colliding agent task, or unavailable evidence to stderr.
+> Missing backlog rows and failed GitHub/task scans fail closed. Use
+> `--task-tag` for untracked work; use a `--skip-*` flag only when the
+> operator deliberately accepts that offline blind spot.
 
 ## Worktree-isolation prelude
 

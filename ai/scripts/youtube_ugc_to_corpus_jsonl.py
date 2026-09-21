@@ -11,7 +11,7 @@ Shared infrastructure: :mod:`ai.src.corpus.base` (ADR-0371).
 
 Pipeline shape::
 
-    .workingdir2/youtube-ugc/
+    .corpus/youtube-ugc/
       +-- .download-progress.json
       +-- manifest.csv
       +-- clips/

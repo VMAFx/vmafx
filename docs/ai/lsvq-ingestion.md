@@ -30,11 +30,11 @@ alongside KonViD-150k and BVI-DVC.
 
 ## Prerequisites
 
-1. ~500 GB free disk under `.workingdir2/lsvq/` for the
+1. ~500 GB free disk under `.corpus/lsvq/` for the
    whole-corpus run, or ~5 GB for the laptop-class default.
 2. `curl` and `ffprobe` on `$PATH`.
 3. The split CSV from Hugging Face dropped at
-   `.workingdir2/lsvq/manifest.csv` (or pass `--manifest-csv`
+   `.corpus/lsvq/manifest.csv` (or pass `--manifest-csv`
    to point elsewhere).
 
 ## Quick start (laptop-class subset)
@@ -42,10 +42,10 @@ alongside KonViD-150k and BVI-DVC.
 ```bash
 # Drop the LSVQ_whole_train CSV at the default location, then:
 python ai/scripts/lsvq_to_corpus_jsonl.py
-# → reads .workingdir2/lsvq/manifest.csv
+# → reads .corpus/lsvq/manifest.csv
 # → caps at the first --max-rows=500 clips (default)
-# → downloads each via curl into .workingdir2/lsvq/clips/
-# → writes .workingdir2/lsvq/lsvq.jsonl
+# → downloads each via curl into .corpus/lsvq/clips/
+# → writes .corpus/lsvq/lsvq.jsonl
 ```
 
 ## Whole-corpus ingestion
@@ -57,12 +57,12 @@ python ai/scripts/lsvq_to_corpus_jsonl.py --full
 This disables the `--max-rows` cap. Working set is ~500 GB on
 `LSVQ_whole_train`. The run is resumable: `Ctrl-C` mid-download
 is safe, and re-running picks up from
-`.workingdir2/lsvq/.download-progress.json` (atomic
+`.corpus/lsvq/.download-progress.json` (atomic
 tempfile-rename writes).
 
 ## Output schema
 
-One JSON object per line in `.workingdir2/lsvq/lsvq.jsonl`:
+One JSON object per line in `.corpus/lsvq/lsvq.jsonl`:
 
 ```jsonc
 {
@@ -111,7 +111,7 @@ Bare-stem filenames (e.g. `0001`) are normalised to
 ## Operator flags
 
 ```text
---lsvq-dir PATH               Working dir (default: .workingdir2/lsvq/)
+--lsvq-dir PATH               Working dir (default: .corpus/lsvq/)
 --manifest-csv PATH           Path to split CSV (default: <dir>/manifest.csv)
 --progress-path PATH          Resumable state file
                               (default: <dir>/.download-progress.json)

@@ -2618,8 +2618,8 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
     return err;
 }
 
-/* Upstream dispatch function. Refactoring is tracked in .workingdir2/OPEN.md.
- * `ref` / `dist` are only read on the CPU configuration cppcheck analyses,
+/* Upstream dispatch function. `ref` / `dist` are only read on the CPU
+ * configuration cppcheck analyses,
  * but the SYCL build hands them to vmaf_sycl_shared_frame_upload(), whose
  * prototype (src/sycl/common.h) takes mutable pictures, so they cannot be
  * const-qualified for every backend. Suppression cited per ADR-0278. */

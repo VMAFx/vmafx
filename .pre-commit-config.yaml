@@ -282,6 +282,12 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+      - id: check-local-data-contract
+        name: Local state, corpus, and public evidence stay separated
+        entry: scripts/ci/check-local-data-contract.sh
+        language: script
+        pass_filenames: false
+        always_run: true
       - id: check-state-md-rows
         name: Every docs/state.md bug id appears exactly once (ADR-0165)
         entry: scripts/ci/check-state-md-rows.sh
@@ -498,7 +504,7 @@ repos:
 
       - id: ffmpeg-patches-apply-check
         name: FFmpeg patch stack on the configured release
-        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir2/cache/ffmpeg-patch-stack/hooks
+        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir/cache/ffmpeg-patch-stack/hooks
         language: system
         # CI helpers are authority inputs (ADR-1140), including the replay
         # script's config/refresh helpers. Public API/build changes can make
