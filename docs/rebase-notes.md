@@ -51867,3 +51867,16 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+
+### `chore/hiss21-core-src-simd`
+
+`core/src/sycl/common.cpp` gained five same-TU `static` helpers
+(`sycl_resolve_device`, `sycl_log_fp64_note`, `sycl_profiling_enabled`,
+`sycl_queue_props`, `sycl_enqueue_plane_upload`, `sycl_shared_frame_release`,
+`sycl_any_extractor_wants_graph`, `sycl_run_compute_phase`,
+`sycl_apply_input_barriers`, `sycl_enqueue_all_phases`) to clear HISS-01/HISS-04;
+`sycl_shared_frame_release()` is now the single cleanup owner that replaced the
+`fail:` label, so a rebase must not reintroduce `goto fail` or an early return
+that skips it. The SIMD kernels under `core/src/feature/{x86,arm64}` were left
+unsplit on purpose — their per-TU `-ffp-contract=off` carve-outs and inline
+horizontal reductions are ADR-0138/ADR-0139 bit-exactness invariants.

@@ -149,6 +149,32 @@ sycl/
   do not let area-threshold heuristic (tuned for host-upload) re-select
   graph for VA-import.
 
+- **`common.cpp` cleanup + helper boundaries (HISS-21 burn-down).**
+  `sycl_shared_frame_release()` is the single cleanup owner for the shared
+  frame buffers; it replaced the `fail:` label that
+  `vmaf_sycl_shared_frame_init` used before the HISS-01 burn-down. Its body is
+  that label block verbatim — the loop frees `shared_ref_buf[i]` before
+  `shared_dis_buf[i]` for `i = 0` then `i = 1`, each guarded by its own null
+  check, then nulls all four slots — so every error exit frees the same
+  buffers in the same order, and partially-allocated states still rely on
+  those null checks. The helper is idempotent. The `static` helpers extracted
+  alongside it (`sycl_resolve_device`, `sycl_log_fp64_note`,
+  `sycl_profiling_enabled`, `sycl_queue_props`, `sycl_enqueue_plane_upload`,
+  `sycl_any_extractor_wants_graph`, `sycl_run_compute_phase`,
+  `sycl_apply_input_barriers`, `sycl_enqueue_all_phases`) exist to hold their
+  callers inside the HISS-04 60-LOC bound. **On rebase**: do not reintroduce
+  `goto fail` or an early return between an allocation and the release call;
+  do not move these helpers to another TU or behind a function pointer (that
+  changes inlining and was not what the burn-down verified); keep
+  `sycl_resolve_device` and `sycl_enqueue_all_phases` called from *inside*
+  their caller's existing `try` so a `sycl::exception` never crosses the
+  `extern "C"` frame; preserve the in-order enqueue order (ref before dis in
+  `vmaf_sycl_shared_frame_upload`; graph recording, then `pre_fn`, then
+  compute, then `post_fn` in `sycl_enqueue_all_phases`); and keep
+  `sycl_enqueue_plane_upload`'s original `static_cast<unsigned>` narrowing on
+  the stride comparison — widening it to `size_t` changes which pictures take
+  the bulk-memcpy path.
+
 - [ADR-0002](../../../docs/adr/0002-merge-path-master-default.md) —
   sycl branch → master merge history.
 - [ADR-0016](../../../docs/adr/0016-sycl-to-master-merge-conflict-policy.md)

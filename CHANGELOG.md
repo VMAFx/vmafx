@@ -24171,6 +24171,22 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- HISS-21 burn-down, `core/src` SIMD/GPU slice: the SYCL runtime
+  (`core/src/sycl/common.cpp`) no longer trips HISS-01 or HISS-04.
+  `vmaf_sycl_shared_frame_init` drops its two `goto fail` jumps for a
+  `sycl_shared_frame_release()` cleanup owner whose body is the former
+  `fail:` block verbatim, so every error exit frees the same buffers in the
+  same order (`ref[0]`, `dis[0]`, `ref[1]`, `dis[1]`, each null-guarded).
+  `vmaf_sycl_state_init`, `vmaf_sycl_shared_frame_upload` and
+  `vmaf_sycl_graph_submit` are split into same-translation-unit `static`
+  helpers that preserve enqueue order on the in-order queues and keep every
+  throwing call inside its original `try` block. No feature kernel, SIMD
+  intrinsics path or scoring arithmetic was touched, so VMAF scores are
+  unchanged; the oversized AVX2 / AVX-512 / NEON / SVE2 kernels remain
+  deliberately unsplit under their ADR-0138 / ADR-0139 bit-exactness
+  invariants.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so
