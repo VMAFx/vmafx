@@ -51714,6 +51714,16 @@ forced-inline helpers; preserve those boundaries even though they change binary
 layout, because all four CUDA ADM regression executables remain exactly
 base-identical at runtime.
 
+## Core extractor control-flow cleanup (2026-09-21)
+
+`y_funque_plus.c::init()` and `libvmaf.c` no longer carry their seven historical
+HISS baseline findings. Preserve structured reverse-order subsystem cleanup,
+the CUDA collect-before-submit batch boundary, and the SYCL
+wait/checksum/collect/submit order when resolving upstream conflicts. The
+helper boundaries are structural only: extractor selection, pending indices,
+error propagation, and score output remain unchanged. No new public surface or
+rebase-sensitive policy was introduced.
+
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
