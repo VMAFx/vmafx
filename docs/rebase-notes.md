@@ -12,6 +12,16 @@ unchanged, but its command must still expose a failed step outcome. Do not
 restore `ignore_outcome`, coverage `-i`, `|| true`, or disabled `pipefail` on
 these paths. `Coverage GPU` is required and listed by the aggregator; do not
 restore its stale `(advisory)` name or job-level `continue-on-error`.
+## fix/ai-trainer-warning-cleanup — preserve executable trainer helpers (2026-09-21)
+
+The five AI corpus/trainer scripts in this cleanup are fork-local. Upstream
+syncs have no direct overlap, but future trainer refactors must preserve two
+runtime fixes: `train_fr_regressor._standardize()` returns new arrays instead
+of mutating pandas-owned NumPy views, and `train_konvid_mos_head._export_onnx()`
+uses `dynamic_shapes` with a two-row example batch so current PyTorch exports a
+genuinely dynamic batch axis without warning. Do not restore the old in-place
+normalisation or `dynamic_axes` call. Parser and workflow helpers remain below
+the HISS-04 60-line limit; no public CLI option or model threshold changed.
 
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
