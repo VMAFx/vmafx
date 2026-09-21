@@ -51658,7 +51658,7 @@ authentication, network, or markup failure to “no open PR.”
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
-No rebase impact on product behavior: fourteen Python and MCP test/harness files only split
+No rebase impact on product behavior: twenty Python and MCP test/harness files only split
 existing setup, fixture data, CLI argument registration, matrix execution, and assertion blocks
 into class constants or private helpers. The CLI PTY reader and manual YUV-reader tests also
 replace `while True` with bounded loops that preserve the same EOF/error checks. Test names,

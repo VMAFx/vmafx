@@ -13894,10 +13894,11 @@ See `docs/research/0755-hip-backend-audit-20260529.md`.
 - **changed/hip**: Consolidate 8 identical `rc_to_errno` helpers across HIP feature extractors into a single shared `vmaf_hip_rc_to_errno()` in `core/src/hip/common.h`. Drops ~80 LOC of duplicated translation logic; all 8 callers (adm/vif/motion/psnr/ssim/ansnr/moment/ciede HIP extractors) now route through the canonical implementation. Pure deduplication, no functional change.
 
 
-- Refactored the Python feature-extractor, asset, quality-runner, BD-rate, VMAFx CLI, reader,
-  bootstrap-model, MCP, cross-backend parity, and Git-isolation regression harnesses into bounded
-  helpers so every touched function satisfies HISS without changing test discovery, fixtures,
-  CLI behavior, or any golden assertion, expected value, or tolerance.
+- Refactored the Python feature-extractor, asset, executor, quality-runner, local-explanation,
+  model-training, BD-rate, VMAFx CLI, reader, bootstrap-model, MCP, cross-backend parity, and
+  Git-isolation regression harnesses into bounded helpers so every touched function satisfies HISS
+  without changing test discovery, fixtures, CLI behavior, or any golden assertion, expected value,
+  or tolerance.
 
 
 docs(research): hardware backend audit recommends dropping Vulkan backend (#733)
