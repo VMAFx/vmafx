@@ -741,6 +741,15 @@ kernel variants at runtime. Current policy table is in ADR-0753.
   chroma planes give 4x2 = 8 blocks for 25x25 covariance — singular on
   every frame, so never reach regular path at all. Any new
   SpEED test needing regular frame must be at least 960x960.
+- **`speed_chroma_cuda.c` keeps CUDA context balance on every structured
+  return.** `initialize_cuda_resources()` and `extract_fex_cuda()` push once,
+  call `pop_cuda_context_with_retry()`, and propagate the first pop error after
+  one best-effort retry. Device, pinned-host, and aligned-host ownership stays
+  partitioned through the typed free/allocate helpers; partial initialization
+  must unwind all successfully acquired buffers without restoring the former
+  `CHECK_CUDA_GOTO` cleanup labels. The score pipeline helper split is
+  structural only: launch order, stream synchronization, CPU eigendecomposition
+  and QR order, singular flags, and U/V aggregation are score-sensitive.
 - **`float_adm` options must reach KERNELS, not option
   table alone** (ADR-1220) — `adm_p_norm` (`apn`), `adm_bypass_cm` (`bcm`)
   and, on Metal, `adm_skip_scale0` (`ssz`) =

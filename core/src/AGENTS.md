@@ -197,12 +197,13 @@ bound in destroy, plus `free`-before-`strdup` guard in
 `append_feature_name`; re-apply fork's hunks on top of any upstream
 changes.
 
-### 11. Vendored libsvm + IQA test files are observation-only (ADR-0952)
+### 11. libsvm + IQA tests pin public behavior (ADR-0952)
 
 `core/test/test_svm_api.c`, `core/test/test_svm_multiclass.c`, and
-`core/test/test_iqa_helpers.c` were added to lift coverage of vendored
-bodies (`core/src/svm.cpp`, `core/src/feature/iqa/*.c`) without modifying
-any vendored source. Invariant symmetric to ADR-0889 cordon:
+`core/test/test_iqa_helpers.c` exercise the supported interfaces of
+`core/src/svm.cpp` and `core/src/feature/iqa/*.c`. They are regression
+tests, not a reason to exempt either implementation from whole-tree
+standards.
 
 `test_svm_multiclass.c` specifically exercises sequential-realloc
 double-free path fixed in PR #708 — 17-class and 32-class C_SVC fixtures
@@ -215,9 +216,10 @@ pattern aborts immediately. (ADR-1066)
   call any static-internal helper, or rely on any vendored macro
   beyond public surface declared in `svm.h` / `convolve.h` /
   `decimate.h` / `math_utils.h` / `ssim_tools.h`.
-- Vendored cordon `NOLINTBEGIN/NOLINTEND` in `svm.cpp` and
-  `tdistler.com` copyright headers in IQA helpers stay
-  byte-identical across upstream re-pins.
+- `svm.cpp` has no file-wide analyzer cordon. Keep it at zero strict
+  clang-tidy and Cppcheck findings after every libsvm refresh. Preserve
+  original copyright notices, but adapt refreshed code to project
+  standards in source rather than restoring suppressions.
 - `_round()` / `_cmp_float()` asymmetry tests in
   `test_iqa_helpers.c` double as behavioural documentation. They lock
   the asymmetric "trunc toward zero, add sign when |frac| >= 0.5"
@@ -226,11 +228,9 @@ pattern aborts immediately. (ADR-1066)
   surfaces unintended numerical change at rebase diff, not at an
   integration-level SSIM/VMAF anomaly.
 
-When porting upstream Netflix/vmaf commit modifying
-vendored libsvm or IQA bodies, test files do not need to follow
-upstream change; they observe public-API contracts that survive
-across versions. Test failure post-port is the signal — investigate
-API drift before relaxing assertion.
+When porting an upstream change to libsvm or the IQA bodies, keep these
+tests on the supported interfaces. A failure is evidence of behavior or
+API drift: investigate and fix the port before changing an assertion.
 
 ### 10. `.cpp` files lint-clean to `modernize-*` profile (ADR-0915)
 
@@ -246,17 +246,16 @@ files: prefer `nullptr` over `NULL`, prefer `<cstdlib>`/`<cstring>` over
 `<stdlib.h>`/`<string.h>`, drop `<stdbool.h>` includes (in C++ `bool` is
 a keyword), and use `auto*` for `static_cast<T*>(malloc(...))`-style
 initialisers where cast already spells type. These match checks
-enabled by ADR-0915; deviating reintroduces warnings that touched-file
-rule (ADR-0141) requires discharging in same PR.
+enabled by ADR-0915; deviating reintroduces whole-tree warnings forbidden
+by ADR-1142.
 
-### 10. Vendored libsvm — three fork patches must not regress on sync (ADR-0889)
+### 10. Fork-adapted libsvm must remain analyzer-clean (ADR-0889, ADR-1142)
 
-`core/src/svm.cpp` + `core/src/svm.h` = verbatim vendored copy of
-upstream libsvm 3.24 (Chih-Chung Chang / Chih-Jen Lin), wrapped in
-file-level `NOLINTBEGIN` / `NOLINTEND` cordon so fork's
-touched-file lint-clean rule does not re-flow vendored body. Three
-fork-local patch families live inside that cordon and must survive any
-future upstream sync:
+`core/src/svm.cpp` + `core/src/svm.h` started from libsvm 3.24
+(Chih-Chung Chang / Chih-Jen Lin), but `svm.cpp` is now materially
+fork-adapted. It is neither a verbatim mirror nor exempt because of its
+origin. Do not restore the removed file-wide `NOLINT` cordon. Preserve
+these fork-local families across any libsvm refresh:
 
 1. **Thread-locale isolation** — both `SVMModelParserFileSource` and
    `SVMModelParserBufferSource` constructors call
@@ -271,16 +270,32 @@ future upstream sync:
    `read_json_model.c` depends on buffer entry point.
    Removing it breaks JSON-embedded model loading.
 
-3. **SAN-MODEL-MALLOC-OOB hardening** — every `Malloc(...)` call in
-   `parse_header()` and `parse_support_vectors()` whose size depends on
-   `nr_class` or `total_sv` is gated by `exceptAssert(... > 0 && ... <=
-   VMAF_SVM_MAX_AXIS_COUNT, ...)`. The bound `VMAF_SVM_MAX_AXIS_COUNT
-   (1 << 24)` is fork-defined. The `sv_buffer.empty()` post-parse guard
-   is fork-added. `model->nr_class > 0` row-ordering precondition
-   on `rho`, `label`, `probA`, `probB`, `nr_sv` is fork-added.
+3. **Parser bounds and ownership** — `nr_class` and `total_sv` must be in
+   `1..VMAF_SVM_MAX_AXIS_COUNT` (`46340`) before they drive allocation.
+   Header vectors reject missing dimensions and duplicates. Support-vector
+   offsets are validated before either storage plane is published, every
+   vector must terminate, and failure unwinds both planes through parser
+   ownership. `model->nr_class > 0` row-ordering preconditions on `rho`,
+   `label`, `probA`, `probB`, and `nr_sv` are fork-added.
    Regression coverage lives in `core/test/test_svm_parser.c` (suite
    `fast`). *Cite sanitizer-real-bug-fixes changelog and ADR-0889
    in any commit touching these guards.*
+
+4. **Checked resource handling** — `Malloc` is a typed, overflow-checked,
+   zero-initializing allocator. Allocation failure is fatal because the C API
+   has no partial-training unwind contract. `svm_save_model()` checks every
+   write and always closes the stream. Parser and model failure paths retain
+   single ownership and clear transferred pointers.
+
+5. **Strict C++ structure** — internal implementation has anonymous-namespace
+   linkage, RAII/parser ownership, private solver state, and explicit virtual
+   overrides. `Solver_NU::select_working_set`, `calculate_rho`, and
+   `do_shrinking` retain `override`. Do not trade any of these for a warning
+   suppression on refresh.
+
+6. **Thread-safe fold shuffling** — cross-validation uses a thread-local
+   `std::mt19937` seeded from `std::random_device`; never restore process-global
+   `rand()` state. The random index remains inclusive on `[first, last]`.
 
 Additionally:
 
@@ -288,10 +303,9 @@ Additionally:
   load-bearing invariant for `svm_free_and_destroy_model`'s ownership
   transfer. Vendor-original; never flip it.
 - `LIBSVM_VERSION 324` in `svm.h` = the pin. A sync to newer
-  version must re-apply three patch families above and re-run
-  `core/test/test_svm_parser.c` + `core/test/test_predict` +
-  `core/test/test_model`. See ADR-0889 for deferral rationale on
-  upstream 3.36 sync.
+  version must re-apply all families above and run the complete fast
+  suite under ASan+UBSan plus strict clang-tidy and Cppcheck on
+  `svm.cpp`. See ADR-0889 for deferral rationale on upstream 3.36 sync.
 
 ### 10. Fork diagnostics route through `vmaf_log`, not `fprintf(stderr)`
 
@@ -318,10 +332,10 @@ Exceptions — direct stream writes are correct in these cases:
   `vmaf_sycl_profiling_print`) — stream IS function's contract;
   routing through callback would silently drop output for callers
   without an installed callback at matching level.
-- Vendored libsvm (`core/src/svm.cpp`) and upstream-mirror feature
-  extractors (`feature/vif.c`, `feature/adm.c`, etc.) — leave as-is to
-  preserve upstream-sync semantics; route only if touching PR has
-  an upstream-sync impact note.
+- libsvm's `svm_set_print_string_function` callback is its own public
+  diagnostic contract. Its implementation may write through that callback,
+  but must check formatting and stream failures; provenance is not an
+  exemption from diagnostic handling.
 
 See `docs/research/logging-consistency-audit-2026-05-30.md` for
 audit that established this invariant.
