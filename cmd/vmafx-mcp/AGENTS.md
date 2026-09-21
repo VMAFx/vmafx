@@ -234,3 +234,14 @@ Key facts:
     by vmaf-dev-mcp container after `make install`).
     `server.py::_sidecar_binary` mirrors same order. Adding sidecar requires
     adding to `SidecarBinaryEnv` AND to `_SIDECAR_BINARY_ENV`.
+
+19. **Every tool reaches the server through one of `registerTools`' grouped
+    helpers** (`tools.go`). `registerTools` is a list of `registerXTools(srv)`
+    calls; the tool registrations live in those helpers, in the order they were
+    originally written. A new tool must go into one of them (or into a new
+    helper that `registerTools` calls) — a `register*` function nothing calls
+    registers nothing, and invariant #1's parity test only asserts every Python
+    tool is present, so a Go-only tool silently dropped this way is not caught.
+    Schema literals are marshalled by `toolSchema`, which never panics: a schema
+    that fails to marshal registers the permissive empty object and logs, so one
+    malformed literal cannot take the whole server down with it.

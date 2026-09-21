@@ -262,9 +262,11 @@ func scoringOutputProperties() schemaObj {
 // registerTools wires every MCP tool into srv. Schema definitions mirror the
 // Python server's _list_tools() output exactly.
 //
-// The registrations are grouped into the helpers below; the order in which they run
-// is the order the tools are registered, which is the order the Python server lists
-// them in, so the grouping is observationally invisible to a client.
+// The registrations are grouped into the helpers below, called in the order the
+// registrations were originally written, so the tool set and its registration order are
+// both unchanged by the grouping. A new tool belongs in one of these helpers: a register
+// function that nothing calls registers nothing, and the parity test only checks that
+// every Python tool is present, so the omission would not be caught there.
 func registerTools(srv *mcp.Server) {
 	registerScoringTools(srv)
 	registerModelEvalTools(srv)
