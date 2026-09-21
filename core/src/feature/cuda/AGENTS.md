@@ -392,6 +392,15 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   Netflix one. Upstream-mirror — keep both headers
   verbatim on rebase.
 
+- **Integer ADM scales 1-3 keep ADR-0155's negative rounding term as
+  `INT32_MIN`.** The one site in `integer_adm/adm_csf.cu` and both fused sites
+  in `integer_adm/adm_cm.cu` deliberately subtract 2^31 before their 32-bit
+  right shift to stay Netflix-golden compatible. Do not restore
+  `1u << 31` assigned into `int32_t`: it generates NVCC diagnostic `#68-D`.
+  Do not widen the constant either; that changes ADM output. Focused CUDA 13.4
+  builds produced byte-identical fatbins after changing only the spelling.
+  See [Research-2076](../../../../docs/research/2076-cuda-adm-signbit-warning.md).
+
 - **Every CUDA reduce kernel SHOULD use warp-reduce + `atomicAdd_int64`
   into single accumulator; separate per-thread scratch buffer plus
   separate reduce kernel launch = pre-fix legacy pattern.**
