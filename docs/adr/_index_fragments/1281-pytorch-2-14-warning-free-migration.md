@@ -1,0 +1,1 @@
+| [ADR-1281](1281-pytorch-2-14-warning-free-migration.md) | Migrate QAT to torchao 0.18 PT2E and ONNX export to the dynamo/dynamic-shapes contract so the complete Python ML package suites pass with warnings fatal and without filters, version rollback, or feature removal. | Accepted | ai, ci, dependencies, python, testing, fork-local |

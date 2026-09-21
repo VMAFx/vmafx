@@ -1,0 +1,1 @@
+- Migrated QAT and ONNX export to the supported PyTorch 2.14 contracts, corrected warning-producing ML/test paths, and kept complete AI and vmaf-tune suites fail-closed on every warning (ADR-1281).

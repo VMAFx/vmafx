@@ -26275,6 +26275,9 @@ version reported by ``setup.py``.
 - Removed all warnings from the classic Python harness regression batch by dropping an unused deprecated SciPy import, replacing unsafe multithreaded `fork` execution with ordered loky/spawn workers, closing override-import temporary files deterministically, preserving duplicate-asset serialization, restoring the reference overflow-safe five-parameter logistic equation, and making warnings fatal in root/package pytest and legacy tox runs without ignore rules (ADR-1278).
 
 
+- Migrated QAT and ONNX export to the supported PyTorch 2.14 contracts, corrected warning-producing ML/test paths, and kept complete AI and vmaf-tune suites fail-closed on every warning (ADR-1281).
+
+
 **Dead code + unused-variable cleanup after r12 PR train** — two defects introduced
 by the parallel PR 741/747 merge train:
 

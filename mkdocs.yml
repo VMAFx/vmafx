@@ -1396,6 +1396,7 @@ nav:
         - "ADR-1278: python-safe-parallel-execution": adr/1278-python-safe-parallel-execution.md
         - "ADR-1279: mypy-fail-closed": adr/1279-mypy-fail-closed.md
         - "ADR-1280: worktree-state-sync": adr/1280-worktree-state-sync.md
+        - "ADR-1281: pytorch-2-14-warning-free-migration": adr/1281-pytorch-2-14-warning-free-migration.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

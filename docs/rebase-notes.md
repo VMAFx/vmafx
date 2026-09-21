@@ -51781,3 +51781,17 @@ and the hook fixture are fork-only governance tooling. Preserve the regular
 linked-worktree mirror, common-Git exclusive lock, active-worktree Git
 identity, cache preservation, symlink refusal, and the rule that only derived
 `STATE.md` is copied back to canonical private state.
+
+## PyTorch 2.14 warning-free ML contracts (ADR-1281)
+
+The QAT path uses torchao PT2E preparation with the supported X86Inductor
+quantizer, then deliberately keeps the existing name-and-shape weight transfer
+into a fresh fp32 module and ORT static-QDQ conversion. Preserve that two-step
+bridge and the zero-copied-tensors failure guard during upstream conflicts; do
+not restore `torch.ao.quantization`, a warning filter, or a converted PT2E graph
+as the ONNX input.
+
+Torch ONNX exports use the dynamo exporter with `dynamic_shapes`. Shared input
+dimensions must reuse the same `torch.export.Dim` instance. Every future
+PyTorch/torchao bump must replay the QAT smoke, ONNX Runtime roundtrip, complete
+AI/vmaf-tune suites with warnings fatal, and strict whole-scope mypy.
