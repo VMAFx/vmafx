@@ -1516,7 +1516,9 @@ if is_sycl_enabled
     #          When `sycl_icpx_aot_targets` is non-empty (the default),
     #          we additionally pass `-fsycl-targets=spir64_gen,spir64` to
     #          request AOT compilation into native GPU ISA, and
-    #          `-Xs '-device <list>'` to specify target micro-architectures.
+    #          `-Xsycl-target-backend=spir64_gen '-device <list>'` to specify
+    #          target micro-architectures without forwarding the option to the
+    #          portable `spir64` target.
     #          This eliminates the JIT cold-start cost paid on every first
     #          kernel launch. The binary embeds native ISA blobs for each
     #          listed target plus a SPIR-V fallback for unlisted devices.
@@ -1531,12 +1533,14 @@ if is_sycl_enabled
         icpx_aot_targets = get_option('sycl_icpx_aot_targets')
         if icpx_aot_targets != ''
             # AOT path: emit spir64_gen (IGC) ISA blobs for the listed targets.
-            # `-Xs '-device <list>'` is forwarded to IGC via clang-offload-wrapper.
+            # Scope the device list to IGC. The unqualified `-Xs` form is
+            # ambiguous in a multi-target command and oneAPI 2026 reports it as
+            # unused when the portable `spir64` fallback is present.
             # `spir64` fallback embeds portable SPIR-V for any unlisted device.
             sycl_toolchain_args = [
                 '-fsycl',
                 '-fsycl-targets=spir64_gen,spir64',
-                '-Xs', '-device ' + icpx_aot_targets,
+                '-Xsycl-target-backend=spir64_gen', '-device ' + icpx_aot_targets,
             ]
             message('SYCL AOT targets (icpx): ' + icpx_aot_targets)
         else

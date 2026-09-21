@@ -35,6 +35,23 @@ uses `dynamic_shapes` with a two-row example batch so current PyTorch exports a
 genuinely dynamic batch axis without warning. Do not restore the old in-place
 normalisation or `dynamic_axes` call. Parser and workflow helpers remain below
 the HISS-04 60-line limit; no public CLI option or model threshold changed.
+## fix/sycl-strict-clean — strict SYCL diagnostics and AOT command contract (fork-local, 2026-09-21)
+
+All touched `core/src/feature/sycl/*.cpp` files are intentionally warning-free
+under the fork's oneAPI, clang-tidy, cppcheck, and HISS profiles. Upstream
+origin is not an exemption: when resolving conflicts, preserve the phase
+helpers and explicit size-domain arithmetic rather than restoring long kernel
+lambdas or analyzer suppressions. Device-side arithmetic remains fp32-only and
+filter/reduction order remains unchanged.
+
+The icpx multi-target command must keep
+`-Xsycl-target-backend=spir64_gen '-device <list>'`; unqualified `-Xs` sends the
+device selector to the portable `spir64` target and produces an unused-argument
+warning. Keep the paired removal in
+`scripts/ci/gen-sycl-compile-commands.py` and its
+`test_sycl_aot_command.py` pre-commit contract when either Meson source or the
+lint projection is rebased. Language standards stay in Meson's built-in
+fallback lists; do not restore manual `-std=` probes.
 
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 

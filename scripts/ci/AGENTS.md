@@ -64,6 +64,18 @@ last-valid-file preservation. Required Pre-Commit runs both when driver,
 exporter, workflows or Makefile change.
 Does not replace lane-specific ratchet measurements or their baselines.
 
+### SYCL custom-command lint database
+
+Meson emits per-feature SYCL translation units as `CUSTOM_COMMAND` rules, so
+`gen-sycl-compile-commands.py` must augment the native compilation database
+before clang-tidy can see them. Keep both legacy `-Xs` removal and the current
+target-scoped pair (`-Xsycl-target-backend=spir64_gen` plus its following
+backend argument) in the translator; passing either device-only option to
+stock clang++ breaks the analyzer lane. `test_sycl_aot_command.py` is the
+required pre-commit contract for the Meson AOT spelling, built-in language
+standard policy, and translator output. Do not exempt a SYCL TU because it was
+ported from upstream or predates the gate.
+
 Real-Make fixtures create failing/recording pip sentinel before fake
 Meson and Ninja, satisfying recursive build dependency graph without tool
 bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`

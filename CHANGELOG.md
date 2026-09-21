@@ -27849,6 +27849,12 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   `src01` delta=1.21e-2 <= 5.0e-2).
 
 
+- Made the touched SYCL feature-kernel batch warning-free under oneAPI,
+  clang-tidy, cppcheck, and the 60-line HISS policy without suppressions or
+  numerical-contract changes. Intel AOT device arguments are now scoped to the
+  native target while retaining the portable SPIR-V fallback.
+
+
 - **sycl:** Fix crashes and prediction errors when running default model `vmaf_v1.0.16_3d0h`
   on Intel Arc GPUs. Fix uninitialized bounds and histogram buffer allocation in
   `integer_cambi_sycl.cpp`, eliminate `double` accumulators and accessors in

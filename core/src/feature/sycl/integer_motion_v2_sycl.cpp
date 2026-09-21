@@ -101,6 +101,11 @@ struct MotionV2StateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+} // namespace
+
+namespace
+{
+
 static constexpr int32_t MV2_FILTER[5] = {3571, 16004, 26386, 16004, 3571};
 static constexpr int MV2_WG_X = 32;
 static constexpr int MV2_WG_Y = 8;
@@ -108,27 +113,144 @@ static constexpr int MV2_HALF_FW = 2;
 static constexpr int MV2_TILE_W = MV2_WG_X + 2 * MV2_HALF_FW; /* 36 */
 static constexpr int MV2_TILE_H = MV2_WG_Y + 2 * MV2_HALF_FW; /* 12 */
 
+struct Mv2KernelArgs {
+    const void *prev;
+    const void *cur;
+    int64_t *sad;
+    unsigned width;
+    unsigned height;
+    unsigned bpc;
+};
+
+} // namespace
+
+namespace
+{
+
 static inline int dev_mirror_mv2(int idx, int sup)
 {
-    if (idx < 0)
+    if (idx < 0) {
         return -idx;
-    if (idx >= sup)
+    }
+    if (idx >= sup) {
         return 2 * sup - idx - 2;
+    }
     return idx;
 }
 
-static sycl::event launch_motion_v2(sycl::queue &q, const void *prev, const void *cur,
-                                    int64_t *sad_accum, unsigned width, unsigned height,
-                                    unsigned bpc)
+static inline int32_t mv2_read_pixel(const void *plane, int y, int x, const Mv2KernelArgs &args)
 {
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_bpc = bpc;
-    const void *e_prev = prev;
-    const void *e_cur = cur;
+    const size_t offset = (size_t)y * args.width + (size_t)x;
+    if (args.bpc <= 8) {
+        return (int32_t)static_cast<const uint8_t *>(plane)[offset];
+    }
+    return (int32_t)static_cast<const uint16_t *>(plane)[offset];
+}
 
-    sycl::range<2> global(((height + MV2_WG_Y - 1) / MV2_WG_Y) * MV2_WG_Y,
-                          ((width + MV2_WG_X - 1) / MV2_WG_X) * MV2_WG_X);
+} // namespace
+
+namespace
+{
+
+static inline void mv2_load_diff(sycl::nd_item<2> item,
+                                 const sycl::local_accessor<int32_t, 2> &diff,
+                                 const Mv2KernelArgs &args)
+{
+    const unsigned lid = item.get_local_linear_id();
+    const int tile_y = (int)(item.get_group(0) * MV2_WG_Y) - MV2_HALF_FW;
+    const int tile_x = (int)(item.get_group(1) * MV2_WG_X) - MV2_HALF_FW;
+    const bool interior = (tile_y >= 0) && (tile_y + MV2_TILE_H <= (int)args.height) &&
+                          (tile_x >= 0) && (tile_x + MV2_TILE_W <= (int)args.width);
+    constexpr unsigned tile_elems = MV2_TILE_H * MV2_TILE_W;
+    constexpr unsigned group_size = MV2_WG_X * MV2_WG_Y;
+    for (unsigned i = lid; i < tile_elems; i += group_size) {
+        const unsigned row = i / MV2_TILE_W;
+        const unsigned col = i % MV2_TILE_W;
+        int pixel_y = tile_y + (int)row;
+        int pixel_x = tile_x + (int)col;
+        if (!interior) {
+            pixel_y = dev_mirror_mv2(pixel_y, (int)args.height);
+            pixel_x = dev_mirror_mv2(pixel_x, (int)args.width);
+        }
+        diff[row][col] = mv2_read_pixel(args.prev, pixel_y, pixel_x, args) -
+                         mv2_read_pixel(args.cur, pixel_y, pixel_x, args);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static inline int64_t mv2_filtered_abs(sycl::nd_item<2> item,
+                                       const sycl::local_accessor<int32_t, 2> &diff,
+                                       const Mv2KernelArgs &args)
+{
+    const int x = (int)item.get_global_id(1);
+    const int y = (int)item.get_global_id(0);
+    if (!std::cmp_less(x, args.width) || !std::cmp_less(y, args.height)) {
+        return 0;
+    }
+    const unsigned local_x = item.get_local_id(1);
+    const unsigned local_y = item.get_local_id(0);
+    const int64_t round_y = (int64_t)1 << ((int)args.bpc - 1);
+    const int shift_y = (int)args.bpc;
+    int32_t vertical[5];
+#pragma unroll
+    for (int hx = 0; hx < 5; hx++) {
+        const unsigned tile_col = local_x + (unsigned)hx;
+        int64_t const sum =
+            (int64_t)MV2_FILTER[0] * (diff[local_y][tile_col] + diff[local_y + 4][tile_col]) +
+            (int64_t)MV2_FILTER[1] * (diff[local_y + 1][tile_col] + diff[local_y + 3][tile_col]) +
+            (int64_t)MV2_FILTER[2] * diff[local_y + 2][tile_col];
+        vertical[hx] = (int32_t)((sum + round_y) >> shift_y);
+    }
+    const int64_t horizontal = (int64_t)MV2_FILTER[0] * (vertical[0] + vertical[4]) +
+                               (int64_t)MV2_FILTER[1] * (vertical[1] + vertical[3]) +
+                               (int64_t)MV2_FILTER[2] * vertical[2];
+    const int64_t blurred = (horizontal + 32768) >> 16;
+    return blurred < 0 ? -blurred : blurred;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void mv2_reduce_sad(sycl::nd_item<2> item,
+                                  const sycl::local_accessor<int64_t, 1> &scratch, int64_t absolute,
+                                  int64_t *sad)
+{
+    sycl::sub_group const subgroup = item.get_sub_group();
+    const int64_t subgroup_sum = sycl::reduce_over_group(subgroup, absolute, sycl::plus<int64_t>{});
+    const uint32_t subgroup_id = subgroup.get_group_linear_id();
+    const uint32_t subgroup_lane = subgroup.get_local_linear_id();
+    const uint32_t subgroup_count = subgroup.get_group_linear_range();
+    if (subgroup_lane == 0) {
+        scratch[subgroup_id] = subgroup_sum;
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    if (item.get_local_linear_id() == 0) {
+        int64_t total = 0;
+        for (uint32_t i = 0; i < subgroup_count; i++) {
+            total += scratch[i];
+        }
+        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                         sycl::access::address_space::global_space> const output(*sad);
+        output.fetch_add(total);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static sycl::event launch_motion_v2(sycl::queue &q, Mv2KernelArgs args)
+{
+    const size_t global_height = ((size_t)args.height + MV2_WG_Y - 1) / MV2_WG_Y * MV2_WG_Y;
+    const size_t global_width = ((size_t)args.width + MV2_WG_X - 1) / MV2_WG_X * MV2_WG_X;
+    sycl::range<2> global(global_height, global_width);
     sycl::range<2> local(MV2_WG_Y, MV2_WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
@@ -136,99 +258,22 @@ static sycl::event launch_motion_v2(sycl::queue &q, const void *prev, const void
         constexpr int MAX_SUBGROUPS = 32;
         sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
-        cgh.parallel_for(
-            sycl::nd_range<2>(global, local),
-            [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                const int gx = (int)item.get_global_id(1);
-                const int gy = (int)item.get_global_id(0);
-                const unsigned lid = item.get_local_linear_id();
-                const unsigned lx = item.get_local_id(1);
-                const unsigned ly = item.get_local_id(0);
-                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
-
-                /* --- Phase 1: cooperative tile load of (prev - cur) --- */
-                const int tile_oy = (int)(item.get_group(0) * MV2_WG_Y) - MV2_HALF_FW;
-                const int tile_ox = (int)(item.get_group(1) * MV2_WG_X) - MV2_HALF_FW;
-                constexpr unsigned tile_elems = MV2_TILE_H * MV2_TILE_W;
-                constexpr unsigned WG_SIZE = MV2_WG_X * MV2_WG_Y;
-
-                auto read_pixel = [&](const void *plane, int y, int x) -> int32_t {
-                    if (e_bpc <= 8) {
-                        return (int32_t)static_cast<const uint8_t *>(
-                            plane)[(size_t)y * e_w + (size_t)x];
-                    }
-                    return (int32_t)static_cast<const uint16_t *>(
-                        plane)[(size_t)y * e_w + (size_t)x];
-                };
-
-                const bool interior = (tile_oy >= 0) && (tile_oy + MV2_TILE_H <= (int)e_h) &&
-                                      (tile_ox >= 0) && (tile_ox + MV2_TILE_W <= (int)e_w);
-
-                for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
-                    const unsigned tr = i / MV2_TILE_W;
-                    const unsigned tc = i % MV2_TILE_W;
-                    int py = tile_oy + (int)tr;
-                    int px = tile_ox + (int)tc;
-                    if (!interior) {
-                        py = dev_mirror_mv2(py, (int)e_h);
-                        px = dev_mirror_mv2(px, (int)e_w);
-                    }
-                    s_diff[tr][tc] = read_pixel(e_prev, py, px) - read_pixel(e_cur, py, px);
-                }
-                item.barrier(sycl::access::fence_space::local_space);
-
-                /* --- Phase 2: separable V→H 5-tap filter on the diff --- */
-                int64_t abs_h = 0;
-                if (valid) {
-                    const int64_t round_y = (int64_t)1 << ((int)e_bpc - 1);
-                    const int shift_y = (int)e_bpc;
-                    int32_t vtmp[5];
-
-#pragma unroll
-                    for (int hx = 0; hx < 5; hx++) {
-                        const unsigned tcol = lx + (unsigned)hx;
-                        /* int64 accumulator: at bpc=16 the diff range
-                         * is ±65535 and filter[k] up to 26386 — the
-                         * 5-tap sum overflows int32. */
-                        int64_t const vsum =
-                            (int64_t)MV2_FILTER[0] * (s_diff[ly + 0][tcol] + s_diff[ly + 4][tcol]) +
-                            (int64_t)MV2_FILTER[1] * (s_diff[ly + 1][tcol] + s_diff[ly + 3][tcol]) +
-                            (int64_t)MV2_FILTER[2] * s_diff[ly + 2][tcol];
-                        vtmp[hx] = (int32_t)((vsum + round_y) >> shift_y);
-                    }
-
-                    const int64_t hsum = (int64_t)MV2_FILTER[0] * (vtmp[0] + vtmp[4]) +
-                                         (int64_t)MV2_FILTER[1] * (vtmp[1] + vtmp[3]) +
-                                         (int64_t)MV2_FILTER[2] * vtmp[2];
-                    const int64_t blurred = (hsum + 32768) >> 16;
-                    abs_h = blurred < 0 ? -blurred : blurred;
-                }
-
-                /* --- Phase 3: subgroup + cross-subgroup SAD reduction --- */
-                sycl::sub_group const sg = item.get_sub_group();
-                const int64_t sg_sum = sycl::reduce_over_group(sg, abs_h, sycl::plus<int64_t>{});
-                const uint32_t sg_id = sg.get_group_linear_id();
-                const uint32_t sg_lid = sg.get_local_linear_id();
-                const uint32_t n_subgroups = sg.get_group_linear_range();
-                if (sg_lid == 0)
-                    lmem[sg_id] = sg_sum;
-                item.barrier(sycl::access::fence_space::local_space);
-
-                if (lid == 0) {
-                    int64_t total = 0;
-                    for (uint32_t s = 0; s < n_subgroups; s++)
-                        total += lmem[s];
-                    sycl::atomic_ref<
-                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                        sycl::access::address_space::global_space> const ref(*sad_accum);
-                    ref.fetch_add(total);
-                }
-            });
+        cgh.parallel_for(sycl::nd_range<2>(global, local),
+                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
+                             mv2_load_diff(item, s_diff, args);
+                             item.barrier(sycl::access::fence_space::local_space);
+                             const int64_t absolute = mv2_filtered_abs(item, s_diff, args);
+                             mv2_reduce_sad(item, lmem, absolute, args.sad);
+                         });
     });
 }
 
-template <typename T>
-static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned h)
+} // namespace
+
+namespace
+{
+
+template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
 {
     const T *src = static_cast<const T *>(pic->data[0]);
     T *out = static_cast<T *>(dst);
@@ -241,9 +286,10 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned
     }
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
+namespace
+{
 
 /* Option table mirrors integer_motion_v2.c (CPU reference) for the
  * subset of options the SYCL twin's host-side motion3_v2 post-process
@@ -254,71 +300,103 @@ extern "C" {
  * computes the SAD, and the 5-frame window is unsupported per ADR-0337);
  * they are intentionally omitted from this twin's surface — matching the
  * CUDA twin integer_motion_v2_cuda.c. */
-static const VmafOption options_motion_v2_sycl[] = {
-    {
-        .name = "motion_fps_weight",
-        .alias = "mfw",
-        .help = "fps-aware multiplicative weight/correction",
-        .offset = offsetof(MotionV2StateSycl, motion_fps_weight),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1.0},
-        .min = 0.0,
-        .max = 5.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_blend_factor",
-        .alias = "mbf",
-        .help = "blend motion score given an offset",
-        .offset = offsetof(MotionV2StateSycl, motion_blend_factor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1.0},
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_blend_offset",
-        .alias = "mbo",
-        .help = "blend motion score starting from this offset",
-        .offset = offsetof(MotionV2StateSycl, motion_blend_offset),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 40.0},
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_max_val",
-        .alias = "mmxv",
-        .help = "maximum value allowed; larger values will be clipped to this value",
-        .offset = offsetof(MotionV2StateSycl, motion_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = MOTION_V2_SYCL_DEFAULT_MAX_VAL},
-        .min = 0.0,
-        .max = 10000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_moving_average",
-        .alias = "mma",
-        .help = "smooth motion3 with a 2-frame moving average",
-        .offset = offsetof(MotionV2StateSycl, motion_moving_average),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val = {.b = false},
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {nullptr}};
+static const VmafOption motion_weight_option = {
+    .name = "motion_fps_weight",
+    .help = "fps-aware multiplicative weight/correction",
+    .alias = "mfw",
+    .offset = offsetof(MotionV2StateSycl, motion_fps_weight),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 1.0},
+    .min = 0.0,
+    .max = 5.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
-// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
+static const VmafOption motion_blend_factor_option = {
+    .name = "motion_blend_factor",
+    .help = "blend motion score given an offset",
+    .alias = "mbf",
+    .offset = offsetof(MotionV2StateSycl, motion_blend_factor),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 1.0},
+    .min = 0.0,
+    .max = 1.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+} // namespace
+
+namespace
+{
+
+static const VmafOption motion_blend_offset_option = {
+    .name = "motion_blend_offset",
+    .help = "blend motion score starting from this offset",
+    .alias = "mbo",
+    .offset = offsetof(MotionV2StateSycl, motion_blend_offset),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 40.0},
+    .min = 0.0,
+    .max = 1000.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption motion_max_option = {
+    .name = "motion_max_val",
+    .help = "maximum value allowed; larger values will be clipped to this value",
+    .alias = "mmxv",
+    .offset = offsetof(MotionV2StateSycl, motion_max_val),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = MOTION_V2_SYCL_DEFAULT_MAX_VAL},
+    .min = 0.0,
+    .max = 10000.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+} // namespace
+
+namespace
+{
+
+static const VmafOption motion_average_option = {
+    .name = "motion_moving_average",
+    .help = "smooth motion3 with a 2-frame moving average",
+    .alias = "mma",
+    .offset = offsetof(MotionV2StateSycl, motion_moving_average),
+    .type = VMAF_OPT_TYPE_BOOL,
+    .default_val = {.b = false},
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+
+static const VmafOption options_motion_v2_sycl[] = {
+    motion_weight_option, motion_blend_factor_option, motion_blend_offset_option,
+    motion_max_option,    motion_average_option,      {.name = nullptr},
+};
+
+} // namespace
+
+namespace
+{
+
+static int allocate_motion_v2(MotionV2StateSycl *s)
+{
+    s->plane_bytes = (size_t)s->width * s->height * (s->bpc <= 8 ? 1u : 2u);
+    s->h_pix = vmaf_sycl_malloc_host(s->sycl_state, s->plane_bytes);
+    s->d_pix[0] = vmaf_sycl_malloc_device(s->sycl_state, s->plane_bytes);
+    s->d_pix[1] = vmaf_sycl_malloc_device(s->sycl_state, s->plane_bytes);
+    s->d_sad = static_cast<int64_t *>(vmaf_sycl_malloc_device(s->sycl_state, sizeof(int64_t)));
+    s->h_sad = static_cast<int64_t *>(vmaf_sycl_malloc_host(s->sycl_state, sizeof(int64_t)));
+    if (!s->h_pix || !s->d_pix[0] || !s->d_pix[1] || !s->d_sad || !s->h_sad) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_v2_sycl: USM allocation failed\n");
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -347,29 +425,25 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_v2_sycl: no SYCL state\n");
         return -EINVAL;
     }
-    VmafSyclState *state = fex->sycl_state;
-    s->sycl_state = state;
-
-    s->plane_bytes = (size_t)w * h * (bpc <= 8 ? 1u : 2u);
-
-    s->h_pix = vmaf_sycl_malloc_host(state, s->plane_bytes);
-    s->d_pix[0] = vmaf_sycl_malloc_device(state, s->plane_bytes);
-    s->d_pix[1] = vmaf_sycl_malloc_device(state, s->plane_bytes);
-    s->d_sad = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
-    s->h_sad = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
-
-    if (!s->h_pix || !s->d_pix[0] || !s->d_pix[1] || !s->d_sad || !s->h_sad) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_v2_sycl: USM allocation failed\n");
-        return -ENOMEM;
+    s->sycl_state = fex->sycl_state;
+    const int alloc_err = allocate_motion_v2(s);
+    if (alloc_err) {
+        return alloc_err;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
+    }
 
     return 0;
 }
+
+} // namespace
+
+namespace
+{
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
@@ -379,8 +453,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)dist_pic_90;
     auto *s = static_cast<MotionV2StateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    if (!qptr) {
         return -EINVAL;
+    }
     sycl::queue &q = *qptr;
 
     /* Pack cur ref Y into pinned host staging (handles arbitrary
@@ -397,8 +472,12 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (index > 0) {
         const unsigned prev_idx = (index + 1u) % 2u;
         q.memset(s->d_sad, 0, sizeof(int64_t));
-        launch_motion_v2(q, s->d_pix[prev_idx], s->d_pix[cur_idx], s->d_sad, s->width, s->height,
-                         s->bpc);
+        launch_motion_v2(q, {.prev = s->d_pix[prev_idx],
+                             .cur = s->d_pix[cur_idx],
+                             .sad = s->d_sad,
+                             .width = s->width,
+                             .height = s->height,
+                             .bpc = s->bpc});
         q.memcpy(s->h_sad, s->d_sad, sizeof(int64_t));
     }
 
@@ -408,13 +487,19 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
+} // namespace
+
+namespace
+{
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<MotionV2StateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    if (!qptr) {
         return -EINVAL;
+    }
     qptr->wait();
 
     if (index == 0) {
@@ -429,6 +514,80 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                                                    sad_score, index);
 }
 
+} // namespace
+
+namespace
+{
+
+static unsigned motion_frame_count(VmafFeatureCollector *collector, const char *sad_name)
+{
+    unsigned count = 0;
+    double unused;
+    while (!vmaf_feature_collector_get_score(collector, sad_name, &unused, count)) {
+        count++;
+    }
+    return count;
+}
+
+static double motion_stamp_value(VmafFeatureCollector *collector, const MotionV2StateSycl *s,
+                                 const char *sad_name, unsigned frame_count)
+{
+    constexpr unsigned min_index = 1;
+    double value = 0.0;
+    double sad;
+    if (frame_count > min_index &&
+        !vmaf_feature_collector_get_score(collector, sad_name, &sad, min_index)) {
+        value = MIN(motion_blend(sad, s->motion_blend_factor, s->motion_blend_offset),
+                    s->motion_max_val);
+    }
+    return value;
+}
+
+} // namespace
+
+namespace
+{
+
+static int append_motion_frame(VmafFeatureCollector *collector, MotionV2StateSycl *s,
+                               const char *sad_name, unsigned index, unsigned frame_count,
+                               double stamp_value, double &previous)
+{
+    double score_current;
+    vmaf_feature_collector_get_score(collector, sad_name, &score_current, index);
+    score_current *= s->motion_fps_weight;
+    double motion2 = score_current;
+    if (index + 1 < frame_count) {
+        double score_next;
+        vmaf_feature_collector_get_score(collector, sad_name, &score_next, index + 1);
+        score_next *= s->motion_fps_weight;
+        motion2 = score_current < score_next ? score_current : score_next;
+    }
+    int err = vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score", motion2, index);
+    if (err) {
+        return err;
+    }
+    double motion3;
+    if (index < 1) {
+        motion3 = stamp_value;
+        previous = stamp_value;
+    } else {
+        double const processed =
+            MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
+                s->motion_max_val);
+        motion3 = s->motion_moving_average ? (processed + previous) / 2.0 : processed;
+        previous = processed;
+    }
+    err = vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score", motion3, index);
+    return err;
+}
+
+} // namespace
+
+namespace
+{
+
 static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<MotionV2StateSycl *>(fex->priv);
@@ -440,79 +599,27 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
         vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
     const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
 
-    unsigned n_frames = 0;
-    double dummy;
-    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &dummy, n_frames))
-        n_frames++;
-
-    if (n_frames < 2)
+    const unsigned n_frames = motion_frame_count(feature_collector, sad_name);
+    if (n_frames < 2) {
         return 1;
-
-    /* motion3_v2 seeding — mirrors integer_motion_v2.c::flush and the CUDA
-     * twin exactly. 3-frame mode only (min_idx = 1; the 5-frame window is
-     * unsupported on motion_v2, ADR-0337). stamp_value blends the *raw SAD*
-     * at min_idx, clipped to motion_max_val; it is emitted for all indices
-     * i < min_idx. */
-    const unsigned min_idx = 1;
-    double stamp_value = 0.;
-    if (n_frames > min_idx) {
-        double sad_at_min_idx;
-        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
-                                              min_idx)) {
-            stamp_value =
-                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-        }
     }
-
+    const double stamp_value = motion_stamp_value(feature_collector, s, sad_name, n_frames);
     double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
-        double score_cur;
-        double score_next;
-        vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
-        /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
-         * Bit-exact when motion_fps_weight = 1.0 (default). */
-        score_cur *= s->motion_fps_weight;
-
-        double motion2;
-        if (i + 1 < n_frames) {
-            vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1);
-            score_next *= s->motion_fps_weight;
-            motion2 = score_cur < score_next ? score_cur : score_next;
-        } else {
-            motion2 = score_cur;
+        const int err = append_motion_frame(feature_collector, s, sad_name, i, n_frames,
+                                            stamp_value, prev_processed);
+        if (err) {
+            return err;
         }
-
-        int append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score",
-            motion2, i);
-        if (append_err)
-            return append_err;
-
-        /* motion3_v2_score: per-frame blend + clip + optional moving-average.
-         * Mirrors integer_motion_v2.c::flush lines 466-481 and the CUDA twin
-         * byte-for-byte. */
-        double motion3;
-        if (i < min_idx) {
-            motion3 = stamp_value;
-            prev_processed = stamp_value;
-        } else {
-            double const processed =
-                MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-            motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;
-            prev_processed = processed;
-        }
-
-        append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score",
-            motion3, i);
-        if (append_err)
-            return append_err;
     }
 
     return 1;
 }
+
+} // namespace
+
+namespace
+{
 
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
@@ -538,6 +645,8 @@ static const char *provided_features_motion_v2_sycl[] = {
     "VMAF_integer_feature_motion_v2_sad_score", "VMAF_integer_feature_motion2_v2_score",
     "VMAF_integer_feature_motion3_v2_score", nullptr};
 
+} // namespace
+
 extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl = {
     .name = "motion_v2_sycl",
     .init = init_fex_sycl,
@@ -551,6 +660,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl = {
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_motion_v2_sycl,
 };
-
-} /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

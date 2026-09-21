@@ -254,6 +254,13 @@ repos:
         files: '^(Makefile|scripts/ci/(write-compile-commands\.py|tests/test_write_compile_commands\.py)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: test-sycl-aot-command
+        name: SYCL AOT and language-standard command contract
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_sycl_aot_command.py
+        language: system
+        files: '^(core/(meson\.build|src/meson\.build)|scripts/ci/(gen-sycl-compile-commands\.py|tests/test_sycl_aot_command\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-renovate-file-patterns
         name: Renovate custom managers select real inputs
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py

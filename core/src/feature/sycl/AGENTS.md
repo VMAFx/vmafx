@@ -22,6 +22,13 @@ under [`../../meson.build`](../../meson.build) adds
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md) +
   [../../AGENTS.md](../../AGENTS.md) +
   [`../../sycl/AGENTS.md`](../../sycl/AGENTS.md)).
+- **Every TU is strict-clean regardless of origin or age.** A file ported from
+  Netflix, copied from another backend, or present before the ratchet has no
+  warning exemption. Its oneAPI compile, SYCL clang-tidy projection, cppcheck,
+  and HISS audit must report no file-local diagnostic when touched. Split
+  oversized helpers at cohesive phase boundaries; do not add `NOLINT`, lower a
+  baseline, or filter a diagnostic to make a lane green. Regenerate the SYCL
+  database with `scripts/ci/gen-sycl-compile-commands.py` before clang-tidy.
 - **`-fp-model=precise` on SYCL feature line load-bearing.**
   Removing it allows `icpx` to FMA-contract inside kernel
   lambdas, drifting `float_adm_sycl` past `places=4` at scale 2
@@ -49,12 +56,14 @@ under [`../../meson.build`](../../meson.build) adds
 
 ## Twin-update rules
 
-Every SYCL TU here has CUDA + Vulkan twins. Complete
-table lives in [`../cuda/AGENTS.md`](../cuda/AGENTS.md); changes to
-SYCL TU **must** ship with matching changes to CUDA + Vulkan
-twins in **same PR**. Cross-backend parity gate at `places=4`
+When a SYCL TU has a live CUDA, HIP, or Metal twin, user-visible behavior and
+numeric fixes must be reviewed across those twins in the same PR. Vulkan was
+removed in ADR-0726 and is not a live twin. The complete CUDA mapping lives in
+[`../cuda/AGENTS.md`](../cuda/AGENTS.md). The cross-backend parity gate at
+`places=4`
 ([`scripts/ci/cross_backend_parity_gate.py`](../../../../scripts/ci/cross_backend_parity_gate.py),
-ADR-0214) catches drift but only after full GPU run.
+ADR-0214) catches drift only after a full GPU run; it does not replace that
+source review.
 
 ## Parity invariant — motion3 CPU and SYCL moving-average paths
 
