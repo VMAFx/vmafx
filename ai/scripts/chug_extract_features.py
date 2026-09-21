@@ -29,19 +29,26 @@ import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    from ai.data.feature_extractor import FeatureExtractionResult
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
+if not TYPE_CHECKING:
+    FeatureExtractionResult = import_module("ai.data.feature_extractor").FeatureExtractionResult
 
 
 def _load_runtime_helpers() -> tuple[Any, ...]:
@@ -50,7 +57,6 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
         DEFAULT_FEATURES,
         DEFAULT_VMAF_BINARY,
         FULL_FEATURES,
-        FeatureExtractionResult,
         aggregate_clip_stats,
         extract_features,
     )
@@ -63,7 +69,6 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
         DEFAULT_FEATURES,
         DEFAULT_VMAF_BINARY,
         FULL_FEATURES,
-        FeatureExtractionResult,
         aggregate_clip_stats,
         extract_features,
         collect_cli_argv,
@@ -77,7 +82,6 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
     DEFAULT_FEATURES,
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
-    FeatureExtractionResult,
     aggregate_clip_stats,
     extract_features,
     collect_cli_argv,
@@ -221,6 +225,8 @@ def _truthy_ref_flag(row: dict[str, Any]) -> bool:
     raw = row.get("chug_ref")
     if isinstance(raw, bool):
         return raw
+    if not isinstance(raw, (int, float, str)):
+        return False
     try:
         return int(raw) == 1
     except (TypeError, ValueError):
@@ -242,7 +248,7 @@ def _ffprobe_hdr_payload(
     clip_path: Path,
     *,
     ffprobe_bin: str,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict[str, Any] | None:
     cmd = [
         ffprobe_bin,
@@ -266,7 +272,10 @@ def _ffprobe_hdr_payload(
     if int(getattr(proc, "returncode", 1)) != 0:
         return None
     try:
-        return json.loads(getattr(proc, "stdout", "") or "{}")
+        payload: object = json.loads(getattr(proc, "stdout", "") or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("ffprobe output must be a JSON object")
+        return {str(key): value for key, value in payload.items()}
     except json.JSONDecodeError:
         return None
 
@@ -328,7 +337,7 @@ def probe_clip_hdr_metadata(
     clip_path: Path,
     *,
     ffprobe_bin: str = "ffprobe",
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict[str, Any]:
     """Probe one local clip and return row-safe HDR/display metadata."""
     payload = _ffprobe_hdr_payload(clip_path, ffprobe_bin=ffprobe_bin, runner=runner)
@@ -347,7 +356,7 @@ def audit_chug_hdr_metadata(
     output: Path,
     split_seed: str = DEFAULT_SPLIT_SEED,
     ffprobe_bin: str = "ffprobe",
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Probe local CHUG clips and write a compact HDR metadata audit."""
@@ -484,7 +493,7 @@ def _decode_to_yuv10(
     width: int,
     height: int,
     ffmpeg_bin: str,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     scale_filter = f"scale={width}:{height}:flags=bicubic,format=yuv420p10le"
@@ -511,7 +520,7 @@ def _empty_visual_signals() -> dict[str, float | None]:
 
 
 def _read_yuv420p10le_luma_frame(
-    handle,
+    handle: BinaryIO,
     *,
     frame_index: int,
     width: int,
@@ -636,14 +645,16 @@ def _extract_pair_payload(
     cache_dir: Path,
     ffmpeg_bin: str,
     vmaf_bin: Path,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     extractor: Callable[..., FeatureExtractionResult] = extract_features,
 ) -> ExtractedPairPayload:
     cache_path = cache_dir / f"{_cache_key(pair, feature_set)}.json"
     visual_cache_path = cache_dir / f"{_cache_key(pair, feature_set)}.visual.json"
     result: FeatureExtractionResult | None = None
     if cache_path.is_file():
-        result = FeatureExtractionResult.from_jsonable(json.loads(cache_path.read_text()))
+        from ai.data.feature_extractor import FeatureExtractionResult as FeatureResult
+
+        result = FeatureResult.from_jsonable(json.loads(cache_path.read_text()))
     if result is not None and visual_cache_path.is_file():
         visual_payload = json.loads(visual_cache_path.read_text())
         return ExtractedPairPayload(
@@ -780,7 +791,7 @@ def run(
     ffmpeg_bin: str = "ffmpeg",
     ffprobe_bin: str = "ffprobe",
     vmaf_bin: Path = DEFAULT_VMAF_BINARY,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     extractor: Callable[..., FeatureExtractionResult] = extract_features,
     run_provenance: dict[str, Any] | None = None,
 ) -> int:
@@ -887,7 +898,7 @@ def run(
 
 def _build_chug_parser() -> argparse.ArgumentParser:
     """Build and return the argument parser for chug_extract_features."""
-    ap = make_argument_parser(
+    ap: argparse.ArgumentParser = make_argument_parser(
         prog="chug_extract_features.py",
         description=__doc__,
     )

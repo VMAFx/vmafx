@@ -88,12 +88,15 @@ import statistics
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -135,7 +138,7 @@ _MOS_TO_VMAF_SLOPE = 20.0
 _MOS_TO_VMAF_INTERCEPT = 0.0
 
 
-def mos_to_vmaf_proxy(mos: float) -> float:
+def mos_to_vmaf_proxy(mos: float | str) -> float:
     """Map a MOS on a 1-5 scale onto a VMAF score in [0, 100]."""
     return max(0.0, min(100.0, _MOS_TO_VMAF_SLOPE * float(mos) + _MOS_TO_VMAF_INTERCEPT))
 
@@ -512,7 +515,7 @@ def calibrate(
 
 def _build_calibrate_parser() -> argparse.ArgumentParser:
     """Build and return the argument parser for calibrate_phase_f_recipes."""
-    parser = make_argument_parser(
+    parser: argparse.ArgumentParser = make_argument_parser(
         prog="calibrate_phase_f_recipes.py",
         description=(
             "Calibrate Phase F.5 per-content-type recipe overrides "

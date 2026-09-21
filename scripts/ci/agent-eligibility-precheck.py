@@ -58,7 +58,7 @@ import sys
 import tempfile
 from importlib import import_module
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Protocol
 
 # The script lives at scripts/ci/, the lib package at scripts/lib/.
 _SCRIPTS = Path(__file__).resolve().parent.parent
@@ -66,6 +66,17 @@ sys.path.insert(0, str(_SCRIPTS))
 _BACKLOG_TRACKER = import_module("lib.backlog_tracker")
 BacklogTracker = _BACKLOG_TRACKER.BacklogTracker
 GitHubTracker = _BACKLOG_TRACKER.GitHubTracker
+
+
+class _BacklogReader(Protocol):
+    def get(self, item_id: str) -> Any: ...
+
+
+class _GitHubReader(Protocol):
+    def search_prs(self, query: str, state: str, limit: int) -> list[dict[str, Any]]: ...
+
+    def open_agent_branches(self) -> list[str]: ...
+
 
 # ---------------------------------------------------------------------------
 # stderr helpers — keep verdicts machine-parseable.
@@ -86,7 +97,7 @@ def _emit_notice(message: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def check_backlog_row_open(backlog_id: str, tracker: BacklogTracker) -> bool:
+def check_backlog_row_open(backlog_id: str, tracker: _BacklogReader) -> bool:
     """Return True if the backlog row is OPEN-class, False otherwise."""
     item = tracker.get(backlog_id)
     if item is None:
@@ -118,7 +129,7 @@ def check_backlog_row_open(backlog_id: str, tracker: BacklogTracker) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def check_no_merged_pr(backlog_id: str, tracker: GitHubTracker) -> bool:
+def check_no_merged_pr(backlog_id: str, tracker: _GitHubReader) -> bool:
     """Return True if no merged PR mentions the backlog ID, False otherwise.
 
     Uses ``gh pr list --search "<id> in:title,body"``. An unavailable or

@@ -15,22 +15,25 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 
 def _load_runtime_helpers() -> tuple[Any, ...]:
     """Import helpers after the direct-script bootstrap installs package roots."""
-    from extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata
+    from ai.scripts.extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata
 
     from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
     from aiutils.parquet_utils import write_parquet_atomic
@@ -104,7 +107,7 @@ def enrich_frame(
 
 def _build_enrich_parser() -> argparse.ArgumentParser:
     """Build and return the argument parser for enrich_k150k_parquet_metadata."""
-    ap = make_argument_parser(
+    ap: argparse.ArgumentParser = make_argument_parser(
         prog="enrich_k150k_parquet_metadata.py",
         description=__doc__,
     )
