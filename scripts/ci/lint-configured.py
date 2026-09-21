@@ -81,18 +81,14 @@ def entry_arguments(entry: dict[str, Any], index: int) -> list[str]:
     return cast(list[str], argv)
 
 
-def prepare_database(build: Path, root: Path, report: Path) -> tuple[Path, list[Path]]:
-    """Validate native entries and retain all tracked source command variants."""
-    native = build / "compile_commands.json"
-    raw = native.read_bytes()
-    entries = json.loads(raw)
-    if not isinstance(entries, list):
-        raise ValueError("compile_commands.json must contain an array")
-    tracked = tracked_sources(root)
-    selected = []
+def select_entries(
+    entries: list[Any], tracked: set[Path]
+) -> tuple[list[dict[str, Any]], set[Path], set[str], list[dict[str, Any]]]:
+    """Select tracked native commands while retaining every configured variant."""
+    selected: list[dict[str, Any]] = []
     sources: set[Path] = set()
     excluded: set[str] = set()
-    adaptations = []
+    adaptations: list[dict[str, Any]] = []
     for index, entry in enumerate(entries):
         cwd, source = entry_paths(entry, index)
         argv = entry_arguments(entry, index)
@@ -109,13 +105,23 @@ def prepare_database(build: Path, root: Path, report: Path) -> tuple[Path, list[
                 adaptations.append(
                     {"entry": index, "source": str(source), "from": before, "to": after}
                 )
-        # Do not deduplicate by source: test builds can carry different defines,
-        # include directories and language settings for the same translation unit.
         prepared = dict(entry)
         prepared.pop("command", None)
         prepared.update(directory=str(cwd), file=str(source), arguments=adapted)
         selected.append(prepared)
         sources.add(source)
+    return selected, sources, excluded, adaptations
+
+
+def prepare_database(build: Path, root: Path, report: Path) -> tuple[Path, list[Path]]:
+    """Validate native entries and retain all tracked source command variants."""
+    native = build / "compile_commands.json"
+    raw = native.read_bytes()
+    entries = json.loads(raw)
+    if not isinstance(entries, list):
+        raise ValueError("compile_commands.json must contain an array")
+    tracked = tracked_sources(root)
+    selected, sources, excluded, adaptations = select_entries(entries, tracked)
     if not selected:
         raise ValueError("compile database contains no configured tracked native sources")
     database = report / "compile_commands.json"
@@ -162,12 +168,24 @@ def run_analyzer(argv: list[str], root: Path, log: Path) -> int:
 
 def cppcheck_arguments(binary: str, root: Path, database: Path) -> list[str]:
     """Analyze beyond branch budgets without overriding configured target settings."""
+    posix_model = database.parent / "cppcheck-posix-vmafx.cfg"
+    generator = root / "scripts/ci/write_cppcheck_posix_model.py"
+    result = subprocess.run(  # noqa: S603 -- fixed interpreter and repository script
+        [sys.executable, str(generator), "--cppcheck", binary, "--output", str(posix_model)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stdout + result.stderr).strip()
+        raise ValueError(f"cannot prepare corrected Cppcheck POSIX model: {detail}")
     return [
         binary,
         "--enable=all",
         "--check-level=exhaustive",
         "--inline-suppr",
-        "--library=posix",
+        f"--library={posix_model}",
         f"--library={root / 'scripts/ci/cppcheck-public-entrypoints.cfg'}",
         f"--suppressions-list={root / '.cppcheck-suppressions.txt'}",
         f"--project={database}",

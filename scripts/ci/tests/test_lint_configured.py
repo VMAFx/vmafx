@@ -20,6 +20,7 @@ from typing import Any
 
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
 EXPORT_SCRIPT = SCRIPT.with_name("write-compile-commands.py")
+POSIX_MODEL_SCRIPT = SCRIPT.with_name("write_cppcheck_posix_model.py")
 ROOT = SCRIPT.parents[2]
 PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
 
@@ -147,6 +148,7 @@ class PublicEntrypointModelTests(unittest.TestCase):
         for path in (
             str(PUBLIC_MODEL),
             "scripts/ci/lint-configured.py",
+            "scripts/ci/write_cppcheck_posix_model.py",
             "scripts/ci/tests/test_lint_configured.py",
             "scripts/ci/tests/test_cppcheck_posix_model.py",
             "core/include/libvmaf/libvmaf_hip.h",
@@ -187,13 +189,8 @@ class ConfiguredLintTests(unittest.TestCase):
             "core/src/feature/cuda/active.cu",
             "core/src/vendor/tracked.c",
         ]
-        for name in [*self.native, "core/src/feature/arm64/inactive.c"]:
-            path = self.root / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("int fixture;\n", encoding="utf-8")
-        (self.root / ".cppcheck-suppressions.txt").write_text("", encoding="utf-8")
-        (self.root / PUBLIC_MODEL).parent.mkdir(parents=True)
-        shutil.copy2(ROOT / PUBLIC_MODEL, self.root / PUBLIC_MODEL)
+        self.create_source_fixtures()
+        self.install_model_fixtures()
         self.command(["git", "init", "-q"])
         self.command(["git", "add", "."])
         self.entries = [self.entry(name) for name in self.native]
@@ -207,6 +204,31 @@ class ConfiguredLintTests(unittest.TestCase):
             }
         ]
         self.write_database()
+        self.install_analyzer_stubs()
+
+    def create_source_fixtures(self) -> None:
+        for name in [*self.native, "core/src/feature/arm64/inactive.c"]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("int fixture;\n", encoding="utf-8")
+        (self.root / ".cppcheck-suppressions.txt").write_text("", encoding="utf-8")
+        (self.root / PUBLIC_MODEL).parent.mkdir(parents=True)
+        shutil.copy2(ROOT / PUBLIC_MODEL, self.root / PUBLIC_MODEL)
+
+    def install_model_fixtures(self) -> None:
+        shutil.copy2(POSIX_MODEL_SCRIPT, self.root / "scripts/ci/write_cppcheck_posix_model.py")
+        self.cppcheck_filesdir = self.root / "cppcheck-data"
+        posix_model = self.cppcheck_filesdir / "cfg/posix.cfg"
+        posix_model.parent.mkdir(parents=True)
+        posix_model.write_text(
+            "<?xml version='1.0'?><def format='2'><function name='pthread_cond_init'>"
+            "<arg nr='1'><not-null/></arg><arg nr='2'><not-null/></arg>"
+            "</function></def>\n",
+            encoding="utf-8",
+        )
+        self.env["CPPCHECK_FILESDIR"] = str(self.cppcheck_filesdir)
+
+    def install_analyzer_stubs(self) -> None:
         for name in ["clang-tidy", "cppcheck"]:
             stub = self.bin / name
             stub.write_text(
@@ -214,6 +236,11 @@ class ConfiguredLintTests(unittest.TestCase):
                 "import json, os, sys\n"
                 "from pathlib import Path\n"
                 "name = Path(sys.argv[0]).name\n"
+                "if name == 'cppcheck' and sys.argv[1:] == ['--filesdir']:\n"
+                "    print(os.environ['CPPCHECK_FILESDIR'])\n"
+                "    raise SystemExit(0)\n"
+                "if name == 'cppcheck' and '--check-library' in sys.argv[1:]:\n"
+                "    raise SystemExit(0)\n"
                 "Path(os.environ['CALLS'], name + '-' + str(os.getpid()) + '.json').write_text(json.dumps(sys.argv[1:]))\n"
                 "raise SystemExit(int(os.environ.get(name.upper().replace('-', '_') + '_EXIT', '0')))\n",
                 encoding="utf-8",
@@ -296,7 +323,7 @@ class ConfiguredLintTests(unittest.TestCase):
                 "--enable=all",
                 "--check-level=exhaustive",
                 "--inline-suppr",
-                "--library=posix",
+                f"--library={report / 'cppcheck-posix-vmafx.cfg'}",
                 f"--library={self.root / PUBLIC_MODEL}",
                 f"--suppressions-list={self.root / '.cppcheck-suppressions.txt'}",
                 f"--project={report / 'compile_commands.json'}",
@@ -336,7 +363,7 @@ class ConfiguredLintTests(unittest.TestCase):
         entries = json.loads((self.report() / "compile_commands.json").read_text())
         self.assertEqual(entries[0]["arguments"], self.entries[0]["arguments"])
         args = json.loads(next(self.calls.glob("cppcheck-*.json")).read_text())
-        self.assertIn("--library=posix", args)
+        self.assertIn(f"--library={self.report() / 'cppcheck-posix-vmafx.cfg'}", args)
         self.assertIn(f"--library={self.root / PUBLIC_MODEL}", args)
         self.assertIn("--check-level=exhaustive", args)
         self.assertFalse(any(arg.startswith(("--platform", "--language", "--std")) for arg in args))
@@ -345,7 +372,9 @@ class ConfiguredLintTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         job = workflow.split("\n  cppcheck:\n", 1)[1].split("\n  python-lint:", 1)[0]
         self.assertIn("-p test_cppcheck_posix_model.py", job)
-        self.assertIn("--library=posix", job)
+        self.assertIn("scripts/ci/write_cppcheck_posix_model.py", job)
+        self.assertIn("--library=build/cppcheck-posix-vmafx.cfg", job)
+        self.assertNotIn("--library=posix", job)
         self.assertIn(f"--library={PUBLIC_MODEL.as_posix()}", job)
         self.assertIn("--check-level=exhaustive", job)
         self.assertNotIn("--check-level=normal", job)

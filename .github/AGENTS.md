@@ -137,6 +137,17 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on same commit can
 mask real queued or failed ready-for-review checks.
 
+### Cppcheck POSIX model correction
+
+The required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from the
+installed analyzer before analysis. Preserve the generator call and load the
+generated path, not bare `--library=posix`. Older models without a
+`pthread_cond_init` entry receive the correct contract; newer models lose only
+the invalid argument-2 non-null marker because POSIX permits default attributes
+as `NULL`. The real-tool contract test runs after installation and keeps a null
+condition-object negative control, so no warning category or call site is
+suppressed. See `scripts/ci/AGENTS.md` for model-shape and atomicity invariants.
+
 ### Go validation (ADR-1238)
 
 `go-ci.yml` reports `go vet + go test` as required. It starts on non-draft

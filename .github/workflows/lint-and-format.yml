@@ -617,10 +617,12 @@ jobs:
       - name: Run cppcheck
         if: steps.impact.outputs.c_core == 'true'
         run: |
+          python3 scripts/ci/write_cppcheck_posix_model.py \
+            --cppcheck cppcheck --output build/cppcheck-posix-vmafx.cfg
           cppcheck --enable=warning,performance,portability \
             --check-level=exhaustive \
             --inline-suppr \
-            --library=posix \
+            --library=build/cppcheck-posix-vmafx.cfg \
             --library=scripts/ci/cppcheck-public-entrypoints.cfg \
             --suppressions-list=.cppcheck-suppressions.txt \
             --project=build/compile_commands.json \

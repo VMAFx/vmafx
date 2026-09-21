@@ -60,14 +60,25 @@ bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`
 and assertions that no pip call, real venv or sentinel overwrite occurred;
 host network access must never turn broken fixture into passing test.
 
-Both local and required CI cppcheck invocations load shipped `posix` model.
-Fork uses pthread types on POSIX and through its Windows compatibility shim;
-these = C aggregates, not unknown C++ classes with implicit constructors.
-Keep `--library=posix` separate from target selection: preserve database defines,
-include paths and language settings, with no forced platform or language.
-`tests/test_cppcheck_posix_model.py` runs actual cppcheck on shared headers and
-uninitialized-member/constructor negative controls in Cppcheck job after
-installation. Missing tools/models fail that test; no diagnostic category
+Both local and required CI cppcheck invocations load the installed analyzer's
+full `posix` model through `write_cppcheck_posix_model.py`. Fork pthread types on
+POSIX and in the Windows compatibility shim are C aggregates, not unknown C++
+classes with implicit constructors. For pre-2.22 models, the generator inserts
+the missing `pthread_cond_init` contract. For the newer defective shape it
+removes only argument 2's `not-null` marker: POSIX permits `NULL` to select
+default condition attributes. Preserve argument 1's marker and every other
+installed model node; leave an already-correct entry unchanged. Resolve the
+paired model through `--filesdir` or the pre-2.18 install-relative layout; do
+not copy or hand-maintain a second POSIX model. Unknown/duplicate model shape,
+missing source, or analyzer validation failure must fail closed and leave any
+last-valid generated file intact.
+
+Keep the generated model separate from target selection: preserve database
+defines, include paths and language settings, with no forced platform or
+language. `tests/test_cppcheck_posix_model.py` runs actual cppcheck on shared
+headers, nullable/default attributes, the still-non-null condition object, and
+uninitialized-member/constructor negative controls in the Cppcheck job after
+installation. Missing tools/models fail that test; no diagnostic category is
 disabled. See [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
 
 Both paths select `--check-level=exhaustive` (ADR-1245). Preserve this value-flow

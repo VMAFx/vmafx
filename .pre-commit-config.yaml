@@ -244,7 +244,7 @@ repos:
         name: Configured native lint scope and failure propagation
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
         language: system
-        files: '^(Makefile|scripts/ci/(lint-configured\.py|write-compile-commands\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|write_compile_commands|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(Makefile|scripts/ci/(lint-configured\.py|write-compile-commands\.py|write_cppcheck_posix_model\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|write_compile_commands|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
       - id: test-compile-commands-export

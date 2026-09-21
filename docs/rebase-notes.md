@@ -487,12 +487,17 @@ See Research-2045 and `core/src/feature/x86/AGENTS.md`. No public/FFmpeg impact.
 
 ## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
 
-Keep `--library=posix` in both configured local lint and the required Cppcheck
-workflow. It models pthread's C types without forcing a target platform or
-language. Preserve actual-header positive/negative controls, fail-closed missing
-model behavior, diagnostic categories and compile-database variants. No native
-header constructors or member suppressions are needed for the 24 modeled
-aggregate warnings. Fork-only analyzer wiring; no libvmaf/FFmpeg API impact.
+Keep `write_cppcheck_posix_model.py` in both configured local lint and the
+required Cppcheck workflow, and load its generated path rather than bare
+`--library=posix`. The full installed model supplies pthread's C aggregate
+types without forcing a platform or language. Versions lacking
+`pthread_cond_init` receive its correct contract; the newer defective model
+loses only argument 2's non-null marker because POSIX permits default
+attributes as `NULL`. Preserve actual-header positive/negative controls,
+install-relative fallback, analyzer validation, atomic publication, diagnostic
+categories and compile-database variants. Do not replace the correction with
+call-site suppressions, native header constructors, or a vendored full model.
+Fork-only analyzer wiring; no libvmaf/FFmpeg API impact.
 
 ## fix/tensor-io-test-cleanup-20260908 — preserve tensor test coverage (2026-09-08)
 
@@ -51628,6 +51633,22 @@ The test-only C build of `core/src/log.c` preserves a Clang+C23 branch using
 false uninitialized `va_list`; GCC and MSVC still use `va_start`. Preserve the
 non-reserved `VMAF_SRC_LOG_H_` include guard in `log.h` when porting upstream
 logging changes.
+
+Cppcheck's installed POSIX model is now corrected by
+`scripts/ci/write_cppcheck_posix_model.py` before both local and hosted runs.
+Pre-2.22 models lack `pthread_cond_init` and receive its correct schema; 2.22's
+invalid attributes-pointer non-null marker is removed while the condition
+object remains non-null. Preserve real-tool positive/negative controls and the
+validation-before-atomic-replace sequence. An upstream model fix is accepted
+unchanged; duplicate or malformed shapes still fail closed.
+
+`vmaf_framesync_init` publishes no partial context. Preserve its staged
+acquire-mutex, retrieve-mutex, condition, and queue-node initialization; every
+failure returns the negated pthread error and frees only initialized state.
+`test_framesync_init_failure_impl` is a separately compiled object whose four
+pthread init/destroy symbols are mapped to test wrappers. Do not replace it
+with a production injection hook, textual `.c` include, NOLINT, or
+platform-specific linker interposition.
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 

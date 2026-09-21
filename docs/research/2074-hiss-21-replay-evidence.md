@@ -78,6 +78,28 @@ builtin; GCC and MSVC retain standard `va_start`. The same pass renamed
 `log.h`'s ISO-reserved double-underscore guard. Both C compilers build the
 result warning-free and the log plus ORT-injection tests preserve behavior.
 
+The first complete Cppcheck replay then separated analyzer-model defects from
+source defects. Cppcheck 2.22 incorrectly marks `pthread_cond_init`'s attributes
+pointer non-null, producing seven false `nullPointer` errors for the POSIX
+default-attributes call; versions 2.13 through 2.21 omit the function model and
+therefore miss a genuinely null condition object. The gate now derives a model
+from the installed analyzer, inserts the correct contract when absent or
+removes only the bad argument-2 marker when present, asks that same analyzer to
+validate it, and publishes it atomically. Positive and negative controls cover
+both pointers and the older install layout. No call-site suppression or warning
+category changed.
+
+That corrected replay exposed a real source defect in `vmaf_framesync_init`:
+both mutex initializers and the condition initializer were unchecked. The
+context is now published only after all three primitives and its first queue
+node are ready; each failure returns the pthread error and destroys exactly the
+already-initialized subset. A separately compiled test framesync object maps
+only the four pthread init/destroy entry points to deterministic wrappers, so
+all failure stages are covered without a production hook, linker-specific
+interposition, executable-source include, or analyzer suppression. It also pins
+the header's existing null-context destroy contract, whose implementation had
+previously dereferenced the null pointer.
+
 ## Reproducer
 
 ```bash
@@ -85,6 +107,8 @@ praetorctl hiss coverage --verify
 make hiss-coverage
 python3 -m unittest discover -s scripts/ci/tests -p test_write_compile_commands.py
 python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
+python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
+meson test -C core/build test_framesync test_framesync_init_failure --print-errorlogs
 ```
 
 Deleting the catalog, replacing a positive fixture with clean code, or turning

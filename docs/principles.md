@@ -5,8 +5,8 @@ This document defines the non-negotiable standards for code merged to `master`. 
 requirement here is codified in one of: `.clang-tidy`, `.cppcheck-suppressions.txt`,
 `.semgrep.yml`, `.pre-commit-config.yaml`,
 `.github/workflows/{lint-and-format,security-scans,supply-chain}.yml`.
-If a rule here is not yet codified in tooling, it is tracked as an OPEN item in
-[.workingdir2/OPEN.md](../.workingdir2/OPEN.md).
+If a rule here is not yet codified in tooling, it is tracked as an open row in
+the repository's versioned [`docs/state.md`](state.md) register.
 
 **Scope (ADR-1142).** Every principle and every gate below applies to the
 *whole* tree — upstream-mirror Netflix code, vendored libraries, fork-added
@@ -213,7 +213,8 @@ files and directories, and must not modify or override Netflix golden behavior.
 
 ## 5. Supply chain
 
-See [phases/03-framework/3c-supply-chain.md](../.workingdir2/phases/03-framework/3c-supply-chain.md):
+See the tracked [release](development/release.md) and
+[repository-security](development/repository-security.md) runbooks:
 
 - **SLSA Level 3** provenance attestation on every release
 - **CycloneDX + SPDX SBOMs** on every release

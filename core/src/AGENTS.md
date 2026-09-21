@@ -46,6 +46,13 @@ Pattern to follow: staged init with teardown of already-initialised
 primitives on failure (see `vmaf_thread_pool_create` in
 [`thread_pool.c`](thread_pool.c)).
 
+`vmaf_framesync_init` follows the same staged contract for both mutexes and its
+condition variable. It sets the caller's output to `NULL` before allocation,
+publishes the context only after every primitive and the first queue node are
+ready, returns the negated pthread error, and destroys only primitives whose
+initializers succeeded. Do not move `*fs_ctx = ctx` back above those stages or
+collapse the ordered unwind labels.
+
 ### 2. Every `aligned_malloc` / `malloc` must NULL-check before use (#8)
 
 Missing NULL check after `aligned_malloc` causes null-pointer dereference

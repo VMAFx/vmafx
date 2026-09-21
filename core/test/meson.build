@@ -1265,6 +1265,28 @@ test_framesync = executable('test_framesync',
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
 )
 
+# Compile an isolated framesync object with test-owned pthread entry points so
+# primitive failures are deterministic without a production hook or C include.
+test_framesync_init_failure_impl = static_library('test_framesync_init_failure_impl',
+    '../src/framesync.c',
+    include_directories : [libvmaf_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + [
+        '-Dpthread_mutex_init=vmafx_test_pthread_mutex_init',
+        '-Dpthread_cond_init=vmafx_test_pthread_cond_init',
+        '-Dpthread_mutex_destroy=vmafx_test_pthread_mutex_destroy',
+        '-Dpthread_cond_destroy=vmafx_test_pthread_cond_destroy',
+    ],
+    dependencies : [pthread_dependency, thread_lib],
+)
+
+test_framesync_init_failure = executable('test_framesync_init_failure',
+    ['test.c', 'test_framesync_init_failure.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_whole : test_framesync_init_failure_impl,
+    c_args : vmaf_cflags_common,
+    dependencies : [pthread_dependency, thread_lib],
+)
+
 # Ported from upstream Netflix/vmaf c70debb1 ("libvmaf/test: port new
 # adm/vif/speed tests"). The vif_tools and speed_chroma test files from that
 # commit depend on upstream symbols (NUM_KERNELSCALES, vif_validate_kernelscale,
@@ -4114,6 +4136,7 @@ test('test_ms_ssim_decimate_coverage', test_ms_ssim_decimate_coverage, suite : [
 test('test_pixel_format_edge_coverage',
     test_pixel_format_edge_coverage, suite : ['fast'])
 test('test_framesync', test_framesync, suite : ['fast'])
+test('test_framesync_init_failure', test_framesync_init_failure, suite : ['fast'])
 test('test_propagate_metadata', test_propagate_metadata, suite : ['fast'])
 test('test_adm_csf', test_adm_csf, suite : ['fast'])
 test('test_barten_csf', test_barten_csf, suite : ['fast'])
