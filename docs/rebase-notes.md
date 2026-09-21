@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/ci-fail-closed — test and scan exit status is evidence (fork-local, 2026-09-20)
+
+No upstream C-source impact. Preserve `scripts/ci/test_fail_closed_ci.py` and
+both of its callers when resolving workflow or hook conflicts. Required test,
+coverage, benchmark, and discovery commands return their real exit status. A
+step may continue solely to collect diagnostics when a later `if: always()`
+step checks `steps.<id>.outcome` and fails the job. Advisory Semgrep policy is
+unchanged, but its command must still expose a failed step outcome. Do not
+restore `ignore_outcome`, coverage `-i`, `|| true`, or disabled `pipefail` on
+these paths. `Coverage GPU` is required and listed by the aggregator; do not
+restore its stale `(advisory)` name or job-level `continue-on-error`.
+
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
 Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels

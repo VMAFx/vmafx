@@ -135,8 +135,7 @@ job the PR renamed, every required check and every build lane.
 | `tests-and-quality-gates.yml` | `SYCL float_ssim Parity (Arc DG2-G10)` | `SYCL float_ssim Parity` | 23 | Yes |
 | `tests-and-quality-gates.yml` | `Assertion Density (Power of 10 §5)` | `Assertion Density` | 17 | Yes |
 | `tests-and-quality-gates.yml` | `Coverage Gate (Ramping to 70% / 85% Critical)` | `Coverage Gate` | 13 | No |
-| `tests-and-quality-gates.yml` | `Cross-Backend ULP Diff (CPU Sanity)` | `Cross-Backend ULP Diff` | 22 | No |
-| `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU (advisory)` | 23 | No |
+| `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU` | 12 | Yes |
 | `tests-and-quality-gates.yml` | `MCP Smoke (Embedded C + Python Server)` | `MCP Smoke` | 9 | No |
 | `go-ci.yml` | unchanged | `go vet + go test` | 16 | Yes |
 | `scorecard-policy.yml` | added after #1286 | `Scorecard PR Gate` | 17 | Yes |

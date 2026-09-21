@@ -167,34 +167,6 @@ jobs:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
 
-  # ===== Cross-backend ULP gate =====
-  # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
-  # runners. Disabled until a self-hosted GPU runner is available.
-  cross-backend:
-    name: Cross-Backend ULP Diff
-    if: false
-    runs-on: ubuntu-latest
-    needs: netflix-golden
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
-          python3 -m pip install --user numpy
-      - name: Build CPU
-        working-directory: core
-        run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
-          meson compile -C build
-      - name: Compute CPU scores against snapshot
-        run: |
-          ./testdata/bench_all.sh --backend=cpu --snapshot-only --tolerance-ulp=2
-
   # ADR-0726: vulkan-vif-cross-backend, vulkan-parity-matrix-gate, and
   # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
 
@@ -358,11 +330,8 @@ jobs:
           # versions. Each test object has `name` and `suite[]` fields
           # which we join into the canonical `libvmaf:<name>` form
           # that meson test dispatch expects.
-          set +o pipefail
-          TESTS=$(meson introspect build --tests 2>&1 \
-                  | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE "$EXCLUDE" || true)
-          set -o pipefail
+          TESTS=$(meson introspect build --tests \
+                  | python3 -c 'import json,re,sys; excluded=re.compile(sys.argv[1]); [print("libvmaf:"+t["name"]) for t in json.load(sys.stdin) if excluded.search(t["name"]) is None]' "$EXCLUDE")
           echo "test count: $(echo "$TESTS" | wc -l)"
           echo "first 3: $(echo "$TESTS" | head -3 | tr '\n' ' ')"
           if [ -z "$TESTS" ]; then
@@ -733,7 +702,9 @@ jobs:
         working-directory: core
         run: meson test -C build-coverage --print-errorlogs --num-processes 1
       - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
+        id: python_coverage_tests
         if: steps.impact.outputs.golden_harness == 'true'
+        continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
@@ -771,9 +742,9 @@ jobs:
             --ignore=python/test/resource \
             --ignore=python/test/cy_test.py \
             --ignore=python/test/cambi_test.py \
-            --deselect python/test/command_line_test.py::CommandLineTest || true
+            --deselect python/test/command_line_test.py::CommandLineTest
       - name: Gather coverage report (gcovr)
-        if: steps.impact.outputs.golden_harness == 'true'
+        if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
         working-directory: core
         run: |
           # gcovr deduplicates .gcno files belonging to the same source
@@ -831,6 +802,16 @@ jobs:
             core/build-coverage/coverage.json
             core/build-coverage/coverage.txt
           retention-days: 14
+      - name: Assert Python coverage suite passed
+        if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
+        env:
+          PYTEST_OUTCOME: ${{ steps.python_coverage_tests.outcome }}
+        run: |
+          if [[ "$PYTEST_OUTCOME" != "success" ]]; then
+            echo "::error::Python coverage suite outcome was $PYTEST_OUTCOME" >&2
+            exit 1
+          fi
+          [[ "$PYTEST_OUTCOME" == "success" ]]
 
   # ===== GPU coverage (self-hosted) =====
   # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
@@ -838,16 +819,16 @@ jobs:
   # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
-  # Advisory-only (continue-on-error) for now: merges are gated on the
-  # CPU coverage job above. Will be promoted to required once the runner
-  # has been stable for two weeks.
+  # The two-week stability window closed on 2026-06-02. Keep this required;
+  # the promotion was recorded in the changelog, but a later stale merge
+  # restored the advisory workflow body.
   coverage-gpu:
-    name: Coverage GPU (advisory)
+    # required-aggregator
+    name: Coverage GPU
     runs-on: [self-hosted, linux, gpu-full]
     # ADR-0331: also gate on draft PR status. Self-hosted runners are
     # scarce — drafts must not contend for them.
     if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    continue-on-error: true
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -862,18 +843,20 @@ jobs:
         run: |
           # See CPU coverage job for -fprofile-update=atomic rationale.
           # GPU build also runs SIMD CPU paths, so the same .gcda race applies.
-          source /opt/intel/oneapi/setvars.sh
           # b_lto=false: see libvmaf-build-matrix.yml note. Coverage build
           # uses --buildtype=debug which already disables LTO, but make it
           # explicit to avoid a future buildtype change re-introducing the
           # icx + -flto=auto incompatibility.
-          meson setup build-coverage-gpu --buildtype=debug \
-            -Db_coverage=true -Db_lto=false \
-            -Denable_cuda=true -Denable_sycl=true \
-            -Denable_float=true -Denable_avx512=true \
-            -Dc_args=-fprofile-update=atomic \
-            -Dcpp_args=-fprofile-update=atomic
-          ninja -C build-coverage-gpu
+          bash -e -o pipefail -c '
+            source /opt/intel/oneapi/setvars.sh
+            meson setup build-coverage-gpu --buildtype=debug \
+              -Db_coverage=true -Db_lto=false \
+              -Denable_cuda=true -Denable_sycl=true \
+              -Denable_float=true -Denable_avx512=true \
+              -Dc_args=-fprofile-update=atomic \
+              -Dcpp_args=-fprofile-update=atomic
+            ninja -C build-coverage-gpu
+          '
       - name: Run meson unit suite
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
@@ -965,17 +948,21 @@ jobs:
           CC: icx
           CXX: icpx
         run: |
-          source /opt/intel/oneapi/setvars.sh
-          meson setup build-sycl-parity --buildtype=release \
-            -Denable_cuda=false -Denable_sycl=true \
-            -Denable_float=true
-          ninja -C build-sycl-parity test_sycl_float_ssim_parity
+          bash -e -o pipefail -c '
+            source /opt/intel/oneapi/setvars.sh
+            meson setup build-sycl-parity --buildtype=release \
+              -Denable_cuda=false -Denable_sycl=true \
+              -Denable_float=true
+            ninja -C build-sycl-parity test_sycl_float_ssim_parity
+          '
       - name: Run test_sycl_float_ssim_parity
         working-directory: core
         run: |
-          source /opt/intel/oneapi/setvars.sh
-          meson test -C build-sycl-parity test_sycl_float_ssim_parity \
-            --print-errorlogs
+          bash -e -o pipefail -c '
+            source /opt/intel/oneapi/setvars.sh
+            meson test -C build-sycl-parity test_sycl_float_ssim_parity \
+              --print-errorlogs
+          '
 
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().

@@ -80,6 +80,17 @@ and VIF-fix false-positive in
 (or flipping its `continue-on-error` flag) is policy change, needs
 superseding ADR.
 
+### Fail-closed test and scan outcomes
+
+`scripts/ci/test_fail_closed_ci.py` runs in the blocking
+`deep-dive-checklist` job and through the `fail-closed-ci-contract` local hook.
+Keep both callers. Test, coverage, benchmark, scan, and test-discovery commands
+must expose their real exit status. A step may use `continue-on-error` only to
+collect diagnostics when a later `if: always()` step checks its raw
+`steps.<id>.outcome` and fails the job. An advisory job or step may remain
+non-blocking when an existing ADR says so, but its command must not append
+`|| true` and erase the failure outcome.
+
 ### Opt-out syntax parser
 
 `deep-dive-checklist` job parses PR bodies for ADR-0108's
