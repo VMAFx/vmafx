@@ -51867,3 +51867,5 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+
+- `chore/hiss21-core-src-root`: HISS-21 burn-down removed every `goto` from `core/src/picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp`, `predict.c`, `read_json_model.c` and split `vmaf_picture_pool_fetch`, `vmaf_mcp_start_uds` and the three `interop/pelorus_interop.c` entry points into `static` teardown/compute owners; on conflict reapply the owner boundaries documented in `core/src/AGENTS.md` (free order is the contract, arithmetic was moved statement-for-statement only) rather than restoring the upstream label chains.

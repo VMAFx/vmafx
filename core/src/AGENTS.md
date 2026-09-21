@@ -354,8 +354,44 @@ already stored NULL there). Contract this pins: "caller may inspect
 `*out` only on success; a non-zero return guarantees `*out == NULL`."
 
 Pattern: see `vmaf_gpu_picture_pool_init` in
-[`gpu_picture_pool.c`](gpu_picture_pool.c). Regression test:
-`core/test/test_gpu_picture_pool_uaf.c`.
+[`gpu_picture_pool.cpp`](gpu_picture_pool.cpp). Regression test:
+`core/test/test_gpu_picture_pool_uaf.c`. Since the HISS-21 burn-down that
+file carries no `goto`; the clearing now happens in `gpu_pool_destruct`.
+
+### Teardown owners replace the cleanup ladders (HISS-21)
+
+`picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp`,
+`predict.c`, `read_json_model.c`, `mcp/mcp.c` and `interop/` hold no `goto`.
+Each former label chain is now one named `static` teardown owner, or a guard
+clause that unwinds inline:
+
+- `pool_destruct_partial(p, stage)` — `picture_pool.c` and `picture_pool.cpp`.
+  `stage` counts completed acquisitions; guards run newest-first, so stage N
+  frees what old label N freed, in old order. New resource: append one stage
+  at the end of the enum plus one guard at the **top** of the helper.
+- `gpu_pool_destruct` — `gpu_picture_pool.cpp`.
+- `pool_return_index` / `pool_pop_slot` / `pool_attach_priv` — pool fetch.
+  Only `pool_return_index` touches the free list, so the push-back and the
+  `pthread_cond_signal` of ADR-0960 stay in one place.
+- `mcp_uds_listen` / `mcp_uds_publish` — `mcp/mcp.c`. Both leave
+  `atomic_store(&server->uds_running, 0)` to the caller, so that store stays
+  last on every failure.
+
+Rebase rule: a conflict must not reintroduce an early `return` between an
+acquisition and its owner, and must not reorder the guards. Free order is the
+contract; `core/test/test_picture_pool_error_paths.c`,
+`test_picture_pool_cpp_error_paths.c` and `test_gpu_picture_pool_partial_init.c`
+pin it.
+
+`vmaf_gpu_picture_pool_init` keeps one behaviour verbatim from its old ladder:
+on `malloc` failure it returns 0 with `*pool == nullptr`, because the old
+`goto fail` skipped every `err` assignment. Latent defect, preserved on purpose
+by a structural-only change. Fix it in its own commit with a regression test.
+
+`predict.c` and `interop/pelorus_interop.c` hold scoring arithmetic. Helpers
+there were cut at statement boundaries only. Never split one arithmetic
+expression across a helper, and never reorder an accumulation: FMA contraction
+and re-association both move scores (ADR-1253).
 
 ### PREV_REF batch dispatch: unref before memset, zero f->prev_ref (ADR-1072)
 

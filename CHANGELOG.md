@@ -24171,6 +24171,25 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- **HISS-21 burn-down — `core/src` root, `interop/` and `mcp/` (40 findings)**:
+  removed every `goto` from the library-runtime lifecycle paths and split the
+  oversized lifecycle functions into cohesive `static` helpers, with no change
+  to observable behaviour. `picture.c`, `picture_pool.c`, `picture_pool.cpp`,
+  `gpu_picture_pool.cpp`, `predict.c` and `read_json_model.c` lose their
+  cleanup ladders: each former label became either a guard-clause unwind or a
+  named teardown helper that frees exactly the same resources in exactly the
+  same order on every exit path. `vmaf_picture_pool_fetch`,
+  `vmaf_mcp_start_uds`, `pel_blob_pack`, `pel_blob_find_section`,
+  `pel_qp_report_from_blocks` and `pel_x265_csv_parse` are split below the
+  60-line Rule-4 budget, and `split_fields` in the x265 CSV reader now states
+  its `PEL_CSV_LINE_MAX` scan bound explicitly instead of looping `for (;;)`,
+  treating bound exhaustion (a buffer with no terminator) as a rejected line.
+  No score changes: the arithmetic in `vmaf_bootstrap_predict_score_at_index`
+  and in the QP block-to-cell fold was moved statement-for-statement or left in
+  place, so no floating-point expression was re-associated and no accumulation
+  order changed.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so

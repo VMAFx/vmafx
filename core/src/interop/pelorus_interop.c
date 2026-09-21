@@ -110,6 +110,66 @@ static void write_pack_header(PelorusSideData *hdr, const PelorusSideData *meta,
     hdr->_pad1 = 0;
 }
 
+/* Argument and section-table validation for pel_blob_pack, split out so the
+ * packer body stays inside the Rule-4 line budget.  Exactly the same checks in
+ * exactly the same order, ending in the same validate_pack_sections() call. */
+static pel_result validate_pack_args(const PelorusSideData *meta,
+                                     const PelorusPackSection *sections, int nb, uint8_t **out_blob,
+                                     size_t *out_len, uint32_t *section_mask)
+{
+    if (meta == NULL || out_blob == NULL || out_len == NULL) {
+        return PEL_ERR_INVALID;
+    }
+    if (nb < 0 || (nb > 0 && sections == NULL)) {
+        return PEL_ERR_INVALID;
+    }
+    if (nb > 32) { /* at most one entry per possible section bit */
+        return PEL_ERR_RANGE;
+    }
+    return validate_pack_sections(sections, nb, section_mask);
+}
+
+/* Total bytes of all (aligned) section payloads on top of `cursor`. Accumulated
+ * in 64-bit so the per-section 8-byte alignment and the aggregate sum cannot wrap
+ * the uint32 wire field (PEL_ALIGN8 is 32-bit; a near-UINT32_MAX section would wrap
+ * to a tiny payload -> undersized alloc + heap overflow on the memcpy in
+ * pack_write_sections). Same operands, same order of accumulation as the inline
+ * loop this replaces. */
+static pel_result pack_total_size(const PelorusPackSection *sections, int nb, uint32_t cursor,
+                                  uint32_t *total_size)
+{
+    uint64_t need = cursor;
+    int i;
+
+    for (i = 0; i < nb; i++) {
+        uint64_t aligned = ((uint64_t)sections[i].size + 7u) & ~(uint64_t)7u;
+        need += aligned;
+    }
+    if (need > UINT32_MAX) { /* total_size is a uint32_t wire field */
+        return PEL_ERR_RANGE;
+    }
+    *total_size = (uint32_t)need;
+    return PEL_OK;
+}
+
+/* Fill the section directory and copy each payload to its 8-aligned offset.
+ * `cursor` enters as the first payload offset and is advanced per section
+ * exactly as the inline loop did. */
+static void pack_write_sections(uint8_t *blob, PelorusSectionDir *dir,
+                                const PelorusPackSection *sections, int nb, uint32_t cursor)
+{
+    int i;
+
+    for (i = 0; i < nb; i++) {
+        dir[i].section_id = (uint32_t)sections[i].id;
+        dir[i].offset = cursor; /* relative to magic[0] */
+        dir[i].size = sections[i].size;
+        dir[i].struct_minor = (uint32_t)PELORUS_ABI_MINOR;
+        memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + cursor, sections[i].data, sections[i].size);
+        cursor += PEL_ALIGN8(sections[i].size);
+    }
+}
+
 pel_result pel_blob_pack(const PelorusSideData *meta, const PelorusPackSection *sections, int nb,
                          uint8_t **out_blob, size_t *out_len)
 {
@@ -122,20 +182,9 @@ pel_result pel_blob_pack(const PelorusSideData *meta, const PelorusPackSection *
     uint8_t *blob;
     PelorusSideData *hdr;
     PelorusSectionDir *dir;
-    int i;
-
-    if (meta == NULL || out_blob == NULL || out_len == NULL) {
-        return PEL_ERR_INVALID;
-    }
-    if (nb < 0 || (nb > 0 && sections == NULL)) {
-        return PEL_ERR_INVALID;
-    }
-    if (nb > 32) { /* at most one entry per possible section bit */
-        return PEL_ERR_RANGE;
-    }
 
     {
-        pel_result rc = validate_pack_sections(sections, nb, &section_mask);
+        pel_result rc = validate_pack_args(meta, sections, nb, out_blob, out_len, &section_mask);
         if (rc != PEL_OK) {
             return rc;
         }
@@ -148,20 +197,11 @@ pel_result pel_blob_pack(const PelorusSideData *meta, const PelorusPackSection *
     *out_blob = NULL;
     *out_len = 0;
 
-    /* total bytes of all (aligned) section payloads. Accumulate in 64-bit so the
-     * per-section 8-byte alignment and the aggregate sum cannot wrap the uint32
-     * wire field (PEL_ALIGN8 is 32-bit; a near-UINT32_MAX section would wrap to a
-     * tiny payload -> undersized alloc + heap overflow on the memcpy below). */
     {
-        uint64_t need = cursor;
-        for (i = 0; i < nb; i++) {
-            uint64_t aligned = ((uint64_t)sections[i].size + 7u) & ~(uint64_t)7u;
-            need += aligned;
+        pel_result rc = pack_total_size(sections, nb, cursor, &total_size);
+        if (rc != PEL_OK) {
+            return rc;
         }
-        if (need > UINT32_MAX) { /* total_size is a uint32_t wire field */
-            return PEL_ERR_RANGE;
-        }
-        total_size = (uint32_t)need;
     }
 
     blob_len = (size_t)PELORUS_SIDEDATA_UUID_LEN + (size_t)total_size;
@@ -179,14 +219,7 @@ pel_result pel_blob_pack(const PelorusSideData *meta, const PelorusPackSection *
 
     /* Directory + payloads. */
     dir = (PelorusSectionDir *)(void *)(blob + PELORUS_SIDEDATA_UUID_LEN + header_size);
-    for (i = 0; i < nb; i++) {
-        dir[i].section_id = (uint32_t)sections[i].id;
-        dir[i].offset = cursor; /* relative to magic[0] */
-        dir[i].size = sections[i].size;
-        dir[i].struct_minor = (uint32_t)PELORUS_ABI_MINOR;
-        memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + cursor, sections[i].data, sections[i].size);
-        cursor += PEL_ALIGN8(sections[i].size);
-    }
+    pack_write_sections(blob, dir, sections, nb, cursor);
 
     *out_blob = blob;
     *out_len = blob_len;
@@ -215,24 +248,16 @@ int pel_blob_is_present(const uint8_t *blob, size_t len)
     return hdr->abi_major == (uint16_t)PELORUS_ABI_MAJOR;
 }
 
-pel_result pel_blob_find_section(const uint8_t *blob, size_t len, enum pel_section sec,
-                                 size_t consumer_known_size, const void **out_ptr, size_t *out_size)
+/* Validate the UUID prefix, magic, ABI major and framing of a packed blob and
+ * publish the image view (the bytes after the UUID prefix).  Same checks, same
+ * order, same result codes as the inline sequence this replaces. */
+static pel_result blob_validate_framing(const uint8_t *blob, size_t len, enum pel_section sec,
+                                        const uint8_t **out_image, size_t *out_image_len)
 {
     const PelorusSideData *hdr;
-    const PelorusSectionDir *dir;
     const uint8_t *image;
     size_t image_len;
-    uint16_t i;
 
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_size != NULL) {
-        *out_size = 0;
-    }
-    if (blob == NULL || out_ptr == NULL || out_size == NULL) {
-        return PEL_ERR_INVALID;
-    }
     if (len < (size_t)PELORUS_SIDEDATA_UUID_LEN + sizeof(PelorusSideData)) {
         return PEL_ERR_ABSENT;
     }
@@ -262,6 +287,37 @@ pel_result pel_blob_find_section(const uint8_t *blob, size_t len, enum pel_secti
         return PEL_ERR_ABSENT;
     }
 
+    *out_image = image;
+    *out_image_len = image_len;
+    return PEL_OK;
+}
+
+pel_result pel_blob_find_section(const uint8_t *blob, size_t len, enum pel_section sec,
+                                 size_t consumer_known_size, const void **out_ptr, size_t *out_size)
+{
+    const PelorusSideData *hdr;
+    const PelorusSectionDir *dir;
+    const uint8_t *image;
+    size_t image_len;
+    uint16_t i;
+
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_size != NULL) {
+        *out_size = 0;
+    }
+    if (blob == NULL || out_ptr == NULL || out_size == NULL) {
+        return PEL_ERR_INVALID;
+    }
+    {
+        pel_result rc = blob_validate_framing(blob, len, sec, &image, &image_len);
+        if (rc != PEL_OK) {
+            return rc;
+        }
+    }
+    hdr = (const PelorusSideData *)(const void *)image;
+
     dir = (const PelorusSectionDir *)(const void *)(image + hdr->header_size);
     for (i = 0; i < hdr->section_count; i++) {
         size_t off;
@@ -289,17 +345,12 @@ pel_result pel_blob_find_section(const uint8_t *blob, size_t len, enum pel_secti
     return PEL_ERR_ABSENT;
 }
 
-pel_result pel_qp_report_from_blocks(const PelorusQpReportInput *in, uint16_t grid_cols,
-                                     uint16_t grid_rows, PelorusQpReportSection *out_section,
-                                     int8_t *qp_cell_out, size_t qp_cell_cap)
+/* Copy the per-frame statistics into a zeroed section header.  Field-for-field
+ * identical to the inline block it replaces, including the honored_fraction and
+ * qp_valid defaults. */
+static void qp_report_copy_frame_stats(const PelorusQpReportInput *in,
+                                       PelorusQpReportSection *out_section)
 {
-    uint32_t cells;
-    uint16_t cy;
-
-    if (in == NULL || out_section == NULL || grid_cols == 0 || grid_rows == 0) {
-        return PEL_ERR_INVALID;
-    }
-
     memset(out_section, 0, sizeof(*out_section));
     out_section->avg_qp = in->avg_qp;
     out_section->psnr_y = in->psnr_y;
@@ -313,20 +364,20 @@ pel_result pel_qp_report_from_blocks(const PelorusQpReportInput *in, uint16_t gr
     out_section->report_source = in->report_source;
     out_section->honored_fraction = 0.0f; /* no requested map at this layer */
     out_section->qp_valid = 0;
+}
 
-    /* Frame-stats-only path: caller passed no per-block grid. */
-    if (in->block_qp == NULL || qp_cell_out == NULL || in->blk_cols == 0 || in->blk_rows == 0) {
-        return PEL_OK;
-    }
+/* Fold the block grid onto the cell grid: each cell averages the blocks
+ * whose centre lands in it (nearest-cell box). The block and cell grids are
+ * independent rasters over the same frame, so map by proportional index.
+ *
+ * Moved out of pel_qp_report_from_blocks statement-for-statement: same integer
+ * types, same division order, same accumulation order into `sum`, so every cell
+ * value is bit-identical to the inline version. */
+static void qp_fold_blocks_to_cells(const PelorusQpReportInput *in, uint16_t grid_cols,
+                                    uint16_t grid_rows, int8_t *qp_cell_out)
+{
+    uint16_t cy;
 
-    cells = (uint32_t)grid_cols * (uint32_t)grid_rows;
-    if (qp_cell_cap < (size_t)cells) {
-        return PEL_ERR_RANGE;
-    }
-
-    /* Fold the block grid onto the cell grid: each cell averages the blocks
-     * whose centre lands in it (nearest-cell box). The block and cell grids are
-     * independent rasters over the same frame, so map by proportional index. */
     for (cy = 0; cy < grid_rows; cy++) {
         uint16_t cx;
         for (cx = 0; cx < grid_cols; cx++) {
@@ -354,6 +405,31 @@ pel_result pel_qp_report_from_blocks(const PelorusQpReportInput *in, uint16_t gr
             qp_cell_out[(uint32_t)cy * grid_cols + cx] = (n > 0U) ? (int8_t)(sum / (int64_t)n) : 0;
         }
     }
+}
+
+pel_result pel_qp_report_from_blocks(const PelorusQpReportInput *in, uint16_t grid_cols,
+                                     uint16_t grid_rows, PelorusQpReportSection *out_section,
+                                     int8_t *qp_cell_out, size_t qp_cell_cap)
+{
+    uint32_t cells;
+
+    if (in == NULL || out_section == NULL || grid_cols == 0 || grid_rows == 0) {
+        return PEL_ERR_INVALID;
+    }
+
+    qp_report_copy_frame_stats(in, out_section);
+
+    /* Frame-stats-only path: caller passed no per-block grid. */
+    if (in->block_qp == NULL || qp_cell_out == NULL || in->blk_cols == 0 || in->blk_rows == 0) {
+        return PEL_OK;
+    }
+
+    cells = (uint32_t)grid_cols * (uint32_t)grid_rows;
+    if (qp_cell_cap < (size_t)cells) {
+        return PEL_ERR_RANGE;
+    }
+
+    qp_fold_blocks_to_cells(in, grid_cols, grid_rows, qp_cell_out);
 
     out_section->qp_valid = 1;
     out_section->qp_cell_size = cells; /* int8 per cell */
