@@ -350,12 +350,16 @@ static double calc_psnrhvs(const unsigned char *_src, int _systride, const unsig
                 d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
             od_bin_fdct8x8(dct_s, 8, dct_s, 8);
             od_bin_fdct8x8(dct_d, 8, dct_d, 8);
-            for (i = 0; i < 8; i++)
-                for (j = (i == 0); j < 8; j++)
+            for (i = 0; i < 8; i++) {
+                j = (i == 0);
+                for (; j < 8; j++)
                     s_mask += dct_s[i * 8 + j] * dct_s[i * 8 + j] * mask[i][j];
-            for (i = 0; i < 8; i++)
-                for (j = (i == 0); j < 8; j++)
+            }
+            for (i = 0; i < 8; i++) {
+                j = (i == 0);
+                for (; j < 8; j++)
                     d_mask += dct_d[i * 8 + j] * dct_d[i * 8 + j] * mask[i][j];
+            }
             s_mask = sqrt((double)s_mask * s_gvar) / 32.f;
             d_mask = sqrt((double)d_mask * d_gvar) / 32.f;
             if (d_mask > s_mask)

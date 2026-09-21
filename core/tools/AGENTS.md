@@ -182,10 +182,11 @@ tools/
   re-introduces `pic_w * pic_h` in `int` precision on sync, keep
   fork's cast.
   **bench GPU-state lifetime invariant**:
-  `vmaf_bench::bench_feature` declares `cu_state` / `sycl_state` at
-  function scope, routes every exit through `bench_cleanup`
-  label so `vmaf_*_state_free` always runs. Mirrors T5
-  state-leak audit pattern in same file's `run_feature_collect`.
+  `BenchGpuState` owns CUDA / SYCL handles. `bench_feature()` and
+  `run_feature_collect()` execute guarded stages, then call
+  `bench_cleanup_resources()` exactly once; `run_sycl_gpu_profile()` does the
+  same through `cleanup_sycl_profile()`. Keep context close before GPU-state
+  free and do not add early returns after ownership begins.
 - [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
   `--no-reference` wiring.
   **CLI gate invariant**: reference-required gate at end of
@@ -195,7 +196,7 @@ tools/
   auto-injected (SVM consumes FR feature columns, would always
   fail downstream). If `/sync-upstream` reintroduces unconditional
   `if (!settings->path_ref)` block, restore `no_reference` guard.
-  **Frame-loop invariant**: in NR mode `vmaf.cpp::main` opens
+  **Frame-loop invariant**: in NR mode `vmaf.cpp::open_cli_inputs` opens
   distorted source twice (two `video_input` handles) so
   `vmaf_read_pictures` receives non-null picture pair; this
   satisfies public-API contract without exposing new entry
@@ -221,8 +222,13 @@ tools/
   - In `y4m_input.c`, all plane dimensions, strides, and buffer index
     calculations use `ptrdiff_t` / `size_t` precision to avoid 32-bit
     multiplication overflow.
-  - In `vmaf.cpp`, `ModelArrays` encapsulated with private members and RAII
-    accessors; all internal helpers reside in anonymous namespace.
+  - In `vmaf.cpp`, `CliRunState` owns files, input readers, context, GPU
+    handles and model arrays. `CliRunGuard` invokes one ordered cleanup path on
+    every return after parsing: context, GPU handles, readers, files, CLI
+    settings, then model arrays. Internal declarations live in short, reopened
+    anonymous-namespace blocks so clang-tidy sees internal linkage while every
+    scanner-visible block remains within the 60-line HISS limit. Do not merge
+    those blocks back into one file-wide namespace.
 
 - [ADR-1190](../../docs/adr/1190-cli-option-string-escape-grammar.md) —
   **Escape-aware `--model` / `--feature` option-string splitting.**
@@ -269,10 +275,11 @@ On POSIX both selectors called with `SPINNER_CODEPAGE_UTF8` and
 `vt_enabled = 1`, so emitted bytes are identical to pre-ADR-1166 form.
 Keep it that way — golden-gate CLI invocations parse this stream.
 
-`WindowsConsoleGuard` in `vmaf.cpp` is declared in `main()` **before every
-`goto cleanup` target**, which is what makes restore run on error
-paths. Moving its declaration below jump target is ill-formed C++, would
-silently leave user's console in UTF-8 + VT mode after error exit.
+`WindowsConsoleGuard` in `vmaf.cpp` has static storage and is initialised
+before `cli_parse()`. That is load-bearing: `cli_parse()` calls `exit()` for
+help, version and parse errors, which skips automatic destructors but runs
+static destructors. `CliRunGuard` is created immediately after successful
+parsing and owns all ordinary-return cleanup.
 
 ## `parse_unsigned` rejects negatives on purpose (ADR-1209)
 

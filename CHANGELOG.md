@@ -21703,6 +21703,12 @@ Rollup PR targeting master; rebases trivially after the cpp23 PRs land.
 - Run configured local and CI Cppcheck analysis in exhaustive mode so normal branch-budget cutoffs do not leave clean native sources only partly analyzed. Preserve diagnostic categories and real-defect failures; deeper analysis can take longer (ADR-1245).
 
 
+- Remove twelve high-signal Cppcheck findings and all pre-existing HISS debt
+  from the touched non-CUDA CLI, benchmark, SpEED, tiny-AI, Xiph PSNR-HVS and
+  native-test files. CLI/benchmark cleanup is now structured, and benchmark
+  frame/flush failures propagate instead of being overwritten by success.
+
+
 - **The cppcheck model test passes on the cppcheck CI actually installs.** Its
   public-roots case asserted a non-zero exit code when an unlisted unused
   function is reported. cppcheck 2.21 propagates a whole-program
