@@ -40,8 +40,8 @@ DEFAULT_SCAN_ROOTS: tuple[str, ...] = (
 )
 
 DEFAULT_STATE_FILES: tuple[str, ...] = (
-    ".workingdir2/OPEN.md",
-    ".workingdir2/BACKLOG.md",
+    ".workingdir/OPEN.md",
+    ".workingdir/BACKLOG.md",
     "docs/state.md",
 )
 
@@ -685,7 +685,7 @@ def render_markdown(report: AuditReport, *, max_findings: int = 30) -> str:
         "",
         "- Treat this report as a queue-shaping tool, not a CI gate.",
         "- Review blocked rows before deleting or reprioritising them; the scanner is text-based.",
-        "- Keep `.workingdir2/OPEN.md` and `.workingdir2/BACKLOG.md` as the editorial state of record.",
+        "- Keep `.workingdir/OPEN.md` and `.workingdir/BACKLOG.md` as the editorial state of record.",
         "",
     ]
     return "\n".join(lines)

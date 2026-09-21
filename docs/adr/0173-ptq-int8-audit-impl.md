@@ -158,7 +158,7 @@ moving CI leg lands when there's a model to gate.
   ADR implements.
 - [Research-0006](../research/0006-tinyai-ptq-accuracy-targets.md) —
   accuracy regression targets, ORT API comparison.
-- [BACKLOG T5-3 / T5-3b](../../.workingdir2/BACKLOG.md) — backlog
+- BACKLOG T5-3 / T5-3b — backlog
   rows; T5-3b is the new follow-up for the CI accuracy gate.
 - [ONNX Runtime quantization docs](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html)
 - `req` — user popup choice 2026-04-25: "T5-3 PTQ int8 audit (M,

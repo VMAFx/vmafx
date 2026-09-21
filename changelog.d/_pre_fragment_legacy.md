@@ -287,7 +287,7 @@
   follow-up items captured in
   [`docs/backlog-audit-2026-04-28.md`](docs/backlog-audit-2026-04-28.md)
   §A and the user direction frozen in
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`
   into actual `.workingdir2/BACKLOG.md` rows. New rows: **T3-17**
   (motion3 GPU coverage on Vulkan + CUDA + SYCL), **T3-18** (GPU
   chroma upload + chroma metrics on Vulkan + CUDA), **T5-3e** (PTQ

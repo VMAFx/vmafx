@@ -20,7 +20,7 @@ the deferred free and fails the internal assertion.
 The fork is known-affected. `core/src/cuda/picture_cuda.c:247`
 issues exactly the same `cuMemFreeAsync` call, and the fork's
 2026-04-18 upstream-backlog audit
-([`analysis/upstream-backlog-audit.md`](../../.workingdir2/analysis/upstream-backlog-audit.md))
+(`analysis/upstream-backlog-audit.md`)
 flagged this as Tier-0 correctness item **T0-1**.
 
 Upstream PR [Netflix#1382][pr1382] (open, 1 commit, +1/-1) switches
@@ -65,8 +65,8 @@ are preserved — only the call-site changes.
 
 - Upstream issue: [Netflix#1381 — VMAF CUDA `vmaf_cuda_picture_free` Assertion `0` failed][i1381]
 - Upstream PR: [Netflix#1382 — Change `cuMemFreeAsync` to `cuMemFree`][pr1382]
-- Backlog: [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md) T0-1
-- Audit: [`.workingdir2/analysis/upstream-backlog-audit.md`](../../.workingdir2/analysis/upstream-backlog-audit.md) row #1381 / PR #1382
+- Backlog: `.workingdir2/BACKLOG.md` T0-1
+- Audit: `.workingdir2/analysis/upstream-backlog-audit.md` row #1381 / PR #1382
 - Source: `req` — user direction to ship Batch-A (T0-1 + T4-4/5/6) as one PR (2026-04-20 popup).
 
 [i1381]: https://github.com/Netflix/vmaf/issues/1381

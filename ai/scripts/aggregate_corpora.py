@@ -77,7 +77,7 @@ Citations (access date 2026-05-09):
        4K UHD Videos" (Waterloo IVC 4K-VQA), §III.B: continuous
        0–100 numerical-category scale (DCR-like), recorded verbatim.
        URL: https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/
-.. [6] Netflix Public set in ``.workingdir2/netflix/`` carries
+.. [6] Netflix Public set in ``.corpus/netflix/`` carries
        ``vmaf_v0.6.1`` per-frame scores (an objective proxy, not a
        subjective MOS). Already on the 0–100 VMAF axis per
        ``core/include/libvmaf/model.h``; identity-mapped here.
@@ -132,11 +132,11 @@ Usage
 ::
 
     python ai/scripts/aggregate_corpora.py \\
-        --inputs .workingdir2/konvid-150k/konvid_150k.jsonl \\
-                 .workingdir2/lsvq/lsvq.jsonl \\
-                 .workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl \\
-                 .workingdir2/youtube-ugc/youtube_ugc.jsonl \\
-        --output .workingdir2/aggregated/unified_corpus.jsonl
+        --inputs .corpus/konvid-150k/konvid_150k.jsonl \\
+                 .corpus/lsvq/lsvq.jsonl \\
+                 .corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl \\
+                 .corpus/youtube-ugc/youtube_ugc.jsonl \\
+        --output .corpus/aggregated/unified_corpus.jsonl
 
 Missing-input policy: any input path that does not exist is logged
 as a WARNING and skipped (graceful degradation). The aggregator

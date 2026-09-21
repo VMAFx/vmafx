@@ -219,7 +219,7 @@ test_log = executable('test_log',
 # vmaf_write_output.  Uses the full libvmaf link (no .c include-tricks) so that
 # the public VMAF_EXPORT entry points are exercised through the shared library
 # ABI rather than through static compilation of internals.
-# Addresses .workingdir/audit-test-coverage-2026-05-16.md §2.
+# Keeps the public ABI entry points covered by a linked-library test.
 test_public_api_score = executable('test_public_api_score',
     ['test.c', 'test_public_api_score.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -2958,8 +2958,7 @@ test_version = executable('test_version',
 )
 test('test_version', test_version, suite : ['fast'])
 
-# integer_vif vif_skip_scale0 option (CPU path) — closes the gap noted in
-# .workingdir/audit-test-coverage-2026-05-16.md §1. Source already existed at
+# integer_vif vif_skip_scale0 option (CPU path). Source already existed at
 # core/test/test_vif_skip_scale0.c but was never registered. Public-API only,
 # so it links against libvmaf without pulling in feature internals.
 test_vif_skip_scale0 = executable('test_vif_skip_scale0',

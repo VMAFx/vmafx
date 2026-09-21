@@ -27,7 +27,7 @@ different subsystems (CUDA, feature collector, build, public API)?
 - Netflix PR [#1424](https://github.com/Netflix/vmaf/pull/1424) —
   expose builtin model versions via an iterator
 - Fork backlog audit:
-  [`.workingdir2/analysis/upstream-backlog-audit.md`](../../.workingdir2/analysis/upstream-backlog-audit.md)
+  `.workingdir2/analysis/upstream-backlog-audit.md`
 - `gh pr view <n> --json mergeCommit,state` — confirmed `state:OPEN`
   and `mergeCommit:null` for all four on 2026-04-20.
 

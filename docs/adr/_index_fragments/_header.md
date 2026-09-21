@@ -81,11 +81,12 @@ Another engineer could reasonably have chosen differently. Examples:
 **Not** ADR-worthy: bug fixes, implementation details, one-off refactors that
 don't change any interface or policy.
 
-## Relation to `.workingdir2/`
+## Local state and corpus data
 
-Planning dossiers live under `.workingdir2/` (gitignored). Mirrored copies of
-ADRs may exist there for local session continuity, but the tracked
-`docs/adr/` tree is authoritative.
+Private session state and bounded cache live under `.workingdir/`; local
+datasets and reusable derived data live under `.corpus/`. Both are gitignored
+and may be shown only as operator paths. The tracked `docs/adr/` tree is the
+public authority; documentation never links into either local root.
 
 ## Index
 

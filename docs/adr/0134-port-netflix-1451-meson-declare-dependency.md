@@ -78,7 +78,7 @@ upstream's patch does not. Behaviourally identical.
 ## References
 
 - Upstream PR: [Netflix#1451 — build: declare dependency to use it as subproject][pr1451]
-- Backlog: [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md) T4-5
+- Backlog: `.workingdir2/BACKLOG.md` T4-5
 - Meson docs: [`declare_dependency`](https://mesonbuild.com/Reference-manual_functions.html#declare_dependency),
   [`meson.override_dependency`](https://mesonbuild.com/Reference-manual_builtin_meson.html#mesonoverride_dependency)
 - Source: `req` — user direction to ship Batch-A (T0-1 + T4-4/5/6) as

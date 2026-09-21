@@ -39,10 +39,10 @@ Join DOVER and the fork NR scorer onto a CHUG feature shard:
 ```bash
 .venv/bin/python ai/scripts/materialize_second_opinion_features.py \
   --features .corpus/chug/training/fr_canonical_shards/shard_000.features.jsonl \
-  --scores dover-mobile=.workingdir2/second-opinion/dover-chug.jsonl \
-  --scores fork-nr-metric=.workingdir2/second-opinion/fork-nr-chug.jsonl \
-  --out .workingdir2/second-opinion/shard_000.with-second-opinion.jsonl \
-  --audit-json .workingdir2/second-opinion/shard_000.audit.json
+  --scores dover-mobile=.corpus/derived/second-opinion/dover-chug.jsonl \
+  --scores fork-nr-metric=.corpus/derived/second-opinion/fork-nr-chug.jsonl \
+  --out .corpus/derived/second-opinion/shard_000.with-second-opinion.jsonl \
+  --audit-json .workingdir/evidence/second-opinion/shard_000.audit.json
 ```
 
 Use `--missing-policy fail` for promotion-grade tables where every row must
@@ -72,11 +72,11 @@ manifest are relative to the manifest file unless `--base-dir` is supplied.
       "id": "chug_hdr",
       "features": ".corpus/chug/training/fr_canonical_shards/shard_000.features.jsonl",
       "scores": [
-        "dover-mobile=.workingdir2/second-opinion/dover-chug.jsonl",
-        "fork-nr-metric=.workingdir2/second-opinion/fork-nr-chug.jsonl"
+        "dover-mobile=.corpus/derived/second-opinion/dover-chug.jsonl",
+        "fork-nr-metric=.corpus/derived/second-opinion/fork-nr-chug.jsonl"
       ],
-      "out": ".workingdir2/second-opinion/shard_000.with-second-opinion.jsonl",
-      "audit_json": ".workingdir2/second-opinion/shard_000.audit.json"
+      "out": ".corpus/derived/second-opinion/shard_000.with-second-opinion.jsonl",
+      "audit_json": ".workingdir/evidence/second-opinion/shard_000.audit.json"
     }
   ]
 }
@@ -84,9 +84,9 @@ manifest are relative to the manifest file unless `--base-dir` is supplied.
 
 ```bash
 .venv/bin/python ai/scripts/batch_materialize_second_opinion_features.py \
-  --manifest .workingdir2/second-opinion/batch.json \
-  --report-json .workingdir2/second-opinion/batch.report.json \
-  --report-md .workingdir2/second-opinion/batch.report.md
+  --manifest .workingdir/evidence/second-opinion/batch.json \
+  --report-json .workingdir/evidence/second-opinion/batch.report.json \
+  --report-md .workingdir/evidence/second-opinion/batch.report.md
 ```
 
 Each table may override any single-run join option from `defaults`, including
