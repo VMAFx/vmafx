@@ -7,13 +7,16 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/VMAFx/vmafx/pkg/ffencode"
 	"github.com/VMAFx/vmafx/pkg/prefilter"
 )
 
@@ -241,5 +244,60 @@ func TestPrefilter_flagSurface(t *testing.T) {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("prefilter is missing the --%s flag", name)
 		}
+	}
+}
+
+func TestPrefilterProbeDecodePropagatesCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &prefilterProbeRunner{flags: &prefilterFlags{
+		ffmpegBin: "/bin/true", pixFmt: "yuv420p",
+	}}
+	_, decoded, err := runner.decode(ctx, "probe.mp4", 23)
+	if decoded {
+		t.Fatal("decode succeeded after cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("decode error = %v, want context.Canceled", err)
+	}
+}
+
+func TestPrefilterProbeRemovesPartialEncodeOnError(t *testing.T) {
+	t.Parallel()
+
+	workdir := t.TempDir()
+	sentinel := errors.New("encode failed")
+	runner := &prefilterProbeRunner{
+		adapter: prefilter.PelorusDeband(), workdir: workdir,
+		encodeFn: func(_ context.Context, slot string, _ string, _ int) (ffencode.Result, error) {
+			if err := os.WriteFile(slot, []byte("partial"), 0o600); err != nil {
+				return ffencode.Result{}, fmt.Errorf("write partial encode: %w", err)
+			}
+			return ffencode.Result{}, sentinel
+		},
+	}
+	_, err := runner.run(context.Background(), map[string]float64{}, 23)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("run error = %v, want %v", err, sentinel)
+	}
+	entries, readErr := os.ReadDir(workdir)
+	if readErr != nil {
+		t.Fatalf("read probe workdir: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("partial encode was not removed: %v", entries)
+	}
+}
+
+func TestPrefilterProbeSlotIsUniqueForRepeatedCandidate(t *testing.T) {
+	t.Parallel()
+
+	runner := &prefilterProbeRunner{workdir: t.TempDir()}
+	first := runner.slotPath("pelorus_deband=range=4", 23)
+	second := runner.slotPath("pelorus_deband=range=4", 23)
+	if first == second {
+		t.Fatalf("repeated candidate reused probe path %q", first)
 	}
 }
