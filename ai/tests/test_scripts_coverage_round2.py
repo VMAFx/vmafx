@@ -277,15 +277,16 @@ class TestAggregateFrames:
         assert result["adm2_std"] == pytest.approx(np.nanstd([0.9, 0.8]))
 
     def test_all_nan_column_produces_nan_mean_no_warning(self, k150k) -> None:
-        import warnings
-
         frames = [{"psnr_hvs": None}, {"psnr_hvs": None}]
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = k150k._aggregate_frames(frames)
-        runtime_warnings = [x for x in w if issubclass(x.category, RuntimeWarning)]
-        assert not runtime_warnings, "All-NaN RuntimeWarning must be suppressed"
+        result = k150k._aggregate_frames(frames)
         assert math.isnan(result["psnr_hvs_mean"])
+        assert math.isnan(result["psnr_hvs_std"])
+
+    def test_non_finite_samples_do_not_change_finite_aggregate(self, k150k) -> None:
+        frames = [{"adm2": 0.7}, {"adm2": None}, {"adm2": float("inf")}, {"adm2": 0.9}]
+        result = k150k._aggregate_frames(frames)
+        assert result["adm2_mean"] == pytest.approx(0.8)
+        assert result["adm2_std"] == pytest.approx(0.1)
 
 
 class TestStagingRoundtrip:

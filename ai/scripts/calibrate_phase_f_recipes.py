@@ -80,6 +80,7 @@ constants are kept as a graceful fallback.
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import json
 import logging
@@ -98,8 +99,18 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
+def _load_runtime_helpers() -> tuple[Any, Any, Any, Any]:
+    """Import helpers after the direct-script bootstrap installs package roots."""
+    from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    return collect_cli_argv, make_argument_parser, build_run_provenance, write_manifest_json
+
+
+collect_cli_argv, make_argument_parser, build_run_provenance, write_manifest_json = (
+    _load_runtime_helpers()
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -499,8 +510,8 @@ def calibrate(
     }
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_calibrate_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser for calibrate_phase_f_recipes."""
     parser = make_argument_parser(
         prog="calibrate_phase_f_recipes.py",
         description=(
@@ -524,16 +535,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--max-rows",
         type=int,
         default=0,
-        help=(
-            "Cap the number of rows consumed (0 = all). Useful for " "smoke tests on tiny corpora."
-        ),
+        help="Cap the number of rows consumed (0 = all). Useful for smoke tests on tiny corpora.",
     )
     parser.add_argument(
         "--log-level",
         default="INFO",
         help="Logging level (DEBUG / INFO / WARNING / ERROR).",
     )
-    args = parser.parse_args(raw_argv)
+    return parser
+
+
+def _load_corpus_rows(corpus: Path, max_rows: int) -> list[CorpusRow] | None:
+    """Load corpus rows from *corpus*; return None on empty corpus."""
+    rows: list[CorpusRow] = []
+    for row in _iter_corpus_rows(corpus):
+        rows.append(row)
+        if max_rows and len(rows) >= max_rows:
+            break
+    if not rows:
+        return None
+    return rows
+
+
+def _log_recipe_summary(payload: dict[str, Any]) -> None:
+    """Log one INFO line per recipe class, omitting provenance keys."""
+    for cls, recipe in payload["recipes"].items():
+        _LOG.info(
+            "  %s: %s",
+            cls,
+            {k: v for k, v in recipe.items() if not k.startswith("_")},
+        )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_calibrate_parser().parse_args(raw_argv)
 
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -544,13 +580,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _LOG.error("corpus not found: %s", args.corpus)
         return 2
 
-    rows: list[CorpusRow] = []
-    for row in _iter_corpus_rows(args.corpus):
-        rows.append(row)
-        if args.max_rows and len(rows) >= args.max_rows:
-            break
-
-    if not rows:
+    rows = _load_corpus_rows(args.corpus, args.max_rows)
+    if rows is None:
         _LOG.error("no usable rows in corpus")
         return 3
 
@@ -567,12 +598,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_manifest_json(args.out, payload)
 
     _LOG.info("wrote %s", args.out)
-    for cls, recipe in payload["recipes"].items():
-        _LOG.info(
-            "  %s: %s",
-            cls,
-            {k: v for k, v in recipe.items() if not k.startswith("_")},
-        )
+    _log_recipe_summary(payload)
     return 0
 
 
