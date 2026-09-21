@@ -652,6 +652,12 @@ static int fail_context_create(VmafFeatureExtractorContext **fex_ctx,
                                VmafFeatureExtractorContext *context,
                                VmafFeatureExtractor *extractor, int error)
 {
+    /* The unknown-option path below reaches here with priv allocated and no
+     * other owner, so the free belongs to this helper rather than to one of
+     * the call sites. The copy's priv is nulled right after the memcpy, so the
+     * paths that run before the allocation still free nothing. */
+    if (extractor)
+        free(extractor->priv);
     free(extractor);
     free(context);
     *fex_ctx = nullptr;
@@ -673,6 +679,7 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     if (!x)
         return fail_context_create(fex_ctx, f, nullptr, -ENOMEM);
     memcpy(x, fex, sizeof(*x));
+    x->priv = nullptr;
 
     f->fex = x;
     if (f->fex->priv_size) {
@@ -689,7 +696,6 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
         if (err) {
             /* parse_options failure: tear down all allocations and NULL the
              * out-parameter so callers cannot dereference a freed pointer. */
-            free(f->fex->priv);
             return fail_context_create(fex_ctx, f, x, err);
         }
     } else if (f->opts_dict && f->opts_dict->cnt > 0) {
@@ -1029,6 +1035,8 @@ static int grow_fex_list(VmafFeatureExtractorContextPool *pool)
 static int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex,
                               unsigned n_threads, VmafDictionary *opts_dict)
 {
+    if (!slot || !fex)
+        return -EINVAL;
     new (slot) fex_list_entry(); /* placement-new value-init (ADR-0772) */
 
     slot->fex = fex;
@@ -1179,8 +1187,11 @@ static int unlock_fex_pool(VmafFeatureExtractorContextPool *pool, int primary_er
 {
     const int unlock_err = pthread_mutex_unlock(&(pool->lock));
     if (unlock_err != 0) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool mutex unlock failed: %s\n",
-                 strerror(unlock_err));
+        /* strerror() is concurrency-mt-unsafe and this runs on the pool's
+         * threaded path; the error number is enough to diagnose it. Mirrors
+         * core/tools/vmaf_per_shot.c. */
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool mutex unlock failed: error %d\n",
+                 unlock_err);
         if (primary_err == 0)
             return -unlock_err;
     }
@@ -1285,8 +1296,9 @@ static void record_pool_error(int *first_err, int err, const char *operation)
     if (err == 0)
         return;
     const int error_number = err < 0 ? -err : err;
-    vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool %s failed: %s\n", operation,
-             strerror(error_number));
+    /* strerror() is concurrency-mt-unsafe; see unlock_fex_pool(). */
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor pool %s failed: error %d\n", operation,
+             error_number);
     if (*first_err == 0)
         *first_err = err < 0 ? err : -err;
 }
