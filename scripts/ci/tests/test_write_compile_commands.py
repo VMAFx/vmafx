@@ -14,7 +14,6 @@ import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/write-compile-commands.py"
@@ -83,7 +82,7 @@ class CompileCommandsExportTest(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         main = EXPORT_MAIN
-        if not isinstance(main, Callable):
+        if not callable(main):
             self.fail("exporter main is not callable")
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             returncode = main(["--build-dir", str(self.build), "--ninja", str(self.ninja)])
