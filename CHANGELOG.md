@@ -27720,6 +27720,10 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   before the fix and pass after.
 
 
+- Refactor the SYCL integer VIF kernels and lifecycle into warning-clean,
+  bounded phases while preserving full-precision default and fused scores.
+
+
 **fix(sycl): clip integer_motion2 score to motion_max_val (1080p checkerboard drift)**
 
 In `core/src/feature/sycl/integer_motion_sycl.cpp`, `motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val)` was computed at line 838, but the feature collector appended raw unclipped `motion2` at line 841, and debug mode appended raw `motion_score` instead of `score_clipped` at line 848. In `flush_fex_sycl`, raw unclipped `s->prev_motion_score` was appended at line 896 instead of `last_motion2`.

@@ -106,6 +106,20 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   same ceiling formula. For even widths/heights result identical to
   truncating division.
 
+- **`integer_vif_sycl.cpp` warning-clean phase boundaries are load-bearing.**
+  Keep `dev_vert_accumulate`, `dev_hori_item_step`, `vif_init_resources`,
+  `vif_configure_device`, and `vif_register_graph` as bounded phases. The
+  strict C++ profile requires private declarations in anonymous namespaces,
+  while HISS-04 applies its 60-line limit to each namespace block as well as
+  each function; do not collapse these blocks or replace them with `NOLINT`.
+  The tap loops deliberately have no forced-unroll pragma: oneAPI 2026 emits a
+  failed-unroll diagnostic for supported target instances and remains free to
+  unroll them when profitable. Preserve the `float` device gain in
+  `VifHoriLaunchParams`, the arithmetic order inside each phase, and the
+  cleanup points in the three init helpers. Base-vs-refactor proof covers
+  default and fused modes on 8-bit and 10-bit inputs at zero full-precision
+  delta; rerun both modes after an upstream conflict.
+
 - **`integer_psnr_sycl.cpp` honours `enable_chroma` option parity**
   (ADR-0453). `enable_chroma` option (default `true`) clamps `n_planes`
   to 1 in `init_fex_sycl` when set to `false`, matching CPU
