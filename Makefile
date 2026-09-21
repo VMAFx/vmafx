@@ -166,13 +166,31 @@ lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
 	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
 	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
-# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip
+# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip|arm64
 # (default cpu). The build dir must be configured for the lane
 # (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)); the GPU lanes pass the
 # extra clang-tidy arguments the 2026-09-02 measurement used and the SYCL
 # lane goes through scripts/ci/clang-tidy-sycl.sh. `tidy-ratchet-write`
 # regenerates scripts/ci/tidy-baseline-$(LANE).json after a cleanup —
 # commit it in the same PR; never hand-edit a baseline.
+#
+# The arm64 lane is the only cross lane: nothing on an x86 host compiles
+# core/src/feature/arm64/ or the ARCH_AARCH64 bodies in core/test/, so the
+# cpu lane's compile database has no entry for them and they were unmeasured
+# (ADR-1283). Configure its build dir with the in-tree cross file —
+#
+#   meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+#       -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+#   make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+#
+# — which gives aarch64-linux-gnu-gcc compile commands. clang-tidy needs the
+# same target and sysroot to parse them: without --target it reads the NEON
+# and SVE2 intrinsics against the host's x86 headers, and without --sysroot
+# it resolves libc against the host's. Both are the cross package's defaults
+# (Arch `aarch64-linux-gnu-glibc`, Debian/Ubuntu `libc6-dev-arm64-cross`);
+# override AARCH64_SYSROOT for a sysroot installed anywhere else.
+AARCH64_TARGET ?= aarch64-linux-gnu
+AARCH64_SYSROOT ?= /usr/aarch64-linux-gnu
 LANE ?= cpu
 TIDY_RATCHET_BUILD_DIR ?= $(BUILD_DIR)
 TIDY_RATCHET_EXTRA_cpu :=
@@ -180,6 +198,8 @@ TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
 TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
 TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
+TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
+	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
 tidy-ratchet: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \

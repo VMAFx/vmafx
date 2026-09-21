@@ -254,6 +254,13 @@ repos:
         files: '^(Makefile|scripts/ci/(write-compile-commands\.py|tests/test_write_compile_commands\.py)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: test-tidy-ratchet-lanes
+        name: Ratchet lane flags reach clang-tidy (ADR-1142, ADR-1283)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet_extra_args.py
+        language: system
+        files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet_extra_args\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-sycl-aot-command
         name: SYCL AOT and language-standard command contract
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_sycl_aot_command.py

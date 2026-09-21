@@ -1,6 +1,44 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug-arm64-tidy — the ratchet grows an arm64 cross lane (2026-09-21)
+
+No upstream C-source impact: the change is `Makefile` (fork-only section below
+the "Fork-specific targets" marker), `.github/workflows/lint-and-format.yml`,
+`scripts/ci/AGENTS.md`, `docs/`, and the new
+`scripts/ci/tidy-baseline-arm64.json`. Netflix ships none of these.
+
+Rebase impact for anyone touching `core/src/feature/arm64/`. Those 20
+translation units, and the `ARCH_AARCH64` bodies of the `core/test/` SIMD
+parity tests, are now measured by the ADR-1283 `arm64` ratchet lane and only by
+it — no x86 build in the project emits a compile command for them. Re-measure
+after any change there:
+
+```bash
+meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+    -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+```
+
+Two invariants the lane depends on. `TIDY_RATCHET_EXTRA_arm64` must keep both
+`--extra-arg=--target=…` and `--extra-arg=--sysroot=…`: the compile database is
+produced by `aarch64-linux-gnu-gcc`, and clang-tidy will otherwise parse
+`<arm_neon.h>` / `<arm_sve.h>` against the host's x86 headers and fail every
+NEON translation unit as a compile error (ratchet exit 4, which is a *failed*
+measurement, never a clean one). And the generated model-JSON → C sources under
+`build-arm64/src/` must exist on disk before measuring, exactly as the `cpu`
+lane builds before it measures.
+
+`exclude_untidyable()` in `lint-and-format.yml` keeps its
+`^core/src/feature/arm64/` entry on purpose — that job's CPU-only `build/`
+really has no command for those files. Do not "fix" it by deleting the line on
+a conflict; the lane, not the exclusion list, is what bounds this tree.
+
+The baseline in this change was recorded on a workstation cross toolchain, so
+it is comparable only against the same one. If the lane is ever promoted to a
+CI context, re-record it from that runner's own measurement (ADR-1230), the way
+`tidy-baseline-cpu.json` is taken from the `tidy-ratchet-cpu` artifact.
+
 ## fix/configured-lint-warning-exit — diagnostics cannot pass as green (2026-09-21)
 
 The fork-local configured-lint driver must pass `--warnings-as-errors=*` to

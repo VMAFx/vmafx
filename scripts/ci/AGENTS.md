@@ -443,6 +443,17 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   `paths:` filter or custom early-skip probe to job.
 - `clang-diagnostic-error` in any TU = measurement failure (exit 4), never
   zero. Build (generated headers) before measuring.
+- **arm64 lane = cross lane (ADR-1283).** Build dir configured with
+  `build-aux/aarch64-linux-gnu.ini`; nothing else in the tree compiles
+  `core/src/feature/arm64/` or the `ARCH_AARCH64` bodies of `core/test/`, so
+  no other lane's compile database holds them. `TIDY_RATCHET_EXTRA_arm64`
+  must keep `--extra-arg=--target=$(AARCH64_TARGET)` and
+  `--extra-arg=--sysroot=$(AARCH64_SYSROOT)`: drop the target and clang-tidy
+  parses `<arm_neon.h>` / `<arm_sve.h>` as x86 and every NEON TU is exit 4;
+  drop the sysroot and libc resolves against the host. `exclude_untidyable()`
+  in `lint-and-format.yml` still excludes `^core/src/feature/arm64/` — that
+  job's CPU-only `build/` genuinely has no command for those files; this lane
+  is where they are measured.
 - **Scoped writer (ADR-1243):** `--only` plus `--write` requires exact nonempty
   measured-TU coverage, original tool version/lane, no observed debt
   increase. Preserve every unselected TU/header entry and all full-report
