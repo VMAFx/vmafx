@@ -96,12 +96,8 @@ func main() {
 	// main but untagged). Bridge the prefixed vars across so operators configure
 	// the level through the same prefix as everything else; remove once the
 	// carrying golusoris tag lands. Mirrors cmd/vmafx-server/main.go.
-	if v := os.Getenv("VMAFX_LOG_LEVEL"); v != "" && os.Getenv("LOG_LEVEL") == "" {
-		_ = os.Setenv("LOG_LEVEL", v)
-	}
-	if v := os.Getenv("VMAFX_LOG_FORMAT"); v != "" && os.Getenv("LOG_FORMAT") == "" {
-		_ = os.Setenv("LOG_FORMAT", v)
-	}
+	bridgeLogEnv("LOG_LEVEL")
+	bridgeLogEnv("LOG_FORMAT")
 
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
@@ -170,97 +166,157 @@ func runMCPTransport(
 
 	switch transport {
 	case "stdio":
-		runCtx, cancel := context.WithCancel(context.Background())
-		lc.Append(fx.Hook{
-			OnStart: func(_ context.Context) error {
-				log.Info("vmafx-mcp starting on stdio")
-				go func() {
-					// srv.Run blocks until stdin closes or runCtx is cancelled.
-					err := srv.Run(runCtx, &mcp.StdioTransport{})
-					if err != nil && runCtx.Err() == nil {
-						// Genuine transport failure (not our own cancel): log to
-						// stderr and ask fx to exit non-zero.
-						log.Error("vmafx-mcp stdio transport error", "error", err)
-						_ = sd.Shutdown(fx.ExitCode(1))
-						return
-					}
-					// Clean end (client closed stdin) or our cancel: shut the app
-					// down so the process exits instead of hanging in Run().
-					_ = sd.Shutdown()
-				}()
-				return nil
-			},
-			OnStop: func(_ context.Context) error {
-				cancel()
-				return nil
-			},
-		})
+		appendStdioHooks(lc, srv, log, sd)
 		return nil
-
 	case "http":
-		addr := cfg.Get("mcp.http.addr")
-		if addr == "" {
-			addr = defaultMCPHTTPAddr
-		}
-		// ADR-0967: default to a loopback-only bind when mcp.http.addr carries
-		// no explicit host (the ":3000" form). Operators opt into all-interfaces
-		// exposure with VMAFX_MCP_HTTP_BIND=0.0.0.0 (or by pinning a host in the
-		// listen address). This mirrors the Python transport default so the Go
-		// server is not silently exposed on every interface.
-		addr = applyBindHost(addr)
-		// ADR-0967 startup posture warning, mirroring the Python transport: a
-		// running HTTP server with neither a token nor an explicit no-auth opt-in
-		// rejects every request with 401, so make that loud at startup.
-		if !noAuthMode() && resolveAuthToken() == "" {
-			log.Warn("VMAFX_MCP_HTTP_TOKEN is unset — all HTTP requests will be " +
-				"rejected with 401. Set the token or set VMAFX_MCP_HTTP_NO_AUTH=1 " +
-				"to accept unauthenticated traffic.")
-		} else if noAuthMode() {
-			log.Warn("VMAFX_MCP_HTTP_NO_AUTH=1 — HTTP authentication disabled.")
-		}
-		// ADR-0967: wrap the MCP streamable-HTTP handler in the security
-		// middleware (bearer auth + request-body size limit). Identical gate to
-		// the Python _make_security_middleware so both servers behave the same.
-		// The otelhttp server span (bootstrap.TraceHTTPHandler, ADR-0782 /
-		// ADR-1119) is outermost so rejected requests are traced with their
-		// 401 / 413 status too; this hand-rolled *http.Server is not the
-		// golusoris.HTTP module, so the fx-side bootstrap.HTTPTracing decorator
-		// does not reach it and the wrapper is applied here directly.
-		handler := bootstrap.TraceHTTPHandler(securityMiddleware(mcp.NewStreamableHTTPHandler(
-			func(*http.Request) *mcp.Server { return srv }, nil)))
-		httpSrv := &http.Server{
-			Addr:              addr,
-			Handler:           handler,
-			ReadHeaderTimeout: 10 * time.Second,
-			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      120 * time.Second,
-			IdleTimeout:       60 * time.Second,
-		}
-		lc.Append(fx.Hook{
-			OnStart: func(_ context.Context) error {
-				ln, err := net.Listen("tcp", addr)
-				if err != nil {
-					return fmt.Errorf("listen on %s: %w", addr, err)
-				}
-				log.Info("vmafx-mcp starting on HTTP", "addr", addr)
-				go func() {
-					if serveErr := httpSrv.Serve(ln); serveErr != nil &&
-						serveErr != http.ErrServerClosed {
-						log.Error("vmafx-mcp http transport error", "error", serveErr)
-						_ = sd.Shutdown(fx.ExitCode(1))
-					}
-				}()
-				return nil
-			},
-			OnStop: func(ctx context.Context) error {
-				shutdownCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
-				defer cancel()
-				return httpSrv.Shutdown(shutdownCtx)
-			},
-		})
+		appendHTTPHooks(lc, srv, cfg, log, sd)
 		return nil
-
 	default:
 		return fmt.Errorf("unknown transport %q; set VMAFX_MCP_TRANSPORT to stdio or http", transport)
+	}
+}
+
+// bridgeLogEnv copies the VMAFX_-prefixed value of name onto the bare name, leaving an
+// already-set bare value alone.
+//
+// It runs before fx.New, so there is no logger yet; a failure goes to stderr, which is
+// where the fx logger writes too and is the only stream free to use (R3: in stdio mode
+// the MCP framing owns stdout).
+func bridgeLogEnv(name string) {
+	v := os.Getenv("VMAFX_" + name)
+	if v == "" || os.Getenv(name) != "" {
+		return
+	}
+	if err := os.Setenv(name, v); err != nil {
+		fmt.Fprintf(os.Stderr, "vmafx-mcp: bridging VMAFX_%s onto %s failed: %v\n", name, name, err)
+	}
+}
+
+// appendStdioHooks starts the stdio transport on OnStart and cancels it on OnStop.
+//
+// srv.Run blocks until the client closes stdin or runCtx is cancelled, so it runs on a
+// background goroutine: OnStart has to return for fx to finish startup. When Run ends on
+// its own the whole app is asked to stop, so the process exits instead of sitting in a
+// transport nobody is talking to. R3: the StdioTransport owns stdout; nothing else in the
+// graph writes there.
+func appendStdioHooks(lc fx.Lifecycle, srv *mcp.Server, log *slog.Logger, sd fx.Shutdowner) {
+	runCtx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			log.Info("vmafx-mcp starting on stdio")
+			go func() {
+				// srv.Run blocks until stdin closes or runCtx is cancelled.
+				err := srv.Run(runCtx, &mcp.StdioTransport{})
+				if err != nil && runCtx.Err() == nil {
+					// Genuine transport failure (not our own cancel): log to
+					// stderr and ask fx to exit non-zero.
+					log.Error("vmafx-mcp stdio transport error", "error", err)
+					requestShutdown(log, sd, fx.ExitCode(1))
+					return
+				}
+				// Clean end (client closed stdin) or our cancel: shut the app
+				// down so the process exits instead of hanging in Run().
+				requestShutdown(log, sd)
+			}()
+			return nil
+		},
+		OnStop: func(_ context.Context) error {
+			cancel()
+			return nil
+		},
+	})
+}
+
+// appendHTTPHooks serves the streamable-HTTP transport for the app's lifetime and drains
+// it gracefully on OnStop.
+func appendHTTPHooks(
+	lc fx.Lifecycle,
+	srv *mcp.Server,
+	cfg *config.Config,
+	log *slog.Logger,
+	sd fx.Shutdowner,
+) {
+	addr := cfg.Get("mcp.http.addr")
+	if addr == "" {
+		addr = defaultMCPHTTPAddr
+	}
+	// ADR-0967: default to a loopback-only bind when mcp.http.addr carries
+	// no explicit host (the ":3000" form). Operators opt into all-interfaces
+	// exposure with VMAFX_MCP_HTTP_BIND=0.0.0.0 (or by pinning a host in the
+	// listen address). This mirrors the Python transport default so the Go
+	// server is not silently exposed on every interface.
+	addr = applyBindHost(addr)
+	warnHTTPAuthPosture(log)
+	httpSrv := newHTTPTransportServer(srv, addr)
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			ln, err := net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("listen on %s: %w", addr, err)
+			}
+			log.Info("vmafx-mcp starting on HTTP", "addr", addr)
+			go func() {
+				if serveErr := httpSrv.Serve(ln); serveErr != nil &&
+					serveErr != http.ErrServerClosed {
+					log.Error("vmafx-mcp http transport error", "error", serveErr)
+					requestShutdown(log, sd, fx.ExitCode(1))
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			shutdownCtx, cancel := context.WithTimeout(ctx, gracefulShutdownTimeout)
+			defer cancel()
+			return httpSrv.Shutdown(shutdownCtx)
+		},
+	})
+}
+
+// warnHTTPAuthPosture makes the configured authentication stance loud at startup.
+//
+// ADR-0967, mirroring the Python transport: a running HTTP server with neither a token
+// nor an explicit no-auth opt-in rejects every request with 401, which is indistinguishable
+// from a broken server unless it is announced.
+func warnHTTPAuthPosture(log *slog.Logger) {
+	switch {
+	case noAuthMode():
+		log.Warn("VMAFX_MCP_HTTP_NO_AUTH=1 — HTTP authentication disabled.")
+	case resolveAuthToken() == "":
+		log.Warn("VMAFX_MCP_HTTP_TOKEN is unset — all HTTP requests will be " +
+			"rejected with 401. Set the token or set VMAFX_MCP_HTTP_NO_AUTH=1 " +
+			"to accept unauthenticated traffic.")
+	}
+}
+
+// newHTTPTransportServer builds the *http.Server that carries the streamable-HTTP
+// transport.
+//
+// ADR-0967: the MCP handler is wrapped in the security middleware (bearer auth +
+// request-body size limit), the identical gate to the Python _make_security_middleware so
+// both servers behave the same. The otelhttp server span (bootstrap.TraceHTTPHandler,
+// ADR-0782 / ADR-1119) is outermost so rejected requests are traced with their 401 / 413
+// status too; this hand-rolled *http.Server is not the golusoris.HTTP module, so the
+// fx-side bootstrap.HTTPTracing decorator does not reach it and the wrapper is applied
+// here directly.
+func newHTTPTransportServer(srv *mcp.Server, addr string) *http.Server {
+	handler := bootstrap.TraceHTTPHandler(securityMiddleware(mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return srv }, nil)))
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+}
+
+// requestShutdown asks fx to stop the app, reporting a refusal instead of discarding it.
+//
+// A Shutdown that fails leaves the process up with a transport that has already ended --
+// exactly the hang the shutdown call exists to prevent -- so it has to be visible.
+func requestShutdown(log *slog.Logger, sd fx.Shutdowner, opts ...fx.ShutdownOption) {
+	if err := sd.Shutdown(opts...); err != nil {
+		log.Error("vmafx-mcp shutdown request failed", "error", err)
 	}
 }

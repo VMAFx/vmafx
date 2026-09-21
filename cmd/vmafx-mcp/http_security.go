@@ -36,6 +36,7 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -88,11 +89,18 @@ func applyBindHost(addr string) string {
 }
 
 // writeJSONError writes a JSON {"error": msg} body with the given status.
+//
+// The status line is already on the wire by the time the body is written, so a write
+// failure leaves nothing to recover: there is no second response to send and no caller
+// that could act on it. It is recorded rather than discarded so a client that always
+// hangs up on a 401 is distinguishable from a server that never answers.
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	// Best-effort: the connection may already be gone; nothing to recover.
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		slog.Debug("vmafx-mcp: writing the JSON error body failed",
+			"status", status, "error", err)
+	}
 }
 
 // securityMiddleware wraps an http.Handler with the ADR-0967 body-size and

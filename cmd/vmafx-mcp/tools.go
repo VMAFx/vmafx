@@ -31,6 +31,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"maps"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -49,9 +51,29 @@ type schemaObj = map[string]any
 // This function MUST stay byte-identical to the Python server's
 // `_scoring_extra_properties()` (mcp-server/vmaf-mcp/src/vmaf_mcp/server.py)
 // — same keys, enums, defaults, and descriptions — per cmd/vmafx-mcp/AGENTS.md.
+//
+// The set is assembled from the same groups the Python server lays out in
+// `_scoring_extra_properties()`. Splitting it across those groups changes no key,
+// enum, default or description -- only where each group is written -- so the
+// byte-identical contract above is unaffected.
 func scoringExtraProperties() schemaObj {
+	out := schemaObj{}
+	for _, group := range []schemaObj{
+		scoringFeatureProperties(),
+		scoringTinyModelProperties(),
+		scoringTinyTuningProperties(),
+		scoringFrameRangeProperties(),
+		scoringDeviceProperties(),
+		scoringOutputProperties(),
+	} {
+		maps.Copy(out, group)
+	}
+	return out
+}
+
+// scoringFeatureProperties returns the feature-selection and CTC-preset pass-through properties.
+func scoringFeatureProperties() schemaObj {
 	return schemaObj{
-		// --- Feature selection + CTC presets ---
 		"feature": schemaObj{
 			"type":  "array",
 			"items": schemaObj{"type": "string"},
@@ -71,7 +93,12 @@ func scoringExtraProperties() schemaObj {
 			"description": "Netflix Common Test Conditions preset (--nflx_ctc). Mutually " +
 				"exclusive with manual feature/model config.",
 		},
-		// --- Tiny-AI / DNN scoring surface (ADR-1117) ---
+	}
+}
+
+// scoringTinyModelProperties returns the tiny-AI model and execution-provider properties.
+func scoringTinyModelProperties() schemaObj {
+	return schemaObj{
 		"tiny_model": schemaObj{
 			"type":        "string",
 			"description": "Path to a tiny ONNX model loaded alongside classic models (--tiny-model).",
@@ -94,6 +121,12 @@ func scoringExtraProperties() schemaObj {
 			"description": "Alias for tiny_device: ONNX Runtime execution provider for the " +
 				"tiny model (--dnn-ep / --tiny-device). Default: auto.",
 		},
+	}
+}
+
+// scoringTinyTuningProperties returns the tiny-AI tuning properties, including the no-reference switch.
+func scoringTinyTuningProperties() schemaObj {
+	return schemaObj{
 		"tiny_threads": schemaObj{
 			"type":        "integer",
 			"minimum":     0,
@@ -133,7 +166,12 @@ func scoringExtraProperties() schemaObj {
 				"ONNX model); the reference path becomes a formality — pass any valid YUV " +
 				"of matching geometry since only the distorted picture is scored.",
 		},
-		// --- Score-param completeness ---
+	}
+}
+
+// scoringFrameRangeProperties returns the thread-count and frame-range properties.
+func scoringFrameRangeProperties() schemaObj {
+	return schemaObj{
 		"threads": schemaObj{
 			"type":        "integer",
 			"minimum":     1,
@@ -158,7 +196,12 @@ func scoringExtraProperties() schemaObj {
 			"type":        "boolean",
 			"description": "Extract features only, skip VMAF prediction (--no_prediction).",
 		},
-		// --- Device selectors ---
+	}
+}
+
+// scoringDeviceProperties returns the CPU and GPU device-selector properties.
+func scoringDeviceProperties() schemaObj {
+	return schemaObj{
 		"cpumask": schemaObj{
 			"type":        "integer",
 			"minimum":     0,
@@ -184,7 +227,12 @@ func scoringExtraProperties() schemaObj {
 			"minimum":     0,
 			"description": "Select Metal GPU device by index (--metal_device).",
 		},
-		// --- Output format ---
+	}
+}
+
+// scoringOutputProperties returns the output-format and model-flag properties.
+func scoringOutputProperties() schemaObj {
+	return schemaObj{
 		"output_fmt": schemaObj{
 			"type":        "string",
 			"enum":        []string{"json", "xml", "csv", "sub"},
@@ -213,13 +261,36 @@ func scoringExtraProperties() schemaObj {
 
 // registerTools wires every MCP tool into srv. Schema definitions mirror the
 // Python server's _list_tools() output exactly.
+//
+// The registrations are grouped into the helpers below; the order in which they run
+// is the order the tools are registered, which is the order the Python server lists
+// them in, so the grouping is observationally invisible to a client.
 func registerTools(srv *mcp.Server) {
+	registerScoringTools(srv)
+	registerModelEvalTools(srv)
+	registerFrameInspectionTools(srv)
+	registerEncodedScoringTools(srv)
+	registerCatalogTools(srv)
+	registerCompareTool(srv)
+	registerLadderTool(srv)
+	registerTunePerShotTool(srv)
+	registerPerShotTool(srv)
+	registerRoiTool(srv)
+	registerBenchTool(srv)
+	registerVplTool(srv)
+	registerJobSubmissionTools(srv)
+	registerJobControlTools(srv)
+	registerRemoteScoringTool(srv)
+}
+
+// registerScoringTools wires the core scoring tool and the model/backend listings.
+func registerScoringTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "vmaf_score",
 		Description: "Compute a VMAF score for a (reference, distorted) YUV pair. " +
 			"Optional tiny-AI/DNN, feature-selection, CTC-preset, and frame-range " +
 			"parameters map onto the corresponding vmaf CLI flags (ADR-1117).",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type": "object",
 			"required": []string{
 				"ref", "dis", "width", "height", "pixfmt", "bitdepth",
@@ -255,16 +326,19 @@ func registerTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name:        "list_models",
 		Description: "Enumerate VMAF models (JSON / pickle / ONNX) shipped with the repo.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
+		InputSchema: toolSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
 	}, handleListModels)
 
 	addRawTool(srv, &mcp.Tool{
 		Name: "list_backends",
 		Description: "Report which runtime backends (cpu / cuda / sycl / hip / metal) " +
 			"the local vmaf binary was built with.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
+		InputSchema: toolSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
 	}, handleListBackends)
+}
 
+// registerModelEvalTools wires the benchmark harness and the ONNX model evaluation tools.
+func registerModelEvalTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "run_benchmark",
 		Description: "Run the full multi-fixture benchmark harness (bench_all.sh) " +
@@ -274,7 +348,7 @@ func registerTools(srv *mcp.Server) {
 			"Returns stdout (per-backend scores + backend comparison table) " +
 			"and stderr. Takes no arguments — fixtures are built-in. " +
 			"ADR-0513.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
+		InputSchema: toolSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
 	}, handleRunBenchmark)
 
 	addRawTool(srv, &mcp.Tool{
@@ -282,7 +356,7 @@ func registerTools(srv *mcp.Server) {
 		Description: "Run an ONNX tiny-AI regressor on a parquet feature cache, " +
 			"filter to a deterministic train/val/test split (keyed by the " +
 			"'key' column), and report PLCC / SROCC / RMSE.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"model", "features"},
 			"properties": schemaObj{
@@ -299,7 +373,7 @@ func registerTools(srv *mcp.Server) {
 		Description: "Rank several ONNX models on the same parquet feature split by " +
 			"descending PLCC. Models that fail to load or score are listed " +
 			"under 'errors' instead of aborting the whole call.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"models", "features"},
 			"properties": schemaObj{
@@ -314,7 +388,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleCompareModels)
+}
 
+// registerFrameInspectionTools wires the worst-frame description and backend probe tools.
+func registerFrameInspectionTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "describe_worst_frames",
 		Description: "Score a (ref, dis) pair, pick the N worst-VMAF frames, extract " +
@@ -322,7 +399,7 @@ func registerTools(srv *mcp.Server) {
 			"(SmolVLM -> Moondream2 fallback) to describe the visible " +
 			"artefacts. Falls back to metadata-only output when the [vlm] " +
 			"extras are not installed. ADR-0172 / T6-6.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"ref", "dis", "width", "height", "pixfmt", "bitdepth"},
 			"properties": schemaObj{
@@ -359,7 +436,7 @@ func registerTools(srv *mcp.Server) {
 			"list_backends returns true but actual GPU dispatch may fail " +
 			"(driver not loaded, ICD missing, KFD ioctl failure, etc.). " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"backend"},
 			"properties": schemaObj{
@@ -371,7 +448,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleProbeBackend)
+}
 
+// registerEncodedScoringTools wires the version report and the encode-then-score tool.
+func registerEncodedScoringTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "vmaf_version",
 		Description: "Return the local vmaf binary's identity and build flags. " +
@@ -379,7 +459,7 @@ func registerTools(srv *mcp.Server) {
 			"build_flags dict (cpu/cuda/sycl/hip/metal). Use this " +
 			"to confirm which fork build is running before scoring. " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
+		InputSchema: toolSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
 	}, handleVmafVersion)
 
 	addRawTool(srv, &mcp.Tool{
@@ -392,7 +472,7 @@ func registerTools(srv *mcp.Server) {
 			"same response shape as vmaf_score plus reference_encoded and " +
 			"distorted_encoded fields. Requires ffmpeg + ffprobe on PATH. " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"reference_encoded", "distorted_encoded"},
 			"properties": mergeSchema(schemaObj{
@@ -425,7 +505,10 @@ func registerTools(srv *mcp.Server) {
 			}, scoringExtraProperties()),
 		}),
 	}, handleVmafScoreEncoded)
+}
 
+// registerCatalogTools wires the feature-extractor listing and the model description tool.
+func registerCatalogTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "list_extractors",
 		Description: "Enumerate all VmafFeatureExtractor implementations found in the " +
@@ -433,7 +516,7 @@ func registerTools(srv *mcp.Server) {
 			"name, inferred backend (cpu / cuda / sycl / hip / metal), " +
 			"and the source file it was defined in. Requires no binary — " +
 			"parses the C source directly. ADR-0608.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
+		InputSchema: toolSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
 	}, handleListExtractors)
 
 	addRawTool(srv, &mcp.Tool{
@@ -445,7 +528,7 @@ func registerTools(srv *mcp.Server) {
 			"against 'vmaf_v0.6.1.json' — not mis-trimmed to 'vmaf_v0.6'. " +
 			"Returns: name, path, format, size_bytes, model_type (JSON only), " +
 			"feature_names (JSON only). ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"name"},
 			"properties": schemaObj{
@@ -457,7 +540,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleDescribeModel)
+}
 
+// registerCompareTool wires the encoder-parameter sweep tool.
+func registerCompareTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "run_compare",
 		Description: "Wrap 'vmaf-tune compare': compare codec adapters at one or more " +
@@ -466,7 +552,7 @@ func registerTools(srv *mcp.Server) {
 			"progress notifications when params._meta.progressToken is set. " +
 			"Default encoders: libx264,libx265,libsvtav1,libvpx-vp9. " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"src"},
 			"properties": schemaObj{
@@ -498,14 +584,17 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleRunCompare)
+}
 
+// registerLadderTool wires the bitrate-ladder tool.
+func registerLadderTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "run_ladder",
 		Description: "Wrap 'vmaf-tune ladder': build a per-title bitrate ladder via " +
 			"convex-hull sweep over resolution x target-VMAF, pick K knees, " +
 			"and emit an HLS / DASH / JSON manifest. Requires vmaf-tune. " +
 			"Emits MCP progress notifications. ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"src", "resolutions", "target_vmafs"},
 			"properties": schemaObj{
@@ -537,14 +626,17 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleRunLadder)
+}
 
+// registerTunePerShotTool wires the vmafx-tune per-shot driver tool.
+func registerTunePerShotTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "run_tune_per_shot",
 		Description: "Wrap 'vmaf-tune tune-per-shot': detect scene cuts, run a " +
 			"per-shot CRF bisect targeting a VMAF score, and return the " +
 			"encoding plan. Requires vmaf-tune. Emits MCP progress " +
 			"notifications. ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"src"},
 			"properties": schemaObj{
@@ -563,7 +655,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleRunTunePerShot)
+}
 
+// registerPerShotTool wires the per-shot scoring tool.
+func registerPerShotTool(srv *mcp.Server) {
 	// ── Sidecar-binary bridge (#1240 item b) ────────────────────────────
 	// One tool per sidecar CLI built next to `vmaf` in core/tools/. Schemas
 	// mirror each binary's own --help exactly; bounds match the C parsers.
@@ -575,7 +670,7 @@ func registerTools(srv *mcp.Server) {
 			"return a per-shot CRF plan targeting a VMAF score. Returns the " +
 			"parsed JSON plan by default (format='csv' returns the raw CSV " +
 			"text instead). ADR-0222.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"reference", "width", "height"},
 			"properties": schemaObj{
@@ -617,7 +712,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleVmafPerShot)
+}
 
+// registerRoiTool wires the region-of-interest scoring tool.
+func registerRoiTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "vmaf_roi",
 		Description: "Wrap the 'vmaf_roi' sidecar binary: compute a per-CTU saliency grid " +
@@ -626,7 +724,7 @@ func registerTools(srv *mcp.Server) {
 			"returns the raw int8 ROI map base64-encoded in 'roi_map_base64'. " +
 			"Without saliency_model a centre-weighted radial placeholder is used " +
 			"(smoke-test quality only).",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"reference", "width", "height", "frame"},
 			"properties": schemaObj{
@@ -666,7 +764,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleVmafRoi)
+}
 
+// registerBenchTool wires the micro-benchmark tool.
+func registerBenchTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "vmaf_bench",
 		Description: "Wrap the 'vmaf_bench' sidecar binary: per-feature micro-benchmark " +
@@ -675,7 +776,7 @@ func registerTools(srv *mcp.Server) {
 			"end-to-end bench_all.sh harness over real YUV fixtures. In validate " +
 			"mode a non-zero exit is reported as validation_failed=true rather " +
 			"than as a tool error.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type": "object",
 			"properties": schemaObj{
 				"frames": schemaObj{
@@ -711,7 +812,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleVmafBench)
+}
 
+// registerVplTool wires the oneVPL hardware decode-and-score tool.
+func registerVplTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "vmaf_vpl",
 		Description: "Wrap the 'vmaf_vpl' sidecar binary: decode an encoded (reference, " +
@@ -720,7 +824,7 @@ func registerTools(srv *mcp.Server) {
 			"libva + SYCL toolchain is present; otherwise the tool reports the " +
 			"missing binary. Returns the parsed vmaf_score and frames_processed " +
 			"alongside the raw stdout.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"ref", "dis"},
 			"properties": schemaObj{
@@ -751,7 +855,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleVmafVpl)
+}
 
+// registerJobSubmissionTools wires the controller job submission and lookup tools.
+func registerJobSubmissionTools(srv *mcp.Server) {
 	// ── Phase-4b gRPC control-plane bridge (#1240 item c, ADR-1173) ─────
 	// Go-only tools: the Python server has no gRPC stack by design. Targets
 	// come from the environment (VMAFX_CONTROLLER_ADDR / VMAFX_SERVER_ADDR),
@@ -764,7 +871,7 @@ func registerTools(srv *mcp.Server) {
 			"against its shared mount, not by this server, so they must be " +
 			"absolute worker-side paths. Target host comes from " +
 			"VMAFX_CONTROLLER_ADDR (default localhost:9090). ADR-0711 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"reference", "distorted"},
 			"properties": schemaObj{
@@ -797,7 +904,7 @@ func registerTools(srv *mcp.Server) {
 			"(PENDING/RUNNING/COMPLETED/FAILED/CANCELLED), assigned node, error, " +
 			"timestamps, final_score, and any partial per-frame results. " +
 			"ADR-0711 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"job_id"},
 			"properties": schemaObj{
@@ -805,13 +912,16 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleGetJob)
+}
 
+// registerJobControlTools wires the controller job cancellation and listing tools.
+func registerJobControlTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "cancel_job",
 		Description: "Request cancellation of a PENDING or RUNNING controller job. " +
 			"Returns ok=false with a message when the controller declines. " +
 			"ADR-0711 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"job_id"},
 			"properties": schemaObj{
@@ -826,7 +936,7 @@ func registerTools(srv *mcp.Server) {
 			"status. Drains the StreamJobs server-streaming RPC, which sends the " +
 			"current snapshot and closes (ADR-0962). Returns at most 'limit' jobs " +
 			"and sets truncated=true when more were available. ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type": "object",
 			"properties": schemaObj{
 				"status_filter": schemaObj{
@@ -844,7 +954,10 @@ func registerTools(srv *mcp.Server) {
 			},
 		}),
 	}, handleListJobs)
+}
 
+// registerRemoteScoringTool wires the server-side scoring tool.
+func registerRemoteScoringTool(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "vmaf_score_remote",
 		Description: "Score a (reference, distorted) pair on a remote vmafx-server over " +
@@ -853,7 +966,7 @@ func registerTools(srv *mcp.Server) {
 			"the server's mount. Target host comes from VMAFX_SERVER_ADDR " +
 			"(default localhost:9090). Use vmaf_score for local files. " +
 			"ADR-0703 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
+		InputSchema: toolSchema(schemaObj{
 			"type":     "object",
 			"required": []string{"reference", "distorted"},
 			"properties": schemaObj{
@@ -954,12 +1067,21 @@ func mergeSchema(base, extra schemaObj) schemaObj {
 	return out
 }
 
-// mustSchema converts a Go map to a json.RawMessage for use as an InputSchema.
-// Panics on marshal failure (schema is always a compile-time constant).
-func mustSchema(v any) json.RawMessage {
+// toolSchema converts a Go map to a json.RawMessage for use as an InputSchema.
+//
+// Every schema passed here is a literal built from strings, numbers, booleans, slices and
+// nested maps, so json.Marshal has no input it can fail on. Should that stop being true,
+// the tool is still registered -- with the permissive empty object schema, which accepts
+// any arguments and leaves validation to the handler's own argument parsing -- and the
+// marshal failure is logged so the offending schema can be found. Refusing to start the
+// whole MCP server over one malformed schema literal would take every other tool down
+// with it.
+func toolSchema(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("mustSchema: %v", err))
+		slog.Error("vmafx-mcp: marshalling a tool input schema failed; "+
+			"registering the permissive empty schema instead", "error", err)
+		return json.RawMessage(`{"type":"object"}`)
 	}
 	return b
 }

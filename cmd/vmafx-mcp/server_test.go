@@ -405,21 +405,25 @@ asyncio.run(main())
 
 func findRepoRoot(t *testing.T) string {
 	t.Helper()
-	// Walk upward from the test file's location.
+	// Walk upward from the test file's location. Each step drops one trailing path
+	// element, so the number of candidates is the starting path's separator count:
+	// that is the bound, and exhausting it means the marker is not on this path.
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
+	for range strings.Count(dir, "/") {
 		if _, err := os.Stat(dir + "/CLAUDE.md"); err == nil {
 			return dir
 		}
 		parent := strings.LastIndex(dir, "/")
 		if parent <= 0 {
-			t.Fatal("could not find repo root (no CLAUDE.md)")
+			break
 		}
 		dir = dir[:parent]
 	}
+	t.Fatal("could not find repo root (no CLAUDE.md)")
+	return ""
 }
 
 func mapKeys(m map[string]any) []string {
