@@ -70,13 +70,16 @@ feature/
 
 ## Rebase-sensitive invariants
 
-- **CAMBI read-only views and retained private helpers** (ADR-0205 / ADR-1146):
-  keep CPU validation/preprocessing views and paired scale-score wrapper
-  declaration read-only without changing shared extractor callback types.
-  Ten exact `unusedFunction` annotations preserve seven exports with GPU
-  callers outside CPU builds and three documented helper scaffolds. They do
-  not authorize general unused-function exemptions. Preserve every numerical
-  body and all trampolines; see
+- **CAMBI bounded searches and live private helpers** (ADR-0205 / ADR-1146):
+  `cambi.c` is strict-clean: it contains no `NOLINT` or Cppcheck suppression.
+  Preserve the 16-step TVI bisection, the `UINT16_MAX`-bounded VLT scan, and
+  the `n`/partition-span bounds on quick-select without changing comparison,
+  pivot, swap, or accumulation order. The shared extractor callback ABI stays
+  mutable; `read_only_picture_view()` is the const-view adapter Cppcheck can
+  verify. All ten helpers declared in `cambi_internal.h` must remain exercised
+  by real CPU/reference paths as well as available to GPU twins; do not replace
+  those calls with analyzer annotations. Keep the compact `CAMBI_OPTION`
+  descriptors equivalent to the public option table. See
   [measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
 
 - **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
