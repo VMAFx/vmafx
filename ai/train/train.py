@@ -216,12 +216,8 @@ def _train_loop(  # type: ignore[no-untyped-def]
     yield export_onnx(module, feature_dim, out_dir / f"{arch}_final.onnx")
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Lazy imports so ``--help`` / argparse remains snappy and the module
-    # is importable without torch installed.
+def _check_torch() -> int:
+    """Return 0 if torch is importable, else print an error and return 2."""
     try:
         import torch  # noqa: F401
     except ImportError as e:
@@ -230,72 +226,47 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    return 0
 
-    from ..data.feature_extractor import DEFAULT_FEATURES
+
+def _parse_assume_dims(raw: str | None) -> "tuple[int, int] | int | None":
+    """Parse --assume-dims WxH; return (w, h), None, or 2 on bad input."""
+    if not raw:
+        return None
+    try:
+        w, h = (int(x) for x in raw.lower().split("x"))
+    except ValueError as e:
+        print(f"error: --assume-dims must be WxH (got {raw!r}): {e}", file=sys.stderr)
+        return 2
+    return (w, h)
+
+
+def _load_train_val(args, feature_dim, assume_dims, payload_provider):  # type: ignore[no-untyped-def]
+    """Build and return (train_ds, val_ds) NetflixFrameDataset objects."""
     from .dataset import NetflixFrameDataset
 
-    feature_dim = len(DEFAULT_FEATURES)
-    module = _build_model(args.model_arch, feature_dim)
-    n_params = count_params(module)
-    print(f"[train] arch={args.model_arch} params={n_params} " f"feature_dim={feature_dim}")
-
-    if not args.data_root.is_dir():
-        print(
-            f"[train] data-root {args.data_root} does not exist — " "exporting initial ONNX only.",
-            file=sys.stderr,
-        )
-        export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
-        return 0
-
-    assume_dims: tuple[int, int] | None = None
-    if args.assume_dims:
-        try:
-            w, h = (int(x) for x in args.assume_dims.lower().split("x"))
-        except ValueError as e:
-            print(
-                f"error: --assume-dims must be WxH (got {args.assume_dims!r}): {e}", file=sys.stderr
-            )
-            return 2
-        assume_dims = (w, h)
-
-    # When ``--epochs 0`` we still want the smoke command to work even
-    # without a built ``vmaf`` binary, so inject a zero-filled payload
-    # provider that fakes one frame per pair.
-    payload_provider = None
-    if args.epochs == 0:
-        from .dataset import _make_zero_payload
-
-        payload_provider = _make_zero_payload
-
+    kwargs = dict(
+        max_pairs=args.max_pairs,
+        assume_dims=assume_dims,
+        payload_provider=payload_provider,
+        use_cache=False,
+    )
     train_ds = NetflixFrameDataset(
-        args.data_root,
-        split="train",
-        val_source=args.val_source,
-        max_pairs=args.max_pairs,
-        assume_dims=assume_dims,
-        payload_provider=payload_provider,
-        use_cache=False,
+        args.data_root, split="train", val_source=args.val_source, **kwargs
     )
-    val_ds = NetflixFrameDataset(
-        args.data_root,
-        split="val",
-        val_source=args.val_source,
-        max_pairs=args.max_pairs,
-        assume_dims=assume_dims,
-        payload_provider=payload_provider,
-        use_cache=False,
-    )
-    print(f"[train] train samples={len(train_ds)} val samples={len(val_ds)}")
+    val_ds = NetflixFrameDataset(args.data_root, split="val", val_source=args.val_source, **kwargs)
+    return train_ds, val_ds
 
-    train_xy = train_ds.numpy_arrays()
-    val_xy = val_ds.numpy_arrays()
 
-    if args.epochs == 0:
-        # Smoke path: emit a single initial-weights ONNX and stop.
-        out = export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
-        print(f"[train] epochs=0 — exported initial-weights ONNX to {out}")
-        return 0
-
+def _run_train_loop(  # type: ignore[no-untyped-def]
+    module,
+    train_xy,
+    val_xy,
+    *,
+    args,
+    feature_dim: int,
+) -> Path | None:
+    """Run the training loop; return the last checkpoint path, or None."""
     last: Path | None = None
     for ckpt in _train_loop(
         module,
@@ -312,6 +283,53 @@ def main(argv: list[str] | None = None) -> int:
     ):
         last = ckpt
         print(f"[train] wrote {ckpt}")
+    return last
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    if err := _check_torch():
+        return err
+
+    from ..data.feature_extractor import DEFAULT_FEATURES
+
+    feature_dim = len(DEFAULT_FEATURES)
+    module = _build_model(args.model_arch, feature_dim)
+    n_params = count_params(module)
+    print(f"[train] arch={args.model_arch} params={n_params} feature_dim={feature_dim}")
+
+    if not args.data_root.is_dir():
+        print(
+            f"[train] data-root {args.data_root} does not exist — exporting initial ONNX only.",
+            file=sys.stderr,
+        )
+        export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
+        return 0
+
+    parsed_dims = _parse_assume_dims(args.assume_dims)
+    if isinstance(parsed_dims, int):
+        return parsed_dims
+    assume_dims = parsed_dims
+
+    payload_provider = None
+    if args.epochs == 0:
+        from .dataset import _make_zero_payload
+
+        payload_provider = _make_zero_payload
+
+    train_ds, val_ds = _load_train_val(args, feature_dim, assume_dims, payload_provider)
+    print(f"[train] train samples={len(train_ds)} val samples={len(val_ds)}")
+    train_xy = train_ds.numpy_arrays()
+    val_xy = val_ds.numpy_arrays()
+
+    if args.epochs == 0:
+        out = export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")
+        print(f"[train] epochs=0 — exported initial-weights ONNX to {out}")
+        return 0
+
+    last = _run_train_loop(module, train_xy, val_xy, args=args, feature_dim=feature_dim)
     if last is not None:
         print(f"[train] final checkpoint: {last}")
     return 0
