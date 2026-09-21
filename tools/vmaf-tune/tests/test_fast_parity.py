@@ -167,14 +167,12 @@ def _run_go_twin(repo_root: Path, vmaf_bin: str) -> tuple[list[float], list[floa
     )
 
 
-def test_e2e_probe_extraction_parity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Python and Go fast paths extract identical canonical-6 vectors.
+def _require_parity_toolchain() -> tuple[str, str, Path, Path]:
+    """Resolve ``(ffmpeg, vmaf, repo_root, ref_yuv)`` or skip with the reason.
 
-    Runs both implementations on the same tiny clip with the same probe
-    parameters and asserts the six raw pooled means match exactly and the
-    six StandardScaler-normalised features match within 1e-6. Skips (with
-    the reason) when ffmpeg, the vmaf CLI, the Go toolchain, or the fixture
-    is unavailable on the host.
+    The parity run needs ffmpeg, the vmaf CLI, the Go toolchain and the
+    in-tree fixture; every one of them is optional on a developer box, so
+    a missing piece is a skip, not a failure.
     """
     ffmpeg_bin = shutil.which("ffmpeg")
     if not ffmpeg_bin:
@@ -191,9 +189,16 @@ def test_e2e_probe_extraction_parity(tmp_path: Path, monkeypatch: pytest.MonkeyP
         pytest.skip(f"fixture {ref_yuv} missing")
     if not (repo_root / "go.mod").exists():
         pytest.skip(f"go.mod not found under {repo_root}; cannot drive the Go twin")
+    return ffmpeg_bin, vmaf_bin, repo_root, ref_yuv
 
-    # Spy on the normalisation step so the raw pooled means are observable
-    # alongside the normalised vector the extractor returns.
+
+def _spy_on_normalise(monkeypatch: pytest.MonkeyPatch) -> list[list[float]]:
+    """Record every raw feature vector handed to ``normalise_features``.
+
+    The extractor only returns the normalised vector; the raw pooled
+    means are what libvmaf actually emitted, and the Go twin logs those
+    too, so the parity assertion needs both.
+    """
     import vmaftune.proxy as proxy_module
 
     raw_seen: list[list[float]] = []
@@ -204,8 +209,17 @@ def test_e2e_probe_extraction_parity(tmp_path: Path, monkeypatch: pytest.MonkeyP
         return real_normalise(features, *args, **kwargs)
 
     monkeypatch.setattr(proxy_module, "normalise_features", _spy)
+    return raw_seen
 
-    args = argparse.Namespace(
+
+def _parity_probe_args(ffmpeg_bin: str, vmaf_bin: str) -> argparse.Namespace:
+    """Probe parameters both implementations must be driven with.
+
+    These values are the parity contract shared with the Go twin
+    (``cmd/vmafx-tune``): changing any of them here without changing the
+    twin breaks the comparison.
+    """
+    return argparse.Namespace(
         width=576,
         height=324,
         pix_fmt="yuv420p",
@@ -216,6 +230,20 @@ def test_e2e_probe_extraction_parity(tmp_path: Path, monkeypatch: pytest.MonkeyP
         vmaf_bin=vmaf_bin,
         vmaf_model="vmaf_v0.6.1",
     )
+
+
+def test_e2e_probe_extraction_parity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Python and Go fast paths extract identical canonical-6 vectors.
+
+    Runs both implementations on the same tiny clip with the same probe
+    parameters and asserts the six raw pooled means match exactly and the
+    six StandardScaler-normalised features match within 1e-6. Skips (with
+    the reason) when ffmpeg, the vmaf CLI, the Go toolchain, or the fixture
+    is unavailable on the host.
+    """
+    ffmpeg_bin, vmaf_bin, repo_root, ref_yuv = _require_parity_toolchain()
+    raw_seen = _spy_on_normalise(monkeypatch)
+    args = _parity_probe_args(ffmpeg_bin, vmaf_bin)
     workdir = tmp_path / "probes"
     extractor = cli_module._build_fast_sample_extractor(args, workdir)
 
