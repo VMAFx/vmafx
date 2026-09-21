@@ -993,3 +993,4 @@
 1214-float-adm-csf-scale-watson-mode-and-aliases
 1274-hiss-21-replay-gate
 1278-python-safe-parallel-execution
+1280-worktree-state-sync

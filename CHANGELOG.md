@@ -29447,6 +29447,12 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
 - Refuse unknown custom hooks and preserve managed replacements in unique backups.
 
 
+- Fixed post-commit governance synchronization from linked worktrees. The hook
+  now uses regular, locked private-state mirrors, records the committing
+  worktree's Git identity, preserves local caches, and fails visibly on
+  symlinked or malformed state instead of updating the wrong checkout.
+
+
 - **The `--wrap` interposers are exported, so the SYCL and MSVC+CUDA lanes link
   again.** libvmaf builds with `-fvisibility=hidden`, and that applies to the
   tests too. `--wrap` rewrites libvmaf's own `calloc`/`malloc`/`strdup`/`realloc`
