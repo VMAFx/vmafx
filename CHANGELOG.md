@@ -20031,6 +20031,9 @@ everything except grayscale.
   overrides as before.
 
 
+- Made the legacy AI corpus and trainer entry points HISS-clean, kept FR normalisation compatible with read-only pandas arrays, and migrated MOS-head ONNX export to PyTorch's warning-free dynamic-shape API.
+
+
 Restore `_mean`-suffix column fallback in `train_konvid_mos_head._row_to_features`:
 parquet corpora produced by the CHUG materialiser store per-clip temporal
 averages as `<feature>_mean` columns; when a mixed parquet file is loaded,

@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/ai-trainer-warning-cleanup — preserve executable trainer helpers (2026-09-21)
+
+The five AI corpus/trainer scripts in this cleanup are fork-local. Upstream
+syncs have no direct overlap, but future trainer refactors must preserve two
+runtime fixes: `train_fr_regressor._standardize()` returns new arrays instead
+of mutating pandas-owned NumPy views, and `train_konvid_mos_head._export_onnx()`
+uses `dynamic_shapes` with a two-row example batch so current PyTorch exports a
+genuinely dynamic batch axis without warning. Do not restore the old in-place
+normalisation or `dynamic_axes` call. Parser and workflow helpers remain below
+the HISS-04 60-line limit; no public CLI option or model threshold changed.
+
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
 Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels
