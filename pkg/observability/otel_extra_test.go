@@ -14,8 +14,8 @@
 package observability
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"log/slog"
 	"testing"
 )
