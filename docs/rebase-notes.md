@@ -51702,6 +51702,54 @@ helper boundaries are structural only: extractor selection, pending indices,
 error propagation, and score output remain unchanged. No new public surface or
 rebase-sensitive policy was introduced.
 
+## Strict host diagnostic contracts (2026-09-21)
+
+This entry supersedes the older observation-only/file-cordon descriptions of
+`core/src/svm.cpp` elsewhere in this historical ledger. The libsvm 3.24 source
+is materially fork-adapted and remains whole-tree standards scope: do not
+restore a file-wide `NOLINT`, a Cppcheck exclusion, or a lint-baseline increase
+when refreshing it.
+
+Preserve these libsvm invariants across a refresh: typed overflow-checked
+zero-initializing allocation; single-owner parser failure cleanup; header-order,
+duplicate-vector, dimension, support-vector-count, and terminator validation;
+checked model writes followed by an unconditional close; explicit solver
+virtual overrides; and inclusive cross-validation shuffling through a
+thread-local `std::mt19937`, never process-global `rand()`. The numerically
+stable sigmoid-training expression uses `log1p(exp(x))`; loaded-model scoring
+does not pass through it. The complete fast suite must remain clean under
+ASan+UBSan, and strict clang-tidy plus Cppcheck must report zero findings for
+`svm.cpp`.
+
+`fex_ctx_vector_internal.h::vmaf_next_fex_capacity()` and the feature-extractor
+pool compute the smaller of the count-doubling bound and allocation-byte bound,
+then compare values of the same width. Keep both bounds; a direct 32-bit count
+comparison against a `SIZE_MAX`-derived 64-bit limit is tautological on 64-bit
+hosts. Preserve the explicit full-range BT.709/BT.601 switch exits, complete
+aggregate/sentinel initialization, and the explicitly disabled SYCL profiling
+field. These are source-level diagnostic repairs, not warning annotations.
+
+The same cleanup removed the touched paths' real HISS findings rather than
+retaining their historical exceptions. `vmaf.cpp` now carries resources in
+`CliRunState`; `main()` executes, calls `cleanup_cli_run()` exactly once, then
+returns. Keep the CUDA allocation in `CliRunState` and preserve the public
+`vmaf_close(vmaf)` then `vmaf_cuda_state_free(cuda_state)` order before
+input/CLI cleanup and `ModelArrays` destruction. The old CLI lost the original
+allocation after importing a copy and leaked it on every CUDA invocation.
+Cleanup and JSON-amendment failures must remain visible in stderr and the exit
+status. Keep `WindowsConsoleGuard` static for `cli_parse()`'s direct `exit()` paths.
+Picture-copy templates preserve direct typed loops without per-row indirect
+calls. `speed_chroma_cuda.c` keeps allocation and release split by device,
+pinned-host and aligned-host ownership; both context users call
+`pop_cuda_context_with_retry()` so a failed pop gets one best-effort stack
+recovery before the first error is returned. Do not restore cleanup jumps or
+function-size suppressions during an upstream resolution.
+
+`core/tools/test/test_vmaf_cuda_gpumask.sh` intentionally uses 576x324 for all
+four two-frame invocations. It verifies dispatch, temporal-model and PSNR
+selection, not 1080p throughput; restoring 1920x1080 makes the aggregate
+10-second hang detector fail under ordinary full-suite contention.
+
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 

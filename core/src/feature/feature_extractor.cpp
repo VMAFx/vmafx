@@ -497,7 +497,6 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
 {
     if (!name)
         return nullptr;
-
     VmafFeatureExtractor *fex = nullptr;
 
     /* First pass: prefer an extractor that matches one of the requested
@@ -598,6 +597,19 @@ bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
 namespace
 {
 
+int fail_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
+                                          VmafFeatureExtractorContext *context,
+                                          VmafFeatureExtractor *extractor, int err)
+{
+    if (extractor) {
+        free(extractor->priv);
+        free(extractor);
+    }
+    free(context);
+    *fex_ctx = nullptr;
+    return err;
+}
+
 int vmaf_fex_ctx_parse_options(VmafFeatureExtractorContext *fex_ctx)
 {
     const char *missing_key = nullptr;
@@ -627,7 +639,6 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict)
 {
-    int err = 0;
     VmafFeatureExtractorContext *f = *fex_ctx =
         static_cast<VmafFeatureExtractorContext *>(malloc(sizeof(*f)));
     if (!f)
@@ -636,46 +647,36 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
 
     VmafFeatureExtractor *x = static_cast<VmafFeatureExtractor *>(malloc(sizeof(*x)));
     if (!x)
-        goto free_f;
+        return fail_feature_extractor_context_create(fex_ctx, f, nullptr, -ENOMEM);
     memcpy(x, fex, sizeof(*x));
+    x->priv = nullptr;
 
     f->fex = x;
     if (f->fex->priv_size) {
         void *priv = malloc(f->fex->priv_size);
         if (!priv)
-            goto free_x;
+            return fail_feature_extractor_context_create(fex_ctx, f, x, -ENOMEM);
         memset(priv, 0, f->fex->priv_size);
         f->fex->priv = priv;
     }
 
     f->opts_dict = opts_dict;
     if (f->fex->options && f->fex->priv) {
-        err = vmaf_fex_ctx_parse_options(f);
+        const int err = vmaf_fex_ctx_parse_options(f);
         if (err) {
             /* parse_options failure: tear down all allocations and NULL the
              * out-parameter so callers cannot dereference a freed pointer. */
-            free(f->fex->priv);
-            goto free_x;
+            return fail_feature_extractor_context_create(fex_ctx, f, x, err);
         }
     } else if (f->opts_dict && f->opts_dict->cnt > 0) {
         const char *missing_key = nullptr;
         (void)vmaf_feature_extractor_supports_options(f->fex, f->opts_dict, &missing_key);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor '%s': unknown option '%s'\n",
                  f->fex->name ? f->fex->name : "(unknown)", missing_key ? missing_key : "(null)");
-        err = -EINVAL;
-        goto free_x;
+        return fail_feature_extractor_context_create(fex_ctx, f, x, -EINVAL);
     }
 
     return 0;
-
-free_x:
-    free(x);
-free_f:
-    free(f);
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * create call. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *fex_ctx = nullptr;
-    return err ? err : -ENOMEM;
 }
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
@@ -922,36 +923,24 @@ int vmaf_fex_ctx_pool_create(VmafFeatureExtractorContextPool **pool, unsigned n_
     if (!n_threads || n_threads > INT_MAX)
         return -EINVAL;
 
-    /* Hoist fex_list_sz before any goto to avoid C++ cross-initialisation
-     * error (jump over a const initialisation is ill-formed in C++). */
-    size_t fex_list_sz;
     VmafFeatureExtractorContextPool *const p = *pool =
         static_cast<VmafFeatureExtractorContextPool *>(malloc(sizeof(*p)));
-    if (!p)
-        goto fail;
+    if (!p) {
+        *pool = nullptr;
+        return -ENOMEM;
+    }
     memset(p, 0, sizeof(*p));
 
     p->n_threads = n_threads;
-
     p->cnt = 0;
     p->capacity = 8;
-    fex_list_sz = sizeof(*(p->fex_list)) * p->capacity;
+    const size_t fex_list_sz = sizeof(*(p->fex_list)) * p->capacity;
     p->fex_list = static_cast<decltype(p->fex_list)>(malloc(fex_list_sz));
-    if (!p->fex_list)
-        goto free_p;
+    if (p->fex_list && pthread_mutex_init(&(p->lock), nullptr) == 0)
+        return 0;
 
-    if (pthread_mutex_init(&(p->lock), nullptr) != 0)
-        goto free_fex_list;
-    return 0;
-
-free_fex_list:
     free(static_cast<void *>(p->fex_list));
-free_p:
     free(p);
-    *pool = nullptr; /* prevent dangling pointer — mirrors feature_extractor.c:797 pattern */
-fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * pool create. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
     *pool = nullptr;
     return -ENOMEM;
 }
@@ -990,7 +979,11 @@ int grow_fex_list(VmafFeatureExtractorContextPool *pool)
      * assert() is compiled out under NDEBUG exactly where that matters. */
     if (pool->capacity == 0)
         return -EINVAL;
-    if (pool->capacity > UINT_MAX / 2 || pool->capacity > SIZE_MAX / sizeof(*pool->fex_list) / 2)
+    constexpr size_t allocation_limit = SIZE_MAX / sizeof(*pool->fex_list) / 2u;
+    constexpr unsigned max_capacity = allocation_limit < static_cast<size_t>(UINT_MAX / 2u) ?
+                                          static_cast<unsigned>(allocation_limit) :
+                                          UINT_MAX / 2u;
+    if (pool->capacity > max_capacity)
         return -ENOMEM;
     const unsigned capacity = pool->capacity * 2;
     struct fex_list_entry **fex_list = static_cast<struct fex_list_entry **>(
@@ -1021,7 +1014,11 @@ int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, u
     slot->in_use.store(0, std::memory_order_relaxed);
     if (pthread_cond_init(&(slot->full), nullptr) != 0)
         return -ENOMEM;
-    if (n_threads > SIZE_MAX / sizeof(slot->ctx_list[0])) {
+    constexpr size_t allocation_limit = SIZE_MAX / sizeof(slot->ctx_list[0]);
+    constexpr unsigned max_threads = allocation_limit < static_cast<size_t>(UINT_MAX) ?
+                                         static_cast<unsigned>(allocation_limit) :
+                                         UINT_MAX;
+    if (n_threads > max_threads) {
         pthread_cond_destroy(&(slot->full));
         return -ENOMEM;
     }
@@ -1162,8 +1159,8 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
 
     struct fex_list_entry *entry = get_fex_list_entry(pool, fex, opts_dict);
     if (!entry) {
-        err = -EINVAL;
-        goto unlock;
+        pthread_mutex_unlock(&(pool->lock));
+        return -EINVAL;
     }
 
     while (entry->capacity.load() == entry->in_use.load())
@@ -1180,8 +1177,6 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
             (fex->flags & VMAF_FEATURE_FRAME_SYNC) ? fex->framesync : nullptr;
         err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx, framesync);
     }
-
-unlock:
     pthread_mutex_unlock(&(pool->lock));
     return err;
 }
@@ -1195,7 +1190,7 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
         return -EINVAL;
 
     pthread_mutex_lock(&(pool->lock));
-    int err = 0;
+    int err = -EINVAL;
 
     const VmafFeatureExtractor *const fex = fex_ctx->fex;
     struct fex_list_entry *entry = nullptr;
@@ -1207,24 +1202,20 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
         }
     }
 
-    if (!entry) {
-        err = -EINVAL;
-        goto unlock;
-    }
-
-    for (int i = 0; i < entry->capacity.load(); i++) {
-        if (fex_ctx == entry->ctx_list[i].fex_ctx) {
-            entry->ctx_list[i].in_use = false;
-            entry->in_use.fetch_sub(1);
-            pthread_cond_signal(&(entry->full));
-            goto unlock;
+    if (entry) {
+        for (int i = 0; i < entry->capacity.load(); i++) {
+            if (fex_ctx == entry->ctx_list[i].fex_ctx) {
+                entry->ctx_list[i].in_use = false;
+                entry->in_use.fetch_sub(1);
+                pthread_cond_signal(&(entry->full));
+                err = 0;
+                break;
+            }
         }
     }
-    err = -EINVAL;
 
-unlock:
     pthread_mutex_unlock(&(pool->lock));
-    return err;
+    return entry ? err : -EINVAL;
 }
 
 int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
@@ -1259,8 +1250,10 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
 {
     if (!pool)
         return -EINVAL;
-    if (!pool->fex_list)
-        goto free_pool;
+    if (!pool->fex_list) {
+        free(pool);
+        return 0;
+    }
     pthread_mutex_lock(&(pool->lock));
 
     for (unsigned i = 0; i < pool->cnt; i++) {
@@ -1290,8 +1283,6 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
      * before destroying the mutex leaks POSIX TSD resources on glibc. */
     (void)pthread_mutex_unlock(&(pool->lock));
     (void)pthread_mutex_destroy(&(pool->lock));
-
-free_pool:
     free(pool);
     return 0;
 }
