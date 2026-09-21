@@ -656,6 +656,21 @@ back while resolving a conflict; the failure is `[Errno 122] Disk quota
 exceeded`, not a full disk. In `run:` blocks use `${RUNNER_TEMP}`; in action
 inputs use `${{ runner.temp }}`, because `with:` has no shell. The contract test
 `scripts/ci/test_e2e_runtime_contract.py` enforces exactly that split.
+## fix/bug-mypy-pyver — mypy models the required Python (2026-09-21)
+
+`[tool.mypy] python_version` in `pyproject.toml` is `3.14` and tracks
+`requires-python`; take `3.14` on any conflict and never resolve back towards
+`3.10`. Below 3.12 mypy refuses to parse the PEP 695 `type` statement in numpy's
+bundled `__init__.pyi`, and that blocking `[syntax]` error aborts the entire
+`ai/src/` pass before a single source file is checked. The comment above the
+value carries that reason; keep it with the value. The 60 findings the raise
+makes visible are pre-existing debt — measured against a merge base carrying the
+same `3.14`, the change introduces none — so do not absorb a conflict here by
+adding `type: ignore`, widening `ignore_missing_imports`, or relaxing `strict`.
+`[tool.black]` and `[tool.ruff]` `target-version` are deliberately left at their
+older values in this change. Fork-only tooling; no native API or FFmpeg patch
+impact. See ADR-1282.
+
 ## fix/pre-push-mypy-delta — introduced findings only (2026-09-19)
 
 `scripts/git-hooks/pre-push-mypy.py` keeps the `ai/`/`scripts/` merge-base
@@ -667,10 +682,9 @@ files are re-checked at the merge base in a disposable worktree and only new
 findings fail, because CI's `mypy` is advisory and inherited findings vary with
 the checkout's installed stub packages. Do not restore the raw exit-status
 propagation: an unattributable non-zero exit now fails closed with its own
-message, which the regression suite pins. Do not raise `python_version` while
-resolving a conflict here; `3.10` is stale but `3.14` unmasks 175 findings on
-master and belongs to its own change. Fork-only tooling; no native API or
-FFmpeg patch impact.
+message, which the regression suite pins. `python_version` moved to `3.14` in its
+own change (ADR-1282, `fix/bug-mypy-pyver`); take `3.14` on any conflict here.
+Fork-only tooling; no native API or FFmpeg patch impact.
 
 ## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
 
