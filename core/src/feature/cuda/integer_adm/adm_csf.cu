@@ -25,6 +25,7 @@
 #include "common.h"
 
 #include <assert.h>
+#include <cstdint>
 
 #include "cuda_helper.cuh"
 #include "adm_decouple_inline.cuh"
@@ -90,7 +91,7 @@ __device__ __forceinline__ int32_t i4_adm_csf_pixel(const I4AdmCsfContext *ctx, 
         (int32_t)(((ctx->rfactor * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
     const uint32_t fix_one_by_30 = 143165577;
     const uint32_t shift_flt = 32;
-    const int32_t add_bef_shift_flt = static_cast<int32_t>(1u << (shift_flt - 1));
+    const int32_t add_bef_shift_flt = INT32_MIN;
     return (int32_t)((((int64_t)fix_one_by_30 * abs(dst_val)) + add_bef_shift_flt) >> shift_flt);
 }
 

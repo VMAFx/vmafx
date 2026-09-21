@@ -51614,3 +51614,111 @@ restores the `^`-only anchor, `Tidy Ratchet` will start reporting every header f
    an alias differently from the CPU emits a different feature key for the same
    request. `float_adm`'s aliases are `scf` / `scfd`; a sync that brings back
    `cs` / `cds` reintroduces the split key.
+
+## HISS-21 claims require replay evidence (ADR-1274)
+
+The HISS catalog under `.config/hiss/` is executable evidence, not generated
+decoration. Preserve the catalog and its positive, negative, and gap fixtures
+when syncing governance files. `make hiss-coverage` must pass with Praetor's
+pinned engine on Linux, macOS, and Windows. A new scanner rule or newly closed
+gap requires a catalog update and a fixture in the same change; never make the
+matrix green by dropping the contradictory fixture or removing a required
+context from `.github/workflows/required-aggregator.yml`. The four governance
+contexts live in `strictMustReport`: absence, skip, or neutral is a failure, not
+an ADR-0313 path-filter exemption.
+
+Hosted replay validation also proved that the draft-only Scorecard guard runs
+before its artifacts exist. Preserve the non-draft predicate on the artifact
+upload in `.github/workflows/scorecard-policy.yml`; `if-no-files-found: error`
+remains mandatory once a real scan starts. Keep that workflow in
+`.github/ci-impact.json`'s `full_patterns` so changes exercise its contracts.
+
+Meson 1.12 does not materialise `compile_commands.json` for the configured
+Ninja builds used by the native lint gates. Preserve the explicit
+`scripts/ci/write-compile-commands.py` call between each build and its analyzer,
+including before the SYCL custom-command augmentation. The exporter must request
+exactly `c_COMPILER` and `cpp_COMPILER`; an unfiltered `ninja -t compdb` brings
+link, generator, and phony commands back into analyzer scope. Failed or partial
+exports must leave the last valid database intact and fail the lane.
+
+The top-level Makefile must also prepend `VIRTUAL_ENV_ABS`, never relative
+`.venv/bin`, when invoking Meson and Ninja. Meson persists the resolved Ninja
+name and launches it from the build directory during reconfiguration; restoring
+the relative recipe prefix makes that launch target
+`core/build/.venv/bin/ninja` and prevents the native lint gate from starting.
+
+The test-only C build of `core/src/log.c` preserves a Clang+C23 branch using
+`__builtin_va_start(args, fmt)`. Clang 21 does not model the
+`__builtin_c23_va_start` emitted by its standard macro and otherwise reports a
+false uninitialized `va_list`; GCC and MSVC still use `va_start`. Preserve the
+non-reserved `VMAF_SRC_LOG_H_` include guard in `log.h` when porting upstream
+logging changes.
+
+Cppcheck's installed POSIX model is now corrected by
+`scripts/ci/write_cppcheck_posix_model.py` before both local and hosted runs.
+Pre-2.22 models lack `pthread_cond_init` and receive its correct schema; 2.22's
+invalid attributes-pointer non-null marker is removed while the condition
+object remains non-null. Preserve real-tool positive/negative controls and the
+validation-before-atomic-replace sequence. An upstream model fix is accepted
+unchanged; duplicate or malformed shapes still fail closed.
+
+`vmaf_framesync_init` publishes no partial context. Preserve its staged
+acquire-mutex, retrieve-mutex, condition, and queue-node initialization; every
+failure returns the negated pthread error and frees only initialized state.
+`test_framesync_init_failure_impl` is a separately compiled object whose four
+pthread init/destroy symbols are mapped to test wrappers. Do not replace it
+with a production injection hook, textual `.c` include, NOLINT, or
+platform-specific linker interposition.
+
+The PR-body pre-push guard must bound `gh pr view` because a locked desktop
+keyring can otherwise hang every push. Preserve the public-page fallback, raw
+Markdown body extraction, schema validation, confirmed-no-PR-only skip, and
+fail-closed behavior when both metadata sources are unavailable. Do not map an
+authentication, network, or markup failure to “no open PR.”
+## CAMBI strict-clean bounded searches and live helpers (2026-09-21)
+
+`core/src/feature/cambi.c` has no file-local clang-tidy or Cppcheck
+suppression. Preserve that state during upstream syncs. In particular, retain
+the 16-step TVI bisection, the `UINT16_MAX` VLT terminus, and the `n`/partition
+span bounds in quick-select; their comparison, pivot, swap, and accumulation
+order is score-sensitive. Keep `read_only_picture_view()` as the adapter from
+the mutable extractor callback ABI to CAMBI's const reads.
+
+All ten `cambi_internal.h` helper exports are deliberately called by the
+CPU/reference implementation as well as by optional GPU twins. Do not restore
+`unusedFunction` annotations or bypass the wrappers when resolving an upstream
+conflict. The compact `CAMBI_OPTION` descriptors are the unchanged public
+option table and keep the declaration below HISS-04's 60-line boundary.
+
+The 48-frame 576x324 regression fixture produced identical scalar and
+dispatched CPU JSON before and after this cleanup: mean
+`0.51441210777008473`, normalized SHA-256
+`2fed4234f9f8c018ac9af0810dbf43a0c7a30765bee00e4e55c23de983a1a523`.
+Re-run `core/test/test_cambi.c` after any conflict; its unreachable VLT,
+threshold-extreme TVI, and duplicate/descending quick-select cases pin the
+termination behavior directly.
+
+## CUDA integer ADM negative rounding constant (Research-2076)
+
+ADR-0155 still requires the scales 1-3 integer-ADM rounding term to be
+`INT32_MIN`; changing it to a positive 2^31 value moves Netflix golden scores.
+Preserve the direct `INT32_MIN` spelling in `integer_adm/adm_csf.cu` and both
+fused paths in `integer_adm/adm_cm.cu`. Do not restore the prior `1u << 31`
+unsigned-to-signed conversion, which emits NVCC diagnostic `#68-D`, and do not
+replace it with a warning suppression or a widened type. CUDA 13.4 generated
+byte-identical ADM-CSF and ADM-CM fatbins for the isolated constant-spelling
+change. The final touched-file cleanup also decomposes oversized kernels into
+forced-inline helpers; preserve those boundaries even though they change binary
+layout, because all four CUDA ADM regression executables remain exactly
+base-identical at runtime.
+
+## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
+## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
+
+No rebase impact on product behavior: twenty Python and MCP test/harness files only split
+existing setup, fixture data, CLI argument registration, matrix execution, and assertion blocks
+into class constants or private helpers. The CLI PTY reader and manual YUV-reader tests also
+replace `while True` with bounded loops that preserve the same EOF/error checks. Test names,
+execution order, fixtures, assertion expressions, numeric constants, expected values, tolerances,
+and parity-gate CLI/output behavior stay unchanged. An upstream textual conflict may take the
+upstream test body, then reapply the helper boundaries needed by HISS.

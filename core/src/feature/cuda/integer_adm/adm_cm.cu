@@ -25,6 +25,7 @@
 #include "adm_decouple_inline.cuh"
 
 #include <algorithm>
+#include <cstdint>
 
 //#define COMPARE_FUSED_SPLIT
 #if defined(COMPARE_FUSED_SPLIT)
@@ -259,8 +260,8 @@ __device__ __forceinline__ I4AdmCmContext make_i4_adm_context(AdmBufferCuda *buf
                                                               const AdmFixedParametersCuda *params)
 {
     const uint32_t shift_flt = 32;
-    /* ADR-0155: preserve Netflix's intentional uint32_t-to-int32_t wrap. */
-    const int32_t add_bef_shift_flt = static_cast<int32_t>(1u << (shift_flt - 1));
+    /* ADR-0155: preserve Netflix's negative signed rounding bias directly. */
+    const int32_t add_bef_shift_flt = INT32_MIN;
     const uint32_t shift_dst = 28;
     const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
     const uint32_t shift_sq = 30;
