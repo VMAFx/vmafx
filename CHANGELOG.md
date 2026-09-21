@@ -12881,6 +12881,12 @@ and docs now carry `Copyright 2026 Lusoris` (single notice) per ADR-0861.
   untouched.
 
 
+- **Core ingest and Y-FUNQUE+ now satisfy the whole-tree HISS control-flow
+  contract.** Structured cleanup replaces seven baselined
+  `goto`/function-size findings without changing extractor ordering, backend
+  scheduling, error propagation, scores, or standards baselines.
+
+
 - **`vmaf-tune` corpus schema v2 → v3 — canonical-6 per-feature
   aggregates land as first-class columns.** Adds 12 new corpus row
   fields (`adm2_mean`, `vif_scale[0..3]_mean`, `motion2_mean` plus
