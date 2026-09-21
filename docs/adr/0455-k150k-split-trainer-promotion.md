@@ -35,7 +35,7 @@ the canonical split boundary entirely**.  This means:
    `"5-fold-random"` instead of `"explicit-corpus-split"`, which
    obscures the split provenance from downstream consumers.
 
-[OPEN.md § KonViD-150k corpus ingestion](../../.workingdir2/OPEN.md)
+OPEN.md § KonViD-150k corpus ingestion
 (lines 56–60) flagged this as the outstanding "downstream feature /
 trainer promotion" work after the basic JSONL ingestion landed.
 

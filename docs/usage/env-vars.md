@@ -41,13 +41,13 @@ overrides not listed here.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `VMAF_BIN` | path | `core/build-cpu/tools/vmaf` | Path to the `vmaf` CLI binary used by Python AI scripts and feature-extraction pipelines. |
-| `VMAF_BVI_DVC_RAW_DIR` | path | `<repo>/.workingdir2/bvi-dvc-raw` | Root of the raw BVI-DVC dataset for `train_predictor_v2_realcorpus.py`. |
+| `VMAF_BVI_DVC_RAW_DIR` | path | `<repo>/.corpus/bvi-dvc-raw` | Root of the raw BVI-DVC dataset for `train_predictor_v2_realcorpus.py`. |
 | `VMAF_CHUG_DIR` | path | `<repo>/.corpus/chug` | Root of the CHUG shard tree used by `chug_extract_features.py` and `chug_to_corpus_jsonl.py`. |
 | `VMAF_DATA_ROOT` | path | `~/datasets` | Parent directory for datasets whose sub-paths are not otherwise overridden (e.g. `$VMAF_DATA_ROOT/konvid-1k`). |
 | `VMAF_HW_TAG` | string | `ryzen-9950x3d+rtx4090+arc-a380` | Hardware identifier stamped into benchmark artefacts by `measure_quant_drop_per_ep.py`. |
 | `VMAF_KONVID_1K_DIR` | path | `$VMAF_DATA_ROOT/konvid-1k` | Root of the KonViD-1k dataset. |
-| `VMAF_KONVID_150K_DIR` | path | `<repo>/.workingdir2/konvid-150k` | Root of the KonViD-150k dataset used by `extract_k150k_features.py`, `konvid_150k_to_corpus_jsonl.py`, and `train_konvid_mos_head.py`. |
-| `VMAF_NETFLIX_CORPUS_DIR` | path | `<repo>/.workingdir2/netflix` | Root of the Netflix internal MOS corpus (non-public). |
+| `VMAF_KONVID_150K_DIR` | path | `<repo>/.corpus/konvid-150k` | Root of the KonViD-150k dataset used by `extract_k150k_features.py`, `konvid_150k_to_corpus_jsonl.py`, and `train_konvid_mos_head.py`. |
+| `VMAF_NETFLIX_CORPUS_DIR` | path | `<repo>/.corpus/netflix` | Root of the Netflix internal MOS corpus (non-public). |
 
 ---
 

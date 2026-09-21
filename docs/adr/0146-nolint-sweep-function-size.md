@@ -18,7 +18,7 @@ of the public-API surface; three sat in IQA / SIMD code
 
 [ADR-0141](0141-touched-file-cleanup-rule.md) ("touched-file lint-clean")
 earmarked these as pre-rule historical debt and queued a single sweep-PR
-(`T7-5` in [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md)).
+(`T7-5` in `.workingdir2/BACKLOG.md`).
 Every existing NOLINT here carried a justification comment of the form
 "Refactor deferred to backlog item T7-5 …". This PR is that sweep.
 

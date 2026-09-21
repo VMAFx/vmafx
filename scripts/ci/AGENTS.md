@@ -10,6 +10,16 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Local data-root separation (ADR-1277)
+
+`check-local-data-contract.sh` separates three authorities: private state and
+bounded cache under `.workingdir/`, datasets and reusable derived data under
+`.corpus/`, and public evidence in tracked files. The retired numbered state
+root stays unignored so accidental recreation is visible. Tracked Markdown may
+show local paths in commands but never link into ignored data. Preserve the
+hermetic shell suite, always-run pre-commit hook, and
+`rule-enforcement.yml` invocation together.
+
 ### Exact-source Scorecard reports (ADR-1247)
 
 `scorecard_gate.py` validates complete reviewed check sets and tool identity,

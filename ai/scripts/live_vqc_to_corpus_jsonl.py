@@ -14,7 +14,7 @@ Downstream trainer code must account for the cross-corpus scale split.
 
 Pipeline shape::
 
-    .workingdir2/live-vqc/
+    .corpus/live-vqc/
       +-- .download-progress.json
       +-- manifest.csv
       +-- clips/
@@ -307,7 +307,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--live-vqc-dir",
         type=Path,
         default=_DEFAULT_LIVE_VQC_DIR,
-        help="Local LIVE-VQC working directory (default: .workingdir2/live-vqc/).",
+        help="Local LIVE-VQC working directory (default: .corpus/live-vqc/).",
     )
     ap.add_argument("--manifest-csv", type=Path, default=None)
     ap.add_argument("--progress-path", type=Path, default=None)
@@ -325,7 +325,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=_DEFAULT_OUTPUT,
-        help="Output JSONL path (default: .workingdir2/live-vqc/live_vqc.jsonl).",
+        help="Output JSONL path (default: .corpus/live-vqc/live_vqc.jsonl).",
     )
     ap.add_argument(
         "--manifest-out",

@@ -25,7 +25,7 @@ bugs in the feature-collector's singly-linked model list under
 
 The fork inherited both bugs verbatim and had test coverage for only
 the trivial one-model case, so the regression was latent. The fork's
-T4-4 row in [`BACKLOG.md`](../../.workingdir2/BACKLOG.md) calls for
+T4-4 row in `BACKLOG.md` calls for
 porting Netflix#1406.
 
 ## Decision
@@ -75,8 +75,8 @@ size threshold.
 ## References
 
 - Upstream PR: [Netflix#1406 — Bugfix: adding/removing models][pr1406]
-- Backlog: [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md) T4-4
-- Audit: [`.workingdir2/analysis/upstream-backlog-audit.md`](../../.workingdir2/analysis/upstream-backlog-audit.md)
+- Backlog: `.workingdir2/BACKLOG.md` T4-4
+- Audit: `.workingdir2/analysis/upstream-backlog-audit.md`
   PR #1406
 - Source: `req` — user direction to ship Batch-A (T0-1 + T4-4/5/6) as
   one PR (2026-04-20 popup).

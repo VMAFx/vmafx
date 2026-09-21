@@ -81,11 +81,12 @@ Another engineer could reasonably have chosen differently. Examples:
 **Not** ADR-worthy: bug fixes, implementation details, one-off refactors that
 don't change any interface or policy.
 
-## Relation to `.workingdir2/`
+## Local state and corpus data
 
-Planning dossiers live under `.workingdir2/` (gitignored). Mirrored copies of
-ADRs may exist there for local session continuity, but the tracked
-`docs/adr/` tree is authoritative.
+Private session state and bounded cache live under `.workingdir/`; local
+datasets and reusable derived data live under `.corpus/`. Both are gitignored
+and may be shown only as operator paths. The tracked `docs/adr/` tree is the
+public authority; documentation never links into either local root.
 
 ## Index
 
@@ -93,7 +94,7 @@ ADRs may exist there for local session continuity, but the tracked
 | --- | --- | --- | --- |
 | [ADR-0001](0001-stash-benchmark-noise-file.md) | Treat uncommitted benchmark result JSON as noise | Accepted | workspace, git, testing |
 | [ADR-0002](0002-merge-path-master-default.md) | Merge path gpu-opt → sycl → master, master is fork default | Accepted | git, release, workspace |
-| [ADR-0003](0003-workingdir2-empty-planning-dir.md) | Introduce `.workingdir2` as new planning directory | Accepted | workspace, planning, claude |
+| [ADR-0003](0003-workingdir2-empty-planning-dir.md) | Introduce `.workingdir2` as new planning directory | Superseded by ADR-1277 | workspace, planning, claude |
 | [ADR-0004](0004-auto-push-after-merges.md) | Auto-push sycl and master to origin after merges | Accepted | git, ci, release |
 | [ADR-0005](0005-framework-adaptation-full-scope.md) | Adopt full framework adaptation scope (a–g) | Accepted | framework, ci, docs, build, mcp |
 | [ADR-0006](0006-cli-precision-17g-default.md) | Set CLI precision default to `%.17g` with `--precision` flag | Superseded by [ADR-0119](0119-cli-precision-default-revert.md) | cli, testing, python |
@@ -109,7 +110,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0016](0016-sycl-to-master-merge-conflict-policy.md) | `sycl → master` merge conflict resolution policy | Accepted | git, workspace |
 | [ADR-0017](0017-claude-skills-scope.md) | Claude skills scope includes domain scaffolding | Accepted | claude, agents, framework |
 | [ADR-0018](0018-claude-hooks-scope.md) | Claude hooks scope: safety + auto-format + git | Accepted | claude, agents, ci, git |
-| [ADR-0019](0019-workingdir2-full-dossier.md) | `.workingdir2` is the full planning dossier | Accepted | workspace, planning, docs |
+| [ADR-0019](0019-workingdir2-full-dossier.md) | `.workingdir2` is the full planning dossier | Superseded by ADR-1277 | workspace, planning, docs |
 | [ADR-0020](0020-tinyai-four-capabilities.md) | Tiny-AI scope covers all four capabilities | Accepted | ai, dnn, framework, cli |
 | [ADR-0021](0021-training-stack-pytorch-lightning.md) | Training stack: PyTorch + Lightning with ONNX export | Accepted | ai, python, framework |
 | [ADR-0022](0022-inference-runtime-onnx.md) | Inference runtime: ONNX Runtime via execution providers | Accepted | ai, dnn, cuda, sycl, build |
@@ -1082,4 +1083,5 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1257](1257-retire-darwin-adm-dwt2-legacy-dispatch.md) | Retire the Darwin three-tap integer-ADM DWT2 compatibility dispatch: Apple AArch64 dispatches the universal four-tap `adm_dwt2_8_neon()`, `adm_dwt2_8_neon_apple_legacy()` is deleted, and the three akiyo assertions drop their Darwin branch for the platform-independent `88.030463` (Netflix/vmaf `cba9343ed` fixed the same dropped tap upstream). Supersedes ADR-1057's Darwin integer-compatibility contract. | Accepted | simd, neon, integer-adm, darwin, testing, upstream-sync |
 | [ADR-1265](1265-clang-tidy-header-filter-absolute-paths.md) | `.clang-tidy`'s `HeaderFilterRegex` was anchored `^core/…`, but clang-tidy matches it against the absolute path it saw, which never starts with `core/` — so every in-repo header was dropped as "non-user code" and the ADR-1142 whole-tree ratchet had never counted a header (one TU: `Suppressed 540 warnings (480 in non-user code)`; tree-wide 60 headers carry 313 findings, `adm_tools.h` 142). The regex gains a `(^|/)` prefix and every lane's baseline is re-recorded, the CPU one from CI's own `tidy-ratchet-cpu` artifact. | Proposed | ci, clang-tidy, lint, ratchet, fork-local |
 | [ADR-1214](1214-float-adm-csf-scale-watson-mode-and-aliases.md) | The float-ADM GPU twins ignore `adm_csf_scale` in Watson mode and share the CPU's option aliases | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, options |
+| [ADR-1277](1277-workingdir-contract-cleanup.md) | Separate private state, corpora, and tracked evidence | Accepted | workspace, datasets, agents, ci, docs |
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |

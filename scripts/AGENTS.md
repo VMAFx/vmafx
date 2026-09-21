@@ -226,9 +226,9 @@ to accept both spellings; producer-side rename = path forward.
 
 Modernization audit = operator aid, not CI gate. Scans
 curated source/doc roots, model-registry smoke rows, AI script-family
-clusters, `.workingdir2` state files, emits JSON/Markdown.
-Must stay read-only: no automatic edits to `.workingdir2/OPEN.md`,
-`.workingdir2/BACKLOG.md`, `docs/state.md`, GitHub PRs, or changelog
+clusters, `.workingdir` state files, emits JSON/Markdown.
+Must stay read-only: no automatic edits to `.workingdir/OPEN.md`,
+`.workingdir/BACKLOG.md`, `docs/state.md`, GitHub PRs, or changelog
 fragments. If future branch wants machine-written backlog updates,
 that = separate ADR and module.
 
@@ -237,7 +237,7 @@ non-debt Python exception plumbing. Live `raise NotImplementedError(...)`
 = actionable; docstring saying old `NotImplementedError` scaffold was
 replaced, `except NotImplementedError` handler, or custom
 `NotImplementedError` subclass is not. Keep that distinction on rebase so
-tool does not repopulate `.workingdir2` with already-closed gaps.
+tool does not repopulate `.workingdir` with already-closed gaps.
 Same rule applies to documented `-ENOSYS` disabled-build contracts:
 workflow comments, API docs, DNN fallback stubs explicitly describing
 optional-build behavior are not implementation gaps; bare `return -ENOSYS;`

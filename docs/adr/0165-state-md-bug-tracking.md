@@ -116,7 +116,7 @@ slot in the hard-rules block):
   is the concrete artifact that re-opens the audit trail).
 - [ADR-0028](0028-adr-maintenance-rule.md) — ADR-row-before-commit
   rule (the decision-log half of state hygiene).
-- [BACKLOG T7-1](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T7-1 — backlog row.
 - `req` — user direction 2026-04-25: "well then update the state files
   thats bullshit as well" → "well then lets go" (popup choice:
   tracked `docs/state.md`).

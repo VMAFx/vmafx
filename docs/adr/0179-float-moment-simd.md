@@ -8,7 +8,7 @@
 ## Context
 
 The fork's SIMD coverage matrix
-([`.workingdir2/analysis/metrics-backends-matrix.md`](../../.workingdir2/analysis/metrics-backends-matrix.md))
+(`.workingdir2/analysis/metrics-backends-matrix.md`)
 flagged `float_moment` as the only fully-scalar row remaining after
 T5-1c closed. The extractor produces four scores
 (`float_moment_{ref,dis}{1st,2nd}`) via two trivial reductions over
@@ -67,7 +67,7 @@ edge case to exercise the per-row tail).
   gaps of metrics-backends-matrix.md (meaning implementing the
   gaps)").
 - Backlog row: `T7-19` in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
+  `.workingdir2/BACKLOG.md`.
 - Pattern parent: [ADR-0125](0125-ms-ssim-decimate-simd.md)
   (MS-SSIM decimate SIMD), [ADR-0159](0159-psnr-hvs-avx2-bitexact.md)
   (PSNR-HVS AVX2), [ADR-0161](0161-ssimulacra2-simd-bitexact.md)

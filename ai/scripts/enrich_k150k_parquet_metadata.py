@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         "--metadata-jsonl",
         type=Path,
         required=True,
-        help="Corpus JSONL sidecar, e.g. .workingdir2/chug/chug.jsonl.",
+        help="Corpus JSONL sidecar, e.g. .corpus/chug/chug.jsonl.",
     )
     ap.add_argument(
         "--out",

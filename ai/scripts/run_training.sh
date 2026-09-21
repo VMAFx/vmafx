@@ -16,14 +16,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-data_root="${VMAF_DATA_ROOT:-$repo_root/.workingdir2/netflix}"
+data_root="${VMAF_DATA_ROOT:-$repo_root/.corpus/netflix}"
 out_dir="${VMAF_TRAIN_OUT_DIR:-$repo_root/runs/tiny_nflx}"
 vmaf_bin="${VMAF_BIN:-$repo_root/core/build-cpu/tools/vmaf}"
 
 if [[ ! -d "$data_root" ]]; then
   echo "error: data root not found: $data_root" >&2
   echo "Either populate \$VMAF_DATA_ROOT or copy the corpus to" \
-    ".workingdir2/netflix/{ref,dis}/." >&2
+    ".corpus/netflix/{ref,dis}/." >&2
   exit 2
 fi
 

@@ -13,7 +13,7 @@ script. It exits 0 if dispatching is still useful, 1 otherwise.
 Three checks, in order:
 
     1. **Backlog row not closed.**
-       Parse ``.workingdir2/BACKLOG.md``. If the row for the given
+       Parse ``.workingdir/BACKLOG.md``. If the row for the given
        ID has status DONE / CLOSED / REMOVED, exit 1 with the
        closing PR's number (when known).
 

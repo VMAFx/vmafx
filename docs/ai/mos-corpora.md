@@ -89,14 +89,14 @@ It normalises each shard to a common 0–100 axis, deduplicates by
 
 ```bash
 python ai/scripts/aggregate_corpora.py \
-    --inputs .workingdir2/konvid-150k/konvid_150k.jsonl \
-             .workingdir2/lsvq/lsvq.jsonl \
-             .workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl \
-             .workingdir2/youtube-ugc/youtube_ugc.jsonl \
-    --output .workingdir2/aggregated/unified_corpus.jsonl
+    --inputs .corpus/konvid-150k/konvid_150k.jsonl \
+             .corpus/lsvq/lsvq.jsonl \
+             .corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl \
+             .corpus/youtube-ugc/youtube_ugc.jsonl \
+    --output .corpus/aggregated/unified_corpus.jsonl
 ```
 
-The command writes `.workingdir2/aggregated/unified_corpus.manifest.json` by
+The command writes `.corpus/aggregated/unified_corpus.manifest.json` by
 default. That manifest records source-shard hashes, MOS scale conversions,
 dedup counters, corpus-source overrides, and ADR-0661 `run_provenance`.
 Use `--manifest-out PATH` when the JSONL and manifest need to live in a
@@ -221,7 +221,7 @@ python ai/scripts/fetch_konvid_1k.py
 
 # 2. Convert to JSONL.
 python ai/scripts/konvid_1k_to_corpus_jsonl.py
-#    → .workingdir2/konvid-1k/konvid_1k.jsonl
+#    → .corpus/konvid-1k/konvid_1k.jsonl
 
 # Smoke (5 clips only):
 python ai/scripts/konvid_1k_to_corpus_jsonl.py --max-rows 5
@@ -233,7 +233,7 @@ python ai/scripts/konvid_1k_to_corpus_jsonl.py --max-rows 5
 # Drop manifest.csv first:  https://database.mmsp-kn.de/konvid-150k-vqa-database.html
 
 python ai/scripts/konvid_150k_to_corpus_jsonl.py
-#    → .workingdir2/konvid-150k/konvid_150k.jsonl
+#    → .corpus/konvid-150k/konvid_150k.jsonl
 #    Resumable — safe to Ctrl-C and re-run.
 
 # Smoke (50 clips):
@@ -243,29 +243,29 @@ python ai/scripts/konvid_150k_to_corpus_jsonl.py --max-rows 50
 ### LSVQ (~39 000 clips, ~500 GB whole)
 
 ```bash
-# Drop LSVQ_whole_train CSV at .workingdir2/lsvq/manifest.csv, then:
+# Drop LSVQ_whole_train CSV at .corpus/lsvq/manifest.csv, then:
 python ai/scripts/lsvq_to_corpus_jsonl.py          # laptop subset (500 clips)
 python ai/scripts/lsvq_to_corpus_jsonl.py --full   # whole corpus
-#    → .workingdir2/lsvq/lsvq.jsonl
+#    → .corpus/lsvq/lsvq.jsonl
 ```
 
 ### YouTube UGC (~1 500 clips, ~2 TB whole)
 
 ```bash
-# Drop original_videos.csv at .workingdir2/youtube-ugc/manifest.csv, then:
+# Drop original_videos.csv at .corpus/youtube-ugc/manifest.csv, then:
 python ai/scripts/youtube_ugc_to_corpus_jsonl.py          # laptop subset (300 clips)
 python ai/scripts/youtube_ugc_to_corpus_jsonl.py --full   # whole corpus
-#    → .workingdir2/youtube-ugc/youtube_ugc.jsonl
+#    → .corpus/youtube-ugc/youtube_ugc.jsonl
 ```
 
 ### Waterloo IVC 4K-VQA (1 200 clips, staged locally)
 
 ```bash
-# Extract bulk archives to .workingdir2/waterloo-ivc-4k/clips/
-# Drop scores.txt at .workingdir2/waterloo-ivc-4k/manifest.csv, then:
+# Extract bulk archives to .corpus/waterloo-ivc-4k/clips/
+# Drop scores.txt at .corpus/waterloo-ivc-4k/manifest.csv, then:
 python ai/scripts/waterloo_ivc_to_corpus_jsonl.py          # default subset
 python ai/scripts/waterloo_ivc_to_corpus_jsonl.py --full   # whole corpus
-#    → .workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl
+#    → .corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl
 ```
 
 Note: Waterloo IVC 4K-VQA uses a **0–100 continuous scale**, not 1–5 ACR Likert.
@@ -276,13 +276,13 @@ table.
 ### CHUG UGC-HDR (5 992 clips, S3-hosted)
 
 ```bash
-mkdir -p .workingdir2/chug
+mkdir -p .corpus/chug
 curl -L https://raw.githubusercontent.com/shreshthsaini/CHUG/master/chug.csv \
-  -o .workingdir2/chug/manifest.csv
+  -o .corpus/chug/manifest.csv
 
 PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py          # 500-row subset
 PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py --full   # whole corpus
-#    → .workingdir2/chug/chug.jsonl
+#    → .corpus/chug/chug.jsonl
 ```
 
 CHUG is UGC-HDR and reports MOS on a **0–100 continuous scale**. The
@@ -295,11 +295,11 @@ geometry, and content-name metadata under `chug_*` optional fields.
 ### LIVE-VQC (585 clips, ~few GB)
 
 ```bash
-# Drop manifest CSV at .workingdir2/live-vqc/manifest.csv
-# and clips at .workingdir2/live-vqc/clips/, then:
+# Drop manifest CSV at .corpus/live-vqc/manifest.csv
+# and clips at .corpus/live-vqc/clips/, then:
 python ai/scripts/live_vqc_to_corpus_jsonl.py          # laptop subset (200 clips)
 python ai/scripts/live_vqc_to_corpus_jsonl.py --full   # whole corpus (585 clips)
-#    → .workingdir2/live-vqc/live_vqc.jsonl
+#    → .corpus/live-vqc/live_vqc.jsonl
 ```
 
 Note: LIVE-VQC uses a **0–100 continuous scale** (same as Waterloo IVC 4K-VQA).
@@ -321,8 +321,8 @@ python ai/scripts/train_konvid_mos_head.py --smoke
 
 # Production (real KonViD JSONL drops on disk):
 python ai/scripts/train_konvid_mos_head.py \
-    --konvid-1k   .workingdir2/konvid-1k/konvid_1k.jsonl \
-    --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
+    --konvid-1k   .corpus/konvid-1k/konvid_1k.jsonl \
+    --konvid-150k .corpus/konvid-150k/konvid_150k.jsonl
 #    → model/konvid_mos_head_v1.onnx
 #    → model/konvid_mos_head_v1.json  (manifest sidecar)
 
@@ -345,8 +345,8 @@ addition to the canonical-6 feature means:
 
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py
-#    → .workingdir2/chug/chug_hdr_mos_head_v1.onnx
-#    → .workingdir2/chug/chug_hdr_mos_head_v1.json
+#    → .corpus/chug/chug_hdr_mos_head_v1.onnx
+#    → .corpus/chug/chug_hdr_mos_head_v1.json
 ```
 
 To train against a target HDR display instead of treating MOS as
@@ -354,7 +354,7 @@ display-invariant, provide a display profile:
 
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py \
-  --display-profile-json .workingdir2/chug/display-profile.json
+  --display-profile-json .corpus/chug/display-profile.json
 ```
 
 With that flag and no explicit `--feature-schema`, the wrapper uses

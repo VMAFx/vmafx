@@ -272,7 +272,7 @@ transport body landing as its own PR.
   audit pattern applied to a tooling surface.
 - [`mcp-server/vmaf-mcp/`](../../mcp-server/vmaf-mcp/) — the
   external Python MCP server this one complements.
-- [BACKLOG T5-2](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T5-2 — backlog row.
 - `req` — backlog T5-2 ("Embedded MCP skeleton (SSE + UDS +
   stdio). New `libvmaf_mcp.h` header. Dedicated MCP pthread +
   SPSC ring buffer; no alloc on hot path (Power-of-10 §3).

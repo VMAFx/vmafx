@@ -12,7 +12,7 @@ The `coverage-gpu` job runs only when the repository variable
 with the matching labels before enabling that variable; an enabled job
 waits for a matching runner. This guide describes that enrollment.
 
-Historical backlog reference: T7-3. The local `.workingdir2/BACKLOG.md`
+Historical backlog reference: T7-3. The local `.workingdir/BACKLOG.md`
 notebook is not part of the published documentation; the linked workflow
 is the current configuration source.
 
@@ -160,7 +160,7 @@ rm -rf ~/actions-runner
 
 ## References
 
-- Historical T7-3 reference: `.workingdir2/BACKLOG.md` (local notebook,
+- Historical T7-3 reference: `.workingdir/BACKLOG.md` (local notebook,
   not shipped with this documentation).
 - [`tests-and-quality-gates.yml` § coverage-gpu](../../.github/workflows/tests-and-quality-gates.yml) —
   the first consumer of the `gpu-full` label.
