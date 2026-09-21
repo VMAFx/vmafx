@@ -24188,8 +24188,9 @@ The required standards gate now replays declared HISS enforcement fixtures on Li
   failures are reported instead of dropped. `unsafe.Sizeof` and
   `unsafe.Pointer` in the eBPF ring-buffer decode carry `// SAFETY:` proofs
   naming the bound that makes each sound, and the MCP schema marshaller no
-  longer panics — a schema that cannot marshal registers the permissive empty
-  object and logs, rather than taking every other tool down with it.
+  longer panics — a schema that cannot marshal is returned as an error that
+  aborts tool registration and fails `buildServer`, so the failure is fatal at
+  startup rather than a tool served with no argument validation at all.
 
 
 

@@ -132,7 +132,11 @@ func main() {
 // dependency is taken for forward-looking config-driven tool wiring and so the
 // provider participates in the graph in the same shape as the sibling
 // migrations; buildServer itself currently needs only the logger.
-func buildMCPServer(log *slog.Logger, _ *config.Config) *mcp.Server {
+//
+// The error is fx's: a tool whose input schema fails to marshal fails the provider, so
+// the graph never starts and the process exits non-zero instead of serving an incomplete
+// tool surface.
+func buildMCPServer(log *slog.Logger, _ *config.Config) (*mcp.Server, error) {
 	return buildServer(log)
 }
 

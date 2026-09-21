@@ -50,13 +50,16 @@ var pythonToolNames = []string{
 func TestToolListMatchesPython(t *testing.T) {
 	t.Parallel()
 
-	srv := buildServer(nil) // nil logger is fine for tests
+	srv, err := buildServer(nil) // nil logger is fine for tests
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
 
 	t1, t2 := mcp.NewInMemoryTransports()
 	ctx := context.Background()
 
-	_, err := srv.Connect(ctx, t1, nil)
+	_, err = srv.Connect(ctx, t1, nil)
 	if err != nil {
 		t.Fatalf("server.Connect: %v", err)
 	}
@@ -122,13 +125,16 @@ var pythonToolRequired = map[string][]string{
 func TestToolSchemasMatchPython(t *testing.T) {
 	t.Parallel()
 
-	srv := buildServer(nil)
+	srv, err := buildServer(nil)
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
 
 	t1, t2 := mcp.NewInMemoryTransports()
 	ctx := context.Background()
 
-	_, err := srv.Connect(ctx, t1, nil)
+	_, err = srv.Connect(ctx, t1, nil)
 	if err != nil {
 		t.Fatalf("server.Connect: %v", err)
 	}

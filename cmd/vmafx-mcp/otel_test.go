@@ -74,7 +74,10 @@ func TestOTelWiredThroughBootstrap(t *testing.T) {
 func TestToolCallEmitsSpan(t *testing.T) {
 	sr := oteltest.Recorder(t)
 
-	srv := buildServer(nil)
+	srv, err := buildServer(nil)
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "otel-test-client", Version: "0.0.1"}, nil)
 	t1, t2 := mcp.NewInMemoryTransports()
 	ctx := context.Background()

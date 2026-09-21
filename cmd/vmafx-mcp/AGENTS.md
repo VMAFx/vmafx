@@ -17,7 +17,7 @@ fx.New(
     bootstrap.Base,
     fx.Replace(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: true}),
     bootstrap.FxLogger(),
-    fx.Provide(buildMCPServer),  // (*slog.Logger, *config.Config) -> *mcp.Server; reuses buildServer
+    fx.Provide(buildMCPServer),  // (*slog.Logger, *config.Config) -> (*mcp.Server, error); reuses buildServer
     fx.Invoke(runMCPTransport),  // wires the transport in a lifecycle hook
 ).Run()
 ```
@@ -30,11 +30,16 @@ Key facts:
   `OnStart` launches on goroutine, `OnStop` drains. If golusoris adds MCP module
   later, fold hook into module. Until then, do not express transport as
   framework module.
-- **`buildServer` is the unchanged domain seam.** `buildMCPServer` = thin fx
-  provider calling existing `buildServer(*slog.Logger) *mcp.Server`
-  (server.go). `*config.Config` param exists for fx signature / config-driven
-  wiring; `buildServer` itself needs only logger. Tests call `buildServer(nil)`
-  directly — do not change signature.
+- **`buildServer` is the domain seam.** `buildMCPServer` = thin fx provider
+  calling `buildServer(*slog.Logger) (*mcp.Server, error)` (server.go).
+  `*config.Config` param exists for fx signature / config-driven wiring;
+  `buildServer` itself needs only logger. Tests call `buildServer(nil)`
+  directly and must check the error. The error return is load-bearing, not
+  decoration: it is the only path by which a tool whose input schema failed to
+  marshal stops the process instead of being served with no argument
+  validation (invariant #19). Do not widen the signature further, and do not
+  reduce it back to a single return value — an fx provider that cannot fail
+  has nowhere to put that failure but a log line.
 - **Config keys (env prefix `VMAFX_`, `.` delimiter — every `_` becomes `.`):**
   `VMAFX_MCP_TRANSPORT` -> `mcp.transport` (default `stdio`);
   `VMAFX_MCP_HTTP_ADDR` -> `mcp.http.addr` (default `:3000`, full listen
@@ -242,6 +247,12 @@ Key facts:
     helper that `registerTools` calls) — a `register*` function nothing calls
     registers nothing, and invariant #1's parity test only asserts every Python
     tool is present, so a Go-only tool silently dropped this way is not caught.
-    Schema literals are marshalled by `toolSchema`, which never panics: a schema
-    that fails to marshal registers the permissive empty object and logs, so one
-    malformed literal cannot take the whole server down with it.
+    Schema literals are marshalled by `toolRegistrar.add`, not by the tool
+    literal, so a schema that fails to marshal cannot reach a registered tool:
+    `add` retains the error, registers nothing, and skips every later
+    registration; `registerTools` returns it and `buildServer` fails. Never
+    substitute a default schema for one that failed to marshal — the permissive
+    `{"type":"object"}` accepts every argument map, so the tool would stay
+    reachable with its declared contract silently switched off, and the parity
+    tests would not notice because they only compare the tools that *are*
+    registered. `cmd/vmafx-mcp/tool_schema_test.go` pins that outcome.
