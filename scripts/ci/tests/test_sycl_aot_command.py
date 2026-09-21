@@ -8,13 +8,14 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[3]
 MESON_SOURCE = ROOT / "core" / "src" / "meson.build"
 GENERATOR_SOURCE = ROOT / "scripts" / "ci" / "gen-sycl-compile-commands.py"
 
 
-def load_generator():
+def load_generator() -> ModuleType:
     spec = importlib.util.spec_from_file_location("gen_sycl_compile_commands", GENERATOR_SOURCE)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load {GENERATOR_SOURCE}")
@@ -38,7 +39,8 @@ class MesonCommandContractTest(unittest.TestCase):
             source,
             flags=re.DOTALL,
         )
-        self.assertIsNotNone(match, "missing SYCL toolchain argument list")
+        if match is None:
+            self.fail("missing SYCL toolchain argument list")
         body = match.group("body")
 
         self.assertIn("'-fsycl-targets=spir64_gen,spir64'", body)
