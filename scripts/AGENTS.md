@@ -272,6 +272,18 @@ non-doc invocations select scope before requiring docs toolchain.
 Paired updates to config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
 
+### Post-commit state sync preserves worktree identity
+
+[ADR-1280](../docs/adr/1280-worktree-state-sync.md) requires
+`githooks/state-sync.sh` to synchronize from the checkout that created the
+commit. Linked worktrees use regular-file ledger mirrors; never replace them
+with a `.workingdir` symlink or run the synchronizer against the main checkout,
+because those paths respectively violate Praetor confinement and record false
+Git identity. Keep the common-Git lock fail-closed, preserve worktree-local
+cache content, and copy only derived `STATE.md` back to canonical private
+state. The real-worktree regression in `githooks/tests/test_install.py` must
+cover branch identity, regular files, cache preservation, and symlink refusal.
+
 ### Python pre-push scope follows the PR merge base
 
 `git-hooks/pre-push-mypy.py` implements parent §12.10 for existing

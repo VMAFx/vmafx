@@ -51735,3 +51735,11 @@ no rebase impact: `cmd/vmafx-tune/cmd/recommend.go` and `pkg/corpus/corpus.go`
 are fork-only Go surfaces. The helper boundaries only enforce the 60-line
 limit; preserve existing CLI flags/output, corpus row order/schema, the
 distorted-decode fallback, and explicit source-hash/encode-cleanup errors.
+
+## Worktree-safe private-state synchronization (ADR-1280)
+
+No Netflix rebase impact: `scripts/githooks/state-sync.sh`, `lefthook.yml`,
+and the hook fixture are fork-only governance tooling. Preserve the regular
+linked-worktree mirror, common-Git exclusive lock, active-worktree Git
+identity, cache preservation, symlink refusal, and the rule that only derived
+`STATE.md` is copied back to canonical private state.

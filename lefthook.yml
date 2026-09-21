@@ -38,7 +38,7 @@ pre-commit:
 post-commit:
   commands:
     state-sync:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl state sync .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl state sync .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: scripts/githooks/state-sync.sh
     dedupe-cadence:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe cadence --threshold=20 --record .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe cadence --threshold=20 --record .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
 
