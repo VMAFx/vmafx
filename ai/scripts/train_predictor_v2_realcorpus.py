@@ -727,12 +727,8 @@ def render_human_summary(report: dict) -> str:
 # ---------------------------------------------------------------------
 
 
-def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = make_argument_parser(
-        prog="train_predictor_v2_realcorpus.py",
-        description="Real-corpus LOSO trainer for the per-codec predictor "
-        "models (Phase 2 of the predictor pipeline).",
-    )
+def _add_corpus_args(parser: argparse.ArgumentParser) -> None:
+    """Register the corpus-selection arguments on *parser*."""
     parser.add_argument(
         "--corpus",
         type=Path,
@@ -755,6 +751,35 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Restrict to specific codec(s). Repeatable. Default: all 14.",
     )
+
+
+def _add_diagnostic_args(parser: argparse.ArgumentParser) -> None:
+    """Register the smoke / diagnostic flags on *parser*."""
+    parser.add_argument(
+        "--synthetic-smoke",
+        action="store_true",
+        help="Skip real-corpus discovery and run on the synthetic stub "
+        "corpus for every codec. Used by tests + CI smoke; never "
+        "produces a passing gate verdict (synthetic targets do not "
+        "exercise the LOSO generalisation surface).",
+    )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Do not error when no corpora are discovered; instead emit "
+        "a report where every codec has status='missing-rows'. Used "
+        "by ``run_predictor_v2_training.sh`` to render an honest "
+        "diagnostic when the operator has not yet generated corpora.",
+    )
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = make_argument_parser(
+        prog="train_predictor_v2_realcorpus.py",
+        description="Real-corpus LOSO trainer for the per-codec predictor "
+        "models (Phase 2 of the predictor pipeline).",
+    )
+    _add_corpus_args(parser)
     parser.add_argument(
         "--epochs",
         type=int,
@@ -773,22 +798,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=Path("runs/predictor_v2_realcorpus/report.json"),
         help="Where to write the per-codec JSON report.",
     )
-    parser.add_argument(
-        "--synthetic-smoke",
-        action="store_true",
-        help="Skip real-corpus discovery and run on the synthetic stub "
-        "corpus for every codec. Used by tests + CI smoke; never "
-        "produces a passing gate verdict (synthetic targets do not "
-        "exercise the LOSO generalisation surface).",
-    )
-    parser.add_argument(
-        "--allow-empty",
-        action="store_true",
-        help="Do not error when no corpora are discovered; instead emit "
-        "a report where every codec has status='missing-rows'. Used "
-        "by ``run_predictor_v2_training.sh`` to render an honest "
-        "diagnostic when the operator has not yet generated corpora.",
-    )
+    _add_diagnostic_args(parser)
     return parser
 
 
@@ -812,37 +822,21 @@ def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict]:
     return rows
 
 
-def main(argv: Iterable[str] | None = None) -> int:
-    parser = _build_arg_parser()
-    raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
-
-    codecs = tuple(args.codec) if args.codec else CODECS
-    unknown = [c for c in codecs if c not in CODECS]
-    if unknown:
-        parser.error(f"unknown codec(s): {unknown}; supported: {list(CODECS)}")
-
-    corpus_files = [] if args.synthetic_smoke else _resolve_corpora(args)
-    if not corpus_files and not args.synthetic_smoke and not args.allow_empty:
-        parser.error(
-            "no corpora discovered. Pass --corpus PATH, --corpus-root DIR, "
-            f"populate one of {[str(p) for p in DEFAULT_CORPUS_ROOTS]}, "
-            "or use --synthetic-smoke / --allow-empty for a diagnostic run."
-        )
-
-    print(f"[predictor-v2] codecs:        {list(codecs)}", flush=True)
-    print(f"[predictor-v2] corpus files:  {[str(c.path) for c in corpus_files]}", flush=True)
-    print(f"[predictor-v2] synthetic:     {args.synthetic_smoke}", flush=True)
-
+def _train_codec_batch(
+    codecs: tuple[str, ...],
+    corpus_files: list[CorpusFile],
+    *,
+    synthetic: bool,
+    epochs: int,
+    seed: int,
+) -> list[CodecResult]:
+    """Run LOSO training for every codec; return one CodecResult each."""
     results: list[CodecResult] = []
     for codec in codecs:
-        if args.synthetic_smoke:
-            rows = _synthetic_rows_for_codec(codec)
-        else:
-            rows = load_rows(corpus_files, codec)
-        print(f"  {codec}: {len(rows)} rows / " f"{source_count(rows)} sources", flush=True)
+        rows = _synthetic_rows_for_codec(codec) if synthetic else load_rows(corpus_files, codec)
+        print(f"  {codec}: {len(rows)} rows / {source_count(rows)} sources", flush=True)
         try:
-            result = train_codec_loso(codec, rows, epochs=args.epochs, seed=args.seed)
+            result = train_codec_loso(codec, rows, epochs=epochs, seed=seed)
         except RuntimeError as exc:
             # vmaftune.predictor_train missing — render a diagnostic
             # row rather than crashing the whole batch.
@@ -871,7 +865,17 @@ def main(argv: Iterable[str] | None = None) -> int:
         else:
             reasons = "; ".join(result.failure_reasons) or "(no folds)"
             print(f"    {verdict}: {reasons}", flush=True)
+    return results
 
+
+def _emit_report(
+    results: list[CodecResult],
+    corpus_files: list[CorpusFile],
+    *,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> None:
+    """Build, annotate, write, and print the JSON + human-summary report."""
     report = render_report(results, corpus_files=corpus_files)
     report["run_provenance"] = build_run_provenance(
         entrypoint=SCRIPT_PATH,
@@ -890,6 +894,38 @@ def main(argv: Iterable[str] | None = None) -> int:
     print(render_human_summary(report), flush=True)
     print("", flush=True)
     print(f"[predictor-v2] report:        {args.report_out}", flush=True)
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    parser = _build_arg_parser()
+    raw_argv = collect_cli_argv(argv)
+    args = parser.parse_args(raw_argv)
+
+    codecs = tuple(args.codec) if args.codec else CODECS
+    unknown = [c for c in codecs if c not in CODECS]
+    if unknown:
+        parser.error(f"unknown codec(s): {unknown}; supported: {list(CODECS)}")
+
+    corpus_files = [] if args.synthetic_smoke else _resolve_corpora(args)
+    if not corpus_files and not args.synthetic_smoke and not args.allow_empty:
+        parser.error(
+            "no corpora discovered. Pass --corpus PATH, --corpus-root DIR, "
+            f"populate one of {[str(p) for p in DEFAULT_CORPUS_ROOTS]}, "
+            "or use --synthetic-smoke / --allow-empty for a diagnostic run."
+        )
+
+    print(f"[predictor-v2] codecs:        {list(codecs)}", flush=True)
+    print(f"[predictor-v2] corpus files:  {[str(c.path) for c in corpus_files]}", flush=True)
+    print(f"[predictor-v2] synthetic:     {args.synthetic_smoke}", flush=True)
+
+    results = _train_codec_batch(
+        codecs,
+        corpus_files,
+        synthetic=args.synthetic_smoke,
+        epochs=args.epochs,
+        seed=args.seed,
+    )
+    _emit_report(results, corpus_files, args=args, raw_argv=raw_argv)
 
     # Exit code: 0 if every codec passed, 1 if any failed (so the
     # orchestration shell can short-circuit). The honest report is
