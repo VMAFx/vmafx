@@ -145,15 +145,19 @@ Fork-local subtree. Read this before editing any TU under
    `INADDR_ANY` without ADR + auth design — v3 explicitly ships
    without CORS/Bearer/per-session auth on assumption of
    same-host trust boundary.
-9. **`sse_emit_event` and `sse_extract_id` are reserved for v4
-   broadcast.** Marked `__attribute__((unused))` in v3 to keep
-   build warning-free; v4 routes POST replies onto subscribed
-   GET streams via these helpers.
+9. **`sse_emit_event` owns SSE frame construction.** The v3 ready
+   event already uses this helper; a future broadcast implementation
+   may reuse it for POST replies. Do not retain speculative private
+   helpers behind `unused` attributes: add response-id extraction only
+   when the broadcast path has a caller and tests. The v3 SSE worker
+   serves one client synchronously, so its socket writes need no mutex;
+   introduce per-stream locking only with concurrent broadcast writers.
 10. **Every `read(2)` on blocking fd must retry on `EINTR`.**
     Primary helpers (`read_line`, `sse_read_n`, `read_exact`) and
     over-length line drain loops in `transport_stdio.c` and
     `transport_uds.c` all follow pattern: `if (r < 0 && errno
-    == EINTR) continue;` then break on hard error / EOF / `\n`.
+    == EINTR) continue;` within an explicit retry budget, then break
+    on exhausted retries, hard error, EOF, or `\n`.
     Never collapse this to `if (r <= 0) break;` — stray signal
     (SIGCHLD, SIGURG, debugger attach) then desynchronises
     stream framing on very next request. Same for `write(2)` —
