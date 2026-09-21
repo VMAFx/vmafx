@@ -80,6 +80,12 @@ jobs:
       - name: Audit HISS invariants against the baseline
         run: standardsctl audit
 
+      # The general HISS audit and its baseline do not include the AST clone
+      # detector. Keep this explicit and fail-closed: duplicate implementation
+      # families are defects regardless of origin or historical ownership.
+      - name: Reject duplicate implementation families
+        run: standardsctl dedupe scan .
+
       - name: Replay HISS enforcement evidence
         run: standardsctl hiss coverage --verify
 

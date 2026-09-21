@@ -263,7 +263,7 @@ func TestStopOrder(t *testing.T) {
 	grpcIdx, queueIdx, registryIdx, scorerIdx := -1, -1, -1, -1
 	for i, caller := range rec.order {
 		switch {
-		case strings.Contains(caller, "provideScorer"):
+		case strings.Contains(caller, "scoringservice.ProvideScorer"):
 			if scorerIdx == -1 {
 				scorerIdx = i
 			}
@@ -291,7 +291,7 @@ func TestStopOrder(t *testing.T) {
 		t.Fatalf("did not observe a provideNodeRegistry OnStop hook; callers=%v", rec.order)
 	}
 	if scorerIdx == -1 {
-		t.Fatalf("did not observe a provideScorer OnStop hook; callers=%v", rec.order)
+		t.Fatalf("did not observe a scoringservice.ProvideScorer OnStop hook; callers=%v", rec.order)
 	}
 	// gRPC drains before the domain resources close.
 	if grpcIdx > queueIdx {
@@ -322,7 +322,9 @@ func TestProductionGraphBadGRPCAddrFailsStart(t *testing.T) {
 	defer cancel()
 
 	if err := app.Start(ctx); err == nil {
-		_ = app.Stop(context.Background())
+		if stopErr := app.Stop(context.Background()); stopErr != nil {
+			t.Errorf("stop unexpectedly-started app: %v", stopErr)
+		}
 		t.Fatal("expected app.Start to fail with an unbindable gRPC address, got nil")
 	}
 }
@@ -337,7 +339,9 @@ func freeLocalAddr(t *testing.T) string {
 		t.Fatalf("reserve free port: %v", err)
 	}
 	addr := ln.Addr().String()
-	_ = ln.Close()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("release free port: %v", err)
+	}
 	return addr
 }
 
