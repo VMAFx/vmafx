@@ -367,27 +367,22 @@ def export_onnx(model: nn.Module, output: Path, opset: int = 17) -> None:
     model.eval()
     dummy = torch.zeros(1, 3, 256, 256, dtype=torch.float32)
     output.parent.mkdir(parents=True, exist_ok=True)
-    # Note: the fork's tiny-AI loader binds tensors by name; the C-side
-    # extractor (feature_mobilesal.c) expects "input" -> "saliency_map".
-    # The torch.onnx.dynamo path requires opset >= 18 in this PyTorch
-    # build; we explicitly request the legacy TorchScript path
-    # (`dynamo=False`) so the requested opset 17 is honoured exactly,
-    # which keeps the registry's `"opset": 17` field truthful and
-    # matches every other model under model/tiny/.
-    torch.onnx.export(
+    # The C-side extractor binds "input" -> "saliency_map" by name. The
+    # shared exporter uses dynamo at its native opset and explicitly converts
+    # the self-contained result to the registry's opset-17 contract.
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy,),
-        str(output),
+        output,
         input_names=["input"],
         output_names=["saliency_map"],
         dynamic_axes={
             "input": {2: "H", 3: "W"},
             "saliency_map": {2: "H", 3: "W"},
         },
-        opset_version=opset,
-        do_constant_folding=True,
-        training=torch.onnx.TrainingMode.EVAL,
-        dynamo=False,
+        opset=opset,
     )
 
 

@@ -196,8 +196,8 @@ class LumaAdapter(nn.Module):
         * collapse RGB output back to luma via BT.601 weights.
 
     The BatchNorm layers in upstream's UNet are fused-into-the-graph at
-    eval() time; ``do_constant_folding=True`` in ``torch.onnx.export``
-    bakes them down to plain Conv biases.
+    eval() time; the dynamo exporter's constant folding then bakes them
+    down to plain Conv biases.
     """
 
     # BT.601 Y = 0.299 R + 0.587 G + 0.114 B — chosen because the fork's
@@ -278,23 +278,19 @@ def _build_adapter(upstream_dir: Path, sigma: float) -> LumaAdapter:
 def _export(adapter: nn.Module, onnx_path: Path, height: int, width: int, opset: int) -> None:
     dummy = torch.zeros(1, WINDOW, height, width, dtype=torch.float32)
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    # Legacy TorchScript exporter (dynamo=False) — keeps the graph
-    # under ONNX-Runtime's strict op allowlist and compatible with the
-    # fork's opset-17 target.  do_constant_folding=True fuses BN into
-    # Conv biases at export time.
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         adapter,
         (dummy,),
-        str(onnx_path),
+        onnx_path,
         input_names=["frames"],
         output_names=["denoised"],
-        opset_version=opset,
         dynamic_axes={
             "frames": {2: "H", 3: "W"},
             "denoised": {2: "H", 3: "W"},
         },
-        do_constant_folding=True,
-        dynamo=False,
+        opset=opset,
     )
 
 

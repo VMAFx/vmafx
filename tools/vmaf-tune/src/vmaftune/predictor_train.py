@@ -64,6 +64,7 @@ import os
 import random
 import statistics
 import sys
+import tempfile
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
@@ -544,17 +545,29 @@ def _export_onnx(model: Any, output: Path, opset: int) -> None:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     dummy = torch.zeros(1, INPUT_DIM, dtype=torch.float32)
-    torch.onnx.export(
-        model,
-        (dummy,),
-        str(output),
-        input_names=["input"],
-        output_names=["vmaf"],
-        opset_version=opset,
-        do_constant_folding=True,
-        training=torch.onnx.TrainingMode.EVAL,
-        dynamo=False,
-    )
+    export_opset = max(opset, 18)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".onnx", dir=output.parent)
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        torch.onnx.export(
+            model,
+            (dummy,),
+            str(tmp_path),
+            input_names=["input"],
+            output_names=["vmaf"],
+            opset_version=export_opset,
+            external_data=False,
+        )
+        if export_opset != opset:
+            import onnx
+
+            graph = onnx.load(str(tmp_path), load_external_data=False)
+            graph = onnx.version_converter.convert_version(graph, opset)
+            onnx.save(graph, str(tmp_path), save_as_external_data=False)
+        os.replace(tmp_path, output)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def _check_op_allowlist(onnx_path: Path) -> tuple[bool, tuple[str, ...]]:

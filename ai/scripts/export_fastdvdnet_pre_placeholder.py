@@ -100,22 +100,19 @@ def _export(onnx_path: Path, height: int, width: int, opset: int) -> None:
     model = FastDVDnetPlaceholder().eval()
     dummy = torch.zeros(1, 5, height, width, dtype=torch.float32)
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    # Use the legacy TorchScript exporter (dynamo=False) so the resulting
-    # graph is a single self-contained file under ONNX-Runtime's strict
-    # op allowlist (`Conv`, `Relu`, `Slice`, `Mul`, `Add`, `Clip`).
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy,),
-        str(onnx_path),
+        onnx_path,
         input_names=["frames"],
         output_names=["denoised"],
-        opset_version=opset,
         dynamic_axes={
             "frames": {2: "H", 3: "W"},
             "denoised": {2: "H", 3: "W"},
         },
-        do_constant_folding=True,
-        dynamo=False,
+        opset=opset,
     )
 
 

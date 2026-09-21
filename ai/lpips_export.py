@@ -124,15 +124,16 @@ def _export(output: Path, opset: int) -> int:
     }
 
     tmp = output.with_suffix(".onnx.tmp")
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy_ref, dummy_dist),
-        tmp.as_posix(),
+        tmp,
         input_names=["ref", "dist"],
         output_names=["score"],
-        opset_version=opset,
         dynamic_axes=dynamic_axes,
-        do_constant_folding=True,
+        opset=opset,
     )
 
     # Strip non-deterministic metadata for reproducible sha256.

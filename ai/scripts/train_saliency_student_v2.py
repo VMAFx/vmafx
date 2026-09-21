@@ -372,20 +372,19 @@ def export_onnx(model: nn.Module, output: Path, opset: int = 17) -> None:
     model.eval()
     dummy = torch.zeros(1, 3, 256, 256, dtype=torch.float32)
     output.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx as export_dynamo_onnx
+
+    export_dynamo_onnx(
         model,
         (dummy,),
-        str(output),
+        output,
         input_names=["input"],
         output_names=["saliency_map"],
         dynamic_axes={
             "input": {2: "H", 3: "W"},
             "saliency_map": {2: "H", 3: "W"},
         },
-        opset_version=opset,
-        do_constant_folding=True,
-        training=torch.onnx.TrainingMode.EVAL,
-        dynamo=False,
+        opset=opset,
     )
 
 

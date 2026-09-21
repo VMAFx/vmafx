@@ -553,14 +553,16 @@ def _export_onnx_combined(
         "codec": {0: "batch"},
         "score": {0: "batch"},
     }
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy_feat, dummy_codec),
-        str(onnx_path),
+        onnx_path,
         input_names=["features", "codec"],
         output_names=["score"],
         dynamic_axes=dynamic_axes,
-        opset_version=17,
+        opset=17,
     )
 
     loaded = onnx.load(str(onnx_path))

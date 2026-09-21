@@ -192,15 +192,16 @@ def _export_graph(args: Any, wrapper: "torch.nn.Module", in_dim: int) -> None:
     dummy = torch.zeros(1, in_dim, dtype=torch.float32)
     args.out_onnx.parent.mkdir(parents=True, exist_ok=True)
     print(f"[export-v2] tracing wrapper -> {args.out_onnx} (opset={OPSET})")
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         wrapper,
         (dummy,),
-        str(args.out_onnx),
+        args.out_onnx,
         input_names=["features"],
         output_names=["vmaf"],
         dynamic_axes={"features": {0: "N"}, "vmaf": {0: "N"}},
-        opset_version=OPSET,
-        do_constant_folding=True,
+        opset=OPSET,
     )
 
 

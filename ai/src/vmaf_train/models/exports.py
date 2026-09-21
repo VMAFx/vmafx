@@ -47,14 +47,16 @@ def export_to_onnx(
     dummy = _guess_dummy(model, in_shape)
 
     dynamic_axes = {input_name: {0: "batch"}, output_name: {0: "batch"}}
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy,),
-        str(out_path),
+        out_path,
         input_names=[input_name],
         output_names=[output_name],
         dynamic_axes=dynamic_axes,
-        opset_version=opset,
+        opset=opset,
     )
     loaded = onnx.load(str(out_path))
     # torch.onnx duplicates every initialiser into graph.value_info with

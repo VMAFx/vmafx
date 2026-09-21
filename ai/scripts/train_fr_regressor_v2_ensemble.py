@@ -255,10 +255,12 @@ def _export_member(
     model = model.eval()
     dummy_features = torch.zeros(1, len(CANONICAL_6), dtype=torch.float32)
     dummy_codec = torch.zeros(1, num_codecs, dtype=torch.float32)
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy_features, dummy_codec),
-        str(onnx_path),
+        onnx_path,
         input_names=["features", "codec_onehot"],
         output_names=["score"],
         dynamic_axes={
@@ -266,7 +268,7 @@ def _export_member(
             "codec_onehot": {0: "batch"},
             "score": {0: "batch"},
         },
-        opset_version=17,
+        opset=17,
     )
     return sha256(onnx_path)
 

@@ -187,35 +187,22 @@ class SGDEMATrainer:
         Writes atomically (temp file + rename) to prevent nodes from loading
         a partial checkpoint.
         """
-        import os
-        import tempfile
-
         import torch
 
         with self._lock:
             self._ema_model.eval()
             dummy = torch.zeros(1, n_features)
-            tmp_fd, tmp_path = tempfile.mkstemp(
-                dir=os.path.dirname(os.path.abspath(path)),
-                suffix=".tmp.onnx",
+            from aiutils.onnx_export import export_onnx
+
+            export_onnx(
+                self._ema_model,
+                (dummy,),
+                path,
+                opset=opset,
+                input_names=["features"],
+                output_names=["score"],
+                dynamic_axes={"features": {0: "batch"}},
             )
-            try:
-                os.close(tmp_fd)
-                torch.onnx.export(
-                    self._ema_model,
-                    (dummy,),
-                    tmp_path,
-                    opset_version=opset,
-                    input_names=["features"],
-                    output_names=["score"],
-                    dynamic_axes={"features": {0: "batch"}},
-                    do_constant_folding=True,
-                )
-                os.replace(tmp_path, path)
-            except Exception:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-                raise
 
         self._last_ckpt_time = time.monotonic()
         self._samples_since_ckpt = 0

@@ -1070,17 +1070,20 @@ def _export_onnx(
     model = model.cpu()
     dummy_features = torch.zeros(2, n_features, dtype=torch.float32)
     dummy_encoder = torch.ones(2, N_ENCODERS, dtype=torch.float32)
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy_features, dummy_encoder),
-        str(onnx_path),
+        onnx_path,
         input_names=["features", "encoder_onehot"],
         output_names=["mos"],
-        dynamic_shapes={
-            "features": {0: torch.export.Dim.AUTO},
-            "encoder_onehot": {0: torch.export.Dim.AUTO},
+        dynamic_axes={
+            "features": {0: "batch"},
+            "encoder_onehot": {0: "batch"},
+            "mos": {0: "batch"},
         },
-        opset_version=17,
+        opset=17,
     )
     return sha256(onnx_path)
 

@@ -59,12 +59,16 @@ PayloadProvider = Callable[["NetflixPair"], dict[str, Any]]
 # ``python -m ai.train.train`` (module) invocations. When run as a
 # script, ``__package__`` is empty and the ``..`` relative imports
 # below would fail; this shim repoints the sys.path so plain-script
-# invocation works for the documented smoke-test command.
+# invocation works for the documented smoke-test command. ``ai/src``
+# joins it so ``aiutils`` resolves from this checkout rather than from
+# whatever editable install happens to be on the interpreter's path —
+# the same rule ``ai/scripts/_script_bootstrap.py`` applies there.
 if __package__ in (None, ""):
     _here = Path(__file__).resolve()
     _ai_parent = _here.parent.parent.parent  # repo root
-    if str(_ai_parent) not in sys.path:
-        sys.path.insert(0, str(_ai_parent))
+    for _root in (_ai_parent / "ai" / "src", _ai_parent):
+        if str(_root) not in sys.path:
+            sys.path.insert(0, str(_root))
     __package__ = "ai.train"  # required for the relative imports below
 
 
@@ -156,14 +160,16 @@ def export_onnx(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     dummy = torch.zeros((1, feature_dim), dtype=torch.float32)
     module.eval()
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         module,
         (dummy,),
-        str(out_path),
+        out_path,
         input_names=["input"],
         output_names=["score"],
         dynamic_axes={"input": {0: "batch"}, "score": {0: "batch"}},
-        opset_version=opset,
+        opset=opset,
     )
     return out_path
 

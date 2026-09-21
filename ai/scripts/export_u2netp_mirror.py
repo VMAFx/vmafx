@@ -158,19 +158,19 @@ class U2NetPMirrorAdapter(nn.Module):
 def _export_onnx(adapter: nn.Module, output: Path, *, height: int, width: int, opset: int) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     dummy = torch.zeros(1, 3, height, width, dtype=torch.float32)
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         adapter.eval(),
         (dummy,),
-        str(output),
+        output,
         input_names=["input"],
         output_names=["saliency_map"],
-        opset_version=opset,
         dynamic_axes={
             "input": {2: "H", 3: "W"},
             "saliency_map": {2: "H", 3: "W"},
         },
-        do_constant_folding=True,
-        dynamo=False,
+        opset=opset,
     )
 
 

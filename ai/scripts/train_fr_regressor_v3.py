@@ -503,14 +503,16 @@ def export_onnx(model: "torch.nn.Module", onnx_path: Path) -> None:
         "codec_block": {0: "batch"},
         "vmaf": {0: "batch"},
     }
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy_feat, dummy_codec),
-        str(onnx_path),
+        onnx_path,
         input_names=["features", "codec_block"],
         output_names=["vmaf"],
         dynamic_axes=dynamic_axes,
-        opset_version=17,
+        opset=17,
     )
 
     loaded = onnx.load(str(onnx_path))

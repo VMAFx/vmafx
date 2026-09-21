@@ -108,18 +108,15 @@ def _export(onnx_path: Path, opset: int) -> None:
     model = TransNetV2Placeholder().eval()
     dummy = torch.zeros(1, WINDOW, CHANNELS, HEIGHT, WIDTH, dtype=torch.float32)
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    # Use the legacy TorchScript exporter (dynamo=False) so the resulting
-    # graph is a single self-contained file under ONNX-Runtime's strict
-    # op allowlist (``Reshape``, ``MatMul``, ``Add``, ``Relu``).
-    torch.onnx.export(
+    from aiutils.onnx_export import export_onnx
+
+    export_onnx(
         model,
         (dummy,),
-        str(onnx_path),
+        onnx_path,
         input_names=["frames"],
         output_names=["boundary_logits"],
-        opset_version=opset,
-        do_constant_folding=True,
-        dynamo=False,
+        opset=opset,
     )
 
 
