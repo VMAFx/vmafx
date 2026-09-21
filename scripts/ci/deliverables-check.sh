@@ -65,6 +65,7 @@ else
   pr_body_classify_stdin
   if [ "${PR_BODY_STDIN_KIND}" = "stream" ]; then
     PR_BODY="$(pr_body_read_stdin)"
+    pr_body_close_stdin
     body_src="stdin"
   else
     echo "deliverables-check: no PR body supplied — $(pr_body_stdin_reason)" >&2

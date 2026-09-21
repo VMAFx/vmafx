@@ -36,8 +36,9 @@
 #   closed      fd 0 is closed; reading it is the deadlock described above
 #
 # For "stream" it also sets PR_BODY_STDIN_FD to a private duplicate of fd 0;
-# pass that to pr_body_read_stdin. For every other kind PR_BODY_STDIN_FD is
-# empty and the caller must report a usage error rather than read anything.
+# pass that to pr_body_read_stdin, then release it with pr_body_close_stdin.
+# For every other kind PR_BODY_STDIN_FD is empty and nothing needs releasing —
+# the caller decides what an absent body means for its own gate.
 pr_body_classify_stdin() {
   local fd=""
 
@@ -84,6 +85,25 @@ pr_body_read_stdin() {
     return 2
   fi
   cat <&"${PR_BODY_STDIN_FD}"
+}
+
+# pr_body_close_stdin — release the duplicate pr_body_classify_stdin handed out.
+#
+# Call it from the caller's own shell once the body has been read. It cannot be
+# folded into pr_body_read_stdin: that function runs inside `$( )`, and an
+# `exec {fd}<&-` there closes the *subshell's* copy while the caller's stays
+# open. Leaving it open is not fatal, but it is a descriptor the gate never
+# uses again and every process it spawns afterwards inherits — `git`,
+# `python3`, `mktemp` in these scripts all receive it — and a second
+# classification would strand another one.
+#
+# Safe to call when nothing was duplicated: for "tty", "closed" and
+# "unreadable" PR_BODY_STDIN_FD is empty and this is a no-op.
+pr_body_close_stdin() {
+  if [ -n "${PR_BODY_STDIN_FD:-}" ]; then
+    exec {PR_BODY_STDIN_FD}<&-
+  fi
+  PR_BODY_STDIN_FD=""
 }
 
 # pr_body_stdin_reason — one line naming why fd 0 cannot supply a body.

@@ -134,10 +134,18 @@ Exit codes:
 | 1 | PR body would fail (same `::error` lines as CI emits) |
 | 2 | Usage error — missing body, unreadable diff file, etc. |
 
-Exit 2 also covers every shape where stdin cannot carry a body at all: a
-terminal, a closed `fd 0`, or `/dev/null`. Those are the producer's fault,
-not the PR author's, and the scripts say so rather than parsing an empty
-string into six missing deliverables. See
+For these two deliverables entry points, exit 2 also covers every shape where
+stdin cannot carry a body at all: a terminal, a closed `fd 0`, or `/dev/null`.
+Those are the producer's fault, not the PR author's, and the scripts say so
+rather than parsing an empty string into six missing deliverables.
+
+The other two gates that read a PR body —
+`scripts/ci/ffmpeg-patches-surface-check.sh` (ADR-0186) and
+`scripts/ci/state-md-touch-check.sh` (ADR-0165) — classify `fd 0` through the
+same helper but answer an absent body differently: they have a diff to fall
+back on, so they name what fd 0 was and then decide on the diff alone, with
+their opt-out sentinel unclaimable. None of the four may read a closed `fd 0`,
+which used to hang them outright. See
 [pr-body-validator.md](pr-body-validator.md#where-the-body-comes-from).
 
 ## Metadata lookup failures

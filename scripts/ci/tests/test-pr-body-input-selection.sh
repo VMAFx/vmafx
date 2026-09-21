@@ -5,10 +5,29 @@
 # scripts/ci/tests/test-pr-body-input-selection.sh — the ADR-0108 PR-body
 # gates must decide what fd 0 is before reading it.
 #
-# Both entry points once chose their input with `[ ! -t 0 ]`, which answers
-# "is fd 0 something other than a terminal" — not "did anybody pipe me a PR
-# body". Three shapes fall in the gap, and this file pins all three for
-# `scripts/ci/deliverables-check.sh` and `scripts/ci/validate-pr-body.sh`:
+# Four gates read a PR body, and every one of them once chose its input with
+# `[ ! -t 0 ]`, which answers "is fd 0 something other than a terminal" — not
+# "did anybody pipe me a PR body". Three shapes fall in the gap, and this file
+# pins all three for all four:
+#
+#   scripts/ci/deliverables-check.sh          ADR-0108 six-deliverable gate
+#   scripts/ci/validate-pr-body.sh            its local mirror
+#   scripts/ci/ffmpeg-patches-surface-check.sh  ADR-0186 surface gate
+#   scripts/ci/state-md-touch-check.sh        ADR-0165 state.md gate
+#
+# The last two were fixed a commit later than the first two, which is the
+# reason this file covers all four rather than the pair that happened to be
+# noticed first: the defect was in a copied idiom, so a test naming only the
+# scripts already fixed would have gone on passing while two gates still hung.
+#
+# The two pairs answer an absent body differently, and the expectations below
+# encode that on purpose. deliverables-check.sh and validate-pr-body.sh exist
+# only to parse a body, so no body is a usage error (exit 2). The surface and
+# state.md gates also have a diff to check, so no body means the opt-out is
+# unclaimable and they fall through to that diff — passing when it is clean,
+# failing when it is not. Neither pair may hang.
+#
+# The shapes:
 #
 #   closed fd 0   `bash gate.sh 0<&-`. The old code ran `PR_BODY="$(cat)"`,
 #                 the command substitution's pipe took the freed descriptor
@@ -25,14 +44,22 @@
 #
 # The positive controls in the same file are the point of the exercise: a
 # real pipe, a real $PR_BODY and a real --body file must still be read.
+#
+# One more case sits below the gates, on the helper itself: the duplicate of
+# fd 0 that pr_body_classify_stdin hands out has to be released once the body
+# has been read, or every process the gate spawns afterwards inherits it.
 
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 deliverables="${repo_root}/scripts/ci/deliverables-check.sh"
 validator="${repo_root}/scripts/ci/validate-pr-body.sh"
+ffmpeg_surface="${repo_root}/scripts/ci/ffmpeg-patches-surface-check.sh"
+state_touch="${repo_root}/scripts/ci/state-md-touch-check.sh"
+helper="${repo_root}/scripts/ci/pr-body-input.sh"
 
-for script in "${deliverables}" "${validator}"; do
+for script in "${deliverables}" "${validator}" "${ffmpeg_surface}" \
+  "${state_touch}" "${helper}"; do
   if [ ! -r "${script}" ]; then
     echo "test-pr-body-input-selection: missing ${script}" >&2
     exit 1
@@ -193,6 +220,107 @@ run_case 0 "validator: --body still reaches the parser with fd 0 closed" \
 
 run_case 0 "validator: \$PR_BODY still reaches the parser with fd 0 on /dev/null" \
   "PR_BODY=\"\$(cat '${work}/body.md')\" bash '${validator}' --diff '${work}/empty-diff.txt' </dev/null"
+
+echo "--- scripts/ci/ffmpeg-patches-surface-check.sh ---"
+
+# An absent body is legal for this gate: it makes the
+# `no ffmpeg-patches update needed:` opt-out unclaimable, and the gate then
+# decides on the diff alone. With HEAD..HEAD no public header moved, so the
+# correct answer to all three shapes is a clean PASS — arrived at, not hung.
+
+run_case 0 "ffmpeg-surface: closed fd 0 is decided, not a hang" \
+  "${same_rev} bash '${ffmpeg_surface}' 0<&-"
+expect_output "ffmpeg-surface: the closed-fd case names what fd 0 was" \
+  'PR body from empty .closed stdin.'
+
+run_case 0 "ffmpeg-surface: </dev/null is decided, not read as a body" \
+  "${same_rev} bash '${ffmpeg_surface}' </dev/null"
+expect_output "ffmpeg-surface: the /dev/null case names what fd 0 was" \
+  'PR body from empty .unreadable stdin.'
+
+run_case 0 "ffmpeg-surface: a real pipe still reaches the opt-out parser" \
+  "printf 'no ffmpeg-patches update needed: regression test\n' | ${same_rev} bash '${ffmpeg_surface}'"
+expect_output "ffmpeg-surface: the piped opt-out was honoured" \
+  'opt-out claimed in PR body'
+
+echo "--- scripts/ci/state-md-touch-check.sh ---"
+
+# PR_TITLE carries a Conventional-Commit `fix:` prefix, so the ADR-0165
+# trigger predicate fires on every case below. HEAD..HEAD touches no
+# docs/state.md, so without the `no state delta:` opt-out the gate must
+# FAIL — the point being that it reaches a verdict instead of hanging.
+state_env="PR_TITLE='fix: a bug-shaped title' ${same_rev}"
+
+run_case 1 "state-md: closed fd 0 fails closed, it does not hang" \
+  "${state_env} bash '${state_touch}' 0<&-"
+expect_output "state-md: the closed-fd case names what fd 0 was" \
+  'PR body from empty .closed stdin.'
+expect_output "state-md: the closed-fd case still reaches the trigger predicate" \
+  'docs/state.md drift'
+
+run_case 1 "state-md: </dev/null fails closed" \
+  "${state_env} bash '${state_touch}' </dev/null"
+expect_output "state-md: the /dev/null case names what fd 0 was" \
+  'PR body from empty .unreadable stdin.'
+
+run_case 0 "state-md: a real pipe still reaches the opt-out parser" \
+  "printf 'no state delta: regression test\n' | ${state_env} bash '${state_touch}'"
+expect_output "state-md: the piped opt-out was honoured" \
+  'PASS — opt-out'
+
+echo "--- scripts/ci/pr-body-input.sh (descriptor hygiene) ---"
+
+# pr_body_classify_stdin duplicates fd 0 so no later command substitution can
+# steal it. That duplicate is the caller's to release: pr_body_read_stdin runs
+# inside `$( )`, so closing it there would close the subshell's copy and leave
+# the caller's open, inherited by every git / python3 / mktemp the gate spawns
+# afterwards. The probe reads a body the supported way, then asks a child
+# whether the descriptor is still there.
+#
+# `declare -F` rather than calling pr_body_close_stdin unconditionally: run
+# against a helper that lacks the function, the probe must still report the
+# leak it is looking for instead of dying at "command not found".
+cat >"${work}/fd-release-probe.sh" <<'PROBE'
+#!/usr/bin/env bash
+# Argument 1 is the pr-body-input.sh to probe; stdin carries the body.
+set -euo pipefail
+. "${1:?helper path required}"
+
+pr_body_classify_stdin
+if [ "${PR_BODY_STDIN_KIND}" != "stream" ]; then
+  echo "probe: expected a stream, got '${PR_BODY_STDIN_KIND}'" >&2
+  exit 2
+fi
+probe_fd="${PR_BODY_STDIN_FD}"
+
+body="$(pr_body_read_stdin)"
+if [ "${body}" != "probe body" ]; then
+  echo "probe: the body did not survive the read: [${body}]" >&2
+  exit 2
+fi
+
+# Guarded, not called outright: run against a helper that has no
+# pr_body_close_stdin the probe must still report the leak it is looking for,
+# rather than dying at "command not found" for an unrelated reason.
+if declare -F pr_body_close_stdin >/dev/null 2>&1; then
+  pr_body_close_stdin
+fi
+
+if bash -c "[ -e /proc/self/fd/${probe_fd} ]"; then
+  echo "probe: LEAKED descriptor ${probe_fd} — a child inherited the duplicate of fd 0" >&2
+  exit 1
+fi
+echo "probe: descriptor ${probe_fd} released before any child was spawned"
+PROBE
+
+if [ -e /proc/self/fd ]; then
+  run_case 0 "helper: the duplicate of fd 0 is released, not inherited by children" \
+    "printf 'probe body' | bash '${work}/fd-release-probe.sh' '${helper}'"
+  expect_output "helper: the probe confirms the descriptor was released" \
+    'descriptor [0-9]+ released'
+else
+  echo "SKIP: helper descriptor probe needs /proc/self/fd"
+fi
 
 echo ""
 echo "test-pr-body-input-selection: ${pass_count} passed, ${fail_count} failed"
