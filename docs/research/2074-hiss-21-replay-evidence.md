@@ -70,6 +70,14 @@ then tried to launch it from `core/build` during reconfiguration. The recipes
 now prepend the venv's `abspath`, and the real Make fixture rejects any return
 to a relative first `PATH` entry.
 
+Once the analyzers could run, Clang 21 reported `log.c`'s initialized
+`va_list` as uninitialized. Preprocessing showed why: C23 maps the standard
+macro to `__builtin_c23_va_start`, which the VA-list analyzer does not model.
+The Clang+C23 branch now uses the older, semantically identical modeled
+builtin; GCC and MSVC retain standard `va_start`. The same pass renamed
+`log.h`'s ISO-reserved double-underscore guard. Both C compilers build the
+result warning-free and the log plus ORT-injection tests preserve behavior.
+
 ## Reproducer
 
 ```bash

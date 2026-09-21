@@ -319,6 +319,13 @@ Exceptions — direct stream writes are correct in these cases:
   preserve upstream-sync semantics; route only if touching PR has
   an upstream-sync impact note.
 
+`log.c` has one additional C23 toolchain invariant: Clang lowers `va_start`
+to `__builtin_c23_va_start`, which Clang 21's VA-list analyzer does not model.
+Keep the Clang+C23 branch on the semantically identical
+`__builtin_va_start(args, fmt)` while GCC and MSVC retain the standard macro.
+Do not replace the internal `log.h` guard with an identifier beginning `__`;
+that namespace is reserved by ISO C and fails CERT DCL37-C.
+
 See `docs/research/logging-consistency-audit-2026-05-30.md` for
 audit that established this invariant.
 

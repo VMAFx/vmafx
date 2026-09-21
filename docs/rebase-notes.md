@@ -51621,3 +51621,10 @@ The top-level Makefile must also prepend `VIRTUAL_ENV_ABS`, never relative
 name and launches it from the build directory during reconfiguration; restoring
 the relative recipe prefix makes that launch target
 `core/build/.venv/bin/ninja` and prevents the native lint gate from starting.
+
+The test-only C build of `core/src/log.c` preserves a Clang+C23 branch using
+`__builtin_va_start(args, fmt)`. Clang 21 does not model the
+`__builtin_c23_va_start` emitted by its standard macro and otherwise reports a
+false uninitialized `va_list`; GCC and MSVC still use `va_start`. Preserve the
+non-reserved `VMAF_SRC_LOG_H_` include guard in `log.h` when porting upstream
+logging changes.
