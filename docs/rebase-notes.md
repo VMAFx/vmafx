@@ -51867,3 +51867,29 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+
+## fix/bug-hip-adr0759 — HIP ADM buffer stays by pointer (2026-09-21)
+
+Fork-local; no upstream Netflix surface. The four HIP integer ADM `__global__`
+kernels that read `AdmBufferHip` take
+`const AdmBufferHip *__restrict__ buf_ptr`, and `AdmStateHip` owns a device copy
+(`buf_dev`) uploaded once at the end of `init_fex_hip()`, passed as `args[0]` by
+address, and freed in `close_fex_hip()` and on the `fail_buf_dev` init path.
+
+This has already been lost once: ADR-0759 landed it in `31a51afb2` (#101) and
+`92ea978a4` (#102), a squash of a branch cut from an older base, put the
+by-value signatures back the same day while leaving the AGENTS.md invariant note
+in place. If a rebase, a squash of a stale branch, or an upstream-shaped
+conflict resolution reintroduces `AdmBufferHip buf` in any of
+`adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4`, `i4_adm_cm_line_kernel` or
+`adm_cm_line_kernel_8`, take the pointer side — it is the decided design, not a
+stylistic preference, and it is worth 320 bytes of kernel arguments per launch
+plus roughly 310 bytes of per-thread scratch on the scale-0 CM kernel.
+
+The single upload is only correct while nothing writes `s->buf` after init. Any
+change that starts mutating a field of `s->buf` per frame has to re-upload the
+device copy before the next launch, or add a per-frame refresh; the invariant is
+stated in `core/src/feature/hip/AGENTS.md`.
+
+`AdmFixedParametersHip` (248 bytes) is deliberately still by value — ADR-0759's
+deferred follow-up. Do not "finish the job" on a rebase without an ADR.

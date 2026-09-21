@@ -111,6 +111,14 @@ typedef struct AdmStateHip {
     hipFunction_t func_adm_cm_line_kernel_8;
     hipFunction_t func_i4_adm_cm_line_kernel;
 
+    /* ADR-0759: device-resident copy of `buf`. The two CSF and the two CM
+     * compute kernels take `const AdmBufferHip *` and read their band
+     * pointers from here, instead of receiving the whole 328-byte struct by
+     * value in the kernel-argument buffer on every launch. Uploaded once at
+     * the end of init_fex_hip(); nothing writes `buf` after that, so the copy
+     * stays equal to it until close_fex_hip(). */
+    void *buf_dev;
+
     /* ADR-1211: device staging for the scale-0 luma plane.
      * The HIP backend is host-pic (ADR-0530): `VmafPicture::data[]` points at
      * HOST memory. The DWT2 kernel is a device kernel, so the plane has to be
@@ -719,7 +727,7 @@ static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, i
     const int rows_per_thread = 1;
     const int BLOCKX = 32, BLOCKY = 4;
 
-    void *args[] = {buf, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {&s->buf_dev, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_csf_kernel_1_4, (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
         (uint32_t)DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3, (uint32_t)BLOCKX,
@@ -753,7 +761,7 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, i
     const int rows_per_thread = 1;
     const int BLOCKX = 32, BLOCKY = 4;
 
-    void *args[] = {buf, &scale, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {&s->buf_dev, &scale, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
                               (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
@@ -848,7 +856,7 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
     {
         const int BLOCKX = 128;
         void *args[] = {
-            buf,           &h,         &w,        &top,           &bottom,         &left,
+            &s->buf_dev,   &h,         &w,        &top,           &bottom,         &left,
             &right,        &start_row, &end_row,  &start_col,     &end_col,        &src_stride,
             &csf_a_stride, &scale,     &buffer_h, &buffer_stride, &buf->tmp_accum, p};
         hipError_t rc = hipModuleLaunchKernel(
@@ -911,7 +919,7 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
     {
         const int rows_per_thread = 8;
         const int BLOCKX = 32, BLOCKY = 4;
-        void *args[] = {buf,
+        void *args[] = {&s->buf_dev,
                         &h,
                         &w,
                         &top,
@@ -1362,13 +1370,33 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         }
     }
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL)
-        goto fail_host;
+    /* ADR-0759: upload the device copy the two CSF and the two CM compute
+     * kernels read. It has to come after both slicing blocks above, once
+     * every pointer inside `s->buf` is final. Nothing writes `s->buf` between
+     * here and close_fex_hip(), so this single upload serves every launch;
+     * code that starts changing `s->buf` after init has to upload it again
+     * before the next launch. */
+    hip_err = hipMalloc(&s->buf_dev, sizeof(s->buf));
+    if (hip_err == hipSuccess) {
+        hip_err = hipMemcpy(s->buf_dev, &s->buf, sizeof(s->buf), hipMemcpyHostToDevice);
+    } else {
+        s->buf_dev = NULL;
+    }
+
+    if (hip_err == hipSuccess) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    }
+    if (hip_err != hipSuccess || s->feature_name_dict == NULL)
+        goto fail_buf_dev;
 
     return 0;
 
+fail_buf_dev:
+    (void)hipFree(s->buf_dev);
+    s->buf_dev = NULL;
+    (void)hipFree(s->d_dis_luma);
+    s->d_dis_luma = NULL;
 fail_ref_luma:
     (void)hipFree(s->d_ref_luma);
     s->d_ref_luma = NULL;
@@ -1522,6 +1550,10 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     if (s->d_dis_luma != NULL) {
         (void)hipFree(s->d_dis_luma);
         s->d_dis_luma = NULL;
+    }
+    if (s->buf_dev != NULL) {
+        (void)hipFree(s->buf_dev);
+        s->buf_dev = NULL;
     }
     if (s->buf.results_host != NULL) {
         (void)hipHostFree(s->buf.results_host);
