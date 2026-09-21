@@ -122,6 +122,26 @@ class ConfidenceThresholds:
             )
 
 
+def _defaults_with_warning(reason_fmt: str, *reason_args: object) -> ConfidenceThresholds:
+    """Emit one WARNING naming `reason_fmt` and return the documented defaults.
+
+    Every sidecar load failure degrades to the same floor surface rather
+    than raising, so a missing or broken calibration weakens the gate
+    instead of killing the run. `reason_fmt` carries its own ``%s``
+    slots, filled from `reason_args`; the threshold values are appended
+    by this helper so all three call sites stay byte-identical.
+    """
+    _LOG.warning(
+        "vmaf-tune uncertainty: "
+        + reason_fmt
+        + "; falling back to documented defaults (tight=%.1f, wide=%.1f).",
+        *reason_args,
+        DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
+        DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
+    )
+    return ConfidenceThresholds()
+
+
 def load_confidence_thresholds(sidecar_path: Path | str | None) -> ConfidenceThresholds:
     """Load corpus-derived thresholds from a calibration sidecar.
 
@@ -149,25 +169,10 @@ def load_confidence_thresholds(sidecar_path: Path | str | None) -> ConfidenceThr
     functional but signal that the corpus fit hasn't landed yet.
     """
     if sidecar_path is None:
-        _LOG.warning(
-            "vmaf-tune uncertainty: no calibration sidecar provided; "
-            "falling back to documented defaults "
-            "(tight=%.1f, wide=%.1f).",
-            DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
-            DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
-        )
-        return ConfidenceThresholds()
+        return _defaults_with_warning("no calibration sidecar provided")
     path = Path(sidecar_path)
     if not path.exists():
-        _LOG.warning(
-            "vmaf-tune uncertainty: calibration sidecar %s not found; "
-            "falling back to documented defaults "
-            "(tight=%.1f, wide=%.1f).",
-            path,
-            DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
-            DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
-        )
-        return ConfidenceThresholds()
+        return _defaults_with_warning("calibration sidecar %s not found", path)
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
         tight = float(doc["tight_interval_max_width"])
@@ -178,16 +183,7 @@ def load_confidence_thresholds(sidecar_path: Path | str | None) -> ConfidenceThr
             source=str(path),
         )
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        _LOG.warning(
-            "vmaf-tune uncertainty: calibration sidecar %s unreadable "
-            "(%s); falling back to documented defaults "
-            "(tight=%.1f, wide=%.1f).",
-            path,
-            exc,
-            DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
-            DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
-        )
-        return ConfidenceThresholds()
+        return _defaults_with_warning("calibration sidecar %s unreadable (%s)", path, exc)
     return thresholds
 
 
