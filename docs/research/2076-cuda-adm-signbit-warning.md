@@ -70,9 +70,17 @@ preserves ADR-0155 and removes the compiler diagnostic.
   stdout/stderr diffs for all four). The first three tests pass in both builds.
 - `test_cuda_adm_small_border` exposes a pre-existing required-gate defect in
   both builds: CPU `adm3=0.97618931`, CUDA `adm3=0.97606859`, delta
-  `1.21e-4` against the `1.00e-4` bound. The threshold is not loosened and the
-  defect is tracked as `T-CUDA-ADM-SMALL-BORDER-PARITY-2026-09-21` for the
-  next CUDA parity repair after the contract-blocking core HISS batch.
+  `1.21e-4` against the `1.00e-4` bound. Instrumentation isolated the entire
+  drift to scale-0 AIM: the dispatched AVX2/AVX-512 CPU path reports zero,
+  while scalar CPU and CUDA both report `0.00024139`. The x86 SIMD contrast
+  threshold omits scalar's narrowing `(int16_t)` conversion for the centre
+  taps. With the six sign-extension operations from commit `28552bd55`
+  temporarily applied, default-dispatch CPU and CUDA differ by only
+  `2.37e-11` for AIM and `3.03e-8` for adm3, and the test passes. The exact
+  fix, standalone SIMD regression, and documentation are already carried by
+  open PR #1507; this branch deliberately does not duplicate them. The
+  threshold remains unchanged, and #1507 must land before or beneath this
+  branch in the merge train.
 
 No new runtime test file is warranted: the focused compile is the direct seam
 for this diagnostic, while the four existing ADM tests prove that the final
