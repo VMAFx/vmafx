@@ -619,6 +619,13 @@ leaves a usable partial corpus. The selected scoring backend is echoed on
 `stderr` (`vmafx-tune: scoring backend = cpu`) before the first encode, and the
 row count is echoed when the sweep finishes.
 
+When `--keep-encodes` is off, cleanup is part of a successful cell. A missing
+temporary encode is harmless (an injected runner may already have removed it),
+but any other removal failure stops the sweep instead of silently leaking data.
+Likewise, when source hashing is enabled, an unreadable source fails before the
+first encode; use `--no-source-hash` only when provenance is deliberately not
+required.
+
 ## Ported subcommands (encoder introspection)
 
 ### `benchmark` — Rank encoders from an existing corpus
