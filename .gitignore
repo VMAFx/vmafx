@@ -84,14 +84,12 @@ compat/python-vmaf/core/adm_dwt2_cy.cpp
 
 # Working/scratch directories
 .workingdir/
-.workingdir2/
-# Also match them as symlinks. A trailing slash only matches a real
-# directory, so an agent worktree that symlinks these shared state dirs
+# Also match it as a symlink. A trailing slash only matches a real
+# directory, so an agent worktree that symlinks this shared state dir
 # in (the praetor flavor audit wants them present) leaves an untracked
 # entry that `git add -A` happily commits -- an absolute path to one
 # machine, landing in a PR. Caught exactly that way; see bug ledger L-78.
 .workingdir
-.workingdir2
 
 # vmaf-tune Phase A scratch outputs (ADR-0237)
 corpus.jsonl
@@ -230,5 +228,4 @@ build-upstream-ab/
 # Vendor skill mirrors. `.claude/skills/` is canonical and tracked; the
 # per-vendor copies drift and are regenerated from it.
 .agents/skills/
-/.workingdir/
 /.standards/worktrees/

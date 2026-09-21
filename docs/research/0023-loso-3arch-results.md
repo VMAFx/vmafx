@@ -109,7 +109,7 @@ finding in ADR-0203:
   rules out arch-specific overfitting; it's a corpus-distribution
   issue **within** the existing 9-source Netflix Public corpus. The
   Netflix Public Dataset is already in
-  [`.workingdir2/netflix/`](../../.workingdir2/) (9 reference clips +
+  `.workingdir2/netflix/` (9 reference clips +
   70 distortion variants) and is what these LOSO runs train on, so
   "more Netflix Public" is not the unblocker. The natural unblocker
   is a **different / larger** training corpus that adds source-

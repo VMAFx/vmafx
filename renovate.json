@@ -29,7 +29,6 @@
     "python/requirements.txt",
     "subprojects/**",
     "python/test/resource/**",
-    ".workingdir2/**",
     "build_artifacts/**",
     "model/**",
     "ai/**/runs/**",

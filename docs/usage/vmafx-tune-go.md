@@ -183,7 +183,7 @@ vmafx-tune-go recommend [flags]
 | `--framerate` | `24` | Reference framerate. |
 | `--duration` | `0` | Clip duration in seconds; bounds the encode and derives achieved kbps. |
 | `--output` | `corpus.jsonl` | JSONL destination for the visited points. |
-| `--encode-dir` | `.workingdir2/encodes` | Scratch directory for the probe encodes. |
+| `--encode-dir` | `.workingdir/cache/vmafx-tune/encodes` | Bounded scratch directory for the probe encodes. |
 | `--keep-encodes` | off | Keep the encoded artefacts instead of deleting them after scoring. |
 | `--no-source-hash` | off | Skip the source SHA-256 (faster on very large sources). |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version, or a `path=...` string. |
@@ -342,7 +342,7 @@ vmafx-tune-go prefilter --target-vmaf T [flags]
 | `--seed` | `0` | Sampler seed; the same seed reproduces the same recommendation. |
 | `--encoder` | `libx264` | Codec performing the post-deband encode. |
 | `--filter` | `pelorus_deband` | Filter adapter to autotune. |
-| `--encode-dir` | `.workingdir2/prefilter` | Probe scratch directory. |
+| `--encode-dir` | `.workingdir/cache/vmafx-tune/prefilter` | Probe scratch directory. |
 | `--output` | stdout | JSON destination. |
 
 The objective is `|achieved - target| + λ·kbps`, so the search converges on the
@@ -452,7 +452,7 @@ vmafx-tune-go fast --target-vmaf <N> [--smoke | --src <file> --width W --height 
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
 | `--vmaf-bin` | `vmaf` | Path to the libvmaf CLI binary. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | vmaf model version string. |
-| `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
+| `--encode-dir` | `.workingdir/cache/vmafx-tune/fast` | Scratch dir for probe + verify encodes. |
 | `--output`, `-o` | stdout | JSON destination for the recommendation payload. |
 | `--crf-max` | — | See `vmafx-tune-go fast --help`. |
 | `--height` | — | See `vmafx-tune-go fast --help`. |
@@ -551,7 +551,7 @@ trainers.
 | `--crf` | — | Quality value. Repeat for multiple cells. Required unless `--coarse-to-fine` derives the axis. |
 | `--two-pass` | off | Run a 2-pass encode for codecs that support it (libx264 / libx265). Adapters without true 2-pass emit a one-line stderr warning and run single-pass. |
 | `--sample-clip-seconds` | `0` | Encode and score only the centre N-second slice of each source. Encode time scales linearly with the slice; expect a 1–2 VMAF-point delta versus full-clip on diverse content. |
-| `--encode-dir` | `.workingdir2/encodes` | Scratch directory for encodes. |
+| `--encode-dir` | `.workingdir/cache/vmafx-tune/encodes` | Bounded scratch directory for encodes. |
 | `--keep-encodes` | off | Retain encoded outputs after scoring and record their paths in `encode_path`. |
 | `--no-source-hash` | off | Skip `src_sha256`. Faster on huge YUVs; loses provenance. |
 | `--source` | — | Reference video. Repeat for multiple sources. |

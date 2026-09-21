@@ -111,7 +111,7 @@ func NewOptions() Options {
 	return Options{
 		Encoder:         "libx264",
 		Output:          "corpus.jsonl",
-		EncodeDir:       filepath.Join(".workingdir2", "encodes"),
+		EncodeDir:       filepath.Join(".workingdir", "cache", "vmafx-tune", "encodes"),
 		VMAFModel:       Model1080P,
 		FFmpegBin:       "ffmpeg",
 		VMAFBin:         "vmaf",

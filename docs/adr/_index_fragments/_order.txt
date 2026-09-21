@@ -994,3 +994,4 @@
 1274-hiss-21-replay-gate
 1278-python-safe-parallel-execution
 1280-worktree-state-sync
+1277-workingdir-contract-cleanup

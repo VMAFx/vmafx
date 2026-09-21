@@ -13,7 +13,7 @@ script. It exits 0 if dispatching is still useful, 1 otherwise.
 Three checks, in order:
 
     1. **Backlog row not closed.**
-       Parse ``.workingdir2/BACKLOG.md``. If the row for the given
+       Parse ``.workingdir/BACKLOG.md``. If the row for the given
        ID has status DONE / CLOSED / REMOVED, exit 1 with the
        closing PR's number (when known).
 
@@ -50,19 +50,22 @@ commands. Safe to run unconditionally in any wrapper.
 from __future__ import annotations
 
 import argparse
-import glob
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+from importlib import import_module
 from pathlib import Path
 from typing import Iterable
 
 # The script lives at scripts/ci/, the lib package at scripts/lib/.
 _SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_SCRIPTS))
-from lib.backlog_tracker import BacklogTracker, GitHubTracker  # noqa: E402  (sys.path bootstrap)
+_BACKLOG_TRACKER = import_module("lib.backlog_tracker")
+BacklogTracker = _BACKLOG_TRACKER.BacklogTracker
+GitHubTracker = _BACKLOG_TRACKER.GitHubTracker
 
 # ---------------------------------------------------------------------------
 # stderr helpers — keep verdicts machine-parseable.
@@ -87,12 +90,11 @@ def check_backlog_row_open(backlog_id: str, tracker: BacklogTracker) -> bool:
     """Return True if the backlog row is OPEN-class, False otherwise."""
     item = tracker.get(backlog_id)
     if item is None:
-        # An ID the operator passed in but doesn't exist in
-        # BACKLOG.md is suspicious but not necessarily blocking —
-        # the row may live in OPEN.md or PLAN.md instead. Warn but
-        # let the dispatcher continue.
-        _emit_notice(f"backlog: {backlog_id} not found in BACKLOG.md (skipping check 1)")
-        return True
+        _emit_error(
+            f"agent-eligibility: {backlog_id} is unknown",
+            "BACKLOG.md has no matching row; use --task-tag for untracked work.",
+        )
+        return False
     if item.is_closed():
         prs = ", ".join(f"#{n}" for n in item.pr_refs) or "none recorded"
         _emit_error(
@@ -119,14 +121,16 @@ def check_backlog_row_open(backlog_id: str, tracker: BacklogTracker) -> bool:
 def check_no_merged_pr(backlog_id: str, tracker: GitHubTracker) -> bool:
     """Return True if no merged PR mentions the backlog ID, False otherwise.
 
-    Uses ``gh pr list --search "<id> in:title,body"``. If ``gh`` is
-    unavailable (offline / not authenticated), the check is skipped
-    with a notice — the operator can re-run with ``--skip-gh-search``
-    to silence the notice.
+    Uses ``gh pr list --search "<id> in:title,body"``. An unavailable or
+    unauthenticated ``gh`` blocks dispatch unless the operator explicitly
+    selected ``--skip-gh-search`` before entering this function.
     """
     if shutil.which("gh") is None:
-        _emit_notice("gh CLI not in PATH — skipping merged-PR check")
-        return True
+        _emit_error(
+            "agent-eligibility: merged-PR check unavailable",
+            "gh CLI is not on PATH; install it or explicitly pass --skip-gh-search.",
+        )
+        return False
     try:
         prs = tracker.search_prs(
             f"{backlog_id} in:title,body",
@@ -134,11 +138,17 @@ def check_no_merged_pr(backlog_id: str, tracker: GitHubTracker) -> bool:
             limit=10,
         )
     except subprocess.CalledProcessError as exc:
-        _emit_notice(f"gh search failed (rc={exc.returncode}); skipping merged-PR check")
-        return True
+        _emit_error(
+            "agent-eligibility: merged-PR check failed",
+            f"gh search exited {exc.returncode}; restore authentication or pass --skip-gh-search.",
+        )
+        return False
     except FileNotFoundError:
-        _emit_notice("gh CLI missing — skipping merged-PR check")
-        return True
+        _emit_error(
+            "agent-eligibility: merged-PR check unavailable",
+            "gh CLI disappeared while running; restore it or explicitly pass --skip-gh-search.",
+        )
+        return False
 
     # Filter for PRs that name the ID as a token (not e.g.
     # `T3-90` matching a search for `T3-9`). The regex requires a
@@ -165,11 +175,12 @@ def check_no_merged_pr(backlog_id: str, tracker: GitHubTracker) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _read_text_safely(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
+def _glob_paths(pattern: str) -> Iterable[Path]:
+    candidate = Path(pattern)
+    if candidate.is_absolute():
+        root = Path(candidate.anchor)
+        return root.glob(candidate.relative_to(root).as_posix())
+    return Path.cwd().glob(pattern)
 
 
 def check_no_active_agent(
@@ -197,19 +208,23 @@ def check_no_active_agent(
     # is configured differently or no agents are active — that's a
     # pass, not an error.
     matching_tasks: list[str] = []
-    # PTH207 noqa: tasks_glob is a user-overridable, fully-arbitrary glob
-    # (default is an absolute multi-wildcard pattern like
-    # ``/tmp/claude-*/tasks/*.output``). ``Path.glob`` would require splitting
-    # into a base directory + relative pattern, which we cannot do without
-    # parsing the user-supplied glob — ``glob.glob`` is the correct primitive.
-    for path_str in glob.glob(tasks_glob):  # noqa: PTH207
-        text = _read_text_safely(Path(path_str))
+    scan_failed = False
+    for path in _glob_paths(tasks_glob):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as error:
+            _emit_error(
+                f"agent-eligibility: cannot read active task {path}",
+                str(error),
+            )
+            scan_failed = True
+            continue
         if token.search(text):
-            matching_tasks.append(path_str)
+            matching_tasks.append(str(path))
 
     matching_branches = [b for b in open_branches if scope_token.lower() in b.lower()]
 
-    if not matching_tasks and not matching_branches:
+    if not matching_tasks and not matching_branches and not scan_failed:
         _emit_notice(f"in-flight scan: no active agent on {scope_token} — OK")
         return True
 
@@ -231,7 +246,16 @@ def check_no_active_agent(
 # ---------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> int:
+def _default_harness_tasks_glob() -> str:
+    # The Claude Code harness owns this read-only path. ADR-0355 documents why
+    # the predictable name does not carry the tempfile risk covered by S108.
+    temp_root = Path(tempfile.gettempdir())
+    if hasattr(os, "getuid"):
+        return str(temp_root / f"claude-{os.getuid()}" / "*" / "tasks" / "*.output")
+    return str(temp_root / "claude-*" / "tasks" / "*.output")
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Pre-dispatch eligibility gate for Claude Code agent runs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -253,21 +277,9 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("GH_REPO", "VMAFx/vmafx"),
         help="GitHub repository (default: VMAFx/vmafx).",
     )
-    # The Claude Code harness writes per-task metadata under
-    # `/tmp/claude-<uid>/...` — that path is the harness's contract,
-    # not a tempfile we own (we never write to it). The S108 lint
-    # rule fires on the literal `/tmp/` prefix; this default is
-    # **read-only** and overridable via `--harness-tasks-glob`, so
-    # the rule's threat model (an attacker pre-creating a predictable
-    # tempfile) doesn't apply. Cite ADR-0355 for the contract.
-    default_glob = (
-        f"/tmp/claude-{os.getuid()}/*/tasks/*.output"  # noqa: S108  ADR-0355: harness path, read-only
-        if hasattr(os, "getuid")
-        else "/tmp/claude-*/tasks/*.output"  # noqa: S108  ADR-0355: harness path, read-only
-    )
     parser.add_argument(
         "--harness-tasks-glob",
-        default=default_glob,
+        default=_default_harness_tasks_glob(),
         help="Glob for the agent harness's per-task metadata files.",
     )
     parser.add_argument(
@@ -285,26 +297,14 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override path to BACKLOG.md (default: autodetect via scripts/lib).",
     )
-    args = parser.parse_args(argv)
+    return parser
 
-    if not args.backlog_id and not args.task_tag:
-        parser.error("either --backlog-id or --task-tag is required")
 
-    scope_token = args.backlog_id or args.task_tag
-    sys.stderr.write(f"agent-eligibility-precheck: scope={scope_token}\n")
-
-    # Wire dependencies.
+def _run_checks(args: argparse.Namespace, scope_token: str) -> bool:
     backlog_path = Path(args.backlog_path) if args.backlog_path else None
     backlog = BacklogTracker(backlog_path)
     github = GitHubTracker(repo=args.repo)
-
-    failed = False
-
-    # -- Check 1 ---------------------------------------------------
-    if args.backlog_id and not check_backlog_row_open(args.backlog_id, backlog):
-        failed = True
-
-    # -- Check 2 ---------------------------------------------------
+    failed = args.backlog_id is not None and not check_backlog_row_open(args.backlog_id, backlog)
     if (
         args.backlog_id
         and not args.skip_gh_search
@@ -312,24 +312,46 @@ def main(argv: list[str] | None = None) -> int:
     ):
         failed = True
 
-    # -- Check 3 ---------------------------------------------------
-    if not args.skip_active_scan:
-        # Only consult `gh` for open branches if we have it
-        # available; otherwise pass an empty list.
-        open_branches: list[str] = []
-        if shutil.which("gh") is not None:
-            try:
-                open_branches = github.open_agent_branches()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                _emit_notice("gh open-branch listing failed; skipping branch portion of check 3")
-        if not check_no_active_agent(
-            scope_token,
-            tasks_glob=args.harness_tasks_glob,
-            open_branches=open_branches,
-        ):
+    if args.skip_active_scan:
+        return failed
+    open_branches: list[str] = []
+    if shutil.which("gh") is None:
+        _emit_error(
+            "agent-eligibility: open-branch check unavailable",
+            "gh CLI is not on PATH; install it or explicitly pass --skip-active-scan.",
+        )
+        failed = True
+    else:
+        try:
+            open_branches = github.open_agent_branches()
+        except subprocess.CalledProcessError as error:
+            _emit_error(
+                "agent-eligibility: open-branch check failed",
+                f"gh branch listing exited {error.returncode}; dispatch is blocked.",
+            )
             failed = True
+        except FileNotFoundError as error:
+            _emit_error("agent-eligibility: open-branch check unavailable", str(error))
+            failed = True
+    if not check_no_active_agent(
+        scope_token,
+        tasks_glob=args.harness_tasks_glob,
+        open_branches=open_branches,
+    ):
+        failed = True
+    return failed
 
-    if failed:
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if not args.backlog_id and not args.task_tag:
+        parser.error("either --backlog-id or --task-tag is required")
+
+    scope_token = args.backlog_id or args.task_tag
+    sys.stderr.write(f"agent-eligibility-precheck: scope={scope_token}\n")
+    if _run_checks(args, scope_token):
         sys.stderr.write("agent-eligibility-precheck: VERDICT=FAIL — do not dispatch.\n")
         return 1
 

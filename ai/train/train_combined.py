@@ -57,7 +57,7 @@ if __package__ in (None, ""):
     __package__ = "ai.train"
 
 
-_DEFAULT_NETFLIX_ROOT = Path(".workingdir2/netflix")
+_DEFAULT_NETFLIX_ROOT = Path(".corpus/netflix")
 _DEFAULT_KONVID_PARQUET = Path("ai/data/konvid_vmaf_pairs.parquet")
 _VAL_MODES = (
     "netflix-source",

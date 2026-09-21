@@ -259,7 +259,7 @@ Wave-1 C1 baseline trainer =
 [`ai/scripts/train_fr_regressor.py`](scripts/train_fr_regressor.py). It
 consumes `runs/full_features_netflix.parquet` (produced by
 `ai/scripts/extract_full_features.py` over local Netflix Public
-drop at `.workingdir2/netflix/`), runs 9-fold leave-one-source-out
+drop at `.corpus/netflix/`), runs 9-fold leave-one-source-out
 (LOSO), exports `model/tiny/fr_regressor_v1.onnx` only when mean
 LOSO PLCC ≥ 0.95 against `vmaf_v0.6.1` per-frame teacher.
 
@@ -572,8 +572,8 @@ by `(src_sha256, encoder, preset, crf)`).
 **Rebase-sensitive invariants:**
 
 - BVI-DVC is research-only. Archive
-  (`.workingdir2/BVI-DVC Part 1.zip`), extracted MP4s
-  (`.workingdir2/bvi-dvc-extracted/`),
+  (`.corpus/bvi-dvc-raw/BVI-DVC Part 1.zip`), extracted MP4s
+  (`.corpus/bvi-dvc-extracted/`),
   feature parquet (`runs/full_features_bvi_dvc_*.parquet`), JSONL
   corpus shard (`runs/bvi_dvc_corpus.jsonl`), and cached vmaf JSON
   (`~/.cache/vmaf-tiny-ai-bvi-dvc-full/`) **never committed**. Fork
@@ -659,7 +659,7 @@ scripts:
 - Fetcher hits public GCS bucket (`gs://ugc-dataset/`,
   CC-BY); raw videos and resulting
   `runs/full_features_ugc.parquet` must NEVER be committed
-  (`runs/` and `.workingdir2/` trees are gitignored).
+  (`runs/` and `.corpus/` trees are gitignored).
 - `extract_ugc_features.py` emits same current `FULL_FEATURES`
   schema as other full-feature refresh scripts. Older versions
   intentionally populated only canonical-6, forced rest to NaN;
@@ -676,7 +676,7 @@ scripts:
 
 ### Rebase-sensitive invariants
 
-- Adapter accepts two local layouts under `.workingdir2/konvid-150k/`:
+- Adapter accepts two local layouts under `.corpus/konvid-150k/`:
   URL `manifest.csv` plus `clips/`, or split score-drop layout
   `k150ka_scores.csv` / `k150kb_scores.csv` plus
   `k150ka_extracted/` / `k150kb_extracted/`. Do not remove split
@@ -694,7 +694,7 @@ scripts:
 
 ### Rebase-sensitive invariants
 
-- CHUG data is local-only under `.workingdir2/chug/`. Do not commit the
+- CHUG data is local-only under `.corpus/chug/`. Do not commit the
   public `chug.csv`, downloaded MP4s, emitted JSONL, trained local
   CHUG heads, or derived features. README/license mismatch is
   handled by treating dataset as non-commercial/share-alike until

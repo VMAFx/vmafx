@@ -6,8 +6,8 @@
  *
  *  Oracle source: a faithful Python reference (pywt 'periodization' Haar +
  *  OpenCV INTER_CUBIC bicubic + the verified dossier constants) computed the
- *  expected atom values; see ADR-1114 and .workingdir2/rc/metrics/
- *  y-funque-plus.md. The deterministic input patterns below are pure
+ *  expected atom values; see ADR-1114 and docs/metrics/y-funque-plus.md. The
+ *  deterministic input patterns below are pure
  *  closed-form integer formulas so the same bytes flow through both the
  *  Python reference and this C test. The C implementation matches the
  *  reference to better than 1e-10 in practice; the committed tolerance is the

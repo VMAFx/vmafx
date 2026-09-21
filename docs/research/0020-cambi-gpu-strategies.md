@@ -336,7 +336,7 @@ The hybrid's correctness depends on two things being true:
 
 A v2 GPU pass would target the c-values phase using **strategy III**
 (direct per-pixel histogram). Tracking: per the
-[Section-A audit decisions](../../.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+Section-A audit decisions
 §A.1.2, a backlog T-NN for this v2 phase opens once **T7-36** (the
 v1 cambi GPU integration PR) lands — the v2 work is gated on the v1
 hybrid path being shipped + bit-identical CPU↔GPU verified.

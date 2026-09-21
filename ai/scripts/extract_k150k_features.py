@@ -67,8 +67,8 @@ isolation ensures no shared mutable state and avoids backend context conflicts.
 Usage::
 
     python ai/scripts/extract_k150k_features.py \\
-        --clips-dir .workingdir2/konvid-150k/k150ka_extracted \\
-        --scores   .workingdir2/konvid-150k/k150ka_scores.csv  \\
+        --clips-dir .corpus/konvid-150k/k150ka_extracted \\
+        --scores   .corpus/konvid-150k/k150ka_scores.csv  \\
         --out      runs/full_features_k150k.parquet
 
 Smoke-test (100 clips, 8 workers)::

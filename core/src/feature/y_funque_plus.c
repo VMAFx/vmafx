@@ -23,7 +23,7 @@
  * The algorithm is a clean-room C reimplementation guided by the published
  * papers (arXiv:2304.03412 "One Transform To Compute Them All";
  * arXiv:2202.11241 FUNQUE; Nadenau HVS-CSF; Wang/Simoncelli/Bovik MS-SSIM)
- * and the verified design dossier .workingdir2/rc/metrics/y-funque-plus.md.
+ * and the tracked design in docs/metrics/y-funque-plus.md and ADR-1114.
  * The reference funque_plus implementation
  * (github.com/abhinaukumar/funque_plus, MIT License, (c) 2023 Abhinau Kumar)
  * is MIT-licensed and therefore compatible with this fork's

@@ -56,9 +56,8 @@ CheckOptions:
     value: 'assert,VMAF_ASSERT_DEBUG'
   - key: cert-msc32-c.DisallowedSeedTypes
     value: 'time_t,std::time_t'
-  # Power-of-10 rule 4 — a printed page. Upstream Netflix functions that
-  # exceed this budget are explicitly marked with NOLINT and tracked for
-  # refactor in .workingdir2/OPEN.md.
+  # Power-of-10 rule 4 — a printed page. The threshold applies to the whole
+  # tree; violations are refactored instead of hidden with source suppressions.
   - key: readability-function-size.LineThreshold
     value: '60'
   - key: readability-function-size.StatementThreshold

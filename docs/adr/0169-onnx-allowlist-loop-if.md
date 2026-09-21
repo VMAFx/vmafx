@@ -8,7 +8,7 @@
 
 ## Context
 
-[BACKLOG T6-5](../../.workingdir2/BACKLOG.md) calls for "Op-allowlist
+BACKLOG T6-5 calls for "Op-allowlist
 expansion (`Loop`, `If` with bounded-iteration guard). Unlocks MUSIQ /
 RAFT / small VLMs. `Scan` stays rejected." The existing allowlist in
 [`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c)
@@ -196,7 +196,7 @@ Test changes in this PR:
 
 ## References
 
-- [BACKLOG T6-5](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T6-5 — backlog row.
 - [Wave 1 roadmap § Op-allowlist expansion](../ai/roadmap.md).
 - ADR D39 — onnx_scan.c bounded-scope rationale (no libprotobuf-c).
 - [ADR-0020](0020-tinyai-four-capabilities.md) — Tiny-AI four-

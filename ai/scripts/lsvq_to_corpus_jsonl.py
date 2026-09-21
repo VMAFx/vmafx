@@ -13,7 +13,7 @@ Shared infrastructure: :mod:`ai.src.corpus.base` (ADR-0371).
 
 Pipeline shape::
 
-    .workingdir2/lsvq/
+    .corpus/lsvq/
       +-- .download-progress.json
       +-- manifest.csv
       +-- clips/
@@ -245,7 +245,7 @@ def _add_lsvq_io_arguments(ap: argparse.ArgumentParser) -> None:
         "--lsvq-dir",
         type=Path,
         default=_DEFAULT_LSVQ_DIR,
-        help="Local LSVQ working directory (default: .workingdir2/lsvq/).",
+        help="Local LSVQ working directory (default: .corpus/lsvq/).",
     )
     ap.add_argument(
         "--manifest-csv",
@@ -270,7 +270,7 @@ def _add_lsvq_io_arguments(ap: argparse.ArgumentParser) -> None:
         "--output",
         type=Path,
         default=_DEFAULT_OUTPUT,
-        help="Output JSONL path (default: .workingdir2/lsvq/lsvq.jsonl).",
+        help="Output JSONL path (default: .corpus/lsvq/lsvq.jsonl).",
     )
     ap.add_argument(
         "--manifest-out",

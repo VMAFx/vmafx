@@ -1066,7 +1066,7 @@ in stub cards are artificially high. Real-corpus retrains follow
 same trainer entry point with `--corpus path/to/file.jsonl`
 or `--corpus path/to/corpus-dir/` and produce honest metrics.
 Directory corpus inputs are recursive and sorted so
-`.workingdir2/corpus_run/` trains deterministically without
+`.corpus/corpus_run/` trains deterministically without
 manual concatenation step. Keep that directory handling reachable
 from both `train_all_codecs()` and CLI; file-only `is_file()`
 guards above `load_corpus()` silently turn real corpus

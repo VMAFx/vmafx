@@ -161,7 +161,7 @@ Code CLI process, not to any editor extension. When Claude Agent runs inside
 Zed via ACP, it is the same `claude` CLI process reading the same memory files.
 
 Skills (`.claude/skills/`), hooks (`.claude/hooks/`), and all ADR/plan state
-under `.workingdir2/` are equally unaffected — they are filesystem artifacts
+under `.workingdir/` are equally unaffected — they are filesystem artifacts
 read by the CLI, not by the editor.
 Source: <https://zed.dev/docs/ai/external-agents>, retrieved 2026-05-19 (ACP
 architecture: Zed forwards project root and env to the CLI process).

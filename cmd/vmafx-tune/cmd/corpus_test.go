@@ -36,7 +36,7 @@ func TestCorpusFlagSurface(t *testing.T) {
 		{flag: "preset", wantDefault: "[]"},
 		{flag: "crf", wantDefault: "[]"},
 		{flag: "output", wantDefault: "corpus.jsonl"},
-		{flag: "encode-dir", wantDefault: filepath.Join(".workingdir2", "encodes")},
+		{flag: "encode-dir", wantDefault: filepath.Join(".workingdir", "cache", "vmafx-tune", "encodes")},
 		{flag: "keep-encodes", wantDefault: "false"},
 		{flag: "vmaf-model", wantDefault: corpus.Model1080P},
 		{flag: "neg", wantDefault: "false"},

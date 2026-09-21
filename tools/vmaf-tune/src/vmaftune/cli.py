@@ -224,8 +224,10 @@ def _add_corpus_grid_args(corpus: argparse.ArgumentParser) -> None:
     corpus.add_argument(
         "--encode-dir",
         type=Path,
-        default=Path(".workingdir2/encodes"),
-        help="scratch dir for encodes (default .workingdir2/encodes, gitignored)",
+        default=Path(".workingdir/cache/vmafx-tune/encodes"),
+        help=(
+            "scratch dir for encodes " "(default .workingdir/cache/vmafx-tune/encodes, gitignored)"
+        ),
     )
     corpus.add_argument(
         "--keep-encodes",
@@ -1883,7 +1885,7 @@ def _add_recommend_execution_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--encode-dir",
         type=Path,
-        default=Path(".workingdir2/encodes"),
+        default=Path(".workingdir/cache/vmafx-tune/encodes"),
     )
     p.add_argument("--keep-encodes", action="store_true")
     p.add_argument("--vmaf-model", default=DEFAULT_MODEL)
@@ -4317,8 +4319,8 @@ def _add_fast_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--encode-dir",
         type=Path,
-        default=Path(".workingdir2/fast"),
-        help="scratch dir for probe + verify encodes (default .workingdir2/fast, gitignored)",
+        default=Path(".workingdir/cache/vmafx-tune/fast"),
+        help="scratch dir for probe + verify encodes (default .workingdir/cache/vmafx-tune/fast, gitignored)",
     )
     parser.add_argument(
         "--output",
@@ -4802,8 +4804,8 @@ def _add_prefilter_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--encode-dir",
         type=Path,
-        default=Path(".workingdir2/prefilter"),
-        help="scratch dir for probe encodes (default .workingdir2/prefilter, gitignored)",
+        default=Path(".workingdir/cache/vmafx-tune/prefilter"),
+        help="scratch dir for probe encodes (default .workingdir/cache/vmafx-tune/prefilter, gitignored)",
     )
     parser.add_argument(
         "--output",

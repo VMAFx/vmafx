@@ -39,17 +39,17 @@ consumes alongside BVI-DVC, KonViD-150k, and LSVQ.
 
 ## Prerequisites
 
-1. Multi-TB free disk under `.workingdir2/waterloo-ivc-4k/`
+1. Multi-TB free disk under `.corpus/waterloo-ivc-4k/`
    for the whole-corpus run, or ~few-hundred GB for the
    laptop-class default.
 2. `curl` and `ffprobe` on `$PATH`.
 3. The scores table from
    <https://ivc.uwaterloo.ca/database/4KVQA/201908/scores.txt>
-   dropped at `.workingdir2/waterloo-ivc-4k/manifest.csv`
+   dropped at `.corpus/waterloo-ivc-4k/manifest.csv`
    (or pass `--manifest-csv` to point elsewhere).
 4. The bulk archives (Sources, H264, HEVC, VP9, AVS2 / AV1
    split-4-part) extracted to
-   `.workingdir2/waterloo-ivc-4k/clips/`. The canonical
+   `.corpus/waterloo-ivc-4k/clips/`. The canonical
    `scores.txt` carries no per-clip URL column, so the
    adapter expects clips to be staged on disk before it
    runs (the upstream's bulk-archive distribution model).
@@ -60,10 +60,10 @@ consumes alongside BVI-DVC, KonViD-150k, and LSVQ.
 # Drop the upstream scores.txt and the extracted bulk
 # archives at the default location, then:
 python ai/scripts/waterloo_ivc_to_corpus_jsonl.py
-# → reads .workingdir2/waterloo-ivc-4k/manifest.csv
+# → reads .corpus/waterloo-ivc-4k/manifest.csv
 # → caps at the first --max-rows=100 clips (default)
 # → probes each clip via ffprobe
-# → writes .workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl
+# → writes .corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl
 ```
 
 ## Whole-corpus ingestion
@@ -79,7 +79,7 @@ set + 20 pristine 4K sources.
 ## Output schema
 
 One JSON object per line in
-`.workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl`:
+`.corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl`:
 
 ```jsonc
 {
@@ -180,7 +180,7 @@ standard branch. Aliases:
 
 ```text
 --waterloo-ivc-dir PATH       Working dir
-                              (default: .workingdir2/waterloo-ivc-4k/)
+                              (default: .corpus/waterloo-ivc-4k/)
 --manifest-csv PATH           Path to manifest
                               (default: <dir>/manifest.csv)
 --progress-path PATH          Resumable state file

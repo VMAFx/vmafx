@@ -19,7 +19,7 @@ deferred work.
 
 The 2026-04-28 backlog audit ([Section A.2.1](../backlog-audit-2026-04-28.md))
 flagged QAT as untracked. Per the
-[Section-A audit decisions](../../.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+Section-A audit decisions
 §A.2.1, the user direction is **implement, do not close** — QAT
 becomes backlog row **T5-4** with implementation scope. This ADR
 locks the QAT pass design before code lands.
@@ -150,7 +150,7 @@ phase 4 runs as a post-train step.
 - [ADR-0174](0174-first-model-quantisation.md) — first per-model PTQ.
 - [Research-0006](../research/0006-tinyai-ptq-accuracy-targets.md) — accuracy
   budgets, ORT API surface, and QAT cost estimates.
-- [Section-A audit decisions](../../.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+- Section-A audit decisions
   §A.2.1 — *user response: "implement it? ffs"*. Captured as the
   binding direction for this ADR's scope.
 - [PyTorch Quantization (`torch.ao.quantization`)](https://pytorch.org/docs/stable/quantization.html)

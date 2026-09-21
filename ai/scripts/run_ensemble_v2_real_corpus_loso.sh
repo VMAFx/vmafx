@@ -37,7 +37,7 @@ cd "$repo_root"
 corpus_jsonl="${CORPUS_JSONL:-$repo_root/runs/phase_a/full_grid/per_frame_canonical6.jsonl}"
 # Informational only — the YUV directory is consumed by the Phase A
 # pre-step (``scripts/dev/hw_encoder_corpus.py``), not by the trainer.
-corpus_root="${CORPUS_ROOT:-$repo_root/.workingdir2/netflix}"
+corpus_root="${CORPUS_ROOT:-$repo_root/.corpus/netflix}"
 out_dir="${OUT_DIR:-$repo_root/runs/ensemble_v2_real}"
 log_dir="$out_dir/logs"
 seeds=(0 1 2 3 4)

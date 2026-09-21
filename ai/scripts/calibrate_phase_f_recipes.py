@@ -7,7 +7,7 @@ Replaces the F.4 placeholder thresholds in
 :mod:`vmaftune.auto` (``_animation_recipe`` / ``_screen_content_recipe`` /
 ``_live_action_hdr_recipe`` / ``_ugc_recipe``) with empirically-derived
 values fitted on a real corpus JSONL — by default the K150K ingestion
-output at ``.workingdir2/konvid-150k/konvid_150k.jsonl``.
+output at ``.corpus/konvid-150k/konvid_150k.jsonl``.
 
 The four override keys per ADR-0325 §F.4:
 
@@ -68,7 +68,7 @@ Usage
 ::
 
     python ai/scripts/calibrate_phase_f_recipes.py \
-        --corpus .workingdir2/konvid-150k/konvid_150k.jsonl \
+        --corpus .corpus/konvid-150k/konvid_150k.jsonl \
         --out ai/data/phase_f_recipes_calibrated.json
 
 The script is deterministic (NumPy seeded) and produces a JSON file
