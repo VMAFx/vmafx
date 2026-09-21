@@ -38,44 +38,16 @@ typedef struct ThreadData {
     uint8_t *dist;
     unsigned index;
     VmafFrameSyncContext *fs_ctx;
-    int err;
 } ThreadData;
 
-static int my_worker(void *data, void **tpool_thread_data)
+static int merge_result(int result, int next_result)
 {
-    (void)tpool_thread_data;
-    int ctr;
-    struct ThreadData *thread_data = data;
-    uint8_t *shared_buf;
-    uint8_t *dependent_buf;
+    return result != 0 ? result : next_result;
+}
 
-    //acquire new buffer from frame sync
-    vmaf_framesync_acquire_new_buf(thread_data->fs_ctx, (void *)&shared_buf, FRAME_BUF_LEN,
-                                   thread_data->index);
-
-    //populate shared buffer with values
-    for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++)
-        shared_buf[ctr] = thread_data->ref[ctr] + thread_data->dist[ctr] + 2;
-
-    //submit filled buffer back to frame sync
-    vmaf_framesync_submit_filled_data(thread_data->fs_ctx, shared_buf, thread_data->index);
-
-    //sleep to simulate work load
-    const int sleep_seconds = 1;
-#ifdef _WIN32
-    Sleep(1000 * sleep_seconds);
-#else
-    sleep(sleep_seconds);
-#endif
-
-    if (thread_data->index == 0)
-        goto cleanup;
-
-    //retrieve dependent buffer from frame sync
-    vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void *)&dependent_buf,
-                                        thread_data->index - 1);
-
-    for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
+static int verify_dependent_buffer(const ThreadData *thread_data, const uint8_t *dependent_buf)
+{
+    for (int ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
         /* The writer at frame N stored (seed_N + seed_N + 2) where both
          * ref and dist were memset to seed_N = N.  Frame N+1's worker
          * retrieves frame N's buffer and must verify against seed_N, NOT
@@ -94,78 +66,126 @@ static int my_worker(void *data, void **tpool_thread_data)
                           "framesync verification error at frame %u byte %d: "
                           "got %u expected %u\n",
                           thread_data->index, ctr, dependent_buf[ctr], (unsigned)expected);
-            abort(); /* fail the test process — mu_assert cannot be used in void workers */
+            return -1;
         }
     }
+    return 0;
+}
 
-    //release dependent buffer from frame sync
-    vmaf_framesync_release_buf(thread_data->fs_ctx, dependent_buf, thread_data->index - 1);
-
-cleanup:
+static int finish_worker(ThreadData *thread_data, int result)
+{
+    if (result != 0) {
+        result = merge_result(result, vmaf_framesync_abort(thread_data->fs_ctx));
+    }
     free(thread_data->ref);
     free(thread_data->dist);
-    return thread_data->err;
+    return result;
+}
+
+static int my_worker(void *data, void **tpool_thread_data)
+{
+    (void)tpool_thread_data;
+    ThreadData *thread_data = data;
+    void *shared_raw = (void *)0;
+    int result = vmaf_framesync_acquire_new_buf(thread_data->fs_ctx, &shared_raw, FRAME_BUF_LEN,
+                                                thread_data->index);
+    if (result != 0) {
+        return finish_worker(thread_data, result);
+    }
+    uint8_t *shared_buf = shared_raw;
+    for (int ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
+        shared_buf[ctr] = thread_data->ref[ctr] + thread_data->dist[ctr] + 2;
+    }
+
+    result = vmaf_framesync_submit_filled_data(thread_data->fs_ctx, shared_buf, thread_data->index);
+    if (result != 0 || thread_data->index == 0) {
+        return finish_worker(thread_data, result);
+    }
+
+    void *dependent_raw = (void *)0;
+    result = vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, &dependent_raw,
+                                                 thread_data->index - 1);
+    if (result != 0) {
+        return finish_worker(thread_data, result);
+    }
+    uint8_t *dependent_buf = dependent_raw;
+    result = verify_dependent_buffer(thread_data, dependent_buf);
+
+    const int release_result =
+        vmaf_framesync_release_buf(thread_data->fs_ctx, dependent_buf, thread_data->index - 1);
+    result = merge_result(result, release_result);
+    return finish_worker(thread_data, result);
+}
+
+static int enqueue_frames(VmafThreadPool *pool, VmafFrameSyncContext *fs_ctx)
+{
+    int result = 0;
+    (void)fprintf(stderr, "\n");
+    for (int frame_index = 0; frame_index < NUM_TEST_FRAMES && result == 0; frame_index++) {
+        uint8_t *pic_a = malloc(FRAME_BUF_LEN);
+        uint8_t *pic_b = malloc(FRAME_BUF_LEN);
+        if (pic_a == (uint8_t *)0 || pic_b == (uint8_t *)0) {
+            free(pic_a);
+            free(pic_b);
+            result = -1;
+            break;
+        }
+
+        (void)fprintf(stderr, "processing frame %d\r", frame_index);
+        memset(pic_a, frame_index, FRAME_BUF_LEN);
+        memset(pic_b, frame_index, FRAME_BUF_LEN);
+        const ThreadData data = {
+            .ref = pic_a,
+            .dist = pic_b,
+            .index = (unsigned)frame_index,
+            .fs_ctx = fs_ctx,
+        };
+        result = vmaf_thread_pool_enqueue(pool, my_worker, &data, sizeof(data));
+        if (result != 0) {
+            free(pic_a);
+            free(pic_b);
+            break;
+        }
+        if (frame_index >= 1 && (frame_index & 1) != 0) {
+            result = vmaf_thread_pool_wait(pool);
+        }
+    }
+    (void)fprintf(stderr, "\n");
+    if (result != 0) {
+        result = merge_result(result, vmaf_framesync_abort(fs_ctx));
+    }
+    return result;
+}
+
+static int run_framesync_workload(void)
+{
+    VmafThreadPool *pool = (VmafThreadPool *)0;
+    VmafFrameSyncContext *fs_ctx = (VmafFrameSyncContext *)0;
+    const VmafThreadPoolConfig tpool_cfg = {.n_threads = 2u};
+    int result = vmaf_thread_pool_create(&pool, tpool_cfg);
+    if (result != 0) {
+        return result;
+    }
+    result = vmaf_framesync_init(&fs_ctx);
+    if (result == 0) {
+        result = enqueue_frames(pool, fs_ctx);
+        result = merge_result(result, vmaf_thread_pool_wait(pool));
+    }
+    result = merge_result(result, vmaf_thread_pool_destroy(pool));
+    if (fs_ctx != (VmafFrameSyncContext *)0) {
+        result = merge_result(result, vmaf_framesync_destroy(fs_ctx));
+    }
+    return result;
 }
 
 static char *test_framesync_create_process_and_destroy(void)
 {
-    int err;
-    int frame_index;
-
-    VmafThreadPool *pool;
-    VmafFrameSyncContext *fs_ctx;
-    unsigned n_threads = 2;
-
-    VmafThreadPoolConfig tpool_cfg = {.n_threads = n_threads};
-    err = vmaf_thread_pool_create(&pool, tpool_cfg);
-    mu_assert("problem during vmaf_thread_pool_init", !err);
-
-    err = vmaf_framesync_init(&fs_ctx);
-    mu_assert("problem during vmaf_framesync_init", !err);
-
-    (void)fprintf(stderr, "\n");
-    for (frame_index = 0; frame_index < NUM_TEST_FRAMES; frame_index++) {
-        uint8_t *pic_a = malloc(FRAME_BUF_LEN);
-        uint8_t *pic_b = malloc(FRAME_BUF_LEN);
-        mu_assert("malloc failed for pic_a/pic_b", pic_a && pic_b);
-
-        (void)fprintf(stderr, "processing frame %d\r", frame_index);
-
-        memset(pic_a, frame_index, FRAME_BUF_LEN);
-        memset(pic_b, frame_index, FRAME_BUF_LEN);
-
-        struct ThreadData data = {
-            .ref = pic_a,
-            .dist = pic_b,
-            .index = frame_index,
-            .fs_ctx = fs_ctx,
-            .err = 0,
-        };
-
-        err = vmaf_thread_pool_enqueue(pool, my_worker, &data, sizeof(ThreadData));
-
-        mu_assert("problem during vmaf_thread_pool_enqueue with data", !err);
-
-        //wait once in 2 frames
-        if ((frame_index >= 1) && (frame_index & 1)) {
-            err = vmaf_thread_pool_wait(pool);
-            mu_assert("problem during vmaf_thread_pool_wait", !err);
-        }
-    }
-    (void)fprintf(stderr, "\n");
-
-    err = vmaf_thread_pool_wait(pool);
-    mu_assert("problem during vmaf_thread_pool_wait\n", !err);
-    err = vmaf_thread_pool_destroy(pool);
-    mu_assert("problem during vmaf_thread_pool_destroy\n", !err);
-    err = vmaf_framesync_destroy(fs_ctx);
-    mu_assert("problem during vmaf_framesync_destroy\n", !err);
-
-    return NULL;
+    mu_assert("framesync workload must complete without errors", run_framesync_workload() == 0);
+    return (char *)0;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_framesync_create_process_and_destroy);
-    return NULL;
+    return (char *)0;
 }

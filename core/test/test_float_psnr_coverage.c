@@ -60,6 +60,26 @@ static int alloc_grey(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned b
     return 0;
 }
 
+static int merge_cleanup_error(int result, int cleanup_result)
+{
+    return result != 0 ? result : cleanup_result;
+}
+
+static int cleanup_float_psnr_run(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                                  VmafPicture *ref, VmafPicture *dist, int result)
+{
+    if (ref->ref != NULL) {
+        result = merge_cleanup_error(result, vmaf_picture_unref(ref));
+    }
+    if (dist->ref != NULL) {
+        result = merge_cleanup_error(result, vmaf_picture_unref(dist));
+    }
+    result = merge_cleanup_error(result, vmaf_feature_extractor_context_close(ctx));
+    result = merge_cleanup_error(result, vmaf_feature_extractor_context_destroy(ctx));
+    vmaf_feature_collector_destroy(fc);
+    return result;
+}
+
 /* Helper: run a full init→extract→close cycle and return the float_psnr score. */
 static int run_float_psnr(unsigned bpc, unsigned ref_val, unsigned dist_val, double *score_out)
 {
@@ -88,33 +108,26 @@ static int run_float_psnr(unsigned bpc, unsigned ref_val, unsigned dist_val, dou
 
     VmafPicture ref;
     VmafPicture dist;
+    memset(&ref, 0, sizeof(ref));
+    memset(&dist, 0, sizeof(dist));
     err = alloc_grey(&ref, VMAF_PIX_FMT_YUV420P, bpc, ref_val);
-    if (err)
-        goto cleanup;
+    if (err) {
+        return cleanup_float_psnr_run(ctx, fc, &ref, &dist, err);
+    }
     err = alloc_grey(&dist, VMAF_PIX_FMT_YUV420P, bpc, dist_val);
     if (err) {
-        vmaf_picture_unref(&ref);
-        goto cleanup;
+        return cleanup_float_psnr_run(ctx, fc, &ref, &dist, err);
     }
 
     err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
     if (err) {
-        vmaf_picture_unref(&ref);
-        vmaf_picture_unref(&dist);
-        goto cleanup;
+        return cleanup_float_psnr_run(ctx, fc, &ref, &dist, err);
     }
 
     if (score_out)
         err = vmaf_feature_collector_get_score(fc, "float_psnr", score_out, 0);
 
-    vmaf_picture_unref(&ref);
-    vmaf_picture_unref(&dist);
-
-cleanup:
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
-    vmaf_feature_collector_destroy(fc);
-    return err;
+    return cleanup_float_psnr_run(ctx, fc, &ref, &dist, err);
 }
 
 /* ----------------------------------------------------------------- */
