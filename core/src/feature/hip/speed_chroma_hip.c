@@ -148,84 +148,50 @@ typedef struct SpeedChromaHipState {
     SpeedInternalSingularTally singular_tally;
 } SpeedChromaHipState;
 
+/* Keeps each option row inside the 100-column limit so the whole table stays
+ * under the HISS-04 60-line block bound. Field order, values, ranges and
+ * aliases are unchanged. */
+#define SC_OPT_OFF(field) offsetof(SpeedChromaHipState, field)
+
+/* clang-format off: the option rows are hand-packed so the whole table stays
+ * inside the HISS-04 60-line block bound. Same treatment, and same guarantee,
+ * as the CPU SpEED tables in core/src/feature/speed.c: name, alias, help,
+ * default, range, flags and array order are byte-for-byte unchanged. */
+// clang-format off
 static const VmafOption options_chroma[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the Gaussian kernel",
-        .offset = offsetof(SpeedChromaHipState, speed_chroma_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = SC_DEFAULT_KERNELSCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame",
-        .offset = offsetof(SpeedChromaHipState, speed_chroma_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = SC_DEFAULT_PRESCALE,
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
-        .offset = offsetof(SpeedChromaHipState, speed_chroma_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = SC_DEFAULT_PRESCALE_METHOD,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedChromaHipState, speed_chroma_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = SC_DEFAULT_SIGMA_NN,
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor fraction",
-        .offset = offsetof(SpeedChromaHipState, speed_chroma_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = SC_DEFAULT_NN_FLOOR,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "clip output to this maximum",
-        .offset = offsetof(SpeedChromaHipState, speed_chroma_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = SC_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_weight_var_mode",
-        .help = "variance weighting mode (0-6)",
-        .offset = offsetof(SpeedChromaHipState, speed_weight_var_mode),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.d = 0,
-        .min = 0,
-        .max = 6,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "wvm",
-    },
+    {.name = "speed_kernelscale", .help = "scaling factor for the Gaussian kernel",
+     .offset = SC_OPT_OFF(speed_chroma_kernelscale), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = SC_DEFAULT_KERNELSCALE, .min = 0.1, .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "ks"},
+    {.name = "speed_prescale", .help = "scaling factor for the frame",
+     .offset = SC_OPT_OFF(speed_chroma_prescale), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = SC_DEFAULT_PRESCALE, .min = 0.1, .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "ps"},
+    {.name = "speed_prescale_method",
+     .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
+     .offset = SC_OPT_OFF(speed_chroma_prescale_method), .type = VMAF_OPT_TYPE_STRING,
+     .default_val.s = SC_DEFAULT_PRESCALE_METHOD, .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+     .alias = "psm"},
+    {.name = "speed_sigma_nn", .help = "standard deviation of neural noise",
+     .offset = SC_OPT_OFF(speed_chroma_sigma_nn), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = SC_DEFAULT_SIGMA_NN, .min = 0.1, .max = 2.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "snn"},
+    {.name = "speed_nn_floor", .help = "neural noise floor fraction",
+     .offset = SC_OPT_OFF(speed_chroma_nn_floor), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = SC_DEFAULT_NN_FLOOR, .min = 0.0, .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "nnf"},
+    {.name = "speed_max_val", .help = "clip output to this maximum",
+     .offset = SC_OPT_OFF(speed_chroma_max_val), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = SC_DEFAULT_MAX_VAL, .min = 0.0, .max = 1000.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "mxv"},
+    {.name = "speed_weight_var_mode", .help = "variance weighting mode (0-6)",
+     .offset = SC_OPT_OFF(speed_weight_var_mode), .type = VMAF_OPT_TYPE_INT, .default_val.d = 0,
+     .min = 0, .max = 6, .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "wvm"},
     {0},
 };
+// clang-format on
+
+#undef SC_OPT_OFF
 
 /* ------------------------------------------------------------------ */
 /* HIP helpers (compiled only when hipcc is present)                  */
@@ -506,6 +472,44 @@ static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_s
 }
 
 /* K5 score + D2H + CPU aggregate. */
+/* Per-block |weighted ref entropy - weighted dis entropy| under the configured
+ * weight-variance mode.
+ *
+ * Extracted from run_score_sc() for HISS-04. Every branch is copied
+ * expression-for-expression and the parameters keep their `float` type, so no
+ * intermediate is widened and no multiply-add is re-associated across the
+ * helper boundary. The caller's `total +=` accumulation order is untouched.
+ * MUST stay `static` and in this translation unit — see AGENTS.md. */
+static float sc_block_delta(float re, float de, float rv, float dv, int wvm)
+{
+    float sr = 0.0f;
+    float sd = 0.0f;
+    if (wvm == 0) {
+        sr = re * log2f(1.0f + rv);
+        sd = de * log2f(1.0f + dv);
+    } else if (wvm == 1) {
+        sr = re * log2f(1.0f + rv);
+        sd = de * log2f(1.0f + rv);
+    } else if (wvm == 2) {
+        sr = re * log2f(1.0f + dv);
+        sd = de * log2f(1.0f + dv);
+    } else if (wvm == 3) {
+        const float mv = (rv + dv) * 0.5f;
+        sr = re * log2f(1.0f + mv);
+        sd = de * log2f(1.0f + mv);
+    } else if (wvm == 4) {
+        sr = re * log2f(1.0f + rv);
+        sd = de * log2f(1.0f + (rv + dv) * 0.5f);
+    } else if (wvm == 5) {
+        sr = re * log2f(1.0f + rv);
+        sd = de * log2f(1.0f + 0.75f * rv + 0.25f * dv);
+    } else if (wvm == 6) {
+        sr = re * log2f(1.0f + rv);
+        sd = de * log2f(1.0f + 0.25f * rv + 0.75f * dv);
+    }
+    return fabsf(sr - sd);
+}
+
 static int run_score_sc(SpeedChromaHipState *s, float *score_out)
 {
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
@@ -554,35 +558,8 @@ static int run_score_sc(SpeedChromaHipState *s, float *score_out)
         const float de = s->h_dis_ent[i];
         if (re < base_entropy && de < base_entropy)
             continue;
-        const float rv = s->h_ref_var[i];
-        const float dv = s->h_dis_var[i];
-        const int wvm = s->opt.speed_weight_var_mode;
-        float sr = 0.0f;
-        float sd = 0.0f;
-        if (wvm == 0) {
-            sr = re * log2f(1.0f + rv);
-            sd = de * log2f(1.0f + dv);
-        } else if (wvm == 1) {
-            sr = re * log2f(1.0f + rv);
-            sd = de * log2f(1.0f + rv);
-        } else if (wvm == 2) {
-            sr = re * log2f(1.0f + dv);
-            sd = de * log2f(1.0f + dv);
-        } else if (wvm == 3) {
-            const float mv = (rv + dv) * 0.5f;
-            sr = re * log2f(1.0f + mv);
-            sd = de * log2f(1.0f + mv);
-        } else if (wvm == 4) {
-            sr = re * log2f(1.0f + rv);
-            sd = de * log2f(1.0f + (rv + dv) * 0.5f);
-        } else if (wvm == 5) {
-            sr = re * log2f(1.0f + rv);
-            sd = de * log2f(1.0f + 0.75f * rv + 0.25f * dv);
-        } else if (wvm == 6) {
-            sr = re * log2f(1.0f + rv);
-            sd = de * log2f(1.0f + 0.25f * rv + 0.75f * dv);
-        }
-        total += fabsf(sr - sd);
+        total +=
+            sc_block_delta(re, de, s->h_ref_var[i], s->h_dis_var[i], s->opt.speed_weight_var_mode);
     }
     *score_out = total / (float)num_blocks;
     return 0;
@@ -594,43 +571,53 @@ static int run_score_sc(SpeedChromaHipState *s, float *score_out)
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                           unsigned w, unsigned h)
+/* Releases every host-side scratch buffer allocated by init_chroma_hip().
+ * Extracted so the init error paths and close_chroma_hip() free the exact same
+ * set in the exact same order (HISS-01: no goto-chained cleanup ladder). */
+static void sc_free_cpu_buffers(SpeedChromaHipState *s)
 {
-    (void)bpc;
-    SpeedChromaHipState *s = fex->priv;
+    aligned_free(s->h_plane_ref);
+    aligned_free(s->h_plane_dis);
+    aligned_free(s->h_eigenvalues);
+    aligned_free(s->h_eig_scratch);
+    aligned_free(s->h_Q);
+    aligned_free(s->h_R);
+    aligned_free(s->h_qr_scratch);
+    aligned_free(s->h_indterm_ref);
+    aligned_free(s->h_indterm_dis);
+    aligned_free(s->h_qt_scratch);
+}
 
-    unsigned cw = w;
-    unsigned ch = h;
+/* Maps the picture format to the chroma-plane dimensions. Returns -EINVAL for
+ * the formats speed_chroma cannot score. Extracted from init_chroma_hip() for
+ * HISS-04; the divisions are copied unchanged. */
+static int sc_chroma_plane_dims(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h, unsigned *cw,
+                                unsigned *ch)
+{
+    *cw = w;
+    *ch = h;
     switch (pix_fmt) {
     case VMAF_PIX_FMT_UNKNOWN:
     case VMAF_PIX_FMT_YUV400P:
         return -EINVAL;
     case VMAF_PIX_FMT_YUV420P:
-        cw /= 2u;
-        ch /= 2u;
+        *cw /= 2u;
+        *ch /= 2u;
         break;
     case VMAF_PIX_FMT_YUV422P:
-        cw /= 2u;
+        *cw /= 2u;
         break;
     case VMAF_PIX_FMT_YUV444P:
         break;
     }
+    return 0;
+}
 
-    s->opt = (SpeedInternalOptions){
-        .speed_kernelscale = s->speed_chroma_kernelscale,
-        .speed_prescale = s->speed_chroma_prescale,
-        .speed_prescale_method = s->speed_chroma_prescale_method,
-        .speed_sigma_nn = s->speed_chroma_sigma_nn,
-        .speed_nn_floor = s->speed_chroma_nn_floor,
-        .speed_weight_var_mode = s->speed_weight_var_mode,
-    };
-
-    int err = speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
-    if (err)
-        return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
+/* Allocates the host scratch buffers and validates the mandatory ones.
+ * Releases everything and reports -ENOMEM on failure, exactly as the former
+ * inline block did. */
+static int sc_alloc_cpu_buffers(SpeedChromaHipState *s)
+{
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
@@ -652,19 +639,31 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
 #undef ALLOC_A
 
     if (!s->h_plane_ref || !s->h_plane_dis || !s->h_eigenvalues || !s->h_Q || !s->h_R) {
-        err = -ENOMEM;
-        goto free_cpu;
+        sc_free_cpu_buffers(s);
+        return -ENOMEM;
     }
+    return 0;
+}
 
 #ifdef HAVE_HIPCC
-    err = sc_hip_module_load(s);
-    if (err)
-        goto free_cpu;
+/* Loads the HSACO, creates the stream, queries the wavefront width and
+ * allocates the device buffers. Every failure path releases the same
+ * resources, in the same order, as the goto ladder this replaces. */
+static int sc_hip_setup(SpeedChromaHipState *s)
+{
+    int err = sc_hip_module_load(s);
+    if (err) {
+        sc_free_cpu_buffers(s);
+        return err;
+    }
 
-    err = hipStreamCreate(&s->stream);
-    if (err != hipSuccess) {
-        err = -EIO;
-        goto free_module;
+    if (hipStreamCreate(&s->stream) != hipSuccess) {
+        if (s->module) {
+            (void)hipModuleUnload(s->module);
+            s->module = NULL;
+        }
+        sc_free_cpu_buffers(s);
+        return -EIO;
     }
 
     /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
@@ -679,8 +678,48 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
     }
 
     err = sc_hip_bufs_alloc(s);
+    if (err) {
+        free_hip_buffers(s);
+        sc_free_cpu_buffers(s);
+        return err;
+    }
+    return 0;
+}
+#endif /* HAVE_HIPCC */
+
+static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                           unsigned w, unsigned h)
+{
+    (void)bpc;
+    SpeedChromaHipState *s = fex->priv;
+
+    unsigned cw = 0u;
+    unsigned ch = 0u;
+    if (sc_chroma_plane_dims(pix_fmt, w, h, &cw, &ch) != 0)
+        return -EINVAL;
+
+    s->opt = (SpeedInternalOptions){
+        .speed_kernelscale = s->speed_chroma_kernelscale,
+        .speed_prescale = s->speed_chroma_prescale,
+        .speed_prescale_method = s->speed_chroma_prescale_method,
+        .speed_sigma_nn = s->speed_chroma_sigma_nn,
+        .speed_nn_floor = s->speed_chroma_nn_floor,
+        .speed_weight_var_mode = s->speed_weight_var_mode,
+    };
+
+    int err = speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
     if (err)
-        goto free_hip;
+        return err;
+    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+
+    err = sc_alloc_cpu_buffers(s);
+    if (err)
+        return err;
+
+#ifdef HAVE_HIPCC
+    err = sc_hip_setup(s);
+    if (err)
+        return err;
 #else
     /* Without hipcc this extractor reports ENOSYS. */
     return -ENOSYS;
@@ -689,37 +728,105 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
-        err = -ENOMEM;
 #ifdef HAVE_HIPCC
-        goto free_hip;
+        free_hip_buffers(s);
 #endif
+        sc_free_cpu_buffers(s);
+        return -ENOMEM;
     }
 
     return 0;
+}
 
 #ifdef HAVE_HIPCC
-free_hip:
-    free_hip_buffers(s);
-    goto free_cpu;
-free_module:
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
+/* Scores one chroma channel end-to-end: host filter/downscale, the reference
+ * and distorted GPU pipelines, the CPU linear algebra and the score kernel.
+ *
+ * Extracted verbatim from extract_chroma_hip() for HISS-04. No arithmetic
+ * expression was split and no accumulation order changed; the early-return
+ * paths leave *score_out at 0.0f and *singular_out false, which is exactly the
+ * state the former `continue` left score_u/score_v and singular_u/singular_v
+ * in. See AGENTS.md in this directory. */
+static int sc_score_channel(SpeedChromaHipState *s, VmafPicture *ref_pic, VmafPicture *dist_pic,
+                            float *tmp_filter, int ch, float *score_out, bool *singular_out)
+{
+    *score_out = 0.0f;
+    *singular_out = false;
+
+    /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
+    picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
+                                        s->float_stride);
+    picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, ch);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
+                                        s->float_stride);
+
+    /* Reference: means → cov → indterm, then eigendecomp + QR. Uploads ref
+     * eigenvalues into the shared d_eigenvalues buffer. */
+    int e = run_gpu_pipeline_sc(s, s->h_plane_ref, s->d_indterm_ref, s->h_indterm_ref);
+    if (e)
+        return e;
+    bool singular_ref = false;
+    e = run_cpu_linalg_sc(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
+    if (e)
+        return e;
+
+    /* Stash the reference eigenvalues aside before the distorted linalg
+     * pass overwrites d_eigenvalues. The CPU reference (est_params in
+     * speed.c) computes SEPARATE ref and dis covariance + eigenvalues; the
+     * score kernel needs both. run_cpu_linalg_sc synchronizes the stream
+     * after its eigenvalue H2D, so this DtoD copy is correctly ordered. */
+    hipError_t drc =
+        hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, SC_ELEMENTS * sizeof(float));
+    if (drc != hipSuccess)
+        return hip_rc(drc);
+
+    /* Distorted: means → cov → indterm (keeps the DIS covariance in
+     * h_cov_mat — no save/restore of the ref covariance), then eigendecomp
+     * + QR. Uploads dis eigenvalues into d_eigenvalues. */
+    bool singular_dis = false;
+    e = run_gpu_pipeline_sc(s, s->h_plane_dis, s->d_indterm_dis, s->h_indterm_dis);
+    if (!e)
+        e = run_cpu_linalg_sc(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
+
+    /* Exactly one side numerically unstable: report 0 rather than the
+     * inflated score a zeroed solution on one side produces. Verbatim the
+     * CPU rule in speed_extract_score() (speed.c), which this twin matches. */
+    float sc = 0.0f;
+    if (!e && singular_ref == singular_dis)
+        e = run_score_sc(s, &sc);
+
+    *score_out = sc;
+    *singular_out = singular_ref || singular_dis;
+    return e;
+}
+
 #endif /* HAVE_HIPCC */
-free_cpu:
-    aligned_free(s->h_plane_ref);
-    aligned_free(s->h_plane_dis);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
+
+#ifdef HAVE_HIPCC
+/* Emits the three chroma features with the configured max-value ceiling.
+ * Emission only; the ternary clamps are copied unchanged. */
+static int sc_emit_scores(const SpeedChromaHipState *s, VmafFeatureCollector *feature_collector,
+                          unsigned index, float score_u, float score_v, bool singular_u,
+                          bool singular_v)
+{
+    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
+
+    const double mxv = s->speed_chroma_max_val;
+    int err = 0;
+    err |= vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_u_score",
+        (double)score_u < mxv ? (double)score_u : mxv, index);
+    err |= vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_v_score",
+        (double)score_v < mxv ? (double)score_v : mxv, index);
+    err |= vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_uv_score",
+        (double)score_uv < mxv ? (double)score_uv : mxv, index);
     return err;
 }
+
+#endif /* HAVE_HIPCC */
 
 static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
@@ -753,63 +860,17 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     bool singular_v = false;
 
     for (int ch = 1; ch <= 2; ++ch) {
-        /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
-        picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
-        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
-                                            s->float_stride);
-        picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, ch);
-        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
-                                            s->float_stride);
-
-        /* Reference: means → cov → indterm, then eigendecomp + QR. Uploads ref
-         * eigenvalues into the shared d_eigenvalues buffer. */
-        int e = run_gpu_pipeline_sc(s, s->h_plane_ref, s->d_indterm_ref, s->h_indterm_ref);
-        if (e) {
-            (ch == 1) ? (err_u = e) : (err_v = e);
-            continue;
-        }
-        bool singular_ref = false;
-        e = run_cpu_linalg_sc(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
-        if (e) {
-            (ch == 1) ? (err_u = e) : (err_v = e);
-            continue;
-        }
-
-        /* Stash the reference eigenvalues aside before the distorted linalg
-         * pass overwrites d_eigenvalues. The CPU reference (est_params in
-         * speed.c) computes SEPARATE ref and dis covariance + eigenvalues; the
-         * score kernel needs both. run_cpu_linalg_sc synchronizes the stream
-         * after its eigenvalue H2D, so this DtoD copy is correctly ordered. */
-        hipError_t drc =
-            hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, SC_ELEMENTS * sizeof(float));
-        if (drc != hipSuccess) {
-            (ch == 1) ? (err_u = hip_rc(drc)) : (err_v = hip_rc(drc));
-            continue;
-        }
-
-        /* Distorted: means → cov → indterm (keeps the DIS covariance in
-         * h_cov_mat — no save/restore of the ref covariance), then eigendecomp
-         * + QR. Uploads dis eigenvalues into d_eigenvalues. */
-        bool singular_dis = false;
-        e = run_gpu_pipeline_sc(s, s->h_plane_dis, s->d_indterm_dis, s->h_indterm_dis);
-        if (!e)
-            e = run_cpu_linalg_sc(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
-
-        /* Exactly one side numerically unstable: report 0 rather than the
-         * inflated score a zeroed solution on one side produces. Verbatim the
-         * CPU rule in speed_extract_score() (speed.c), which this twin matches. */
         float sc = 0.0f;
-        if (!e && singular_ref == singular_dis)
-            e = run_score_sc(s, &sc);
-
+        bool sing = false;
+        const int e = sc_score_channel(s, ref_pic, dist_pic, tmp_filter, ch, &sc, &sing);
         if (ch == 1) {
             err_u = e;
             score_u = sc;
-            singular_u = singular_ref || singular_dis;
+            singular_u = sing;
         } else {
             err_v = e;
             score_v = sc;
-            singular_v = singular_ref || singular_dis;
+            singular_v = sing;
         }
     }
 
@@ -824,20 +885,7 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (err_v)
         return err_v;
 
-    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
-
-    const double mxv = s->speed_chroma_max_val;
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_u_score",
-        (double)score_u < mxv ? (double)score_u : mxv, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_v_score",
-        (double)score_v < mxv ? (double)score_v : mxv, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_uv_score",
-        (double)score_uv < mxv ? (double)score_uv : mxv, index);
-    return err;
+    return sc_emit_scores(s, feature_collector, index, score_u, score_v, singular_u, singular_v);
 #endif /* HAVE_HIPCC */
 }
 
@@ -848,16 +896,7 @@ static int close_chroma_hip(VmafFeatureExtractor *fex)
 #ifdef HAVE_HIPCC
     free_hip_buffers(s);
 #endif
-    aligned_free(s->h_plane_ref);
-    aligned_free(s->h_plane_dis);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
+    sc_free_cpu_buffers(s);
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
     return 0;

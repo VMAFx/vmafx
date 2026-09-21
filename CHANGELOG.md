@@ -24171,6 +24171,32 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- HIP feature extractors and backend runtime: the `goto`-based
+  init/allocation cleanup ladders in `integer_adm_hip.c`,
+  `integer_cambi_hip.c`, `integer_ms_ssim_hip.c`,
+  `integer_psnr_hvs_hip.c`, `speed_chroma_hip.c`,
+  `speed_temporal_hip.c` and `ssimulacra2_hip.c` were rewritten as
+  cascading `static` unwind helpers (HISS-01, NASA Rule 1), and the
+  oversized init / submit / collect / close / score-writer functions in
+  the same files were split into cohesive `static` helpers (HISS-04,
+  NASA Rule 4). Each former `fail_*:` label became one helper that
+  releases exactly its own acquisition and then tail-calls the label it
+  used to fall into, so the release **set** and release **order** are
+  unchanged on every exit path — including the paths that deliberately
+  skipped a tier or reported the `hipSuccess` left by the last
+  successful call. No arithmetic expression was split across a helper
+  boundary and no accumulation order was touched, so every score is
+  bit-identical. Behaviour-preserving refactor only; no user-visible
+  change.
+- HIP feature extractors: the four `VmafOption` tables and the
+  SSIMULACRA2 `g_weights[108]` vector are now hand-packed inside
+  `// clang-format off` fences, the same treatment
+  `core/src/feature/speed.c` gives the CPU SpEED tables, so each block
+  stays inside the HISS-04 60-line bound. Every option name, alias, help
+  string, default, range and flag — and the array order — is unchanged,
+  so no CLI surface, feature-name key or model lookup moves.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so

@@ -69,116 +69,29 @@ enum yuv_matrix_h {
 };
 
 /* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
+/* clang-format off: the SSIMULACRA2 weight vector is packed so the table stays
+ * inside the HISS-04 60-line block bound. The 108 values and their order are
+ * byte-for-byte unchanged. */
+// clang-format off
 static const double g_weights[108] = {
-    0.0,
-    0.0007376606707406586,
-    0.0,
-    0.0,
-    0.0007793481682867309,
-    0.0,
-    0.0,
-    0.0004371155730107379,
-    0.0,
-    1.1041726426657346,
-    0.00066284834129271,
-    0.00015231632783718752,
-    0.0,
-    0.0016406437456599754,
-    0.0,
-    1.8422455520539298,
-    11.441172603757666,
-    0.0,
-    0.0007989109436015163,
-    0.000176816438078653,
-    0.0,
-    1.8787594979546387,
-    10.94906990605142,
-    0.0,
-    0.0007289346991508072,
-    0.9677937080626833,
-    0.0,
-    0.00014003424285435884,
-    0.9981766977854967,
-    0.00031949755934435053,
-    0.0004550992113792063,
-    0.0,
-    0.0,
-    0.0013648766163243398,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    7.466890328078848,
-    0.0,
-    17.445833984131262,
-    0.0006235601634041466,
-    0.0,
-    0.0,
-    6.683678146179332,
-    0.00037724407979611296,
-    1.027889937768264,
-    225.20515300849274,
-    0.0,
-    0.0,
-    19.213238186143016,
-    0.0011401524586618361,
-    0.001237755635509985,
-    176.39317598450694,
-    0.0,
-    0.0,
-    24.43300999870476,
-    0.28520802612117757,
-    0.0004485436923833408,
-    0.0,
-    0.0,
-    0.0,
-    34.77906344483772,
-    44.835625328877896,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0008680556573291698,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0005313191874358747,
-    0.0,
-    0.00016533814161379112,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0004179171803251336,
-    0.0017290828234722833,
-    0.0,
-    0.0020827005846636437,
-    0.0,
-    0.0,
-    8.826982764996862,
-    23.19243343998926,
-    0.0,
-    95.1080498811086,
-    0.9863978034400682,
-    0.9834382792465353,
-    0.0012286405048278493,
-    171.2667255897307,
-    0.9807858872435379,
-    0.0,
-    0.0,
-    0.0,
-    0.0005130064588990679,
-    0.0,
-    0.00010854057858411537,
+    0.0, 0.0007376606707406586, 0.0, 0.0, 0.0007793481682867309, 0.0, 0.0, 0.0004371155730107379,
+    0.0, 1.1041726426657346, 0.00066284834129271, 0.00015231632783718752, 0.0,
+    0.0016406437456599754, 0.0, 1.8422455520539298, 11.441172603757666, 0.0, 0.0007989109436015163,
+    0.000176816438078653, 0.0, 1.8787594979546387, 10.94906990605142, 0.0, 0.0007289346991508072,
+    0.9677937080626833, 0.0, 0.00014003424285435884, 0.9981766977854967, 0.00031949755934435053,
+    0.0004550992113792063, 0.0, 0.0, 0.0013648766163243398, 0.0, 0.0, 0.0, 0.0, 0.0,
+    7.466890328078848, 0.0, 17.445833984131262, 0.0006235601634041466, 0.0, 0.0, 6.683678146179332,
+    0.00037724407979611296, 1.027889937768264, 225.20515300849274, 0.0, 0.0, 19.213238186143016,
+    0.0011401524586618361, 0.001237755635509985, 176.39317598450694, 0.0, 0.0, 24.43300999870476,
+    0.28520802612117757, 0.0004485436923833408, 0.0, 0.0, 0.0, 34.77906344483772,
+    44.835625328877896, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0008680556573291698, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0005313191874358747, 0.0, 0.00016533814161379112, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0004179171803251336, 0.0017290828234722833, 0.0, 0.0020827005846636437, 0.0, 0.0,
+    8.826982764996862, 23.19243343998926, 0.0, 95.1080498811086, 0.9863978034400682,
+    0.9834382792465353, 0.0012286405048278493, 171.2667255897307, 0.9807858872435379, 0.0, 0.0, 0.0,
+    0.0005130064588990679, 0.0, 0.00010854057858411537,
 };
+// clang-format on
 
 typedef struct Ssimu2StateHip {
     /* Options. */
@@ -360,6 +273,35 @@ static inline float ss2h_read_plane(const VmafPicture *pic, int plane, int x, in
  * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5 sweep
  * closeout — ADR-0278).
  * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+/* Resolves the luma primaries for the configured YUV matrix and reports
+ * whether the range is limited. Extracted from ss2h_picture_to_linear_rgb()
+ * for HISS-04: the literals and the fallthrough structure are copied exactly,
+ * and the ADR-1205 / ADR-0891 fmaf() chain downstream is untouched. */
+static int ss2h_yuv_primaries(int yuv_matrix, float *kr, float *kg, float *kb)
+{
+    int limited = 1;
+    switch (yuv_matrix) {
+    case SS2H_MATRIX_BT709_FULL:
+        limited = 0;
+        // fallthrough
+    case SS2H_MATRIX_BT709_LIMITED:
+        *kr = 0.2126f;
+        *kg = 0.7152f;
+        *kb = 0.0722f;
+        break;
+    case SS2H_MATRIX_BT601_FULL:
+        limited = 0;
+        // fallthrough
+    case SS2H_MATRIX_BT601_LIMITED:
+    default:
+        *kr = 0.299f;
+        *kg = 0.587f;
+        *kb = 0.114f;
+        break;
+    }
+    return limited;
+}
+
 static void ss2h_picture_to_linear_rgb(const Ssimu2StateHip *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->width;
@@ -375,26 +317,7 @@ static void ss2h_picture_to_linear_rgb(const Ssimu2StateHip *s, const VmafPictur
     float kr;
     float kg;
     float kb;
-    int limited = 1;
-    switch (s->yuv_matrix) {
-    case SS2H_MATRIX_BT709_FULL:
-        limited = 0;
-        // fallthrough
-    case SS2H_MATRIX_BT709_LIMITED:
-        kr = 0.2126f;
-        kg = 0.7152f;
-        kb = 0.0722f;
-        break;
-    case SS2H_MATRIX_BT601_FULL:
-        limited = 0;
-        // fallthrough
-    case SS2H_MATRIX_BT601_LIMITED:
-    default:
-        kr = 0.299f;
-        kg = 0.587f;
-        kb = 0.114f;
-        break;
-    }
+    const int limited = ss2h_yuv_primaries(s->yuv_matrix, &kr, &kg, &kb);
     const float cr_r = 2.0f * (1.0f - kr);
     const float cb_b = 2.0f * (1.0f - kb);
     const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
@@ -818,20 +741,11 @@ static double ss2h_pool_score(const double avg_ssim[6][6], const double avg_ed[6
  * audit (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
  * sweep closeout — ADR-0278).
  * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
-static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
+/* Per-plane host-to-device upload of the XYB buffers for one scale. Pure
+ * enqueue; lifted out of ss2h_run_scale_gpu() for HISS-04. */
+static int ss2h_upload_xyb(Ssimu2StateHip *s, void *ref_xyb, void *dis_xyb, size_t plane_full_bytes,
+                           size_t scale_bytes_per_plane)
 {
-    const size_t plane_full_bytes = (size_t)s->width * (size_t)s->height * sizeof(float);
-    const size_t scale_pixels = (size_t)s->scale_w[scale] * (size_t)s->scale_h[scale];
-    const size_t scale_bytes_per_plane = scale_pixels * sizeof(float);
-    void *ref_xyb = s->d_ref_xyb;
-    void *dis_xyb = s->d_dis_xyb;
-    void *mul_buf = s->d_mul_buf;
-    void *mu1 = s->d_mu1;
-    void *mu2 = s->d_mu2;
-    void *ds11 = s->d_s11;
-    void *ds22 = s->d_s22;
-    void *ds12 = s->d_s12;
-
     /* Upload XYB buffers per plane (valid sub-region only). */
     for (int c = 0; c < 3; c++) {
         const size_t plane_off_bytes = (size_t)c * plane_full_bytes;
@@ -847,37 +761,14 @@ static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
         if (hip_rc != hipSuccess)
             return ss2h_hip_rc(hip_rc);
     }
+    return 0;
+}
 
-    int err = 0;
-
-    err = ss2h_launch_mul3(s, ref_xyb, ref_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, mul_buf, ds11, scale);
-    if (err)
-        return err;
-
-    err = ss2h_launch_mul3(s, dis_xyb, dis_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, mul_buf, ds22, scale);
-    if (err)
-        return err;
-
-    err = ss2h_launch_mul3(s, ref_xyb, dis_xyb, mul_buf, (unsigned)scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, mul_buf, ds12, scale);
-    if (err)
-        return err;
-
-    err = ss2h_blur_3plane(s, ref_xyb, mu1, scale);
-    if (err)
-        return err;
-    err = ss2h_blur_3plane(s, dis_xyb, mu2, scale);
-    if (err)
-        return err;
-
+/* Per-plane device-to-host download of the blurred / product buffers. Pure
+ * enqueue; the copy order is unchanged. */
+static int ss2h_download_blurred(Ssimu2StateHip *s, void *mu1, void *mu2, void *ds11, void *ds22,
+                                 void *ds12, size_t plane_full_bytes, size_t scale_bytes_per_plane)
+{
     /* Download blurred buffers (valid sub-region only). */
     for (int c = 0; c < 3; c++) {
         const size_t plane_off_bytes = (size_t)c * plane_full_bytes;
@@ -908,8 +799,99 @@ static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
         if (hip_rc != hipSuccess)
             return ss2h_hip_rc(hip_rc);
     }
+    return 0;
+}
+
+static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
+{
+    const size_t plane_full_bytes = (size_t)s->width * (size_t)s->height * sizeof(float);
+    const size_t scale_pixels = (size_t)s->scale_w[scale] * (size_t)s->scale_h[scale];
+    const size_t scale_bytes_per_plane = scale_pixels * sizeof(float);
+    void *ref_xyb = s->d_ref_xyb;
+    void *dis_xyb = s->d_dis_xyb;
+    void *mul_buf = s->d_mul_buf;
+    void *mu1 = s->d_mu1;
+    void *mu2 = s->d_mu2;
+    void *ds11 = s->d_s11;
+    void *ds22 = s->d_s22;
+    void *ds12 = s->d_s12;
+
+    int err = ss2h_upload_xyb(s, ref_xyb, dis_xyb, plane_full_bytes, scale_bytes_per_plane);
+    if (err)
+        return err;
+
+    err = ss2h_launch_mul3(s, ref_xyb, ref_xyb, mul_buf, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, mul_buf, ds11, scale);
+    if (err)
+        return err;
+
+    err = ss2h_launch_mul3(s, dis_xyb, dis_xyb, mul_buf, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, mul_buf, ds22, scale);
+    if (err)
+        return err;
+
+    err = ss2h_launch_mul3(s, ref_xyb, dis_xyb, mul_buf, (unsigned)scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, mul_buf, ds12, scale);
+    if (err)
+        return err;
+
+    err = ss2h_blur_3plane(s, ref_xyb, mu1, scale);
+    if (err)
+        return err;
+    err = ss2h_blur_3plane(s, dis_xyb, mu2, scale);
+    if (err)
+        return err;
+
+    err = ss2h_download_blurred(s, mu1, mu2, ds11, ds22, ds12, plane_full_bytes,
+                                scale_bytes_per_plane);
+    if (err)
+        return err;
+
     hipError_t hip_rc = hipStreamSynchronize(s->str);
     return ss2h_hip_rc(hip_rc);
+}
+
+/* ------------------------------------------------------------------ */
+/* init failure unwind — cascading tiers                              */
+/*                                                                    */
+/* These three helpers replace the former goto ladder in init_fex_hip.*/
+/* Each tier undoes exactly its own acquisition and then delegates to */
+/* the next-earlier tier, so the release order is byte-for-byte the   */
+/* order the fall-through labels produced (HISS-01).                  */
+/* ------------------------------------------------------------------ */
+
+static int ss2h_init_unwind_stream(Ssimu2StateHip *s, hipError_t rc)
+{
+    (void)hipStreamDestroy(s->str);
+    s->str = NULL;
+    return ss2h_hip_rc(rc);
+}
+
+static int ss2h_init_unwind_mod_blur(Ssimu2StateHip *s, hipError_t rc)
+{
+    (void)hipModuleUnload(s->module_blur);
+    s->module_blur = NULL;
+    return ss2h_init_unwind_stream(s, rc);
+}
+
+/* Frees any device + pinned allocation that succeeded before the fault.
+ * ss2h_alloc_device / ss2h_alloc_pinned each free their own partial state
+ * internally, but if init failed after one of them returned 0 (i.e. an
+ * allocation succeeded fully and then the OTHER helper or a later step
+ * failed), this tier is the only cleanup. */
+static int ss2h_init_unwind_mod_mul(Ssimu2StateHip *s, hipError_t rc)
+{
+    ss2h_free_pinned_buffers(s);
+    ss2h_free_device_buffers(s);
+    (void)hipModuleUnload(s->module_mul);
+    s->module_mul = NULL;
+    return ss2h_init_unwind_mod_blur(s, rc);
 }
 
 #endif /* HAVE_HIPCC */
@@ -917,6 +899,35 @@ static int ss2h_run_scale_gpu(Ssimu2StateHip *s, int scale)
 /* ------------------------------------------------------------------ */
 /* init / extract / close                                             */
 /* ------------------------------------------------------------------ */
+
+#ifdef HAVE_HIPCC
+/* Loads both HSACO modules and resolves the three kernel handles. On failure
+ * it returns through the same unwind tier the inline code used, so the release
+ * order is unchanged; on success `*rc_out` carries the hipSuccess the caller's
+ * later unwind tiers historically reported. */
+static int ss2h_load_modules(Ssimu2StateHip *s, hipError_t *rc_out)
+{
+    hipError_t hip_rc;
+    hip_rc = hipModuleLoadData(&s->module_blur, ssimulacra2_blur_hsaco);
+    if (hip_rc != hipSuccess)
+        return ss2h_init_unwind_stream(s, hip_rc);
+    hip_rc = hipModuleLoadData(&s->module_mul, ssimulacra2_mul_hsaco);
+    if (hip_rc != hipSuccess)
+        return ss2h_init_unwind_mod_blur(s, hip_rc);
+    hip_rc = hipModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h");
+    if (hip_rc != hipSuccess)
+        return ss2h_init_unwind_mod_mul(s, hip_rc);
+    hip_rc = hipModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v");
+    if (hip_rc != hipSuccess)
+        return ss2h_init_unwind_mod_mul(s, hip_rc);
+    hip_rc = hipModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3");
+    if (hip_rc != hipSuccess)
+        return ss2h_init_unwind_mod_mul(s, hip_rc);
+    *rc_out = hip_rc;
+    return 0;
+}
+
+#endif /* HAVE_HIPCC */
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
@@ -954,49 +965,48 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (hip_rc != hipSuccess)
         return ss2h_hip_rc(hip_rc);
 
-    hip_rc = hipModuleLoadData(&s->module_blur, ssimulacra2_blur_hsaco);
-    if (hip_rc != hipSuccess)
-        goto fail_stream;
-    hip_rc = hipModuleLoadData(&s->module_mul, ssimulacra2_mul_hsaco);
-    if (hip_rc != hipSuccess)
-        goto fail_mod_blur;
-    hip_rc = hipModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h");
-    if (hip_rc != hipSuccess)
-        goto fail_mod_mul;
-    hip_rc = hipModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v");
-    if (hip_rc != hipSuccess)
-        goto fail_mod_mul;
-    hip_rc = hipModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3");
-    if (hip_rc != hipSuccess)
-        goto fail_mod_mul;
+    int mod_err = ss2h_load_modules(s, &hip_rc);
+    if (mod_err)
+        return mod_err;
 
+    /* NOTE: the unwind tier reports `hip_rc`, which at this point still holds
+     * the hipSuccess left by the last hipModuleGetFunction above. That is the
+     * pre-existing return value of this path and is preserved verbatim here;
+     * changing it would change observable behaviour. */
     int ret = ss2h_alloc_device(s);
     if (ret)
-        goto fail_mod_mul;
+        return ss2h_init_unwind_mod_mul(s, hip_rc);
     ret = ss2h_alloc_pinned(s);
     if (ret)
-        goto fail_mod_mul;
+        return ss2h_init_unwind_mod_mul(s, hip_rc);
     return 0;
-
-fail_mod_mul:
-    /* Free any device + pinned allocations that succeeded before the
-     * fault. ss2h_alloc_device / ss2h_alloc_pinned each free their own
-     * partial state internally, but if init failed after one of them
-     * returned 0 (i.e. an allocation succeeded fully and then the OTHER
-     * helper or a later step failed), this label is the only cleanup. */
-    ss2h_free_pinned_buffers(s);
-    ss2h_free_device_buffers(s);
-    (void)hipModuleUnload(s->module_mul);
-    s->module_mul = NULL;
-fail_mod_blur:
-    (void)hipModuleUnload(s->module_blur);
-    s->module_blur = NULL;
-fail_stream:
-    (void)hipStreamDestroy(s->str);
-    s->str = NULL;
-    return ss2h_hip_rc(hip_rc);
 #endif
 }
+
+#ifdef HAVE_HIPCC
+/* Halves both linear-RGB pyramids in place for the next scale. This is the
+ * pyramid step, not part of the per-scale GPU dispatch order the parity audit
+ * reads (see the NOLINT note on extract_fex_hip), so lifting it out leaves that
+ * ordering visible in one place. ss2h_downsample_2x2() and the plane memcpys
+ * are copied verbatim — no arithmetic here. */
+static void ss2h_downsample_for_next_scale(Ssimu2StateHip *s, unsigned *cw, unsigned *ch,
+                                           size_t plane_full)
+{
+    const unsigned nw = (*cw + 1) / 2;
+    const unsigned nh = (*ch + 1) / 2;
+    ss2h_downsample_2x2(s->h_ref_lin, *cw, *ch, s->h_ref_lin_ds, nw, nh, plane_full);
+    for (int c = 0; c < 3; c++)
+        memcpy(s->h_ref_lin + (size_t)c * plane_full, s->h_ref_lin_ds + (size_t)c * plane_full,
+               (size_t)nw * (size_t)nh * sizeof(float));
+    ss2h_downsample_2x2(s->h_dis_lin, *cw, *ch, s->h_dis_lin_ds, nw, nh, plane_full);
+    for (int c = 0; c < 3; c++)
+        memcpy(s->h_dis_lin + (size_t)c * plane_full, s->h_dis_lin_ds + (size_t)c * plane_full,
+               (size_t)nw * (size_t)nh * sizeof(float));
+    *cw = nw;
+    *ch = nh;
+}
+
+#endif /* HAVE_HIPCC */
 
 /* Per-scale orchestration mirrors the CUDA extract loop.
  * Splitting would obscure the dispatch ordering required for parity
@@ -1052,22 +1062,8 @@ static int extract_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         ss2h_host_combine(s, scale, avg_ssim[scale], avg_ed[scale]);
         completed++;
 
-        if (scale + 1 < SS2H_NUM_SCALES) {
-            const unsigned nw = (cw + 1) / 2;
-            const unsigned nh = (ch + 1) / 2;
-            ss2h_downsample_2x2(s->h_ref_lin, cw, ch, s->h_ref_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
-                memcpy(s->h_ref_lin + (size_t)c * plane_full,
-                       s->h_ref_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            ss2h_downsample_2x2(s->h_dis_lin, cw, ch, s->h_dis_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
-                memcpy(s->h_dis_lin + (size_t)c * plane_full,
-                       s->h_dis_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            cw = nw;
-            ch = nh;
-        }
+        if (scale + 1 < SS2H_NUM_SCALES)
+            ss2h_downsample_for_next_scale(s, &cw, &ch, plane_full);
     }
 
     const double score = ss2h_pool_score(avg_ssim, avg_ed, completed);

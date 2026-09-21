@@ -51867,3 +51867,5 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+
+- `chore/hiss21-core-src-hip` — HIP host code (`core/src/feature/hip/**`) replaced its `goto` cleanup ladders with cascading `static` unwind helpers and split oversized init/submit/collect/close functions; on conflict keep the helper boundaries and re-check that each tier still frees the same set in the same order as the upstream-twin CUDA ladder it mirrors.
