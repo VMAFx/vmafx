@@ -668,8 +668,17 @@ makes visible are pre-existing debt — measured against a merge base carrying t
 same `3.14`, the change introduces none — so do not absorb a conflict here by
 adding `type: ignore`, widening `ignore_missing_imports`, or relaxing `strict`.
 `[tool.black]` and `[tool.ruff]` `target-version` are deliberately left at their
-older values in this change. Fork-only tooling; no native API or FFmpeg patch
-impact. See ADR-1282.
+older values in this change. The pairing is now enforced rather than commented:
+`check_mypy_python_version` in `scripts/ci/check-workflow-versions.py` fails the
+always-run pre-commit gate when `python_version`, the `requires-python` floor and
+`PYTHON_CI_VERSION` stop agreeing, or when `python_version` is deleted instead of
+reverted. A rebase that moves `requires-python` must move `python_version` in the
+same commit, and `scripts/ci/tests/test_mypy_python_version_single_source.py`
+(discovered by the `test-base-image-single-source` hook's `test_*single_source.py`
+pattern) is the fixture that says so. CI's own `Python Lint` job is untouched by
+any of this: it installs only `mypy`, so its output is byte-identical at `3.10`
+and `3.14` and it checks zero source files either way. Fork-only tooling; no
+native API or FFmpeg patch impact. See ADR-1282.
 
 ## fix/pre-push-mypy-delta — introduced findings only (2026-09-19)
 
