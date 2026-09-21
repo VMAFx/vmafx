@@ -24924,6 +24924,9 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
   the embedded runtime and release channel as stubs.
 
 
+- Removed the MCP subprocess-timeout test's `RuntimeWarning` suppression and made it prove that the post-kill `communicate()` drain is awaited exactly once.
+
+
 - **thread_pool.c (finding #7)**: `pthread_mutex_init` and two
   `pthread_cond_init` calls in `vmaf_thread_pool_create` now have their
   return values checked.  Under `ENOMEM` the function tears down already-

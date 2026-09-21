@@ -51677,6 +51677,15 @@ dispatched CPU JSON before and after this cleanup: mean
 Re-run `core/test/test_cambi.c` after any conflict; its unreachable VLT,
 threshold-extreme TVI, and duplicate/descending quick-select cases pin the
 termination behavior directly.
+
+## MCP timeout-drain warning regression (2026-09-21)
+
+No rebase impact: this changes only the fork-local Python MCP timeout test.
+The timeout fake closes the first coroutine when injecting `TimeoutError`, then
+actually awaits the second `communicate()` call so the production post-kill
+drain lifecycle is exercised. Do not restore the former `RuntimeWarning`
+suppression or replace the drain await with a fabricated return value.
+
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
