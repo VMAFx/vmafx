@@ -403,6 +403,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: dedupe-gate-contract
+        name: Duplicate implementation scan remains fail-closed
+        entry: bash scripts/ci/tests/test-dedupe-gate.sh
+        language: system
+        files: '^(Makefile|lefthook\.yml|scripts/ci/tests/test-dedupe-gate\.sh|\.github/workflows/(rule-enforcement|standards-gate)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: mypy-scope-contract
         name: Check pre-push mypy merge-base scope
         entry: python3 scripts/git-hooks/test-pre-push-mypy.py

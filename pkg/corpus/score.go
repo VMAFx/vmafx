@@ -12,7 +12,7 @@ package corpus
 import (
 	"context"
 	"encoding/json"
-	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
@@ -95,7 +96,7 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin, backend string) []s
 		"--height", strconv.Itoa(req.Height),
 		"--pixel_format", pixFmtToVMAF(req.PixFmt),
 		"--bitdepth", strconv.Itoa(bitdepthFor(req.PixFmt)),
-		"--model", modelArg(req.Model),
+		"--model", vmafmodel.CLIArgument(req.Model),
 		"--json",
 		"--output", jsonOutput,
 	}
@@ -122,16 +123,6 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin, backend string) []s
 // pkg/fast, pkg/scorecli and pkg/tune/executor share one decision.
 func ModelRequestsVIF(model string) bool {
 	return vmafmodel.RequestsVIF(model)
-}
-
-// modelArg formats the --model argument. A bare version identifier is wrapped
-// as "version=..."; a pre-formatted "key=value" string (e.g. the HDR model's
-// "path=/abs/model.json") passes through unchanged.
-func modelArg(model string) string {
-	if strings.Contains(model, "=") {
-		return model
-	}
-	return "version=" + model
 }
 
 // pixFmtToVMAF maps an ffmpeg pix_fmt to libvmaf's --pixel_format vocabulary.
@@ -343,34 +334,11 @@ func RunScore(
 	ctx context.Context, req ScoreRequest, vmafBin string, run Runner, workdir, backend string,
 ) ScoreResult {
 	run = runnerOrExec(run)
-
-	ownWorkdir := workdir == ""
-	if ownWorkdir {
-		dir, err := os.MkdirTemp("", "vmaftune-score-")
-		if err != nil {
-			return ScoreResult{
-				Request:           req,
-				VMAFScore:         math.NaN(),
-				VMAFBinaryVersion: "unknown",
-				ExitStatus:        2,
-				StderrTail:        err.Error(),
-				FeatureMeans:      map[string]float64{},
-				FeatureStds:       map[string]float64{},
-			}
-		}
-		workdir = dir
-		defer func() { _ = os.RemoveAll(workdir) }()
-	} else if err := os.MkdirAll(workdir, 0o750); err != nil {
-		return ScoreResult{
-			Request:           req,
-			VMAFScore:         math.NaN(),
-			VMAFBinaryVersion: "unknown",
-			ExitStatus:        2,
-			StderrTail:        err.Error(),
-			FeatureMeans:      map[string]float64{},
-			FeatureStds:       map[string]float64{},
-		}
+	workdir, cleanup, err := prepareScoreWorkdir(workdir)
+	if err != nil {
+		return scoreFailure(req, err)
 	}
+	defer cleanup()
 
 	jsonPath := filepath.Join(workdir, "vmaf.json")
 	cmd := BuildVMAFCommand(req, jsonPath, vmafBin, backend)
@@ -379,32 +347,7 @@ func RunScore(
 	res := run(ctx, cmd)
 	elapsedMS := float64(time.Since(started).Nanoseconds()) / 1e6
 
-	rc := res.ReturnCode
-	score := math.NaN()
-	featureMeans := map[string]float64{}
-	featureStds := map[string]float64{}
-
-	if rc == 0 {
-		if data, err := os.ReadFile(jsonPath); err == nil { // #nosec G304 -- driver-generated sidecar path.
-			var payload map[string]any
-			if uErr := json.Unmarshal(data, &payload); uErr != nil {
-				// vmaf exited 0 but wrote corrupt / partial JSON (e.g.
-				// killed mid-write). Treat this as a scoring error so
-				// the corpus row records NaN and a non-zero status
-				// rather than crashing the run.
-				rc = 65
-			} else {
-				var ok bool
-				score, ok = ParseVMAFJSON(payload)
-				if !ok && rc == 0 {
-					rc = 65
-				}
-				// Per-feature aggregates are best-effort — a cambi-only
-				// model will not expose adm2 etc.
-				featureMeans, featureStds = ParseFeatureAggregates(payload, Canonical6Features)
-			}
-		}
-	}
+	score, featureMeans, featureStds, rc := parseScoreOutput(jsonPath, res.ReturnCode)
 
 	version := firstSubmatch(vmafVersionRe, res.Stderr)
 	if version == "" {
@@ -421,4 +364,59 @@ func RunScore(
 		FeatureMeans:      featureMeans,
 		FeatureStds:       featureStds,
 	}
+}
+
+func prepareScoreWorkdir(workdir string) (string, func(), error) {
+	if workdir != "" {
+		if err := os.MkdirAll(workdir, 0o750); err != nil {
+			return "", nil, err
+		}
+		return workdir, func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "vmaftune-score-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() {
+		if err := os.RemoveAll(dir); err != nil {
+			slog.Warn("corpus: remove score workdir", "error", err, "path", dir)
+		}
+	}
+	return dir, cleanup, nil
+}
+
+func scoreFailure(req ScoreRequest, err error) ScoreResult {
+	return ScoreResult{
+		Request:           req,
+		VMAFScore:         math.NaN(),
+		VMAFBinaryVersion: "unknown",
+		ExitStatus:        2,
+		StderrTail:        err.Error(),
+		FeatureMeans:      map[string]float64{},
+		FeatureStds:       map[string]float64{},
+	}
+}
+
+func parseScoreOutput(path string, rc int) (float64, map[string]float64, map[string]float64, int) {
+	score := math.NaN()
+	means := map[string]float64{}
+	stds := map[string]float64{}
+	if rc != 0 {
+		return score, means, stds, rc
+	}
+	// #nosec G304 -- path is the driver-owned JSON sidecar.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return score, means, stds, 65
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return score, means, stds, 65
+	}
+	parsed, ok := ParseVMAFJSON(payload)
+	if !ok {
+		return score, means, stds, 65
+	}
+	means, stds = ParseFeatureAggregates(payload, Canonical6Features)
+	return parsed, means, stds, rc
 }

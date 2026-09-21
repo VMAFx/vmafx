@@ -534,6 +534,7 @@ help:
 	@echo "  make lint-tools       — install ruff/black/mypy into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
 	@echo "  make hiss-coverage    — replay declared HISS evidence fixtures"
+	@echo "  make dedupe-check     — reject duplicate implementation families"
 	@echo "                          (set VMAFX_NATIVE_HOOKS=1 for native bash; ADR-0924)"
 	@echo "  make hooks-install    — legacy alias for install-hooks"
 	@echo ""
@@ -547,10 +548,11 @@ help:
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"
 
 # cordanaLLM/praetor Governance Targets
-.PHONY: verify-all compile-context audit hiss-coverage
+.PHONY: verify-all compile-context audit hiss-coverage dedupe-check
 
 verify-all:
 	@standardsctl audit && standardsctl compile-context --verify && standardsctl hiss coverage --verify
+	@$(MAKE) --no-print-directory dedupe-check
 
 compile-context:
 	@standardsctl compile-context
@@ -560,3 +562,6 @@ audit:
 
 hiss-coverage:
 	@standardsctl hiss coverage --verify
+
+dedupe-check:
+	@standardsctl dedupe scan .

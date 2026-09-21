@@ -82,6 +82,15 @@ two implementations must produce same bytes for same inputs.**
    Swapping in `pkg/gpu` would change which backend sweep picks
    relative to Python.
 
+   The typed failure is owned by `pkg/scorebackend.UnavailableError`;
+   `BackendUnavailableError` is an alias kept for corpus API compatibility.
+   Do not restore a second `Error()` implementation.
+
+   `BuildVMAFCommand` formats model selectors through
+   `pkg/model.CLIArgument`. Do not restore a local `modelArg`; unlike the
+   defaulting callers, this boundary intentionally preserves empty as
+   `version=`.
+
 8. **Resolution-aware model selection overrides configured model**
    (`corpus.go`, `resolveHDRScoreModel` call site). When
    `Options.ResolutionAware` is set — default — `SelectVMAFModelVersion`

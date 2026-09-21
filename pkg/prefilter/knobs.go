@@ -17,7 +17,8 @@ package prefilter
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -128,12 +129,7 @@ func GetAdapter(name string) (Adapter, error) {
 
 // KnownFilters returns the sorted adapter names.
 func KnownFilters() []string {
-	out := make([]string, 0, len(registry))
-	for k := range registry {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(registry))
 }
 
 // Knobs returns the frozen knob table in contract order.
@@ -156,12 +152,7 @@ func (a Adapter) Knob(name string) (Knob, error) {
 
 // knobNames returns the sorted contract knob names.
 func knobNames() []string {
-	out := make([]string, 0, len(knobByName))
-	for k := range knobByName {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(knobByName))
 }
 
 // Defaults returns the contract default for every knob.

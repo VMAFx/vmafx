@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/go-duplicate-cleanup — shared Go service and CLI plumbing (2026-09-21)
+
+Fork-local ownership cleanup with no upstream C-source impact. Preserve
+`internal/app/scoringservice` as the single implementation of server/controller
+metrics, scorer lifecycle, legacy probes, and JSON responses. Preserve
+`pkg/model.CLIArgument{,OrDefault}` as the formatter for Go subprocess callers,
+the corpus alias to `scorebackend.UnavailableError`, standard-library sorted
+registry keys, and the shared root-resource deep-copy helper. When rebasing a
+binary or Go port, adapt the shared owner rather than restoring a local copy.
+`praetorctl dedupe scan .` is the regression command and must remain explicit
+in the required Standards workflow, pre-commit, pre-push, and
+`make verify-all`; the general audit does not include it.
+
 ## fix/ci-fail-closed — test and scan exit status is evidence (fork-local, 2026-09-20)
 
 No upstream C-source impact. Preserve `scripts/ci/test_fail_closed_ci.py` and

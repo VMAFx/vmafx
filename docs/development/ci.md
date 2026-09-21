@@ -21,6 +21,7 @@ The main `pull_request`-triggered workflows include:
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
+| [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS/context verification and the fail-closed duplicate-implementation scan. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan+UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity tests on self-hosted Intel Arc A380 runner (ADR-1177; see [runbook](ci-self-hosted-sycl.md)). |
@@ -453,6 +454,8 @@ Before pushing, run the local subset of CI to catch the common
 formatter / lint / fast-test failures:
 
 ```bash
+make verify-all     # HISS/context/evidence plus duplicate implementations
+make dedupe-check   # fast standalone AST clone scan
 make format-check   # clang-format + black + ruff, no writes
 make lint           # configured native + Python, shell, Markdown, Go and docs checks
 meson test -C build --suite=fast
@@ -463,6 +466,12 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check + pre-commit pair catches roughly the same surface as
 `lint-and-format.yml`'s `pre-commit` job in seconds, vs. a 10-minute
 CI round-trip.
+
+The duplicate scan is intentionally separate from `standardsctl audit`: the
+audit baseline does not include AST clones. `make verify-all`, pre-commit,
+pre-push, and the required Standards job therefore invoke
+`standardsctl dedupe scan .` explicitly. A finding is a hard failure; there is
+no origin, generated-code, or historical-debt exemption.
 
 ### Local lint build profile and receipts
 

@@ -20,6 +20,8 @@
 // gate then tells you to update.
 package model
 
+import "strings"
+
 // DefaultVersion is the model version libvmaf scores with when no model is
 // named. It must equal VMAF_DEFAULT_MODEL_VERSION in
 // core/include/libvmaf/model.h; the CI gate above enforces that.
@@ -37,3 +39,21 @@ const DefaultVersion = "vmaf_v1.0.16_3d0h"
 // the v0.6.1 family and the two constants intentionally name different
 // generations.
 const DefaultNEGVersion = "vmaf_v0.6.1neg"
+
+// CLIArgument formats a libvmaf --model value. Bare model versions are
+// wrapped as "version=..."; explicit key=value selectors pass through.
+func CLIArgument(name string) string {
+	if strings.Contains(name, "=") {
+		return name
+	}
+	return "version=" + name
+}
+
+// CLIArgumentOrDefault applies DefaultVersion before formatting an empty
+// libvmaf --model value.
+func CLIArgumentOrDefault(name string) string {
+	if name == "" {
+		name = DefaultVersion
+	}
+	return CLIArgument(name)
+}
