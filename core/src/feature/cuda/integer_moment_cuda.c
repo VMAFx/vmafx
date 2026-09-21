@@ -78,6 +78,20 @@ static int moment_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* moment_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_ref` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int moment_init_unwind(VmafFeatureExtractor *fex, MomentStateCuda *s, int err)
+{
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    return err;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -108,21 +122,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, 4u * sizeof(uint64_t));
     if (err)
-        goto free_ref;
+        return moment_init_unwind(fex, s, err);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
         err = -ENOMEM;
-        goto free_ref;
+        return moment_init_unwind(fex, s, err);
     }
 
     return 0;
-
-free_ref:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return err;
 
 fail:
     if (ctx_pushed)

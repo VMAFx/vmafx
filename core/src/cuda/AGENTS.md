@@ -321,3 +321,12 @@ plane while host faithfully passed `plane`. Host dispatch shared
 between bit-depth variants -> diff two kernel signatures against
 params array before trusting parity test. Also make sure fixture's
 chroma isn't flat, or wrong plane reads same sentinel as right one.
+
+## Teardown helpers replace the cleanup labels (HISS-21 / 2026-09-21)
+
+`common.c` and `picture_cuda.c` have no explicit `goto` left. `provided_ctx_unwind` holds what the
+`fail` -> `fail_after_stream` fall-through used to do, and takes `ctx_pushed` so the caller says
+whether the context pop still has to run; `pinned_alloc_unwind` takes a `PINNED_UNWIND_*` stage
+because it replaced the `free_priv` -> `free_data` -> `fail_no_data` cascade. Adding a resource to
+either path means adding a stage to the helper, not a second exit. The `CHECK_CUDA_GOTO` labels stay
+— they are the macro's jump targets and now just call the helper.

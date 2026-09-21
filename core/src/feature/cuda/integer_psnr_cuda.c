@@ -146,12 +146,33 @@ static int psnr_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis, Vm
     return 0;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* psnr_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_ref` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int psnr_init_unwind(VmafFeatureExtractor *fex, PsnrStateCuda *s)
 {
-    PsnrStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
+    for (unsigned p = 0; p < s->n_planes; p++)
+        (void)vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
+    if (s->feature_name_dict) {
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
+    }
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    return -ENOMEM;
+}
 
+/* psnr_cuda_plane_geometry - derive the per-plane dimensions from pix_fmt.
+ *
+ * HISS-04: the geometry prologue of init_fex_cuda, moved whole. Every
+ * statement keeps its original order and stays integer arithmetic, so the
+ * dimensions it writes into `s` are the ones the inline block wrote.
+ */
+static void psnr_cuda_plane_geometry(PsnrStateCuda *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                     unsigned h)
+{
     /* Per-plane geometry derived from pix_fmt. CPU reference:
      * libvmaf/src/feature/integer_psnr.c::init computes the same
      * (ss_hor, ss_ver) split. YUV400 has chroma absent, so n_planes = 1. */
@@ -180,6 +201,15 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->width[1] = s->width[2] = 0U;
         s->height[1] = s->height[2] = 0U;
     }
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    PsnrStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    psnr_cuda_plane_geometry(s, pix_fmt, w, h);
 
     /* Stream + event pair via the template — replaces the
      * cuCtxPushCurrent → cuStreamCreateWithPriority → cuEventCreate ×2
@@ -214,24 +244,15 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     for (unsigned p = 0; p < s->n_planes; p++) {
         err = vmaf_cuda_kernel_readback_alloc(&s->rb[p], fex->cu_state, sizeof(uint64_t));
         if (err)
-            goto free_ref;
+            return psnr_init_unwind(fex, s);
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        goto free_ref;
+        return psnr_init_unwind(fex, s);
 
     return 0;
-
-free_ref:
-    for (unsigned p = 0; p < s->n_planes; p++)
-        (void)vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
-    if (s->feature_name_dict) {
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
-    }
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return -ENOMEM;
 
 fail:
     if (ctx_pushed)
