@@ -64,6 +64,16 @@
  * previous shot. Guards against detector flicker on flashes / fades. */
 #define VMAF_PER_SHOT_MIN_LEN 4U
 
+/* Upper bound on the frames one scan may consume.
+ *
+ * per_shot_record_frame() stores the frame index in a uint32_t, so a stream
+ * longer than this would wrap the numbering and silently corrupt the shot
+ * table; the scan reports -EFBIG instead. The bound doubles as the scan's
+ * termination guarantee on an input that never reports EOF (a FIFO kept open
+ * by a writer, /dev/zero), which the former `for (;;)` had no defence
+ * against. */
+#define VMAF_PER_SHOT_MAX_FRAMES UINT32_MAX
+
 /* Output format selector. */
 enum vmaf_per_shot_format {
     VMAF_PER_SHOT_FMT_CSV = 0,
@@ -717,7 +727,7 @@ struct per_shot_scan_ctx {
 static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per_shot_scan_ctx *ctx,
                               struct vmaf_per_shot_record *shots, uint32_t *shot_count)
 {
-    for (;;) {
+    while (ctx->frame_idx < VMAF_PER_SHOT_MAX_FRAMES) {
         int r = per_shot_read_luma(ctx->fin, ctx->cur, ctx->luma_bytes, ctx->chroma_bytes);
         if (r == 0)
             break;
@@ -745,6 +755,11 @@ static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per
         ctx->cur = tmp;
         ctx->have_prev = true;
         ctx->frame_idx += 1U;
+    }
+    if (ctx->frame_idx >= VMAF_PER_SHOT_MAX_FRAMES) {
+        (void)fprintf(stderr, "vmaf-perShot: input exceeds the %" PRIu32 "-frame scan limit\n",
+                      (uint32_t)VMAF_PER_SHOT_MAX_FRAMES);
+        return -EFBIG;
     }
     return 0;
 }
@@ -781,14 +796,13 @@ static int per_shot_scan(const struct vmaf_per_shot_settings *s, struct vmaf_per
     ctx.have_prev = false;
     if (ctx.cur == NULL || ctx.prev == NULL) {
         rc = -ENOMEM;
-        goto cleanup;
+    } else {
+        rc = per_shot_scan_loop(s, &ctx, shots, shot_count);
+        if (rc == 0 && ctx.frame_idx == 0U) {
+            (void)fprintf(stderr, "vmaf-perShot: no frames read from %s\n", s->reference);
+            rc = -EINVAL;
+        }
     }
-    rc = per_shot_scan_loop(s, &ctx, shots, shot_count);
-    if (rc == 0 && ctx.frame_idx == 0U) {
-        (void)fprintf(stderr, "vmaf-perShot: no frames read from %s\n", s->reference);
-        rc = -EINVAL;
-    }
-cleanup:
     free(ctx.cur);
     free(ctx.prev);
     if (fclose(fin) != 0 && rc == 0)

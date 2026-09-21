@@ -73,6 +73,12 @@ fails (older kernel without Level Zero VA import, or a DRM render node
 mismatch), re-run with `--fallback` to confirm the SYCL backend itself
 is healthy and isolate the issue to the import path.
 
+A decode that produces neither a frame nor an end-of-stream marker
+within 60 s of retries is treated as a wedged device: the tool prints
+`DecodeFrameAsync yielded no frame after 60000 attempts` and stops
+rather than retrying forever. The ceiling matches the 60 s timeout the
+tool already gives each sync operation.
+
 ## Status
 
 The tool tracks ADR-0183 (FFmpeg `libvmaf_sycl` filter) — both share

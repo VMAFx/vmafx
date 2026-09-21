@@ -147,6 +147,11 @@ tools/
     silently succeed. `per_shot_long_opts` table maps `--help` to
     `'H'`; `per_shot_parse_args` handles `'H'` for help and `'?'` for
     error path. Never change short-option value.
+  - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES`.** `per_shot_scan_loop`
+    counts frames in a `uint32_t` and `per_shot_record_frame` stores that
+    index, so an endless input (FIFO with live writer, `/dev/zero`) used to
+    spin forever and would wrap numbering past `UINT32_MAX`. Loop now
+    reports `-EFBIG` at bound. Never restore bare `for (;;)`.
   - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
     `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
     `_fseeki64` (WIN32). Never revert to `fseek((long)...)` —

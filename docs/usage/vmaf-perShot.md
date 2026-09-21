@@ -168,6 +168,11 @@ content, matching the fork's raw-YUV CLI convention.
   break expected).
 - Shot table capped at 4096 entries (covers ≈3-hour content at
   one cut every 2 s); overflow surfaces as `ENOSPC`.
+- Scan stops after `UINT32_MAX` frames and reports
+  `vmaf-perShot: input exceeds the 4294967295-frame scan limit`
+  (`EFBIG`). The limit is the width of the frame counter, so it only
+  ever fires on an input stream that never reaches end of file — a FIFO
+  held open by a writer, or `/dev/zero`.
 
 ## Related
 
