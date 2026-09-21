@@ -151,22 +151,50 @@ type member struct {
 	value reflect.Value
 }
 
+// maxIndirection bounds how many interface / pointer levels resolveIndirection
+// will strip. Go's own `type T *T` makes an unbounded chain expressible, so the
+// walk is bounded rather than trusted; no payload this package renders carries
+// more than two levels.
+const maxIndirection = 64
+
+// resolveIndirection strips interface and pointer levels until a concrete
+// value is reached. ok is false when the chain ends in an invalid or nil
+// value, which renders as null.
+//
+// This is the iterative form of what used to be value's self-call (HISS-01):
+// every step removes exactly one level of indirection.
+func resolveIndirection(v reflect.Value) (reflect.Value, bool, error) {
+	for level := 0; level < maxIndirection; level++ {
+		if !v.IsValid() {
+			return v, false, nil
+		}
+		if v.Kind() != reflect.Interface && v.Kind() != reflect.Pointer {
+			return v, true, nil
+		}
+		if v.IsNil() {
+			return v, false, nil
+		}
+		v = v.Elem()
+	}
+	return v, false, fmt.Errorf(
+		"pyjson: value nested deeper than %d levels of indirection", maxIndirection)
+}
+
 // value writes v at the given nesting depth.
 func (e *encoder) value(v reflect.Value, depth int) error {
-	if !v.IsValid() {
+	resolved, ok, err := resolveIndirection(v)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		e.sb.WriteString("null")
 		return nil
 	}
+	v = resolved
 	if v.Type() == jsonNumberType {
 		return e.number(json.Number(v.String()))
 	}
 	switch v.Kind() {
-	case reflect.Interface, reflect.Pointer:
-		if v.IsNil() {
-			e.sb.WriteString("null")
-			return nil
-		}
-		return e.value(v.Elem(), depth)
 	case reflect.Bool:
 		e.sb.WriteString(strconv.FormatBool(v.Bool()))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
