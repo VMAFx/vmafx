@@ -41,7 +41,9 @@ The contract check verifies that:
 3. active source, configuration, tests, and operator docs do not name the
    retired root;
 4. no tracked Markdown link points into an ignored local root;
-5. representative runtime defaults resolve to the role-appropriate root.
+5. every local root, including the Git-visible retired root, remains excluded
+   from Docker build contexts;
+6. representative runtime defaults resolve to the role-appropriate root.
 
 Historical ADR and changelog prose is not rewritten into a false path. The
 link target is removed when the source was local-only, and current public
