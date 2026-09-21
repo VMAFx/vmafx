@@ -69,10 +69,16 @@ class HissReplayContractTests(unittest.TestCase):
         self.assertIn("never reported (strict required context)", aggregator)
 
     def test_public_claim_matches_the_enforced_revision(self) -> None:
-        self.assertIn("HISS--21", read("README.md"))
+        readme = read("README.md")
         agents = read("AGENTS.md")
-        self.assertIn("HISS-20", agents)
-        self.assertIn("HISS-21", agents)
+        declared_revisions = {int(value) for value in re.findall(r"HISS-(\d+)", agents)}
+        self.assertTrue(declared_revisions)
+        enforced_revision = max(declared_revisions)
+
+        self.assertIn(f"HISS--{enforced_revision}", readme)
+        self.assertIn(f"(HISS-{enforced_revision})", readme)
+        advertised_revisions = {int(value) for value in re.findall(r"HISS-(?:-)?(\d+)", readme)}
+        self.assertEqual(advertised_revisions, {enforced_revision})
 
 
 if __name__ == "__main__":

@@ -161,7 +161,7 @@ The per-file tags are authoritative; this paragraph is a summary.
 
 ## Standards & Governance
 
-This repository conforms to High-Integrity Systems Standards (HISS-16)
+This repository conforms to High-Integrity Systems Standards (HISS-21)
 and modernized NASA JPL Power-of-10 rules.
 
 | Gate | Command | Description |
