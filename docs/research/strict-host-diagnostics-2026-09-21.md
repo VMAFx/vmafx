@@ -242,14 +242,22 @@ Independently re-verified before the batch was committed:
   `testdata` 48-frame pair. Every JSON matched apart from the `version` and
   `fps` fields. The checkerboard pair scores 22.976089318013408 and
   3.8147569267283545 on both.
-- `standardsctl audit` over the six files this change touches falls from 27
-  findings to 2, and the whole tree from 1249 total infractions to 1239, with
-  no new unbaselined finding. With every source change committed the audit
-  passes outright. The two residuals are constant-array initialisers the
-  HISS-04 scanner counts as functions — `speed_chroma_cuda.c:180`
-  (`static const VmafOption options[]`, 78 LOC) and `test_model.c:1458`
-  (`static const TestCase test_cases[]`, 82 LOC). Neither can be split. No
-  baseline was edited and no suppression was added to hide them.
+- `standardsctl audit` passes outright with every source change committed.
+  Measured with the engine the gate pins (`846da59`, installed by
+  `.github/workflows/standards-gate.yml`, and the ref the baseline is recorded
+  against): 1239 active violations within the 1411 baselined limit, 0 new
+  unbaselined, exit 0 — the same baseline-only form CI and `lefthook.yml`
+  run. Tree-wide debt falls from 1241 to 1239 across this batch and from 1411
+  to 1239 across the branch as a whole; over the six files this change touches
+  it falls from 3 to 1. The optional `audit -base <ref>` form, which no gate
+  runs (the workflow pins the baseline-only form deliberately, ADR-1249),
+  additionally reports 2 findings in touched files. Both are constant-array
+  initialisers the HISS-04 scanner counts as functions —
+  `speed_chroma_cuda.c:180` (`static const VmafOption options[]`, 78 LOC) and
+  `test_model.c:1458` (`static const TestCase test_cases[]`, 82 LOC) — and
+  both are byte-identical to the merge base `371ff5891`, so this change neither
+  introduced nor grew them. Neither can be split. No baseline was edited and no
+  suppression was added to hide them.
 
 ## Delivery declarations
 
