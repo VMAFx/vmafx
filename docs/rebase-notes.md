@@ -51867,3 +51867,6 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+## Upstream MATLAB MEX helpers are extracted, not re-inlined (T-HISS-PY-COMPAT-2026-09-21)
+
+On conflict in `compat/python-vmaf/matlab/`, reapply the `static` band/parse helpers (`reduce_*` / `expand_*` / `wrap_*` sections, the `Extend()` reduce/expand halves, the `corrDn` / `upConv` / `histo` / `pointOp` argument parsers, and the STMAD block-statistics helpers) instead of restoring the inline `INPROD` macros — every index expression and accumulation order is unchanged, which a stubbed-MEX differential harness confirmed bit-identical over ~16k recorded outputs, and the `reflect1` default now uses a bounded copy because HISS-08 bans `strcpy()`.
