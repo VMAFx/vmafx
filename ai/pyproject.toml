@@ -10,6 +10,7 @@ authors = [
 ]
 dependencies = [
   "torch>=2.14.0,<3.0",
+  "torchao>=0.18.0,<0.19",
   # torchvision must be pinned as a direct dep to enforce ABI compatibility with
   # the torch floor declared above.  pytorch-lightning → torchmetrics 1.9+
   # eagerly imports `torchvision.transforms` for its arniqa metric; an older

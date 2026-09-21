@@ -15,8 +15,9 @@ Pipeline
 2. Build the underlying Lightning module via
    ``ai.src.vmaf_train.train.MODEL_REGISTRY``.
 3. fp32 warm-start: train normally for ``--epochs-fp32`` epochs.
-4. Insert FX fake-quants (``prepare_qat_fx`` with the default
-   symmetric per-tensor activation + per-channel weight qconfig).
+4. Insert PT2E fake-quants (``torch.export`` capture followed by
+   torchao's ``prepare_qat_pt2e`` with the symmetric X86 QAT
+   quantization config — ADR-1281).
 5. QAT fine-tune for ``--epochs-qat`` epochs at ``--lr-qat``
    (default fp32-lr / 10).
 6. Copy QAT-conditioned weights into a fresh fp32 module, export to
@@ -212,7 +213,7 @@ def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg: "QatConfig") -> int:
 
     Read from ``qat.input_shape`` — the same value
     :func:`_build_example_inputs` traces the model with, so the loader and
-    the FX trace cannot disagree. When the key is absent
+    the PT2E capture cannot disagree. When the key is absent
     :func:`_build_example_inputs` falls back to ``[1, 1, 32, 32]``, so this
     reports rank 4 for that case too.
     """
