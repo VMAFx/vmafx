@@ -21880,6 +21880,14 @@ used consistently for `s->adm_csf_module`, `s->adm_csf_den_module`, and
 `s->adm_dwt_module` in the same function.
 
 
+- **CUDA integer ADM kernels compile without NVCC diagnostic `#68-D`.** The
+  historical Netflix-compatible negative rounding term is now spelled directly
+  as `INT32_MIN` instead of being produced by an out-of-range unsigned-to-signed
+  conversion. CUDA 13.4 emits no warning, touched kernels satisfy the whole-tree
+  standards contract, and their runtime output remains exactly identical to the
+  base build across the existing CUDA ADM regression executables.
+
+
 - **CUDA `dispatch_strategy.c` `getenv()` thread-safety (round-5 clang-tidy
   `concurrency-mt-unsafe` sweep).** `vmaf_cuda_select_strategy()` called
   `getenv("VMAF_CUDA_DISPATCH")` on every invocation, which is not MT-safe per

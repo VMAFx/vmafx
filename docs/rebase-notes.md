@@ -51699,6 +51699,21 @@ dispatched CPU JSON before and after this cleanup: mean
 Re-run `core/test/test_cambi.c` after any conflict; its unreachable VLT,
 threshold-extreme TVI, and duplicate/descending quick-select cases pin the
 termination behavior directly.
+
+## CUDA integer ADM negative rounding constant (Research-2076)
+
+ADR-0155 still requires the scales 1-3 integer-ADM rounding term to be
+`INT32_MIN`; changing it to a positive 2^31 value moves Netflix golden scores.
+Preserve the direct `INT32_MIN` spelling in `integer_adm/adm_csf.cu` and both
+fused paths in `integer_adm/adm_cm.cu`. Do not restore the prior `1u << 31`
+unsigned-to-signed conversion, which emits NVCC diagnostic `#68-D`, and do not
+replace it with a warning suppression or a widened type. CUDA 13.4 generated
+byte-identical ADM-CSF and ADM-CM fatbins for the isolated constant-spelling
+change. The final touched-file cleanup also decomposes oversized kernels into
+forced-inline helpers; preserve those boundaries even though they change binary
+layout, because all four CUDA ADM regression executables remain exactly
+base-identical at runtime.
+
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
