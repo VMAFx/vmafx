@@ -51655,6 +51655,28 @@ keyring can otherwise hang every push. Preserve the public-page fallback, raw
 Markdown body extraction, schema validation, confirmed-no-PR-only skip, and
 fail-closed behavior when both metadata sources are unavailable. Do not map an
 authentication, network, or markup failure to “no open PR.”
+## CAMBI strict-clean bounded searches and live helpers (2026-09-21)
+
+`core/src/feature/cambi.c` has no file-local clang-tidy or Cppcheck
+suppression. Preserve that state during upstream syncs. In particular, retain
+the 16-step TVI bisection, the `UINT16_MAX` VLT terminus, and the `n`/partition
+span bounds in quick-select; their comparison, pivot, swap, and accumulation
+order is score-sensitive. Keep `read_only_picture_view()` as the adapter from
+the mutable extractor callback ABI to CAMBI's const reads.
+
+All ten `cambi_internal.h` helper exports are deliberately called by the
+CPU/reference implementation as well as by optional GPU twins. Do not restore
+`unusedFunction` annotations or bypass the wrappers when resolving an upstream
+conflict. The compact `CAMBI_OPTION` descriptors are the unchanged public
+option table and keep the declaration below HISS-04's 60-line boundary.
+
+The 48-frame 576x324 regression fixture produced identical scalar and
+dispatched CPU JSON before and after this cleanup: mean
+`0.51441210777008473`, normalized SHA-256
+`2fed4234f9f8c018ac9af0810dbf43a0c7a30765bee00e4e55c23de983a1a523`.
+Re-run `core/test/test_cambi.c` after any conflict; its unreachable VLT,
+threshold-extreme TVI, and duplicate/descending quick-select cases pin the
+termination behavior directly.
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 

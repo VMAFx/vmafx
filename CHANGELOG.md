@@ -20622,6 +20622,9 @@ The `cross_backend_vif_diff.py` per-feature lane already carried a `cambi` entry
   they have no effect on the current GPU v1 code paths.
 
 
+- Bound CAMBI's TVI, VLT, and top-k searches and remove every analyzer exemption from the production implementation while preserving byte-exact scalar and dispatched CPU scores.
+
+
 - **`cargo deny check` now passes for all workspace crates.** ADR-1036 corrected
   the fork's SPDX identifier from `BSD-3-Clause-Plus-Patent` to `BSD-2-Clause-Patent`
   across `Cargo.toml` manifests, but `deny.toml`'s `[licenses].allow` list was not
