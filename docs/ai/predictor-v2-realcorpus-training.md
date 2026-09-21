@@ -16,10 +16,10 @@ and commit the resulting ONNX + model-card diff in a follow-up PR.
 
 Run Phase 2 after either:
 
-- A real corpus has been generated under `~/.workingdir2/netflix/`
+- A real corpus has been generated under `~/.corpus/netflix/`
   (canonical-6 schema; 9 Netflix Public Dataset sources × NVENC /
-  QSV / SW codecs), `~/.workingdir2/konvid-150k/` (KoNViD-1k UGC,
-  when ingested), or `~/.workingdir2/bvi-dvc-raw/` (BVI-DVC raw
+  QSV / SW codecs), `~/.corpus/konvid-150k/` (KoNViD-1k UGC,
+  when ingested), or `~/.corpus/bvi-dvc-raw/` (BVI-DVC raw
   YUVs, when ingested). Or
 - An operator wants to validate that the shipped synthetic stubs
   remain the right ship for a codec by running the gate against

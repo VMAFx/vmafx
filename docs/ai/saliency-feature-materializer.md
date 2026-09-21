@@ -180,8 +180,8 @@ The `konvid_150k.jsonl` corpus table has `src` (relative clip filename),
 PYTHONPATH=ai/scripts:ai/src:tools/vmaf-tune/src \
   python3 ai/scripts/batch_materialize_saliency_features.py \
   --manifest ai/batch-manifests/saliency/konvid-150k.json \
-  --report-json .workingdir2/saliency-runs/konvid-150k/report.json \
-  --report-md .workingdir2/saliency-runs/konvid-150k/report.md
+  --report-json .workingdir/evidence/saliency/konvid-150k/report.json \
+  --report-md .workingdir/evidence/saliency/konvid-150k/report.md
 ```
 
 Smoke run (10 rows only, requires `head -10` truncation of the JSONL input):

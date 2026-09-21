@@ -24,13 +24,13 @@ or local trained heads.
 ## Quick Start
 
 ```bash
-mkdir -p .workingdir2/chug
+mkdir -p .corpus/chug
 curl -L https://raw.githubusercontent.com/shreshthsaini/CHUG/master/chug.csv \
-  -o .workingdir2/chug/manifest.csv
+  -o .corpus/chug/manifest.csv
 curl -L https://raw.githubusercontent.com/shreshthsaini/CHUG/master/chug-video.txt \
-  -o .workingdir2/chug/chug-video.txt
+  -o .corpus/chug/chug-video.txt
 
-PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py --chug-dir .workingdir2/chug
+PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py --chug-dir .corpus/chug
 ```
 
 The default run caps at `--max-rows 500`. Use `--full` for all 5,992
@@ -38,17 +38,17 @@ manifest rows:
 
 ```bash
 PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py \
-  --chug-dir .workingdir2/chug \
-  --output .workingdir2/chug/chug.jsonl \
+  --chug-dir .corpus/chug \
+  --output .corpus/chug/chug.jsonl \
   --full \
   --verbose
 ```
 
-The run is resumable through `.workingdir2/chug/.download-progress.json`.
+The run is resumable through `.corpus/chug/.download-progress.json`.
 The adapter downloads each MP4 via `curl`, probes it with `ffprobe`,
 deduplicates by SHA-256, and appends JSONL rows.
 
-The source adapter also writes `.workingdir2/chug/chug.manifest.json` by
+The source adapter also writes `.corpus/chug/chug.manifest.json` by
 default (or `<output>.manifest.json` when `--output` changes). The sidecar
 records the CHUG root, manifest CSV, row caps, written/skipped/dedup counters,
 and ADR-0661 `run_provenance`; pass `--manifest-out PATH` to place it in a
@@ -91,12 +91,12 @@ Once `chug.jsonl` exists, materialise feature rows before training:
 
 ```bash
 PYTHONPATH=ai/src python ai/scripts/chug_extract_features.py \
-  --input .workingdir2/chug/chug.jsonl \
-  --output .workingdir2/chug/chug_features.jsonl \
-  --clips-dir .workingdir2/chug/clips \
-  --cache-dir .workingdir2/chug/feature-cache \
-  --split-manifest .workingdir2/chug/chug_splits.json \
-  --audit-output .workingdir2/chug/chug_hdr_audit.json \
+  --input .corpus/chug/chug.jsonl \
+  --output .corpus/chug/chug_features.jsonl \
+  --clips-dir .corpus/chug/clips \
+  --cache-dir .corpus/chug/feature-cache \
+  --split-manifest .corpus/chug/chug_splits.json \
+  --audit-output .workingdir/evidence/chug/chug_hdr_audit.json \
   --vmaf-bin core/build-cpu/tools/vmaf \
   --feature-set canonical \
   --full
@@ -183,9 +183,9 @@ python ai/scripts/train_chug_hdr_mos_head.py \
   --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_06.features.jsonl \
   --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_07.features.jsonl \
   --model-id chug_hdr_mos_head_v1 \
-  --out-onnx .workingdir2/chug/chug_hdr_mos_head_v1.onnx \
-  --out-card .workingdir2/chug/chug_hdr_mos_head_v1_card.md \
-  --out-manifest .workingdir2/chug/chug_hdr_mos_head_v1.json
+  --out-onnx .corpus/chug/chug_hdr_mos_head_v1.onnx \
+  --out-card .corpus/chug/chug_hdr_mos_head_v1_card.md \
+  --out-manifest .corpus/chug/chug_hdr_mos_head_v1.json
 ```
 
 When all canonical shards live under
@@ -216,7 +216,7 @@ python ai/scripts/train_chug_hdr_mos_head.py --feature-schema konvid-v1
 For display-aware HDR experiments, pass a target panel profile:
 
 ```bash
-cat > .workingdir2/chug/display-profile.json <<'JSON'
+cat > .corpus/chug/display-profile.json <<'JSON'
 {
   "display": {
     "peak_nits": 1000,
@@ -232,7 +232,7 @@ cat > .workingdir2/chug/display-profile.json <<'JSON'
 JSON
 
 python ai/scripts/train_chug_hdr_mos_head.py \
-  --display-profile-json .workingdir2/chug/display-profile.json
+  --display-profile-json .corpus/chug/display-profile.json
 ```
 
 When `--display-profile-json` is supplied and `--feature-schema` is
@@ -283,10 +283,10 @@ correct full-reference CHUG run, the trainer can consume it directly:
 
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py \
-  --feature-parquet .workingdir2/chug/training/full_features_chug.parquet \
-  --out-onnx .workingdir2/chug/chug_full_features_mos_head.onnx \
-  --out-card .workingdir2/chug/chug_full_features_mos_head_card.md \
-  --out-manifest .workingdir2/chug/chug_full_features_mos_head.json
+  --feature-parquet .corpus/chug/training/full_features_chug.parquet \
+  --out-onnx .corpus/chug/chug_full_features_mos_head.onnx \
+  --out-card .corpus/chug/chug_full_features_mos_head_card.md \
+  --out-manifest .corpus/chug/chug_full_features_mos_head.json
 ```
 
 `train_chug_hdr_mos_head.py` forwards to the shared MOS trainer, which
@@ -301,8 +301,8 @@ finished parquet in place from `chug.jsonl`:
 
 ```bash
 python ai/scripts/enrich_k150k_parquet_metadata.py \
-  --features-parquet .workingdir2/chug/training/full_features_chug.parquet \
-  --metadata-jsonl .workingdir2/chug/chug.jsonl
+  --features-parquet .corpus/chug/training/full_features_chug.parquet \
+  --metadata-jsonl .corpus/chug/chug.jsonl
 ```
 
 The enrichment utility matches rows by `clip_name`, fills missing CHUG

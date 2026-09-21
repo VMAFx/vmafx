@@ -19,14 +19,14 @@
 #
 # Usage:
 #   bash ai/scripts/extract_k150k_features.sh \
-#       --input  .workingdir2/konvid-150k/konvid_150k.jsonl \
+#       --input  .corpus/konvid-150k/konvid_150k.jsonl \
 #       --output runs/k150k_fr_corpus.jsonl
 #
 # Environment overrides:
 #   VMAFTUNE_PRESET    libx264 preset for the FR sweep (default: medium)
 #   VMAFTUNE_CRF_SWEEP comma-separated CRFs           (default: 18,23,28,33,38)
-#   VMAFTUNE_SCRATCH   raw-YUV intermediate dir       (default: .workingdir2/k150k-scratch)
-#   VMAFTUNE_ENCODES   re-encoded MP4 dir             (default: .workingdir2/k150k-encodes)
+#   VMAFTUNE_SCRATCH   raw-YUV intermediate dir       (default: .workingdir/cache/k150k-scratch)
+#   VMAFTUNE_ENCODES   re-encoded MP4 dir             (default: .corpus/k150k-encodes)
 
 set -euo pipefail
 
@@ -63,8 +63,8 @@ fi
 
 preset="${VMAFTUNE_PRESET:-medium}"
 crf_sweep="${VMAFTUNE_CRF_SWEEP:-18,23,28,33,38}"
-scratch_dir="${VMAFTUNE_SCRATCH:-$repo_root/.workingdir2/k150k-scratch}"
-encode_dir="${VMAFTUNE_ENCODES:-$repo_root/.workingdir2/k150k-encodes}"
+scratch_dir="${VMAFTUNE_SCRATCH:-$repo_root/.workingdir/cache/k150k-scratch}"
+encode_dir="${VMAFTUNE_ENCODES:-$repo_root/.corpus/k150k-encodes}"
 
 mkdir -p "$scratch_dir" "$encode_dir"
 mkdir -p "$(dirname "$output")"

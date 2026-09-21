@@ -14435,7 +14435,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -25050,7 +25050,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -35496,7 +35496,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -51687,3 +51687,15 @@ replace `while True` with bounded loops that preserve the same EOF/error checks.
 execution order, fixtures, assertion expressions, numeric constants, expected values, tolerances,
 and parity-gate CLI/output behavior stay unchanged. An upstream textual conflict may take the
 upstream test body, then reapply the helper boundaries needed by HISS.
+## Local data roots are separated by lifecycle (ADR-1277)
+
+Do not restore the retired numbered workspace path during an upstream sync.
+Local state, bounded cache, evidence, and recovery material use `.workingdir/`;
+datasets, extracted media, reusable encodes, and derived feature tables use
+`.corpus/`. A mechanical substitution of every legacy path with `.workingdir/`
+is incorrect because it recreates the former mixed-lifecycle tree.
+
+Public Markdown may show these paths in operator commands but must not link
+into either ignored directory. Durable claims must cite tracked docs, ADRs,
+research, or manifests. Preserve historically accurate prose in old ADRs and
+changelog entries, while keeping it non-clickable and non-authoritative.

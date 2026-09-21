@@ -199,7 +199,7 @@ benchmark.
 
 Originally listed as an open follow-up "until a user surfaces a
 non-CPU tiny-AI deployment". That framing was retired by the
-[Section-A audit decisions](../../.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+Section-A audit decisions
 §A.3.4 once the fork's bench host gained both an NVIDIA RTX 4090 and
 an Intel Arc A380. Empirical run on 2026-04-28 with
 `ai/scripts/measure_quant_drop_per_ep.py` (see

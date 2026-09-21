@@ -35,7 +35,7 @@ clip) without forcing 9 separate `compare_models` calls.
 ## Running it
 
 ```bash
-# Default — uses .workingdir2/netflix as data-root, looks for fold ONNX
+# Default — uses .corpus/netflix as data-root, looks for fold ONNX
 # under model/tiny/training_runs/loso_mlp_small, writes to runs/loso_eval/
 python ai/scripts/eval_loso_mlp_small.py
 
