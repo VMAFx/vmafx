@@ -36,7 +36,7 @@ def _load_frame(path: str | Path) -> torch.Tensor:
     return torch.from_numpy(arr).unsqueeze(0)  # (1, H, W)
 
 
-class FrameMOSDataset(Dataset):
+class FrameMOSDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     """C2 — single-frame luma → scalar MOS.
 
     Returns ``(frame[1,H,W], mos[scalar])`` per item.
@@ -64,7 +64,7 @@ class FrameMOSDataset(Dataset):
         return self._keys
 
 
-class PairedFrameDataset(Dataset):
+class PairedFrameDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     """C3 — degraded → clean paired frames (self-supervised L1 residual).
 
     Returns ``(degraded[1,H,W], clean[1,H,W])`` per item.

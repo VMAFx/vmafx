@@ -9,17 +9,20 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
-np = pytest.importorskip("numpy")
+if TYPE_CHECKING:
+    import numpy as np
+else:
+    np = pytest.importorskip("numpy")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "materialize_saliency_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("materialize_saliency_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -31,10 +34,10 @@ def _load_module():
 def _runner(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
     if cmd[0] == "ffprobe-test":
         payload = {"streams": [{"width": 4, "height": 4}]}
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+        return subprocess.CompletedProcess[str](cmd, 0, stdout=json.dumps(payload), stderr="")
     if cmd[0] == "ffmpeg-test":
         Path(cmd[-1]).write_bytes(b"\x10" * (4 * 4 * 3 // 2))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, 0, stdout="", stderr="")
     raise AssertionError(f"unexpected command: {cmd}")
 
 
@@ -242,7 +245,7 @@ def test_materialize_rows_yuv_input_emits_rawvideo_flags(tmp_path: Path) -> None
     def _capturing_runner(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
         captured_cmds.append(cmd)
         Path(cmd[-1]).write_bytes(b"\x10" * (4 * 4 * 3 // 2))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, 0, stdout="", stderr="")
 
     cfg = module.SaliencyMaterializeConfig(
         ffmpeg_bin="ffmpeg",
@@ -326,11 +329,11 @@ def test_materialize_rows_cached_failure_replays_status(tmp_path: Path) -> None:
         nonlocal decode_calls
         if cmd[0] == "ffprobe-test":
             payload = {"streams": [{"width": 4, "height": 4}]}
-            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            return subprocess.CompletedProcess[str](cmd, 0, stdout=json.dumps(payload), stderr="")
         if cmd[0] == "ffmpeg-test":
             decode_calls += 1
             # Non-zero return code: decode fails, no output file written.
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+            return subprocess.CompletedProcess[str](cmd, 1, stdout="", stderr="boom")
         raise AssertionError(f"unexpected command: {cmd}")
 
     cfg = module.SaliencyMaterializeConfig(

@@ -23,13 +23,20 @@ exporter can be reused.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -47,7 +54,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -59,7 +66,15 @@ def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-def _train(x, y, *, epochs, batch_size, lr, seed):  # type: ignore[no-untyped-def]
+def _train(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    seed: int,
+) -> "torch.nn.Module":
     import torch
     from torch import nn
 
@@ -96,7 +111,7 @@ def _train(x, y, *, epochs, batch_size, lr, seed):  # type: ignore[no-untyped-de
     return model.eval()
 
 
-def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
+def _train_metrics(model: "torch.nn.Module", x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     import torch
 
     with torch.no_grad():
@@ -111,7 +126,7 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _load(parquet: Path, name: str, assume_teacher: str | None = None):  # type: ignore[no-untyped-def]
+def _load(parquet: Path, name: str, assume_teacher: str | None = None) -> "pd.DataFrame":
     import pandas as pd
 
     df = pd.read_parquet(parquet)

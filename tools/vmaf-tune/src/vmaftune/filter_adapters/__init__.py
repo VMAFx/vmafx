@@ -48,9 +48,14 @@ class FilterAdapter(Protocol):
     on ``name``.
     """
 
-    name: str
-    filter_name: str
-    adapter_version: str
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def filter_name(self) -> str: ...
+
+    @property
+    def adapter_version(self) -> str: ...
 
     @property
     def knobs(self) -> tuple[Knob, ...]:

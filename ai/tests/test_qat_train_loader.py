@@ -25,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "qat_train.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("qat_train_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -98,9 +98,12 @@ def test_rank4_config_routes_to_the_image_loader(
 ) -> None:
     cache = _write_npz(tmp_path / "imgs.npz")
     seen: list[Path] = []
-    monkeypatch.setattr(
-        QT, "_build_image_loader_factory", lambda cfg, path: seen.append(path) or "SENTINEL"
-    )
+
+    def fake_image_loader_factory(_cfg: object, path: Path) -> str:
+        seen.append(path)
+        return "SENTINEL"
+
+    monkeypatch.setattr(QT, "_build_image_loader_factory", fake_image_loader_factory)
     cfg = {"cache": str(cache), "qat": {"input_shape": [1, 1, 8, 8]}}
     assert QT._build_train_loader_factory(cfg, _FakeQatConfig()) == "SENTINEL"
     assert seen == [cache]
@@ -109,7 +112,7 @@ def test_rank4_config_routes_to_the_image_loader(
 def test_rank2_config_still_routes_to_the_tabular_datamodule(tmp_path: Path) -> None:
     """Rank-2 must keep using VmafTrainDataModule — the FR-regressor path."""
     pytest.importorskip("torch")
-    from conftest import requires_pytorch_lightning
+    from ai.tests.conftest import requires_pytorch_lightning
 
     requires_pytorch_lightning()
     cache = tmp_path / "features.parquet"
@@ -214,7 +217,7 @@ def test_image_loader_batches_feed_the_learned_filter_model(tmp_path: Path) -> N
     ``learned_filter_v1_qat.yaml`` never trained for real.
     """
     pytest.importorskip("torch")
-    from conftest import requires_pytorch_lightning
+    from ai.tests.conftest import requires_pytorch_lightning
 
     requires_pytorch_lightning()
     import sys as _sys
@@ -222,7 +225,7 @@ def test_image_loader_batches_feed_the_learned_filter_model(tmp_path: Path) -> N
     for extra in (_REPO_ROOT, _REPO_ROOT / "ai" / "src"):
         if str(extra) not in _sys.path:
             _sys.path.insert(0, str(extra))
-    from ai.src.vmaf_train.models import LearnedFilter
+    from vmaf_train.models import LearnedFilter
 
     cache = _write_npz(tmp_path / "imgs.npz", n=4, c=1, h=32, w=32)
     loader = QT._build_image_loader_factory({"batch_size": 2}, cache)()

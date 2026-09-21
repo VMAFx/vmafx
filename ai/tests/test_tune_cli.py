@@ -8,12 +8,13 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from conftest import _PYTORCH_LIGHTNING_ERROR
 from typer.testing import CliRunner
 
-from ai.src.vmaf_train import cli
+from ai.tests.conftest import _PYTORCH_LIGHTNING_ERROR
+from vmaf_train import cli
 
 requires_lightning = pytest.mark.skipif(
     _PYTORCH_LIGHTNING_ERROR is not None,
@@ -60,14 +61,16 @@ def test_make_tune_suggest_dispatches_to_trial_methods() -> None:
 
 
 @requires_lightning
-def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
+def test_tune_cli_invokes_sweep(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
         "model: fr_regressor\nmodel_args:\n  in_features: 6\ncache: features.parquet\noutput: runs/base\nepochs: 1"
     )
     calls: list[dict[str, object]] = []
 
-    def fake_sweep(base_cfg, suggest, *, n_trials: int, study_name: str, storage):
+    def fake_sweep(
+        base_cfg: Any, suggest: Any, *, n_trials: int, study_name: str, storage: Any
+    ) -> Any:
         class Trial:
             def suggest_int(self, name: str, low: int, high: int) -> int:
                 return high
@@ -86,7 +89,7 @@ def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setitem(
         sys.modules,
-        "ai.src.vmaf_train.tune",
+        "vmaf_train.tune",
         SimpleNamespace(sweep=fake_sweep),
     )
 
@@ -121,7 +124,9 @@ def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
     assert "Sweep done" in result.output
 
 
-def test_validate_norm_json_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_validate_norm_json_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     model = tmp_path / "model.json"
     features = tmp_path / "features.parquet"
     out_json = tmp_path / "norm.json"
@@ -136,7 +141,7 @@ def test_validate_norm_json_records_run_provenance(monkeypatch, tmp_path: Path) 
 
     monkeypatch.setitem(
         sys.modules,
-        "ai.src.vmaf_train.validate_norm",
+        "vmaf_train.validate_norm",
         SimpleNamespace(
             validate_norm=lambda _model, _features: Report(),
             render_table=lambda _report: "norm-ok",

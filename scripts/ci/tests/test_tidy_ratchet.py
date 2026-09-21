@@ -10,13 +10,17 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "tidy-ratchet.py"
 
 
-def _load():
+def _load() -> ModuleType:
     spec = importlib.util.spec_from_file_location("tidy_ratchet", SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load module spec for {SCRIPT}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -139,7 +143,11 @@ class UncitedNolints(unittest.TestCase):
 
 
 class Compare(unittest.TestCase):
-    def _m(self, warnings: dict, nolint: dict | None = None) -> ratchet.Measurement:
+    def _m(
+        self,
+        warnings: dict[str, int],
+        nolint: dict[str, int] | None = None,
+    ) -> Any:
         return ratchet.Measurement(lane="cpu", warnings=warnings, nolint_uncited=nolint or {})
 
     def test_regression_and_slack(self) -> None:

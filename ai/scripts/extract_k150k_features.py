@@ -100,19 +100,28 @@ import sys
 import tempfile
 import time
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_vmaf_tune_src=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
 
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
 
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -261,7 +270,9 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
 # ---------------------------------------------------------------------------
 
 
-def _geometry_from_sidecar(meta: dict | None) -> tuple[int, int, str, str] | None:
+def _geometry_from_sidecar(
+    meta: Mapping[str, Any] | None,
+) -> tuple[int, int, str, str] | None:
     """Extract (width, height, pix_fmt, fps) from a CHUG JSONL sidecar row.
 
     Returns ``None`` if ``meta`` is ``None`` or if any required geometry field
@@ -536,7 +547,7 @@ def _run_vmaf_json(
     backend_args: list[str],
     is_hdr: bool = False,
     motion_fps_weight_value: float = 1.0,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Run vmaf once and return a list of per-frame metric dicts."""
     cmd = _build_vmaf_cmd(
         vmaf_bin,
@@ -557,10 +568,12 @@ def _run_vmaf_json(
     return [fr["metrics"] for fr in data.get("frames", [])]
 
 
-def _merge_frame_metrics(primary: list[dict], residual: list[dict]) -> list[dict]:
+def _merge_frame_metrics(
+    primary: list[dict[str, Any]], residual: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Merge per-frame metric dictionaries from two vmaf invocations."""
     frame_count = min(len(primary), len(residual))
-    merged: list[dict] = []
+    merged: list[dict[str, Any]] = []
     for idx in range(frame_count):
         row = dict(primary[idx])
         row.update(residual[idx])
@@ -581,7 +594,7 @@ def _run_feature_passes(
     is_hdr: bool = False,
     motion_fps_weight_value: float = 1.0,
     teacher_model_arg: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Run vmaf feature extraction, splitting CUDA mode where required.
 
     The teacher model is dispatched on every invocation so that the
@@ -658,7 +671,7 @@ def _run_feature_passes(
 # ---------------------------------------------------------------------------
 
 
-def _lookup_metric(metrics: dict, feature: str) -> float:
+def _lookup_metric(metrics: dict[str, Any], feature: str) -> float:
     """Return the float value for ``feature`` from a libvmaf metrics dict.
 
     Tries each alias in order; returns NaN if none match or value is None.
@@ -673,7 +686,7 @@ def _lookup_metric(metrics: dict, feature: str) -> float:
     return float("nan")
 
 
-def _aggregate_frames(frames: list[dict]) -> dict[str, float]:
+def _aggregate_frames(frames: list[dict[str, Any]]) -> dict[str, float]:
     """Return nanmean and nanstd per feature across all frames."""
     if not frames:
         result: dict[str, float] = {}
@@ -860,13 +873,13 @@ def _staging_path(out_path: Path) -> Path:
     return out_path.with_suffix(".rows.jsonl")
 
 
-def _append_row_to_staging(staging_path: Path, row: dict) -> None:
+def _append_row_to_staging(staging_path: Path, row: dict[str, Any]) -> None:
     """Append one row to the JSONL staging file (main process only)."""
     with staging_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, allow_nan=True) + "\n")
 
 
-def _load_staging_rows(staging_path: Path) -> list[dict]:
+def _load_staging_rows(staging_path: Path) -> list[dict[str, Any]]:
     """Load all rows from the JSONL staging file, skipping malformed lines.
 
     Malformed lines are tolerated (a crash can truncate the in-flight final
@@ -876,7 +889,7 @@ def _load_staging_rows(staging_path: Path) -> list[dict]:
     """
     if not staging_path.is_file():
         return []
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     skipped = 0
     with staging_path.open("r", encoding="utf-8") as fh:
         for raw in fh:
@@ -899,7 +912,7 @@ def _load_staging_rows(staging_path: Path) -> list[dict]:
     return rows
 
 
-def _write_parquet_from_rows(rows: list[dict], out_path: Path) -> None:
+def _write_parquet_from_rows(rows: list[dict[str, Any]], out_path: Path) -> None:
     """Write ``rows`` to ``out_path`` atomically, deduplicating by clip_name.
 
     Parquet writes happen exactly once per run.  The per-clip JSONL staging
@@ -1043,10 +1056,10 @@ def _process_clip(
     vmaf_threads: int,
     use_cuda: bool,
     worker_id: int,
-    sidecar_meta: dict | None = None,
+    sidecar_meta: dict[str, Any] | None = None,
     teacher_model_arg: str | None = None,
     teacher_model_name: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Decode one clip, score it, aggregate, and return the row dict.
 
     Runs in a subprocess worker.  Uses a worker-private YUV path so parallel
@@ -1479,7 +1492,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Parallel extraction via ProcessPoolExecutor
     # ------------------------------------------------------------------
-    rows: list[dict] = list(recovered_rows)
+    rows: list[dict[str, Any]] = list(recovered_rows)
     ok = 0
     fail = 0
     t0 = time.time()
@@ -1514,7 +1527,7 @@ def main() -> int:
     # keeping the checkpoint and staging file up-to-date without waiting for
     # the whole batch.  Parquet is written once at the end.
     with concurrent.futures.ProcessPoolExecutor(max_workers=args.threads_cuda) as executor:
-        future_to_clip: dict[concurrent.futures.Future, str] = {}
+        future_to_clip: dict[concurrent.futures.Future[dict[str, Any]], str] = {}
         for idx, mp4 in enumerate(pending):
             clip_name = mp4.name
             # Tolerate a filename<->'video_name' extension mismatch (corpus
@@ -1545,13 +1558,13 @@ def main() -> int:
             clip_name = future_to_clip[fut]
             completed += 1
             try:
-                row = fut.result()
-                row.update(score_meta.get(clip_name, {}))
-                row.update(jsonl_meta.get(clip_name, {}))
+                result_row = fut.result()
+                result_row.update(score_meta.get(clip_name, {}))
+                result_row.update(jsonl_meta.get(clip_name, {}))
                 # Append to JSONL staging immediately for crash durability.
                 if clip_name not in recovered_names:
-                    _append_row_to_staging(staging_path, row)
-                rows.append(row)
+                    _append_row_to_staging(staging_path, result_row)
+                rows.append(result_row)
                 _append_done(done_path, clip_name)
                 ok += 1
             except Exception as exc:

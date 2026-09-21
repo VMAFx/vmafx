@@ -70,9 +70,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
@@ -290,7 +293,7 @@ def _encoder_onehot(idx: int) -> np.ndarray:
 
 
 def _row_to_features(
-    row: dict, *, warn_missing: bool = True
+    row: dict[str, Any], *, warn_missing: bool = True
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Materialise one (canonical6, codec_block, target) tuple from a corpus row.
 
@@ -356,8 +359,8 @@ def _row_to_features(
     return canon, codec_block, target
 
 
-def _load_jsonl(path: Path) -> list[dict]:
-    rows: list[dict] = []
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -367,7 +370,7 @@ def _load_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
+def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict[str, Any]]:
     """Synthesise ``n`` fake corpus rows.
 
     Generates rows that look like Phase A's schema and embed plausible
@@ -377,7 +380,7 @@ def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
     accuracy.
     """
     rng = np.random.default_rng(seed)
-    rows = []
+    rows: list[dict[str, Any]] = []
     encoders = ["libx264", "libx265", "libsvtav1", "libvvenc", "libvpx-vp9"]
     presets_for = {
         "libx264": ["fast", "medium", "slow"],
@@ -426,7 +429,7 @@ def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
     return rows
 
 
-def _materialise(rows: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _materialise(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Stack rows into ``(X_canon (N, 6), X_codec (N, N_ENCODERS+2), y (N,))``.
 
     Rows whose materialised canonical features, codec block, or target are
@@ -470,7 +473,7 @@ def _train(
     seed: int,
     hidden: int,
     depth: int,
-):  # type: ignore[no-untyped-def]
+) -> tuple["torch.nn.Module", dict[str, list[float]]]:
     """Train an FRRegressor with codec conditioning. Returns (model, scaler)."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -512,7 +515,7 @@ def _train(
             opt.zero_grad()
             pred = model(xb, kb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
             ep_loss += float(loss.item())
         if ep == 0 or (ep + 1) % max(1, epochs // 5) == 0:
@@ -523,7 +526,7 @@ def _train(
 
 
 def _export_onnx_combined(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     *,
     num_codec_dims: int,
     onnx_path: Path,
@@ -600,7 +603,7 @@ def _write_sidecar_and_registry(
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,
-    scaler: dict,
+    scaler: dict[str, list[float]],
     in_sample: dict[str, float],
     n_rows: int,
     smoke: bool,

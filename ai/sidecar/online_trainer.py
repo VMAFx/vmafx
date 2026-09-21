@@ -36,12 +36,15 @@ import signal
 import socket
 import sys
 import threading
+from collections.abc import Sequence
 from typing import Any
 
 from .replay_buffer import ReplayBuffer, Sample
 from .sgd_ema import SGDEMAConfig, SGDEMATrainer
 
 logger = logging.getLogger(__name__)
+
+NumericInput = str | int | float
 
 # ---------------------------------------------------------------------------
 # Configuration from environment
@@ -100,7 +103,7 @@ def _load_base_model(path: str, n_features: int) -> Any:
         if path.endswith(".onnx"):
             # Load ONNX via onnx2torch (optional dep) or the fallback MLP.
             try:
-                import onnx2torch  # type: ignore[import]
+                import onnx2torch
 
                 model = onnx2torch.convert(path)
                 logger.info("Loaded base ONNX model via onnx2torch from %r", path)
@@ -197,7 +200,11 @@ class OnlineTrainer:
         self._checkpoint_lock = threading.Lock()
         self._checkpoint_counter: int = 0
 
-    def ingest(self, features: list[float], true_score: float) -> dict[str, Any]:
+    def ingest(
+        self,
+        features: Sequence[NumericInput],
+        true_score: NumericInput,
+    ) -> dict[str, Any]:
         """Accept one (features, true_score) pair from the socket handler.
 
         Accumulates into the pending queue.  When the queue reaches
@@ -354,7 +361,7 @@ def _handle_connection(
     writes JSON ACK responses.  The connection is closed when the client
     disconnects or sends malformed data.
     """
-    addr = conn.getpeername() if conn.type != socket.AF_UNIX else "<unix>"
+    addr = conn.getpeername() if conn.family != socket.AF_UNIX else "<unix>"
     logger.debug("Connection from %s", addr)
     buf = b""
     try:

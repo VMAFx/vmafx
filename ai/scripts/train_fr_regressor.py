@@ -50,7 +50,11 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
 
 import numpy as np
 
@@ -116,7 +120,7 @@ def _fit_predict(
     lr: float,
     weight_decay: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> tuple["torch.nn.Module", np.ndarray]:
     """Train an :class:`FRRegressor` and return ``(model, val_preds)``."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -168,7 +172,9 @@ def _metrics(pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _standardize(x_train: np.ndarray, x_val: np.ndarray) -> tuple[np.ndarray, dict]:
+def _standardize(
+    x_train: np.ndarray, x_val: np.ndarray
+) -> tuple[np.ndarray, dict[str, list[float]]]:
     mean = x_train.mean(axis=0)
     std = x_train.std(axis=0, ddof=0)
     std = np.where(std < 1e-8, 1.0, std)
@@ -180,7 +186,7 @@ def _standardize(x_train: np.ndarray, x_val: np.ndarray) -> tuple[np.ndarray, di
 
 
 def _loso_sweep(
-    df,
+    df: "pd.DataFrame",
     feature_cols: tuple[str, ...],
     *,
     epochs: int,
@@ -188,7 +194,7 @@ def _loso_sweep(
     lr: float,
     weight_decay: float,
     seed: int,
-) -> dict:
+) -> dict[str, Any]:
     sources = sorted(df["source"].unique())
     per_fold: dict[str, dict[str, float]] = {}
     for held_out in sources:
@@ -237,7 +243,7 @@ def _loso_sweep(
 
 
 def _train_final(
-    df,
+    df: "pd.DataFrame",
     feature_cols: tuple[str, ...],
     *,
     epochs: int,
@@ -245,7 +251,7 @@ def _train_final(
     lr: float,
     weight_decay: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> tuple["torch.nn.Module", dict[str, list[float]], dict[str, float]]:
     """Train on all 9 sources; this is the shipped checkpoint."""
     x = df[list(feature_cols)].to_numpy(dtype=np.float64)
     y = df["vmaf"].to_numpy(dtype=np.float64)
@@ -269,12 +275,12 @@ def _train_final(
 
 
 def _export_and_register(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     *,
     feature_cols: tuple[str, ...],
-    standardisation: dict,
-    loso_summary: dict,
-    in_sample: dict,
+    standardisation: dict[str, list[float]],
+    loso_summary: dict[str, float],
+    in_sample: dict[str, float],
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,

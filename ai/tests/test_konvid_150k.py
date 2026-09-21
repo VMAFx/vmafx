@@ -36,7 +36,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "konvid_150k_to_corpus_jsonl.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("konvid_150k_to_corpus_jsonl", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -151,16 +151,16 @@ class _FakeRunner:
         self.download_attempts: list[str] = []
         self.ffprobe_attempts: list[str] = []
 
-    def __call__(self, cmd, **_kw):
+    def __call__(self, cmd: Any, **_kw: Any) -> Any:
         argv0 = Path(cmd[0]).name
         if argv0.endswith("ffprobe"):
             target = Path(cmd[-1]).name
             self.ffprobe_attempts.append(target)
             if target in self.ffprobe_failures:
-                return subprocess.CompletedProcess(
+                return subprocess.CompletedProcess[str](
                     args=cmd, returncode=1, stdout="", stderr="moov atom not found"
                 )
-            return subprocess.CompletedProcess(
+            return subprocess.CompletedProcess[str](
                 args=cmd, returncode=0, stdout=self.ffprobe_payload, stderr=""
             )
         if argv0.endswith("curl"):
@@ -174,13 +174,13 @@ class _FakeRunner:
             target_name = Path(output_path).name.removesuffix(".part")
             self.download_attempts.append(target_name)
             if target_name in self.download_failures:
-                return subprocess.CompletedProcess(
+                return subprocess.CompletedProcess[str](
                     args=cmd, returncode=22, stdout="", stderr="HTTP 404 Not Found"
                 )
             # Write a deterministic non-empty payload to the .part file.
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             Path(output_path).write_bytes(f"downloaded:{target_name}".encode("utf-8"))
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess[str](args=cmd, returncode=0, stdout="", stderr="")
         raise AssertionError(f"unexpected runner invocation: {cmd!r}")
 
 
@@ -386,7 +386,7 @@ def test_attrition_below_threshold_no_warning(
 # ---------------------------------------------------------------------------
 
 
-def test_refuses_konvid_1k_csv(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_refuses_konvid_1k_csv(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A CSV with < 5000 rows must abort with a hint pointing at Phase 1."""
     konvid_dir = _scaffold_corpus(tmp_path, clip_names=["only_one.mp4"], n_csv_rows=1200)
 
@@ -696,7 +696,7 @@ def test_license_text_wording_in_module_docstring() -> None:
 
 
 def test_missing_konvid_dir_returns_clear_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Pointing the script at a non-existent dir surfaces a download hint."""
     rc = KONVID.main(

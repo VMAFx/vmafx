@@ -10,13 +10,23 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
-from materialize_mos_labels import REPO_ROOT, materialize  # noqa: E402
-
+from ai.scripts.materialize_mos_labels import (  # noqa: E402
+    REPO_ROOT as REPO_ROOT,
+)
+from ai.scripts.materialize_mos_labels import (  # noqa: E402
+    materialize as materialize,
+)
 from aiutils.cli_helpers import (  # noqa: E402
     add_batch_manifest_arguments,
     collect_cli_argv,

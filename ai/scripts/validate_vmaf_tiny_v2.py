@@ -17,13 +17,17 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -131,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[validate-v2] sample preds: {pred[:5].round(3).tolist()}")
     print(f"[validate-v2] sample truth: {y[:5].round(3).tolist()}")
 
+    diff: dict[str, float | str] | None
     if args.v1_onnx is not None and args.v1_onnx.exists():
         # v1 graph layout differs (input name, no scaler). We feed the
         # standardised features the v1 trainer expects (z-score on the
@@ -152,8 +157,7 @@ def main(argv: list[str] | None = None) -> int:
                 "max_abs": float(np.max(np.abs(delta))),
             }
             print(
-                f"[validate-v2] v2-v1 delta: mean={diff['mean']:+.3f} "
-                f"max_abs={diff['max_abs']:.3f}"
+                f"[validate-v2] v2-v1 delta: mean={diff['mean']:+.3f} max_abs={diff['max_abs']:.3f}"
             )
         except Exception as exc:
             diff = {"error": str(exc)}

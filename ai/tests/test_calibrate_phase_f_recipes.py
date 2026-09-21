@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-import calibrate_phase_f_recipes
+from ai.scripts import calibrate_phase_f_recipes
 
 
 def test_phase_f_calibration_records_run_provenance(tmp_path: Path) -> None:

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import onnxruntime as ort
@@ -46,7 +47,7 @@ class CrossBackendReport:
     def ok(self) -> bool:
         return all(c.max_abs_error <= self.atol for c in self.comparisons)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model": str(self.model),
             "atol": self.atol,

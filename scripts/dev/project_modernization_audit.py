@@ -18,7 +18,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -234,13 +234,28 @@ class Finding:
     blocked_reason: str
 
 
+class FindingSummary(TypedDict):
+    total: int
+    actionable: int
+    blocked: int
+    by_kind: dict[str, int]
+    by_area: dict[str, int]
+
+
+class AuditReportJson(TypedDict):
+    repo_root: str
+    summary: FindingSummary
+    findings: list[dict[str, object]]
+    clusters: list[dict[str, object]]
+
+
 @dataclass(frozen=True)
 class AuditReport:
     repo_root: str
     findings: list[Finding]
     clusters: list[Finding]
 
-    def to_json(self) -> dict:
+    def to_json(self) -> AuditReportJson:
         return {
             "repo_root": self.repo_root,
             "summary": summarize_findings(self.findings + self.clusters),
@@ -555,7 +570,7 @@ def dedupe_findings(findings: Iterable[Finding]) -> list[Finding]:
     )
 
 
-def summarize_findings(findings: Sequence[Finding]) -> dict[str, object]:
+def summarize_findings(findings: Sequence[Finding]) -> FindingSummary:
     by_kind = Counter(finding.kind for finding in findings)
     by_area = Counter(finding.area for finding in findings)
     blocked = sum(1 for finding in findings if finding.blocked)

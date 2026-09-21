@@ -7,14 +7,19 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-import measure_quant_drop_per_ep
+from ai.scripts import measure_quant_drop_per_ep
 
 
-def test_quant_ep_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_quant_ep_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     repo = tmp_path / "repo"
     script_path = repo / "ai" / "scripts" / "measure_quant_drop_per_ep.py"
     model_dir = repo / "model" / "tiny"
@@ -41,7 +46,7 @@ def test_quant_ep_report_records_run_provenance(monkeypatch, tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    def fake_run_model(*_args, **_kwargs):
+    def fake_run_model(*_args: Any, **_kwargs: Any) -> Any:
         return {
             "model_id": "toy_model",
             "fp32": str(model_dir / "toy.onnx"),

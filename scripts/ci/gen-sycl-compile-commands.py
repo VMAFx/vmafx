@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 
-def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
+def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict[str, str]]:
     """Extract CUSTOM_COMMAND entries for SYCL .cpp files from build.ninja.
 
     Returns a list of dicts matching the compile_commands.json schema:
@@ -38,7 +38,7 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
 
     content = build_ninja_path.read_text(encoding="utf-8")
 
-    entries = []
+    entries: list[dict[str, str]] = []
     # Match lines of the form:
     #   build <out>: CUSTOM_COMMAND <src.cpp> | <compiler>
     #    COMMAND = <icpx flags ...> <src.cpp> -o <out>

@@ -24,7 +24,7 @@ from ai.data.feature_extractor import (
 )
 
 
-def test_default_features_unchanged():
+def test_default_features_unchanged() -> None:
     """Canonical 6-feature set must stay byte-identical to vmaf_v0.6.1.
 
     Regression guard: anything that quietly broadens DEFAULT_FEATURES
@@ -41,11 +41,11 @@ def test_default_features_unchanged():
     )
 
 
-def test_full_features_superset_of_default():
+def test_full_features_superset_of_default() -> None:
     assert set(DEFAULT_FEATURES).issubset(set(FULL_FEATURES))
 
 
-def test_full_features_excludes_lpips_and_moment():
+def test_full_features_excludes_lpips_and_moment() -> None:
     """Per Research-0026 §"Open questions" Q1: lpips and float_moment
     are deliberately excluded from the v1 candidate pool.
     """
@@ -53,12 +53,12 @@ def test_full_features_excludes_lpips_and_moment():
     assert forbidden.isdisjoint(set(FULL_FEATURES))
 
 
-def test_full_features_count():
+def test_full_features_count() -> None:
     """Sanity: ~22 features per Research-0026 inventory."""
     assert 18 <= len(FULL_FEATURES) <= 28
 
 
-def test_every_full_feature_has_extractor_mapping():
+def test_every_full_feature_has_extractor_mapping() -> None:
     """If a feature is in FULL_FEATURES, _METRIC_TO_EXTRACTOR must
     know which CLI ``--feature`` extractor to invoke. Otherwise the
     libvmaf CLI is asked for an unregistered feature and silently
@@ -68,22 +68,22 @@ def test_every_full_feature_has_extractor_mapping():
     assert not missing, f"FULL_FEATURES missing extractor mapping: {missing}"
 
 
-def test_resolve_feature_set_canonical_and_full():
+def test_resolve_feature_set_canonical_and_full() -> None:
     assert resolve_feature_set("canonical") == DEFAULT_FEATURES
     assert resolve_feature_set("full") == FULL_FEATURES
 
 
-def test_resolve_feature_set_unknown_raises():
+def test_resolve_feature_set_unknown_raises() -> None:
     with pytest.raises(ValueError, match="unknown feature set"):
         resolve_feature_set("ppx99")
 
 
-def test_feature_sets_registry_keys():
+def test_feature_sets_registry_keys() -> None:
     assert "canonical" in FEATURE_SETS
     assert "full" in FEATURE_SETS
 
 
-def test_extractors_for_full_set_dedups():
+def test_extractors_for_full_set_dedups() -> None:
     """``_extractors_for`` should collapse the FULL set to a small
     number of unique CLI ``--feature`` flags. ADM has 6 metrics, VIF
     5, motion 2, but each maps to one extractor — net unique should

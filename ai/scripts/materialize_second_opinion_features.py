@@ -17,10 +17,17 @@ import math
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -163,9 +170,9 @@ def _read_score_payloads(path: Path) -> list[dict[str, Any]]:
     if suffix == ".json":
         payload = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(payload, dict):
-            rows = payload.get("rows") or payload.get("results")
-            if isinstance(rows, list):
-                return _ensure_dict_rows(rows, path)
+            payload_rows = payload.get("rows") or payload.get("results")
+            if isinstance(payload_rows, list):
+                return _ensure_dict_rows(payload_rows, path)
             return [payload]
         if isinstance(payload, list):
             return _ensure_dict_rows(payload, path)
@@ -231,8 +238,7 @@ def _infer_feature_key_column(df: pd.DataFrame, requested: str | None) -> str:
         if found is not None:
             return found
     raise ValueError(
-        "could not infer feature key column; pass --key-column. "
-        f"Tried: {', '.join(KEY_CANDIDATES)}"
+        f"could not infer feature key column; pass --key-column. Tried: {', '.join(KEY_CANDIDATES)}"
     )
 
 

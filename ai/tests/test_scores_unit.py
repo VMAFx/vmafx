@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -134,13 +135,13 @@ def test_run_vmaf_score_default_passes_version_arg(
 
     captured_argv: list[list[str]] = []
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> Any:
         captured_argv.append(list(cmd))
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, returncode=0, stdout="", stderr="")
 
-    with patch.object(scores_mod.subprocess, "run", side_effect=fake_run):
+    with patch("ai.data.scores.subprocess.run", side_effect=fake_run):
         scores_mod._run_vmaf_score(
             fake_binary,
             ref,
@@ -173,14 +174,14 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
 
     captured_argv: list[list[str]] = []
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> Any:
         captured_argv.append(list(cmd))
         # The function reads <out_path>.json — write a stub.
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, returncode=0, stdout="", stderr="")
 
-    with patch.object(scores_mod.subprocess, "run", side_effect=fake_run):
+    with patch("ai.data.scores.subprocess.run", side_effect=fake_run):
         doc = scores_mod._run_vmaf_score(
             fake_binary,
             ref,
@@ -217,12 +218,12 @@ def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -
 
     leftover: list[Path] = []
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> None:
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
         raise subprocess.CalledProcessError(returncode=2, cmd=cmd)
 
     with (
-        patch.object(scores_mod.subprocess, "run", side_effect=fake_run),
+        patch("ai.data.scores.subprocess.run", side_effect=fake_run),
         pytest.raises(subprocess.CalledProcessError),
     ):
         scores_mod._run_vmaf_score(
@@ -244,12 +245,12 @@ def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -
 # ---------------------------------------------------------------------------
 
 
-def _stub_vmaf_doc(per_frame_vmaf: list[float | None], pooled_mean: float | None) -> dict:
+def _stub_vmaf_doc(per_frame_vmaf: list[float | None], pooled_mean: float | None) -> dict[str, Any]:
     frames = []
     for i, v in enumerate(per_frame_vmaf):
         m = {} if v is None else {"vmaf": v}
         frames.append({"frameNum": i, "metrics": m})
-    doc: dict = {"frames": frames}
+    doc: dict[str, Any] = {"frames": frames}
     if pooled_mean is not None:
         doc["pooled_metrics"] = {"vmaf": {"mean": pooled_mean}}
     else:

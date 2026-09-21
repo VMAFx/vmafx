@@ -14,6 +14,7 @@ These run without ``onnxruntime`` by stubbing :func:`evaluate_onnx`.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -131,7 +132,7 @@ def test_bisect_caches_repeated_index_visits(tmp_path: Path) -> None:
     # Build a deterministic "good before idx 3, bad from idx 3" schedule.
     call_counts: dict[int, int] = {}
 
-    def _fake_eval(model, _features, _targets, input_name="input"):
+    def _fake_eval(model: Any, _features: Any, _targets: Any, input_name: Any = "input") -> Any:
         # Map model path back to its index.
         idx = int(model.stem.lstrip("m"))
         call_counts[idx] = call_counts.get(idx, 0) + 1
@@ -156,7 +157,7 @@ def test_bisect_with_srocc_gate(tmp_path: Path) -> None:
     feats = np.zeros((4, 6), dtype=np.float32)
     targets = np.zeros(4, dtype=np.float32)
 
-    def _fake_eval(model, *_args, **_kwargs):
+    def _fake_eval(model: Any, *_args: Any, **_kwargs: Any) -> Any:
         idx = int(model.stem.lstrip("m"))
         return _report(srocc=0.95 if idx < 2 else 0.30)
 

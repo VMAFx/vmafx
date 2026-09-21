@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,7 +13,7 @@ torch = pytest.importorskip("torch")
 onnx = pytest.importorskip("onnx")
 onnxruntime = pytest.importorskip("onnxruntime")
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 
@@ -29,7 +30,7 @@ from vmaf_train.models import FRRegressor, LearnedFilter, NRMetric, export_to_on
         (lambda: LearnedFilter(channels=1, width=8, num_blocks=2), (1, 1, 64, 64), "input"),
     ],
 )
-def test_export_roundtrip(tmp_path: Path, model_cls, in_shape, input_name) -> None:
+def test_export_roundtrip(tmp_path: Path, model_cls: Any, in_shape: Any, input_name: Any) -> None:
     model = model_cls().eval()
     onnx_path = tmp_path / "model.onnx"
     export_to_onnx(model, onnx_path, in_shape=in_shape, input_name=input_name, atol=1e-5)

@@ -24,7 +24,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 
@@ -124,6 +124,7 @@ def test_fr_regressor_codec_aware_training_step_finite() -> None:
     y = torch.randn(8) * 20 + 50  # realistic MOS range
     loss = m._step((x, codec, y), "train")
     assert torch.isfinite(loss)
+    assert isinstance(loss, torch.Tensor)
     loss.backward()
     # First linear layer's weight column slice for the codec one-hot
     # input should receive non-zero gradient — confirms the codec

@@ -10,7 +10,7 @@ repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / "ai" / "scripts"))
 
 # noinspection PyUnresolvedReference
-import extract_k150k_features as extractor  # noqa: E402
+from ai.scripts import extract_k150k_features as extractor  # noqa: E402
 
 
 def test_feature_names_excludes_ssimulacra2() -> None:

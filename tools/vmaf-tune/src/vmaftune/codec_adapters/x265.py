@@ -18,6 +18,11 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
 
 from . import _gop_common
 
@@ -46,6 +51,7 @@ class X265Adapter:
 
     name: str = "libx265"
     encoder: str = "libx265"
+    adapter_version: str = "1"
     quality_knob: str = "crf"
     # x265 nominally accepts 0..51; surface the same Phase A informative
     # window as x264 so the search loop is uniform across codecs.
@@ -130,7 +136,7 @@ class X265Adapter:
 
     def zones_from_saliency(
         self,
-        block_offsets: object,
+        block_offsets: npt.NDArray[np.int32],
         *,
         duration_frames: int = 1,
     ) -> str:

@@ -22,6 +22,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Iterator
 
 import numpy as np
 
@@ -32,7 +33,7 @@ _VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
 if str(_VMAFTUNE_SRC) not in sys.path:
     sys.path.insert(0, str(_VMAFTUNE_SRC))
 
-from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+from vmaftune.defaultmodel import DEFAULT_MODEL as DEFAULT_MODEL  # noqa: E402
 
 #: Sentinel stamped on legacy cache payloads that predate per-clip teacher
 #: provenance.  Consumers must treat it as "teacher unknown" and recompute or
@@ -50,7 +51,7 @@ class ResolvedTeacherModel:
     resolved: str = ""
     path: Path | None = None
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter((self.arg, self.name))
 
 
@@ -102,7 +103,7 @@ class TeacherScores:
     pooled: float
     teacher_model: str = DEFAULT_MODEL
 
-    def to_jsonable(self) -> dict:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "per_frame": self.per_frame.tolist(),
             "pooled": float(self.pooled),
@@ -110,7 +111,7 @@ class TeacherScores:
         }
 
     @classmethod
-    def from_jsonable(cls, payload: dict) -> TeacherScores:
+    def from_jsonable(cls, payload: dict[str, Any]) -> TeacherScores:
         per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
         pooled = float(payload["pooled"])
         # A payload without the key was written before ADR-1173 stamped
@@ -130,7 +131,7 @@ def _run_vmaf_score(
     pix_fmt: str,
     bitdepth: int,
     model: str | Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     if model is None:
         resolved = resolve_teacher_model()
         model_arg = resolved.arg
@@ -164,7 +165,10 @@ def _run_vmaf_score(
             model_arg,
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return json.loads(out_path.read_text())
+        payload: object = json.loads(out_path.read_text())
+        if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
+            raise ValueError("vmaf score output must be a string-keyed JSON object")
+        return {key: value for key, value in payload.items() if isinstance(key, str)}
     finally:
         out_path.unlink(missing_ok=True)
 

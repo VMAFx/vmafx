@@ -22,9 +22,15 @@ import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(
     __file__,
@@ -97,7 +103,10 @@ def read_table(path: Path) -> list[dict[str, Any]]:
             import pandas as pd
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("pandas is required to read parquet tables") from exc
-        return list(pd.read_parquet(path).to_dict(orient="records"))
+        return [
+            {str(key): value for key, value in row.items()}
+            for row in pd.read_parquet(path).to_dict(orient="records")
+        ]
     raise ValueError(f"unsupported input extension {path.suffix!r}; expected .jsonl or .parquet")
 
 

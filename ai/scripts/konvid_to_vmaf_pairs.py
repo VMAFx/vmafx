@@ -49,19 +49,24 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
 
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
@@ -76,7 +81,7 @@ DEFAULT_FEATURES = (
 )
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -205,7 +210,7 @@ def _run_vmaf(
     )
 
 
-def _lookup(metrics: dict, name: str) -> float:
+def _lookup(metrics: dict[str, Any], name: str) -> float:
     for key in (name, f"integer_{name}"):
         val = metrics.get(key)
         if val is not None:
@@ -217,7 +222,9 @@ def _lookup(metrics: dict, name: str) -> float:
     raise KeyError(f"Metric {name!r} not found in frame metrics")
 
 
-def _frames_to_rows(key: str, vmaf_json: Path, teacher_model: str = DEFAULT_MODEL) -> list[dict]:
+def _frames_to_rows(
+    key: str, vmaf_json: Path, teacher_model: str = DEFAULT_MODEL
+) -> list[dict[str, Any]]:
     """Extract one (key, frame, teacher_model, *features, vmaf) row per frame from libvmaf JSON."""
     with vmaf_json.open() as f:
         d = json.load(f)
@@ -244,13 +251,16 @@ def _process_clip(
     crf: int,
     cache_dir: Path | None,
     scratch: Path,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     resolved = resolve_teacher_model(model)
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
             with cache_path.open() as f:
-                return json.load(f)
+                cached: object = json.load(f)
+            if not isinstance(cached, list) or not all(isinstance(row, dict) for row in cached):
+                raise ValueError(f"{cache_path}: cache must be a list of objects")
+            return [{str(field): value for field, value in row.items()} for row in cached]
     ref_yuv = scratch / f"{key}_ref.yuv"
     dis_yuv = scratch / f"{key}_dis.yuv"
     vmaf_json = scratch / f"{key}_vmaf.json"
@@ -370,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         clips = clips[: args.max_clips]
     print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
 
-    all_rows: list[dict] = []
+    all_rows: list[dict[str, Any]] = []
     failed_clips: list[str] = []
     t0 = time.monotonic()
     for i, src_mp4 in enumerate(clips):

@@ -5,12 +5,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 
-def collect_cli_argv(argv: Sequence[str] | None) -> list[str]:
+def collect_cli_argv(argv: Sequence[str | os.PathLike[str]] | None) -> list[str]:
     """Return the effective raw CLI argument vector for provenance."""
     source = sys.argv[1:] if argv is None else argv
     return [str(item) for item in source]

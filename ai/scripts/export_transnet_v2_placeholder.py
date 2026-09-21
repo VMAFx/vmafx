@@ -41,15 +41,20 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -94,7 +99,7 @@ class TransNetV2Placeholder(nn.Module):
         flat = x.reshape(b * t, c * h * w)
         hidden = self.act(self.proj(flat))
         # logits: (B*T, 1) -> (B, T)
-        logits = self.head(hidden).reshape(b, t)
+        logits: torch.Tensor = self.head(hidden).reshape(b, t)
         return logits
 
 
@@ -108,7 +113,7 @@ def _export(onnx_path: Path, opset: int) -> None:
     # op allowlist (``Reshape``, ``MatMul``, ``Add``, ``Relu``).
     torch.onnx.export(
         model,
-        dummy,
+        (dummy,),
         str(onnx_path),
         input_names=["frames"],
         output_names=["boundary_logits"],
@@ -118,7 +123,7 @@ def _export(onnx_path: Path, opset: int) -> None:
     )
 
 
-def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None = None) -> Path:
+def _write_sidecar(onnx_path: Path, *, run_provenance: Mapping[str, object] | None = None) -> Path:
     sidecar = onnx_path.with_suffix(".json")
     payload = {
         "id": "transnet_v2",
@@ -154,7 +159,7 @@ def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
         sys.exit(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
-    models: list[dict] = doc.get("models", [])
+    models: list[dict[str, Any]] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
     digest = sha256(onnx_path)
     entry = {

@@ -31,6 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 CANONICAL_6 = (
     "integer_adm2",
@@ -189,15 +190,15 @@ def score_cuda(
 
 
 def emit_rows(
-    payload: dict,
+    payload: dict[str, Any],
     *,
     src: str,
     encoder: str,
     cq: int,
     enc_bytes: int,
     enc_time_ms: float,
-) -> list[dict]:
-    rows: list[dict] = []
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for fr in payload.get("frames", []):
         m = fr.get("metrics", {})
         if not all(k in m for k in CANONICAL_6):

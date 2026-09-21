@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,8 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
-import train_saliency_student as train_v1  # noqa: E402
-import train_saliency_student_v2 as train_v2  # noqa: E402
+from ai.scripts import train_saliency_student as train_v1  # noqa: E402
+from ai.scripts import train_saliency_student_v2 as train_v2  # noqa: E402
 
 
 def _args(tmp_path: Path) -> argparse.Namespace:
@@ -38,7 +39,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
 
 
 @pytest.mark.parametrize("module", [train_v1, train_v2])
-def test_saliency_metrics_payload_records_run_provenance(tmp_path: Path, module) -> None:
+def test_saliency_metrics_payload_records_run_provenance(tmp_path: Path, module: Any) -> None:
     provenance = {
         "schema": "ai-run-provenance-v1",
         "entrypoint": {"path": f"ai/scripts/{module.__name__}.py"},

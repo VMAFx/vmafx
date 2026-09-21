@@ -12,6 +12,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "analyze_knob_sweep.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     """Import ``analyze_knob_sweep`` from its scripts/ path."""
     spec = importlib.util.spec_from_file_location("analyze_knob_sweep", SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
@@ -30,7 +31,7 @@ def _load_module():
 
 
 @pytest.fixture(scope="module")
-def aks():
+def aks() -> Any:
     return _load_module()
 
 
@@ -39,7 +40,7 @@ def aks():
 # ---------------------------------------------------------------------------
 
 
-def _synthetic_rows() -> list[dict]:
+def _synthetic_rows() -> list[dict[str, Any]]:
     """20-row synthetic JSONL fixture covering every code path.
 
     Layout:
@@ -54,7 +55,7 @@ def _synthetic_rows() -> list[dict]:
       vmaf at the same bitrate; one has lower encode_time_ms. The
       tiebreaker should pick the cheaper one.
     """
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
 
     # source_a / libx264 / cq — three rows, includes a regression
     rows.append(
@@ -356,7 +357,19 @@ def _synthetic_rows() -> list[dict]:
     return rows
 
 
-def _row(source, codec, rc_mode, preset, quality, knob_combo, *, bitrate, vmaf, enc_ms, bare):
+def _row(
+    source: Any,
+    codec: Any,
+    rc_mode: Any,
+    preset: Any,
+    quality: Any,
+    knob_combo: Any,
+    *,
+    bitrate: Any,
+    vmaf: Any,
+    enc_ms: Any,
+    bare: Any,
+) -> Any:
     return {
         "source": source,
         "codec": codec,
@@ -385,7 +398,7 @@ def synthetic_jsonl(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_pareto_frontier_smoke(aks, synthetic_jsonl, tmp_path):
+def test_pareto_frontier_smoke(aks: Any, synthetic_jsonl: Any, tmp_path: Path) -> None:
     """End-to-end smoke: load → stratify → hull → CSV → summary."""
     rows = aks.load_jsonl(synthetic_jsonl)
     assert len(rows) == 20
@@ -420,7 +433,7 @@ def test_pareto_frontier_smoke(aks, synthetic_jsonl, tmp_path):
     assert "regressions" in summary.lower()
 
 
-def test_stratification_keys(aks, synthetic_jsonl):
+def test_stratification_keys(aks: Any, synthetic_jsonl: Any) -> None:
     """Stratification groups by exactly (source, codec, rc_mode)."""
     rows = aks.load_jsonl(synthetic_jsonl)
     grouped = aks.stratify(rows)
@@ -444,7 +457,7 @@ def test_stratification_keys(aks, synthetic_jsonl):
             assert (row.source, row.codec, row.rc_mode) == key
 
 
-def test_recipe_regression_detection(aks, synthetic_jsonl):
+def test_recipe_regression_detection(aks: Any, synthetic_jsonl: Any) -> None:
     """The hq_recipe at source_a/libx264/cq must be flagged as regressing."""
     rows = aks.load_jsonl(synthetic_jsonl)
     regressions = aks.detect_recipe_regressions(rows)

@@ -28,7 +28,9 @@ from __future__ import annotations
 import dataclasses
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ..hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
 from . import _gop_common
@@ -72,7 +74,7 @@ def ffmpeg_supports_encoder(
     encoder: str,
     *,
     ffmpeg_bin: str = "ffmpeg",
-    runner: object | None = None,
+    runner: Callable[..., Any] | None = None,
 ) -> bool:
     """Probe whether ``ffmpeg -encoders`` advertises ``encoder``.
 
@@ -86,7 +88,7 @@ def ffmpeg_supports_encoder(
         return False
     runner_fn = runner or subprocess.run
     try:
-        completed = runner_fn(  # type: ignore[operator]
+        completed = runner_fn(
             [ffmpeg_bin, "-hide_banner", "-encoders"],
             capture_output=True,
             text=True,
@@ -107,7 +109,7 @@ def require_qsv_encoder(
     encoder: str,
     *,
     ffmpeg_bin: str = "ffmpeg",
-    runner: object | None = None,
+    runner: Callable[..., Any] | None = None,
 ) -> None:
     """Raise ``RuntimeError`` if FFmpeg cannot drive ``encoder``.
 
@@ -134,6 +136,7 @@ class BaseQsvAdapter:
 
     name: str = "h264_qsv"
     encoder: str = "h264_qsv"
+    adapter_version: str = "1"
     quality_knob: str = "global_quality"
     quality_range: tuple[int, int] = QSV_QUALITY_RANGE
     quality_default: int = QSV_QUALITY_DEFAULT

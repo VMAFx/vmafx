@@ -21,8 +21,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-from feature_correlation import _pearson_matrix, _redundant_pairs, _top_k_consensus
-from feature_correlation import main as corr_main
+from ai.scripts.feature_correlation import _pearson_matrix, _redundant_pairs, _top_k_consensus
+from ai.scripts.feature_correlation import main as corr_main
 
 
 def _make_synthetic_parquet(path: Path, *, n: int = 500, seed: int = 0) -> Path:
@@ -46,14 +46,14 @@ def _make_synthetic_parquet(path: Path, *, n: int = 500, seed: int = 0) -> Path:
     return path
 
 
-def test_pearson_matrix_diagonal_is_one():
+def test_pearson_matrix_diagonal_is_one() -> None:
     x = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     m = _pearson_matrix(x, ["a", "b"])
     assert m["a"]["a"] == pytest.approx(1.0, abs=1e-9)
     assert m["b"]["b"] == pytest.approx(1.0, abs=1e-9)
 
 
-def test_redundant_pairs_flags_near_perfect_correlation(tmp_path):
+def test_redundant_pairs_flags_near_perfect_correlation(tmp_path: Path) -> None:
     parquet = _make_synthetic_parquet(tmp_path / "syn.parquet")
     df = pd.read_parquet(parquet)
     feat_cols = ["feat_a", "feat_b_redundant", "feat_c_independent"]
@@ -64,7 +64,7 @@ def test_redundant_pairs_flags_near_perfect_correlation(tmp_path):
     assert pairs[0]["r"] > 0.99
 
 
-def test_top_k_consensus_intersection():
+def test_top_k_consensus_intersection() -> None:
     importances = {
         "mi": {"a": 1.0, "b": 0.5, "c": 0.1},
         "lasso": {"a": 0.9, "b": 0.4, "c": 0.0},
@@ -74,7 +74,7 @@ def test_top_k_consensus_intersection():
     assert "a" in consensus  # ranked top-2 by all three
 
 
-def test_top_k_consensus_handles_missing_method():
+def test_top_k_consensus_handles_missing_method() -> None:
     importances = {
         "mi": {"a": float("nan"), "b": float("nan")},
         "lasso": {"a": 1.0, "b": 0.0},
@@ -84,7 +84,7 @@ def test_top_k_consensus_handles_missing_method():
     assert consensus == ["a"]
 
 
-def test_corr_main_invokable_via_argparse(tmp_path, monkeypatch):
+def test_corr_main_invokable_via_argparse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("sklearn")
     parquet = _make_synthetic_parquet(tmp_path / "syn.parquet")
     out = tmp_path / "report.json"

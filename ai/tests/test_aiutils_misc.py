@@ -81,5 +81,6 @@ def test_aiutils_lazy_imports_parquet_writer() -> None:
 
 def test_aiutils_getattr_raises_for_unknown_name() -> None:
     """Unknown attribute on the package raises a normal AttributeError."""
+    missing_name = "nonexistent_thing"
     with pytest.raises(AttributeError, match="no attribute 'nonexistent_thing'"):
-        _ = aiutils.nonexistent_thing  # type: ignore[attr-defined]
+        _ = getattr(aiutils, missing_name)

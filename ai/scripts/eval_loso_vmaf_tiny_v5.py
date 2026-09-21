@@ -24,7 +24,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -33,7 +33,13 @@ REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train  # noqa: E402
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
+
+    from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train
+else:
+    from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -47,7 +53,13 @@ def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"n": len(y), "plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _eval_fold(model, mean, std, x_val, y_val):  # type: ignore[no-untyped-def]
+def _eval_fold(
+    model: "torch.nn.Module",
+    mean: np.ndarray,
+    std: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+) -> dict[str, float]:
     import torch
 
     x_std = (x_val - mean) / std
@@ -56,11 +68,13 @@ def _eval_fold(model, mean, std, x_val, y_val):  # type: ignore[no-untyped-def]
     return _metrics(pred, y_val)
 
 
-def _run_loso(df, label: str, epochs: int, batch_size: int, lr: float, seed: int) -> dict:
+def _run_loso(
+    df: "pd.DataFrame", label: str, epochs: int, batch_size: int, lr: float, seed: int
+) -> dict[str, Any]:
     nf = df[df["corpus"] == "netflix"]
     sources = sorted(nf["source"].unique().tolist())
     print(f"[{label}] Netflix sources={sources} total_rows={len(df)} nf_rows={len(nf)}", flush=True)
-    fold_metrics: dict[str, dict] = {}
+    fold_metrics: dict[str, dict[str, float]] = {}
     plccs, sroccs, rmses = [], [], []
     for held_out in sources:
         train_mask = ~((df["corpus"] == "netflix") & (df["source"] == held_out))
@@ -184,8 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     combined = pd.concat([base, extra], ignore_index=True, sort=False)
 
     print(
-        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} "
-        f"combined_rows={len(combined)}",
+        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} combined_rows={len(combined)}",
         flush=True,
     )
 

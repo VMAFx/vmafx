@@ -112,4 +112,4 @@ class TestNormalInputsUnchanged:
 
     def test_2d_input_raises(self) -> None:
         with pytest.raises(ValueError):
-            correlations(np.zeros((3, 2)), np.zeros((3, 2)))  # type: ignore[arg-type]
+            correlations(np.zeros((3, 2)), np.zeros((3, 2)))

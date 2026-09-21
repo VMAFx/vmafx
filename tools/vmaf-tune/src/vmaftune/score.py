@@ -16,6 +16,7 @@ import re
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -322,7 +323,7 @@ def _decode_to_raw_yuv(
     *,
     pix_fmt: str,
     ffmpeg_bin: str = "ffmpeg",
-    runner: object | None = None,
+    runner: Callable[..., Any] | None = None,
     duration_s: float | None = None,
 ) -> int:
     """Decode a container (mp4/mkv/…) to a raw planar YUV file for the vmaf CLI.
@@ -356,7 +357,7 @@ def _decode_to_raw_yuv(
         # ``-t`` after ``-i`` clamps the output to the first N seconds.
         cmd.extend(["-t", f"{float(duration_s)}"])
     cmd.append(str(dst))
-    completed = runner_fn(cmd, capture_output=True, text=True, check=False)  # type: ignore[operator]
+    completed = runner_fn(cmd, capture_output=True, text=True, check=False)
     return int(getattr(completed, "returncode", 1))
 
 
@@ -380,7 +381,7 @@ def maybe_decode_distorted(
     *,
     workdir: Path,
     ffmpeg_bin: str = "ffmpeg",
-    runner: object | None = None,
+    runner: Callable[..., Any] | None = None,
 ) -> tuple[ScoreRequest, int]:
     """Decode ``req.distorted`` to raw YUV when it is a container file.
 
@@ -428,7 +429,7 @@ def run_score(
     req: ScoreRequest,
     *,
     vmaf_bin: str = "vmaf",
-    runner: object | None = None,
+    runner: Callable[..., Any] | None = None,
     workdir: Path | None = None,
     backend: str | None = None,
 ) -> ScoreResult:
@@ -457,9 +458,7 @@ def run_score(
 
     try:
         started = time.monotonic()
-        completed = runner_fn(  # type: ignore[operator]
-            cmd, capture_output=True, text=True, check=False
-        )
+        completed = runner_fn(cmd, capture_output=True, text=True, check=False)
         elapsed_ms = (time.monotonic() - started) * 1000.0
 
         stderr = getattr(completed, "stderr", "") or ""

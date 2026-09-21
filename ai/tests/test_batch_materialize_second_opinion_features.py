@@ -8,12 +8,13 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "batch_materialize_second_opinion_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location(
         "batch_materialize_second_opinion_features", _SCRIPT
     )

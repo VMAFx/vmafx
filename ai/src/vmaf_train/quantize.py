@@ -23,10 +23,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from .features import FEATURE_COLUMNS
+
+if TYPE_CHECKING:
+    from onnxruntime.quantization import CalibrationDataReader
 
 DEFAULT_CALIB_SAMPLES = 512
 HELD_OUT_SAMPLES = 128
@@ -47,7 +51,7 @@ class QuantizationReport:
     def compression_ratio(self) -> float:
         return self.fp32_bytes / max(self.int8_bytes, 1)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "fp32_path": str(self.fp32_path),
             "int8_path": str(self.int8_path),
@@ -80,7 +84,9 @@ def _load_calibration_features(parquet: Path, n_total: int) -> np.ndarray:
     return x[idx]
 
 
-def _make_calibration_reader(features: np.ndarray, input_name: str, batch_size: int):
+def _make_calibration_reader(
+    features: np.ndarray, input_name: str, batch_size: int
+) -> "CalibrationDataReader":
     """Build an onnxruntime CalibrationDataReader yielding feature batches."""
     from onnxruntime.quantization import CalibrationDataReader
 
@@ -90,7 +96,7 @@ def _make_calibration_reader(features: np.ndarray, input_name: str, batch_size: 
                 features[i : i + batch_size] for i in range(0, len(features), batch_size)
             )
 
-        def get_next(self) -> dict | None:
+        def get_next(self) -> dict[str, np.ndarray] | None:
             try:
                 batch = next(self._iter)
             except StopIteration:

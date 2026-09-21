@@ -22,25 +22,28 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import onnxruntime as ort
 import torch
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from train_saliency_student import TinyUNet  # noqa: E402  # type: ignore[import-not-found]
-
+from ai.scripts.train_saliency_student import TinyUNet as TinyUNet  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
-from vmaf_train.op_allowlist import check_model  # noqa: E402  # type: ignore[import-not-found]
+from vmaf_train.op_allowlist import check_model  # noqa: E402
 
 
 def _check_allowlist(onnx_path: Path) -> int:
@@ -53,7 +56,7 @@ def _check_allowlist(onnx_path: Path) -> int:
 
 def _check_parity(
     onnx_path: Path,
-    pt_state: dict | None = None,
+    pt_state: dict[str, object] | None = None,
     seed: int = 0,
     h: int = 256,
     w: int = 256,

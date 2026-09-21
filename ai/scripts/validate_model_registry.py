@@ -29,12 +29,15 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -50,7 +53,7 @@ DEFAULT_SCHEMA = REPO_ROOT / "model" / "tiny" / "registry.schema.json"
 def _try_jsonschema_validate(reg: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     """Run jsonschema if available; return a list of error strings (empty = ok)."""
     try:
-        import jsonschema  # type: ignore[import-not-found]
+        import jsonschema
     except ImportError:
         return ["__skipped__"]
     validator = jsonschema.Draft202012Validator(schema)
@@ -111,7 +114,7 @@ def graph_bakes_scaler(onnx_path: Path) -> bool:
         return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)
 
     try:
-        import onnx  # type: ignore[import-not-found]
+        import onnx
     except ImportError:
         return _byte_scan()
 

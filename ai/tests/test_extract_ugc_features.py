@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_ugc_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("extract_ugc_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -47,12 +48,14 @@ def test_frame_row_reads_full_features_and_speed_aliases() -> None:
     assert row["vmaf"] == 88.0
 
 
-def test_run_vmaf_command_requests_full_feature_extractors(monkeypatch, tmp_path: Path) -> None:
+def test_run_vmaf_command_requests_full_feature_extractors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     mod = _load_module()
     captured: dict[str, list[str]] = {}
     out_json = {"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: Any, **kwargs: Any) -> Any:
         captured["cmd"] = cmd
         out_path = Path(cmd[cmd.index("--output") + 1])
         out_path.write_text(__import__("json").dumps(out_json))
@@ -98,8 +101,8 @@ def _make_main_fixture(tmp_path: Path) -> dict[str, Path]:
     }
 
 
-def _run_main(mod, fx: dict[str, Path]) -> int:
-    return mod.main(
+def _run_main(mod: Any, fx: dict[str, Path]) -> int:
+    result = mod.main(
         [
             "--manifest",
             str(fx["manifest"]),
@@ -113,9 +116,13 @@ def _run_main(mod, fx: dict[str, Path]) -> int:
             str(fx["out_parquet"]),
         ]
     )
+    assert isinstance(result, int)
+    return result
 
 
-def test_main_skips_clip_with_zero_height_instead_of_crashing(monkeypatch, tmp_path: Path) -> None:
+def test_main_skips_clip_with_zero_height_instead_of_crashing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """R3-18: a zero ffprobe height must skip just that clip (no
     ZeroDivisionError escaping the loop and aborting the whole run).
 
@@ -138,7 +145,9 @@ def test_main_skips_clip_with_zero_height_instead_of_crashing(monkeypatch, tmp_p
     assert rc == 2  # graceful "no rows extracted", not an unhandled crash
 
 
-def test_main_skips_clip_with_missing_height_key(monkeypatch, tmp_path: Path) -> None:
+def test_main_skips_clip_with_missing_height_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """R3-18: an ffprobe stream missing 'height' must skip the clip (KeyError
     no longer escapes the per-clip guard)."""
     mod = _load_module()
@@ -189,7 +198,7 @@ def test_run_vmaf_rejects_empty_or_null_paths(tmp_path: Path) -> None:
         mod._run_vmaf(vmaf, ref, dis, 1920, 1080, 1, Path("model\0bad.json"))
 
 
-def test_run_vmaf_validates_scratch_dir(monkeypatch, tmp_path: Path) -> None:
+def test_run_vmaf_validates_scratch_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     mod = _load_module()
     vmaf = tmp_path / "vmaf"
     ref = tmp_path / "ref.yuv"
@@ -205,7 +214,9 @@ def test_run_vmaf_validates_scratch_dir(monkeypatch, tmp_path: Path) -> None:
         mod._run_vmaf(vmaf, ref, dis, 1920, 1080, 1, model)
 
 
-def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None:
+def test_run_vmaf_honours_valid_scratch_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     mod = _load_module()
     scratch = tmp_path / "custom_scratch"
     monkeypatch.setenv("VMAF_TINY_AI_SCRATCH", str(scratch))
@@ -213,7 +224,7 @@ def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None
     out_json = {"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}
     captured: dict[str, list[str]] = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: Any, **kwargs: Any) -> Any:
         captured["cmd"] = cmd
         out_path = Path(cmd[cmd.index("--output") + 1])
         assert scratch.resolve() in out_path.parents or out_path.parent == scratch.resolve()

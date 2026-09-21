@@ -72,18 +72,24 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+
 from ai.data.feature_extractor import FULL_FEATURES, _extractors_for  # noqa: E402
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -118,7 +124,7 @@ def _tier_from_resolution(w: int, h: int) -> str | None:
     return _RES_TO_TIER.get((w, h))
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -255,7 +261,7 @@ def _run_vmaf_full(
     )
 
 
-def _lookup(metrics: dict, name: str) -> float | None:
+def _lookup(metrics: dict[str, Any], name: str) -> float | None:
     """libvmaf may emit ``integer_<name>`` for fixed-point kernels.
 
     Returns None when the key is absent OR when libvmaf emits a JSON null
@@ -277,13 +283,13 @@ def _lookup(metrics: dict, name: str) -> float | None:
 
 def _frames_to_rows(
     key: str, vmaf_json: Path, codec: str, teacher_model: str = DEFAULT_MODEL
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     with vmaf_json.open() as f:
         d = json.load(f)
     rows = []
     for fr in d["frames"]:
         m = fr["metrics"]
-        row: dict = {
+        row: dict[str, Any] = {
             "key": key,
             "frame_index": int(fr["frameNum"]),
             "codec": codec,
@@ -308,7 +314,7 @@ def _process_clip(
     scratch: Path,
     codec: str,
     teacher_model: str = DEFAULT_MODEL,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
@@ -345,7 +351,7 @@ def _process_clip_yuv(
     scratch: Path,
     codec: str,
     teacher_model: str = DEFAULT_MODEL,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Process a pre-decoded YUV clip from ``--bvi-dir`` mode.
 
     The caller has already parsed ``w``, ``h``, ``fps``, and ``depth``
@@ -512,7 +518,7 @@ def _run_zip_mode(
             flush=True,
         )
 
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         t0 = time.time()
         for i, info in enumerate(entries):
             base = info.filename.rsplit("/", 1)[-1]
@@ -593,7 +599,7 @@ def _run_dir_mode(
         flush=True,
     )
 
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     t0 = time.time()
     for i, entry in enumerate(entries):
         key = entry.path.stem
@@ -650,7 +656,7 @@ def _run_dir_mode(
     return 0, stats
 
 
-def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> dict[str, object]:
+def _write_parquet(rows: list[dict[str, Any]], n_clips: int, out_path: Path) -> dict[str, object]:
     df = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     write_parquet_atomic(df, out_path)

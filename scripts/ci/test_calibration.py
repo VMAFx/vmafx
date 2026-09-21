@@ -87,7 +87,7 @@ def test_parse_table_features_must_be_mapping() -> None:
 
 def test_parse_table_root_must_be_mapping() -> None:
     with pytest.raises(ValueError, match="root"):
-        parse_table(["not", "a", "mapping"])  # type: ignore[arg-type]
+        parse_table(["not", "a", "mapping"])
 
 
 def test_parse_table_gpus_must_be_list() -> None:

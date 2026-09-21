@@ -18,10 +18,17 @@ import math
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -317,7 +324,8 @@ def _load_labels(
             inferred_key = current_key
         if not inferred_mos:
             inferred_mos = current_mos
-        for row in df.to_dict(orient="records"):
+        for raw_row in df.to_dict(orient="records"):
+            row = {str(key): value for key, value in raw_row.items()}
             label = _label_from_row(
                 row,
                 key_column=current_key,

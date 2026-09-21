@@ -24,13 +24,19 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -48,7 +54,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_medium(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_medium(in_dim: int) -> "torch.nn.Module":
     """v3 architecture — 6 → 32 → 16 → 1, ~737 params.
 
     3x the hidden capacity of ``_build_mlp_small`` (v2). Linear-1
@@ -77,7 +83,7 @@ def _train(
     batch_size: int,
     lr: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train mlp_medium on the standardised feature matrix.
 
     Identical loop to v2 — only the model factory differs.
@@ -120,7 +126,7 @@ def _train(
     return model.eval()
 
 
-def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
+def _train_metrics(model: "torch.nn.Module", x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     """Compute PLCC / SROCC / RMSE on the standardised training set."""
     import torch
 
@@ -136,7 +142,7 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _count_params(model) -> int:  # type: ignore[no-untyped-def]
+def _count_params(model: "torch.nn.Module") -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
@@ -196,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     std = np.where(std < 1e-8, 1.0, std)
     x_std = (x - mean) / std
 
-    print(f"[train-v3] mean={mean.round(4).tolist()}\n" f"           std ={std.round(4).tolist()}")
+    print(f"[train-v3] mean={mean.round(4).tolist()}\n           std ={std.round(4).tolist()}")
     print(f"[train-v3] training mlp_medium for {args.epochs} epochs (lr={args.lr})")
     model = _train(
         x_std,

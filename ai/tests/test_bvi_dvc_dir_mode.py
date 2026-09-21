@@ -23,6 +23,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,7 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "bvi_dvc_to_full_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("bvi_dvc_to_full_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -138,7 +139,7 @@ class TestSelectTierEntriesDir:
         assert entries[0].path.suffix == ".mkv"
 
     def test_unknown_resolution_emits_warning_and_skips(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """A file with a plausible name but unknown resolution is skipped with a warning."""
         mod = _load_module()
@@ -226,7 +227,7 @@ def _make_fake_vmaf_json(n_frames: int = 2) -> str:
 class TestMainDirMode:
     """End-to-end test of ``main()`` with ``--bvi-dir``, subprocess mocked."""
 
-    def _mock_subprocess_run(self, cmd, **kwargs):
+    def _mock_subprocess_run(self, cmd: Any, **kwargs: Any) -> Any:
         """Replace subprocess.run: write fake vmaf JSON when the vmaf binary
         is invoked; return a no-op CompletedProcess for ffmpeg/ffprobe calls."""
         mock_result = MagicMock()

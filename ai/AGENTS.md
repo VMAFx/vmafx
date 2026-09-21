@@ -53,6 +53,13 @@ ai/
   for re-export packages it lists re-exported symbols; for
   `__version__`-only packages it's `["__version__"]`. See
   [ADR-0911](../docs/adr/0911-init-py-export-completeness-audit.md).
+- **The type gate owns all of `ai/`.** Per
+  [ADR-1279](../docs/adr/1279-mypy-fail-closed.md), every tracked `.py`
+  and `.pyi` file below this directory must pass strict mypy for Python 3.14.
+  Scripts and tests use their `ai.scripts.*` / `ai.tests.*` package identity;
+  `ai/src` maps to the installed top-level packages. Optional dependencies
+  without upstream typing get the smallest reviewed interface under
+  `ai/typings/`; never restore missing-import ignores or a finding baseline.
 - **Bisect-cache fixture is content-stable** — `ai/testdata/bisect/`
   = deterministic default for nightly `bisect-model-quality`
   workflow. Regenerate committed synthetic cache via

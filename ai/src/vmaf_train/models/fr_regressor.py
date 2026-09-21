@@ -105,7 +105,7 @@ class FRRegressor(L.LightningModule):
                     f"num_codecs {self._hp['num_codecs']}"
                 )
             x = torch.cat([x, codec_onehot.to(x.dtype)], dim=-1)
-        out = self.net(x)
+        out: torch.Tensor = self.net(x)
         if self._hp["emit_variance"]:
             return out  # (N, 2): [:, 0] = score, [:, 1] = logvar
         return out.squeeze(-1)
@@ -115,15 +115,19 @@ class FRRegressor(L.LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Accept (x, y) or (x, codec, y) tuples. Codec-blind callers
         keep the v1 2-tuple shape; codec-aware datamodules emit 3-tuples."""
-        if len(batch) == 3:  # type: ignore[arg-type]
-            x, codec, y = batch  # type: ignore[misc]
+        if not isinstance(batch, (tuple, list)) or len(batch) not in (2, 3):
+            raise TypeError("FRRegressor expects a two- or three-item tensor batch")
+        if not all(isinstance(item, torch.Tensor) for item in batch):
+            raise TypeError("FRRegressor batch items must all be torch.Tensor instances")
+        if len(batch) == 3:
+            x, codec, y = batch
             return x, y, codec
-        x, y = batch  # type: ignore[misc]
+        x, y = batch
         return x, y, None
 
     def _step(self, batch: object, tag: str) -> torch.Tensor:
         x, y, codec = self._unpack_batch(batch)
-        out = self(x, codec)
+        out = self.forward(x, codec)
         if self._hp["emit_variance"]:
             pred = out[..., 0]
             logvar = out[..., 1]

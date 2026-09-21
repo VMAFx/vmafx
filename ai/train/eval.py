@@ -33,9 +33,12 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from onnxruntime import InferenceSession
 
 
 @dataclass
@@ -78,20 +81,20 @@ def correlation_metrics(pred: np.ndarray, target: np.ndarray) -> tuple[float, fl
     return plcc, srocc, krocc, rmse
 
 
-def _onnx_session(onnx_path: Path):  # type: ignore[no-untyped-def]
+def _onnx_session(onnx_path: Path) -> "InferenceSession":
     import onnxruntime as ort
 
     return ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
 
 
-def _onnx_predict(session, features: np.ndarray) -> np.ndarray:  # type: ignore[no-untyped-def]
+def _onnx_predict(session: "InferenceSession", features: np.ndarray) -> np.ndarray:
     input_name = session.get_inputs()[0].name
     out = session.run(None, {input_name: features.astype(np.float32)})[0]
     return np.asarray(out).reshape(-1)
 
 
 def measure_latency_ms(
-    session,  # type: ignore[no-untyped-def]
+    session: "InferenceSession",
     *,
     feature_dim: int,
     n_warmup: int = 5,

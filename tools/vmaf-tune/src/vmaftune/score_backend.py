@@ -47,13 +47,17 @@ JSON) is calibrated against the Netflix corpus by
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
 import logging
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, cast
+
+if TYPE_CHECKING:
+    import numpy as np
 
 _log = logging.getLogger(__name__)
 
@@ -64,6 +68,22 @@ ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "hip")
 #: in vendor-priority order on their respective silicon. CPU is the
 #: always-available floor.
 DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "sycl", "hip", "cpu")
+
+ProbeRunner = Callable[..., Any]
+
+
+class _Cv2Module(Protocol):
+    """Typed subset of OpenCV used by the optional resize fast path."""
+
+    INTER_LINEAR: int
+
+    def resize(
+        self,
+        source: np.ndarray,
+        size: tuple[int, int],
+        *,
+        interpolation: int,
+    ) -> object: ...
 
 
 class BackendUnavailableError(RuntimeError):
@@ -89,7 +109,7 @@ class BackendProbe:
         return self.binary_supports and self.hardware_available
 
 
-def _vmaf_help(vmaf_bin: str, runner: object | None = None) -> str:
+def _vmaf_help(vmaf_bin: str, runner: ProbeRunner | None = None) -> str:
     """Return the vmaf ``--help`` output (stderr+stdout joined).
 
     Returns empty string on any error so probe logic degrades to
@@ -99,7 +119,7 @@ def _vmaf_help(vmaf_bin: str, runner: object | None = None) -> str:
     if shutil.which(vmaf_bin) is None and "/" not in vmaf_bin:
         return ""
     try:
-        completed = runner_fn(  # type: ignore[operator]
+        completed = runner_fn(
             [vmaf_bin, "--help"],
             capture_output=True,
             text=True,
@@ -138,13 +158,13 @@ def parse_supported_backends(help_text: str) -> frozenset[str]:
     return frozenset(found)
 
 
-def _probe_cuda(runner: object | None = None) -> bool:
+def _probe_cuda(runner: ProbeRunner | None = None) -> bool:
     """True if a CUDA device is reachable. Tries `nvidia-smi -L`."""
     if shutil.which("nvidia-smi") is None:
         return False
     runner_fn = runner or subprocess.run
     try:
-        completed = runner_fn(  # type: ignore[operator]
+        completed = runner_fn(
             ["nvidia-smi", "-L"],
             capture_output=True,
             text=True,
@@ -158,13 +178,13 @@ def _probe_cuda(runner: object | None = None) -> bool:
     return rc == 0 and "GPU" in out
 
 
-def _probe_sycl(runner: object | None = None) -> bool:
+def _probe_sycl(runner: ProbeRunner | None = None) -> bool:
     """True if a SYCL device is reachable. Tries `sycl-ls`."""
     if shutil.which("sycl-ls") is None:
         return False
     runner_fn = runner or subprocess.run
     try:
-        completed = runner_fn(  # type: ignore[operator]
+        completed = runner_fn(
             ["sycl-ls"],
             capture_output=True,
             text=True,
@@ -180,12 +200,12 @@ def _probe_sycl(runner: object | None = None) -> bool:
     return rc == 0 and "[" in out and ":gpu" in out.lower()
 
 
-def _probe_hip(runner: object | None = None) -> bool:
+def _probe_hip(runner: ProbeRunner | None = None) -> bool:
     """True if an AMD ROCm/HIP GPU is reachable."""
     runner_fn = runner or subprocess.run
     if shutil.which("rocminfo") is not None:
         try:
-            completed = runner_fn(  # type: ignore[operator]
+            completed = runner_fn(
                 ["rocminfo"],
                 capture_output=True,
                 text=True,
@@ -203,7 +223,7 @@ def _probe_hip(runner: object | None = None) -> bool:
     if shutil.which("rocm-smi") is None:
         return False
     try:
-        completed = runner_fn(  # type: ignore[operator]
+        completed = runner_fn(
             ["rocm-smi", "--showproductname"],
             capture_output=True,
             text=True,
@@ -221,7 +241,7 @@ def _probe_hip(runner: object | None = None) -> bool:
 def detect_available_backends(
     *,
     vmaf_bin: str = "vmaf",
-    runner: object | None = None,
+    runner: ProbeRunner | None = None,
 ) -> list[str]:
     """Return backends usable on this host, in `ALL_BACKENDS` order.
 
@@ -249,7 +269,7 @@ def select_backend(
     fallbacks: Sequence[str] = DEFAULT_FALLBACKS,
     available: Sequence[str] | None = None,
     vmaf_bin: str = "vmaf",
-    runner: object | None = None,
+    runner: ProbeRunner | None = None,
 ) -> str:
     """Pick a backend honouring user preference and host capability.
 
@@ -373,7 +393,9 @@ class NRProxyBackend:
     _calibration_intercept_resolved: float = dataclasses.field(
         default=float("nan"), init=False, repr=False
     )
-    _cache: dict[tuple, float] = dataclasses.field(default_factory=dict, init=False, repr=False)
+    _cache: dict[tuple[str, int, int], float] = dataclasses.field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         # Resolve sidecar path alongside model_path.
@@ -685,7 +707,7 @@ def _extract_middle_luma_frame(
     width: int,
     height: int,
     pix_fmt: str,
-) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
+) -> np.ndarray:
     """Read the middle frame's luma plane from a raw YUV file.
 
     Returns a 2-D ``uint8`` numpy array of shape ``(height, width)``.
@@ -745,7 +767,7 @@ def _extract_middle_luma_frame(
     return arr_u8.reshape(height, width)
 
 
-def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
+def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray:
     """Resize luma frame to 224×224 using simple bilinear interpolation.
 
     Uses ``cv2`` when available (faster); falls back to a pure-numpy
@@ -755,14 +777,18 @@ def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray
         return luma
 
     try:
-        import cv2  # type: ignore[import-not-found]
+        cv2 = cast(_Cv2Module, importlib.import_module("cv2"))
+        import numpy as np
 
-        return cv2.resize(  # type: ignore[no-any-return]
-            luma,
-            (NR_MODEL_INPUT_HW, NR_MODEL_INPUT_HW),
-            interpolation=cv2.INTER_LINEAR,
+        return np.asarray(
+            cv2.resize(
+                luma,
+                (NR_MODEL_INPUT_HW, NR_MODEL_INPUT_HW),
+                interpolation=cv2.INTER_LINEAR,
+            ),
+            dtype=np.uint8,
         )
-    except ImportError:
+    except ModuleNotFoundError:
         pass
 
     # Pure-numpy bilinear fallback (slow for large frames but avoids cv2 dep).
@@ -789,4 +815,4 @@ def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray
         + luma_f[row_lo[:, None] + 1, col_lo[None, :] + 1] * col_frac
     )
     result = top * (1.0 - row_frac) + bottom * row_frac
-    return result.clip(0, 255).astype(np.uint8)
+    return np.asarray(result.clip(0, 255), dtype=np.uint8)

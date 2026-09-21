@@ -112,6 +112,7 @@ class BaseNvencAdapter:
 
     name: str = "h264_nvenc"
     encoder: str = "h264_nvenc"
+    adapter_version: str = "1"
     quality_knob: str = "cq"
     quality_range: tuple[int, int] = NVENC_CQ_RANGE
     quality_default: int = 23

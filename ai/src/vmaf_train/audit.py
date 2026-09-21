@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import onnx
 
@@ -105,7 +106,7 @@ def audit_model(onnx_path: Path) -> ModelAudit:
     return audit
 
 
-def _audit_fr(model: onnx.ModelProto, meta: dict, audit: ModelAudit) -> None:
+def _audit_fr(model: onnx.ModelProto, meta: dict[str, Any], audit: ModelAudit) -> None:
     inputs = meta.get("input_names") or []
     if len(inputs) != 1:
         audit.issues.append(f"fr model must have exactly 1 input, has {len(inputs)}")

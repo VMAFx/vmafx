@@ -27,7 +27,7 @@ class TestAllNanMetricsReturnsInf:
         result = _read_best_metric(df, "val/mse")
         assert math.isinf(result) and result > 0, "expected +inf for all-NaN column"
 
-    def test_all_nan_emits_warning(self, caplog) -> None:
+    def test_all_nan_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         import logging
 
         df = pd.DataFrame({"val/mse": [float("nan")]})
@@ -38,7 +38,7 @@ class TestAllNanMetricsReturnsInf:
         ), "expected a WARNING log containing 'all-NaN metrics'"
         assert math.isinf(result) and result > 0
 
-    def test_empty_column_returns_inf(self, caplog) -> None:
+    def test_empty_column_returns_inf(self, caplog: pytest.LogCaptureFixture) -> None:
         """A completely empty column (no rows) also has no valid minimum."""
         import logging
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -80,13 +81,13 @@ def test_lookup_prefers_direct_over_integer_prefix() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_fake_run_ok(out_payload: dict):
+def _make_fake_run_ok(out_payload: dict[str, Any]) -> Any:
     """Return a side-effect function for subprocess.run that writes the output JSON."""
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> Any:
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps(out_payload))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, returncode=0, stdout="", stderr="")
 
     return fake_run
 
@@ -99,16 +100,16 @@ def test_run_vmaf_json_composes_argv(tmp_path: Path) -> None:
     ref.write_bytes(b"\x00" * 16)
     dis.write_bytes(b"\x00" * 16)
 
-    payload = {"frames": []}
+    payload: dict[str, Any] = {"frames": []}
     captured: list[list[str]] = []
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> Any:
         captured.append(list(cmd))
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps(payload))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess[str](cmd, returncode=0, stdout="", stderr="")
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run):
+    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run):
         result = _run_vmaf_json(binary, ref, dis, 320, 240, features=DEFAULT_FEATURES)
 
     assert captured, "subprocess.run not called"
@@ -128,12 +129,12 @@ def test_run_vmaf_json_passes_custom_pix_fmt_and_bitdepth(tmp_path: Path) -> Non
     binary = tmp_path / "vmaf"
     binary.write_text("")
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> Any:
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": []}))
-        return subprocess.CompletedProcess(cmd, returncode=0)
+        return subprocess.CompletedProcess[str](cmd, returncode=0)
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run) as m:
+    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run) as m:
         _run_vmaf_json(
             binary,
             tmp_path / "r.yuv",
@@ -153,12 +154,12 @@ def test_run_vmaf_json_includes_feature_flags(tmp_path: Path) -> None:
     binary = tmp_path / "vmaf"
     binary.write_text("")
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> Any:
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": []}))
-        return subprocess.CompletedProcess(cmd, returncode=0)
+        return subprocess.CompletedProcess[str](cmd, returncode=0)
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run) as m:
+    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run) as m:
         _run_vmaf_json(
             binary,
             tmp_path / "r.yuv",
@@ -179,12 +180,12 @@ def test_run_vmaf_json_cleans_up_temp_on_subprocess_error(tmp_path: Path) -> Non
     binary.write_text("")
     leftover: list[Path] = []
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd: Any, **kw: Any) -> None:
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
         raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
 
     with (
-        patch.object(fe_mod.subprocess, "run", side_effect=fake_run),
+        patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run),
         pytest.raises(subprocess.CalledProcessError),
     ):
         _run_vmaf_json(
@@ -204,7 +205,7 @@ def test_run_vmaf_json_cleans_up_temp_on_subprocess_error(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def _stub_frame(frame_num: int, metrics: dict) -> dict:
+def _stub_frame(frame_num: int, metrics: dict[str, Any]) -> dict[str, Any]:
     return {"frameNum": frame_num, "metrics": metrics}
 
 
@@ -311,7 +312,7 @@ def test_extract_features_empty_frames_returns_zero_shape(tmp_path: Path) -> Non
     binary = tmp_path / "vmaf"
     binary.write_text("")
 
-    doc = {"frames": []}
+    doc: dict[str, Any] = {"frames": []}
 
     with (
         patch.object(fe_mod, "_ensure_binary"),
@@ -339,7 +340,7 @@ def test_extract_features_uses_default_binary_from_env(
     fake_binary.write_text("")
     monkeypatch.setenv("VMAF_BIN", str(fake_binary))
 
-    doc = {"frames": []}
+    doc: dict[str, Any] = {"frames": []}
 
     with (
         patch.object(fe_mod, "_ensure_binary"),

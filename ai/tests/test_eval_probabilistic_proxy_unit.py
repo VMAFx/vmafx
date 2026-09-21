@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -21,7 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "eval_probabilistic_proxy.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("epp_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -168,7 +169,7 @@ def test_predict_ensemble_stacks_sessions() -> None:
         def __init__(self, bias: float) -> None:
             self.bias = bias
 
-        def run(self, _outputs, _feeds):
+        def run(self, _outputs: Any, _feeds: Any) -> Any:
             n = _feeds["features"].shape[0]
             return [np.full((n, 1), self.bias, dtype=np.float32)]
 
@@ -194,7 +195,7 @@ def _write_manifest(path: Path, num_codecs: int = 3, conformal_q: float | None =
     members = [{"onnx": f"member_{i}.onnx"} for i in range(2)]
     for m in members:
         (path.parent / m["onnx"]).write_bytes(b"\x00")  # placeholder
-    payload: dict = {
+    payload: dict[str, Any] = {
         "members": members,
         "feature_mean": [0.5] * 6,
         "feature_std": [0.2] * 6,
@@ -205,10 +206,10 @@ def _write_manifest(path: Path, num_codecs: int = 3, conformal_q: float | None =
     path.write_text(json.dumps(payload))
 
 
-def _make_fake_session(bias: float, num_codecs: int = 3):
+def _make_fake_session(bias: float, num_codecs: int = 3) -> Any:
     sess = MagicMock()
 
-    def _run(_outputs, feeds):
+    def _run(_outputs: Any, feeds: Any) -> Any:
         n = feeds["features"].shape[0]
         return [np.full((n, 1), bias, dtype=np.float32) + feeds["features"][:, :1]]
 
@@ -221,7 +222,9 @@ def _make_fake_session(bias: float, num_codecs: int = 3):
     return sess
 
 
-def test_main_exits_2_when_manifest_missing(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_main_exits_2_when_manifest_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     rc = EPP.main(["--manifest", str(tmp_path / "nope.json"), "--smoke"])
     assert rc == 2
     err = capsys.readouterr().err

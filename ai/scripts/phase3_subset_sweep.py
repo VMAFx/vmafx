@@ -31,13 +31,20 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -99,7 +106,7 @@ SUBSETS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -195,7 +202,7 @@ def _standardize_inplace(x_train: np.ndarray, x_val: np.ndarray) -> None:
 
 
 def _loso_sweep(
-    df,  # type: ignore[no-untyped-def]
+    df: "pd.DataFrame",
     feature_cols: tuple[str, ...],
     *,
     epochs: int,
@@ -302,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[phase3] sources: {sorted(df['source'].unique())}")
 
     requested = [s.strip() for s in args.subsets.split(",")]
-    results: dict[str, dict] = {}
+    results: dict[str, dict[str, Any]] = {}
     seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else [args.seed]
     for name in requested:
         if name not in SUBSETS:

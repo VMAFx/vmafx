@@ -31,6 +31,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -42,7 +43,7 @@ _KONVID_MANIFEST = _CONFIGS_DIR / "mos-label-batch-konvid.json"
 _CHUG_MANIFEST = _CONFIGS_DIR / "mos-label-batch-chug.json"
 
 
-def _load_module():
+def _load_module() -> Any:
     # ``_script_bootstrap`` lives in ai/scripts/; make it importable before
     # executing the script module so the bootstrap import does not fail when
     # pytest is invoked from the repo root without PYTHONPATH=ai/scripts.
@@ -56,7 +57,7 @@ def _load_module():
     return module
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> None:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",

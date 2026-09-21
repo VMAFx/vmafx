@@ -7,8 +7,11 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+from aiutils.file_utils import sha256
 
 pytest.importorskip("torch")
 
@@ -19,15 +22,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 
-import export_fastdvdnet_pre as fastdvdnet_real  # noqa: E402
-import export_fastdvdnet_pre_placeholder as fastdvdnet_placeholder  # noqa: E402
-import export_tiny_models as tiny_export  # noqa: E402
-import export_transnet_v2 as transnet_real  # noqa: E402
-import export_transnet_v2_placeholder as transnet_placeholder  # noqa: E402
+from ai.scripts import export_fastdvdnet_pre as fastdvdnet_real  # noqa: E402
+from ai.scripts import export_fastdvdnet_pre_placeholder as fastdvdnet_placeholder  # noqa: E402
+from ai.scripts import export_tiny_models as tiny_export  # noqa: E402
+from ai.scripts import export_transnet_v2 as transnet_real  # noqa: E402
+from ai.scripts import export_transnet_v2_placeholder as transnet_placeholder  # noqa: E402
 
 
 def _provenance(entrypoint: str) -> dict[str, object]:
@@ -40,7 +43,9 @@ def _provenance(entrypoint: str) -> dict[str, object]:
 
 
 def _read(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
 
 
 def test_export_tiny_models_sidecar_records_run_provenance(
@@ -61,7 +66,7 @@ def test_export_tiny_models_sidecar_records_run_provenance(
 
     payload = _read(sidecar)
     assert payload["id"] == "nr_metric_v1"
-    assert payload["sha256"] == tiny_export.sha256(onnx_path)
+    assert payload["sha256"] == sha256(onnx_path)
     assert payload["run_provenance"] == provenance
 
 
@@ -83,7 +88,7 @@ def test_export_tiny_models_sidecar_records_run_provenance(
     ],
 )
 def test_feature_model_export_sidecar_records_run_provenance(
-    tmp_path: Path, module, entrypoint: str, model_id: str
+    tmp_path: Path, module: Any, entrypoint: str, model_id: str
 ) -> None:
     onnx_path = tmp_path / f"{model_id}.onnx"
     onnx_path.write_bytes(b"onnx")

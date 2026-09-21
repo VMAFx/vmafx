@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import Any, cast
+from typing import Any
 
 
 def run_cmd(
@@ -43,11 +43,4 @@ def run_cmd(
     if capture:
         kwargs.setdefault("capture_output", True)
         kwargs.setdefault("text", True)
-    # Cast through CompletedProcess[Any]: the runtime ``mode`` (text vs.
-    # bytes) is decided by the ``text``/``capture`` kwargs the caller
-    # passes, which the overload chain can't reconcile against a
-    # ``**kwargs: Any`` forward.
-    return cast(
-        "subprocess.CompletedProcess[Any]",
-        subprocess.run(cmd, check=check, timeout=timeout, **kwargs),
-    )
+    return subprocess.run(cmd, check=check, timeout=timeout, **kwargs)

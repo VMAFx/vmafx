@@ -50,7 +50,7 @@ def main() -> int:
     out_name = sess.get_outputs()[0].name
 
     def predict(arr: np.ndarray) -> np.ndarray:
-        return sess.run([out_name], {in_name: arr})[0].reshape(-1)
+        return np.asarray(sess.run([out_name], {in_name: arr})[0]).reshape(-1)
 
     base_pred = predict(X)
     base_plcc, _ = pearsonr(base_pred, y)

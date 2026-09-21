@@ -29,7 +29,7 @@ import math
 import os
 import sys
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,7 @@ from . import (
 from .codec_adapters import get_adapter
 from .encode import (
     EncodeRequest,
+    EncodeResult,
     bitrate_kbps,
     run_encode,
     run_encode_with_stats,
@@ -557,7 +558,7 @@ def iter_rows(
     opts: CorpusOptions,
     *,
     encode_runner: object | None = None,
-    score_runner: object | None = None,
+    score_runner: Callable[..., Any] | None = None,
     shot_runner: object | None = None,
     probe_runner: object | None = None,
 ) -> Iterator[dict[str, Any]]:
@@ -983,14 +984,14 @@ def _row_for(
     preset: str,
     crf: int,
     src_sha: str,
-    enc_res,
-    score_res,
+    enc_res: EncodeResult,
+    score_res: ScoreResult,
     score_model: str = "",
     clip_mode: str = "full",
     hdr_info: HdrInfo | None = None,
     hdr_forced: bool = False,
     shot_meta: ShotMetadata | None = None,
-) -> dict:
+) -> dict[str, Any]:
     # Bitrate is computed against the *encoded* duration so sample-clip
     # rows aren't biased low by dividing slice-bytes by full-source
     # seconds. ``duration_s`` keeps the source provenance.
@@ -999,7 +1000,7 @@ def _row_for(
         if enc_res.request.sample_clip_seconds > 0.0
         else job.duration_s
     )
-    row = {
+    row: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": uuid.uuid4().hex,
         "timestamp": _utc_now_iso(),
@@ -1061,7 +1062,7 @@ def _row_for(
     return row
 
 
-def write_jsonl(rows: Sequence[dict] | Iterator[dict], path: Path) -> int:
+def write_jsonl(rows: Sequence[Mapping[str, Any]] | Iterator[Mapping[str, Any]], path: Path) -> int:
     """Write ``rows`` to ``path`` (one JSON object per line). Returns count."""
     path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
@@ -1073,7 +1074,7 @@ def write_jsonl(rows: Sequence[dict] | Iterator[dict], path: Path) -> int:
     return n
 
 
-def read_jsonl(path: Path, *, upgrade_to_current: bool = True) -> list[dict]:
+def read_jsonl(path: Path, *, upgrade_to_current: bool = True) -> list[dict[str, Any]]:
     """Read a corpus JSONL with forward / backward schema compatibility.
 
     Rows whose ``schema_version <= 2`` predate the canonical-6 column
@@ -1087,20 +1088,23 @@ def read_jsonl(path: Path, *, upgrade_to_current: bool = True) -> list[dict]:
 
     Pass ``upgrade_to_current=False`` to get the bare on-disk row.
     """
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
-            row = json.loads(line)
+            decoded: object = json.loads(line)
+            if not isinstance(decoded, dict) or not all(isinstance(key, str) for key in decoded):
+                raise ValueError(f"{path} contains a non-object JSONL row")
+            row = {key: value for key, value in decoded.items() if isinstance(key, str)}
             if upgrade_to_current:
                 _upgrade_row_in_place(row)
             rows.append(row)
     return rows
 
 
-def _upgrade_row_in_place(row: dict) -> None:
+def _upgrade_row_in_place(row: dict[str, Any]) -> None:
     """Fill missing v3 canonical-6 columns with NaN on legacy rows."""
     sv = row.get("schema_version")
     try:
@@ -1199,7 +1203,7 @@ def fine_grid_crfs(
 
 
 def _pick_best_crf(
-    rows: Sequence[dict],
+    rows: Sequence[Mapping[str, Any]],
     *,
     target_vmaf: float | None,
 ) -> int | None:
@@ -1213,8 +1217,10 @@ def _pick_best_crf(
     practice, but tie-broken by score). NaN / failed rows are ignored.
     """
 
-    def _score(row: dict) -> float:
+    def _score(row: Mapping[str, Any]) -> float:
         v = row.get("vmaf_score")
+        if v is None:
+            return float("nan")
         try:
             v = float(v)
         except (TypeError, ValueError):
@@ -1286,8 +1292,8 @@ def coarse_to_fine_search(
     crf_min: int = 10,
     crf_max: int = 50,
     encode_runner: object | None = None,
-    score_runner: object | None = None,
-) -> Iterator[dict]:
+    score_runner: Callable[..., Any] | None = None,
+) -> Iterator[dict[str, Any]]:
     """Run a 2-pass coarse-to-fine CRF search.
 
     Yields the same JSONL rows :func:`iter_rows` does — coarse pass
@@ -1308,7 +1314,7 @@ def coarse_to_fine_search(
     for preset in presets:
         coarse_cells = tuple((preset, c) for c in coarse_grid)
         coarse_job = dataclasses.replace(job, cells=coarse_cells)
-        coarse_rows: list[dict] = []
+        coarse_rows: list[dict[str, Any]] = []
         for row in iter_rows(
             coarse_job,
             opts,
@@ -1338,7 +1344,7 @@ def coarse_to_fine_search(
         ):
             continue
 
-        # mypy: best_crf cannot be None here — _should_skip_refinement
+        # best_crf cannot be None here because _should_skip_refinement
         # would have returned True above.
         assert best_crf is not None
         fine_crfs = fine_grid_crfs(

@@ -272,38 +272,23 @@ non-doc invocations select scope before requiring docs toolchain.
 Paired updates to config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
 
-### Python pre-push scope follows the PR merge base
+### Python type checking is complete and fail closed
 
-`git-hooks/pre-push-mypy.py` implements parent §12.10 for existing
-`ai/` and `scripts/` Python scope. Preserve full merge-base ownership,
-including type changes, rather than intersecting with pre-commit's
-old-tip/new-tip filenames. Rebases can change imports without changing
-owned source file. Keep `always_run: true` and `pass_filenames: false` so
-even empty outgoing diff rechecks that set. Resolve symlinks only for
-safety validation; keep lexical Git paths for selection and mypy. Reject
-outgoing refs different from checked-out HEAD, fail closed on missing
-base/tool/file state. Keep `git-hooks/test-pre-push-mypy.py` registered in
-local hooks and required Pre-Commit CI. No new lint policy introduced.
+Per [ADR-1279](../docs/adr/1279-mypy-fail-closed.md),
+`git-hooks/pre-push-mypy.py` enumerates every tracked `.py` and `.pyi` below
+`ai/` and `scripts/` on every invocation. Preserve `always_run: true` and
+`pass_filenames: false`; command-line filenames, a merge base, and the outgoing
+push set must never narrow the scope. Make, pre-push, and hosted `Python Lint`
+must call this same runner.
 
-Hook fails on findings branch introduces, not inherited ones (ADR-1261).
-Two invariants:
-
-- Paths under `ai/src/` = own `mypy` run with `--explicit-package-bases`.
-  `ai/src` = `mypy_path` base -> path under it has two module names -> mypy
-  refuses run ("Source file found twice under different module names"), so every
-  push touching it failed. `exclude` in `pyproject.toml` stops crawl discovery
-  only, not a path named on command line.
-- Same files re-checked at merge base in disposable worktree; only new
-  fingerprints fail. Fingerprint = path + error code + message, no line number
-  (edit above a finding shifts it, does not change it). Worktree removed in
-  `finally` (ADR-0332 drift guard). CI `mypy` = advisory
-  (`|| echo` in `Python Lint`), inherited findings vary with installed
-  numpy / pandas / torch stubs.
-
-Non-zero exit with no attributable finding = mypy broke -> fail closed, exit 2.
-Do not restore raw exit-status propagation. Do not raise `python_version` from
-`3.10` here: stale, but `3.14` unmasks 175 findings on master
-(T-CI-MYPY-PYTHON-VERSION-STALE-2026-09-19).
+Each source root runs with `--explicit-package-bases` and one canonical module
+identity. `ai/src` remains the import base for `vmaf_train`, `aiutils`, and
+`corpus`; `ai/scripts` and `ai/tests` use the `ai.*` package identity. Do not
+restore `ai/src` exclusions, bare/package double imports, diagnostic baselines,
+per-module `ignore_errors`, `ignore_missing_imports`, or advisory `|| echo`
+handling. Missing Git, mypy, tracked files, or an empty owned scope blocks the
+gate. Keep `git-hooks/test-pre-push-mypy.py` registered in local hooks and the
+required Pre-Commit CI job.
 
 ### `run_unittests.sh` is upstream-mirror
 

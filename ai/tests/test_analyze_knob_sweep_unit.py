@@ -23,6 +23,7 @@ import csv
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,7 +31,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "analyze_knob_sweep.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     # Use a unique module-name to avoid collision with test_knob_sweep_analysis.py
     # which may have already registered "analyze_knob_sweep".  The dataclass
     # machinery resolves SweepRow.__module__ against sys.modules, so the
@@ -48,7 +49,7 @@ def _load_module():
 
 
 @pytest.fixture(scope="module")
-def aks():
+def aks() -> Any:
     return _load_module()
 
 
@@ -57,7 +58,16 @@ def aks():
 # ---------------------------------------------------------------------------
 
 
-def _row(mod, source, codec, rc_mode, bitrate, vmaf, enc_ms, bare=False):
+def _row(
+    mod: Any,
+    source: Any,
+    codec: Any,
+    rc_mode: Any,
+    bitrate: Any,
+    vmaf: Any,
+    enc_ms: Any,
+    bare: Any = False,
+) -> Any:
     return mod.SweepRow(
         source=source,
         codec=codec,
@@ -79,27 +89,27 @@ def _row(mod, source, codec, rc_mode, bitrate, vmaf, enc_ms, bare=False):
 
 
 class TestStableKnobRepr:
-    def test_empty_dict_returns_empty_string(self, aks):
+    def test_empty_dict_returns_empty_string(self, aks: Any) -> None:
         assert aks._stable_knob_repr({}) == ""
 
-    def test_single_entry(self, aks):
+    def test_single_entry(self, aks: Any) -> None:
         assert aks._stable_knob_repr({"aq": "1"}) == "aq=1"
 
-    def test_keys_sorted_alphabetically(self, aks):
+    def test_keys_sorted_alphabetically(self, aks: Any) -> None:
         result = aks._stable_knob_repr({"z": "3", "a": "1", "m": "2"})
         assert result == "a=1,m=2,z=3"
 
-    def test_non_dict_returns_empty_string(self, aks):
+    def test_non_dict_returns_empty_string(self, aks: Any) -> None:
         # Branch: not a Mapping
         assert aks._stable_knob_repr(None) == ""
         assert aks._stable_knob_repr("not-a-dict") == ""
         assert aks._stable_knob_repr(42) == ""
 
-    def test_dict_with_numeric_values_stringified(self, aks):
+    def test_dict_with_numeric_values_stringified(self, aks: Any) -> None:
         result = aks._stable_knob_repr({"crf": 28, "preset": "slow"})
         assert result == "crf=28,preset=slow"
 
-    def test_iteration_order_irrelevant(self, aks):
+    def test_iteration_order_irrelevant(self, aks: Any) -> None:
         # Two dicts with same keys but different insertion order
         d1 = {"b": "2", "a": "1"}
         d2 = {"a": "1", "b": "2"}
@@ -112,27 +122,27 @@ class TestStableKnobRepr:
 
 
 class TestSlug:
-    def test_alphanumeric_unchanged(self, aks):
+    def test_alphanumeric_unchanged(self, aks: Any) -> None:
         assert aks._slug("libx264") == "libx264"
 
-    def test_hyphen_and_underscore_preserved(self, aks):
+    def test_hyphen_and_underscore_preserved(self, aks: Any) -> None:
         assert aks._slug("my-source_01") == "my-source_01"
 
-    def test_spaces_replaced_with_underscore(self, aks):
+    def test_spaces_replaced_with_underscore(self, aks: Any) -> None:
         assert aks._slug("source a") == "source_a"
 
-    def test_slashes_replaced(self, aks):
+    def test_slashes_replaced(self, aks: Any) -> None:
         assert aks._slug("path/to/file") == "path_to_file"
 
-    def test_empty_string_returns_unknown(self, aks):
+    def test_empty_string_returns_unknown(self, aks: Any) -> None:
         assert aks._slug("") == "unknown"
 
-    def test_all_special_chars_replaced(self, aks):
+    def test_all_special_chars_replaced(self, aks: Any) -> None:
         result = aks._slug("!@#$%")
         assert all(c == "_" for c in result)
         assert len(result) == 5
 
-    def test_numbers_preserved(self, aks):
+    def test_numbers_preserved(self, aks: Any) -> None:
         assert aks._slug("1080p") == "1080p"
 
 
@@ -142,11 +152,11 @@ class TestSlug:
 
 
 class TestClosestBareAtBitrate:
-    def test_no_bare_rows_returns_none(self, aks):
+    def test_no_bare_rows_returns_none(self, aks: Any) -> None:
         candidate = _row(aks, "s", "codec", "cq", 2000, 90.0, 4000, bare=False)
         assert aks._closest_bare_at_bitrate(candidate, [], bitrate_tol_pct=5.0) is None
 
-    def test_returns_closest_within_tolerance(self, aks):
+    def test_returns_closest_within_tolerance(self, aks: Any) -> None:
         candidate = _row(aks, "s", "codec", "cq", 2000, 90.0, 4000, bare=False)
         bare_close = _row(aks, "s", "codec", "cq", 2050, 91.0, 4000, bare=True)
         bare_far = _row(aks, "s", "codec", "cq", 3000, 95.0, 4000, bare=True)
@@ -155,13 +165,13 @@ class TestClosestBareAtBitrate:
         )
         assert result is bare_close
 
-    def test_returns_none_when_all_outside_tolerance(self, aks):
+    def test_returns_none_when_all_outside_tolerance(self, aks: Any) -> None:
         candidate = _row(aks, "s", "codec", "cq", 2000, 90.0, 4000)
         bare_far = _row(aks, "s", "codec", "cq", 3000, 92.0, 4000, bare=True)
         result = aks._closest_bare_at_bitrate(candidate, [bare_far], bitrate_tol_pct=5.0)
         assert result is None
 
-    def test_picks_closest_among_multiple_within_tolerance(self, aks):
+    def test_picks_closest_among_multiple_within_tolerance(self, aks: Any) -> None:
         candidate = _row(aks, "s", "codec", "cq", 2000, 90.0, 4000)
         bare_near = _row(aks, "s", "codec", "cq", 2010, 91.0, 4000, bare=True)
         bare_mid = _row(aks, "s", "codec", "cq", 2060, 92.0, 4000, bare=True)
@@ -169,13 +179,13 @@ class TestClosestBareAtBitrate:
         result = aks._closest_bare_at_bitrate(candidate, [bare_mid, bare_near], bitrate_tol_pct=5.0)
         assert result is bare_near  # gap=10 < gap=60
 
-    def test_exact_bitrate_match_returns_that_row(self, aks):
+    def test_exact_bitrate_match_returns_that_row(self, aks: Any) -> None:
         candidate = _row(aks, "s", "codec", "cq", 2000, 90.0, 4000)
         bare = _row(aks, "s", "codec", "cq", 2000, 91.0, 4000, bare=True)
         result = aks._closest_bare_at_bitrate(candidate, [bare], bitrate_tol_pct=1.0)
         assert result is bare
 
-    def test_tolerance_zero_requires_exact_match(self, aks):
+    def test_tolerance_zero_requires_exact_match(self, aks: Any) -> None:
         candidate = _row(aks, "s", "codec", "cq", 2000, 90.0, 4000)
         bare = _row(aks, "s", "codec", "cq", 2001, 91.0, 4000, bare=True)
         result = aks._closest_bare_at_bitrate(candidate, [bare], bitrate_tol_pct=0.0)
@@ -188,16 +198,16 @@ class TestClosestBareAtBitrate:
 
 
 class TestWriteSliceCsv:
-    def test_creates_file_with_correct_name(self, aks, tmp_path):
+    def test_creates_file_with_correct_name(self, aks: Any, tmp_path: Path) -> None:
         key = ("sourceA", "libx264", "cq")
         hull = [_row(aks, "sourceA", "libx264", "cq", 2000, 92.0, 4000, bare=True)]
         path = aks.write_slice_csv(tmp_path, key, hull)
         assert path.exists()
         assert path.name == "pareto_sourceA_libx264_cq.csv"
 
-    def test_csv_has_header_row(self, aks, tmp_path):
+    def test_csv_has_header_row(self, aks: Any, tmp_path: Path) -> None:
         key = ("s", "codec", "rc")
-        hull = []
+        hull: list[Any] = []
         path = aks.write_slice_csv(tmp_path, key, hull)
         with path.open(encoding="utf-8") as fh:
             reader = csv.reader(fh)
@@ -207,7 +217,7 @@ class TestWriteSliceCsv:
         assert "bitrate_kbps" in header
         assert "is_bare_default" in header
 
-    def test_csv_contains_hull_rows(self, aks, tmp_path):
+    def test_csv_contains_hull_rows(self, aks: Any, tmp_path: Path) -> None:
         key = ("clip1", "libx265", "vbr")
         hull = [
             _row(aks, "clip1", "libx265", "vbr", 1500, 88.5, 3000, bare=True),
@@ -221,14 +231,14 @@ class TestWriteSliceCsv:
         assert float(rows[0]["vmaf_score"]) == pytest.approx(88.5, abs=1e-4)
         assert float(rows[1]["bitrate_kbps"]) == pytest.approx(2500.0, abs=1e-2)
 
-    def test_special_chars_in_key_produce_safe_filename(self, aks, tmp_path):
+    def test_special_chars_in_key_produce_safe_filename(self, aks: Any, tmp_path: Path) -> None:
         key = ("clip/01", "h264.nvenc", "cbr")
-        hull = []
+        hull: list[Any] = []
         path = aks.write_slice_csv(tmp_path, key, hull)
         assert "/" not in path.name
         assert "." not in path.name.replace(".csv", "")
 
-    def test_creates_out_dir_if_missing(self, aks, tmp_path):
+    def test_creates_out_dir_if_missing(self, aks: Any, tmp_path: Path) -> None:
         key = ("s", "c", "r")
         subdir = tmp_path / "nested" / "reports"
         assert not subdir.exists()
@@ -242,16 +252,16 @@ class TestWriteSliceCsv:
 
 
 class TestWriteSummaryMd:
-    def _hull_row(self, mod, bitrate=2000, vmaf=92.0):
+    def _hull_row(self, mod: Any, bitrate: Any = 2000, vmaf: Any = 92.0) -> Any:
         return _row(mod, "src", "libx264", "cq", bitrate, vmaf, 4000, bare=True)
 
-    def test_creates_summary_md(self, aks, tmp_path):
+    def test_creates_summary_md(self, aks: Any, tmp_path: Path) -> None:
         hulls = {("src", "libx264", "cq"): [self._hull_row(aks)]}
         path = aks.write_summary_md(tmp_path, hulls, [])
         assert path.exists()
         assert path.name == "summary.md"
 
-    def test_summary_contains_slice_count(self, aks, tmp_path):
+    def test_summary_contains_slice_count(self, aks: Any, tmp_path: Path) -> None:
         hulls = {
             ("src", "libx264", "cq"): [self._hull_row(aks)],
             ("src", "libx265", "vbr"): [self._hull_row(aks, 3000, 95.0)],
@@ -262,13 +272,13 @@ class TestWriteSummaryMd:
         assert "libx264" in content
         assert "libx265" in content
 
-    def test_no_regressions_message_when_empty(self, aks, tmp_path):
+    def test_no_regressions_message_when_empty(self, aks: Any, tmp_path: Path) -> None:
         hulls = {("src", "codec", "rc"): [self._hull_row(aks)]}
         path = aks.write_summary_md(tmp_path, hulls, regressions=[])
         content = path.read_text(encoding="utf-8")
         assert "No regressions detected" in content
 
-    def test_regression_table_when_regressions_present(self, aks, tmp_path):
+    def test_regression_table_when_regressions_present(self, aks: Any, tmp_path: Path) -> None:
         hulls = {("src", "libx264", "cq"): [self._hull_row(aks)]}
         regression = {
             "source": "src",
@@ -285,7 +295,7 @@ class TestWriteSummaryMd:
         assert "-3.50" in content
         assert "must not ship" in content
 
-    def test_creates_out_dir_if_missing(self, aks, tmp_path):
+    def test_creates_out_dir_if_missing(self, aks: Any, tmp_path: Path) -> None:
         subdir = tmp_path / "new_reports"
         assert not subdir.exists()
         aks.write_summary_md(subdir, {}, [])

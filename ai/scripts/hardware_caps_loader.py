@@ -41,14 +41,18 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
@@ -163,7 +167,7 @@ class HardwareCapsTable:
                 return row
         return None
 
-    def __iter__(self) -> Iterable[HardwareCapRow]:  # type: ignore[override]
+    def __iter__(self) -> Iterator[HardwareCapRow]:
         return iter(self.rows)
 
     def __len__(self) -> int:
@@ -180,7 +184,7 @@ def _parse_row(raw: dict[str, str], *, source: str) -> HardwareCapRow:
     vendor = raw["vendor"].strip().lower()
     if vendor not in {"intel", "amd", "nvidia"}:
         raise HardwareCapsError(
-            f"{source}: arch={arch_name!r}: vendor must be intel|amd|nvidia, " f"got {vendor!r}"
+            f"{source}: arch={arch_name!r}: vendor must be intel|amd|nvidia, got {vendor!r}"
         )
     try:
         gen_year = int(raw["gen_year"])
@@ -243,14 +247,14 @@ def _parse_max_res(
             continue
         if "=" not in entry:
             raise HardwareCapsError(
-                f"{source}: arch={arch_name!r}: max_res entry {entry!r} " "must be codec=WxH"
+                f"{source}: arch={arch_name!r}: max_res entry {entry!r} must be codec=WxH"
             )
         codec, dims = entry.split("=", 1)
         codec = codec.strip().lower()
         match = re.fullmatch(r"(\d+)x(\d+)", dims.strip())
         if not match:
             raise HardwareCapsError(
-                f"{source}: arch={arch_name!r}: max_res dims {dims!r} " "must be WxH"
+                f"{source}: arch={arch_name!r}: max_res dims {dims!r} must be WxH"
             )
         out[codec] = (int(match.group(1)), int(match.group(2)))
     missing = [c for c in codecs if c not in out]

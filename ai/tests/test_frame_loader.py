@@ -26,7 +26,7 @@ class _FakeProcess:
         return 0
 
 
-def _popen_factory(payload: bytes, captured: dict[str, Any]):
+def _popen_factory(payload: bytes, captured: dict[str, Any]) -> Any:
     def fake_popen(argv: list[str], *, stdout: int, stderr: int | None = None) -> _FakeProcess:
         captured["argv"] = argv
         captured["stdout"] = stdout
@@ -96,7 +96,7 @@ def test_iter_frames_packed_color_keeps_channel_axis(pix_fmt: str, channels: int
 
 
 def test_iter_frames_rejects_unsupported_pix_fmt_before_spawning() -> None:
-    def should_not_run(*_args, **_kwargs):
+    def should_not_run(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("ffmpeg should not be spawned")
 
     source = FrameSource(path=Path("clip.mov"), width=2, height=2, pix_fmt="yuv420p")

@@ -70,9 +70,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -104,7 +107,7 @@ def _synthesize_smoke_corpus(
     n_features: int = 6,
     num_codecs: int = 6,
     seed: int = 1234,
-):  # type: ignore[no-untyped-def]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Synthesise a tiny smoke corpus that mimics the v2 input shape.
 
     Returns (features, codec_onehot, vmaf, codec_idx). Values are
@@ -145,7 +148,7 @@ def _train_one_member(
     weight_decay: float,
     seed: int,
     num_codecs: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train one ``FRRegressor`` ensemble member; return the model."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -176,14 +179,14 @@ def _train_one_member(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
 def _predict_member(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     x_features: np.ndarray,
     x_codec: np.ndarray,
 ) -> np.ndarray:
@@ -194,7 +197,7 @@ def _predict_member(
             torch.from_numpy(x_features.astype(np.float32)),
             torch.from_numpy(x_codec.astype(np.float32)),
         )
-    return out.cpu().numpy().reshape(-1)
+    return np.asarray(out.cpu().numpy(), dtype=np.float32).reshape(-1)
 
 
 def _ensemble_stats(member_preds: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -236,7 +239,7 @@ def _split_conformal_q(
 
 
 def _export_member(
-    model,  # type: ignore[no-untyped-def]
+    model: "torch.nn.Module",
     *,
     onnx_path: Path,
     num_codecs: int,
@@ -486,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     if cal_frac > 0.0:
         if n < 10:
             print(
-                "[fr-v2-ens] warning: corpus too small for conformal split; " "disabling.",
+                "[fr-v2-ens] warning: corpus too small for conformal split; disabling.",
                 file=sys.stderr,
             )
             cal_frac = 0.0
@@ -528,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
             num_codecs=NUM_CODECS,
         )
         member_preds_train.append(_predict_member(model, feat_train, cod_train))
-        if feat_cal is not None:
+        if feat_cal is not None and cod_cal is not None:
             member_preds_cal.append(_predict_member(model, feat_cal, cod_cal))
 
         if not args.no_export:
@@ -553,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
 
     conformal_q: float | None = None
     cal_summary: dict[str, Any] | None = None
-    if feat_cal is not None and len(member_preds_cal) > 0:
+    if feat_cal is not None and y_cal is not None and len(member_preds_cal) > 0:
         member_preds_cal_arr = np.vstack(member_preds_cal)
         mu_cal, sigma_cal = _ensemble_stats(member_preds_cal_arr)
         alpha = max(1e-6, 1.0 - args.nominal_coverage)

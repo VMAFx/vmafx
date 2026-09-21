@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import onnx
 from onnx import TensorProto, helper
@@ -31,7 +32,7 @@ def _make_nr(path: Path, channels: int) -> None:
     onnx.save(model, str(path))
 
 
-def _write_sidecar(onnx_path: Path, **over) -> None:
+def _write_sidecar(onnx_path: Path, **over: Any) -> None:
     doc = {
         "schema_version": 1,
         "name": onnx_path.stem,

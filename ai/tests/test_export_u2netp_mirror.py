@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from aiutils.file_utils import sha256
+
 torch = pytest.importorskip("torch")
 onnx = pytest.importorskip("onnx")
 
@@ -17,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
-import export_u2netp_mirror as exporter  # noqa: E402
+from ai.scripts import export_u2netp_mirror as exporter  # noqa: E402
 
 
 def _write_fake_upstream(root: Path) -> Path:
@@ -86,17 +88,17 @@ def test_export_u2netp_mirror_writes_contract_and_manifest(tmp_path: Path) -> No
     assert graph.graph.output[0].name == "saliency_map"
     metadata = {prop.key: prop.value for prop in graph.metadata_props}
     assert metadata["lusoris.model_id"] == "u2netp_mirror_v1"
-    assert metadata["lusoris.upstream_checkpoint_sha256"] == exporter.sha256(checkpoint)
+    assert metadata["lusoris.upstream_checkpoint_sha256"] == sha256(checkpoint)
 
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["schema"] == "u2netp-mirror-export-manifest-v1"
     assert payload["model_id"] == "u2netp_mirror_v1"
-    assert payload["upstream"]["checkpoint_sha256"] == exporter.sha256(checkpoint)
-    assert payload["upstream"]["license_sha256"] == exporter.sha256(upstream / "LICENSE")
+    assert payload["upstream"]["checkpoint_sha256"] == sha256(checkpoint)
+    assert payload["upstream"]["license_sha256"] == sha256(upstream / "LICENSE")
     assert payload["upstream"]["notice_present"] is False
     assert payload["export"]["output_name"] == "saliency_map"
     assert payload["export"]["selected_upstream_output"] == "d0"
-    assert payload["outputs"]["onnx_sha256"] == exporter.sha256(output)
+    assert payload["outputs"]["onnx_sha256"] == sha256(output)
     assert payload["run_provenance"]["entrypoint"]["path"] == ("ai/scripts/export_u2netp_mirror.py")
 
 

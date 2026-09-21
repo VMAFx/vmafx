@@ -11,8 +11,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
-from train_fr_regressor_v2 import _write_sidecar_and_registry as write_v2_sidecar  # noqa: E402
-from train_fr_regressor_v3 import write_sidecar_and_registry as write_v3_sidecar  # noqa: E402
+from ai.scripts.train_fr_regressor_v2 import (  # noqa: E402
+    _write_sidecar_and_registry as write_v2_sidecar,
+)
+from ai.scripts.train_fr_regressor_v3 import (  # noqa: E402
+    write_sidecar_and_registry as write_v3_sidecar,
+)
 
 
 def _registry(path: Path) -> Path:

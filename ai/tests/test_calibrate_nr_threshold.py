@@ -9,13 +9,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-import calibrate_nr_threshold
+from ai.scripts import calibrate_nr_threshold
 
 
-def test_fr_vmaf_uses_current_cli_pixel_format_and_quiet(monkeypatch, tmp_path: Path) -> None:
+def test_fr_vmaf_uses_current_cli_pixel_format_and_quiet(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     ref = tmp_path / "ref.yuv"
     dist = tmp_path / "dist.yuv"
     ref.write_bytes(b"ref")
@@ -30,7 +34,7 @@ def test_fr_vmaf_uses_current_cli_pixel_format_and_quiet(monkeypatch, tmp_path: 
         captured["cmd"] = cmd
         return Completed()
 
-    monkeypatch.setattr(calibrate_nr_threshold.subprocess, "run", fake_run)
+    monkeypatch.setattr("ai.scripts.calibrate_nr_threshold.subprocess.run", fake_run)
 
     score = calibrate_nr_threshold._run_fr_vmaf(
         ref,
@@ -84,7 +88,9 @@ def test_detect_yuv_geometry_knows_netflix_public_1080p_names() -> None:
     )
 
 
-def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_nr_threshold_calibration_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     yuv = corpus / "sample_64x64.yuv"
@@ -96,18 +102,18 @@ def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: 
     model_onnx.write_bytes(b"fake-onnx")
     report_dir = tmp_path / "reports"
 
-    def fake_encode(*_args, output: Path, **_kwargs) -> bool:
+    def fake_encode(*_args: Any, output: Path, **_kwargs: Any) -> bool:
         output.write_bytes(b"encoded")
         return True
 
-    def fake_decode(_encoded: Path, output: Path, **_kwargs) -> bool:
+    def fake_decode(_encoded: Path, output: Path, **_kwargs: Any) -> bool:
         output.write_bytes(b"decoded")
         return True
 
-    def fake_fr(_ref_yuv: Path, dist_yuv: Path, **_kwargs) -> float:
+    def fake_fr(_ref_yuv: Path, dist_yuv: Path, **_kwargs: Any) -> float:
         return 92.0 if "crf20" in dist_yuv.name else 82.0
 
-    def fake_nr(dist_yuv: Path, **kwargs) -> float:
+    def fake_nr(dist_yuv: Path, **kwargs: Any) -> float:
         assert kwargs["nr_use_gpu_ep"] is False
         return 90.0 if "crf20" in dist_yuv.name else 80.0
 
@@ -158,7 +164,9 @@ def test_nr_threshold_calibration_records_run_provenance(monkeypatch, tmp_path: 
     assert provenance["args"]["nr_ep"] == "cpu"
 
 
-def test_nr_threshold_single_sample_requires_delta_override(monkeypatch, tmp_path: Path) -> None:
+def test_nr_threshold_single_sample_requires_delta_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     yuv = corpus / "sample_64x64.yuv"
@@ -203,7 +211,9 @@ def test_nr_threshold_single_sample_requires_delta_override(monkeypatch, tmp_pat
     assert "calibration_threshold" not in json.loads(model_json.read_text(encoding="utf-8"))
 
 
-def test_nr_threshold_quality_gate_rejects_weak_correlation(monkeypatch, tmp_path: Path) -> None:
+def test_nr_threshold_quality_gate_rejects_weak_correlation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     yuv = corpus / "sample_64x64.yuv"
@@ -271,7 +281,7 @@ def test_nr_threshold_quality_gate_rejects_weak_correlation(monkeypatch, tmp_pat
 
 
 def test_nr_threshold_quality_gate_override_records_weak_status(
-    monkeypatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     corpus = tmp_path / "corpus"
     corpus.mkdir()

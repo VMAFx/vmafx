@@ -60,11 +60,12 @@ def default_root() -> Path:
 
 
 def _humanize(n: int) -> str:
+    value = float(n)
     for unit in ("B", "KiB", "MiB", "GiB"):
-        if n < 1024:
-            return f"{n:.1f} {unit}"
-        n = n / 1024  # type: ignore[assignment]
-    return f"{n:.1f} TiB"
+        if value < 1024:
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TiB"
 
 
 def _download(url: str, dst: Path, min_bytes: int) -> Path:
@@ -122,7 +123,7 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
     final_sz = dst.stat().st_size
     if final_sz < min_bytes:
         raise RuntimeError(
-            f"Download truncated: {dst} is only {final_sz} bytes " f"(expected >= {min_bytes})"
+            f"Download truncated: {dst} is only {final_sz} bytes (expected >= {min_bytes})"
         )
     print(f"[konvid] {dst.name} done — {_humanize(final_sz)}")
     return dst

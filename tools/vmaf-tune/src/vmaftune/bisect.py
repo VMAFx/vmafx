@@ -53,10 +53,11 @@ import os
 import shutil
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from .codec_adapters import get_adapter
+from .codec_adapters import CodecAdapter, get_adapter
 from .defaultmodel import DEFAULT_MODEL
 from .encode import EncodeRequest, bitrate_kbps, run_encode
 from .score import VMAF_RAW_SUFFIXES, ScoreRequest, maybe_decode_distorted, run_score
@@ -510,9 +511,9 @@ def bisect_target_vmaf(
     max_iterations: int = 8,
     vmaf_model: str = DEFAULT_MODEL,
     score_backend: str | None = None,
-    encode_runner: object | None = None,
-    score_runner: object | None = None,
-    decode_runner: object | None = None,
+    encode_runner: Callable[..., Any] | None = None,
+    score_runner: Callable[..., Any] | None = None,
+    decode_runner: Callable[..., Any] | None = None,
     ffmpeg_bin: str = "ffmpeg",
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
@@ -741,6 +742,8 @@ def bisect_target_vmaf(
             # sentinel BisectResult with ok=False and error starting with
             # _NR_SKIP_SENTINEL. Parse direction + calibrated NR-VMAF from the payload.
             if not sample.ok and sample.error.startswith(_NR_SKIP_SENTINEL):
+                if nr_proxy_backend is None:
+                    raise RuntimeError("NR skip result received without an NR proxy backend")
                 _fr_calls_saved += 1
                 _payload = sample.error[len(_NR_SKIP_SENTINEL) :]
                 _parts = _payload.split(";", 1)
@@ -754,7 +757,7 @@ def bisect_target_vmaf(
                     mid,
                     nr_val,
                     target_vmaf,
-                    nr_proxy_backend.calibration_threshold,  # type: ignore[union-attr]
+                    nr_proxy_backend.calibration_threshold,
                     direction,
                     n_iterations,
                 )
@@ -864,7 +867,7 @@ def bisect_target_vmaf(
             workdir_ctx.cleanup()
 
 
-def _default_preset(adapter: object) -> str:
+def _default_preset(adapter: CodecAdapter) -> str:
     """Return the adapter's mid-range preset.
 
     The codec-adapter contract names ``"medium"`` for the canonical
@@ -872,7 +875,7 @@ def _default_preset(adapter: object) -> str:
     so we prefer that when the adapter advertises it; otherwise we
     pick the middle of the ``presets`` tuple.
     """
-    presets = getattr(adapter, "presets", None)
+    presets = adapter.presets
     if not presets:
         return "medium"
     if "medium" in presets:
@@ -947,12 +950,12 @@ def _encode_and_score(
     sample_clip_seconds: float,
     vmaf_model: str,
     score_backend: str | None,
-    encode_runner: object | None = None,
-    score_runner: object | None = None,
+    encode_runner: Callable[..., Any] | None = None,
+    score_runner: Callable[..., Any] | None = None,
     ffmpeg_bin: str,
     vmaf_bin: str,
     workdir: Path,
-    decode_runner: object | None = None,
+    decode_runner: Callable[..., Any] | None = None,
     nr_proxy_backend: NRProxyBackend | None = None,
     nr_target_vmaf: float | None = None,
 ) -> BisectResult:
@@ -1253,9 +1256,9 @@ def make_bisect_predicate(
     max_iterations: int = 8,
     vmaf_model: str = DEFAULT_MODEL,
     score_backend: str | None = None,
-    encode_runner: object | None = None,
-    score_runner: object | None = None,
-    decode_runner: object | None = None,
+    encode_runner: Callable[..., Any] | None = None,
+    score_runner: Callable[..., Any] | None = None,
+    decode_runner: Callable[..., Any] | None = None,
     ffmpeg_bin: str = "ffmpeg",
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,

@@ -64,7 +64,7 @@ def _make_ffprobe_response(
         ],
         "format": {"duration": duration},
     }
-    proc = MagicMock(spec=subprocess.CompletedProcess)
+    proc = MagicMock(spec=subprocess.CompletedProcess[str])
     proc.returncode = rc
     proc.stdout = json.dumps(payload)
     proc.stderr = ""
@@ -152,7 +152,7 @@ def test_probe_geometry_bad_rc(tmp_path: Path) -> None:
 def test_probe_geometry_no_streams(tmp_path: Path) -> None:
     clip = tmp_path / "clip.mp4"
     clip.write_bytes(b"\x00")
-    proc = MagicMock(spec=subprocess.CompletedProcess)
+    proc = MagicMock(spec=subprocess.CompletedProcess[str])
     proc.returncode = 0
     proc.stdout = json.dumps({"streams": [], "format": {}})
     proc.stderr = ""
@@ -204,11 +204,11 @@ def test_should_attempt_logic(tmp_path: Path) -> None:
 
 def test_read_sha_index(tmp_path: Path) -> None:
     jsonl = tmp_path / "out.jsonl"
-    rows = [
+    rows: list[dict[str, object] | str] = [
         {"src_sha256": "aaa", "mos": 3.0},
         {"src_sha256": "bbb", "mos": 4.0},
         {"not_sha": "ccc"},  # should be ignored
-        "malformed line\n",  # type: ignore[list-item]
+        "malformed line\n",
     ]
     with jsonl.open("w") as f:
         for row in rows:
@@ -383,7 +383,7 @@ def test_download_clip_success(tmp_path: Path) -> None:
     dest = tmp_path / "clip.mp4"
     part = dest.with_suffix(".mp4.part")
 
-    def fake_runner(cmd, **_kwargs):
+    def fake_runner(cmd: Any, **_kwargs: Any) -> Any:
         part.write_bytes(b"video")
         proc = MagicMock()
         proc.returncode = 0

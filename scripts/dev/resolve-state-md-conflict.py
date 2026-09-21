@@ -54,16 +54,16 @@ SPLIT_MARK = "=" * 7
 THEIRS_MARK = ">" * 7
 
 
-def bug_id(line):
+def bug_id(line: str) -> str | None:
     """Return the T-… bug id a state.md row declares, or None for other text."""
     match = ID_RE.search(line)
     return match.group(1) if match else None
 
 
-def resolve(path):
+def resolve(path: str | Path) -> int:
     """Rewrite `path` in place, resolving every conflict hunk. Returns the count."""
     lines = Path(path).read_text(encoding="utf-8").split("\n")
-    out = []
+    out: list[str] = []
     index = 0
     hunks = 0
     while index < len(lines):
@@ -72,8 +72,8 @@ def resolve(path):
             index += 1
             continue
 
-        ours = []
-        theirs = []
+        ours: list[str] = []
+        theirs: list[str] = []
         index += 1
         while not lines[index].startswith(SPLIT_MARK):
             ours.append(lines[index])
@@ -106,7 +106,7 @@ def resolve(path):
 MIN_ARGV = 2
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     if len(argv) < MIN_ARGV:
         print(f"usage: {argv[0]} docs/state.md [...]", file=sys.stderr)
         return 2

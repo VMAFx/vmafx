@@ -37,13 +37,17 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
@@ -53,7 +57,7 @@ from ai.data.feature_extractor import (  # noqa: E402
     FULL_FEATURES,
     extract_features,
 )
-from ai.data.netflix_loader import iter_pairs  # noqa: E402
+from ai.data.netflix_loader import NetflixPair, iter_pairs  # noqa: E402
 from ai.data.scores import resolve_teacher_model, teacher_scores  # noqa: E402
 
 # isort: split
@@ -75,11 +79,11 @@ def _per_clip_cache_path(
 
 
 def _load_or_compute(
-    pair,
+    pair: NetflixPair,
     cache_dir: Path,
     vmaf_binary: Path,
     vmaf_model: str | Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     resolved = resolve_teacher_model(vmaf_model)
     src = pair.source
     stem = pair.dis_path.stem
@@ -93,7 +97,7 @@ def _load_or_compute(
             list(payload.get("feature_names", [])) == list(FULL_FEATURES)
             and payload.get("teacher_model", resolved.name) == resolved.name
         ):
-            return payload
+            return {str(key): value for key, value in payload.items()}
 
     feats = extract_features(
         pair.ref_path,
@@ -231,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     resolved_teacher = resolve_teacher_model(args.vmaf_model)
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     pairs = list(iter_pairs(args.data_root, max_pairs=args.max_pairs))
     print(
         f"[extract] {len(pairs)} pairs; FULL_FEATURES = {len(FULL_FEATURES)} features; "

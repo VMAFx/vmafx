@@ -78,9 +78,12 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, describe_path, write_manifest_json
@@ -225,7 +228,7 @@ def _set_seed(seed: int) -> None:
 
     np.random.seed(seed)
     try:
-        import torch  # type: ignore[import-not-found]
+        import torch
 
         torch.manual_seed(seed)
         if hasattr(torch, "cuda") and torch.cuda.is_available():
@@ -259,11 +262,12 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 def _load_parquet(path: Path) -> list[dict[str, Any]]:
     """Load a FULL_FEATURES parquet corpus drop into a list of dicts."""
     try:
-        import pandas as pd  # type: ignore[import-not-found]
+        import pandas as pd
     except ImportError as exc:
         raise RuntimeError("pandas is required for --feature-parquet corpus loading") from exc
     frame = pd.read_parquet(path)
-    return frame.to_dict(orient="records")
+    records = frame.to_dict(orient="records")
+    return [{str(key): value for key, value in record.items()} for record in records]
 
 
 def _load_corpus_rows(path: Path) -> list[dict[str, Any]]:
@@ -562,22 +566,22 @@ def _row_feature_value(
         bitdepth = _safe_float(row.get("feature_bitdepth"))
         return (bitdepth - 8.0) / 4.0 if math.isfinite(bitdepth) else math.nan
     if name in CHUG_HDR_DISPLAY_FEATURES:
-        value = _display_feature_from_mapping(row, name)
-        if math.isfinite(value):
-            return value
+        display_value = _display_feature_from_mapping(row, name)
+        if math.isfinite(display_value):
+            return display_value
         if display_profile is not None:
             return _safe_float(display_profile.get(name))
         return math.nan
 
-    value = row.get(name)
-    primary_f = _safe_float(value)
+    raw_value = row.get(name)
+    primary_f = _safe_float(raw_value)
     if not math.isfinite(primary_f):
         # Parquet corpora produced by materialisers store per-clip temporal
         # averages under ``<feature>_mean`` (e.g. ``adm2_mean``).  When a
         # parquet file has mixed columns, pandas fills absent slots with NaN
         # rather than omitting the key, so NaN must also fall back.
-        value = row.get(f"{name}_mean")
-        primary_f = _safe_float(value)
+        raw_value = row.get(f"{name}_mean")
+        primary_f = _safe_float(raw_value)
     return primary_f
 
 
@@ -597,17 +601,14 @@ def _row_to_features(
     canonical-6 / saliency / shot-metadata columns get bolted on in
     follow-up PRs.
     """
-    mos = row.get("mos")
-    try:
-        mos_f = float(mos)
-    except (TypeError, ValueError):
-        mos_f = math.nan
+    mos_f = _safe_float(row.get("mos"))
     if not math.isfinite(mos_f):
-        raw_mos = row.get("mos_raw_0_100")
-        try:
-            mos_f = MOS_MIN + (MOS_MAX - MOS_MIN) * (float(raw_mos) / 100.0)
-        except (TypeError, ValueError):
-            mos_f = math.nan
+        raw_mos = _safe_float(row.get("mos_raw_0_100"))
+        mos_f = (
+            MOS_MIN + (MOS_MAX - MOS_MIN) * (raw_mos / 100.0)
+            if math.isfinite(raw_mos)
+            else math.nan
+        )
     if not (math.isfinite(mos_f) and MOS_MIN <= mos_f <= MOS_MAX):
         # KonViD's published MOS values live in [1, 5]; out-of-range
         # rows indicate a schema mismatch and are dropped rather than
@@ -827,7 +828,7 @@ def _build_model(
     hidden: int = 64,
     depth: int = 2,
     dropout: float = 0.1,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Build a small ``nn.Module`` MLP. Imported torch lazily."""
     import torch
     from torch import nn
@@ -861,11 +862,11 @@ def _build_model(
     return MOSHead()
 
 
-def _count_parameters(model) -> int:  # type: ignore[no-untyped-def]
+def _count_parameters(model: "torch.nn.Module") -> int:
     return int(sum(p.numel() for p in model.parameters()))
 
 
-def _resolve_device(device: str):  # type: ignore[no-untyped-def]
+def _resolve_device(device: str) -> "torch.device":
     """Resolve the requested PyTorch training device."""
     import torch
 
@@ -934,7 +935,7 @@ def _train_one_fold(
     seed: int,
     n_features: int,
     device: str = "cpu",
-) -> tuple[np.ndarray, dict[str, float]]:
+) -> tuple[np.ndarray, dict[str, Any]]:
     """Train one fold; return ``(val_pred, fold_metrics)``."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -959,7 +960,7 @@ def _train_one_fold(
             opt.zero_grad()
             pred = model(fb, eb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     with torch.no_grad():
@@ -994,7 +995,7 @@ def _train_full(
     seed: int,
     n_features: int,
     device: str = "cpu",
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train one model on the full corpus — the ship checkpoint."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
@@ -1019,17 +1020,17 @@ def _train_full(
             opt.zero_grad()
             pred = model(fb, eb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
 def _export_onnx(
-    model,
+    model: "torch.nn.Module",
     onnx_path: Path,
     n_features: int = N_FEATURES,
-) -> str:  # type: ignore[no-untyped-def]
+) -> str:
     """Export the trained model as opset-17 ONNX. Returns sha256."""
     import torch
 
@@ -1324,8 +1325,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if display_profile is not None and not uses_display_profile:
         print(
-            f"[{args.log_prefix}] display profile ignored by feature schema "
-            f"{args.feature_schema}",
+            f"[{args.log_prefix}] display profile ignored by feature schema {args.feature_schema}",
             file=sys.stderr,
         )
 

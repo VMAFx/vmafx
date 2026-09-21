@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -98,7 +99,7 @@ _SAL_V2_JSON = {
 }
 
 
-def _write_json(path: Path, data: dict) -> None:
+def _write_json(path: Path, data: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -413,7 +414,7 @@ def test_render_report_predictor_card_data(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_main_prints_to_stdout(tmp_path: Path, capsys) -> None:
+def test_main_prints_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _build_minimal_repo(tmp_path)
     rc = tdr.main(["--repo-root", str(tmp_path)])
     assert rc == 0

@@ -103,5 +103,6 @@ def test_scan_entry_dataclass_is_frozen() -> None:
     import dataclasses
 
     entry = manifest_scan.ScanEntry(key="k", path="p", sha256="s", mos=None)
+    frozen_field = "mos"
     with pytest.raises(dataclasses.FrozenInstanceError):
-        entry.mos = 1.0  # type: ignore[misc]
+        setattr(entry, frozen_field, 1.0)

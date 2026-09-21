@@ -44,9 +44,9 @@ CONFLICT = "\n".join(
 DEFAULT_SCRIPT = Path(__file__).with_name("resolve-state-md-conflict.py")
 
 
-def check(out):
+def check(out: str) -> list[str]:
     """Return the list of assertion failures for a resolved state.md body."""
-    failures = []
+    failures: list[str] = []
     if any(mark * 7 in out for mark in ("<", "=", ">")):
         failures.append("conflict markers survived")
     if out.count("T-SHARED-ROW-2026-08-01") != 1:
@@ -62,7 +62,7 @@ def check(out):
     return failures
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     script = Path(argv[1]).resolve() if len(argv) > 1 else DEFAULT_SCRIPT.resolve()
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "state.md"

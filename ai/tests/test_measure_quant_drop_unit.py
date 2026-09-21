@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -20,7 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "measure_quant_drop.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("mqd_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -77,12 +78,12 @@ def test_gate_one_marks_missing_models(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _fake_session_factory(noise_scale: float = 0.0, seed: int = 0):
+def _fake_session_factory(noise_scale: float = 0.0, seed: int = 0) -> Any:
     """Build a callable returning an InferenceSession-like double."""
 
     rng = np.random.default_rng(seed)
 
-    def _make(_path, providers):
+    def _make(_path: Any, providers: Any) -> Any:
         sess = MagicMock()
         inp = MagicMock()
         inp.name = "x"
@@ -90,7 +91,7 @@ def _fake_session_factory(noise_scale: float = 0.0, seed: int = 0):
         out = MagicMock()
         out.name = "y"
 
-        def _run(_outputs, feeds):
+        def _run(_outputs: Any, feeds: Any) -> Any:
             x = feeds["x"]
             base = x.sum(axis=-1, keepdims=True)
             if noise_scale > 0:
@@ -130,7 +131,7 @@ def test_measure_records_drop_when_outputs_diverge(tmp_path: Path) -> None:
     import onnxruntime as ort
 
     # fp32 returns base, int8 returns base + noise.
-    def factory(path, providers):
+    def factory(path: Any, providers: Any) -> Any:
         if "int8" in str(path):
             return _fake_session_factory(noise_scale=0.5, seed=7)(path, providers)
         return _fake_session_factory(noise_scale=0.0, seed=0)(path, providers)
@@ -206,7 +207,7 @@ def test_gate_one_fail_over_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_main_returns_2_when_registry_load_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    def bust():
+    def bust() -> None:
         raise OSError("synthetic")
 
     monkeypatch.setattr(MQD, "_load_registry", bust)
@@ -275,7 +276,7 @@ def test_override_bypasses_registry_entirely(
 ) -> None:
     """The override path must not touch registry.json — that is its whole point."""
 
-    def bust():
+    def bust() -> None:
         raise AssertionError("_load_registry must not be called on the override path")
 
     monkeypatch.setattr(MQD, "_load_registry", bust)

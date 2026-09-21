@@ -25525,6 +25525,9 @@ ADR-0519.
   by ADR-1207's ISA-invariance gate. See ADR-1253.
 
 
+- Made strict Python 3.14 type checking a required, fail-closed whole-scope gate for every tracked Python source under `ai/` and `scripts/`, removing the merge-base baseline and advisory-CI bypass.
+
+
 - **The local pre-push type check no longer blocks a branch over findings it did
   not introduce, and no longer refuses `ai/src/` outright.** `mypy` in CI is
   advisory by design, because numpy, pandas and torch stub coverage is uneven, so

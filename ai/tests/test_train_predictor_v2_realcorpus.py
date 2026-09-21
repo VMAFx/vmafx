@@ -25,13 +25,14 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "ai" / "scripts"))
 
-import train_predictor_v2_realcorpus as trainer  # noqa: E402
+from ai.scripts import train_predictor_v2_realcorpus as trainer  # noqa: E402
 
 # ---------------------------------------------------------------------
 # 1. Gate enforcement — the load-bearing constraint
@@ -117,7 +118,7 @@ def test_gate_reports_no_folds_as_failure() -> None:
 # ---------------------------------------------------------------------
 
 
-def _row(src: str, score: float, **extra) -> dict:
+def _row(src: str, score: float, **extra: Any) -> dict[str, Any]:
     return {
         "encoder": "libx264",
         "src": src,
