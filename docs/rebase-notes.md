@@ -1,6 +1,10 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/hiss21-core-tools — `yuv_input_open` cleanup path is fork-shaped (2026-09-21)
+
+Upstream keeps the `goto fail` form; the fork splits the pixel-format and buffer-size decision into `yuv_input_set_plane_geometry()` (ADR-0977's size_t-precision cast lives there now), so resolve a sync conflict in favour of the helper rather than restoring the label.
+
 ## fix/configured-lint-warning-exit — diagnostics cannot pass as green (2026-09-21)
 
 The fork-local configured-lint driver must pass `--warnings-as-errors=*` to

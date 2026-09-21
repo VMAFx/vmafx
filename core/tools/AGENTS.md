@@ -180,7 +180,12 @@ tools/
   `width` / `height` (YUV) **before** multiply. 4:4:4 paths
   in `y4m_input.c` already cast for same reason. If upstream
   re-introduces `pic_w * pic_h` in `int` precision on sync, keep
-  fork's cast.
+  fork's cast. In `yuv_input.c` that cast now lives in
+  `yuv_input_set_plane_geometry()`, which `yuv_input_open` calls in place
+  of upstream's `switch` plus `goto fail` label. Helper returns -1 for
+  unsupported `pix_fmt`; caller frees reader state and returns NULL, same
+  as label did. Sync conflict here resolves to fork's helper, not
+  upstream's label — cast must not follow label back.
   **bench GPU-state lifetime invariant**:
   `BenchGpuState` owns CUDA / SYCL handles. `bench_feature()` and
   `run_feature_collect()` execute guarded stages, then call
