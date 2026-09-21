@@ -132,8 +132,8 @@ func registerCorpusInputFlags(cmd *cobra.Command, flags *corpusFlags) {
 	cmd.Flags().StringVar(&flags.output, "output", "corpus.jsonl",
 		"JSONL output path (default corpus.jsonl)")
 	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir",
-		filepath.Join(".workingdir2", "encodes"),
-		"Scratch dir for encodes (default .workingdir2/encodes, gitignored)")
+		filepath.Join(".workingdir", "cache", "vmafx-tune", "encodes"),
+		"Scratch dir for encodes (default .workingdir/cache/vmafx-tune/encodes, gitignored)")
 	cmd.Flags().BoolVar(&flags.keepEncodes, "keep-encodes", false,
 		"Retain encoded outputs after scoring (default: delete)")
 	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", corpus.Model1080P,

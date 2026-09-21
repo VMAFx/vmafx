@@ -125,7 +125,7 @@ to prevent the same bugs from re-emerging in a caller.
 - Upstream PR: [Netflix#1424 — Expose builtin model versions][pr1424]
 - Upstream issue/use-case: same PR description — ffmpeg filter and
   downstream tooling want model discovery without hard-coded lists.
-- Backlog: [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md) T4-6
+- Backlog: `.workingdir2/BACKLOG.md` T4-6
 - C11 undefined-behaviour reference: §6.5.6/9 (pointer arithmetic
   on NULL), §6.5.16.1 (assignment-qualifier rules).
 - Source: `req` — user direction to ship Batch-A (T0-1 + T4-4/5/6) as

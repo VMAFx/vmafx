@@ -144,7 +144,7 @@ func registerPrefilterFlags(cmd *cobra.Command, flags *prefilterFlags) {
 	cmd.Flags().StringVar(&flags.vmafBin, "vmaf-bin", "vmaf", "libvmaf CLI binary")
 	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"libvmaf model version string")
-	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/prefilter",
+	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir/cache/vmafx-tune/prefilter",
 		"Scratch directory for the probe encodes")
 	cmd.Flags().StringVar(&flags.output, "output", "",
 		"JSON destination for the recommendation (default: stdout)")

@@ -204,7 +204,7 @@ the same syntax (`-Denable_<vendor>=true|false`).
   share + ROCm Linux maturity check.
 - [`/add-gpu-backend`](../../.claude/skills/add-gpu-backend/SKILL.md) —
   the skill that produced the initial scaffold.
-- [BACKLOG T7-10](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T7-10 — backlog row.
 - `req` — user direction in T7-10 implementation prompt
   (paraphrased): "HIP (AMD) GPU backend scaffold (audit-first,
   mirrors Vulkan T5-1)".

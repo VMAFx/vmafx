@@ -5,8 +5,8 @@
     "Run: PYTHONPATH=ai/scripts:ai/src:tools/vmaf-tune/src \\",
     "      python3 ai/scripts/batch_materialize_saliency_features.py \\",
     "      --manifest ai/batch-manifests/saliency/konvid-150k.json \\",
-    "      --report-json .workingdir2/saliency-runs/konvid-150k/report.json \\",
-    "      --report-md .workingdir2/saliency-runs/konvid-150k/report.md"
+    "      --report-json .workingdir/evidence/saliency/konvid-150k/report.json \\",
+    "      --report-md .workingdir/evidence/saliency/konvid-150k/report.md"
   ],
   "defaults": {
     "model_id": "saliency_student_v1",
@@ -21,8 +21,8 @@
     {
       "id": "konvid-150k-full",
       "input": "../../../.corpus/konvid-150k/konvid_150k.jsonl",
-      "output": "../../../.workingdir2/saliency-runs/konvid-150k/konvid_150k.saliency.jsonl",
-      "audit_json": "../../../.workingdir2/saliency-runs/konvid-150k/audit.json"
+      "output": "../../../.corpus/derived/saliency/konvid-150k/konvid_150k.saliency.jsonl",
+      "audit_json": "../../../.workingdir/evidence/saliency/konvid-150k/audit.json"
     }
   ]
 }

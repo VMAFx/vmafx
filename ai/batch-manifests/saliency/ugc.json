@@ -5,7 +5,7 @@
     "Option A (recommended): Generate a UGC corpus JSONL with 'src' pointing to",
     "  download/ files by running: ai/scripts/youtube_ugc_to_corpus_jsonl.py",
     "  --ugc-dir .corpus/ugc --clips-subdir download --clip-suffix _orig.mp4",
-    "  --output .workingdir2/saliency-runs/ugc/ugc_corpus.jsonl",
+    "  --output .corpus/derived/saliency/ugc/ugc_corpus.jsonl",
     "  Then update the 'input' below to point to that JSONL and uncomment the table.",
     "",
     "Option B: Add a path-enrichment step to extract_ugc_features.py to emit",

@@ -110,8 +110,8 @@ When the real KonViD-1k / KonViD-150k JSONL drops land
 
 ```bash
 python ai/scripts/train_konvid_mos_head.py \
-    --konvid-1k     ~/.workingdir2/konvid-1k/konvid_1k.jsonl   \
-    --konvid-150k   ~/.workingdir2/konvid-150k/konvid_150k.jsonl
+    --konvid-1k     ~/.corpus/konvid-1k/konvid_1k.jsonl   \
+    --konvid-150k   ~/.corpus/konvid-150k/konvid_150k.jsonl
 ```
 
 The Phase 1/2 corpus rows do not yet carry the canonical-6 / saliency
@@ -189,7 +189,7 @@ ML stack and on dev branches that haven't pulled the head yet.
 ## License + redistribution
 
 The training corpus (KonViD-1k / KonViD-150k) is **not**
-redistributed — it stays local under `~/.workingdir2/konvid-{1k,150k}/`
+redistributed — it stays local under `~/.corpus/konvid-{1k,150k}/`
 per [ADR-0325] §Constraint 1. Only the *derived* ONNX +
 manifest sidecar redistribute, under the fork's BSD-3-Clause-Plus-
 Patent licence.

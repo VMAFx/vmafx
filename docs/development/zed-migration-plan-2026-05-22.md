@@ -101,7 +101,7 @@ never receives the contents of:
 
 - `build/**`, `build-*/**`, `subprojects/**`
 - `python/test/resource/**`, `python/vmaf/resource/**`, `python/vmaf/matlab/**`
-- `.workingdir/**`, `.workingdir2/**`, `.corpus/**`, `model/**`
+- `.workingdir/**`, `.corpus/**`, `model/**`
 - `**/*.yuv`, `**/*.onnx`, `**/*.onnx.data`, `**/*.pkl`, `**/*.parquet`,
   `**/*.bin`
 

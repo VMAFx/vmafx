@@ -12,7 +12,7 @@ Training data is **never committed**. All YUV files are gitignored. The
 canonical local path for the Netflix corpus is:
 
 ```text
-.workingdir2/netflix/
+.corpus/netflix/
   ref/    # 9 reference YUVs
   dis/    # 70 distorted YUVs
 ```
@@ -83,13 +83,13 @@ When `--data-root` points to a directory with the layout above, the loader:
 ```bash
 # Extract features from the local Netflix corpus.
 vmaf-train extract-features \
-    --data-root .workingdir2/netflix \
+    --data-root .corpus/netflix \
     --dataset nflx-local \
     --vmaf-binary core/build-cpu/tools/vmaf \
     --output ai/data/nflx_local_features.parquet
 
 # If VMAF_DATA_ROOT is set instead:
-export VMAF_DATA_ROOT=.workingdir2/netflix
+export VMAF_DATA_ROOT=.corpus/netflix
 vmaf-train extract-features --dataset nflx-local \
     --output ai/data/nflx_local_features.parquet
 ```
@@ -131,7 +131,7 @@ cd mcp-server/vmaf-mcp && python -m pytest tests/test_smoke_e2e.py -v
 ## Data path safety invariants
 
 - **Never commit YUV files.** The `.gitignore` at the repo root lists
-  `*.yuv` and `.workingdir2/`. Do not override these entries.
+  `*.yuv` and `.corpus/`. Do not override these entries.
 - The training script takes `--data-root` as an explicit CLI flag precisely
   to avoid hard-coding the local path. CI does not have the corpus; the
   smoke test in `test_smoke_e2e.py` uses only the committed Netflix golden

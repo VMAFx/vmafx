@@ -193,7 +193,7 @@ def _scaffold_corpus_canonical(
     clip_count: int = 10,
     pre_existing_clips: list[str] | None = None,
 ) -> Path:
-    """Build a minimal ``.workingdir2/waterloo-ivc-4k/``-shaped tree with the
+    """Build a minimal ``.corpus/waterloo-ivc-4k/``-shaped tree with the
     canonical headerless ``scores.txt`` shape."""
     waterloo_dir = tmp_path / "waterloo-ivc-4k"
     waterloo_dir.mkdir(parents=True)

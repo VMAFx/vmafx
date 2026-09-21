@@ -17,7 +17,7 @@ Nothing in this directory mirrors upstream Netflix/vmaf. Rebase risk
 | Module | Consumers | What couples them |
 |---|---|---|
 | `backlog_tracker.py` | `scripts/ci/agent-eligibility-precheck.py` (direct import); future state-audit / status-reporter scripts. | The `BacklogItem` dataclass field names (`id` / `title` / `status` / `priority` / `pr_refs` / `raw_row`) and the status enum strings (OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED). Renames are breaking changes for every importer. |
-| `backlog_tracker.py` ↔ `.workingdir2/BACKLOG.md` row format | The regex parser in `_ID_PATTERN` + `_STATUS_RULES`. | If BACKLOG.md ever adds a column or renames a status word, the parser silently mis-classifies rows. Run the smoke (`python3 -c 'from scripts.lib.backlog_tracker import BacklogTracker; print(len(BacklogTracker().all()))'`) after any structural BACKLOG.md edit; expected ≥ 100 rows on master at 2026-05-09. |
+| `backlog_tracker.py` ↔ `.workingdir/BACKLOG.md` row format | The regex parser in `_ID_PATTERN` + `_STATUS_RULES`. | If BACKLOG.md ever adds a column or renames a status word, the parser silently mis-classifies rows. Run the smoke (`python3 -c 'from scripts.lib.backlog_tracker import BacklogTracker; print(len(BacklogTracker().all()))'`) after any structural BACKLOG.md edit; expected ≥ 100 rows on master at 2026-05-09. |
 | `GitHubTracker._run` | Wraps the `gh` CLI. | Output schema (`number / title / body / headRefName / mergedAt / state`) is `gh`-version-coupled. Pin behaviour by passing `--json` field lists explicitly; never rely on default columns. |
 
 ## Read-only invariant
@@ -45,10 +45,10 @@ New dep genuinely justified -> write ADR first.
 ## Worktree-aware path resolution
 
 `DEFAULT_BACKLOG_PATH` walks parents to find closest
-`.workingdir2/BACKLOG.md`. Handles per-agent worktree case
+`.workingdir/BACKLOG.md`. Handles per-agent worktree case
 (`<main-repo>/.claude/worktrees/agent-<id>/...`) by hopping up to
 main repo root. **Don't** simplify this to
-`Path.cwd().parent / ".workingdir2" / "BACKLOG.md"` — breaks
+`Path.cwd().parent / ".workingdir" / "BACKLOG.md"` — breaks
 worktree case silently.
 
 ## Testing

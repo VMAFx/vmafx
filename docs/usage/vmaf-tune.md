@@ -121,13 +121,13 @@ External binaries required at runtime:
 by the fast, per-shot, ladder, and auto paths. `--corpus` accepts either
 a single Phase-A JSONL file or a directory of JSONL shards; directory
 inputs are scanned recursively in sorted order so the trainer can consume
-`.workingdir2/corpus_run/` directly:
+`.corpus/corpus_run/` directly:
 
 ```shell
 python -m vmaftune.predictor_train \
-    --corpus .workingdir2/corpus_run \
+    --corpus .corpus/corpus_run \
     --codec libx264 \
-    --output-dir .workingdir2/predictor-real
+    --output-dir .workingdir/evidence/predictor-real
 ```
 
 Rows are filtered per codec after schema aliases are normalised. The
@@ -295,7 +295,7 @@ The mapping is closed and order-stable; see
 | `--preset P` | — | Required. Repeatable. Preset name (see codec table below). |
 | `--crf N` | — | Required. Repeatable. CRF integer (range varies by codec). |
 | `--output PATH` | `corpus.jsonl` | JSONL destination. |
-| `--encode-dir PATH` | `.workingdir2/encodes` | Scratch dir; gitignored by convention. |
+| `--encode-dir PATH` | `.workingdir/cache/vmafx-tune/encodes` | Bounded scratch; gitignored by convention. |
 | `--keep-encodes` | off | Retain encoded files after scoring. |
 | `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | Forwarded to `vmaf --model`. Only used when `--no-resolution-aware` is set; otherwise auto-picked per encode resolution (see "Resolution-aware mode" below). |
 | `--resolution-aware` / `--no-resolution-aware` | on | Auto-pick the VMAF model per encode resolution. Default on. |
@@ -922,7 +922,7 @@ the fast-path is not confident.
 | `--score-backend` | `auto` | Verify-pass backend (`auto`/`cpu`/`cuda`/`sycl`/`hip`). (`vulkan` removed in ADR-0726.) |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Tool paths. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model for the verify pass. |
-| `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
+| `--encode-dir` | `.workingdir/cache/vmafx-tune/fast` | Scratch dir for probe + verify encodes. |
 | `--output` | stdout | JSON destination for the recommendation payload. |
 
 ## `prefilter` subcommand — Pelorus deband + CRF joint autotune (ADR-1116)
@@ -1037,7 +1037,7 @@ vmaf-tune prefilter --target-vmaf 93 --smoke \
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Tool paths. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model for the probe scores. |
 | `--neg` | off | Use the VMAF NEG model variant. |
-| `--encode-dir` | `.workingdir2/prefilter` | Scratch dir for probe encodes. |
+| `--encode-dir` | `.workingdir/cache/vmafx-tune/prefilter` | Scratch dir for probe encodes. |
 | `--output` | stdout | JSON destination for the recommendation payload. |
 
 > **Note**: the live encode path is unit-tested with a mocked
@@ -3248,7 +3248,7 @@ are the **F.5-calibrated** thresholds emitted by
 `ai/scripts/calibrate_phase_f_recipes.py` and shipped in
 `ai/data/phase_f_recipes_calibrated.json`. The calibration was run on
 2026-05-09 against the K150K corpus
-(`.workingdir2/konvid-150k/konvid_150k.jsonl`, 148 543 rows out of an
+(`.corpus/konvid-150k/konvid_150k.jsonl`, 148 543 rows out of an
 expected 153 841 — the ingestion was ~96.6 % complete; a re-run on the
 full corpus is a follow-up PR). Threshold rationale and the per-class
 proxy-vs-corpus provenance break-down live in
@@ -3287,7 +3287,7 @@ ingestion completes (or when a class-labelled corpus replaces K150K), run:
 
 ```shell
 python ai/scripts/calibrate_phase_f_recipes.py \
-    --corpus .workingdir2/konvid-150k/konvid_150k.jsonl \
+    --corpus .corpus/konvid-150k/konvid_150k.jsonl \
     --out ai/data/phase_f_recipes_calibrated.json
 ```
 

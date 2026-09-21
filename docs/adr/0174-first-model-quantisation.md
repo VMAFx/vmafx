@@ -195,6 +195,6 @@ print('OK')
   this PR completes.
 - [ADR-0168](0168-tinyai-konvid-baselines.md) — `learned_filter_v1`
   baseline that this PR quantises.
-- [BACKLOG T5-3b](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T5-3b — backlog row.
 - `req` — user popup choice 2026-04-25: "T5-3b first per-model
   quantisation (M, Recommended)".
