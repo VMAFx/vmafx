@@ -263,20 +263,31 @@ larger architectures with wider weight distributions QAT typically
 wins; the empirical delta is captured per-model in each model's
 ADR (e.g. [ADR-0208](../adr/0208-learned-filter-v1-qat-impl.md)).
 
-**Pipeline.** Per [ADR-0207](../adr/0207-tinyai-qat-design.md) the
-QAT pass runs in three phases: (1) fp32 warm-start training,
-(2) FX fake-quant insertion via
-`torch.ao.quantization.quantize_fx.prepare_qat_fx` with the default
-symmetric per-tensor activation + per-channel weight qconfig, (3)
-QAT fine-tune at 10× reduced learning rate (defaulting to
-`fp32_lr / 10`). Phase 4 — ONNX export — bridges
-PyTorch 2.11's two broken ONNX exporters by copying the
-QAT-conditioned weights back into a fresh fp32 module, exporting the
-fp32 graph, then running `onnxruntime.quantization.quantize_static`
-with a calibration set drawn from the QAT training distribution.
+**Pipeline.** Per [ADR-0207](../adr/0207-tinyai-qat-design.md), with the
+PyTorch 2.14 API migration recorded in
+[ADR-1281](../adr/1281-pytorch-2-14-warning-free-migration.md), the QAT pass
+runs in three phases: (1) fp32 warm-start training, (2) PT2E fake-quant
+insertion — the trained module is captured with
+`torch.export.export(model, example_inputs).module()` and prepared with
+torchao's `prepare_qat_pt2e` using `X86InductorQuantizer` and
+`get_default_x86_inductor_quantization_config(is_qat=True)`, which is the same
+symmetric per-tensor activation + per-channel weight recipe the static-PTQ path
+uses, (3) QAT fine-tune at 10× reduced learning rate (defaulting to
+`fp32_lr / 10`), with the prepared graph switched into training mode through
+`move_exported_model_to_train`. Phase 4 — ONNX export — copies the
+QAT-conditioned weights back into a fresh fp32 module, exports that fp32 graph
+through the shared `aiutils.onnx_export` bridge, then runs
+`onnxruntime.quantization.quantize_static` with a calibration set drawn from
+the QAT training distribution. ONNX Runtime, not PyTorch, is what emits the
+loadable QDQ graph — this two-step bridge is load-bearing and must not be
+collapsed into a single converted-PT2E export.
 The output is a QDQ-format `.int8.onnx` bit-identical in structure
 to the static-PTQ artefact — the QAT effect is preserved entirely
 through weight pre-conditioning.
+
+**Dependencies.** QAT requires `torchao>=0.18.0,<0.19` (declared in
+`ai/pyproject.toml`). torchao 0.17 fails to import on Python 3.14, so 0.18 is a
+hard floor rather than a preference.
 
 **CLI knobs.** `--epochs-fp32` (default 20), `--epochs-qat`
 (default 10), `--lr-qat` (default fp32-lr / 10), `--n-calibration`

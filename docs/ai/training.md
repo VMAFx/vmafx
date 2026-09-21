@@ -95,6 +95,56 @@ The sidecar `model/tiny/vmaf_tiny_fr_v1.json` pins:
 }
 ```
 
+## ONNX export contract
+
+Every PyTorch → ONNX export under `ai/` goes through one shared bridge,
+`aiutils.onnx_export.export_onnx`, so the published graphs all satisfy the same
+contract. Callers keep the familiar keyword shape:
+
+```python
+from aiutils.onnx_export import export_onnx
+
+export_onnx(
+    model.eval(),
+    (dummy,),
+    out_path,                       # str or Path; written atomically
+    input_names=["features"],
+    output_names=["score"],
+    dynamic_axes={"features": {0: "batch"}, "score": {0: "batch"}},
+    opset=17,                       # the registry's deployed opset
+)
+```
+
+What the bridge guarantees:
+
+- **The requested opset, exactly.** PyTorch 2.14's exporter implements its
+  operators at opset 18. Asked for less, it logs a warning, tries its own
+  conversion, and silently keeps the graph at 18 when that conversion fails —
+  so a model could claim `"opset": 17` in `model/tiny/registry.json` and not be
+  one. The bridge exports at 18 and runs
+  `onnx.version_converter.convert_version` itself, then validates the result
+  with `onnx.checker.check_model` before publishing it.
+- **A valid graph, not just a relabelled one.** ONNX's version converter has
+  gaps: down-converting a reduction moves `axes` from an input back to an
+  attribute but leaves `noop_with_empty_axes` behind, and opset 17 does not
+  define it, so the graph fails both ONNX's checker and ONNX Runtime's loader.
+  The bridge removes such a leftover when it still holds its source-opset
+  default value, and raises when it holds anything else rather than guessing.
+- **Named dynamic axes on inputs and outputs.** `dynamic_axes` keeps the
+  legacy `{tensor: {axis: label}}` spelling. Tensors that share a dimension —
+  a common batch axis, a shared `H` / `W` frame geometry — all receive the same
+  label, which the runtime loader relies on (see
+  [ADR-0524](../adr/0524-tiny-model-loader-symbolic-batch-dim.md)).
+- **One self-contained file.** External-data sidecars are disabled, and the
+  finished graph is moved into place with `os.replace`, so a failed export never
+  leaves a truncated or half-updated `.onnx` behind.
+- **No warnings.** The AI package runs pytest with `filterwarnings = ["error"]`;
+  the bridge exists so that policy holds without suppressing anything. See
+  [ADR-1281](../adr/1281-pytorch-2-14-warning-free-migration.md).
+
+An export that asks for a dynamic input axis the model cannot actually keep
+dynamic fails loudly rather than silently publishing a fixed-shape graph.
+
 ## Run provenance sidecars
 
 Training, evaluation, and validation scripts that emit durable JSON reports

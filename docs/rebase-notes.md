@@ -51791,7 +51791,12 @@ bridge and the zero-copied-tensors failure guard during upstream conflicts; do
 not restore `torch.ao.quantization`, a warning filter, or a converted PT2E graph
 as the ONNX input.
 
-Torch ONNX exports use the dynamo exporter with `dynamic_shapes`. Shared input
-dimensions must reuse the same `torch.export.Dim` instance. Every future
-PyTorch/torchao bump must replay the QAT smoke, ONNX Runtime roundtrip, complete
-AI/vmaf-tune suites with warnings fatal, and strict whole-scope mypy.
+Torch ONNX exports use the dynamo exporter with `dynamic_shapes`. They pass
+`torch.export.Dim.DYNAMIC` hints and apply the caller's axis labels to the
+serialized graph, because the exporter's own renaming pass is keyed on exported
+symbols and rejects the second name whenever two tensors share one dimension.
+Preserve the post-conversion attribute repair and `onnx.checker.check_model`
+call: ONNX's version converter leaves `noop_with_empty_axes` on down-converted
+reductions, which makes an opset-17 graph invalid. Every future PyTorch/torchao
+bump must replay the QAT smoke, ONNX Runtime roundtrip, complete AI/vmaf-tune
+suites with warnings fatal, and strict whole-scope mypy.

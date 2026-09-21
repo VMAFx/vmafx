@@ -483,48 +483,86 @@ model card:
   distribution into scaler would silently inflate per-fold
   PLCC. See ADR-0319 §Decision and `_load_corpus`'s docstring.
 
-## Quantization-Aware Training (ADR-0207 / ADR-0208)
+## Quantization-Aware Training (ADR-0207 / ADR-0208 / ADR-1281)
 
 QAT trainer hook lives in [`ai/train/qat.py`](train/qat.py); CLI
 driver in [`ai/scripts/qat_train.py`](scripts/qat_train.py). Default
 config example =
 [`ai/configs/learned_filter_v1_qat.yaml`](configs/learned_filter_v1_qat.yaml).
 
-**Pipeline (per ADR-0207 + ADR-0208 implementation bridge):**
+**Pipeline (per ADR-0207 + ADR-0208 implementation bridge, migrated
+to the supported PyTorch 2.14 contracts by ADR-1281):**
 
 1. fp32 warm-start training.
-2. FX fake-quant insertion via
-   `torch.ao.quantization.quantize_fx.prepare_qat_fx` with
-   default symmetric per-tensor activation + per-channel weight
-   qconfig.
-3. QAT fine-tune at 10× reduced LR.
-4. Copy QAT-conditioned weights into fresh fp32 module, export
-   to ONNX (`dynamo=False`), then ORT static-quantize with
-   calibration set drawn from QAT distribution. Output = a
-   QDQ `.int8.onnx`.
+2. PT2E fake-quant insertion: `torch.export.export(...).module()`
+   followed by torchao's `prepare_qat_pt2e` with
+   `X86InductorQuantizer` and
+   `get_default_x86_inductor_quantization_config(is_qat=True)` —
+   the same symmetric per-tensor activation + per-channel weight
+   recipe the ORT static path uses.
+3. QAT fine-tune at 10× reduced LR, with the prepared graph put in
+   training mode through `move_exported_model_to_train`.
+4. Copy QAT-conditioned weights into fresh fp32 module, export to
+   ONNX through [`aiutils.onnx_export`](src/aiutils/onnx_export.py),
+   then ORT static-quantize with a calibration set drawn from the
+   QAT distribution. Output = a QDQ `.int8.onnx`.
 
 **Rebase-sensitive invariants:**
 
 - Two-step pipeline (PyTorch QAT → fp32 ONNX → ORT
-  static-quantize) is load-bearing. Do NOT collapse to
-  `convert_fx → torch.onnx.export` — both PyTorch 2.11 ONNX
-  exporters refuse `convert_fx` output (legacy emits
-  `quantized::conv2d`; TorchDynamo trips on
-  `Conv2dPackedParamsBase.__obj_flatten__`). Re-check on each
-  PyTorch upgrade.
+  static-quantize) is load-bearing. Do NOT collapse to a
+  converted PT2E graph exported straight to ONNX — the ORT
+  static-quantize phase is what produces the loadable QDQ graph.
+  Re-check on each PyTorch / torchao upgrade.
 - State-dict transfer in `_copy_qat_weights_into_fp32` matches
-  by submodule name + tensor shape. Models using top-level
-  `nn.Sequential` will break this (FX renames Sequential
-  children to numeric indices); the `RuntimeError("0 tensors
-  copied")` guard catches it.
-- FX preparation runs on CPU (PyTorch 2.11's symbolic tracer is
-  flaky on CUDA buffers); trainer migrates to CPU before
-  `prepare_qat_fx` and back to accelerator afterwards.
-- `torch.ao.quantization` is deprecated and will be removed in
-  PyTorch 2.10. Migration target = `torchao.quantization.pt2e`
-  (`prepare_pt2e` / `convert_pt2e`); only FX-prep call
-  changes — rest of pipeline (ORT static-quantize) is
-  unaffected.
+  by submodule name + tensor shape. `torch.export` keeps the
+  original parameter keys; models using top-level `nn.Sequential`
+  can still lose them, and the `RuntimeError("0 tensors copied")`
+  guard catches that.
+- PT2E export runs on CPU so the captured graph and observer
+  state do not depend on the training device; the trainer
+  migrates to CPU before preparation and back afterwards.
+- Do not reintroduce `torch.ao.quantization`
+  (`prepare_qat_fx` / `convert_fx`). It is deprecated, its
+  deprecation warning is fatal under the repository's
+  `filterwarnings = ["error"]` policy, and ADR-1281 forbids
+  filtering it.
+- torchao 0.17 fails to import on Python 3.14; the floor is
+  `torchao>=0.18.0,<0.19`.
+
+## ONNX export bridge (ADR-1281)
+
+Every PyTorch → ONNX export under `ai/` goes through
+[`aiutils.onnx_export.export_onnx`](src/aiutils/onnx_export.py).
+It keeps the legacy `dynamic_axes` call shape while running the
+dynamo exporter underneath.
+
+- The dynamo exporter's native opset is 18. Asking it for the
+  fork's opset-17 registry contract makes it log a warning and, when
+  its own conversion fails, silently keep the graph at 18 — so the
+  bridge exports at 18 and runs
+  `onnx.version_converter.convert_version` explicitly, then
+  publishes one self-contained file with `os.replace`.
+- That converter is not trusted blindly. Down-converting a reduction
+  moves `axes` from an input back to an attribute but leaves
+  `noop_with_empty_axes`, which opset 17 does not define: the result
+  claims opset 17 and fails ONNX's own checker and ORT's loader.
+  The bridge drops such a leftover only when it still carries its
+  source-opset default, raises otherwise, and runs
+  `onnx.checker.check_model` before publishing. Do not remove that
+  check — it is what stops an invalid graph reaching
+  `model/tiny/registry.json`.
+- The exporter's own axis renaming is deliberately bypassed: it is
+  keyed on exported symbols, so two tensors sharing a dimension
+  (a common batch axis, a shared frame geometry) collapse to one
+  symbol and the second name is rejected with a fatal
+  `UserWarning`. The bridge passes `torch.export.Dim.DYNAMIC`
+  hints instead and applies the caller's labels to the serialized
+  graph, where one shared symbol names every tensor that uses it.
+- Do not reintroduce `dynamo=False`, `do_constant_folding=`,
+  `training=torch.onnx.TrainingMode.EVAL`, or a bare
+  `opset_version=17`; all four are removed or warning-producing on
+  PyTorch 2.14.
 
 ## Local workflow
 

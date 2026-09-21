@@ -40,6 +40,18 @@ Rules for new script in `ai/scripts/` or module in
    `sys.path`. Direct `ai/scripts/*.py` entrypoints use
    `ai/scripts/_script_bootstrap.py` before importing package; do not move
    bootstrap into `aiutils` (too late to solve import).
+8. **ONNX export:** Use `export_onnx()` from `aiutils.onnx_export`; do not call
+   `torch.onnx.export` directly. ADR-1281: PyTorch 2.14's dynamo exporter
+   implements opset 18 and warns when asked to down-convert, and its axis
+   renaming rejects the second name whenever two tensors share one exported
+   dimension — both are fatal under `filterwarnings = ["error"]`. The helper
+   exports at the native opset, runs `onnx.version_converter` explicitly,
+   repairs the no-op attributes that converter leaves on down-converted
+   nodes, applies the caller's `dynamic_axes` labels to the serialized
+   graph, validates with `onnx.checker.check_model`, and publishes one
+   self-contained file with `os.replace`. Do not reintroduce
+   `dynamo=False`, `do_constant_folding=`, `training=`, or a bare
+   `opset_version=`.
 
 ## Module inventory
 
@@ -53,3 +65,6 @@ Rules for new script in `ai/scripts/` or module in
   (ADR-0926; schema v2 = on-disk default)
 - `run_manifest.py` — deterministic `run_provenance` sidecar helpers
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers
+- `onnx_export.py` — `export_onnx(model, example_inputs, output, *,
+  input_names, output_names, dynamic_axes=None, opset=17) -> None`
+  (ADR-1281; warning-free dynamo export at the registry's opset)
