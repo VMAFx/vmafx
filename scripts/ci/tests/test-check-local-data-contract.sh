@@ -24,7 +24,9 @@ new_case() {
   git -C "$case_dir" config user.email test@example.invalid
   git -C "$case_dir" config user.name test
   printf '%s/\n%s/\n' "$state_root" "$corpus_root" >"$case_dir/.gitignore"
-  git -C "$case_dir" add .gitignore
+  printf '%s/\n%s/\n%s/\n' \
+    "$state_root" "$retired_root" "$corpus_root" >"$case_dir/.dockerignore"
+  git -C "$case_dir" add .gitignore .dockerignore
 }
 
 track() {
@@ -63,6 +65,10 @@ new_case
 printf '%s*/\n%s/\n' "$state_root" "$corpus_root" >"$case_dir/.gitignore"
 git -C "$case_dir" add .gitignore
 expect 'wildcard must not hide the retired root' 1
+
+new_case
+printf '%s/\n%s/\n' "$state_root" "$corpus_root" >"$case_dir/.dockerignore"
+expect 'retired root stays outside Docker contexts' 1
 
 new_case
 track scripts/config.txt "cache=$retired_root/cache"

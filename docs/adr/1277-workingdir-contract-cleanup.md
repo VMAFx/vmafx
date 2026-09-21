@@ -40,7 +40,9 @@ The retired numbered directory is not ignored and is not a supported runtime
 path. Active code, configuration, tests, and operator documentation may not
 refer to it. Historical ADRs and changelog records keep historically accurate
 plain-text references, but no Markdown link may target either ignored local
-root. A required repository contract check enforces these boundaries.
+root. It remains excluded from Docker build contexts as a defense against stale
+worktrees leaking local data before the contract check rejects the directory.
+A required repository contract check enforces these boundaries.
 
 ## Alternatives considered
 

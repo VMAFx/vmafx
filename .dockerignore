@@ -9,8 +9,11 @@ python/.tox
 *.mov
 
 # Local-only state — without this the dev-MCP build context can include
-# machine-local evidence, recovery bundles, and scratch output.
+# machine-local evidence, recovery bundles, and scratch output. The retired
+# numbered root stays visible to Git but remains excluded here as a defensive
+# boundary for stale worktrees that have not yet completed local migration.
 .workingdir/
+.workingdir2/
 .claude/
 
 # Corpora / training data (can exceed 1 TB on developer hosts)

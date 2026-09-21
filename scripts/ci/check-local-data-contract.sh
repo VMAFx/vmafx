@@ -15,7 +15,7 @@ retired_root="${state_root}2"
 failed=0
 
 active_paths=(
-  .clang-tidy .claude/skills .codex .cursor .dockerignore .gemini .github
+  .clang-tidy .claude/skills .codex .cursor .gemini .github
   .gitignore .pre-commit-config.yaml .windsurfrules AGENTS.md CLAUDE.md
   ai cmd compat core dev model pkg python renovate.json scripts tools
   ':(glob)docs/*.md'
@@ -56,6 +56,16 @@ if [ -e "$retired_root" ] || [ -L "$retired_root" ]; then
   printf 'error: retired workspace path exists locally: %s\n' "$retired_root" >&2
   failed=1
 fi
+
+# The retired root must remain visible to Git so stale local state cannot hide,
+# but it must never inflate or leak into a Docker build context before this gate
+# gets a chance to reject it.
+for local_root in "$state_root" "$retired_root" "$corpus_root"; do
+  if ! grep -Fqx -- "$local_root/" .dockerignore; then
+    printf 'error: local root %s must be excluded from Docker contexts\n' "$local_root" >&2
+    failed=1
+  fi
+done
 
 retired_refs=$(git grep -n -I -F "$retired_root" -- "${active_paths[@]}" 2>/dev/null || true)
 if [ -n "$retired_refs" ]; then
