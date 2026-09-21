@@ -150,7 +150,7 @@ static int invoke_init_add_uv(VmafFeatureExtractor *fex, unsigned w, unsigned h)
         return -1;
     fex->priv = priv;
 
-    int rc = -EINVAL;
+    int rc = 0;
     if (fex->options) {
         for (unsigned i = 0; fex->options[i].name; i++) {
             const char *val = NULL;
@@ -158,12 +158,12 @@ static int invoke_init_add_uv(VmafFeatureExtractor *fex, unsigned w, unsigned h)
                 val = "true";
             rc = vmaf_option_set(&fex->options[i], priv, val);
             if (rc)
-                goto done;
+                break;
         }
     }
-    rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, w, h);
+    if (!rc)
+        rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, w, h);
 
-done:
     if (fex->close)
         (void)fex->close(fex);
     free(priv);

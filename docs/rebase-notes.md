@@ -51638,3 +51638,21 @@ replace `while True` with bounded loops that preserve the same EOF/error checks.
 execution order, fixtures, assertion expressions, numeric constants, expected values, tolerances,
 and parity-gate CLI/output behavior stay unchanged. An upstream textual conflict may take the
 upstream test body, then reapply the helper boundaries needed by HISS.
+
+## Non-CUDA high-signal Cppcheck and touched-HISS cleanup (2026-09-21)
+
+Score arithmetic and registration order do not change. The native sources narrow error-variable
+lifetimes, remove two SpEED QR aliases, make two Xiph loop initializers explicit, and simplify a
+high-bit-depth rounding branch after its 8-bit early return. The picture-pool test replaces obsolete
+`usleep` with the same 100 microsecond POSIX `nanosleep` (and existing one-millisecond Windows
+delay).
+
+`vmaf.cpp` no longer has a file-wide anonymous namespace or cleanup `goto` spine. Keep its short,
+reopened anonymous-namespace blocks separate: they provide internal linkage without exceeding the
+scanner's 60-line block limit. `CliRunState` plus `CliRunGuard` own the one teardown order documented
+in `core/tools/AGENTS.md`. `vmaf_bench.c` likewise keeps one post-stage cleanup call in
+`bench_feature()` / `run_feature_collect()` and a dedicated SYCL-profile cleanup owner. A rebase
+must not restore early returns after those owners acquire resources. The compact SpEED option rows
+preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
+conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
+Research-2075.

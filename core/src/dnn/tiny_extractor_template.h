@@ -88,10 +88,6 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * Enforce the build-time optional DNN runtime contract shared by every
  * tiny-AI extractor. Call this from `init()` after validating the pixel
@@ -279,7 +275,7 @@ static inline int vmaf_tiny_ai_sample_to_8bit(uint16_t v, unsigned bpc)
     const unsigned max_sample = (bpc == 16u) ? 65535u : ((1u << bpc) - 1u);
     unsigned sample = (v > max_sample) ? max_sample : (unsigned)v;
     const unsigned shift = bpc - 8u;
-    const unsigned round = (shift == 0u) ? 0u : (1u << (shift - 1u));
+    const unsigned round = 1u << (shift - 1u);
     return (int)((sample + round) >> shift);
 }
 
@@ -373,10 +369,6 @@ static inline int vmaf_tiny_ai_yuv_to_rgb8_planes(const VmafPicture *pic, uint8_
         .default_val.s = NULL,                                                                     \
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,                                                      \
     }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* LIBVMAF_DNN_TINY_EXTRACTOR_TEMPLATE_H_ */
 

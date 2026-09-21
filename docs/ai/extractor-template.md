@@ -26,7 +26,7 @@ documented inline in
 | `vmaf_tiny_ai_resolve_model_path(name, option, env_var)` | Feature-option-then-env-var lookup. Returns NULL with a single user-facing log line when neither is set. |
 | `vmaf_tiny_ai_open_session(name, path, &out)` | `vmaf_dnn_session_open` wrapper with the standard `<name>: vmaf_dnn_session_open(<path>) failed: <rc>` log line on error. |
 | `vmaf_tiny_ai_yuv8_to_rgb8_planes(pic, dst_r, dst_g, dst_b)` | BT.709 limited-range 8-bit YUV → RGB with nearest-neighbour chroma upsample. Bit-exact with the per-extractor copies it replaces. |
-| `vmaf_tiny_ai_yuv_to_rgb8_planes(pic, dst_r, dst_g, dst_b)` | 8/10/12/16-bit planar YUV → RGB8 wrapper for ImageNet-family models that keep an RGB8 tensor ABI. |
+| `vmaf_tiny_ai_yuv_to_rgb8_planes(pic, dst_r, dst_g, dst_b)` | 8/10/12/16-bit planar YUV → RGB8 wrapper for ImageNet-family models that keep an RGB8 tensor ABI. The 8-bit path is unchanged; higher depths use a non-zero right shift with half-up rounding before BT.709 conversion. |
 | `VMAF_TINY_AI_MODEL_PATH_OPTION(state_t, help)` | Emits the standard `model_path` row of a per-extractor `VmafOption[]` table. |
 
 The `init` / `extract` / `close` lifecycle stays per-extractor — model
