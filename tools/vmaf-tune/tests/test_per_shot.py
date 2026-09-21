@@ -348,24 +348,35 @@ def _stub_bisect_and_backend(monkeypatch, fake_bisect) -> None:
     monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
 
 
+def _flag_argv(*pairs: tuple[str, str]) -> list[str]:
+    """Flatten ``(flag, value)`` pairs into the flat token list argparse wants.
+
+    Callers pass one tuple per CLI flag, so the formatter lays the argv out
+    one flag-and-its-value per line — the way the command is read on a
+    terminal — while ``main()`` still receives the flat ``["--width", "1920",
+    ...]`` sequence.
+    """
+    return [token for pair in pairs for token in pair]
+
+
 def _tune_per_shot_argv(src: Path, output: str, *extra: str) -> list[str]:
     """``tune-per-shot`` argv: 1080p24 source, target VMAF 92, CRF 18-30."""
-    # fmt: off
     return [
         "tune-per-shot",
-        "--src", str(src),
-        "--width", "1920",
-        "--height", "1080",
-        "--framerate", "24",
-        "--target-vmaf", "92",
-        "--encoder", "libx264",
-        "--crf-min", "18",
-        "--crf-max", "30",
-        "--max-iterations", "4",
-        "--output", output,
+        *_flag_argv(
+            ("--src", str(src)),
+            ("--width", "1920"),
+            ("--height", "1080"),
+            ("--framerate", "24"),
+            ("--target-vmaf", "92"),
+            ("--encoder", "libx264"),
+            ("--crf-min", "18"),
+            ("--crf-max", "30"),
+            ("--max-iterations", "4"),
+            ("--output", output),
+        ),
         *extra,
     ]
-    # fmt: on
 
 
 def _make_readonly_dir(tmp_path: Path, name: str) -> Path:

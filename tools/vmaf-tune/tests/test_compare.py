@@ -378,6 +378,17 @@ def _compare_argv(src: Path, *extra: str) -> list[str]:
     return ["compare", "--src", str(src), "--target-vmaf", "92", *extra]
 
 
+def _flag_argv(*pairs: tuple[str, str]) -> list[str]:
+    """Flatten ``(flag, value)`` pairs into the flat token list argparse wants.
+
+    Callers pass one tuple per CLI flag, so the formatter lays the argv out
+    one flag-and-its-value per line — the way the command is read on a
+    terminal — while ``main()`` still receives the flat ``["--width", "1920",
+    ...]`` sequence.
+    """
+    return [token for pair in pairs for token in pair]
+
+
 def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
     """Geometry flags build the Phase-B bisect predicate for each codec."""
     from vmaftune import cli as cli_module
@@ -399,22 +410,22 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
         _capturing_make_bisect_predicate(captured, _result),
     )
 
-    # fmt: off
     rc = cli_module.main(
         _compare_argv(
             tmp_path / "ref.yuv",
-            "--encoders", "libx264,libx265",
-            "--width", "1920",
-            "--height", "1080",
-            "--framerate", "24",
-            "--duration", "10",
-            "--sample-clip-seconds", "4",
-            "--crf-min", "15",
-            "--crf-max", "40",
-            "--format", "json",
+            *_flag_argv(
+                ("--encoders", "libx264,libx265"),
+                ("--width", "1920"),
+                ("--height", "1080"),
+                ("--framerate", "24"),
+                ("--duration", "10"),
+                ("--sample-clip-seconds", "4"),
+                ("--crf-min", "15"),
+                ("--crf-max", "40"),
+                ("--format", "json"),
+            ),
         )
     )
-    # fmt: on
     assert rc == 0
     assert len(captured) == 1
     _assert_bisect_kwargs(captured[0], _EXPECTED_BOUND_BISECT_KWARGS)
@@ -445,21 +456,21 @@ def test_cli_compare_runtime_variant_binds_per_encoder_ffmpeg(monkeypatch, capsy
         _capturing_make_bisect_predicate(captured, _result),
     )
 
-    # fmt: off
     rc = cli_module.main(
         _compare_argv(
             tmp_path / "ref.yuv",
-            "--encoders", "libsvtav1,libsvtav1@svt-av1-hdr",
-            "--ffmpeg-bin", "/opt/ffmpeg-main",
-            "--encoder-ffmpeg-bin", "libsvtav1@svt-av1-hdr=/opt/ffmpeg-hdr",
-            "--width", "1920",
-            "--height", "1080",
-            "--duration", "10",
-            "--format", "json",
+            *_flag_argv(
+                ("--encoders", "libsvtav1,libsvtav1@svt-av1-hdr"),
+                ("--ffmpeg-bin", "/opt/ffmpeg-main"),
+                ("--encoder-ffmpeg-bin", "libsvtav1@svt-av1-hdr=/opt/ffmpeg-hdr"),
+                ("--width", "1920"),
+                ("--height", "1080"),
+                ("--duration", "10"),
+                ("--format", "json"),
+            ),
             "--no-parallel",
         )
     )
-    # fmt: on
 
     assert rc == 0
     assert sorted(call["ffmpeg_bin"] for call in captured) == [
@@ -688,17 +699,17 @@ def test_cli_compare_passes_probed_framerate_for_container_src(monkeypatch, caps
     src = tmp_path / "bbb.mp4"
     src.touch()
     # No --framerate / --duration — auto-probe must fill them.
-    # fmt: off
     rc = cli_module.main(
         _compare_argv(
             src,
-            "--encoders", "libx264",
-            "--width", "1920",
-            "--height", "1080",
-            "--format", "json",
+            *_flag_argv(
+                ("--encoders", "libx264"),
+                ("--width", "1920"),
+                ("--height", "1080"),
+                ("--format", "json"),
+            ),
         )
     )
-    # fmt: on
     assert rc == 0
     assert len(captured) == 1
     # The probed 60 fps must reach the bisect predicate, not the
