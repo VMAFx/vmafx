@@ -11,6 +11,7 @@ KonViD MOS head.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -48,111 +49,35 @@ def _discover_feature_jsonls(shard_dir: Path) -> list[Path]:
     return sorted(shard_dir.glob("shard_*.features.jsonl"))
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(
-        prog="train_chug_hdr_mos_head.py",
-        description="Train a local CHUG HDR MOS head from reference-aligned feature JSONL.",
-    )
-    parser.epilog = (
-        "Additional MOS-trainer flags such as --epochs, --batch-size, "
-        "--k-folds, --seed, and --no-export are forwarded unchanged."
-    )
-    parser.add_argument(
-        "--feature-jsonl",
-        type=Path,
-        action="append",
-        default=[],
-        help=(
-            "CHUG feature JSONL shard from chug_extract_features.py; may be repeated. "
-            "Defaults to shard_*.features.jsonl under --shard-dir."
-        ),
-    )
-    parser.add_argument(
-        "--feature-parquet",
-        type=Path,
-        action="append",
-        default=[],
-        help=(
-            "Metadata-enriched CHUG FULL_FEATURES parquet from a correct "
-            "full-reference extraction; may be repeated."
-        ),
-    )
-    parser.add_argument(
-        "--shard-dir",
-        type=Path,
-        default=DEFAULT_SHARD_DIR,
-        help="Directory searched for shard_*.features.jsonl when --feature-jsonl is absent.",
-    )
-    parser.add_argument(
-        "--model-id",
-        default=DEFAULT_MODEL_ID,
-        help="Model id recorded in the emitted manifest.",
-    )
-    parser.add_argument(
-        "--feature-schema",
-        choices=(
-            FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
-            FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
-            FEATURE_SCHEMA_KONVID_V1,
-        ),
-        default=None,
-        help=(
-            "Feature schema for the local head. The default uses CHUG temporal "
-            "quantiles/std plus HDR ladder metadata, or the display-aware "
-            "schema when --display-profile-json is supplied; konvid-v1 keeps "
-            "the older 11-column baseline for ablation runs."
-        ),
-    )
-    parser.add_argument(
-        "--display-profile-json",
-        type=Path,
-        default=None,
-        help=(
-            "Optional target-display profile JSON. When set and --feature-schema "
-            "is omitted, the wrapper selects chug-hdr-display-v1."
-        ),
-    )
-    parser.add_argument(
-        "--out-onnx",
-        type=Path,
-        default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}.onnx",
-    )
-    parser.add_argument(
-        "--out-card",
-        type=Path,
-        default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}_card.md",
-        help="Reserved for the generated/local model card path.",
-    )
-    parser.add_argument(
-        "--out-manifest",
-        type=Path,
-        default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}.json",
-    )
-    args, forwarded = parser.parse_known_args(raw_argv)
+def _resolve_chug_feature_schema(args: argparse.Namespace) -> str:
+    """Resolve the CHUG feature schema from explicit flag or display-profile hint."""
+    if args.feature_schema is not None:
+        return args.feature_schema
+    if args.display_profile_json is not None:
+        return FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1
+    return FEATURE_SCHEMA_CHUG_HDR_WIDE_V1
 
+
+def _collect_chug_inputs(
+    args: argparse.Namespace,
+) -> tuple[list[Path], list[Path]]:
+    """Resolve feature JSONL and parquet lists, auto-discovering shards when absent."""
     feature_parquets = list(args.feature_parquet)
     feature_jsonls = list(args.feature_jsonl)
     if not feature_jsonls and not feature_parquets:
         feature_jsonls = _discover_feature_jsonls(args.shard_dir)
-    if not feature_jsonls and not feature_parquets:
-        print(
-            f"[chug-hdr-mos] no feature JSONL shards found under {args.shard_dir}; "
-            "pass --feature-jsonl/--feature-parquet explicitly or set VMAF_CHUG_DIR.",
-            file=sys.stderr,
-        )
-        return 2
-    feature_schema = args.feature_schema
-    if feature_schema is None:
-        feature_schema = (
-            FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1
-            if args.display_profile_json is not None
-            else FEATURE_SCHEMA_CHUG_HDR_WIDE_V1
-        )
+    return feature_jsonls, feature_parquets
 
-    # The shared trainer still has legacy KonViD defaults. Pass explicit
-    # impossible paths so a CHUG run cannot accidentally ingest local KoNViD
-    # rows alongside the HDR MOS shards.
+
+def _build_chug_delegated_argv(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    feature_schema: str,
+    feature_jsonls: list[Path],
+    feature_parquets: list[Path],
+    forwarded: list[str],
+) -> list[str]:
+    """Build the argv list to forward to the shared KoNViD MOS-head trainer."""
     delegated: list[str] = [
         "--konvid-1k",
         str(args.shard_dir / "__no_konvid_1k_for_chug__.jsonl"),
@@ -182,6 +107,125 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.display_profile_json is not None:
         delegated.extend(["--display-profile-json", str(args.display_profile_json)])
     delegated.extend(forwarded)
+    return delegated
+
+
+def _add_chug_input_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add CHUG input-selection arguments to ``parser``."""
+    parser.add_argument(
+        "--feature-jsonl",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "CHUG feature JSONL shard from chug_extract_features.py; may be repeated. "
+            "Defaults to shard_*.features.jsonl under --shard-dir."
+        ),
+    )
+    parser.add_argument(
+        "--feature-parquet",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "Metadata-enriched CHUG FULL_FEATURES parquet from a correct "
+            "full-reference extraction; may be repeated."
+        ),
+    )
+    parser.add_argument(
+        "--shard-dir",
+        type=Path,
+        default=DEFAULT_SHARD_DIR,
+        help="Directory searched for shard_*.features.jsonl when --feature-jsonl is absent.",
+    )
+
+
+def _add_chug_model_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add CHUG model and display-profile arguments to ``parser``."""
+    parser.add_argument(
+        "--model-id",
+        default=DEFAULT_MODEL_ID,
+        help="Model id recorded in the emitted manifest.",
+    )
+    parser.add_argument(
+        "--feature-schema",
+        choices=(
+            FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
+            FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
+            FEATURE_SCHEMA_KONVID_V1,
+        ),
+        default=None,
+        help=(
+            "Feature schema for the local head. The default uses CHUG temporal "
+            "quantiles/std plus HDR ladder metadata, or the display-aware "
+            "schema when --display-profile-json is supplied; konvid-v1 keeps "
+            "the older 11-column baseline for ablation runs."
+        ),
+    )
+    parser.add_argument(
+        "--display-profile-json",
+        type=Path,
+        default=None,
+        help=(
+            "Optional target-display profile JSON. When set and --feature-schema "
+            "is omitted, the wrapper selects chug-hdr-display-v1."
+        ),
+    )
+
+
+def _add_chug_output_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add CHUG output path arguments to ``parser``."""
+    parser.add_argument(
+        "--out-onnx",
+        type=Path,
+        default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}.onnx",
+    )
+    parser.add_argument(
+        "--out-card",
+        type=Path,
+        default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}_card.md",
+        help="Reserved for the generated/local model card path.",
+    )
+    parser.add_argument(
+        "--out-manifest",
+        type=Path,
+        default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}.json",
+    )
+
+
+def _build_chug_parser() -> argparse.ArgumentParser:
+    """Build the CHUG wrapper parser while keeping forwarded flags untouched."""
+    parser = make_argument_parser(
+        prog="train_chug_hdr_mos_head.py",
+        description="Train a local CHUG HDR MOS head from reference-aligned feature JSONL.",
+    )
+    parser.epilog = (
+        "Additional MOS-trainer flags such as --epochs, --batch-size, "
+        "--k-folds, --seed, and --no-export are forwarded unchanged."
+    )
+    _add_chug_input_arguments(parser)
+    _add_chug_model_arguments(parser)
+    _add_chug_output_arguments(parser)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    parser = _build_chug_parser()
+    args, forwarded = parser.parse_known_args(raw_argv)
+
+    feature_jsonls, feature_parquets = _collect_chug_inputs(args)
+    if not feature_jsonls and not feature_parquets:
+        print(
+            f"[chug-hdr-mos] no feature JSONL shards found under {args.shard_dir}; "
+            "pass --feature-jsonl/--feature-parquet explicitly or set VMAF_CHUG_DIR.",
+            file=sys.stderr,
+        )
+        return 2
+    feature_schema = _resolve_chug_feature_schema(args)
+    delegated = _build_chug_delegated_argv(
+        args, raw_argv, feature_schema, feature_jsonls, feature_parquets, forwarded
+    )
     return _train_mos_head_main(delegated)
 
 

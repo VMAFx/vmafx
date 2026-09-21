@@ -710,6 +710,12 @@ def test_smoke_run_produces_allowlist_conformant_onnx(tmp_path: Path) -> None:
     # core/src/dnn/op_allowlist.c.
     model = onnx_pkg.load(str(onnx_path))
     onnx_pkg.checker.check_model(model)
+    batch_dims = {
+        value.type.tensor_type.shape.dim[0].dim_param
+        for value in (*model.graph.input, *model.graph.output)
+    }
+    assert len(batch_dims) == 1
+    assert batch_dims != {""}
     ops = {n.op_type for n in model.graph.node}
     allowlist_text = (REPO_ROOT / "core" / "src" / "dnn" / "op_allowlist.c").read_text()
     for op in ops:
