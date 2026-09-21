@@ -153,28 +153,13 @@ func NewStreamScorer(cfg StreamConfig) (*StreamScorer, error) {
 	}
 
 	var vmafCtx *C.VmafContext
-	vcfg := C.VmafConfiguration{
-		log_level:   C.VMAF_LOG_LEVEL_WARNING,
-		n_threads:   0,
-		n_subsample: 1,
-		cpumask:     0,
-		gpumask:     0,
-	}
-	if err := mapErrno("vmaf_init", int(C.vmaf_init(&vmafCtx, vcfg))); err != nil {
+	if err := mapErrno("vmaf_init",
+		int(C.vmaf_init(&vmafCtx, newScoringConfiguration()))); err != nil {
 		return nil, err
 	}
 
-	var model *C.VmafModel
-	cModelPath := C.CString(cfg.ModelPath)
-	defer C.free(unsafe.Pointer(cModelPath))
-	cModelName := C.CString("vmaf_stream")
-	defer C.free(unsafe.Pointer(cModelName))
-	mcfg := C.VmafModelConfig{
-		name:  cModelName,
-		flags: C.VMAF_MODEL_FLAGS_DEFAULT,
-	}
-	if err := mapErrno("vmaf_model_load_from_path",
-		int(C.vmaf_model_load_from_path(&model, &mcfg, cModelPath))); err != nil {
+	model, err := loadModelFromPath(cfg.ModelPath, "vmaf_stream")
+	if err != nil {
 		C.vmaf_close(vmafCtx)
 		return nil, err
 	}
@@ -331,6 +316,10 @@ func (s *StreamScorer) featuresAtIndex(i int) map[string]float64 {
 		cName := C.CString(name)
 		var fScore C.double
 		rc := C.vmaf_feature_score_at_index(s.vmafCtx, cName, &fScore, C.uint(i))
+		// SAFETY: cName is the C.CString malloc'd at the top of this iteration
+		// and is not stored anywhere by vmaf_feature_score_at_index, which has
+		// already returned; freeing it here releases a live block exactly once
+		// per iteration.
 		C.free(unsafe.Pointer(cName))
 		if rc == 0 {
 			out[name] = float64(fScore)
@@ -399,6 +388,11 @@ func copyPlanesInto(pic *C.VmafPicture, src []byte) error {
 			continue
 		}
 		rowBytes := w * bytesPerSample
+		// SAFETY: dataPtr is the plane base returned by vmaf_picture_alloc,
+		// which guarantees stride[plane]*h[plane] readable-and-writable bytes
+		// for that plane; the nil/zero-extent case was rejected above, and the
+		// slice never outlives pic, whose planes stay alive until the
+		// ownership transfer in vmaf_read_pictures.
 		dst := unsafe.Slice((*byte)(dataPtr), stride*h)
 		for row := 0; row < h; row++ {
 			if off+rowBytes > len(src) {

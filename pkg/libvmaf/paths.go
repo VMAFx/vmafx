@@ -55,8 +55,14 @@ func discoverRepoRoot() (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	// filepath.Dir strips exactly one component per step, so the number of
+	// separators in the starting path is an exact upper bound on how many
+	// steps can precede the filesystem root; +2 covers the root itself and a
+	// possible trailing separator. Exhausting the bound therefore means the
+	// same thing as walking off the root: the marker was not found.
+	maxSteps := strings.Count(cwd, string(os.PathSeparator)) + 2
 	dir := cwd
-	for {
+	for step := 0; step < maxSteps; step++ {
 		if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
 			return dir, true
 		}
@@ -66,6 +72,7 @@ func discoverRepoRoot() (string, bool) {
 		}
 		dir = parent
 	}
+	return "", false
 }
 
 func RepoRoot() string {
