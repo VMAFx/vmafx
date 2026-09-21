@@ -19,11 +19,9 @@
 /* ADR-0809 — C++23 Wave 8: vmaf.c → vmaf.cpp.
  * Conservative idioms: nullptr, static_cast, [[nodiscard]], and RAII
  * wrappers for the three pointer-owning arrays (model, model_collection,
- * model_collection_label) that previously required manual free() under the
- * goto-cleanup ladder.  The goto-cleanup spine is retained — it is a
- * load-bearing invariant per ADR-0141 §2 (cleanup ownership chain); jumping
- * over trivially-destructible or default-initialised objects is well-formed
- * C++23.  Spinner header uses inline to suppress ODR warnings. */
+ * model_collection_label). CliRunState plus cleanup_cli_run() preserve the
+ * required subsystem teardown order without cleanup jumps. Spinner header
+ * uses inline to suppress ODR warnings. */
 
 #include <cstdint>
 #include <cerrno>
@@ -162,28 +160,45 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
      * world-writable regardless of the caller's umask (CodeQL cpp/world-writable-file-creation). */
 #ifdef _WIN32
     FILE *fp = fopen(output_path, "wb");
+    const int file_error = fp ? 0 : (errno ? errno : EIO);
 #else
     const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
+    const int file_error = fp ? 0 : (errno ? errno : EIO);
     if (!fp && raw_fd >= 0) {
         /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
          * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
          * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-         * second free.  2.21 no longer does. */
+        * second free.  2.21 no longer does. */
         /* cppcheck-suppress doubleFree ; see the note above */
-        (void)close(raw_fd);
+        if (close(raw_fd) != 0) {
+            (void)fprintf(stderr,
+                          "vmaf: could not close failed output descriptor for %s (errno=%d)\n",
+                          output_path, errno ? errno : EIO);
+        }
     }
 #endif
-    if (!fp)
+    if (!fp) {
+        (void)fprintf(stderr, "vmaf: could not write backend error JSON to %s (errno=%d)\n",
+                      output_path, file_error);
         return;
+    }
     /* Keep the JSON compact + single line — every consumer in the tree
      * parses it with a permissive reader and the file is short. */
-    (void)fprintf(fp,
-                  "{\"error\": \"%s\", \"backend_requested\": \"%s\", "
-                  "\"errno\": %d, \"adr\": \"ADR-0498\", "
-                  "\"exit_code\": %d}\n",
-                  reason, backend_requested, err_no, VMAF_EXIT_BACKEND_INIT_FAILED);
-    (void)fclose(fp);
+    const int write_result =
+        fprintf(fp,
+                "{\"error\": \"%s\", \"backend_requested\": \"%s\", "
+                "\"errno\": %d, \"adr\": \"ADR-0498\", "
+                "\"exit_code\": %d}\n",
+                reason, backend_requested, err_no, VMAF_EXIT_BACKEND_INIT_FAILED);
+    const int write_errno = write_result < 0 ? errno : 0;
+    const int close_result = fclose(fp);
+    const int close_errno = close_result != 0 ? errno : 0;
+    if (write_result < 0 || close_result != 0) {
+        const int output_errno = write_result < 0 ? write_errno : close_errno;
+        (void)fprintf(stderr, "vmaf: could not finish backend error JSON %s (errno=%d)\n",
+                      output_path, output_errno ? output_errno : EIO);
+    }
 }
 
 /* Validate per-video constraints that do not require comparing the two streams:
@@ -269,90 +284,72 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
     return err_cnt;
 }
 
-/* Copy video input data to picture buffer. The four bit-depth × component
- * branches (8-bit Y/U/V, 10-bit Y/U/V, 16-bit packed) duplicate the per-row
- * loop with different per-sample casts; folding them through a function
- * pointer would cost a per-row indirect call on every frame, so the
- * branches stay inline. The nesting-level warning is structural to YUV
- * (plane × row × column) — splitting wouldn't reduce it
- * (ADR-0141 §2 load-bearing invariant: per-frame indirect-call cost;
- * T7-5 sweep closeout — ADR-0278).
- */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: per-frame pixel unpacking loop
-void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_info *info, int depth)
+template <typename Sample>
+void copy_same_depth_plane(VmafPicture *pic, const video_input_ycbcr ycbcr,
+                           const video_input_info *info, unsigned plane)
+{
+    const int xdec = plane && !(info->pixel_fmt & 1);
+    const int ydec = plane && !(info->pixel_fmt & 2);
+    const ptrdiff_t source_stride = ycbcr[plane].stride / static_cast<ptrdiff_t>(sizeof(Sample));
+    const Sample *source = reinterpret_cast<const Sample *>(ycbcr[plane].data) +
+                           static_cast<size_t>(info->pic_y >> ydec) * source_stride +
+                           (info->pic_x >> xdec);
+    Sample *destination = static_cast<Sample *>(pic->data[plane]);
+    const ptrdiff_t destination_stride =
+        pic->stride[plane] / static_cast<ptrdiff_t>(sizeof(Sample));
+    for (unsigned row = 0; row < pic->h[plane]; row++) {
+        memcpy(destination, source, sizeof(*destination) * pic->w[plane]);
+        destination += destination_stride;
+        source += source_stride;
+    }
+}
+
+template <typename Sample>
+void copy_shifted_plane(VmafPicture *pic, const video_input_ycbcr ycbcr,
+                        const video_input_info *info, unsigned plane, int left_shift)
+{
+    const int xdec = plane && !(info->pixel_fmt & 1);
+    const int ydec = plane && !(info->pixel_fmt & 2);
+    const ptrdiff_t source_stride = ycbcr[plane].stride / static_cast<ptrdiff_t>(sizeof(Sample));
+    const Sample *source = reinterpret_cast<const Sample *>(ycbcr[plane].data) +
+                           static_cast<size_t>(info->pic_y >> ydec) * source_stride +
+                           (info->pic_x >> xdec);
+    auto *destination = static_cast<uint16_t *>(pic->data[plane]);
+    const ptrdiff_t destination_stride = pic->stride[plane] / 2;
+    for (unsigned row = 0; row < pic->h[plane]; row++) {
+        for (unsigned column = 0; column < pic->w[plane]; column++) {
+            destination[column] = static_cast<uint16_t>(source[column] << left_shift);
+        }
+        destination += destination_stride;
+        source += source_stride;
+    }
+}
+
+/* Copy video input data to the picture buffer. Compile-time sample types keep
+ * the per-pixel path direct while the dispatcher stays independent of plane
+ * traversal and row-stride mechanics. */
+void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, const video_input_info *info,
+                       int depth)
 {
     if (info->depth == depth) {
-        if (info->depth == 8) {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint8_t *ycbcr_data =
-                    ycbcr[i].data + static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
-                    (info->pic_x >> xdec);
-                uint8_t *pic_data = static_cast<uint8_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    memcpy(pic_data, ycbcr_data, sizeof(*pic_data) * pic->w[i]);
-                    pic_data += pic->stride[i];
-                    ycbcr_data += ycbcr[i].stride;
-                }
-            }
-        } else {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint16_t *ycbcr_data =
-                    reinterpret_cast<const uint16_t *>(ycbcr[i].data) +
-                    static_cast<size_t>(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
-                    (info->pic_x >> xdec);
-                uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    memcpy(pic_data, ycbcr_data, sizeof(*pic_data) * pic->w[i]);
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride / 2;
-                }
+        for (unsigned plane = 0; plane < 3; plane++) {
+            if (info->depth == 8) {
+                copy_same_depth_plane<uint8_t>(pic, ycbcr, info, plane);
+            } else {
+                copy_same_depth_plane<uint16_t>(pic, ycbcr, info, plane);
             }
         }
-    } else if (depth > 8) {
-        // unequal bit-depth
-        // therefore depth must be > 8 since we do not support depth < 8
-        const int left_shift = depth - info->depth;
+        return;
+    }
+    if (depth <= 8) {
+        return;
+    }
+    const int left_shift = depth - info->depth;
+    for (unsigned plane = 0; plane < 3; plane++) {
         if (info->depth == 8) {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint8_t *ycbcr_data =
-                    ycbcr[i].data + static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
-                    (info->pic_x >> xdec);
-                uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    for (unsigned k = 0; k < pic->w[i]; k++) {
-                        pic_data[k] = static_cast<uint16_t>(ycbcr_data[k] << left_shift);
-                    }
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride;
-                }
-            }
+            copy_shifted_plane<uint8_t>(pic, ycbcr, info, plane, left_shift);
         } else {
-            for (unsigned i = 0; i < 3; i++) {
-                const int xdec = i && !(info->pixel_fmt & 1);
-                const int ydec = i && !(info->pixel_fmt & 2);
-                const uint16_t *ycbcr_data =
-                    reinterpret_cast<const uint16_t *>(ycbcr[i].data) +
-                    static_cast<size_t>(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
-                    (info->pic_x >> xdec);
-                uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    for (unsigned k = 0; k < pic->w[i]; k++) {
-                        pic_data[k] = static_cast<uint16_t>(ycbcr_data[k] << left_shift);
-                    }
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride / 2;
-                }
-            }
+            copy_shifted_plane<uint16_t>(pic, ycbcr, info, plane, left_shift);
         }
     }
 }
@@ -395,9 +392,9 @@ void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_in
 
 /* RAII wrapper for the three parallel model-tracking arrays.
  * Owns heap-allocated VmafModel**, VmafModelCollection**, and const char**
- * arrays sized to model_cnt.  The destructor calls vmaf_model_destroy /
- * vmaf_model_collection_destroy and frees the backing store so the
- * goto-cleanup spine in main() simply lets this object go out of scope.
+ * arrays sized to model_cnt. The destructor calls vmaf_model_destroy /
+ * vmaf_model_collection_destroy and frees the backing store when the owning
+ * CliRunState leaves scope.
  *
  * ADR-0809: replaces the manual free()/vmaf_model*_destroy() calls that
  * were previously duplicated across three locations in main(). */
@@ -442,14 +439,6 @@ class ModelArrays
     [[nodiscard]] const char *const *collection_label() const noexcept
     {
         return m_collection_label;
-    }
-    [[nodiscard]] unsigned &model_cnt() noexcept
-    {
-        return m_model_cnt;
-    }
-    [[nodiscard]] unsigned model_cnt() const noexcept
-    {
-        return m_model_cnt;
     }
     [[nodiscard]] unsigned &collection_cnt() noexcept
     {
@@ -518,7 +507,7 @@ const char *model_label(const CLISettings *c, unsigned i)
                                               enum VmafPixelFormat pix_fmt)
 {
     unsigned *slot = &arrays.collection_cnt();
-    int err;
+    int err = 0;
 
     if (c->model_config[i].version) {
         err = vmaf_model_collection_load(&arrays.model()[i], &arrays.collection()[*slot],
@@ -634,8 +623,7 @@ const char *model_label(const CLISettings *c, unsigned i)
  * video_input_open). On success transfers FILE* ownership from *file_ref/dist
  * to the corresponding video_input and zeros the pointers so the cleanup
  * fclose() doesn't double-close. Sets *vid_ref_open / *vid_dist_open to true
- * for cleanup unwinding. Returns 0 on success, -1 on any failure (caller
- * should treat as fatal and `goto cleanup`).
+ * for cleanup unwinding. Returns 0 on success and -1 on any failure.
  */
 [[nodiscard]] int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_dist,
                                     video_input *vid_ref, video_input *vid_dist, bool *vid_ref_open,
@@ -680,24 +668,156 @@ const char *model_label(const CLISettings *c, unsigned i)
     return 0;
 }
 
-/* Initialise the GPU backends in declared priority order: SYCL first
- * (preferred when --sycl_device or --gpumask is set), CUDA second
- * (consulted only if SYCL was not activated), then HIP and Metal
- * (explicit --hip_device / --metal_device opt-in). On a hard
- * backend-import failure returns -1 so the caller can `goto cleanup`;
- * soft init failures (state_init returning non-zero) silently fall
- * back to CPU. State pointers are passed by reference so the cleanup
- * block can free them after vmaf_close().
- *
- * The function is intentionally kept in a single TU even though
- * several #ifdef-guarded backend stanzas push the line count past the
- * 60-line threshold. Splitting into per-backend helpers would multiply
- * the `#if defined(HAVE_X)` decoration without making the activation
- * priority chain (SYCL > CUDA > HIP > Metal) any clearer to a reader
- * (ADR-0141 §2 load-bearing invariant: backend-priority chain
- * readability + #ifdef discipline; T7-5 sweep closeout — ADR-0278).
- */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: backend priority chain and context init
+[[nodiscard]] bool is_explicit_backend(const CLISettings *c)
+{
+    return c->backend && strcmp(c->backend, "auto") != 0 && strcmp(c->backend, "cpu") != 0;
+}
+
+[[nodiscard]] bool backend_is_compiled(const char *backend)
+{
+    (void)backend;
+    return
+#ifdef HAVE_SYCL
+        strcmp(backend, "sycl") == 0 ||
+#endif
+#ifdef HAVE_CUDA
+        strcmp(backend, "cuda") == 0 ||
+#endif
+#ifdef HAVE_HIP
+        strcmp(backend, "hip") == 0 ||
+#endif
+#ifdef HAVE_METAL
+        strcmp(backend, "metal") == 0 ||
+#endif
+        false;
+}
+
+[[nodiscard]] int validate_explicit_backend(const CLISettings *c, bool explicit_backend)
+{
+    if (!explicit_backend || backend_is_compiled(c->backend))
+        return 0;
+    (void)fprintf(stderr,
+                  "vmaf: --backend %s requested but this libvmaf was built without %s support; "
+                  "refusing to silently fall back to CPU (ADR-0498)\n",
+                  c->backend, c->backend);
+    write_backend_error_json(c->output_path, c->output_fmt, c->backend,
+                             "backend not compiled into this libvmaf", 0);
+    return VMAF_INIT_GPU_EXPLICIT_FAIL;
+}
+
+#ifdef HAVE_SYCL
+[[nodiscard]] int init_sycl_backend(VmafContext *vmaf, const CLISettings *c, VmafSyclState **state,
+                                    bool *active, bool explicit_backend)
+{
+    if ((c->sycl_device < 0 && !c->use_gpumask) || c->no_sycl)
+        return 0;
+    const VmafSyclConfiguration cfg = {
+        .device_index = c->sycl_device >= 0 ? c->sycl_device : 0,
+        .enable_profiling = 0,
+    };
+    const int init_err = vmaf_sycl_state_init(state, cfg);
+    if (init_err) {
+        (void)fprintf(stderr, "problem during vmaf_sycl_state_init, using CPU\n");
+        if (!explicit_backend || strcmp(c->backend, "sycl") != 0)
+            return 0;
+        (void)fprintf(stderr, "vmaf: --backend sycl requested but init failed; refusing to "
+                              "silently fall back to CPU (ADR-0498)\n");
+        write_backend_error_json(c->output_path, c->output_fmt, "sycl",
+                                 "vmaf_sycl_state_init failed", init_err);
+        return VMAF_INIT_GPU_EXPLICIT_FAIL;
+    }
+    if (vmaf_sycl_import_state(vmaf, *state)) {
+        (void)fprintf(stderr, "problem during vmaf_sycl_import_state\n");
+        return -1;
+    }
+    *active = true;
+    return 0;
+}
+#endif
+
+#ifdef HAVE_CUDA
+[[nodiscard]] int init_cuda_backend(VmafContext *vmaf, const CLISettings *c, VmafCudaState **state,
+                                    bool sycl_active, bool *active, bool explicit_backend)
+{
+    *active = false;
+    if (!c->use_gpumask || c->no_cuda || sycl_active)
+        return 0;
+    const VmafCudaConfiguration cfg = {};
+    const int init_err = vmaf_cuda_state_init(state, cfg);
+    if (init_err) {
+        (void)fprintf(stderr, "problem during vmaf_cuda_state_init, using CPU\n");
+        if (!explicit_backend || strcmp(c->backend, "cuda") != 0)
+            return 0;
+        (void)fprintf(stderr, "vmaf: --backend cuda requested but init failed; refusing to "
+                              "silently fall back to CPU (ADR-0498)\n");
+        write_backend_error_json(c->output_path, c->output_fmt, "cuda",
+                                 "vmaf_cuda_state_init failed", init_err);
+        return VMAF_INIT_GPU_EXPLICIT_FAIL;
+    }
+    if (vmaf_cuda_import_state(vmaf, *state)) {
+        (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
+        return -1;
+    }
+    *active = true;
+    return 0;
+}
+#endif
+
+#ifdef HAVE_HIP
+[[nodiscard]] int init_hip_backend(VmafContext *vmaf, const CLISettings *c, VmafHipState **state,
+                                   bool *active, bool explicit_backend)
+{
+    if (c->hip_device < 0 || c->no_hip)
+        return 0;
+    const VmafHipConfiguration cfg = {.device_index = c->hip_device, .flags = 0};
+    const int init_err = vmaf_hip_state_init(state, cfg);
+    if (init_err) {
+        (void)fprintf(stderr, "problem during vmaf_hip_state_init (%d), using CPU\n", init_err);
+        if (!explicit_backend || strcmp(c->backend, "hip") != 0)
+            return 0;
+        (void)fprintf(stderr, "vmaf: --backend hip requested but init failed; refusing to "
+                              "silently fall back to CPU (ADR-0498)\n");
+        write_backend_error_json(c->output_path, c->output_fmt, "hip", "vmaf_hip_state_init failed",
+                                 init_err);
+        return VMAF_INIT_GPU_EXPLICIT_FAIL;
+    }
+    if (vmaf_hip_import_state(vmaf, *state)) {
+        (void)fprintf(stderr, "problem during vmaf_hip_import_state\n");
+        return -1;
+    }
+    *active = true;
+    return 0;
+}
+#endif
+
+#ifdef HAVE_METAL
+[[nodiscard]] int init_metal_backend(VmafContext *vmaf, const CLISettings *c,
+                                     VmafMetalState **state, bool *active, bool explicit_backend)
+{
+    if (c->metal_device < 0 || c->no_metal)
+        return 0;
+    const VmafMetalConfiguration cfg = {.device_index = c->metal_device, .flags = 0};
+    const int init_err = vmaf_metal_state_init(state, cfg);
+    if (init_err) {
+        (void)fprintf(stderr, "problem during vmaf_metal_state_init (%d), using CPU\n", init_err);
+        if (!explicit_backend || strcmp(c->backend, "metal") != 0)
+            return 0;
+        (void)fprintf(stderr, "vmaf: --backend metal requested but init failed; refusing to "
+                              "silently fall back to CPU (ADR-0498)\n");
+        write_backend_error_json(c->output_path, c->output_fmt, "metal",
+                                 "vmaf_metal_state_init failed", init_err);
+        return VMAF_INIT_GPU_EXPLICIT_FAIL;
+    }
+    if (vmaf_metal_import_state(vmaf, *state)) {
+        (void)fprintf(stderr, "problem during vmaf_metal_import_state\n");
+        return -1;
+    }
+    *active = true;
+    return 0;
+}
+#endif
+
+/* Initialise GPU backends in the priority chain SYCL > CUDA > HIP > Metal. */
 [[nodiscard]] int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #ifdef HAVE_SYCL
                                     ,
@@ -705,7 +825,7 @@ const char *model_label(const CLISettings *c, unsigned i)
 #endif
 #ifdef HAVE_CUDA
                                     ,
-                                    bool *cuda_active_out
+                                    VmafCudaState **cuda_state, bool *cuda_active
 #endif
 #ifdef HAVE_HIP
                                     ,
@@ -717,178 +837,37 @@ const char *model_label(const CLISettings *c, unsigned i)
 #endif
 )
 {
-    int err;
     (void)vmaf;
-    (void)c;
-    (void)err;
-
-    /* ADR-0498 / Bug #v2-E: when the user passes ``--backend NAME``
-     * (not the default ``auto``), an init failure for the requested
-     * backend must surface as a hard error — silently falling back to
-     * CPU corrupts CI gates that depend on backend-specific scoring.
-     * The ``auto`` selector keeps the legacy soft-fallback chain.
-     * Marked (void) so a build with no GPU backends compiled in
-     * doesn't trip ``-Wunused-variable``. */
-    const bool explicit_backend =
-        c->backend && strcmp(c->backend, "auto") != 0 && strcmp(c->backend, "cpu") != 0;
-    (void)explicit_backend;
-
-    /* If the requested backend isn't compiled into this libvmaf,
-     * surface that as a hard error too — otherwise the CLI silently
-     * runs on CPU and the user has no signal beyond stderr. */
-    if (explicit_backend) {
-        /* Folded into a single initialiser rather than a sequence of guarded
-         * assignments: the assignments only exist in configurations where the
-         * matching HAVE_* macro is defined, so a `const` declaration compiled
-         * clean on the CPU-only build and broke every CUDA / SYCL / Windows
-         * leg. One expression is const-correct in every configuration. */
-        const bool compiled_in =
+    const bool explicit_backend = is_explicit_backend(c);
+    const int validation_err = validate_explicit_backend(c, explicit_backend);
+    if (validation_err)
+        return validation_err;
 #ifdef HAVE_SYCL
-            strcmp(c->backend, "sycl") == 0 ||
+    const int sycl_err = init_sycl_backend(vmaf, c, sycl_state, sycl_active, explicit_backend);
+    if (sycl_err)
+        return sycl_err;
 #endif
 #ifdef HAVE_CUDA
-            strcmp(c->backend, "cuda") == 0 ||
+#ifdef HAVE_SYCL
+    const bool sycl_was_activated = *sycl_active;
+#else
+    const bool sycl_was_activated = false;
+#endif
+    const int cuda_err =
+        init_cuda_backend(vmaf, c, cuda_state, sycl_was_activated, cuda_active, explicit_backend);
+    if (cuda_err)
+        return cuda_err;
 #endif
 #ifdef HAVE_HIP
-            strcmp(c->backend, "hip") == 0 ||
+    const int hip_err = init_hip_backend(vmaf, c, hip_state, hip_active, explicit_backend);
+    if (hip_err)
+        return hip_err;
 #endif
 #ifdef HAVE_METAL
-            strcmp(c->backend, "metal") == 0 ||
+    const int metal_err = init_metal_backend(vmaf, c, metal_state, metal_active, explicit_backend);
+    if (metal_err)
+        return metal_err;
 #endif
-            false;
-        if (!compiled_in) {
-            (void)fprintf(stderr,
-                          "vmaf: --backend %s requested but this libvmaf was built "
-                          "without %s support; refusing to silently fall back to CPU "
-                          "(ADR-0498)\n",
-                          c->backend, c->backend);
-            write_backend_error_json(c->output_path, c->output_fmt, c->backend,
-                                     "backend not compiled into this libvmaf", 0);
-            return VMAF_INIT_GPU_EXPLICIT_FAIL;
-        }
-    }
-
-    // GPU backend initialization: each backend activates only when its
-    // specific flag is passed.  --gpumask enables the preferred backend
-    // (SYCL > CUDA).  --sycl_device selects
-    // that specific backend.  No flag = CPU only.
-#ifdef HAVE_SYCL
-    VmafSyclConfiguration sycl_cfg = {
-        .device_index = c->sycl_device >= 0 ? c->sycl_device : 0,
-    };
-    if ((c->sycl_device >= 0 || c->use_gpumask) && !c->no_sycl) {
-        err = vmaf_sycl_state_init(sycl_state, sycl_cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem during vmaf_sycl_state_init, using CPU\n");
-            if (explicit_backend && strcmp(c->backend, "sycl") == 0) {
-                (void)fprintf(stderr, "vmaf: --backend sycl requested but init failed; "
-                                      "refusing to silently fall back to CPU (ADR-0498)\n");
-                write_backend_error_json(c->output_path, c->output_fmt, "sycl",
-                                         "vmaf_sycl_state_init failed", err);
-                return VMAF_INIT_GPU_EXPLICIT_FAIL;
-            }
-        } else {
-            err = vmaf_sycl_import_state(vmaf, *sycl_state);
-            if (err) {
-                (void)fprintf(stderr, "problem during vmaf_sycl_import_state\n");
-                return -1;
-            }
-            *sycl_active = true;
-        }
-    }
-#endif
-#ifdef HAVE_CUDA
-    *cuda_active_out = false;
-    VmafCudaState *cu_state;
-    VmafCudaConfiguration cuda_cfg = {0};
-    if (c->use_gpumask && !c->no_cuda
-#ifdef HAVE_SYCL
-        && !*sycl_active
-#endif
-    ) {
-        err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem during vmaf_cuda_state_init, using CPU\n");
-            if (explicit_backend && strcmp(c->backend, "cuda") == 0) {
-                (void)fprintf(stderr, "vmaf: --backend cuda requested but init failed; "
-                                      "refusing to silently fall back to CPU (ADR-0498)\n");
-                write_backend_error_json(c->output_path, c->output_fmt, "cuda",
-                                         "vmaf_cuda_state_init failed", err);
-                return VMAF_INIT_GPU_EXPLICIT_FAIL;
-            }
-        } else {
-            err |= vmaf_cuda_import_state(vmaf, cu_state);
-            if (err) {
-                (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
-                return -1;
-            }
-            *cuda_active_out = true;
-        }
-    }
-#endif
-
-#ifdef HAVE_HIP
-    /* HIP opt-in: explicit --hip_device only. Same lifetime model as
-     * SYCL — state is passed back by reference so the cleanup
-     * block can free it after vmaf_close(). */
-    VmafHipConfiguration hip_cfg = {
-        .device_index = c->hip_device,
-        .flags = 0,
-    };
-    if (c->hip_device >= 0 && !c->no_hip) {
-        err = vmaf_hip_state_init(hip_state, hip_cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem during vmaf_hip_state_init (%d), using CPU\n", err);
-            if (explicit_backend && strcmp(c->backend, "hip") == 0) {
-                (void)fprintf(stderr, "vmaf: --backend hip requested but init failed; "
-                                      "refusing to silently fall back to CPU (ADR-0498)\n");
-                write_backend_error_json(c->output_path, c->output_fmt, "hip",
-                                         "vmaf_hip_state_init failed", err);
-                return VMAF_INIT_GPU_EXPLICIT_FAIL;
-            }
-        } else {
-            err = vmaf_hip_import_state(vmaf, *hip_state);
-            if (err) {
-                (void)fprintf(stderr, "problem during vmaf_hip_import_state\n");
-                return -1;
-            }
-            *hip_active = true;
-        }
-    }
-    (void)*hip_active;
-#endif
-
-#ifdef HAVE_METAL
-    /* Metal opt-in: explicit --metal_device only. macOS-only; on non-
-     * Apple hosts vmaf_metal_state_init returns -ENODEV and the CLI
-     * falls back to CPU. Same state-lifetime model as SYCL/HIP. */
-    VmafMetalConfiguration metal_cfg = {
-        .device_index = c->metal_device,
-        .flags = 0,
-    };
-    if (c->metal_device >= 0 && !c->no_metal) {
-        err = vmaf_metal_state_init(metal_state, metal_cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem during vmaf_metal_state_init (%d), using CPU\n", err);
-            if (explicit_backend && strcmp(c->backend, "metal") == 0) {
-                (void)fprintf(stderr, "vmaf: --backend metal requested but init failed; "
-                                      "refusing to silently fall back to CPU (ADR-0498)\n");
-                write_backend_error_json(c->output_path, c->output_fmt, "metal",
-                                         "vmaf_metal_state_init failed", err);
-                return VMAF_INIT_GPU_EXPLICIT_FAIL;
-            }
-        } else {
-            err = vmaf_metal_import_state(vmaf, *metal_state);
-            if (err) {
-                (void)fprintf(stderr, "problem during vmaf_metal_import_state\n");
-                return -1;
-            }
-            *metal_active = true;
-        }
-    }
-    (void)*metal_active;
-#endif
-
     return 0;
 }
 
@@ -998,8 +977,7 @@ const char *model_label(const CLISettings *c, unsigned i)
 /* Configure the tiny-AI (DNN) model on the VMAF context when --tiny-model
  * is passed. Performs the optional Sigstore-bundle verification (T6-9 /
  * ADR-0211) before opening the model so a signature failure short-circuits
- * load and never touches ORT. Returns 0 on success, -1 on any failure
- * (caller should treat as fatal and `goto cleanup`).
+ * load and never touches ORT. Returns 0 on success and -1 on any failure.
  */
 [[nodiscard]] int apply_tiny_resize(VmafContext *const vmaf, const char *const tiny_resize)
 {
@@ -1158,11 +1136,10 @@ double wall_time_s()
  * conhost printed the CSI sequence literally, on every frame of every run.
  *
  * Switch the console to UTF-8 and enable VT for the life of the process, and
- * restore whatever was there on the way out (including the `goto cleanup`
- * paths — the guard is declared before every jump target, so C++ runs its
- * destructor on each of them). Whatever the console refuses is reflected back
- * through console_progress_style(), which then falls back to the ASCII table
- * and space padding. No effect on POSIX: the whole class is #ifdef'd out.
+ * restore whatever was there on every exit. Whatever the console refuses is
+ * reflected back through console_progress_style(), which then falls back to
+ * the ASCII table and space padding. No effect on POSIX: the whole class is
+ * #ifdef'd out.
  */
 class WindowsConsoleGuard
 {
@@ -1396,18 +1373,15 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 
 /* Compute and report pooled VMAF scores for all loaded models and model
  * collections. Called only when c->no_prediction is false. Returns 0 on
- * success, non-zero on the first per-model scoring failure (caller should
- * treat as fatal and `goto cleanup`).
+ * success and non-zero on the first per-model scoring failure.
  */
 [[nodiscard]] int report_pooled_scores(VmafContext *vmaf, const CLISettings *c,
                                        const ModelArrays &arrays, unsigned picture_index, int istty)
 {
-    int err = 0;
-
     for (unsigned i = 0; i < c->model_cnt; i++) {
         double vmaf_score;
-        err = vmaf_score_pooled(vmaf, arrays.model()[i], VMAF_POOL_METHOD_MEAN, &vmaf_score, 0,
-                                picture_index - 1);
+        const int err = vmaf_score_pooled(vmaf, arrays.model()[i], VMAF_POOL_METHOD_MEAN,
+                                          &vmaf_score, 0, picture_index - 1);
         if (err) {
             (void)fprintf(stderr, "problem generating pooled VMAF score\n");
             return -1;
@@ -1425,7 +1399,7 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
     for (unsigned i = 0; i < arrays.collection_cnt(); i++) {
         VmafModelCollectionScore score = {.type = static_cast<VmafModelCollectionScoreType>(0),
                                           .bootstrap = {}};
-        err = vmaf_score_pooled_model_collection(
+        const int err = vmaf_score_pooled_model_collection(
             vmaf, arrays.collection()[i], VMAF_POOL_METHOD_MEAN, &score, 0, picture_index - 1);
         if (err) {
             (void)fprintf(stderr, "problem generating pooled VMAF score\n");
@@ -1461,97 +1435,73 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
  *
  * No-op when output_path is NULL or format isn't JSON.
  */
-void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat fmt,
-                                  const char *backend_used)
+[[nodiscard]] int close_output_stream(FILE *fp, const char *output_path, int prior_error)
+{
+    if (fclose(fp) == 0)
+        return prior_error;
+    const int close_error = errno ? -errno : -EIO;
+    (void)fprintf(stderr, "problem closing output file %s (err=%d)\n", output_path, close_error);
+    return prior_error ? prior_error : close_error;
+}
+
+[[nodiscard]] int amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat fmt,
+                                               const char *backend_used)
 {
     if (!output_path || !backend_used)
-        return;
+        return 0;
     if (fmt != VMAF_OUTPUT_FORMAT_JSON)
-        return;
+        return 0;
 
     FILE *fp = fopen(output_path, "rb+");
     if (!fp)
-        return;
+        return errno ? -errno : -EIO;
     if (fseek(fp, 0, SEEK_END) != 0) {
-        (void)fclose(fp);
-        return;
+        const int seek_error = errno ? -errno : -EIO;
+        return close_output_stream(fp, output_path, seek_error);
     }
     const long size = ftell(fp);
     if (size <= 1) {
-        (void)fclose(fp);
-        return;
+        const int size_error = size < 0 && errno ? -errno : -EINVAL;
+        return close_output_stream(fp, output_path, size_error);
     }
     /* Walk backwards over trailing whitespace + the final '}'. */
     long pos = size - 1;
+    bool found_closing_brace = false;
     while (pos > 0) {
         if (fseek(fp, pos, SEEK_SET) != 0) {
-            (void)fclose(fp);
-            return;
+            const int seek_error = errno ? -errno : -EIO;
+            return close_output_stream(fp, output_path, seek_error);
         }
         const int ch = fgetc(fp);
         if (ch == EOF) {
-            (void)fclose(fp);
-            return;
+            const int read_error = ferror(fp) && errno ? -errno : -EINVAL;
+            return close_output_stream(fp, output_path, read_error);
         }
-        if (ch == '}')
+        if (ch == '}') {
+            found_closing_brace = true;
             break;
+        }
         if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
-            (void)fclose(fp);
-            return;
+            return close_output_stream(fp, output_path, -EINVAL);
         }
         pos--;
     }
+    if (!found_closing_brace)
+        return close_output_stream(fp, output_path, -EINVAL);
     if (fseek(fp, pos, SEEK_SET) != 0) {
-        (void)fclose(fp);
-        return;
+        const int seek_error = errno ? -errno : -EIO;
+        return close_output_stream(fp, output_path, seek_error);
     }
-    (void)fprintf(fp, ", \"backend_used\": \"%s\"}\n", backend_used);
-    (void)fclose(fp);
+    const int write_result = fprintf(fp, ", \"backend_used\": \"%s\"}\n", backend_used);
+    const int write_error = write_result < 0 ? (errno ? -errno : -EIO) : 0;
+    return close_output_stream(fp, output_path, write_error);
 }
 
-/* CLI driver: orchestrates input opening, VMAF context init, GPU backend
- * activation, model loading, frame loop, score reporting, and cleanup.
- * The function is structured around a single goto-cleanup block — a
- * load-bearing invariant per ADR-0141 §2 because each subsystem owns a
- * distinct cleanup primitive (fclose / video_input_close / vmaf_close /
- * vmaf_*_state_free / cli_free) that must run in reverse-init order on
- * every exit path.  The ModelArrays RAII object (ADR-0809) replaces the
- * three manual free/destroy loops that previously lived in the cleanup
- * block; the goto-cleanup spine is retained for the remaining resources.
- * T7-5 sweep extracted the eight largest sub-blocks into named helpers.
- * The remaining body is the cleanup-ownership spine plus inter-step glue;
- * further extraction would require pointer-aliasing the cleanup-relevant
- * locals through helper signatures and obscure the unwind chain
- * (ADR-0141 §2; T7-5 sweep closeout — ADR-0278; ADR-0146 prior precedent).
- */
-} // namespace
-
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: top-level CLI main entry point
-int main(int argc, char *argv[])
-{
-    int err = 0;
-    int ret = 0;
-    const int istty = isatty(fileno(stderr));
-
-#ifdef _WIN32
-    /* Netflix/vmaf#743: put the console into UTF-8 + VT mode for the run and
-     * restore it on every exit path, including the `goto cleanup` spine.
-     *
-     * `static` here is load-bearing, not a style choice. cli_parse() below
-     * terminates the process directly for --help, --version and every
-     * argument error: usage_exit() is [[noreturn]] and calls exit(), which
-     * does NOT destroy objects with automatic storage duration. As a plain
-     * local, this guard therefore never ran its destructor on those paths and
-     * left the user's console in UTF-8 + VT mode after a bare `vmaf --help`.
-     * Objects with static storage duration ARE destroyed by exit()
-     * ([basic.start.term]), so the restore now runs on the exit() paths, on
-     * the `goto cleanup` spine and on a normal return alike. */
-    static const WindowsConsoleGuard console_guard;
-#endif
-
-    CLISettings c;
-    cli_parse(argc, argv, &c);
-
+/* Resources acquired after cli_parse(). cleanup_cli_run() preserves the
+ * historical unwind order; ModelArrays is destroyed when this aggregate leaves
+ * main(), after the explicit cleanup call. */
+struct CliRunState {
+    CLISettings settings{};
     FILE *file_ref = nullptr;
     FILE *file_dist = nullptr;
     bool vid_ref_open = false;
@@ -1559,24 +1509,14 @@ int main(int argc, char *argv[])
     video_input vid_ref = {.vtbl = nullptr, .ctx = nullptr, .fin = nullptr};
     video_input vid_dist = {.vtbl = nullptr, .ctx = nullptr, .fin = nullptr};
     VmafContext *vmaf = nullptr;
-
-    /* ModelArrays is trivially default-constructible (all pointers null,
-     * counts zero) so jumping to `cleanup:` before allocate() is called
-     * is well-formed C++23: the destructor runs but does nothing. */
     ModelArrays arrays;
-
 #ifdef HAVE_SYCL
     bool sycl_active = false;
     VmafSyclState *sycl_state = nullptr;
 #endif
 #ifdef HAVE_CUDA
-    /* ADR-0543: CUDA active flag is propagated out of init_gpu_backends
-     * so the per-feature backend gate + `backend_used` JSON echo can
-     * see it. Prior to ADR-0543 the flag was a local in init_gpu_backends
-     * and the JSON echo inferred CUDA from the gpumask state — which
-     * broke down when the user passed an explicit ``--feature *_cuda``
-     * but no ``--backend cuda``. */
     bool cuda_active = false;
+    VmafCudaState *cuda_state = nullptr;
 #endif
 #ifdef HAVE_HIP
     bool hip_active = false;
@@ -1586,338 +1526,366 @@ int main(int argc, char *argv[])
     bool metal_active = false;
     VmafMetalState *metal_state = nullptr;
 #endif
+};
 
-    if (istty && !c.quiet) {
-        if (c.vmafx_mode && !c.netflix_compat) {
-            if (c.precision_max) {
-                (void)fprintf(stderr, "VMAFX version %s (precision=max)\n", vmaf_version());
-            } else {
-                (void)fprintf(stderr, "VMAFX version %s\n", vmaf_version());
-            }
-        } else {
-            (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
-        }
+[[nodiscard]] int cleanup_cli_run(CliRunState *run)
+{
+    int cleanup_error = 0;
+    if (run->vmaf) {
+        cleanup_error = vmaf_close(run->vmaf);
+        run->vmaf = nullptr;
+        if (cleanup_error)
+            (void)fprintf(stderr, "problem closing VMAF context (err=%d)\n", cleanup_error);
     }
-
-    /* ADR-0520: --no-reference mode opens the distorted file twice and
-     * threads both handles through the existing ref+dist code paths.
-     * `vmaf_read_pictures` enforces a non-null picture pair (the public
-     * API contract: either both NULL = flush, or both non-NULL = score),
-     * so we satisfy it with two independent decoded copies of the same
-     * source. The NR tiny-model dispatch in `vmaf_ctx_dnn_run_frame_nchw`
-     * reads picture bytes exclusively from the `ref` slot, so the model
-     * sees the distorted frame as intended. No classic SVM features are
-     * registered in this mode (cli_parse.c forces `no_prediction = true`
-     * when `no_reference` is set), so the second copy is touched only by
-     * `vmaf_picture_unref` in the cleanup tail. */
-    const char *const ref_open_path = c.no_reference ? c.path_dist : c.path_ref;
-    file_ref = fopen(ref_open_path, "rb");
-    if (!file_ref) {
-        (void)fprintf(stderr, "could not open file: %s\n", ref_open_path);
-        ret = -1;
-        goto cleanup;
-    }
-
-    file_dist = fopen(c.path_dist, "rb");
-    if (!file_dist) {
-        (void)fprintf(stderr, "could not open file: %s\n", c.path_dist);
-        ret = -1;
-        goto cleanup;
-    }
-
-    if (open_input_videos(&c, &file_ref, &file_dist, &vid_ref, &vid_dist, &vid_ref_open,
-                          &vid_dist_open)) {
-        ret = -1;
-        goto cleanup;
-    }
-
-    {
-        int common_bitdepth;
-        if (c.use_yuv) {
-            common_bitdepth = static_cast<int>(c.bitdepth);
-        } else {
-            video_input_info info1;
-            video_input_info info2;
-            video_input_get_info(&vid_ref, &info1);
-            video_input_get_info(&vid_dist, &info2);
-            common_bitdepth = info1.depth > info2.depth ? info1.depth : info2.depth;
-        }
-
-        const VmafConfiguration cfg = {
-            .log_level = VMAF_LOG_LEVEL_INFO,
-            .n_threads = c.thread_cnt,
-            .n_subsample = c.subsample,
-            .cpumask = c.cpumask,
-            .gpumask = c.gpumask,
-        };
-
-        err = vmaf_init(&vmaf, cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem initializing VMAF context\n");
-            ret = -1;
-            goto cleanup;
-        }
-
-        {
-            const int gpu_rc = init_gpu_backends(vmaf, &c
 #ifdef HAVE_SYCL
-                                                 ,
-                                                 &sycl_state, &sycl_active
+    if (run->sycl_state)
+        vmaf_sycl_state_free(&run->sycl_state);
 #endif
 #ifdef HAVE_CUDA
-                                                 ,
-                                                 &cuda_active
-#endif
-#ifdef HAVE_HIP
-                                                 ,
-                                                 &hip_state, &hip_active
-#endif
-#ifdef HAVE_METAL
-                                                 ,
-                                                 &metal_state, &metal_active
-#endif
-            );
-            if (gpu_rc) {
-                /* ADR-0543 (extends ADR-0498): explicit-backend init failure
-                 * must surface as a distinct non-zero exit code so CI gates
-                 * (vmaf-tune bisect, MCP probes) can distinguish "you asked
-                 * for SYCL and it isn't there" from a generic encode/score
-                 * error. The init_gpu_backends helper returns the dedicated
-                 * sentinel VMAF_INIT_GPU_EXPLICIT_FAIL for that case and the
-                 * generic -1 for everything else (e.g. an import failure
-                 * after a successful state_init). */
-                ret = (gpu_rc == VMAF_INIT_GPU_EXPLICIT_FAIL) ? VMAF_EXIT_BACKEND_INIT_FAILED : -1;
-                goto cleanup;
-            }
-        }
-
-        // Preallocate picture pool to avoid allocation overhead
-        video_input_info info;
-        video_input_get_info(&vid_ref, &info);
-
-        const VmafPictureConfiguration pic_cfg = {
-            .pic_params =
-                {
-                    .w = static_cast<unsigned>(info.pic_w),
-                    .h = static_cast<unsigned>(info.pic_h),
-                    .bpc = static_cast<unsigned>(common_bitdepth),
-                    .pix_fmt = pix_fmt_map(info.pixel_fmt),
-                },
-            /* Liveness budget per frame:
-             *   2  — ref + dist currently held by the CLI fetch/process step
-             *   1  — `vmaf->prev_ref` keeps the previous frame's ref picture
-             *        live across the frame boundary (for motion features)
-             *   2*thread_cnt — worker threads may hold (ref, dist) on in-flight
-             *        frames that haven't finished processing yet
-             * The `+ 1` term covers prev_ref uniformly. Undersizing deadlocks
-             * vmaf_picture_pool_fetch on frame N+1. */
-            .pic_cnt = 2 * (c.thread_cnt + 1) + 1,
-        };
-
-        err = vmaf_preallocate_pictures(vmaf, pic_cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem during vmaf_preallocate_pictures\n");
-            ret = -1;
-            goto cleanup;
-        }
-
-        if (istty && !c.quiet) {
-            (void)fprintf(stderr, "picture pool: %u pictures pre-allocated\n", pic_cfg.pic_cnt);
-        }
-
-        if (arrays.allocate(c.model_cnt)) {
-            ret = -1;
-            goto cleanup;
-        }
-
-        for (unsigned i = 0; i < c.model_cnt; i++) {
-            const int rc = load_one_model_entry(vmaf, &c, i, arrays, pic_cfg.pic_params.w,
-                                                pic_cfg.pic_params.h, pic_cfg.pic_params.pix_fmt);
-            if (rc) {
-                ret = -EINVAL;
-                goto cleanup;
-            }
-        }
-
-        /* ADR-0543 (extends ADR-0498): a feature name ending in ``_cuda`` /
-         * ``_sycl`` / ``_hip`` / ``_metal`` is a GPU-pinned
-         * variant. If the matching backend isn't active in this run, the
-         * libvmaf feature registry silently registers the CPU twin and the
-         * resulting scores look identical to an explicit-backend invocation
-         * but were actually computed on the CPU — that's exactly the kind
-         * of silent-fallback bug ADR-0498 banned for ``--backend NAME``.
-         * Apply the same hard-fail policy here: surface a clear error +
-         * write the structured JSON descriptor + exit with the dedicated
-         * VMAF_EXIT_BACKEND_INIT_FAILED code. */
-        for (unsigned i = 0; i < c.feature_cnt; i++) {
-            char feat_err[256] = {0};
-            if (vmaf_validate_feature_dimensions(c.feature_cfg[i].name, pic_cfg.pic_params.w,
-                                                 pic_cfg.pic_params.h, pic_cfg.pic_params.pix_fmt,
-                                                 feat_err, sizeof(feat_err))) {
-                (void)fprintf(stderr, "error: feature '%s' %s.\n", c.feature_cfg[i].name, feat_err);
-                ret = -EINVAL;
-                goto cleanup;
-            }
-
-            const char *requested_be = nullptr;
-            if (feature_backend_suffix(c.feature_cfg[i].name, &requested_be)) {
-                const bool sa =
-#ifdef HAVE_SYCL
-                    sycl_active;
-#else
-                    false;
-#endif
-                const bool ca =
-#ifdef HAVE_CUDA
-                    cuda_active;
-#else
-                    false;
-#endif
-                const bool ha =
-#ifdef HAVE_HIP
-                    hip_active;
-#else
-                    false;
-#endif
-                const bool ma =
-#ifdef HAVE_METAL
-                    metal_active;
-#else
-                    false;
-#endif
-                if (!backend_active(requested_be, sa, ca, ha, ma)) {
-                    (void)fprintf(stderr,
-                                  "vmaf: --feature %s pinned to %s backend but %s is not "
-                                  "active in this run; refusing to silently fall back to CPU "
-                                  "(ADR-0498)\n",
-                                  c.feature_cfg[i].name, requested_be, requested_be);
-                    write_backend_error_json(c.output_path, c.output_fmt, requested_be,
-                                             "feature pinned to inactive backend", 0);
-                    ret = VMAF_EXIT_BACKEND_INIT_FAILED;
-                    goto cleanup;
-                }
-            }
-            err = vmaf_use_feature(vmaf, c.feature_cfg[i].name, c.feature_cfg[i].opts_dict);
-            if (err) {
-                (void)fprintf(stderr, "problem loading feature extractor: %s\n",
-                              c.feature_cfg[i].name);
-                ret = -1;
-                goto cleanup;
-            }
-        }
-
-        if (configure_tiny_model(vmaf, &c)) {
-            ret = -1;
-            goto cleanup;
-        }
-
-        skip_initial_frames(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth);
-
-        const FrameLoopResult loop =
-            run_frame_loop(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth, istty);
-        const unsigned picture_index = loop.frames;
-
-        /* Two ways the loop can fail, sharing one exit so this does not add a
-         * jump to the cleanup spine.
-         *
-         * ADR-1262: a failed read is reported first -- "the file would not
-         * read" is the more specific answer than "nothing came out of it", and
-         * it is the one the caller can act on. Either way the run must not
-         * exit 0 over a truncated prefix.
-         *
-         * No-frames guard: the pooling path below computes `picture_index - 1`.
-         * With zero decoded frames that underflows the unsigned counter to
-         * UINT_MAX and feeds a garbage index range into vmaf_score_pooled. */
-        if (loop.exit_code || picture_index == 0) {
-            if (loop.exit_code) {
-                ret = loop.exit_code;
-            } else {
-                (void)fprintf(stderr, "no frames decoded from \"%s\" / \"%s\"\n", c.path_ref,
-                              c.path_dist);
-                ret = VMAF_EXIT_NO_FRAMES_DECODED;
-            }
-            goto cleanup;
-        }
-
-        err |= vmaf_read_pictures(vmaf, nullptr, nullptr, 0);
-        if (err) {
-            (void)fprintf(stderr, "problem flushing context\n");
-            ret = err;
-            goto cleanup;
-        }
-
-        if (!c.no_prediction) {
-            ret = report_pooled_scores(vmaf, &c, arrays, picture_index, istty);
-            if (ret)
-                goto cleanup;
-        }
-
-        if (c.output_path) {
-            const int write_err =
-                vmaf_write_output_with_format(vmaf, c.output_path, c.output_fmt, c.precision_fmt);
-            if (write_err) {
-                /* A discarded return here hid write failures (bad path,
-                 * ENOSPC, permission denied) behind a clean exit 0 over a
-                 * stale or partial output file. Surface it instead. */
-                (void)fprintf(stderr, "problem writing output to %s (err=%d)\n", c.output_path,
-                              write_err);
-                ret = write_err;
-                goto cleanup;
-            }
-            /* ADR-0498 / Bug #v2-E: echo the active backend into the JSON
-             * output so CI gates and MCP probes can confirm what actually
-             * ran (mirrors the MCP-layer echo added by PR #1251). */
-            const char *backend_used = "cpu";
-#ifdef HAVE_SYCL
-            if (sycl_active)
-                backend_used = "sycl";
-#endif
-#ifdef HAVE_HIP
-            if (hip_active)
-                backend_used = "hip";
-#endif
-#ifdef HAVE_METAL
-            if (metal_active)
-                backend_used = "metal";
-#endif
-#ifdef HAVE_CUDA
-            /* ADR-0543: CUDA's active flag is now propagated out of
-             * init_gpu_backends so we can echo it directly instead of
-             * re-deriving it from the gpumask + no-flags state. */
-            if (cuda_active)
-                backend_used = "cuda";
-#endif
-            amend_json_with_backend_used(c.output_path, c.output_fmt, backend_used);
-        }
-
-        ret = err;
+    const int cuda_free_err = run->cuda_state ? vmaf_cuda_state_free(run->cuda_state) : 0;
+    run->cuda_state = nullptr;
+    if (cuda_free_err) {
+        (void)fprintf(stderr, "problem freeing CUDA state (err=%d)\n", cuda_free_err);
+        if (!cleanup_error)
+            cleanup_error = cuda_free_err;
     }
-
-cleanup:
-    /* ModelArrays destructor handles model/collection teardown automatically
-     * (ADR-0809 RAII).  GPU states and video inputs follow below. */
-    if (vmaf)
-        vmaf_close(vmaf);
-#ifdef HAVE_SYCL
-    if (sycl_active)
-        vmaf_sycl_state_free(&sycl_state);
 #endif
 #ifdef HAVE_HIP
-    if (hip_state)
-        vmaf_hip_state_free(&hip_state);
+    if (run->hip_state)
+        vmaf_hip_state_free(&run->hip_state);
 #endif
 #ifdef HAVE_METAL
-    if (metal_state)
-        vmaf_metal_state_free(&metal_state);
+    if (run->metal_state)
+        vmaf_metal_state_free(&run->metal_state);
 #endif
-    if (vid_dist_open)
-        video_input_close(&vid_dist);
-    if (vid_ref_open)
-        video_input_close(&vid_ref);
-    if (file_dist)
-        (void)fclose(file_dist);
-    if (file_ref)
-        (void)fclose(file_ref);
-    cli_free(&c);
-    return ret;
+    if (run->vid_dist_open)
+        video_input_close(&run->vid_dist);
+    if (run->vid_ref_open)
+        video_input_close(&run->vid_ref);
+    if (run->file_dist) {
+        const int close_error = fclose(run->file_dist) == 0 ? 0 : (errno ? -errno : -EIO);
+        run->file_dist = nullptr;
+        if (close_error) {
+            (void)fprintf(stderr, "problem closing distorted input (err=%d)\n", close_error);
+            if (!cleanup_error)
+                cleanup_error = close_error;
+        }
+    }
+    if (run->file_ref) {
+        const int close_error = fclose(run->file_ref) == 0 ? 0 : (errno ? -errno : -EIO);
+        run->file_ref = nullptr;
+        if (close_error) {
+            (void)fprintf(stderr, "problem closing reference input (err=%d)\n", close_error);
+            if (!cleanup_error)
+                cleanup_error = close_error;
+        }
+    }
+    cli_free(&run->settings);
+    return cleanup_error;
+}
+
+void print_version_banner(const CLISettings *c, int istty)
+{
+    if (!istty || c->quiet)
+        return;
+    if (!c->vmafx_mode || c->netflix_compat) {
+        (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
+        return;
+    }
+    if (c->precision_max) {
+        (void)fprintf(stderr, "VMAFX version %s (precision=max)\n", vmaf_version());
+    } else {
+        (void)fprintf(stderr, "VMAFX version %s\n", vmaf_version());
+    }
+}
+
+[[nodiscard]] int open_cli_inputs(CliRunState &run)
+{
+    const CLISettings *const c = &run.settings;
+    /* No-reference mode needs two independent decoder handles because the
+     * picture pair is released independently by vmaf_read_pictures(). */
+    const char *const ref_path = c->no_reference ? c->path_dist : c->path_ref;
+    run.file_ref = fopen(ref_path, "rb");
+    if (!run.file_ref) {
+        (void)fprintf(stderr, "could not open file: %s\n", ref_path);
+        return -1;
+    }
+    run.file_dist = fopen(c->path_dist, "rb");
+    if (!run.file_dist) {
+        (void)fprintf(stderr, "could not open file: %s\n", c->path_dist);
+        return -1;
+    }
+    return open_input_videos(c, &run.file_ref, &run.file_dist, &run.vid_ref, &run.vid_dist,
+                             &run.vid_ref_open, &run.vid_dist_open);
+}
+
+[[nodiscard]] int common_input_bitdepth(CliRunState &run)
+{
+    if (run.settings.use_yuv)
+        return static_cast<int>(run.settings.bitdepth);
+    video_input_info ref_info;
+    video_input_info dist_info;
+    video_input_get_info(&run.vid_ref, &ref_info);
+    video_input_get_info(&run.vid_dist, &dist_info);
+    return ref_info.depth > dist_info.depth ? ref_info.depth : dist_info.depth;
+}
+
+[[nodiscard]] int initialize_cli_context(CliRunState &run)
+{
+    const CLISettings *const c = &run.settings;
+    const VmafConfiguration cfg = {
+        .log_level = VMAF_LOG_LEVEL_INFO,
+        .n_threads = c->thread_cnt,
+        .n_subsample = c->subsample,
+        .cpumask = c->cpumask,
+        .gpumask = c->gpumask,
+    };
+    if (vmaf_init(&run.vmaf, cfg)) {
+        (void)fprintf(stderr, "problem initializing VMAF context\n");
+        return -1;
+    }
+    const int gpu_rc = init_gpu_backends(run.vmaf, c
+#ifdef HAVE_SYCL
+                                         ,
+                                         &run.sycl_state, &run.sycl_active
+#endif
+#ifdef HAVE_CUDA
+                                         ,
+                                         &run.cuda_state, &run.cuda_active
+#endif
+#ifdef HAVE_HIP
+                                         ,
+                                         &run.hip_state, &run.hip_active
+#endif
+#ifdef HAVE_METAL
+                                         ,
+                                         &run.metal_state, &run.metal_active
+#endif
+    );
+    if (gpu_rc == VMAF_INIT_GPU_EXPLICIT_FAIL)
+        return VMAF_EXIT_BACKEND_INIT_FAILED;
+    return gpu_rc ? -1 : 0;
+}
+
+[[nodiscard]] VmafPictureConfiguration make_picture_configuration(CliRunState &run,
+                                                                  int common_bitdepth)
+{
+    video_input_info info;
+    video_input_get_info(&run.vid_ref, &info);
+    return {
+        .pic_params =
+            {
+                .w = static_cast<unsigned>(info.pic_w),
+                .h = static_cast<unsigned>(info.pic_h),
+                .bpc = static_cast<unsigned>(common_bitdepth),
+                .pix_fmt = pix_fmt_map(info.pixel_fmt),
+            },
+        /* ref + dist, previous ref, and a pair per in-flight worker */
+        .pic_cnt = 2 * (run.settings.thread_cnt + 1) + 1,
+    };
+}
+
+[[nodiscard]] int prepare_picture_pool(CliRunState &run, const VmafPictureConfiguration &pic_cfg,
+                                       int istty)
+{
+    if (vmaf_preallocate_pictures(run.vmaf, pic_cfg)) {
+        (void)fprintf(stderr, "problem during vmaf_preallocate_pictures\n");
+        return -1;
+    }
+    if (istty && !run.settings.quiet)
+        (void)fprintf(stderr, "picture pool: %u pictures pre-allocated\n", pic_cfg.pic_cnt);
+    return 0;
+}
+
+[[nodiscard]] int load_cli_models(CliRunState &run, const VmafPictureConfiguration &pic_cfg)
+{
+    CLISettings *const c = &run.settings;
+    if (run.arrays.allocate(c->model_cnt))
+        return -1;
+    for (unsigned i = 0; i < c->model_cnt; i++) {
+        if (load_one_model_entry(run.vmaf, c, i, run.arrays, pic_cfg.pic_params.w,
+                                 pic_cfg.pic_params.h, pic_cfg.pic_params.pix_fmt))
+            return -EINVAL;
+    }
+    return 0;
+}
+
+[[nodiscard]] bool run_backend_active(const CliRunState &run, const char *backend)
+{
+    (void)run;
+    const bool sycl =
+#ifdef HAVE_SYCL
+        run.sycl_active;
+#else
+        false;
+#endif
+    const bool cuda =
+#ifdef HAVE_CUDA
+        run.cuda_active;
+#else
+        false;
+#endif
+    const bool hip =
+#ifdef HAVE_HIP
+        run.hip_active;
+#else
+        false;
+#endif
+    const bool metal =
+#ifdef HAVE_METAL
+        run.metal_active;
+#else
+        false;
+#endif
+    return backend_active(backend, sycl, cuda, hip, metal) != 0;
+}
+
+[[nodiscard]] int register_cli_feature(CliRunState &run, const CLIFeatureConfig &feature,
+                                       const VmafPictureConfiguration &pic_cfg)
+{
+    char feature_error[256] = {0};
+    if (vmaf_validate_feature_dimensions(feature.name, pic_cfg.pic_params.w, pic_cfg.pic_params.h,
+                                         pic_cfg.pic_params.pix_fmt, feature_error,
+                                         sizeof(feature_error))) {
+        (void)fprintf(stderr, "error: feature '%s' %s.\n", feature.name, feature_error);
+        return -EINVAL;
+    }
+    const char *requested_backend = nullptr;
+    if (feature_backend_suffix(feature.name, &requested_backend) &&
+        !run_backend_active(run, requested_backend)) {
+        (void)fprintf(stderr,
+                      "vmaf: --feature %s pinned to %s backend but %s is not active in this run; "
+                      "refusing to silently fall back to CPU (ADR-0498)\n",
+                      feature.name, requested_backend, requested_backend);
+        write_backend_error_json(run.settings.output_path, run.settings.output_fmt,
+                                 requested_backend, "feature pinned to inactive backend", 0);
+        return VMAF_EXIT_BACKEND_INIT_FAILED;
+    }
+    if (vmaf_use_feature(run.vmaf, feature.name, feature.opts_dict)) {
+        (void)fprintf(stderr, "problem loading feature extractor: %s\n", feature.name);
+        return -1;
+    }
+    return 0;
+}
+
+[[nodiscard]] int register_cli_features(CliRunState &run, const VmafPictureConfiguration &pic_cfg)
+{
+    for (unsigned i = 0; i < run.settings.feature_cnt; i++) {
+        const int err = register_cli_feature(run, run.settings.feature_cfg[i], pic_cfg);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+[[nodiscard]] const char *active_backend_name(const CliRunState &run)
+{
+    (void)run;
+    const char *backend = "cpu";
+#ifdef HAVE_SYCL
+    if (run.sycl_active)
+        backend = "sycl";
+#endif
+#ifdef HAVE_HIP
+    if (run.hip_active)
+        backend = "hip";
+#endif
+#ifdef HAVE_METAL
+    if (run.metal_active)
+        backend = "metal";
+#endif
+#ifdef HAVE_CUDA
+    if (run.cuda_active)
+        backend = "cuda";
+#endif
+    return backend;
+}
+
+[[nodiscard]] int write_cli_output(CliRunState &run)
+{
+    const CLISettings *const c = &run.settings;
+    if (!c->output_path)
+        return 0;
+    const int err =
+        vmaf_write_output_with_format(run.vmaf, c->output_path, c->output_fmt, c->precision_fmt);
+    if (err) {
+        (void)fprintf(stderr, "problem writing output to %s (err=%d)\n", c->output_path, err);
+        return err;
+    }
+    const int amend_err =
+        amend_json_with_backend_used(c->output_path, c->output_fmt, active_backend_name(run));
+    if (amend_err) {
+        (void)fprintf(stderr, "problem recording active backend in %s (err=%d)\n", c->output_path,
+                      amend_err);
+        return amend_err;
+    }
+    return 0;
+}
+
+[[nodiscard]] int run_cli_frames(CliRunState &run, int common_bitdepth, int istty)
+{
+    const CLISettings *const c = &run.settings;
+    if (configure_tiny_model(run.vmaf, c))
+        return -1;
+    skip_initial_frames(run.vmaf, &run.vid_ref, &run.vid_dist, c, common_bitdepth);
+    const FrameLoopResult loop =
+        run_frame_loop(run.vmaf, &run.vid_ref, &run.vid_dist, c, common_bitdepth, istty);
+    if (loop.exit_code)
+        return loop.exit_code;
+    if (loop.frames == 0) {
+        (void)fprintf(stderr, "no frames decoded from \"%s\" / \"%s\"\n", c->path_ref,
+                      c->path_dist);
+        return VMAF_EXIT_NO_FRAMES_DECODED;
+    }
+    const int flush_err = vmaf_read_pictures(run.vmaf, nullptr, nullptr, 0);
+    if (flush_err) {
+        (void)fprintf(stderr, "problem flushing context\n");
+        return flush_err;
+    }
+    if (!c->no_prediction) {
+        const int score_err = report_pooled_scores(run.vmaf, c, run.arrays, loop.frames, istty);
+        if (score_err)
+            return score_err;
+    }
+    return write_cli_output(run);
+}
+
+[[nodiscard]] int execute_cli(CliRunState &run, int istty)
+{
+    int err = open_cli_inputs(run);
+    if (err)
+        return err;
+    const int common_bitdepth = common_input_bitdepth(run);
+    err = initialize_cli_context(run);
+    if (err)
+        return err;
+    const VmafPictureConfiguration pic_cfg = make_picture_configuration(run, common_bitdepth);
+    err = prepare_picture_pool(run, pic_cfg, istty);
+    if (err)
+        return err;
+    err = load_cli_models(run, pic_cfg);
+    if (err)
+        return err;
+    err = register_cli_features(run, pic_cfg);
+    if (err)
+        return err;
+    return run_cli_frames(run, common_bitdepth, istty);
+}
+
+} // namespace
+
+int main(int argc, char *argv[])
+{
+    const int istty = isatty(fileno(stderr));
+#ifdef _WIN32
+    /* cli_parse() exits directly for help/version/errors, so only static
+     * storage guarantees restoration on both exit() and ordinary returns. */
+    static const WindowsConsoleGuard console_guard;
+#endif
+    CliRunState run;
+    cli_parse(argc, argv, &run.settings);
+    print_version_banner(&run.settings, istty);
+    const int result = execute_cli(run, istty);
+    const int cleanup_result = cleanup_cli_run(&run);
+    return result ? result : cleanup_result;
 }

@@ -195,7 +195,7 @@ tools/
   auto-injected (SVM consumes FR feature columns, would always
   fail downstream). If `/sync-upstream` reintroduces unconditional
   `if (!settings->path_ref)` block, restore `no_reference` guard.
-  **Frame-loop invariant**: in NR mode `vmaf.cpp::main` opens
+  **Frame-loop invariant**: in NR mode `vmaf.cpp::open_cli_inputs` opens
   distorted source twice (two `video_input` handles) so
   `vmaf_read_pictures` receives non-null picture pair; this
   satisfies public-API contract without exposing new entry
@@ -221,8 +221,15 @@ tools/
   - In `y4m_input.c`, all plane dimensions, strides, and buffer index
     calculations use `ptrdiff_t` / `size_t` precision to avoid 32-bit
     multiplication overflow.
-  - In `vmaf.cpp`, `ModelArrays` encapsulated with private members and RAII
-    accessors; all internal helpers reside in anonymous namespace.
+  - In `vmaf.cpp`, `ModelArrays` encapsulates model ownership with private
+    members and RAII accessors; all internal helpers reside in the anonymous
+    namespace. `CliRunState` carries the remaining resource handles, and
+    `main()` has one ordinary return after `cleanup_cli_run()`. Do not restore
+    the old `goto cleanup` spine or add a return between `execute_cli()` and
+    `cleanup_cli_run()`. CUDA initialization retains the original allocation
+    in `CliRunState`; preserve `vmaf_close()` then `vmaf_cuda_state_free()`
+    before input/CLI teardown and `ModelArrays` destruction. Cleanup and
+    backend-JSON amendment errors are reported and affect the process result.
 
 - [ADR-1190](../../docs/adr/1190-cli-option-string-escape-grammar.md) —
   **Escape-aware `--model` / `--feature` option-string splitting.**
@@ -269,10 +276,19 @@ On POSIX both selectors called with `SPINNER_CODEPAGE_UTF8` and
 `vt_enabled = 1`, so emitted bytes are identical to pre-ADR-1166 form.
 Keep it that way — golden-gate CLI invocations parse this stream.
 
-`WindowsConsoleGuard` in `vmaf.cpp` is declared in `main()` **before every
-`goto cleanup` target**, which is what makes restore run on error
-paths. Moving its declaration below jump target is ill-formed C++, would
-silently leave user's console in UTF-8 + VT mode after error exit.
+`WindowsConsoleGuard` in `vmaf.cpp` has static storage because `cli_parse()`
+uses `exit()` for help, version, and argument errors. Automatic objects are not
+destroyed on those paths; changing the guard back to an automatic local would
+silently leave the user's console in UTF-8 + VT mode after `vmaf --help`.
+
+## CUDA gpumask smoke-test budget
+
+`test/test_vmaf_cuda_gpumask.sh` is a dispatch smoke test, not a throughput
+benchmark. Keep its four two-frame invocations at the 576x324 fixture size.
+The old 1920x1080 inputs made four complete scores compete under the test's
+10-second hang-detector budget and timed out during otherwise healthy loaded
+suite runs. The `nvidia-smi -L` guard owns no-device skipping; do not inflate
+the fixture to detect hardware availability.
 
 ## `parse_unsigned` rejects negatives on purpose (ADR-1209)
 

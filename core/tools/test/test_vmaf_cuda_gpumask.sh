@@ -19,11 +19,19 @@ fi
 # test is recorded as skipped rather than failed.
 nvidia-smi -L >/dev/null 2>&1 || exit 77
 
+# This is a dispatch smoke test, not a throughput test.  The former 1920x1080
+# fixture ran four two-frame scores under one 10-second Meson budget and timed
+# out whenever the full suite contended for CPU/GPU time.  576x324 exercises
+# the same model, temporal and backend-selection paths without making scheduler
+# load part of the pass/fail contract.
+WIDTH=576
+HEIGHT=324
+
 # no gpumask: use cuda
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 0
 
@@ -39,7 +47,7 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 1
 
@@ -47,7 +55,7 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 0 \
   --feature psnr \
@@ -57,7 +65,7 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 1 \
   --feature psnr
