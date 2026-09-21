@@ -51677,6 +51677,21 @@ dispatched CPU JSON before and after this cleanup: mean
 Re-run `core/test/test_cambi.c` after any conflict; its unreachable VLT,
 threshold-extreme TVI, and duplicate/descending quick-select cases pin the
 termination behavior directly.
+## SYCL integer VIF warning-clean phases (2026-09-21)
+
+Rebase impact: `core/src/feature/sycl/integer_vif_sycl.cpp` only; no public
+surface, option, metric, tolerance, golden assertion, or twin algorithm
+changes. The source is decomposed into bounded vertical-accumulation,
+horizontal-work-item, and initialization phases so strict clang-tidy and
+HISS-04 pass without suppressions. Private declarations live in short
+anonymous-namespace blocks; keep those blocks short because HISS measures the
+block scope too. Do not reintroduce the five forced-unroll pragmas: oneAPI 2026
+cannot honour every request across the supported target list and diagnoses the
+failure. Preserve fp32 device gain, integer operation order, ceiling
+downsample stride, and the existing init cleanup points. After conflict
+resolution, compare both `vif_fused=false` and `vif_fused=true` against the
+pre-rebase object on 8-bit and 10-bit inputs; this change measured zero
+full-precision delta in all four comparisons.
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
