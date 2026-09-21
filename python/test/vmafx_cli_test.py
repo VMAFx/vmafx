@@ -16,14 +16,14 @@ def _run_pty(cmd):
     proc = subprocess.Popen(cmd, stdout=slave, stderr=slave, close_fds=True)
     os.close(slave)
     out = b""
-    while True:
-        try:
-            chunk = os.read(master, 1024)
-            if not chunk:
-                break
+    chunk_size = 1024
+    try:
+        chunk = os.read(master, chunk_size)
+        while chunk:
             out += chunk
-        except OSError:
-            break
+            chunk = os.read(master, chunk_size)
+    except OSError:
+        pass
     os.close(master)
     proc.wait()
     return proc.returncode, out.decode(errors="replace")
@@ -155,6 +155,9 @@ class VmafxCliTest(unittest.TestCase):
         rc_vmaf, out_vmaf = _run_pty(cmd_vmaf)
         self.assertEqual(rc_vmaf, 0)
 
+        self._assert_compat_scores_match(out_vmafx, out_vmaf)
+
+    def _assert_compat_scores_match(self, out_vmafx, out_vmaf):
         # 3. Parsed pooled score must match vmaf score at 4 decimal places
         score_vmafx_match = re.search(r"vmaf_v0\.6\.1:\s*([0-9]+\.[0-9]+)", out_vmafx)
         self.assertIsNotNone(score_vmafx_match)
@@ -222,40 +225,43 @@ class VmafxCliTest(unittest.TestCase):
             frame0_metrics = vmafx_data["frames"][0]["metrics"]
             self.assertTrue(any("cambi" in k for k in frame0_metrics))
 
-            # Compat mode writes 6 decimals for metrics
-            out_compat = os.path.join(tmpdir, "compat.json")
-            cmd_compat = [
-                self.vmafx_bin,
-                "-r",
-                self.ref_yuv,
-                "-d",
-                self.dis_yuv,
-                "-w",
-                "576",
-                "-h",
-                "324",
-                "-p",
-                "420",
-                "-b",
-                "8",
-                "--frame_cnt",
-                "2",
-                "--netflix-compat",
-                "--json",
-                "-o",
-                out_compat,
-            ]
-            subprocess.run(cmd_compat, check=True, capture_output=True)
-            with open(out_compat, encoding="utf-8") as f:
-                content_compat = f.read()
-            compat_data = json.loads(content_compat)
-            compat_metrics = compat_data["frames"][0]["metrics"]
-            self.assertIn("vmaf", compat_metrics)
-            # Find line with "vmaf": in content_compat and check it has 6 decimal places
-            vmaf_line = next(line for line in content_compat.splitlines() if '"vmaf":' in line)
-            match = re.search(r'"vmaf":\s*([0-9]+\.[0-9]+)', vmaf_line)
-            self.assertIsNotNone(match)
-            self.assertEqual(len(match.group(1).split(".")[1]), 6)
+            self._assert_compat_json_output(tmpdir)
+
+    def _assert_compat_json_output(self, tmpdir):
+        # Compat mode writes 6 decimals for metrics
+        out_compat = os.path.join(tmpdir, "compat.json")
+        cmd_compat = [
+            self.vmafx_bin,
+            "-r",
+            self.ref_yuv,
+            "-d",
+            self.dis_yuv,
+            "-w",
+            "576",
+            "-h",
+            "324",
+            "-p",
+            "420",
+            "-b",
+            "8",
+            "--frame_cnt",
+            "2",
+            "--netflix-compat",
+            "--json",
+            "-o",
+            out_compat,
+        ]
+        subprocess.run(cmd_compat, check=True, capture_output=True)
+        with open(out_compat, encoding="utf-8") as f:
+            content_compat = f.read()
+        compat_data = json.loads(content_compat)
+        compat_metrics = compat_data["frames"][0]["metrics"]
+        self.assertIn("vmaf", compat_metrics)
+        # Find line with "vmaf": in content_compat and check it has 6 decimal places
+        vmaf_line = next(line for line in content_compat.splitlines() if '"vmaf":' in line)
+        match = re.search(r'"vmaf":\s*([0-9]+\.[0-9]+)', vmaf_line)
+        self.assertIsNotNone(match)
+        self.assertEqual(len(match.group(1).split(".")[1]), 6)
 
 
 if __name__ == "__main__":

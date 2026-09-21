@@ -8,6 +8,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -276,24 +277,7 @@ def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkey
         async def fake_score_fn(_req):
             return fake_score
 
-        async def fake_extract(_yuv, **_kwargs):
-            import struct
-            import zlib
-
-            path = _kwargs["out_png"]
-            captured_roots.append(path.parent)
-
-            def write_chunk(chunk_type, data):
-                crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
-                return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
-
-            raw = (
-                b"\x89PNG\r\n\x1a\n"
-                + write_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-                + write_chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff"))
-                + write_chunk(b"IEND", b"")
-            )
-            path.write_bytes(raw)
+        fake_extract = _fake_frame_extractor(captured_roots)
 
         orig_score = srv._run_vmaf_score
         orig_extract = srv._extract_frame_png
@@ -318,6 +302,10 @@ def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkey
 
     r1, r2 = anyio.run(run)
 
+    _assert_worst_frame_responses(r1, r2, captured_roots)
+
+
+def _assert_worst_frame_responses(r1, r2, captured_roots):
     # Each call allocated its own root — that's the stricter contract.
     unique = {str(r) for r in captured_roots}
     assert len(unique) == 2, (
@@ -335,6 +323,29 @@ def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkey
         assert not Path(
             resp["frames"][0]["png"]
         ).exists(), "TemporaryDirectory leaked: PNG file still present after _describe_worst_frames returned"
+
+
+def _fake_frame_extractor(captured_roots):
+    async def fake_extract(_yuv, **_kwargs):
+        import struct
+        import zlib
+
+        path = _kwargs["out_png"]
+        captured_roots.append(path.parent)
+
+        def write_chunk(chunk_type, data):
+            crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
+            return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
+
+        raw = (
+            b"\x89PNG\r\n\x1a\n"
+            + write_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+            + write_chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff"))
+            + write_chunk(b"IEND", b"")
+        )
+        path.write_bytes(raw)
+
+    return fake_extract
 
 
 # ---------------------------------------------------------------------------
@@ -400,6 +411,10 @@ def test_score_tempfile_uses_unique_path(tmp_path, monkeypatch):
         tasks = [asyncio.create_task(srv._run_vmaf_score(req)) for _ in range(10)]
         return await asyncio.gather(*tasks)
 
+    _run_and_assert_unique_temp_paths(anyio, run_concurrent, captured_paths)
+
+
+def _run_and_assert_unique_temp_paths(anyio, run_concurrent, captured_paths):
     anyio.run(run_concurrent)
 
     assert len(captured_paths) == 10, "expected exactly 10 calls"
@@ -503,27 +518,7 @@ def test_score_sem_limits_concurrent_vmaf_subprocesses(tmp_path, monkeypatch):
     peak_concurrent: list[int] = [0]
     current_concurrent: list[int] = [0]
 
-    class _FakeProc:
-        returncode = 0
-
-        async def communicate(self):
-            # Yield to the event loop so other tasks can enter the semaphore
-            # region; this gives the test a realistic concurrent-overlap window.
-            await asyncio.sleep(0)
-            return b"", b""
-
-    async def fake_subprocess(*argv, **_kwargs):
-        current_concurrent[0] += 1
-        if current_concurrent[0] > peak_concurrent[0]:
-            peak_concurrent[0] = current_concurrent[0]
-        proc = _FakeProc()
-        # Write the minimal JSON payload the caller expects.
-        args = list(argv)
-        idx = args.index("-o")
-        out_path = Path(args[idx + 1])
-        out_path.write_text('{"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}')
-        current_concurrent[0] -= 1
-        return proc
+    fake_subprocess = _make_counting_subprocess(current_concurrent, peak_concurrent)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_subprocess)
 
@@ -548,6 +543,32 @@ def test_score_sem_limits_concurrent_vmaf_subprocesses(tmp_path, monkeypatch):
     )
     # Sanity: all 16 calls completed successfully.
     assert peak_concurrent[0] >= 1, "no subprocess calls were observed — test fixture broken"
+
+
+def _make_counting_subprocess(current_concurrent, peak_concurrent):
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            # Yield to the event loop so other tasks can enter the semaphore
+            # region; this gives the test a realistic concurrent-overlap window.
+            await asyncio.sleep(0)
+            return b"", b""
+
+    async def fake_subprocess(*argv, **_kwargs):
+        current_concurrent[0] += 1
+        if current_concurrent[0] > peak_concurrent[0]:
+            peak_concurrent[0] = current_concurrent[0]
+        proc = _FakeProc()
+        # Write the minimal JSON payload the caller expects.
+        args = list(argv)
+        idx = args.index("-o")
+        out_path = Path(args[idx + 1])
+        out_path.write_text('{"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}')
+        current_concurrent[0] -= 1
+        return proc
+
+    return fake_subprocess
 
 
 def test_describe_image_falls_back_to_metadata_only_without_extras(monkeypatch):

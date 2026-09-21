@@ -14,6 +14,10 @@ def create_rd_points(data: list[tuple[float, float]]) -> list[RdPoint]:
 
 class CalculateBdRateTest(unittest.TestCase):
     def setUp(self) -> None:
+        self._set_up_set_a_part_1()
+        self._set_up_set_a_part_2()
+
+    def _set_up_set_a_part_1(self):
         self.set_a = create_rd_points(
             [
                 (35.99646889759373, 21.955645250419696),
@@ -63,6 +67,12 @@ class CalculateBdRateTest(unittest.TestCase):
                 (393.9552307218803, 81.44409020705092),
                 (415.95752090095135, 82.30904120733068),
                 (438.74847322327906, 83.13002760212642),
+            ]
+        )
+
+    def _set_up_set_a_part_2(self):
+        self.set_a += create_rd_points(
+            [
                 (463.7617672915498, 83.97161655008395),
                 (490.0063805707889, 84.77690864577501),
                 (516.9553140067148, 85.5381991116396),
@@ -136,6 +146,11 @@ class CalculateBdRateTest(unittest.TestCase):
         self.assertAlmostEqual(expected_bd_rate, bd_rate, places=8)
 
     def test_calculate_bd_rate_different_slightly(self) -> None:
+        set_b = self._create_set_b_slightly_part_1()
+        self._extend_set_b_slightly_part_2(set_b)
+        self._assert_bd_rate_different_slightly(set_b)
+
+    def _create_set_b_slightly_part_1(self) -> list[RdPoint]:
         set_b = create_rd_points(
             [
                 (35.99646889759373, 21.955645250419696),
@@ -180,6 +195,13 @@ class CalculateBdRateTest(unittest.TestCase):
                 (300.33591073866813, 76.91376459149411),
                 (317.0971573363177, 77.86057887520982),
                 (334.6360977616115, 78.78165542809175),
+            ]
+        )
+        return set_b
+
+    def _extend_set_b_slightly_part_2(self, set_b: list[RdPoint]):
+        set_b += create_rd_points(
+            [
                 (353.52509696138776, 79.69565129406824),
                 (373.29134338556247, 80.57908869613874),
                 (393.9552307218803, 81.44409020705092),
@@ -225,6 +247,7 @@ class CalculateBdRateTest(unittest.TestCase):
             ]
         )
 
+    def _assert_bd_rate_different_slightly(self, set_b: list[RdPoint]):
         bd_rate = calculate_bd_rate(self.set_a, set_b)
         expected_bd_rate = 0.000537973253591284
         self.assertAlmostEqual(expected_bd_rate, bd_rate, places=8)
@@ -292,6 +315,9 @@ class CalculateBdRateTest(unittest.TestCase):
             ]
         )
 
+        self._assert_bd_rate_different(set_b)
+
+    def _assert_bd_rate_different(self, set_b: list[RdPoint]):
         bd_rate = calculate_bd_rate(self.set_a, set_b)
         self.assertAlmostEqual(0.0828609163164793, bd_rate, places=8)
 
