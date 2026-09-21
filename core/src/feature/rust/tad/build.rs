@@ -10,16 +10,16 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
-    let crate_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let crate_dir = env::var("CARGO_MANIFEST_DIR")?;
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
     let include_dir = out_dir.join("include");
-    std::fs::create_dir_all(&include_dir).expect("failed to create include dir");
+    std::fs::create_dir_all(&include_dir)?;
 
     let header_path = include_dir.join("vmafx_tad.h");
 
-    cbindgen::Builder::new()
+    let wrote_header = cbindgen::Builder::new()
         .with_crate(&crate_dir)
         .with_language(cbindgen::Language::C)
         .with_include_guard("VMAFX_TAD_H")
@@ -32,9 +32,11 @@ fn main() {
             " * SPDX-License-Identifier: EUPL-1.2\n",
             " */",
         ))
-        .generate()
-        .expect("cbindgen generation failed")
+        .generate()?
         .write_to_file(&header_path);
+    if !wrote_header {
+        return Err(std::io::Error::other("failed to write generated TAD header").into());
+    }
 
     // Tell Cargo to rerun build.rs only when the library sources change.
     println!("cargo:rerun-if-changed=src/lib.rs");
@@ -43,4 +45,5 @@ fn main() {
     // Expose OUT_DIR/include to the crate itself (not strictly needed since
     // this is a pure Rust crate, but makes the path available for scripts).
     println!("cargo:include={}", include_dir.display());
+    Ok(())
 }

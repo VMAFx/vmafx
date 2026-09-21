@@ -115,7 +115,7 @@ mod lib_tests {
             Box::new(Error::Libvmaf { code: -42 }),
             Box::new(Error::Nul(nul)),
             Box::new(Error::InvalidState("test state")),
-            Box::new(Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "io"))),
+            Box::new(Error::Io(std::io::Error::other("io"))),
         ];
         for case in &cases {
             let s = format!("{case}");
@@ -132,7 +132,7 @@ mod lib_tests {
         let e_nul = Error::Nul(nul);
         assert!(e_nul.source().is_some(), "Nul error should have a source");
 
-        let e_io = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "io error"));
+        let e_io = Error::Io(std::io::Error::other("io error"));
         assert!(e_io.source().is_some(), "Io error should have a source");
 
         // Other variants have no source.
