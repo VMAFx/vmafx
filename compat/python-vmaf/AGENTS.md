@@ -127,6 +127,34 @@ python/vmaf/
   override temporary file before reopening it and remove the path in `finally`;
   relying on garbage collection emits `ResourceWarning` on Python 3.14.
 
+- **HISS-04 helpers are extraction, not redesign (T-HISS-PY-COMPAT-2026-09-21).**
+  The oversized routines were split so each piece stays under the 60-LOC
+  scanner bound, and the split points were chosen to keep observable output
+  identical: `VmafFeatureExtractor` / `VmafIntegerFeatureExtractor` route
+  options through `VMAF_FLOAT_FEATURE_OPTION_TARGETS` /
+  `VMAF_INTEGER_FEATURE_OPTION_TARGETS` (an unlisted option is still ignored
+  silently), `quality_runner._resolve_vmafexec_options()` keeps `models`
+  deliberately unassigned for `use_default_built_in_model=False` because
+  upstream does, `perf_metric` and `noref_feature_extractor` preserve the
+  accumulation order of every reduction, and `local_explainer` /
+  `nn_train_test_model` keep the per-sample RNG draw order so a seeded run
+  reproduces. `result.scores_key_wildcard_match()`'s doctests were
+  redistributed across the new helpers, not dropped — `doctest.testmod()`
+  must still find all twelve.
+- **Bounded frame loops replace `while True` (HISS-02).** The PyPSNR loop in
+  `core/feature_extractor.py` walks `min(ref.num_frms, dis.num_frms)`, which
+  `YuvReader` already validates as an exact count at construction; do not
+  reintroduce a `try/except StopIteration` spin. `tools/scanf.py` carries its
+  termination in the loop header; `readiter()` keeps its trailing
+  `raise StopIteration` (a PEP 479 RuntimeError for callers) on purpose —
+  changing that is a behaviour change, not a cleanup.
+- **The MATLAB MEX sources are refactored in place (ADR-0030 / ADR-0038).**
+  `matlab/strred/matlabPyrTools/MEX/` and `matlab/STMAD_2011_MatlabCode/`
+  now carry `static` helpers instead of the long `INPROD` macro bodies and
+  inline argument parsing. Every index expression, accumulation order and
+  error string is unchanged; `edges[]` is filled with a bounded copy because
+  HISS-08 bans `strcpy()`. See `docs/rebase-notes.md`.
+
 ## Governing ADRs
 
 - [ADR-0006](../../docs/adr/0006-cli-precision-17g-default.md) — precision default.

@@ -75,6 +75,53 @@ class LocalExplainer(object):
             "the sampled neighborhood may not be of the right shape."
         )
 
+    @staticmethod
+    def _single_model(train_test_model):
+        """Return the single model to explain, rejecting multi-model ensembles."""
+        model = train_test_model.model
+        if isinstance(model, list):
+            if len(model) != 1:
+                raise EnsembleNotSupportedError(
+                    "LocalExplainer received a model list of length {}. "
+                    "Explanation for multi-model ensembles is not yet "
+                    "defined. Either reduce the list to a single model or "
+                    "implement an ensemble aggregation strategy.".format(len(model))
+                )
+            model = model[0]
+        return model
+
+    def _explain_one_row(self, train_test_model, x_row, n_feature):
+        """Fit the local surrogate around one normalized feature row.
+
+        The statements below run in the same order as the loop body they were
+        lifted out of, so the sequence of numpy RNG draws per sample — and
+        therefore the explanation itself — is unchanged.
+        """
+        # generate neighborhood samples
+        xs_2d_neighbor = np.random.randn(self.neighbor_samples, n_feature) * self.neighbor_std
+        xs_2d_neighbor += np.tile(x_row, (self.neighbor_samples, 1))
+
+        # add center to first row
+        xs_2d_neighbor = np.vstack([x_row, xs_2d_neighbor])
+
+        # calculate distance to center
+        distances = sklearn.metrics.pairwise_distances(
+            xs_2d_neighbor, xs_2d_neighbor[0].reshape(1, -1), metric=self.distance_metric
+        ).ravel()
+        sample_weight = self.kernel_fn(distances)
+
+        model = self._single_model(train_test_model)
+
+        # predict
+        ys_label_pred_neighbor = train_test_model._predict(model, xs_2d_neighbor)
+
+        # take xs_2d_neighbor and ys_label_pred_neighbor, train a linear
+        # model
+        self.model_regressor.fit(
+            xs_2d_neighbor, ys_label_pred_neighbor, sample_weight=sample_weight
+        )
+        return self.model_regressor.coef_.copy()
+
     def explain(self, train_test_model, xs):
         """Explain data points.
 
@@ -102,42 +149,9 @@ class LocalExplainer(object):
         n_sample, n_feature = xs_2d.shape
         feature_weights = np.zeros([n_sample, n_feature])
         for i_sample in range(n_sample):
-
-            # generate neighborhood samples
-            x_row = xs_2d[i_sample, :]
-            xs_2d_neighbor = np.random.randn(self.neighbor_samples, n_feature) * self.neighbor_std
-            xs_2d_neighbor += np.tile(x_row, (self.neighbor_samples, 1))
-
-            # add center to first row
-            xs_2d_neighbor = np.vstack([x_row, xs_2d_neighbor])
-
-            # calculate distance to center
-            distances = sklearn.metrics.pairwise_distances(
-                xs_2d_neighbor, xs_2d_neighbor[0].reshape(1, -1), metric=self.distance_metric
-            ).ravel()
-            sample_weight = self.kernel_fn(distances)
-
-            model = train_test_model.model
-            if isinstance(model, list):
-                if len(model) != 1:
-                    raise EnsembleNotSupportedError(
-                        "LocalExplainer received a model list of length {}. "
-                        "Explanation for multi-model ensembles is not yet "
-                        "defined. Either reduce the list to a single model or "
-                        "implement an ensemble aggregation strategy.".format(len(model))
-                    )
-                model = model[0]
-
-            # predict
-            ys_label_pred_neighbor = train_test_model._predict(model, xs_2d_neighbor)
-
-            # take xs_2d_neighbor and ys_label_pred_neighbor, train a linear
-            # model
-            self.model_regressor.fit(
-                xs_2d_neighbor, ys_label_pred_neighbor, sample_weight=sample_weight
+            feature_weights[i_sample, :] = self._explain_one_row(
+                train_test_model, xs_2d[i_sample, :], n_feature
             )
-            feature_weight = self.model_regressor.coef_.copy()
-            feature_weights[i_sample, :] = feature_weight
 
         exps = {
             "feature_weights": feature_weights,
@@ -196,6 +210,73 @@ class LocalExplainer(object):
             print("\tfeature value: {}".format(features))
             print("\tfeature weight: {}".format(weights))
 
+    @staticmethod
+    def _read_dis_first_frame(asset):
+        """Return the first luma frame of the asset's distorted file, as float64."""
+        w, h = asset.dis_width_height
+        img = None
+        with YuvReader(
+            filepath=asset.dis_path, width=w, height=h, yuv_type=asset.dis_yuv_type
+        ) as yuv_reader:
+            for yuv in yuv_reader:
+                img, _, _ = yuv
+                img = img.astype(np.double)
+                break
+        assert img is not None
+        return img
+
+    @staticmethod
+    def _explanation_title(asset, y, y_pred):
+        """Build the per-plot title from whichever of the three parts are present."""
+        title = ""
+        if asset is not None:
+            title += "{}\n".format(get_file_name_without_extension(asset.ref_path))
+        if y is not None:
+            title += "ground truth: {:.3f}\n".format(y)
+        if y_pred is not None:
+            title += "predicted: {:.3f}\n".format(y_pred)
+        if title != "" and title[-1] == "\n":
+            title = title[:-1]
+        return title
+
+    @staticmethod
+    def _plot_one_explanation(feature_names, weights, features, normalized, img, title):
+        """Draw the four-panel figure for one explained data point."""
+        assert len(weights) == len(features)
+        M = len(weights)
+
+        fig = plt.figure()
+
+        ax_top = plt.subplot(2, 1, 1)
+        ax_left = plt.subplot(2, 3, 4)
+        ax_mid = plt.subplot(2, 3, 5, sharey=ax_left)
+        ax_right = plt.subplot(2, 3, 6, sharey=ax_left)
+
+        if img is not None:
+            ax_top.imshow(img, cmap="Greys_r")
+        ax_top.get_xaxis().set_visible(False)
+        ax_top.get_yaxis().set_visible(False)
+        ax_top.set_title(title)
+
+        pos = np.arange(M) + 0.1
+        ax_left.barh(pos, features, color="b", label="feature")
+        ax_left.set_xticks(np.arange(0, 1.1, 0.2))
+        ax_left.set_yticks(pos + 0.35)
+        ax_left.set_yticklabels(feature_names)
+        ax_left.set_title("feature")
+
+        ax_mid.barh(pos, normalized, color="g", label="fnormal")
+        ax_mid.get_yaxis().set_visible(False)
+        ax_mid.set_title("fnormal")
+
+        ax_right.barh(pos, weights, color="r", label="weight")
+        ax_right.get_yaxis().set_visible(False)
+        ax_right.set_title("weight")
+
+        plt.tight_layout()
+
+        return fig
+
     @classmethod
     def plot_explanations(cls, exps, assets=None, ys=None, ys_pred=None):
 
@@ -212,62 +293,14 @@ class LocalExplainer(object):
             y = ys["label"][n] if ys is not None else None
             y_pred = ys_pred[n] if ys_pred is not None else None
 
-            img = None
-            if asset is not None:
-                w, h = asset.dis_width_height
-                with YuvReader(
-                    filepath=asset.dis_path, width=w, height=h, yuv_type=asset.dis_yuv_type
-                ) as yuv_reader:
-                    for yuv in yuv_reader:
-                        img, _, _ = yuv
-                        img = img.astype(np.double)
-                        break
-                assert img is not None
+            img = cls._read_dis_first_frame(asset) if asset is not None else None
+            title = cls._explanation_title(asset, y, y_pred)
 
-            title = ""
-            if asset is not None:
-                title += "{}\n".format(get_file_name_without_extension(asset.ref_path))
-            if y is not None:
-                title += "ground truth: {:.3f}\n".format(y)
-            if y_pred is not None:
-                title += "predicted: {:.3f}\n".format(y_pred)
-            if title != "" and title[-1] == "\n":
-                title = title[:-1]
-
-            assert len(weights) == len(features)
-            M = len(weights)
-
-            fig = plt.figure()
-
-            ax_top = plt.subplot(2, 1, 1)
-            ax_left = plt.subplot(2, 3, 4)
-            ax_mid = plt.subplot(2, 3, 5, sharey=ax_left)
-            ax_right = plt.subplot(2, 3, 6, sharey=ax_left)
-
-            if img is not None:
-                ax_top.imshow(img, cmap="Greys_r")
-            ax_top.get_xaxis().set_visible(False)
-            ax_top.get_yaxis().set_visible(False)
-            ax_top.set_title(title)
-
-            pos = np.arange(M) + 0.1
-            ax_left.barh(pos, features, color="b", label="feature")
-            ax_left.set_xticks(np.arange(0, 1.1, 0.2))
-            ax_left.set_yticks(pos + 0.35)
-            ax_left.set_yticklabels(exps["feature_names"])
-            ax_left.set_title("feature")
-
-            ax_mid.barh(pos, normalized, color="g", label="fnormal")
-            ax_mid.get_yaxis().set_visible(False)
-            ax_mid.set_title("fnormal")
-
-            ax_right.barh(pos, weights, color="r", label="weight")
-            ax_right.get_yaxis().set_visible(False)
-            ax_right.set_title("weight")
-
-            plt.tight_layout()
-
-            figs.append(fig)
+            figs.append(
+                cls._plot_one_explanation(
+                    exps["feature_names"], weights, features, normalized, img, title
+                )
+            )
 
         return figs
 

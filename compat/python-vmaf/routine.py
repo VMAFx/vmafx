@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pandas
@@ -25,6 +26,165 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
+_DATASET_LEVEL_FIELDS = (
+    "width",
+    "height",
+    "yuv_fmt",
+    "quality_width",
+    "quality_height",
+    "resampling_type",
+    "crop_cmd",
+    "pad_cmd",
+    "workfile_yuv_type",
+    "duration_sec",
+    "fps",
+    "start_frame",
+    "end_frame",
+)
+
+
+def _dataset_defaults(dataset):
+    """Dataset-level overrides; each entry is None when the dataset omits it."""
+    return SimpleNamespace(**{name: getattr(dataset, name, None) for name in _DATASET_LEVEL_FIELDS})
+
+
+def _resolve_groundtruth(dis_video, groundtruth_key):
+    """The groundtruth score: an explicit key wins, else dmos, then mos, then groundtruth."""
+    if groundtruth_key is not None:
+        return dis_video[groundtruth_key]
+    for key in ("dmos", "mos", "groundtruth"):
+        if key in dis_video:
+            return dis_video[key]
+    return None
+
+
+def _override_or_dis(dataset_value, dis_video, key):
+    """Dataset-level override, else the distorted video's own value, else None."""
+    if dataset_value is not None:
+        return dataset_value
+    return dis_video[key] if key in dis_video else None
+
+
+def _resolve_dimension(dataset_value, ref_video, dis_video, key):
+    """Frame width/height: dataset override, else whichever side declares it.
+
+    When both sides declare it they have to agree; that assert is the dataset's
+    only guard against a reference/distorted geometry mismatch.
+    """
+    if dataset_value is not None:
+        return dataset_value
+    in_ref = key in ref_video
+    in_dis = key in dis_video
+    if in_ref and not in_dis:
+        return ref_video[key]
+    if in_dis and not in_ref:
+        return dis_video[key]
+    if in_ref and in_dis:
+        assert ref_video[key] == dis_video[key]
+        return ref_video[key]
+    return None
+
+
+def _resolve_cmd_pair(dataset_value, ref_video, dis_video, key):
+    """(ref, dis) crop/pad command pair; a dataset-level command applies to both."""
+    if dataset_value is not None:
+        return dataset_value, dataset_value
+    ref_cmd = ref_video[key] if key in ref_video else None
+    dis_cmd = dis_video[key] if key in dis_video else None
+    return ref_cmd, dis_cmd
+
+
+def _resolve_asset_fields(defaults, ref_video, dis_video, groundtruth):
+    """Every per-asset field with the dataset-level overrides already applied."""
+    ref_yuv_fmt = defaults.yuv_fmt if defaults.yuv_fmt is not None else ref_video["yuv_fmt"]
+    fields = SimpleNamespace(
+        ref_yuv_fmt=ref_yuv_fmt,
+        dis_yuv_fmt=dis_video["yuv_fmt"] if "yuv_fmt" in dis_video else ref_yuv_fmt,
+        groundtruth=groundtruth,
+        raw_groundtruth=dis_video["os"] if "os" in dis_video else None,
+        groundtruth_std=dis_video["groundtruth_std"] if "groundtruth_std" in dis_video else None,
+        rebuf_indices=dis_video["rebuf_indices"] if "rebuf_indices" in dis_video else None,
+        width=_resolve_dimension(defaults.width, ref_video, dis_video, "width"),
+        height=_resolve_dimension(defaults.height, ref_video, dis_video, "height"),
+        quality_width=_override_or_dis(defaults.quality_width, dis_video, "quality_width"),
+        quality_height=_override_or_dis(defaults.quality_height, dis_video, "quality_height"),
+        resampling_type=_override_or_dis(defaults.resampling_type, dis_video, "resampling_type"),
+        duration_sec=_override_or_dis(defaults.duration_sec, dis_video, "duration_sec"),
+        fps=_override_or_dis(defaults.fps, dis_video, "fps"),
+        start_frame=_override_or_dis(defaults.start_frame, dis_video, "start_frame"),
+        end_frame=_override_or_dis(defaults.end_frame, dis_video, "end_frame"),
+        workfile_yuv_type=defaults.workfile_yuv_type,
+    )
+    fields.ref_crop_cmd, fields.dis_crop_cmd = _resolve_cmd_pair(
+        defaults.crop_cmd, ref_video, dis_video, "crop_cmd"
+    )
+    fields.ref_pad_cmd, fields.dis_pad_cmd = _resolve_cmd_pair(
+        defaults.pad_cmd, ref_video, dis_video, "pad_cmd"
+    )
+    return fields
+
+
+def _copy_present(target, sources):
+    """Copy ``source[src_key]`` into ``target[dst_key]`` for every key a source has.
+
+    The tuples are walked in order so the resulting key order matches what the
+    original straight-line sequence of ``if key in video`` checks produced.
+    """
+    for source, dst_key, src_key in sources:
+        if src_key in source:
+            target[dst_key] = source[src_key]
+
+
+def _build_asset_dict(fields, ref_video, dis_video):
+    """The Asset ``asset_dict``; fields the dataset does not set are left out."""
+    asset_dict = {"ref_yuv_type": fields.ref_yuv_fmt, "dis_yuv_type": fields.dis_yuv_fmt}
+    if fields.width is not None:
+        if asset_dict["ref_yuv_type"] != "notyuv":
+            asset_dict["ref_width"] = fields.width
+        if asset_dict["dis_yuv_type"] != "notyuv":
+            asset_dict["dis_width"] = fields.width
+    if fields.height is not None:
+        if asset_dict["ref_yuv_type"] != "notyuv":
+            asset_dict["ref_height"] = fields.height
+        if asset_dict["dis_yuv_type"] != "notyuv":
+            asset_dict["dis_height"] = fields.height
+
+    for asset_key, value in (
+        ("groundtruth", fields.groundtruth),
+        ("raw_groundtruth", fields.raw_groundtruth),
+        ("groundtruth_std", fields.groundtruth_std),
+        ("quality_width", fields.quality_width),
+        ("quality_height", fields.quality_height),
+        ("resampling_type", fields.resampling_type),
+        ("ref_crop_cmd", fields.ref_crop_cmd),
+        ("dis_crop_cmd", fields.dis_crop_cmd),
+        ("ref_pad_cmd", fields.ref_pad_cmd),
+        ("dis_pad_cmd", fields.dis_pad_cmd),
+        ("duration_sec", fields.duration_sec),
+        ("workfile_yuv_type", fields.workfile_yuv_type),
+        ("rebuf_indices", fields.rebuf_indices),
+        ("fps", fields.fps),
+        ("start_frame", fields.start_frame),
+        ("end_frame", fields.end_frame),
+    ):
+        if value is not None:
+            asset_dict[asset_key] = value
+
+    _copy_present(
+        asset_dict,
+        (
+            (ref_video, "ref_start_frame", "ref_start_frame"),
+            (dis_video, "dis_start_frame", "dis_start_frame"),
+            (ref_video, "ref_end_frame", "ref_end_frame"),
+            (dis_video, "dis_end_frame", "dis_end_frame"),
+            (dis_video, "dis_enc_width", "enc_width"),
+            (dis_video, "dis_enc_height", "enc_height"),
+            (dis_video, "dis_enc_bitdepth", "enc_bitdepth"),
+        ),
+    )
+    return asset_dict
+
+
 def read_dataset(dataset, **kwargs):
 
     groundtruth_key = kwargs["groundtruth_key"] if "groundtruth_key" in kwargs else None
@@ -49,21 +209,7 @@ def read_dataset(dataset, **kwargs):
     data_set_name = dataset.dataset_name
     ref_videos = dataset.ref_videos
     dis_videos = dataset.dis_videos
-
-    width = dataset.width if hasattr(dataset, "width") else None
-    height = dataset.height if hasattr(dataset, "height") else None
-    yuv_fmt = dataset.yuv_fmt if hasattr(dataset, "yuv_fmt") else None
-
-    quality_width = dataset.quality_width if hasattr(dataset, "quality_width") else None
-    quality_height = dataset.quality_height if hasattr(dataset, "quality_height") else None
-    resampling_type = dataset.resampling_type if hasattr(dataset, "resampling_type") else None
-    crop_cmd = dataset.crop_cmd if hasattr(dataset, "crop_cmd") else None
-    pad_cmd = dataset.pad_cmd if hasattr(dataset, "pad_cmd") else None
-    workfile_yuv_type = dataset.workfile_yuv_type if hasattr(dataset, "workfile_yuv_type") else None
-    duration_sec = dataset.duration_sec if hasattr(dataset, "duration_sec") else None
-    fps = dataset.fps if hasattr(dataset, "fps") else None
-    start_frame = dataset.start_frame if hasattr(dataset, "start_frame") else None
-    end_frame = dataset.end_frame if hasattr(dataset, "end_frame") else None
+    defaults = _dataset_defaults(dataset)
 
     ref_dict = {}  # dictionary of content_id -> path for ref videos
     for ref_video in ref_videos:
@@ -78,203 +224,11 @@ def read_dataset(dataset, **kwargs):
         if asset_ids is not None and dis_video["asset_id"] not in asset_ids:
             continue
 
-        if groundtruth_key is not None:
-            groundtruth = dis_video[groundtruth_key]
-        else:
-            if "dmos" in dis_video:
-                groundtruth = dis_video["dmos"]
-            elif "mos" in dis_video:
-                groundtruth = dis_video["mos"]
-            elif "groundtruth" in dis_video:
-                groundtruth = dis_video["groundtruth"]
-            else:
-                groundtruth = None
-
-        if "os" in dis_video:
-            raw_groundtruth = dis_video["os"]
-        else:
-            raw_groundtruth = None
-
-        if "groundtruth_std" in dis_video:
-            groundtruth_std = dis_video["groundtruth_std"]
-        else:
-            groundtruth_std = None
-
-        if "rebuf_indices" in dis_video:
-            rebuf_indices = dis_video["rebuf_indices"]
-        else:
-            rebuf_indices = None
+        groundtruth = _resolve_groundtruth(dis_video, groundtruth_key)
 
         ref_video = ref_dict[dis_video["content_id"]]
-
-        ref_path = ref_video["path"]
-
-        ref_yuv_fmt_ = (
-            yuv_fmt if yuv_fmt is not None else ref_dict[dis_video["content_id"]]["yuv_fmt"]
-        )
-        dis_yuv_fmt_ = dis_video["yuv_fmt"] if "yuv_fmt" in dis_video else ref_yuv_fmt_
-
-        if width is not None:
-            width_ = width
-        elif "width" in ref_video and "width" not in dis_video:
-            width_ = ref_video["width"]
-        elif "width" in dis_video and "width" not in ref_video:
-            width_ = dis_video["width"]
-        elif "width" in ref_video and "width" in dis_video:
-            assert ref_video["width"] == dis_video["width"]
-            width_ = ref_video["width"]
-        else:
-            width_ = None
-
-        if height is not None:
-            height_ = height
-        elif "height" in ref_video and "height" not in dis_video:
-            height_ = ref_video["height"]
-        elif "height" in dis_video and "height" not in ref_video:
-            height_ = dis_video["height"]
-        elif "height" in ref_video and "height" in dis_video:
-            assert ref_video["height"] == dis_video["height"]
-            height_ = ref_video["height"]
-        else:
-            height_ = None
-
-        if quality_width is not None:
-            quality_width_ = quality_width
-        elif "quality_width" in dis_video:
-            quality_width_ = dis_video["quality_width"]
-        else:
-            quality_width_ = None
-
-        if quality_height is not None:
-            quality_height_ = quality_height
-        elif "quality_height" in dis_video:
-            quality_height_ = dis_video["quality_height"]
-        else:
-            quality_height_ = None
-
-        if resampling_type is not None:
-            resampling_type_ = resampling_type
-        elif "resampling_type" in dis_video:
-            resampling_type_ = dis_video["resampling_type"]
-        else:
-            resampling_type_ = None
-
-        if crop_cmd is not None:
-            ref_crop_cmd_ = crop_cmd
-            dis_crop_cmd_ = crop_cmd
-        else:
-            if "crop_cmd" in ref_video:
-                ref_crop_cmd_ = ref_video["crop_cmd"]
-            else:
-                ref_crop_cmd_ = None
-            if "crop_cmd" in dis_video:
-                dis_crop_cmd_ = dis_video["crop_cmd"]
-            else:
-                dis_crop_cmd_ = None
-
-        if pad_cmd is not None:
-            ref_pad_cmd_ = pad_cmd
-            dis_pad_cmd_ = pad_cmd
-        else:
-            if "pad_cmd" in ref_video:
-                ref_pad_cmd_ = ref_video["pad_cmd"]
-            else:
-                ref_pad_cmd_ = None
-            if "pad_cmd" in dis_video:
-                dis_pad_cmd_ = dis_video["pad_cmd"]
-            else:
-                dis_pad_cmd_ = None
-
-        if duration_sec is not None:
-            duration_sec_ = duration_sec
-        elif "duration_sec" in dis_video:
-            duration_sec_ = dis_video["duration_sec"]
-        else:
-            duration_sec_ = None
-
-        if fps is not None:
-            fps_ = fps
-        elif "fps" in dis_video:
-            fps_ = dis_video["fps"]
-        else:
-            fps_ = None
-
-        if start_frame is not None:
-            start_frame_ = start_frame
-        elif "start_frame" in dis_video:
-            start_frame_ = dis_video["start_frame"]
-        else:
-            start_frame_ = None
-
-        if end_frame is not None:
-            end_frame_ = end_frame
-        elif "end_frame" in dis_video:
-            end_frame_ = dis_video["end_frame"]
-        else:
-            end_frame_ = None
-
-        asset_dict = {"ref_yuv_type": ref_yuv_fmt_, "dis_yuv_type": dis_yuv_fmt_}
-        if width_ is not None:
-            if asset_dict["ref_yuv_type"] != "notyuv":
-                asset_dict["ref_width"] = width_
-            if asset_dict["dis_yuv_type"] != "notyuv":
-                asset_dict["dis_width"] = width_
-        if height_ is not None:
-            if asset_dict["ref_yuv_type"] != "notyuv":
-                asset_dict["ref_height"] = height_
-            if asset_dict["dis_yuv_type"] != "notyuv":
-                asset_dict["dis_height"] = height_
-        if groundtruth is not None:
-            asset_dict["groundtruth"] = groundtruth
-        if raw_groundtruth is not None:
-            asset_dict["raw_groundtruth"] = raw_groundtruth
-        if groundtruth_std is not None:
-            asset_dict["groundtruth_std"] = groundtruth_std
-        if quality_width_ is not None:
-            asset_dict["quality_width"] = quality_width_
-        if quality_height_ is not None:
-            asset_dict["quality_height"] = quality_height_
-        if resampling_type_ is not None:
-            asset_dict["resampling_type"] = resampling_type_
-
-        if ref_crop_cmd_ is not None:
-            asset_dict["ref_crop_cmd"] = ref_crop_cmd_
-        if dis_crop_cmd_ is not None:
-            asset_dict["dis_crop_cmd"] = dis_crop_cmd_
-
-        if ref_pad_cmd_ is not None:
-            asset_dict["ref_pad_cmd"] = ref_pad_cmd_
-        if dis_pad_cmd_ is not None:
-            asset_dict["dis_pad_cmd"] = dis_pad_cmd_
-
-        if duration_sec_ is not None:
-            asset_dict["duration_sec"] = duration_sec_
-        if workfile_yuv_type is not None:
-            asset_dict["workfile_yuv_type"] = workfile_yuv_type
-        if rebuf_indices is not None:
-            asset_dict["rebuf_indices"] = rebuf_indices
-        if fps_ is not None:
-            asset_dict["fps"] = fps_
-        if start_frame_ is not None:
-            asset_dict["start_frame"] = start_frame_
-        if end_frame_ is not None:
-            asset_dict["end_frame"] = end_frame_
-
-        if "ref_start_frame" in ref_video:
-            asset_dict["ref_start_frame"] = ref_video["ref_start_frame"]
-        if "dis_start_frame" in dis_video:
-            asset_dict["dis_start_frame"] = dis_video["dis_start_frame"]
-        if "ref_end_frame" in ref_video:
-            asset_dict["ref_end_frame"] = ref_video["ref_end_frame"]
-        if "dis_end_frame" in dis_video:
-            asset_dict["dis_end_frame"] = dis_video["dis_end_frame"]
-
-        if "enc_width" in dis_video:
-            asset_dict["dis_enc_width"] = dis_video["enc_width"]
-        if "enc_height" in dis_video:
-            asset_dict["dis_enc_height"] = dis_video["enc_height"]
-        if "enc_bitdepth" in dis_video:
-            asset_dict["dis_enc_bitdepth"] = dis_video["enc_bitdepth"]
+        fields = _resolve_asset_fields(defaults, ref_video, dis_video, groundtruth)
+        asset_dict = _build_asset_dict(fields, ref_video, dis_video)
 
         if groundtruth is None and skip_asset_with_none_groundtruth:
             pass
@@ -284,155 +238,13 @@ def read_dataset(dataset, **kwargs):
                 content_id=dis_video["content_id"],
                 asset_id=dis_video["asset_id"],
                 workdir_root=workdir_root,
-                ref_path=ref_path,
+                ref_path=ref_video["path"],
                 dis_path=dis_video["path"],
                 asset_dict=asset_dict,
             )
             assets.append(asset)
 
     return assets
-
-
-def compare_two_quality_runners_on_dataset(
-    test_dataset,
-    first_runner_class,
-    second_runner_class,
-    result_store,
-    parallelize=True,
-    fifo_mode=True,
-    aggregate_method=np.mean,
-    type="regressor",
-    num_resample=1000,
-    seed_resample=None,
-    ax_plcc=None,
-    ax_srocc=None,
-    **kwargs,
-):
-
-    def _get_stat(
-        df: pandas.DataFrame,
-        xcol: str,
-        ycol: str,
-    ) -> dict:
-        plcc = df[ycol].corr(df[xcol], method="pearson")
-        srocc = df[ycol].corr(df[xcol], method="spearman")
-        return {"plcc": plcc, "srocc": srocc}
-
-    first_test_assets, first_results = run_test_on_dataset(
-        test_dataset,
-        first_runner_class,
-        None,
-        result_store,
-        None,
-        parallelize,
-        fifo_mode,
-        aggregate_method,
-        type,
-        **kwargs,
-    )
-
-    second_test_assets, second_results = run_test_on_dataset(
-        test_dataset,
-        second_runner_class,
-        None,
-        result_store,
-        None,
-        parallelize,
-        fifo_mode,
-        aggregate_method,
-        type,
-        **kwargs,
-    )
-
-    # collect data to list of dictionaries
-    ds = list()
-    assert (
-        len(first_test_assets)
-        == len(second_test_assets)
-        == len(first_results)
-        == len(second_results)
-    )
-    for first_test_asset, first_result, second_test_asset, second_result in zip(
-        first_test_assets, first_results, second_test_assets, second_results
-    ):
-        assert first_test_asset.groundtruth is not None
-        assert second_test_asset.groundtruth is not None
-        assert first_test_asset.groundtruth == second_test_asset.groundtruth
-        d = {
-            "groundtruth": first_test_asset.groundtruth,
-            "first_prediction": first_result[first_runner_class.get_score_key()],
-            "second_prediction": second_result[second_runner_class.get_score_key()],
-        }
-        ds.append(d)
-    df = pandas.DataFrame(ds)
-
-    # bootstrapping
-    np.random.seed(seed_resample)
-    xs = list()
-    ys = list()
-    xs2 = list()
-    ys2 = list()
-    for _ in range(num_resample):
-        dfb = df.sample(n=df.shape[0], replace=True)
-        d_stat_first = _get_stat(dfb, "groundtruth", "first_prediction")
-        d_stat_second = _get_stat(dfb, "groundtruth", "second_prediction")
-        x = d_stat_first["plcc"]
-        y = d_stat_second["plcc"]
-        x2 = d_stat_first["srocc"]
-        y2 = d_stat_second["srocc"]
-        xs.append(x)
-        ys.append(y)
-        xs2.append(x2)
-        ys2.append(y2)
-
-    ci95_xs = [np.percentile(xs, 2.5), np.percentile(xs, 97.5)]
-    ci95_ys = [np.percentile(ys, 2.5), np.percentile(ys, 97.5)]
-    diffs = np.array(ys) - np.array(xs)
-    ci95_diffs = [np.percentile(diffs, 2.5), np.percentile(diffs, 97.5)]
-    if ax_plcc is not None:
-        ax_plcc.scatter(xs, ys, alpha=0.2, label="PLCC with resampling")
-        ax_plcc.plot([min(xs), max(xs)], [min(xs), max(xs)], "-r")
-        ax_plcc.set_xlabel(
-            f"{first_runner_class.TYPE} 95%-CI: [{ci95_xs[0]:.4f}, {ci95_xs[1]:.4f}]"
-        )
-        ax_plcc.set_ylabel(
-            f"{second_runner_class.TYPE} 95%-CI: [{ci95_ys[0]:.4f}, {ci95_ys[1]:.4f}]"
-        )
-        ax_plcc.set_title(
-            f"({second_runner_class.TYPE} - {first_runner_class.TYPE}) 95%-CI: [{ci95_diffs[0]:.4f}, {ci95_diffs[1]:.4f}]"
-        )
-        ax_plcc.grid()
-        ax_plcc.legend()
-
-    ci95_xs2 = [np.percentile(xs2, 2.5), np.percentile(xs2, 97.5)]
-    ci95_ys2 = [np.percentile(ys2, 2.5), np.percentile(ys2, 97.5)]
-    diffs2 = np.array(ys2) - np.array(xs2)
-    ci95_diffs2 = [np.percentile(diffs2, 2.5), np.percentile(diffs2, 97.5)]
-    if ax_srocc is not None:
-        ax_srocc.scatter(xs2, ys2, alpha=0.2, label="SROCC with resampling")
-        ax_srocc.plot([min(xs2), max(xs2)], [min(xs2), max(xs2)], "-r")
-        ax_srocc.set_xlabel(
-            f"{first_runner_class.TYPE} 95%-CI: [{ci95_xs2[0]:.4f}, {ci95_xs2[1]:.4f}]"
-        )
-        ax_srocc.set_ylabel(
-            f"{second_runner_class.TYPE} 95%-CI: [{ci95_ys2[0]:.4f}, {ci95_ys2[1]:.4f}]"
-        )
-        ax_srocc.set_title(
-            f"({second_runner_class.TYPE} - {first_runner_class.TYPE})  95%-CI: [{ci95_diffs2[0]:.4f}, {ci95_diffs2[1]:.4f}]"
-        )
-        ax_srocc.grid()
-        ax_srocc.legend()
-
-    return {
-        "plcc": list(zip(xs, ys)),
-        "srocc": list(zip(xs2, ys2)),
-        "plcc_ci95_first": ci95_xs,
-        "plcc_ci95_second": ci95_ys,
-        "plcc_ci95_diff": ci95_diffs,
-        "srocc_ci95_first": ci95_xs2,
-        "srocc_ci95_second": ci95_ys2,
-        "srocc_ci95_diff": ci95_diffs2,
-    }
 
 
 def run_test_on_dataset(
