@@ -51769,6 +51769,14 @@ downsample stride, and the existing init cleanup points. After conflict
 resolution, compare both `vif_fused=false` and `vif_fused=true` against the
 pre-rebase object on 8-bit and 10-bit inputs; this change measured zero
 full-precision delta in all four comparisons.
+## MCP timeout-drain warning regression (2026-09-21)
+
+No rebase impact: this changes only the fork-local Python MCP timeout test.
+The timeout fake closes the first coroutine when injecting `TimeoutError`, then
+actually awaits the second `communicate()` call so the production post-kill
+drain lifecycle is exercised. Do not restore the former `RuntimeWarning`
+suppression or replace the drain await with a fabricated return value.
+
 ## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 ## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
 
