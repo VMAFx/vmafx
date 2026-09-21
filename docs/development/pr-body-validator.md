@@ -96,6 +96,49 @@ Exit codes:
 | 1    | PR body would fail (same `::error` lines as CI emits).   |
 | 2    | Usage error — missing body, unreadable diff file, etc.   |
 
+## Where the body comes from
+
+Both entry points — [`deliverables-check.sh`][deliv] and
+`validate-pr-body.sh` — resolve the body in this order:
+
+1. `--body PATH` (`validate-pr-body.sh` only).
+2. `$PR_BODY`, **when the variable is set**, including when it is set to
+   the empty string. Setting it is the caller's answer, so a blank one is
+   reported against the variable rather than quietly replaced from stdin.
+   This is the path CI takes (`PR_BODY: ${{ github.event.pull_request.body }}`)
+   and the path `make pr-check` takes.
+3. stdin, **when fd 0 is a pipe, a regular file or a socket**.
+
+Anything else is a usage error (exit 2) naming what fd 0 actually is. The
+classification lives in [`scripts/ci/pr-body-input.sh`][input], shared by
+both scripts so the two agree.
+
+The distinction matters because `[ ! -t 0 ]` — the test both scripts used
+until it was replaced — answers "is fd 0 something other than a terminal",
+not "did anybody pipe a PR body":
+
+| fd 0                    | `[ ! -t 0 ]` | Now                                      |
+|-------------------------|--------------|------------------------------------------|
+| pipe / file with a body | true         | read (unchanged)                         |
+| pipe carrying no bytes  | true         | fail closed: the producer sent nothing   |
+| `/dev/null`             | true         | usage error, exit 2                      |
+| closed (`0<&-`)         | true         | usage error, exit 2                      |
+| terminal                | false        | usage error, exit 2 (unchanged)          |
+
+The closed case was the sharp one. `PR_BODY="$(cat)"` with fd 0 closed does
+not fail, it **deadlocks**: the command substitution opens a pipe, the
+kernel hands out the lowest free descriptor, with fd 0 free that pipe's
+read end lands on fd 0, and `cat` reads the pipe it is writing to. Reproduce
+the old behaviour on any pre-fix checkout with:
+
+```bash
+timeout 10 bash scripts/ci/deliverables-check.sh 0<&- ; echo $?   # 124
+```
+
+`scripts/ci/tests/test-pr-body-input-selection.sh` pins every row of that
+table for both scripts, under `timeout`, so a re-regression is reported as
+a hang instead of becoming one.
+
 ## What the hook does on push
 
 1. Resolves the current branch via `git rev-parse --abbrev-ref HEAD`.
@@ -168,3 +211,4 @@ GitHub Actions log surfaces them as inline annotations.
 
 [rule-yml]: ../../.github/workflows/rule-enforcement.yml
 [deliv]: ../../scripts/ci/deliverables-check.sh
+[input]: ../../scripts/ci/pr-body-input.sh

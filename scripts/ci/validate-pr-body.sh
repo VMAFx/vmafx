@@ -35,6 +35,9 @@
 #   1  PR body would fail the gate (same error message + line number
 #      as the CI gate emits).
 #   2  Usage error (no body supplied, missing --diff file, etc.).
+#      Includes the cases where fd 0 cannot carry a body at all: a
+#      terminal, a closed descriptor, or /dev/null. Those used to be
+#      read as an empty body — or, closed, to hang forever.
 
 set -euo pipefail
 
@@ -43,10 +46,15 @@ usage() {
 Usage: $0 [--body PATH] [--diff PATH]
 
 Options:
-  --body PATH   Read PR body from PATH (default: read from stdin).
+  --body PATH   Read PR body from PATH.
   --diff PATH   Read changed-file paths from PATH, one per line
                 (default: \`git diff --name-only origin/master..HEAD\`).
   -h, --help    Show this help.
+
+Body sources, in order: --body PATH, then \$PR_BODY when the variable is
+set (even to the empty string), then stdin when fd 0 is a pipe, a regular
+file or a socket. A terminal, a closed fd 0 and /dev/null are none of
+those and are reported as a usage error instead of read as an empty body.
 
 Validates a PR body against the ADR-0108 six-deliverable gate enforced
 by .github/workflows/rule-enforcement.yml. Re-uses the parser in
@@ -81,6 +89,14 @@ done
 
 # ---------- Resolve PR body source ----------
 
+# Shared with deliverables-check.sh so both entry points to the same parser
+# decide what fd 0 is the same way. `[ ! -t 0 ]` asked whether stdin is a
+# terminal, which is not the same question as whether a body was piped, and
+# reading a closed fd 0 deadlocks outright.
+_validator_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/pr-body-input.sh
+. "${_validator_dir}/pr-body-input.sh"
+
 if [ -n "${body_path}" ]; then
   if [ ! -r "${body_path}" ]; then
     echo "validate-pr-body: cannot read body file: ${body_path}" >&2
@@ -88,29 +104,33 @@ if [ -n "${body_path}" ]; then
   fi
   body_text="$(cat -- "${body_path}")"
   body_src="--body ${body_path}"
-elif [ -n "${PR_BODY:-}" ]; then
+elif [ -n "${PR_BODY+x}" ]; then
   # Honour the same env var `make pr-check` and the CI workflow set, so the two
-  # entry points to the same parser take the same input the same way.
+  # entry points to the same parser take the same input the same way. Set —
+  # even to the empty string — counts: the caller named it as the input.
   body_text="${PR_BODY}"
   body_src="\$PR_BODY"
-elif [ ! -t 0 ]; then
-  body_text="$(cat)"
-  body_src="stdin"
 else
-  echo "validate-pr-body: no PR body supplied — pass --body PATH, set \$PR_BODY, or pipe on stdin." >&2
-  usage
-  exit 2
+  pr_body_classify_stdin
+  if [ "${PR_BODY_STDIN_KIND}" = "stream" ]; then
+    body_text="$(pr_body_read_stdin)"
+    body_src="stdin"
+  else
+    echo "validate-pr-body: no PR body supplied — $(pr_body_stdin_reason)" >&2
+    echo "  Pass --body PATH, set \$PR_BODY, or pipe the body on stdin." >&2
+    usage
+    exit 2
+  fi
 fi
 
-# `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not, so the stdin
-# branch is reached with nothing to read whenever this runs from a script, a
-# hook or a CI step. The parser would then report all six deliverables missing,
-# which is true of an empty string and misleading about the PR.
+# A source was chosen and it carried nothing but whitespace. Name that, rather
+# than letting the parser report six missing deliverables — true of an empty
+# string, misleading about the PR.
 if [ -z "$(printf '%s' "${body_text}" | tr -d '[:space:]')" ]; then
   if [ "${body_src}" = "stdin" ]; then
     echo "validate-pr-body: nothing arrived on stdin." >&2
-    echo "  '[ ! -t 0 ]' cannot distinguish an empty pipe from no pipe, so this" >&2
-    echo "  is reported here rather than as six missing deliverables." >&2
+    echo "  The pipe was open and carried no bytes, so this is reported here" >&2
+    echo "  rather than as six missing deliverables." >&2
     echo "  Pipe the body, or pass --body PATH, or set \$PR_BODY." >&2
     usage
     exit 2

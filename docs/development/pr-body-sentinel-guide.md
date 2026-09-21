@@ -134,6 +134,12 @@ Exit codes:
 | 1 | PR body would fail (same `::error` lines as CI emits) |
 | 2 | Usage error — missing body, unreadable diff file, etc. |
 
+Exit 2 also covers every shape where stdin cannot carry a body at all: a
+terminal, a closed `fd 0`, or `/dev/null`. Those are the producer's fault,
+not the PR author's, and the scripts say so rather than parsing an empty
+string into six missing deliverables. See
+[pr-body-validator.md](pr-body-validator.md#where-the-body-comes-from).
+
 ## Metadata lookup failures
 
 A locked keyring or broken `gh` authentication must not hang the push and must
