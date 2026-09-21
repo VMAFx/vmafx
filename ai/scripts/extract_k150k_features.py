@@ -99,13 +99,22 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.data.scores import ResolvedTeacherModel
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_vmaf_tune_src=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
@@ -114,13 +123,12 @@ DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
 
 def _load_runtime_helpers() -> tuple[Any, ...]:
     """Import helpers after the direct-script bootstrap installs package roots."""
-    from ai.data.scores import DEFAULT_MODEL, ResolvedTeacherModel, resolve_teacher_model
+    from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     return (
         DEFAULT_MODEL,
-        ResolvedTeacherModel,
         resolve_teacher_model,
         build_run_provenance,
         write_manifest_json,
@@ -129,7 +137,6 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
 
 (
     DEFAULT_MODEL,
-    ResolvedTeacherModel,
     resolve_teacher_model,
     build_run_provenance,
     write_manifest_json,
@@ -281,7 +288,9 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
 # ---------------------------------------------------------------------------
 
 
-def _geometry_from_sidecar(meta: dict | None) -> tuple[int, int, str, str] | None:
+def _geometry_from_sidecar(
+    meta: Mapping[str, Any] | None,
+) -> tuple[int, int, str, str] | None:
     """Extract (width, height, pix_fmt, fps) from a CHUG JSONL sidecar row.
 
     Returns ``None`` if ``meta`` is ``None`` or if any required geometry field
@@ -556,7 +565,7 @@ def _run_vmaf_json(
     backend_args: list[str],
     is_hdr: bool = False,
     motion_fps_weight_value: float = 1.0,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Run vmaf once and return a list of per-frame metric dicts."""
     cmd = _build_vmaf_cmd(
         vmaf_bin,
@@ -577,10 +586,12 @@ def _run_vmaf_json(
     return [fr["metrics"] for fr in data.get("frames", [])]
 
 
-def _merge_frame_metrics(primary: list[dict], residual: list[dict]) -> list[dict]:
+def _merge_frame_metrics(
+    primary: list[dict[str, Any]], residual: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Merge per-frame metric dictionaries from two vmaf invocations."""
     frame_count = min(len(primary), len(residual))
-    merged: list[dict] = []
+    merged: list[dict[str, Any]] = []
     for idx in range(frame_count):
         row = dict(primary[idx])
         row.update(residual[idx])
@@ -601,7 +612,7 @@ def _run_feature_passes(
     is_hdr: bool = False,
     motion_fps_weight_value: float = 1.0,
     teacher_model_arg: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Run vmaf feature extraction, splitting CUDA mode where required.
 
     The teacher model is dispatched on every invocation so that the
@@ -678,7 +689,7 @@ def _run_feature_passes(
 # ---------------------------------------------------------------------------
 
 
-def _lookup_metric(metrics: dict, feature: str) -> float:
+def _lookup_metric(metrics: dict[str, Any], feature: str) -> float:
     """Return the float value for ``feature`` from a libvmaf metrics dict.
 
     Tries each alias in order; returns NaN if none match or value is None.
@@ -693,7 +704,7 @@ def _lookup_metric(metrics: dict, feature: str) -> float:
     return float("nan")
 
 
-def _aggregate_frames(frames: list[dict]) -> dict[str, float]:
+def _aggregate_frames(frames: list[dict[str, Any]]) -> dict[str, float]:
     """Return nanmean and nanstd per feature across all frames."""
     if not frames:
         result: dict[str, float] = {}
@@ -892,13 +903,13 @@ def _staging_path(out_path: Path) -> Path:
     return out_path.with_suffix(".rows.jsonl")
 
 
-def _append_row_to_staging(staging_path: Path, row: dict) -> None:
+def _append_row_to_staging(staging_path: Path, row: dict[str, Any]) -> None:
     """Append one row to the JSONL staging file (main process only)."""
     with staging_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, allow_nan=True) + "\n")
 
 
-def _load_staging_rows(staging_path: Path) -> list[dict]:
+def _load_staging_rows(staging_path: Path) -> list[dict[str, Any]]:
     """Load all rows from the JSONL staging file, skipping malformed lines.
 
     Malformed lines are tolerated (a crash can truncate the in-flight final
@@ -908,7 +919,7 @@ def _load_staging_rows(staging_path: Path) -> list[dict]:
     """
     if not staging_path.is_file():
         return []
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     skipped = 0
     with staging_path.open("r", encoding="utf-8") as fh:
         for raw in fh:
@@ -931,7 +942,7 @@ def _load_staging_rows(staging_path: Path) -> list[dict]:
     return rows
 
 
-def _write_parquet_from_rows(rows: list[dict], out_path: Path) -> None:
+def _write_parquet_from_rows(rows: list[dict[str, Any]], out_path: Path) -> None:
     """Write ``rows`` to ``out_path`` atomically, deduplicating by clip_name.
 
     Parquet writes happen exactly once per run.  The per-clip JSONL staging
@@ -1075,10 +1086,10 @@ def _process_clip(
     vmaf_threads: int,
     use_cuda: bool,
     worker_id: int,
-    sidecar_meta: dict | None = None,
+    sidecar_meta: dict[str, Any] | None = None,
     teacher_model_arg: str | None = None,
     teacher_model_name: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Decode one clip, score it, aggregate, and return the row dict.
 
     Runs in a subprocess worker.  Uses a worker-private YUV path so parallel
@@ -1576,9 +1587,9 @@ def _submit_extract_jobs(
     inputs: _ScoreInputs,
     teacher: ResolvedTeacherModel,
     use_cuda: bool,
-) -> dict[concurrent.futures.Future, str]:
+) -> dict[concurrent.futures.Future[dict[str, Any]], str]:
     """Submit one independent extraction job per pending clip."""
-    future_to_clip: dict[concurrent.futures.Future, str] = {}
+    future_to_clip: dict[concurrent.futures.Future[dict[str, Any]], str] = {}
     for idx, mp4 in enumerate(plan.pending):
         clip_name = mp4.name
         mos = inputs.mos_map.get(clip_name)
@@ -1615,7 +1626,7 @@ def _print_batch_progress(completed: int, total: int, ok: int, fail: int, starte
 
 
 def _collect_extract_jobs(
-    futures: dict[concurrent.futures.Future, str],
+    futures: dict[concurrent.futures.Future[dict[str, Any]], str],
     inputs: _ScoreInputs,
     plan: _ExtractionPlan,
     recovered_rows: list[dict[str, Any]],

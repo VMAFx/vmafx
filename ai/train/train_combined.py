@@ -45,9 +45,18 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from ..data.netflix_loader import NetflixPair
+
+ArrayPair = tuple[np.ndarray[Any, np.dtype[np.float32]], np.ndarray[Any, np.dtype[np.float32]]]
+PayloadProvider = Callable[["NetflixPair"], dict[str, Any]]
 
 if __package__ in (None, ""):
     _here = Path(__file__).resolve()
@@ -156,7 +165,10 @@ def _split_konvid_keys(
     return train_keys, val_keys
 
 
-def _load_netflix(args, payload_provider):  # type: ignore[no-untyped-def]
+def _load_netflix(
+    args: argparse.Namespace,
+    payload_provider: PayloadProvider | None,
+) -> tuple[ArrayPair, ArrayPair]:
     """Build (train_xy, val_xy) for the Netflix slice; ``(empty, empty)`` if disabled."""
     from ..data.feature_extractor import DEFAULT_FEATURES
     from .dataset import NetflixFrameDataset
@@ -215,7 +227,7 @@ def _load_netflix(args, payload_provider):  # type: ignore[no-untyped-def]
     return train_ds.numpy_arrays(), val_xy
 
 
-def _load_konvid(args):  # type: ignore[no-untyped-def]
+def _load_konvid(args: argparse.Namespace) -> tuple[ArrayPair, ArrayPair]:
     """Build (train_xy, val_xy) for the KoNViD slice; ``(empty, empty)`` if disabled."""
     from ..data.feature_extractor import DEFAULT_FEATURES
     from .konvid_pair_dataset import KoNViDPairDataset
@@ -267,7 +279,7 @@ def _load_konvid(args):  # type: ignore[no-untyped-def]
     return train_xy, val_xy
 
 
-def _concat_xy(*pairs):  # type: ignore[no-untyped-def]
+def _concat_xy(*pairs: ArrayPair) -> ArrayPair:
     xs = [x for x, _ in pairs if x.shape[0] > 0]
     ys = [y for _, y in pairs if y.shape[0] > 0]
     if not xs:
@@ -278,14 +290,17 @@ def _concat_xy(*pairs):  # type: ignore[no-untyped-def]
 def _check_torch_combined() -> int:
     """Return 0 if torch is importable, else print an error and return 2."""
     try:
-        import torch  # noqa: F401
+        import_module("torch")
     except ImportError as e:
         print(f"error: PyTorch is required for training: {e}", file=sys.stderr)
         return 2
     return 0
 
 
-def _load_combined_data(args, payload_provider):  # type: ignore[no-untyped-def]
+def _load_combined_data(
+    args: argparse.Namespace,
+    payload_provider: PayloadProvider | None,
+) -> tuple[ArrayPair, ArrayPair]:
     """Return (train_xy, val_xy) by concatenating Netflix + KoNViD slices."""
     netflix_train, netflix_val = _load_netflix(args, payload_provider)
     konvid_train, konvid_val = _load_konvid(args)
@@ -316,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         f"feature_dim={feature_dim} val_mode={args.val_mode}"
     )
 
-    payload_provider = None
+    payload_provider: PayloadProvider | None = None
     if args.epochs == 0:
         from .dataset import _make_zero_payload
 
@@ -359,5 +374,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in tests
+if __name__ == "__main__":
     raise SystemExit(main())

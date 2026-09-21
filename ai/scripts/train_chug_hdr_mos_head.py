@@ -16,25 +16,39 @@ import json
 import os
 import sys
 from collections.abc import Sequence
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+    from ai.scripts.train_konvid_mos_head import (
+        FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
+        FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
+        FEATURE_SCHEMA_KONVID_V1,
+    )
+    from ai.scripts.train_konvid_mos_head import main as _train_mos_head_main
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+    from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from train_konvid_mos_head import (  # noqa: E402
-    FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
-    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
-    FEATURE_SCHEMA_KONVID_V1,
-)
-from train_konvid_mos_head import main as _train_mos_head_main  # noqa: E402
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+if not TYPE_CHECKING:
+    _TRAINER = import_module("ai.scripts.train_konvid_mos_head")
+    FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1 = _TRAINER.FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1
+    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1 = _TRAINER.FEATURE_SCHEMA_CHUG_HDR_WIDE_V1
+    FEATURE_SCHEMA_KONVID_V1 = _TRAINER.FEATURE_SCHEMA_KONVID_V1
+    _train_mos_head_main = _TRAINER.main
+    _CLI_HELPERS = import_module("aiutils.cli_helpers")
+    collect_cli_argv = _CLI_HELPERS.collect_cli_argv
+    make_argument_parser = _CLI_HELPERS.make_argument_parser
 
 DEFAULT_CHUG_DIR = Path(os.environ.get("VMAF_CHUG_DIR", str(REPO_ROOT / ".corpus" / "chug")))
 DEFAULT_CHUG_OUTPUT_DIR = Path(
@@ -52,7 +66,7 @@ def _discover_feature_jsonls(shard_dir: Path) -> list[Path]:
 def _resolve_chug_feature_schema(args: argparse.Namespace) -> str:
     """Resolve the CHUG feature schema from explicit flag or display-profile hint."""
     if args.feature_schema is not None:
-        return args.feature_schema
+        return str(args.feature_schema)
     if args.display_profile_json is not None:
         return FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1
     return FEATURE_SCHEMA_CHUG_HDR_WIDE_V1

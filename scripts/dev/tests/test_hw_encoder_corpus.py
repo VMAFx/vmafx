@@ -8,8 +8,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -21,7 +23,7 @@ HW = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HW)
 
 
-def _payload(*, with_metrics: bool = True) -> dict:
+def _payload(*, with_metrics: bool = True) -> dict[str, Any]:
     metrics = dict.fromkeys(HW.CANONICAL_6, 0.5) if with_metrics else {}
     metrics["vmaf"] = 90.0
     return {
@@ -58,7 +60,7 @@ class HardwareEncoderCorpusTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
 
     @staticmethod
-    def _encode_ok(*args, **kwargs) -> tuple[int, float, int]:
+    def _encode_ok(*args: Any, **kwargs: Any) -> tuple[int, float, int]:
         args[7].write_bytes(b"mp4")
         return 0, 1.5, 4
 
@@ -68,8 +70,8 @@ class HardwareEncoderCorpusTests(unittest.TestCase):
         return 0
 
     @staticmethod
-    def _score_with(payload: dict):
-        def score(*args) -> int:
+    def _score_with(payload: dict[str, Any]) -> Callable[..., int]:
+        def score(*args: Any) -> int:
             args[-1].write_text(json.dumps(payload), encoding="utf-8")
             return 0
 
