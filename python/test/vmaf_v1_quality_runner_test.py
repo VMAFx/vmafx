@@ -19,6 +19,38 @@ class VmafV1QualityRunnerTest(MyTestCase):
             self.runner.remove_results()
         super().tearDown()
 
+    def _run_cambi_override(self, ref, dis, model, extra):
+        dis_dict = {"width": 576, "height": 324}
+        dis_dict.update(extra)
+        asset = Asset(
+            dataset="test",
+            content_id=0,
+            asset_id=0,
+            workdir_root=VmafConfig.workdir_path(),
+            ref_path=ref,
+            dis_path=dis,
+            asset_dict=dis_dict,
+        )
+        asset_original = Asset(
+            dataset="test",
+            content_id=0,
+            asset_id=1,
+            workdir_root=VmafConfig.workdir_path(),
+            ref_path=ref,
+            dis_path=ref,
+            asset_dict={"width": 576, "height": 324},
+        )
+        self.runner = VmafexecQualityRunner(
+            [asset, asset_original],
+            None,
+            fifo_mode=True,
+            delete_workdir=True,
+            result_store=None,
+            optional_dict={"model_filepath": model},
+        )
+        self.runner.run()
+        return self.runner.results[0]
+
     def test_v1016_integer_1080_3d0H_exec(self):
         _, _, asset, asset_original = set_default_576_324_videos_for_testing()
         self.runner = VmafexecQualityRunner(
@@ -351,42 +383,10 @@ class VmafV1QualityRunnerTest(MyTestCase):
         dis = VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv")
         model = VmafConfig.model_path("vmaf_v1.0.16", "vmaf_v1.0.16_3d0h.json")
 
-        def run(extra):
-            dis_dict = {"width": 576, "height": 324}
-            dis_dict.update(extra)
-            asset = Asset(
-                dataset="test",
-                content_id=0,
-                asset_id=0,
-                workdir_root=VmafConfig.workdir_path(),
-                ref_path=ref,
-                dis_path=dis,
-                asset_dict=dis_dict,
-            )
-            asset_original = Asset(
-                dataset="test",
-                content_id=0,
-                asset_id=1,
-                workdir_root=VmafConfig.workdir_path(),
-                ref_path=ref,
-                dis_path=ref,
-                asset_dict={"width": 576, "height": 324},
-            )
-            self.runner = VmafexecQualityRunner(
-                [asset, asset_original],
-                None,
-                fifo_mode=True,
-                delete_workdir=True,
-                result_store=None,
-                optional_dict={"model_filepath": model},
-            )
-            self.runner.run()
-            return self.runner.results[0]
-
         default_key = "VMAFEXEC_cambi_hrs_1080_cmxv_17_vlt_0.06_encbd_8_ench_324_encw_576_score"
 
         # default: enc_* falls back to the 576x324 8-bit input dimensions
-        r = run({})
+        r = self._run_cambi_override(ref, dis, model, {})
         keys = r.get_ordered_list_score_key()
         self.assertIn(default_key, keys)
         self.assertEqual(len([k for k in keys if "cambi" in k]), 1)
@@ -396,7 +396,7 @@ class VmafV1QualityRunnerTest(MyTestCase):
 
         # encode-resolution override (320x180): the CAMBI key reflects the
         # override, the default key is gone, and the score changes
-        r = run({"dis_enc_width": 320, "dis_enc_height": 180})
+        r = self._run_cambi_override(ref, dis, model, {"dis_enc_width": 320, "dis_enc_height": 180})
         keys = r.get_ordered_list_score_key()
         override_key = "VMAFEXEC_cambi_hrs_1080_cmxv_17_vlt_0.06_encbd_8_ench_180_encw_320_score"
         self.assertIn(override_key, keys)
@@ -407,7 +407,7 @@ class VmafV1QualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(r["VMAFEXEC_score"], 82.9629780625, places=4)
 
         # encode-bitdepth override (10): same behaviour via enc_bitdepth
-        r = run({"dis_enc_bitdepth": 10})
+        r = self._run_cambi_override(ref, dis, model, {"dis_enc_bitdepth": 10})
         keys = r.get_ordered_list_score_key()
         override_key = "VMAFEXEC_cambi_hrs_1080_cmxv_17_vlt_0.06_encbd_10_ench_324_encw_576_score"
         self.assertIn(override_key, keys)

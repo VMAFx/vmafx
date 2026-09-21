@@ -9,8 +9,7 @@ __license__ = "BSD+Patent"
 
 class ExecutorTest(unittest.TestCase):
 
-    def test_get_workfile_yuv_type(self):
-
+    def _check_default_and_reference_types(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -44,6 +43,7 @@ class ExecutorTest(unittest.TestCase):
         )
         self.assertEqual(Executor._get_workfile_yuv_type(asset), "yuv444p")
 
+    def _check_mismatched_and_distorted_types(self):
         with self.assertRaises(AssertionError):
             asset = Asset(
                 dataset="test",
@@ -78,6 +78,7 @@ class ExecutorTest(unittest.TestCase):
         )
         self.assertEqual(Executor._get_workfile_yuv_type(asset), "yuv444p")
 
+    def _check_explicit_workfile_types(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -122,6 +123,11 @@ class ExecutorTest(unittest.TestCase):
             workdir_root="my_workdir_root",
         )
         self.assertEqual(Executor._get_workfile_yuv_type(asset), "yuv444p")
+
+    def test_get_workfile_yuv_type(self):
+        self._check_default_and_reference_types()
+        self._check_mismatched_and_distorted_types()
+        self._check_explicit_workfile_types()
 
 
 if __name__ == "__main__":

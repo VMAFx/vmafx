@@ -22,6 +22,51 @@ __license__ = "BSD+Patent"
 
 class LocalExplainerTest(MyTestCase):
 
+    def _assert_vmaf_explanations(self, results, expected_feature_names):
+        weights = np.mean(results[0]["VMAF_LE_scores_exps"]["feature_weights"], axis=0)
+        self.assertAlmostEqual(
+            weights[0], 0.66021689480916868, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[1], 0.14691682562211777, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[2], -0.023682744847036086, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[3], -0.029779341850172818, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[4], 0.19149485210137338, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[5], 0.31890978778344126, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+
+        self.assertEqual(results[0]["VMAF_LE_scores_exps"]["feature_names"], expected_feature_names)
+
+        weights = np.mean(results[1]["VMAF_LE_scores_exps"]["feature_weights"], axis=0)
+        self.assertAlmostEqual(
+            weights[0], 0.69597961598838509, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[1], 0.18256016705513464, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[2], 0.0090048099912423147, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[3], 0.028671810808880094, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[4], 0.21935602577417926, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            weights[5], 0.34190431429767715, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+
+        self.assertEqual(results[1]["VMAF_LE_scores_exps"]["feature_names"], expected_feature_names)
+
     def test_explain_train_test_model(self):
 
         model_class = SklearnRandomForestTrainTestModel
@@ -117,49 +162,7 @@ class LocalExplainerTest(MyTestCase):
             "VMAF_feature_vif_scale3_score",
         ]
 
-        weights = np.mean(results[0]["VMAF_LE_scores_exps"]["feature_weights"], axis=0)
-        self.assertAlmostEqual(
-            weights[0], 0.66021689480916868, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[1], 0.14691682562211777, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[2], -0.023682744847036086, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[3], -0.029779341850172818, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[4], 0.19149485210137338, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[5], 0.31890978778344126, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-
-        self.assertEqual(results[0]["VMAF_LE_scores_exps"]["feature_names"], expected_feature_names)
-
-        weights = np.mean(results[1]["VMAF_LE_scores_exps"]["feature_weights"], axis=0)
-        self.assertAlmostEqual(
-            weights[0], 0.69597961598838509, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[1], 0.18256016705513464, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[2], 0.0090048099912423147, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[3], 0.028671810808880094, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[4], 0.21935602577417926, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            weights[5], 0.34190431429767715, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-
-        self.assertEqual(results[1]["VMAF_LE_scores_exps"]["feature_names"], expected_feature_names)
+        self._assert_vmaf_explanations(results, expected_feature_names)
 
         # self.runner.show_local_explanations(results, indexs=[2, 3])
         # import matplotlib.pyplot as plt

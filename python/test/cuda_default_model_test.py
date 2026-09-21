@@ -52,6 +52,29 @@ class CudaDefaultModelTest(unittest.TestCase):
         if not os.path.isfile(cls.ref_yuv) or not os.path.isfile(cls.dis_yuv):
             raise unittest.SkipTest("Required test YUV video files not found")
 
+    def _build_parity_command(self, backend_options, out_json):
+        return [
+            self.vmaf_bin,
+            "--reference",
+            self.ref_yuv,
+            "--distorted",
+            self.dis_yuv,
+            "--width",
+            "576",
+            "--height",
+            "324",
+            "--pixel_format",
+            "420",
+            "--bitdepth",
+            "8",
+            *backend_options,
+            "--model",
+            "version=vmaf_v1.0.16_3d0h",
+            "--json",
+            "--output",
+            out_json,
+        ]
+
     def test_cuda_default_model_exit_zero_and_pooled_metrics(self):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             out_json = f.name
@@ -101,54 +124,13 @@ class CudaDefaultModelTest(unittest.TestCase):
             cpu_json = f_cpu.name
 
         try:
-            cmd_cuda = [
-                self.vmaf_bin,
-                "--reference",
-                self.ref_yuv,
-                "--distorted",
-                self.dis_yuv,
-                "--width",
-                "576",
-                "--height",
-                "324",
-                "--pixel_format",
-                "420",
-                "--bitdepth",
-                "8",
-                "--backend",
-                "cuda",
-                "--model",
-                "version=vmaf_v1.0.16_3d0h",
-                "--json",
-                "--output",
-                cuda_json,
-            ]
+            cmd_cuda = self._build_parity_command(["--backend", "cuda"], cuda_json)
             res_cuda = subprocess.run(
                 cmd_cuda, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
             self.assertEqual(res_cuda.returncode, 0, f"CUDA run failed: {res_cuda.stderr}")
 
-            cmd_cpu = [
-                self.vmaf_bin,
-                "--reference",
-                self.ref_yuv,
-                "--distorted",
-                self.dis_yuv,
-                "--width",
-                "576",
-                "--height",
-                "324",
-                "--pixel_format",
-                "420",
-                "--bitdepth",
-                "8",
-                "--no_cuda",
-                "--model",
-                "version=vmaf_v1.0.16_3d0h",
-                "--json",
-                "--output",
-                cpu_json,
-            ]
+            cmd_cpu = self._build_parity_command(["--no_cuda"], cpu_json)
             res_cpu = subprocess.run(
                 cmd_cpu, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )

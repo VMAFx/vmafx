@@ -69,6 +69,32 @@ def _probe_sycl():
             return False
 
 
+def _motion_command(vmaf, ref_path, dis_path, width, height, backend, feature, option_str, out):
+    return [
+        vmaf,
+        "-r",
+        ref_path,
+        "-d",
+        dis_path,
+        "-w",
+        str(width),
+        "-h",
+        str(height),
+        "-p",
+        "420",
+        "-b",
+        "8",
+        "--backend",
+        backend,
+        "--no_prediction",
+        "--feature",
+        f"{feature}={option_str}" if option_str else feature,
+        "-o",
+        out,
+        "--json",
+    ]
+
+
 class SyclMotionParityTest(unittest.TestCase):
 
     @classmethod
@@ -87,52 +113,20 @@ class SyclMotionParityTest(unittest.TestCase):
             out_cpu = os.path.join(tmp, "cpu.json")
             out_sycl = os.path.join(tmp, "sycl.json")
 
-            cmd_cpu = [
+            cmd_cpu = _motion_command(
+                self.vmaf, ref_path, dis_path, width, height, "cpu", "motion", option_str, out_cpu
+            )
+            cmd_sycl = _motion_command(
                 self.vmaf,
-                "-r",
                 ref_path,
-                "-d",
                 dis_path,
-                "-w",
-                str(width),
-                "-h",
-                str(height),
-                "-p",
-                "420",
-                "-b",
-                "8",
-                "--backend",
-                "cpu",
-                "--no_prediction",
-                "--feature",
-                f"motion={option_str}" if option_str else "motion",
-                "-o",
-                out_cpu,
-                "--json",
-            ]
-            cmd_sycl = [
-                self.vmaf,
-                "-r",
-                ref_path,
-                "-d",
-                dis_path,
-                "-w",
-                str(width),
-                "-h",
-                str(height),
-                "-p",
-                "420",
-                "-b",
-                "8",
-                "--backend",
+                width,
+                height,
                 "sycl",
-                "--no_prediction",
-                "--feature",
-                f"motion_sycl={option_str}" if option_str else "motion_sycl",
-                "-o",
+                "motion_sycl",
+                option_str,
                 out_sycl,
-                "--json",
-            ]
+            )
 
             subprocess.run(cmd_cpu, check=True, capture_output=True, text=True)
             subprocess.run(cmd_sycl, check=True, capture_output=True, text=True)
