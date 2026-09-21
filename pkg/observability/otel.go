@@ -153,16 +153,21 @@ func resolveServiceName(serviceName string) string {
 
 // resolveSampleRatio picks the trace sample ratio: the environment wins when
 // it parses to a probability, otherwise the package default stands.
+//
+// The bound check is written as an accept predicate on purpose. Its De Morgan
+// dual (err != nil || parsed < 0 || parsed > 1) is not equivalent, because
+// strconv.ParseFloat("NaN", 64) returns NaN with a nil error and NaN compares
+// false against every bound: the dual would find nothing to reject and hand
+// NaN to the sampler, where uint64(NaN * (1<<63)) is implementation-defined.
 func resolveSampleRatio() float64 {
 	raw := os.Getenv(otelTracesSamplerArgEnv)
 	if raw == "" {
 		return DefaultTraceSampleRatio
 	}
-	parsed, err := strconv.ParseFloat(raw, 64)
-	if err != nil || parsed < 0 || parsed > 1 {
-		return DefaultTraceSampleRatio
+	if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed >= 0 && parsed <= 1 {
+		return parsed
 	}
-	return parsed
+	return DefaultTraceSampleRatio
 }
 
 // installTracerProvider registers the tracer provider and the W3C propagators
