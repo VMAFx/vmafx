@@ -19531,6 +19531,20 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   and none of it is suppressed here. `[tool.black]` and `[tool.ruff]`
   `target-version` carry the same staleness and are left to their own
   change because moving them rewrites code.
+  The pairing is now enforced instead of asserted in a comment:
+  `scripts/ci/check-workflow-versions.py` fails the always-run
+  pre-commit gate when `[tool.mypy] python_version`, the
+  `requires-python` floor and `PYTHON_CI_VERSION` stop agreeing, or when
+  the pin is deleted rather than reverted
+  (`scripts/ci/tests/test_mypy_python_version_single_source.py`).
+  Scope correction: CI's advisory `Python Lint` job installs only
+  `mypy`, so numpy's stubs are never read there. That job's output is
+  byte-identical at `3.10` and `3.14` and it checked — and still
+  checks — zero source files, because with no dependencies installed
+  every import is unresolvable and the run aborts before semantic
+  analysis. The behaviour change here is confined to checkouts that
+  have the AI stack installed, which includes the local pre-push hook's
+  environment.
 
 
 - `cmd/vmafx-controller/scheduler/` + `cmd/vmafx-node/` bug audit

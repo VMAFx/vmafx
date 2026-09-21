@@ -52,10 +52,32 @@ with this change.
 
 ## Consequences
 
-- **Positive**: mypy parses numpy's stubs and completes the `ai/src/` pass
-  instead of aborting. The strict settings this file already declares now
-  actually apply to that tree. `python_version`, `requires-python` and
-  `PYTHON_CI_VERSION` agree.
+- **Positive, and only where numpy is installed**: in a checkout that has the
+  AI stack's dependencies — every developer checkout that can run `ai/`, and the
+  environment the local `pre-push-mypy.py` hook runs in — mypy now parses
+  numpy's stubs and completes the `ai/src/` pass instead of aborting, so the
+  strict settings this file already declares actually apply to that tree.
+  `python_version`, `requires-python` and `PYTHON_CI_VERSION` agree, and
+  `check_mypy_python_version` in `scripts/ci/check-workflow-versions.py` now
+  fails the always-run pre-commit gate if they ever stop agreeing — including if
+  `python_version` is deleted rather than reverted. Fixture:
+  `scripts/ci/tests/test_mypy_python_version_single_source.py`.
+- **No change at all to CI's mypy job.** The `Python Lint` job
+  (`.github/workflows/lint-and-format.yml`) installs only `mypy` and runs
+  `mypy ai/ scripts/ || echo "mypy advisory only on first run"`. numpy is not
+  installed there, so its stubs are never parsed and the PEP 695 abort this ADR
+  is about never happened in CI. Measured in a venv holding nothing but mypy
+  2.3.1, that command's combined output is **byte-identical** at `3.10` and at
+  `3.14` — 392 lines, md5 `14d59427cd97323723510b0d14100ca2`, ending
+  `Found 382 errors in 171 files (errors prevented further checking)` in both.
+  That job checked zero source files before this change and still checks zero
+  after it, for an unrelated reason: with no dependencies installed every import
+  is unresolvable (325 `import-not-found`, 56 `import-untyped`) and
+  `ai/src/vmaf_train/models/__init__.py` is additionally found twice under two
+  module names, which aborts the run before semantic analysis. The `|| echo`
+  means it is advisory regardless. Making that job check anything is a separate
+  problem — it needs the AI stack installed or `--explicit-package-bases`, and
+  neither belongs in this change.
 - **Negative**: the pre-push delta gate recomputes its baseline from the *merge
   base's* `pyproject.toml`. For the single change that moves this value, the
   baseline is still evaluated at `3.10` while the branch is evaluated at `3.14`,
@@ -74,7 +96,10 @@ with this change.
     configuration is self-blocking for any change to that configuration.
     Teaching `scripts/git-hooks/pre-push-mypy.py` to apply the branch's
     `[tool.mypy]` block to the baseline worktree belongs to
-    `T-CI-MYPY-PREPUSH-BLOCKS-ON-INHERITED-2026-09-19`, not here.
+    `T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21`, not here. (The
+    similarly-named `T-CI-MYPY-PREPUSH-BLOCKS-ON-INHERITED-2026-09-19` is a
+    different, already-closed finding about which *findings* the gate
+    attributes, not which *configuration* its baseline resolves.)
   - `[tool.black] target-version` (`py310`/`py311`/`py312`) and
     `[tool.ruff] target-version` (`py310`) carry the same staleness. They are
     formatter and linter rule selectors rather than a type model, and moving
@@ -82,7 +107,9 @@ with this change.
 
 ## References
 
-- `T-CI-MYPY-PYTHON-VERSION-STALE-2026-09-19` in [docs/state.md](../state.md).
+- `T-CI-MYPY-PYTHON-VERSION-STALE-2026-09-19` and
+  `T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21` in
+  [docs/state.md](../state.md).
 - [ADR-1261](1261-mypy-pre-push-delta-gate.md) — the delta gate that deferred
   this raise to its own change.
 - [PEP 695](https://peps.python.org/pep-0695/) — the `type` statement numpy's
