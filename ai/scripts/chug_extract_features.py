@@ -17,6 +17,7 @@ The output rows remain local-only under ``.workingdir2/chug/``.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import hashlib
 import json
@@ -42,19 +43,48 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from ai.data.feature_extractor import (  # noqa: E402
+
+def _load_runtime_helpers() -> tuple[Any, ...]:
+    """Import helpers after the direct-script bootstrap installs package roots."""
+    from ai.data.feature_extractor import (
+        DEFAULT_FEATURES,
+        DEFAULT_VMAF_BINARY,
+        FULL_FEATURES,
+        FeatureExtractionResult,
+        aggregate_clip_stats,
+        extract_features,
+    )
+
+    from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+    from aiutils.file_utils import write_text_atomic
+    from aiutils.run_manifest import build_run_provenance
+
+    return (
+        DEFAULT_FEATURES,
+        DEFAULT_VMAF_BINARY,
+        FULL_FEATURES,
+        FeatureExtractionResult,
+        aggregate_clip_stats,
+        extract_features,
+        collect_cli_argv,
+        make_argument_parser,
+        write_text_atomic,
+        build_run_provenance,
+    )
+
+
+(
     DEFAULT_FEATURES,
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     FeatureExtractionResult,
     aggregate_clip_stats,
     extract_features,
-)
-
-# isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import write_text_atomic  # noqa: E402
-from aiutils.run_manifest import build_run_provenance  # noqa: E402
+    collect_cli_argv,
+    make_argument_parser,
+    write_text_atomic,
+    build_run_provenance,
+) = _load_runtime_helpers()
 
 # Default working directory for CHUG feature extraction; override with
 # ``VMAF_CHUG_DIR`` env var for container / non-maintainer layouts.
@@ -855,8 +885,8 @@ def run(
     return written
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_chug_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser for chug_extract_features."""
     ap = make_argument_parser(
         prog="chug_extract_features.py",
         description=__doc__,
@@ -885,7 +915,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ffmpeg-bin", default="ffmpeg")
     ap.add_argument("--ffprobe-bin", default="ffprobe")
     ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
-    args = ap.parse_args(raw_argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_chug_parser().parse_args(raw_argv)
     run_provenance = build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,
@@ -927,5 +962,5 @@ def main(argv: list[str] | None = None) -> int:
     return 130
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())
