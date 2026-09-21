@@ -528,9 +528,13 @@ copy; per-source clang-tidy logs, `cppcheck.log` and `result.json` retain
 results. The helper leaves Meson's resulting native database and build options
 unchanged. Positive numeric GCC `-flto=N` becomes clang-compatible `-flto`
 only in that copy; other spellings, including invalid options, remain visible
-to the analyzer. Missing source files, missing/invalid/empty databases and
-missing tools fail the gate. Both analyzers run when clang-tidy reports source
-diagnostics; either failure fails `lint-c`.
+to the analyzer. Every clang-tidy invocation includes
+`--warnings-as-errors=*`; without it clang-tidy prints ordinary diagnostics but
+normally exits zero. Consequently, any configured-source diagnostic fails
+`lint-c`, regardless of whether the source originated in Netflix, a vendor, or
+the fork. Missing source files, missing/invalid/empty databases and missing
+tools also fail the gate. Cppcheck still runs after clang-tidy reports source
+diagnostics so one analyzer cannot hide the other's report.
 
 Local and CI cppcheck load the official `posix` library model shipped with the
 installed tool. It describes the pthread types and functions used by the fork,

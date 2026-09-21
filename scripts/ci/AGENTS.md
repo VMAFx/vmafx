@@ -62,6 +62,12 @@ scope, run cppcheck even after clang-tidy fails. Scratch-Git fixture
 boundaries; `tests/test_write_compile_commands.py` owns exporter failure and
 last-valid-file preservation. Required Pre-Commit runs both when driver,
 exporter, workflows or Makefile change.
+Every configured clang-tidy command carries `--warnings-as-errors=*`. The tool
+otherwise exits zero after printing ordinary findings, which turns a red
+whole-tree inventory into a false-green gate. Preserve the fixture that emits
+a warning with clang-tidy's default zero exit and proves the driver promotes it
+to failure. Do not replace this with log parsing, a baseline, touched-file
+selection, or an upstream-origin exemption.
 Does not replace lane-specific ratchet measurements or their baselines.
 
 ### SYCL custom-command lint database

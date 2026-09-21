@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/configured-lint-warning-exit — diagnostics cannot pass as green (2026-09-21)
+
+The fork-local configured-lint driver must pass `--warnings-as-errors=*` to
+every clang-tidy invocation. Clang-tidy's default exit status is zero for
+ordinary warnings, so relying on return codes alone silently accepts findings
+from upstream, vendored, test, GPU, and fork-native translation units. Preserve
+the all-diagnostic promotion and its zero-exit-warning regression fixture when
+rebasing CI tooling. Do not replace it with a baseline, touched-file filter,
+log-text heuristic, or origin exemption. Cppcheck must still run after any
+clang-tidy failure so both reports remain available.
+
 ## fix/go-duplicate-cleanup — shared Go service and CLI plumbing (2026-09-21)
 
 Fork-local ownership cleanup with no upstream C-source impact. Preserve

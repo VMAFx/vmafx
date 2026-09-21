@@ -215,6 +215,7 @@ def run(args: argparse.Namespace) -> int:
                 "-p",
                 str(report),
                 "--quiet",
+                "--warnings-as-errors=*",
                 *args.clang_tidy_arg,
                 str(source),
             ]
@@ -234,7 +235,11 @@ def run(args: argparse.Namespace) -> int:
         cppcheck_log,
     )
     print(cppcheck_log.read_text(encoding="utf-8", errors="replace"), end="", flush=True)
-    result = {"clang_tidy_failed_sources": failures, "cppcheck_exit": cppcheck_code}
+    result = {
+        "clang_tidy_warnings_as_errors": "*",
+        "clang_tidy_failed_sources": failures,
+        "cppcheck_exit": cppcheck_code,
+    }
     (report / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return int(bool(failures or cppcheck_code))
 

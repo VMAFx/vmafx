@@ -21353,6 +21353,10 @@ Stale `python/vmaf/workspace` and `python/vmaf/resource` references in
   Make paths.
 
 
+`make lint-c` now fails on every clang-tidy diagnostic instead of accepting
+warnings that clang-tidy printed with a zero default exit status.
+
+
 - Local native lint now selects tracked sources from the configured Meson
   database, covering engine roots, C++ tools, tests and tracked vendors without
   inventing build commands for inactive backends. It preserves build metadata,

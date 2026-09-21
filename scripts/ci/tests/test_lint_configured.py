@@ -242,6 +242,10 @@ class ConfiguredLintTests(unittest.TestCase):
                 "if name == 'cppcheck' and '--check-library' in sys.argv[1:]:\n"
                 "    raise SystemExit(0)\n"
                 "Path(os.environ['CALLS'], name + '-' + str(os.getpid()) + '.json').write_text(json.dumps(sys.argv[1:]))\n"
+                "if name == 'clang-tidy' and os.environ.get('CLANG_TIDY_EMIT_WARNING') == '1':\n"
+                "    print('fixture.c:1:1: warning: visible fixture diagnostic [fixture-warning]')\n"
+                "    if '--warnings-as-errors=*' in sys.argv[1:]:\n"
+                "        raise SystemExit(1)\n"
                 "raise SystemExit(int(os.environ.get(name.upper().replace('-', '_') + '_EXIT', '0')))\n",
                 encoding="utf-8",
             )
@@ -312,6 +316,7 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(
             {args[-1] for args in calls}, {str(self.root / name) for name in self.native}
         )
+        self.assertTrue(all("--warnings-as-errors=*" in args for args in calls))
         self.assertEqual(len(calls), len(self.native))
         cppcheck_calls = [
             json.loads(path.read_text()) for path in self.calls.glob("cppcheck-*.json")
@@ -390,6 +395,13 @@ class ConfiguredLintTests(unittest.TestCase):
                 result = self.run_driver(**{failing: "7"})
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(len(list(self.calls.glob("cppcheck-*.json"))), 2)
+
+    def test_clang_tidy_warning_is_promoted_to_gate_failure(self) -> None:
+        result = self.run_driver(CLANG_TIDY_EMIT_WARNING="1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("visible fixture diagnostic", result.stdout)
+        receipt = json.loads((self.report() / "result.json").read_text())
+        self.assertEqual(len(receipt["clang_tidy_failed_sources"]), len(self.native))
 
     def test_missing_empty_and_invalid_database_fail_before_analyzers(self) -> None:
         cases = [None, "[]", "{}", "invalid", "[null]"]
