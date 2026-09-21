@@ -24171,6 +24171,40 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- HISS-21 burn-down across the Go tree (`pkg/**`, `gen/go`): 84 of the
+  85 open invariant violations in those packages are closed, with no
+  change to any numeric result, row order, argv, predicate string or
+  error message.
+  - **Bounded loops (HISS-02).** Every upward filesystem walk is now
+    bounded by the separator count of its own starting path, the two
+    rclone readiness polls by the poll count their timeout allows, the
+    parquet page and value loops by the chunk's and page's own value
+    counts, the libvmaf direct-path frame loop at 2^20 frames, and the
+    `vmaf-perShot` CSV reader by the payload length. Each reports
+    exhaustion as an error instead of spinning.
+  - **Checked errors (HISS-07).** The blanked `_ = f.Close()` /
+    `_ = os.Remove(...)` sites are handled: a write handle's `Close` is
+    propagated (it is the last chance to report a failed flush), and a
+    read handle's `Close` or a best-effort unlink is reported through
+    `slog` rather than dropped.
+  - **Acyclic control flow (HISS-01).** `pyjson`'s encoder unwraps
+    interface and pointer indirection in a bounded loop,
+    `ResolveSentinels` walks decoded JSON with an explicit work stack,
+    and `normalPPF`'s upper-half reflection calls the lower-half core
+    directly.
+  - **Complexity bounds (HISS-04).** Twenty-one oversized functions are
+    split into named steps, including `auto.RunAuto`, whose ten stages
+    now share one `autoRun` value instead of eight locals — which
+    retires the `//nolint:funlen,gocyclo` that stood in for the fix.
+  - **Proven `unsafe` (HISS-09).** Every `unsafe.Pointer` /
+    `unsafe.Slice` / `unsafe.Sizeof` / `unsafe.StringData` use in
+    `pkg/libvmaf` carries a `// SAFETY:` proof. The two generated
+    protobuf packages get theirs from a new post-generation pass,
+    `scripts/proto/postprocess_gen_go.py`, so the proofs survive the
+    next `buf generate` instead of being hand-edited back in; see
+    `gen/go/AGENTS.md`.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so
