@@ -19,11 +19,35 @@ fi
 # test is recorded as skipped rather than failed.
 nvidia-smi -L >/dev/null 2>&1 || exit 77
 
+# Fixture size is deliberately 1920x1080 and must stay there.
+#
+# This test once overran its 10-second Meson budget at 10.09 s, and shrinking
+# the fixture to 576x324 was proposed as the fix.  It is not one.  Measured on
+# the RTX 4090 workstation, idle, CUDA build, 2 frames:
+#
+#   vmaf --version                              5 ms   process + link floor
+#   576x324   --no_cuda, one invocation        14 ms   CPU scoring only
+#   1920x1080 --no_cuda, one invocation        55 ms   CPU scoring only
+#   576x324   four invocations, CUDA        ~1020 ms   whole script
+#   1920x1080 four invocations, CUDA        ~1000 ms   whole script
+#
+# ~175 ms of every invocation is fixed CUDA bring-up, so the two fixtures cost
+# the same wall time to within noise; the pixel work this constant controls is
+# ~160 ms across the whole script.  The overrun is a different effect entirely
+# and is bimodal: the first run after a CUDA build/relink was measured at
+# 9.70 s and 9.48 s, against 0.95-1.63 s in steady state — a premium paid on
+# the driver's module-load path before any pixel is read.  Shrinking the frame
+# cannot touch it, and doing so would drop the only 1080p exercise of the CUDA
+# dispatch path.  meson.build carries the real fix (a measured timeout plus
+# is_parallel) and the full numbers.
+WIDTH=1920
+HEIGHT=1080
+
 # no gpumask: use cuda
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 0
 
@@ -39,7 +63,7 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 1
 
@@ -47,7 +71,7 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 0 \
   --feature psnr \
@@ -57,7 +81,7 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
-  --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+  --width "$WIDTH" --height "$HEIGHT" --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
   --gpumask 1 \
   --feature psnr
