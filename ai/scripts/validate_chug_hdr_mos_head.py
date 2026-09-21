@@ -32,6 +32,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import math
 import os
 import sys
@@ -307,10 +308,8 @@ def _write_md_report(
 # ---------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> int:
-    import numpy as np
-
-    raw_argv = collect_cli_argv(argv)
+def _build_validate_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser."""
     ap = make_argument_parser(
         prog="validate_chug_hdr_mos_head.py",
         description=__doc__,
@@ -367,22 +366,11 @@ def main(argv: list[str] | None = None) -> int:
         default=GATE_RMSE_MAX,
         help="Maximum RMSE for gate pass.",
     )
-    args = ap.parse_args(raw_argv)
+    return ap
 
-    # Resolve effective thresholds from CLI (may be overridden in tests).
-    gate_plcc = args.gate_plcc
-    gate_srocc = args.gate_srocc
-    gate_rmse = args.gate_rmse
 
-    # Resolve ONNX.
-    if not args.onnx.is_file():
-        print(
-            f"[validate-chug-mos] error: ONNX not found at {args.onnx}",
-            file=sys.stderr,
-        )
-        return 1
-
-    # Resolve shard paths.
+def _resolve_shards(args: "Any") -> "tuple[list[Path], int]":
+    """Return (shard_paths, error_exit_code) where error_exit_code==0 means OK."""
     shard_paths: list[Path] = list(args.feature_jsonl)
     if not shard_paths:
         shard_paths = _discover_shards(args.shard_dir)
@@ -391,11 +379,23 @@ def main(argv: list[str] | None = None) -> int:
             f"[validate-chug-mos] error: no feature JSONL shards found under {args.shard_dir}",
             file=sys.stderr,
         )
-        return 1
+        return [], 1
+    return shard_paths, 0
+
+
+def _run_inference_and_metrics(
+    onnx_path: Path,
+    shard_paths: list[Path],
+) -> "tuple[Any, Any, float, float, float] | int":
+    """Load test rows, run ONNX inference, compute metrics.
+
+    Returns ``(pred, mos_arr, plcc, srocc, rmse)`` on success, or an int
+    exit-code on error.
+    """
+    import numpy as np
 
     print(f"[validate-chug-mos] loading test split from {len(shard_paths)} shard(s)…")
     feature_list, mos_list = _load_test_rows(shard_paths)
-
     if not feature_list:
         print(
             "[validate-chug-mos] error: no test-split rows with valid MOS found",
@@ -405,14 +405,13 @@ def main(argv: list[str] | None = None) -> int:
 
     n_rows = len(feature_list)
     print(f"[validate-chug-mos] test rows loaded: {n_rows}")
-
     features = np.stack(feature_list).astype(np.float32)
     encoder = np.ones((n_rows, N_ENCODERS), dtype=np.float32)
     mos_arr = np.asarray(mos_list, dtype=np.float32)
 
-    print(f"[validate-chug-mos] running ONNX inference on {args.onnx.name}…")
+    print(f"[validate-chug-mos] running ONNX inference on {onnx_path.name}…")
     try:
-        pred = _onnx_inference(args.onnx, features, encoder)
+        pred = _onnx_inference(onnx_path, features, encoder)
     except Exception as exc:
         print(f"[validate-chug-mos] error: ONNX inference failed: {exc}", file=sys.stderr)
         return 1
@@ -420,37 +419,51 @@ def main(argv: list[str] | None = None) -> int:
     plcc = _plcc(pred, mos_arr)
     srocc = _srocc(pred, mos_arr)
     rmse = _rmse(pred, mos_arr)
-
     print(
         f"[validate-chug-mos] "
         f"PLCC={plcc:.4f}  SROCC={srocc:.4f}  RMSE={rmse:.4f}"
         f"  (n={n_rows})"
     )
+    return pred, mos_arr, plcc, srocc, rmse
 
-    # Use CLI-provided gate thresholds (supports test overrides).
+
+def _build_and_write_reports(
+    args: "Any",
+    raw_argv: list[str],
+    shard_paths: list[Path],
+    pred: "Any",
+    mos_arr: "Any",
+    plcc: float,
+    srocc: float,
+    rmse: float,
+) -> "tuple[dict[str, Any], int]":
+    """Build the gate dict, write JSON + MD reports, print verdict.
+
+    Returns ``(gate, exit_code)`` where exit_code is 0 on pass or 2 on fail.
+    """
+    import numpy as np
+
+    n_rows = len(mos_arr)
     gate: dict[str, Any] = {
         "passed": bool(
             (not math.isnan(plcc))
-            and plcc >= gate_plcc
+            and plcc >= args.gate_plcc
             and (not math.isnan(srocc))
-            and srocc >= gate_srocc
+            and srocc >= args.gate_srocc
             and (not math.isnan(rmse))
-            and rmse <= gate_rmse
+            and rmse <= args.gate_rmse
         ),
         "plcc": plcc,
         "srocc": srocc,
         "rmse": rmse,
         "thresholds": {
-            "plcc_min": gate_plcc,
-            "srocc_min": gate_srocc,
-            "rmse_max": gate_rmse,
+            "plcc_min": args.gate_plcc,
+            "srocc_min": args.gate_srocc,
+            "rmse_max": args.gate_rmse,
         },
     }
-
     sample_pred = [float(v) for v in pred[:5].tolist()]
-    sample_mos = [float(v) for v in mos_arr[:5].tolist()]
-
-    # Write reports.
+    sample_mos = [float(v) for v in np.asarray(mos_arr)[:5].tolist()]
     if args.out_json is not None:
         _write_json_report(
             args.out_json,
@@ -477,14 +490,38 @@ def main(argv: list[str] | None = None) -> int:
             onnx_path=args.onnx,
         )
         print(f"[validate-chug-mos] wrote Markdown report: {args.out_md}")
-
     verdict = "PASS" if gate["passed"] else "FAIL"
     print(
         f"[validate-chug-mos] held-out gate: {verdict} — "
         f"PLCC={plcc:.4f} SROCC={srocc:.4f} RMSE={rmse:.4f}"
     )
+    return gate, (0 if gate["passed"] else 2)
 
-    return 0 if gate["passed"] else 2
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_validate_parser().parse_args(raw_argv)
+
+    if not args.onnx.is_file():
+        print(
+            f"[validate-chug-mos] error: ONNX not found at {args.onnx}",
+            file=sys.stderr,
+        )
+        return 1
+
+    shard_paths, err = _resolve_shards(args)
+    if err:
+        return err
+
+    result = _run_inference_and_metrics(args.onnx, shard_paths)
+    if isinstance(result, int):
+        return result
+
+    pred, mos_arr, plcc, srocc, rmse = result
+    _, exit_code = _build_and_write_reports(
+        args, raw_argv, shard_paths, pred, mos_arr, plcc, srocc, rmse
+    )
+    return exit_code
 
 
 __all__ = [
@@ -493,11 +530,14 @@ __all__ = [
     "GATE_SROCC_MIN",
     "MANIFEST_SCHEMA",
     "_build_gate_verdict",
+    "_build_validate_parser",
     "_discover_shards",
     "_load_test_rows",
     "_onnx_inference",
     "_plcc",
+    "_resolve_shards",
     "_rmse",
+    "_run_inference_and_metrics",
     "_srocc",
     "main",
 ]

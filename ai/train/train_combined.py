@@ -68,42 +68,10 @@ _VAL_MODES = (
 )
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="ai/train/train_combined.py",
-        description=(
-            "Train a tiny-AI model on the union of the Netflix Public "
-            "corpus and KoNViD-1k VMAF pairs."
-        ),
-    )
+def _add_data_args(p: argparse.ArgumentParser) -> None:
+    """Register data-path and corpus-cap arguments on *p*."""
     p.add_argument("--netflix-root", type=Path, default=_DEFAULT_NETFLIX_ROOT)
     p.add_argument("--konvid-parquet", type=Path, default=_DEFAULT_KONVID_PARQUET)
-    p.add_argument(
-        "--model-arch",
-        choices=("linear", "mlp_small", "mlp_medium"),
-        default="mlp_small",
-    )
-    p.add_argument("--epochs", type=int, default=10)
-    p.add_argument("--batch-size", type=int, default=256)
-    p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument(
-        "--out-dir",
-        type=Path,
-        default=Path("runs/tiny_combined"),
-    )
-    p.add_argument(
-        "--val-mode",
-        choices=_VAL_MODES,
-        default="netflix-source",
-        help=("How to construct the val split. See module docstring for " "the matrix of options."),
-    )
-    p.add_argument("--val-source", type=str, default="Tennis")
-    p.add_argument(
-        "--konvid-val-fraction",
-        type=float,
-        default=0.1,
-        help="Fraction of KoNViD clip keys held out when val-mode includes konvid-holdout.",
-    )
     p.add_argument(
         "--max-netflix-pairs",
         type=int,
@@ -122,6 +90,43 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="WxH",
         help="Stamp every Netflix pair with these dimensions (smoke fixtures only).",
+    )
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="ai/train/train_combined.py",
+        description=(
+            "Train a tiny-AI model on the union of the Netflix Public "
+            "corpus and KoNViD-1k VMAF pairs."
+        ),
+    )
+    _add_data_args(p)
+    p.add_argument(
+        "--model-arch",
+        choices=("linear", "mlp_small", "mlp_medium"),
+        default="mlp_small",
+    )
+    p.add_argument("--epochs", type=int, default=10)
+    p.add_argument("--batch-size", type=int, default=256)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("runs/tiny_combined"),
+    )
+    p.add_argument(
+        "--val-mode",
+        choices=_VAL_MODES,
+        default="netflix-source",
+        help=("How to construct the val split. See module docstring for the matrix of options."),
+    )
+    p.add_argument("--val-source", type=str, default="Tennis")
+    p.add_argument(
+        "--konvid-val-fraction",
+        type=float,
+        default=0.1,
+        help="Fraction of KoNViD clip keys held out when val-mode includes konvid-holdout.",
     )
     p.add_argument(
         "--no-export-onnx",
@@ -270,15 +275,35 @@ def _concat_xy(*pairs):  # type: ignore[no-untyped-def]
     return np.concatenate(xs, axis=0), np.concatenate(ys, axis=0)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-
+def _check_torch_combined() -> int:
+    """Return 0 if torch is importable, else print an error and return 2."""
     try:
         import torch  # noqa: F401
     except ImportError as e:
         print(f"error: PyTorch is required for training: {e}", file=sys.stderr)
         return 2
+    return 0
+
+
+def _load_combined_data(args, payload_provider):  # type: ignore[no-untyped-def]
+    """Return (train_xy, val_xy) by concatenating Netflix + KoNViD slices."""
+    netflix_train, netflix_val = _load_netflix(args, payload_provider)
+    konvid_train, konvid_val = _load_konvid(args)
+    train_xy = _concat_xy(netflix_train, konvid_train)
+    val_xy = _concat_xy(netflix_val, konvid_val)
+    print(
+        f"[train_combined] combined train_samples={train_xy[0].shape[0]} "
+        f"val_samples={val_xy[0].shape[0]}"
+    )
+    return train_xy, val_xy
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    if err := _check_torch_combined():
+        return err
 
     from ..data.feature_extractor import DEFAULT_FEATURES
     from .train import _build_model, _train_loop, count_params, export_onnx
@@ -297,35 +322,19 @@ def main(argv: list[str] | None = None) -> int:
 
         payload_provider = _make_zero_payload
 
-    netflix_train, netflix_val = _load_netflix(args, payload_provider)
-    konvid_train, konvid_val = _load_konvid(args)
+    train_xy, val_xy = _load_combined_data(args, payload_provider)
 
-    train_xy = _concat_xy(netflix_train, konvid_train)
-    val_xy = _concat_xy(netflix_val, konvid_val)
-    print(
-        f"[train_combined] combined train_samples={train_xy[0].shape[0]} "
-        f"val_samples={val_xy[0].shape[0]}"
-    )
-
+    onnx_final = args.out_dir / f"{args.model_arch}_combined_final.onnx"
     if train_xy[0].shape[0] == 0:
         print(
             "[train_combined] no training samples — exporting initial-weights ONNX only",
             file=sys.stderr,
         )
-        out = export_onnx(
-            module,
-            feature_dim,
-            args.out_dir / f"{args.model_arch}_combined_final.onnx",
-        )
-        print(f"[train_combined] exported {out}")
+        print(f"[train_combined] exported {export_onnx(module, feature_dim, onnx_final)}")
         return 0
 
     if args.epochs == 0:
-        out = export_onnx(
-            module,
-            feature_dim,
-            args.out_dir / f"{args.model_arch}_combined_final.onnx",
-        )
+        out = export_onnx(module, feature_dim, onnx_final)
         print(f"[train_combined] epochs=0 — exported initial-weights ONNX to {out}")
         return 0
 
