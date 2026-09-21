@@ -7,6 +7,7 @@ from numbers import Number
 
 import numpy as np
 from libsvm import svmutil
+from scipy.special import expit
 from sklearn.metrics import f1_score
 from sureal.routine import _get_plot_width_and_height
 
@@ -32,164 +33,96 @@ class RegressorMixin(object):
 
     DEFAULT_N_SPLITS_TEST_INDICES = 5
 
-    @classmethod
-    def get_stats(cls, ys_label, ys_label_pred, **kwargs):
-
-        # cannot have None
-        assert all(x is not None for x in ys_label)
-        assert all(x is not None for x in ys_label_pred)
-
-        # RMSE
-        rmse = RmsePerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        # spearman
-        srcc = SrccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        # pearson
-        pcc = PccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        # kendall
-        kendall = KendallPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"]
-
-        stats = {
-            "RMSE": rmse,
-            "SRCC": srcc,
-            "PCC": pcc,
-            "KENDALL": kendall,
+    @staticmethod
+    def _get_core_stats(ys_label, ys_label_pred):
+        return {
+            "RMSE": RmsePerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"],
+            "SRCC": SrccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"],
+            "PCC": PccPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)["score"],
+            "KENDALL": KendallPerfMetric(ys_label, ys_label_pred).evaluate(enable_mapping=True)[
+                "score"
+            ],
             "ys_label": list(ys_label),
             "ys_label_pred": list(ys_label_pred),
         }
 
-        # create perf metric distributions, if multiple predictions are passed in as kwargs
-        # spearman distribution for now
-        if "ys_label_pred_all_models" in kwargs:
-
-            ys_label_pred_all_models = kwargs["ys_label_pred_all_models"]
-
-            srcc_all_models = []
-            pcc_all_models = []
-            rmse_all_models = []
-
-            for ys_label_pred_some_model in ys_label_pred_all_models:
-                srcc_some_model = SrccPerfMetric(ys_label, ys_label_pred_some_model).evaluate(
-                    enable_mapping=True
-                )["score"]
-                pcc_some_model = PccPerfMetric(ys_label, ys_label_pred_some_model).evaluate(
-                    enable_mapping=True
-                )["score"]
-                rmse_some_model = RmsePerfMetric(ys_label, ys_label_pred_some_model).evaluate(
-                    enable_mapping=True
-                )["score"]
-                srcc_all_models.append(srcc_some_model)
-                pcc_all_models.append(pcc_some_model)
-                rmse_all_models.append(rmse_some_model)
-
-            stats["SRCC_across_model_distribution"] = srcc_all_models
-            stats["PCC_across_model_distribution"] = pcc_all_models
-            stats["RMSE_across_model_distribution"] = rmse_all_models
-
-        split_test_indices_for_perf_ci = (
-            kwargs["split_test_indices_for_perf_ci"]
-            if "split_test_indices_for_perf_ci" in kwargs
-            else False
+    @staticmethod
+    def _add_model_distributions(stats, ys_label, model_predictions):
+        metric_specs = (
+            ("SRCC", SrccPerfMetric),
+            ("PCC", PccPerfMetric),
+            ("RMSE", RmsePerfMetric),
         )
+        distributions = {name: [] for name, _ in metric_specs}
+        for predictions in model_predictions:
+            for name, metric_class in metric_specs:
+                score = metric_class(ys_label, predictions).evaluate(enable_mapping=True)["score"]
+                distributions[name].append(score)
+        for name, distribution in distributions.items():
+            stats[f"{name}_across_model_distribution"] = distribution
 
-        ys_label_raw = kwargs["ys_label_raw"] if "ys_label_raw" in kwargs else None
+    @staticmethod
+    def _add_raw_label_stats(stats, ys_label_raw, ys_label_pred):
+        if isinstance(ys_label_raw[0], dict):
+            ys_label_raw = [list(raw_label.values()) for raw_label in ys_label_raw]
+        try:
+            auc_result = AucPerfMetric(ys_label_raw, ys_label_pred).evaluate()
+            stats["AUC_DS"] = auc_result["AUC_DS"]
+            stats["AUC_BW"] = auc_result["AUC_BW"]
+        except TypeError:
+            stats["AUC_DS"] = float("nan")
+            stats["AUC_BW"] = float("nan")
 
+        for name, enable_mapping in (("ResPow", False), ("ResPowNormalized", True)):
+            try:
+                stats[name] = ResolvingPowerPerfMetric(ys_label_raw, ys_label_pred).evaluate(
+                    enable_mapping=enable_mapping
+                )["score"]
+            except (TypeError, AssertionError):
+                stats[name] = float("nan")
+
+    @classmethod
+    def _add_test_split_distributions(cls, stats, ys_label, ys_label_pred, n_splits):
+        ys_label = np.asarray(ys_label)
+        ys_label_pred = np.asarray(ys_label_pred)
+        distributions = {name: [] for name in ("SRCC", "PCC", "RMSE")}
+        metric_specs = (
+            ("SRCC", SrccPerfMetric),
+            ("PCC", PccPerfMetric),
+            ("RMSE", RmsePerfMetric),
+        )
+        for split_index in range(n_splits):
+            np.random.seed(split_index)
+            sample_indices = np.random.choice(
+                range(len(ys_label)), size=len(ys_label), replace=True
+            )
+            labels = ys_label[sample_indices]
+            predictions = ys_label_pred[sample_indices]
+            for name, metric_class in metric_specs:
+                score = metric_class(labels, predictions).evaluate(enable_mapping=True)["score"]
+                distributions[name].append(score)
+        for name, distribution in distributions.items():
+            stats[f"{name}_across_test_splits_distribution"] = distribution
+
+    @classmethod
+    def get_stats(cls, ys_label, ys_label_pred, **kwargs):
+        assert all(x is not None for x in ys_label)
+        assert all(x is not None for x in ys_label_pred)
+        stats = cls._get_core_stats(ys_label, ys_label_pred)
+
+        if "ys_label_pred_all_models" in kwargs:
+            cls._add_model_distributions(stats, ys_label, kwargs["ys_label_pred_all_models"])
+
+        ys_label_raw = kwargs.get("ys_label_raw")
         if ys_label_raw is not None:
+            cls._add_raw_label_stats(stats, ys_label_raw, ys_label_pred)
 
-            ys_label_raw_list = []
-            if isinstance(ys_label_raw[0], dict):
-                for d in ys_label_raw:
-                    ys_label_raw_list.append(list(d.values()))
-            else:
-                ys_label_raw_list = ys_label_raw
-
-            try:
-                # AUC
-                result = AucPerfMetric(ys_label_raw_list, ys_label_pred).evaluate()
-                stats["AUC_DS"] = result["AUC_DS"]
-                stats["AUC_BW"] = result["AUC_BW"]
-            except TypeError:
-                stats["AUC_DS"] = float("nan")
-                stats["AUC_BW"] = float("nan")
-
-            try:
-                # ResPow
-                respow = ResolvingPowerPerfMetric(ys_label_raw_list, ys_label_pred).evaluate(
-                    enable_mapping=False
-                )["score"]
-                stats["ResPow"] = respow
-            except (TypeError, AssertionError):
-                stats["ResPow"] = float("nan")
-
-            try:
-                # ResPow
-                respow_norm = ResolvingPowerPerfMetric(ys_label_raw_list, ys_label_pred).evaluate(
-                    enable_mapping=True
-                )["score"]
-                stats["ResPowNormalized"] = respow_norm
-            except (TypeError, AssertionError):
-                stats["ResPowNormalized"] = float("nan")
-
-        if (
-            "ys_label_stddev" in kwargs
-            and "ys_label_stddev"
-            and kwargs["ys_label_stddev"] is not None
-        ):
+        if kwargs.get("ys_label_stddev") is not None:
             stats["ys_label_stddev"] = kwargs["ys_label_stddev"]
 
-        if split_test_indices_for_perf_ci:
-
-            # ensure labels and predictions are arrays
-            if type(ys_label) is not np.array:
-                ys_label = np.asarray(ys_label)
-            if type(ys_label_pred) is not np.array:
-                ys_label_pred = np.asarray(ys_label_pred)
-
-            # replicate logic of BootstrapVmafQualityRunner
-            sample_size = len(ys_label)
-            n_splits_test_indices = (
-                kwargs["n_splits_test_indices"]
-                if "n_splits_test_indices" in kwargs
-                else cls.DEFAULT_N_SPLITS_TEST_INDICES
-            )
-
-            srcc_distribution = []
-            pcc_distribution = []
-            rmse_distribution = []
-
-            for i_test_split in range(n_splits_test_indices):
-
-                np.random.seed(i_test_split)  # seed is i_test_split
-                # random sample with replacement
-                idxs = np.random.choice(range(sample_size), size=sample_size, replace=True)
-
-                ys_label_resampled = ys_label[idxs]
-                ys_label_pred_resampled = ys_label_pred[idxs]
-
-                srcc_distribution.append(
-                    SrccPerfMetric(ys_label_resampled, ys_label_pred_resampled).evaluate(
-                        enable_mapping=True
-                    )["score"]
-                )
-
-                pcc_distribution.append(
-                    PccPerfMetric(ys_label_resampled, ys_label_pred_resampled).evaluate(
-                        enable_mapping=True
-                    )["score"]
-                )
-
-                rmse_distribution.append(
-                    RmsePerfMetric(ys_label_resampled, ys_label_pred_resampled).evaluate(
-                        enable_mapping=True
-                    )["score"]
-                )
-
-            stats["SRCC_across_test_splits_distribution"] = srcc_distribution
-            stats["PCC_across_test_splits_distribution"] = pcc_distribution
-            stats["RMSE_across_test_splits_distribution"] = rmse_distribution
-
+        if kwargs.get("split_test_indices_for_perf_ci", False):
+            n_splits = kwargs.get("n_splits_test_indices", cls.DEFAULT_N_SPLITS_TEST_INDICES)
+            cls._add_test_split_distributions(stats, ys_label, ys_label_pred, n_splits)
         return stats
 
     @staticmethod
@@ -341,14 +274,11 @@ class RegressorMixin(object):
 
         return tuple(xlim), tuple(ylim)
 
-    @classmethod
-    def plot_scatter(cls, ax, stats, **kwargs):
-
+    @staticmethod
+    def _get_scatter_arrays(stats, assume_unit_stddev):
         ys_label = np.array(stats["ys_label"])
         ys_label_pred = np.array(stats["ys_label_pred"])
         assert len(ys_label_pred) == len(ys_label)
-
-        assume_unit_stddev = kwargs.get("assume_unit_stddev", False)
         if "ys_label_stddev" in stats:
             ys_label_stddev = np.array(stats["ys_label_stddev"])
         elif assume_unit_stddev:
@@ -367,175 +297,176 @@ class RegressorMixin(object):
             # (CodeQL py/catch-base-exception)
             ys_label_stddev[ys_label_stddev == None] = 0  # noqa: E711
         assert len(ys_label_stddev) == len(ys_label)
+        return ys_label, ys_label_pred, ys_label_stddev
 
-        xlim, ylim = cls.get_xlim_ylim(ys_label, ys_label_pred, ys_label_stddev)
-        content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
+    @staticmethod
+    def _get_plot_options(kwargs, sample_count):
+        content_ids = kwargs.get("content_ids")
         if content_ids is not None:
-            assert len(content_ids) == len(ys_label)
-        point_labels = kwargs["point_labels"] if "point_labels" in kwargs else None
+            assert len(content_ids) == sample_count
+        point_labels = kwargs.get("point_labels")
         if point_labels is not None:
-            assert len(point_labels) == len(ys_label)
-        plot_linear_fit = kwargs["plot_linear_fit"] if "plot_linear_fit" in kwargs else False
+            assert len(point_labels) == sample_count
+        plot_linear_fit = kwargs.get("plot_linear_fit", False)
         assert isinstance(plot_linear_fit, bool)
-
-        do_plot = kwargs["do_plot"] if "do_plot" in kwargs else ["aggregate"]
+        do_plot = kwargs.get("do_plot", ["aggregate"])
         accepted_options = ["aggregate", "per_content", "groundtruth_predicted_in_parallel"]
         assert isinstance(do_plot, list), (
-            f"do_plot needs to be a list of plotting options. Accepted options are "
+            "do_plot needs to be a list of plotting options. Accepted options are "
             f"{accepted_options}"
         )
-
         for option in do_plot:
             assert option in accepted_options, f"{option} is not in {accepted_options}"
+        return content_ids, point_labels, plot_linear_fit, do_plot
 
-        overall_linear_fit = None
+    @staticmethod
+    def _plot_fit_line(ax, xlim, fit, color):
+        slope, intercept = fit[0]
+        ax.axline(
+            (xlim[0], linear_func(xlim[0], slope, intercept)),
+            (xlim[1], linear_func(xlim[1], slope, intercept)),
+            color=color,
+            linestyle="--",
+        )
+
+    @classmethod
+    def _plot_overall_fit(cls, ax, xlim, ylim, ys_label, ys_label_pred):
+        overall_fit = linear_fit(ys_label, ys_label_pred)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        cls._plot_fit_line(ax, xlim, overall_fit, "gray")
+        ax.legend(["overall fit"])
+        return overall_fit
+
+    @staticmethod
+    def _create_parallel_plot(sample_count, xlim, ylim, do_plot):
+        if "groundtruth_predicted_in_parallel" not in do_plot:
+            return None, None, None
+        width, height = _get_plot_width_and_height(sample_count)
+        figure, [groundtruth_ax, predicted_ax] = plt.subplots(
+            figsize=[width, height * 2], ncols=1, nrows=2
+        )
+        groundtruth_ax.set(xlabel="Stimuli", ylabel="True Score", ylim=xlim)
+        groundtruth_ax.grid()
+        predicted_ax.set(xlabel="Stimuli", ylabel="Predicted Score", ylim=ylim)
+        predicted_ax.grid()
+        return figure, groundtruth_ax, predicted_ax
+
+    @staticmethod
+    def _annotate_points(ax, labels, ys_label, ys_label_pred):
+        assert len(labels) == len(ys_label)
+        for index, label in enumerate(labels):
+            ax.annotate(label, (ys_label[index], ys_label_pred[index]))
+
+    @classmethod
+    def _plot_one_content(
+        cls, ax, content_id, color, labels, predictions, stddev, point_labels, xlim, ylim, fits
+    ):
+        _, new_ax = plt.subplots(1, 1, figsize=ax.figure.get_size_inches())
+        new_ax.update_from(ax)
+        new_ax.set_xlim(xlim)
+        new_ax.set_ylim(ylim)
+        overall_fit, plot_linear_fit = fits
         if plot_linear_fit:
-            overall_linear_fit = linear_fit(ys_label, ys_label_pred)
-            ax.set_xlim(xlim)
-            ax.set_ylim(ylim)
-            ax.axline(
-                (xlim[0], linear_func(xlim[0], overall_linear_fit[0][0], overall_linear_fit[0][1])),
-                (xlim[1], linear_func(xlim[1], overall_linear_fit[0][0], overall_linear_fit[0][1])),
-                color="gray",
-                linestyle="--",
-            )
-            ax.legend(["overall fit"])
+            cls._plot_fit_line(new_ax, xlim, overall_fit, "gray")
+            cls._plot_fit_line(new_ax, xlim, linear_fit(labels, predictions), "red")
+            new_ax.legend(["overall fit", "current fit"])
+        new_ax.errorbar(
+            labels,
+            predictions,
+            xerr=1.96 * stddev,
+            marker="o",
+            linestyle="",
+            label=content_id,
+            color=color,
+        )
+        new_ax.set_title(f"Content id {str(content_id)}")
+        new_ax.set_xlabel("True Score")
+        new_ax.set_ylabel("Predicted Score")
+        new_ax.grid()
+        if point_labels:
+            cls._annotate_points(new_ax, point_labels, labels, predictions)
 
-        if "groundtruth_predicted_in_parallel" in do_plot:
-            w, h = _get_plot_width_and_height(len(ys_label))
-            fig_gt_pred, [ax_groundtruth, ax_predicted] = plt.subplots(
-                figsize=[w, h * 2], ncols=1, nrows=2
-            )
-            ax_groundtruth.set_xlabel("Stimuli")
-            ax_groundtruth.set_ylabel("True Score")
-            ax_groundtruth.grid()
-            ax_groundtruth.set_ylim(xlim)
-            ax_predicted.set_xlabel("Stimuli")
-            ax_predicted.set_ylabel("Predicted Score")
-            ax_predicted.grid()
-            ax_predicted.set_ylim(ylim)
-        else:
-            fig_gt_pred = None
-            ax_groundtruth = None
-            ax_predicted = None
+    @classmethod
+    def _plot_content_groups(cls, ax, arrays, content_ids, point_labels, limits, options, parallel):
+        ys_label, ys_label_pred, ys_label_stddev = arrays
+        xlim, ylim = limits
+        plot_linear_fit, do_plot, overall_fit = options
+        _, groundtruth_ax, predicted_ax = parallel
+        unique_content_ids = list(set(content_ids))
+        cmap = plt.get_cmap("jet")
+        colors = [cmap(i) for i in np.linspace(0, 1, len(unique_content_ids))]
+        for index, content_id in enumerate(unique_content_ids):
+            item_indices = indices(content_ids, lambda candidate: candidate == content_id)
+            labels = ys_label[item_indices]
+            predictions = ys_label_pred[item_indices]
+            stddev = ys_label_stddev[item_indices]
+            color = colors[index % len(colors)]
+            if "aggregate" in do_plot:
+                ax.errorbar(
+                    labels,
+                    predictions,
+                    xerr=1.96 * stddev,
+                    marker="o",
+                    linestyle="",
+                    label=content_id,
+                    color=color,
+                )
+            if "per_content" in do_plot:
+                labels_for_points = np.array(point_labels)[item_indices] if point_labels else None
+                cls._plot_one_content(
+                    ax,
+                    content_id,
+                    color,
+                    labels,
+                    predictions,
+                    stddev,
+                    labels_for_points,
+                    xlim,
+                    ylim,
+                    (overall_fit, plot_linear_fit),
+                )
+            if "groundtruth_predicted_in_parallel" in do_plot:
+                legend_label = f"Content id {str(content_id)}"
+                groundtruth_ax.plot(item_indices, labels, "-^", color=color, label=legend_label)
+                predicted_ax.plot(item_indices, predictions, "-^", color=color, label=legend_label)
 
+    @classmethod
+    def plot_scatter(cls, ax, stats, **kwargs):
+        arrays = cls._get_scatter_arrays(stats, kwargs.get("assume_unit_stddev", False))
+        ys_label, ys_label_pred, ys_label_stddev = arrays
+        xlim, ylim = cls.get_xlim_ylim(ys_label, ys_label_pred, ys_label_stddev)
+        content_ids, point_labels, plot_linear_fit, do_plot = cls._get_plot_options(
+            kwargs, len(ys_label)
+        )
+        overall_fit = (
+            cls._plot_overall_fit(ax, xlim, ylim, ys_label, ys_label_pred)
+            if plot_linear_fit
+            else None
+        )
+        parallel = cls._create_parallel_plot(len(ys_label), xlim, ylim, do_plot)
         if content_ids is None:
             ax.errorbar(
                 ys_label, ys_label_pred, xerr=1.96 * ys_label_stddev, marker="o", linestyle=""
             )
         else:
-            assert len(ys_label) == len(content_ids)
-
-            unique_content_ids = list(set(content_ids))
-            cmap = plt.get_cmap("jet")
-            colors = [cmap(i) for i in np.linspace(0, 1, len(unique_content_ids))]
-            for idx, curr_content_id in enumerate(unique_content_ids):
-                curr_idxs = indices(content_ids, lambda cid: cid == curr_content_id)
-                curr_ys_label = ys_label[curr_idxs]
-                curr_ys_label_pred = ys_label_pred[curr_idxs]
-
-                curr_ys_label_stddev = ys_label_stddev[curr_idxs]
-                if "aggregate" in do_plot:
-                    ax.errorbar(
-                        curr_ys_label,
-                        curr_ys_label_pred,
-                        xerr=1.96 * curr_ys_label_stddev,
-                        marker="o",
-                        linestyle="",
-                        label=curr_content_id,
-                        color=colors[idx % len(colors)],
-                    )
-
-                if "per_content" in do_plot:
-                    new_fig, new_ax = plt.subplots(1, 1, figsize=ax.figure.get_size_inches())
-                    new_ax.update_from(ax)
-                    new_ax.set_xlim(xlim)
-                    new_ax.set_ylim(ylim)
-
-                    if plot_linear_fit:
-                        curr_linear_fit = linear_fit(curr_ys_label, curr_ys_label_pred)
-                        new_ax.axline(
-                            (
-                                xlim[0],
-                                linear_func(
-                                    xlim[0], overall_linear_fit[0][0], overall_linear_fit[0][1]
-                                ),
-                            ),
-                            (
-                                xlim[1],
-                                linear_func(
-                                    xlim[1], overall_linear_fit[0][0], overall_linear_fit[0][1]
-                                ),
-                            ),
-                            color="gray",
-                            linestyle="--",
-                        )
-                        new_ax.axline(
-                            (
-                                xlim[0],
-                                linear_func(xlim[0], curr_linear_fit[0][0], curr_linear_fit[0][1]),
-                            ),
-                            (
-                                xlim[1],
-                                linear_func(xlim[1], curr_linear_fit[0][0], curr_linear_fit[0][1]),
-                            ),
-                            color="red",
-                            linestyle="--",
-                        )
-                        new_ax.legend(["overall fit", "current fit"])
-
-                    new_ax.errorbar(
-                        curr_ys_label,
-                        curr_ys_label_pred,
-                        xerr=1.96 * curr_ys_label_stddev,
-                        marker="o",
-                        linestyle="",
-                        label=curr_content_id,
-                        color=colors[idx % len(colors)],
-                    )
-
-                    new_ax.set_title(f"Content id {str(curr_content_id)}")
-                    new_ax.set_xlabel("True Score")
-                    new_ax.set_ylabel("Predicted Score")
-                    new_ax.grid()
-
-                    if point_labels:
-                        curr_point_labels = np.array(point_labels)[curr_idxs]
-                        assert len(curr_point_labels) == len(curr_ys_label)
-                        for i, curr_point_label in enumerate(curr_point_labels):
-                            new_ax.annotate(
-                                curr_point_label, (curr_ys_label[i], curr_ys_label_pred[i])
-                            )
-
-                if "groundtruth_predicted_in_parallel" in do_plot:
-                    ax_groundtruth.plot(
-                        curr_idxs,
-                        curr_ys_label,
-                        "-^",
-                        color=colors[idx % len(colors)],
-                        label=f"Content id {str(curr_content_id)}",
-                    )
-                    ax_predicted.plot(
-                        curr_idxs,
-                        curr_ys_label_pred,
-                        "-^",
-                        color=colors[idx % len(colors)],
-                        label=f"Content id {str(curr_content_id)}",
-                    )
-
+            cls._plot_content_groups(
+                ax,
+                arrays,
+                content_ids,
+                point_labels,
+                (xlim, ylim),
+                (plot_linear_fit, do_plot, overall_fit),
+                parallel,
+            )
         if "aggregate" in do_plot and point_labels is not None:
-            assert len(point_labels) == len(ys_label)
-            for i, point_label in enumerate(point_labels):
-                ax.annotate(point_label, (ys_label[i], ys_label_pred[i]))
-
-        # need the following because ax is passed anyway; if not used for aggregate, close it
-        # TODO: can be improved
+            cls._annotate_points(ax, point_labels, ys_label, ys_label_pred)
         if "aggregate" not in do_plot:
             plt.close(ax.figure)
-
         if "groundtruth_predicted_in_parallel" in do_plot:
-            ax_groundtruth.legend()
-            fig_gt_pred.tight_layout()
+            figure, groundtruth_ax, _ = parallel
+            groundtruth_ax.legend()
+            figure.tight_layout()
 
     @staticmethod
     def get_objective_score(result, score_type="SRCC"):
@@ -1445,12 +1376,16 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
     TYPE = "5PL"
     VERSION = "0.1"
 
+    @staticmethod
+    def _logistic_curve(x, b1, b2, b3, b4, b5):
+        return b1 * (expit(b2 * (x - b3)) - 0.5) + b4 * x + b5
+
     @classmethod
     def _train(cls, model_param, xys_2d, **kwargs):
         """
         Fit the following 5PL curve using scipy.optimize.curve_fit
 
-        Q(x) = B1 + (1/2 - 1/(1 + exp(B2 * (x - B3)))) + B4 * x + B5
+        Q(x) = B1 * (1/2 - 1/(1 + exp(B2 * (x - B3)))) + B4 * x + B5
 
         H. R. Sheikh, M. F. Sabir, and A. C. Bovik,
         "A statistical evaluation of recent full reference image quality assessment algorithms"
@@ -1475,10 +1410,7 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
         from scipy.optimize import curve_fit
 
         [[b1, b2, b3, b4, b5], _] = curve_fit(
-            lambda x, b1, b2, b3, b4, b5: b1
-            + (0.5 - 1 / (1 + np.exp(b2 * (x - b3))))
-            + b4 * x
-            + b5,
+            cls._logistic_curve,
             np.ravel(xys_2d[:, 1]),
             np.ravel(xys_2d[:, 0]),
             p0=0.5 * np.ones((5,)),
@@ -1515,10 +1447,9 @@ class Logistic5PLRegressionTrainTestModel(TrainTestModel, RegressorMixin):
         b4 = model["b4"]
         b5 = model["b5"]
 
-        curve = lambda x: b1 + (0.5 - 1 / (1 + np.exp(b2 * (x - b3)))) + b4 * x + b5
-        predicted = [curve(x) for x in np.ravel(xs_2d)]
+        predicted = cls._logistic_curve(np.ravel(xs_2d), b1, b2, b3, b4, b5)
 
-        return predicted
+        return list(predicted)
 
 
 class RawVideoTrainTestModelMixin(object):
@@ -1619,115 +1550,106 @@ class BootstrapRegressorMixin(RegressorMixin):
         except AssertionError:
             return super(BootstrapRegressorMixin, cls).get_stats(ys_label, ys_label_pred, **kwargs)
 
+    @staticmethod
+    def _bootstrap_yerr(bagging, stddev, ci95_low, ci95_high, assume_gaussian):
+        if assume_gaussian:
+            return 1.96 * stddev
+        return [bagging - ci95_low, ci95_high - bagging]
+
+    @classmethod
+    def _plot_bootstrap_group(cls, ax, stats, item_indices, content_id, color, assume_gaussian):
+        labels = np.array(stats["ys_label"])[item_indices]
+        predictions = np.array(stats["ys_label_pred"])[item_indices]
+        bagging = np.array(stats["ys_label_pred_bagging"])[item_indices]
+        stddev = np.array(stats["ys_label_pred_stddev"])[item_indices]
+        ci95_low = np.array(stats["ys_label_pred_ci95_low"])[item_indices]
+        ci95_high = np.array(stats["ys_label_pred_ci95_high"])[item_indices]
+        yerr = cls._bootstrap_yerr(bagging, stddev, ci95_low, ci95_high, assume_gaussian)
+        errorbar_kwargs = {
+            "yerr": yerr,
+            "capsize": 2,
+            "marker": "o",
+            "linestyle": "",
+            "label": content_id,
+            "color": color,
+        }
+        try:
+            label_stddev = np.array(stats["ys_label_stddev"])[item_indices]
+            ax.errorbar(labels, predictions, xerr=1.96 * label_stddev, **errorbar_kwargs)
+        except (ValueError, TypeError):
+            ax.errorbar(labels, predictions, **errorbar_kwargs)
+
+    @classmethod
+    def _plot_bootstrap_by_content(cls, ax, stats, content_ids, assume_gaussian):
+        assert len(stats["ys_label"]) == len(content_ids)
+        unique_content_ids = list(set(content_ids))
+        cmap = plt.get_cmap("jet")
+        colors = [cmap(i) for i in np.linspace(0, 1, len(unique_content_ids))]
+        for index, content_id in enumerate(unique_content_ids):
+            item_indices = indices(content_ids, lambda candidate: candidate == content_id)
+            cls._plot_bootstrap_group(
+                ax,
+                stats,
+                item_indices,
+                content_id,
+                colors[index % len(colors)],
+                assume_gaussian,
+            )
+
+    @classmethod
+    def _plot_bootstrap_data(cls, ax, stats, content_ids, point_labels, assume_gaussian):
+        required_keys = (
+            "ys_label_pred_bagging",
+            "ys_label_pred_stddev",
+            "ys_label_pred_ci95_low",
+            "ys_label_pred_ci95_high",
+        )
+        assert all(key in stats for key in required_keys)
+        avg_stddev = np.mean(stats["ys_label_pred_stddev"])
+        if content_ids is None:
+            yerr = cls._bootstrap_yerr(
+                stats["ys_label_pred_bagging"],
+                stats["ys_label_pred_stddev"],
+                np.mean(stats["ys_label_pred_ci95_low"]),
+                np.mean(stats["ys_label_pred_ci95_high"]),
+                assume_gaussian,
+            )
+            ax.errorbar(
+                stats["ys_label"],
+                stats["ys_label_pred"],
+                yerr=yerr,
+                capsize=2,
+                marker="o",
+                linestyle="",
+            )
+        else:
+            cls._plot_bootstrap_by_content(ax, stats, content_ids, assume_gaussian)
+        ax.text(
+            0.45,
+            0.1,
+            "Avg. Pred. Std.: {:.2f}".format(avg_stddev),
+            horizontalalignment="right",
+            verticalalignment="top",
+            transform=ax.transAxes,
+            fontsize=12,
+        )
+        if point_labels:
+            cls._annotate_points(ax, point_labels, stats["ys_label"], stats["ys_label_pred"])
+
     @classmethod
     @override(RegressorMixin)
     def plot_scatter(cls, ax, stats, **kwargs):
-
         assert len(stats["ys_label"]) == len(stats["ys_label_pred"])
-
-        content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
-        point_labels = kwargs["point_labels"] if "point_labels" in kwargs else None
-
+        content_ids = kwargs.get("content_ids")
+        point_labels = kwargs.get("point_labels")
         try:
-
-            ci_assume_gaussian = (
-                kwargs["ci_assume_gaussian"] if "ci_assume_gaussian" in kwargs else False
+            cls._plot_bootstrap_data(
+                ax,
+                stats,
+                content_ids,
+                point_labels,
+                kwargs.get("ci_assume_gaussian", False),
             )
-
-            assert "ys_label_pred_bagging" in stats
-            assert "ys_label_pred_stddev" in stats
-            assert "ys_label_pred_ci95_low" in stats
-            assert "ys_label_pred_ci95_high" in stats
-            avg_std = np.mean(stats["ys_label_pred_stddev"])
-            avg_ci95_low = np.mean(stats["ys_label_pred_ci95_low"])
-            avg_ci95_high = np.mean(stats["ys_label_pred_ci95_high"])
-            if content_ids is None:
-                if ci_assume_gaussian:
-                    yerr = 1.96 * stats["ys_label_pred_stddev"]  # 95% C.I. (assume Gaussian)
-                else:
-                    yerr = [
-                        stats["ys_label_pred_bagging"] - avg_ci95_low,
-                        avg_ci95_high - stats["ys_label_pred_bagging"],
-                    ]  # 95% C.I.
-                ax.errorbar(
-                    stats["ys_label"],
-                    stats["ys_label_pred"],
-                    yerr=yerr,
-                    capsize=2,
-                    marker="o",
-                    linestyle="",
-                )
-            else:
-                assert len(stats["ys_label"]) == len(content_ids)
-
-                unique_content_ids = list(set(content_ids))
-                from vmaf import plt
-
-                cmap = plt.get_cmap("jet")
-                colors = [cmap(i) for i in np.linspace(0, 1, len(unique_content_ids))]
-                for idx, curr_content_id in enumerate(unique_content_ids):
-                    curr_idxs = indices(content_ids, lambda cid: cid == curr_content_id)
-                    curr_ys_label = np.array(stats["ys_label"])[curr_idxs]
-                    curr_ys_label_pred = np.array(stats["ys_label_pred"])[curr_idxs]
-                    curr_ys_label_pred_bagging = np.array(stats["ys_label_pred_bagging"])[curr_idxs]
-                    curr_ys_label_pred_stddev = np.array(stats["ys_label_pred_stddev"])[curr_idxs]
-                    curr_ys_label_pred_ci95_low = np.array(stats["ys_label_pred_ci95_low"])[
-                        curr_idxs
-                    ]
-                    curr_ys_label_pred_ci95_high = np.array(stats["ys_label_pred_ci95_high"])[
-                        curr_idxs
-                    ]
-                    if ci_assume_gaussian:
-                        yerr = 1.96 * curr_ys_label_pred_stddev  # 95% C.I. (assume Gaussian)
-                    else:
-                        yerr = [
-                            curr_ys_label_pred_bagging - curr_ys_label_pred_ci95_low,
-                            curr_ys_label_pred_ci95_high - curr_ys_label_pred_bagging,
-                        ]  # 95% C.I.
-                    try:
-                        curr_ys_label_stddev = np.array(stats["ys_label_stddev"])[curr_idxs]
-                        ax.errorbar(
-                            curr_ys_label,
-                            curr_ys_label_pred,
-                            yerr=yerr,
-                            xerr=1.96 * curr_ys_label_stddev,
-                            capsize=2,
-                            marker="o",
-                            linestyle="",
-                            label=curr_content_id,
-                            color=colors[idx % len(colors)],
-                        )
-                    except (ValueError, TypeError):
-                        # matplotlib raises ValueError for malformed xerr/yerr
-                        # shapes and TypeError when curr_ys_label_stddev is
-                        # None. Fall back to the y-only errorbar variant.
-                        # (CodeQL py/catch-base-exception)
-                        ax.errorbar(
-                            curr_ys_label,
-                            curr_ys_label_pred,
-                            yerr=yerr,
-                            capsize=2,
-                            marker="o",
-                            linestyle="",
-                            label=curr_content_id,
-                            color=colors[idx % len(colors)],
-                        )
-
-            ax.text(
-                0.45,
-                0.1,
-                "Avg. Pred. Std.: {:.2f}".format(avg_std),
-                horizontalalignment="right",
-                verticalalignment="top",
-                transform=ax.transAxes,
-                fontsize=12,
-            )
-
-            if point_labels:
-                assert len(point_labels) == len(stats["ys_label"])
-                for i, point_label in enumerate(point_labels):
-                    ax.annotate(point_label, (stats["ys_label"][i], stats["ys_label_pred"][i]))
-
         except AssertionError:
             super(BootstrapRegressorMixin, cls).plot_scatter(ax, stats, **kwargs)
 
@@ -1891,6 +1813,63 @@ class BootstrapMixin(object):
             filename_ = "{}.{:04d}".format(filename, i_model)
         return filename_
 
+    @staticmethod
+    def _load_model_info(filename, fmt):
+        if fmt == "pkl":
+            with open(filename, "rb") as file:
+                return pickle.load(file)
+        if fmt == "json":
+            with open(filename, "rt") as file:
+                return json.load(file)
+        assert False
+
+    @classmethod
+    def _from_combined_file(cls, filename, logger, optional_dict2, **more):
+        info_loaded_meta = cls._load_model_info(filename, "json")
+        assert str(0) in info_loaded_meta
+        info_loaded_0 = info_loaded_meta[str(0)]
+        model_type = info_loaded_0["model_dict"]["model_type"]
+        model_class = TrainTestModel.find_subclass(model_type)
+        assert issubclass(
+            model_class, LibsvmNusvrTrainTestModel
+        ), "combined=True only supports subclass of LibsvmNusvrTrainTestModel"
+
+        train_test_model_0 = model_class._from_info_loaded(
+            info_loaded_0, None, logger, optional_dict2, **more
+        )
+        num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
+        train_test_model_0.model = [
+            model_class._from_info_loaded(
+                info_loaded_meta[str(i_model)], None, logger, optional_dict2, **more
+            ).model
+            for i_model in range(num_models)
+        ]
+        return train_test_model_0
+
+    @classmethod
+    def _from_separate_files(cls, filename, fmt, logger, optional_dict2, **more):
+        filename_0 = cls._get_model_i_filename(filename, 0)
+        assert os.path.exists(filename_0), "File name {} does not exist.".format(filename_0)
+        info_loaded_0 = cls._load_model_info(filename_0, fmt)
+        model_type = info_loaded_0["model_dict"]["model_type"]
+        model_class = TrainTestModel.find_subclass(model_type)
+        train_test_model_0 = model_class._from_info_loaded(
+            info_loaded_0, filename_0, logger, optional_dict2, **more
+        )
+        num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
+
+        models = []
+        for i_model in range(num_models):
+            filename_ = cls._get_model_i_filename(filename, i_model)
+            assert os.path.exists(filename_), "File name {} does not exist.".format(filename_)
+            info_loaded = cls._load_model_info(filename_, fmt)
+            model = model_class._from_info_loaded(
+                info_loaded, filename_, logger, optional_dict2, **more
+            ).model
+            models.append(model)
+        train_test_model_0.model = models
+        return train_test_model_0
+
     @classmethod
     @override(TrainTestModel)
     def from_file(cls, filename, logger=None, optional_dict2=None, **more):
@@ -1908,79 +1887,9 @@ class BootstrapMixin(object):
                 f"{supported_formats_for_combined}, but format is {fmt}"
             )
 
-        if combined is True:
-
-            if fmt == "json":
-                with open(filename, "rt") as file:
-                    info_loaded_meta = json.load(file)
-                assert str(0) in info_loaded_meta
-                info_loaded_0 = info_loaded_meta[str(0)]
-                model_type = info_loaded_0["model_dict"]["model_type"]
-                model_class = TrainTestModel.find_subclass(model_type)
-
-                assert issubclass(
-                    model_class, LibsvmNusvrTrainTestModel
-                ), f"combined=True only supports subclass of LibsvmNusvrTrainTestModel"
-
-                train_test_model_0 = model_class._from_info_loaded(
-                    info_loaded_0, None, logger, optional_dict2, **more
-                )
-                num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
-
-                models = []
-                for i_model in range(num_models):
-                    info_loaded_ = info_loaded_meta[str(i_model)]
-                    train_test_model_ = model_class._from_info_loaded(
-                        info_loaded_, None, logger, optional_dict2, **more
-                    )
-                    model_ = train_test_model_.model
-                    models.append(model_)
-
-                train_test_model_0.model = models
-
-                return train_test_model_0
-
-            else:
-                assert False
-
-        else:
-
-            filename_0 = cls._get_model_i_filename(filename, 0)
-            assert os.path.exists(filename_0), "File name {} does not exist.".format(filename_0)
-            if fmt == "pkl":
-                with open(filename_0, "rb") as file:
-                    info_loaded_0 = pickle.load(file)
-            elif fmt == "json":
-                with open(filename_0, "rt") as file:
-                    info_loaded_0 = json.load(file)
-            else:
-                assert False
-            model_type = info_loaded_0["model_dict"]["model_type"]
-            model_class = TrainTestModel.find_subclass(model_type)
-            train_test_model_0 = model_class._from_info_loaded(
-                info_loaded_0, filename_0, logger, optional_dict2, **more
-            )
-            num_models = cls._get_num_models_from_param_dict(info_loaded_0["param_dict"])
-
-            models = []
-            for i_model in range(num_models):
-                filename_ = cls._get_model_i_filename(filename, i_model)
-                assert os.path.exists(filename_), "File name {} does not exist.".format(filename_)
-                if fmt == "pkl":
-                    with open(filename_, "rb") as file:
-                        info_loaded_ = pickle.load(file)
-                elif fmt == "json":
-                    with open(filename_, "rt") as file:
-                        info_loaded_ = json.load(file)
-                train_test_model_ = model_class._from_info_loaded(
-                    info_loaded_, filename_, logger, optional_dict2, **more
-                )
-                model_ = train_test_model_.model
-                models.append(model_)
-
-            train_test_model_0.model = models
-
-            return train_test_model_0
+        if combined:
+            return cls._from_combined_file(filename, logger, optional_dict2, **more)
+        return cls._from_separate_files(filename, fmt, logger, optional_dict2, **more)
 
     @classmethod
     @override(TrainTestModel)

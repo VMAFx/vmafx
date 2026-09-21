@@ -1,5 +1,6 @@
 import os
 import unittest
+import warnings
 
 import numpy as np
 
@@ -398,10 +399,43 @@ class TrainTestModelTest(MyTestCase):
         xys.update(ys)
 
         model = Logistic5PLRegressionTrainTestModel({"norm_type": "clip_0to1"}, None)
-        model.train(xys)
-        result = model.evaluate(xs, ys)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            model.train(xys)
+            result = model.evaluate(xs, ys)
 
         self.assertAlmostEqual(result["RMSE"], 0.3603374311919728, places=4)
+
+    def test_train_logistic_fit_5PL_uses_all_five_parameters(self):
+        feature = list(range(-5, 6))
+        label = [
+            -1.5667472877842368,
+            -1.3274725672507035,
+            -1.0454555957266805,
+            -0.6858090622290945,
+            -0.2136444421871352,
+            0.36002131968883655,
+            0.945214034135521,
+            1.4410769611853467,
+            1.8210398813328772,
+            2.1154204563159325,
+            2.3610898308636137,
+        ]
+        xys = {
+            "content_id": list(range(len(feature))),
+            "feature": feature,
+            "label": label,
+        }
+        model = Logistic5PLRegressionTrainTestModel({"norm_type": "none"}, None)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            model.train(xys)
+            prediction = model.predict({"feature": feature})["ys_label_pred"]
+            extreme_prediction = model.predict({"feature": [-10000.0, 10000.0]})["ys_label_pred"]
+
+        self.assertLess(np.max(np.abs(np.asarray(prediction) - np.asarray(label))), 1e-6)
+        self.assertTrue(np.all(np.isfinite(extreme_prediction)))
 
 
 class TrainTestModelWithDisYRawVideoExtractorTest(MyTestCase):
