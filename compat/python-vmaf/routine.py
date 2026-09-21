@@ -217,7 +217,6 @@ def read_dataset(dataset, **kwargs):
 
     assets = []
     for dis_video in dis_videos:
-
         if content_ids is not None and dis_video["content_id"] not in content_ids:
             continue
 
@@ -247,56 +246,45 @@ def read_dataset(dataset, **kwargs):
     return assets
 
 
-def compare_two_quality_runners_on_dataset(
-    test_dataset,
-    first_runner_class,
-    second_runner_class,
-    result_store,
-    parallelize=True,
-    fifo_mode=True,
-    aggregate_method=np.mean,
-    type="regressor",
-    num_resample=1000,
-    seed_resample=None,
-    ax_plcc=None,
-    ax_srocc=None,
-    **kwargs,
-):
+def _run_one_side(test_dataset, runner_class, opts):
+    """Score `test_dataset` with one of the two runners under comparison.
 
-    def _get_stat(
-        df: pandas.DataFrame,
-        xcol: str,
-        ycol: str,
-    ) -> dict:
-        plcc = df[ycol].corr(df[xcol], method="pearson")
-        srocc = df[ycol].corr(df[xcol], method="spearman")
-        return {"plcc": plcc, "srocc": srocc}
-
-    first_test_assets, first_results = run_test_on_dataset(
+    Mirrors the positional call this comparison has always made into
+    `run_test_on_dataset`: no axis, no model filepath.
+    """
+    return run_test_on_dataset(
         test_dataset,
-        first_runner_class,
+        runner_class,
         None,
-        result_store,
+        opts.result_store,
         None,
-        parallelize,
-        fifo_mode,
-        aggregate_method,
-        type,
-        **kwargs,
+        opts.parallelize,
+        opts.fifo_mode,
+        opts.aggregate_method,
+        opts.model_type,
+        **opts.runner_kwargs,
     )
 
-    second_test_assets, second_results = run_test_on_dataset(
-        test_dataset,
-        second_runner_class,
-        None,
-        result_store,
-        None,
-        parallelize,
-        fifo_mode,
-        aggregate_method,
-        type,
-        **kwargs,
-    )
+
+def _correlation_stat(
+    df: pandas.DataFrame,
+    xcol: str,
+    ycol: str,
+) -> dict:
+    """PLCC and SROCC of `ycol` against `xcol`."""
+    plcc = df[ycol].corr(df[xcol], method="pearson")
+    srocc = df[ycol].corr(df[xcol], method="spearman")
+    return {"plcc": plcc, "srocc": srocc}
+
+
+def _paired_prediction_frame(test_dataset, first_runner_class, second_runner_class, opts):
+    """Run both runners and join their predictions to the shared groundtruth.
+
+    One row per asset. Asserts the two runs line up asset-for-asset and agree
+    on each asset's groundtruth before the pair is recorded.
+    """
+    first_test_assets, first_results = _run_one_side(test_dataset, first_runner_class, opts)
+    second_test_assets, second_results = _run_one_side(test_dataset, second_runner_class, opts)
 
     # collect data to list of dictionaries
     ds = list()
@@ -318,9 +306,16 @@ def compare_two_quality_runners_on_dataset(
             "second_prediction": second_result[second_runner_class.get_score_key()],
         }
         ds.append(d)
-    df = pandas.DataFrame(ds)
+    return pandas.DataFrame(ds)
 
-    # bootstrapping
+
+def _bootstrap_correlations(df, num_resample, seed_resample):
+    """Resample `df` with replacement `num_resample` times, collecting both correlations.
+
+    Returns `(plcc_first, plcc_second, srocc_first, srocc_second)`. `df.sample()`
+    draws from the global numpy RNG, so the seed is set here, immediately before
+    the loop, to keep the draw sequence reproducible for a given `seed_resample`.
+    """
     np.random.seed(seed_resample)
     xs = list()
     ys = list()
@@ -328,54 +323,82 @@ def compare_two_quality_runners_on_dataset(
     ys2 = list()
     for _ in range(num_resample):
         dfb = df.sample(n=df.shape[0], replace=True)
-        d_stat_first = _get_stat(dfb, "groundtruth", "first_prediction")
-        d_stat_second = _get_stat(dfb, "groundtruth", "second_prediction")
-        x = d_stat_first["plcc"]
-        y = d_stat_second["plcc"]
-        x2 = d_stat_first["srocc"]
-        y2 = d_stat_second["srocc"]
-        xs.append(x)
-        ys.append(y)
-        xs2.append(x2)
-        ys2.append(y2)
+        d_stat_first = _correlation_stat(dfb, "groundtruth", "first_prediction")
+        d_stat_second = _correlation_stat(dfb, "groundtruth", "second_prediction")
+        xs.append(d_stat_first["plcc"])
+        ys.append(d_stat_second["plcc"])
+        xs2.append(d_stat_first["srocc"])
+        ys2.append(d_stat_second["srocc"])
+    return xs, ys, xs2, ys2
 
-    ci95_xs = [np.percentile(xs, 2.5), np.percentile(xs, 97.5)]
-    ci95_ys = [np.percentile(ys, 2.5), np.percentile(ys, 97.5)]
+
+def _plot_resampled_correlation(ax, xs, ys, label, first, second, ci95, title_gap):
+    """Scatter one runner's resampled correlation against the other's, with the y=x line.
+
+    `title_gap` is the separator between the runner pair and the CI in the title.
+    The PLCC and SROCC titles have always differed here -- one space against two
+    -- so the caller supplies it rather than this helper imposing one spelling.
+    """
+    ci95_x, ci95_y, ci95_diff = ci95
+    ax.scatter(xs, ys, alpha=0.2, label=label)
+    ax.plot([min(xs), max(xs)], [min(xs), max(xs)], "-r")
+    ax.set_xlabel(f"{first.TYPE} 95%-CI: [{ci95_x[0]:.4f}, {ci95_x[1]:.4f}]")
+    ax.set_ylabel(f"{second.TYPE} 95%-CI: [{ci95_y[0]:.4f}, {ci95_y[1]:.4f}]")
+    ax.set_title(
+        f"({second.TYPE} - {first.TYPE}){title_gap}95%-CI: [{ci95_diff[0]:.4f}, {ci95_diff[1]:.4f}]"
+    )
+    ax.grid()
+    ax.legend()
+
+
+def _summarize_metric(xs, ys, ax, label, first, second, title_gap):
+    """95% percentile intervals for one metric, plotted onto `ax` when there is one.
+
+    Returns `(ci95_first, ci95_second, ci95_diff)`.
+    """
+    ci95_x = [np.percentile(xs, 2.5), np.percentile(xs, 97.5)]
+    ci95_y = [np.percentile(ys, 2.5), np.percentile(ys, 97.5)]
     diffs = np.array(ys) - np.array(xs)
-    ci95_diffs = [np.percentile(diffs, 2.5), np.percentile(diffs, 97.5)]
-    if ax_plcc is not None:
-        ax_plcc.scatter(xs, ys, alpha=0.2, label="PLCC with resampling")
-        ax_plcc.plot([min(xs), max(xs)], [min(xs), max(xs)], "-r")
-        ax_plcc.set_xlabel(
-            f"{first_runner_class.TYPE} 95%-CI: [{ci95_xs[0]:.4f}, {ci95_xs[1]:.4f}]"
-        )
-        ax_plcc.set_ylabel(
-            f"{second_runner_class.TYPE} 95%-CI: [{ci95_ys[0]:.4f}, {ci95_ys[1]:.4f}]"
-        )
-        ax_plcc.set_title(
-            f"({second_runner_class.TYPE} - {first_runner_class.TYPE}) 95%-CI: [{ci95_diffs[0]:.4f}, {ci95_diffs[1]:.4f}]"
-        )
-        ax_plcc.grid()
-        ax_plcc.legend()
+    ci95_diff = [np.percentile(diffs, 2.5), np.percentile(diffs, 97.5)]
+    ci95 = (ci95_x, ci95_y, ci95_diff)
+    if ax is not None:
+        _plot_resampled_correlation(ax, xs, ys, label, first, second, ci95, title_gap)
+    return ci95
 
-    ci95_xs2 = [np.percentile(xs2, 2.5), np.percentile(xs2, 97.5)]
-    ci95_ys2 = [np.percentile(ys2, 2.5), np.percentile(ys2, 97.5)]
-    diffs2 = np.array(ys2) - np.array(xs2)
-    ci95_diffs2 = [np.percentile(diffs2, 2.5), np.percentile(diffs2, 97.5)]
-    if ax_srocc is not None:
-        ax_srocc.scatter(xs2, ys2, alpha=0.2, label="SROCC with resampling")
-        ax_srocc.plot([min(xs2), max(xs2)], [min(xs2), max(xs2)], "-r")
-        ax_srocc.set_xlabel(
-            f"{first_runner_class.TYPE} 95%-CI: [{ci95_xs2[0]:.4f}, {ci95_xs2[1]:.4f}]"
-        )
-        ax_srocc.set_ylabel(
-            f"{second_runner_class.TYPE} 95%-CI: [{ci95_ys2[0]:.4f}, {ci95_ys2[1]:.4f}]"
-        )
-        ax_srocc.set_title(
-            f"({second_runner_class.TYPE} - {first_runner_class.TYPE})  95%-CI: [{ci95_diffs2[0]:.4f}, {ci95_diffs2[1]:.4f}]"
-        )
-        ax_srocc.grid()
-        ax_srocc.legend()
+
+def compare_two_quality_runners_on_dataset(
+    test_dataset,
+    first_runner_class,
+    second_runner_class,
+    result_store,
+    parallelize=True,
+    fifo_mode=True,
+    aggregate_method=np.mean,
+    type="regressor",
+    num_resample=1000,
+    seed_resample=None,
+    ax_plcc=None,
+    ax_srocc=None,
+    **kwargs,
+):
+    opts = SimpleNamespace(
+        result_store=result_store,
+        parallelize=parallelize,
+        fifo_mode=fifo_mode,
+        aggregate_method=aggregate_method,
+        model_type=type,
+        runner_kwargs=kwargs,
+    )
+    df = _paired_prediction_frame(test_dataset, first_runner_class, second_runner_class, opts)
+
+    # bootstrapping
+    xs, ys, xs2, ys2 = _bootstrap_correlations(df, num_resample, seed_resample)
+    ci95_xs, ci95_ys, ci95_diffs = _summarize_metric(
+        xs, ys, ax_plcc, "PLCC with resampling", first_runner_class, second_runner_class, " "
+    )
+    ci95_xs2, ci95_ys2, ci95_diffs2 = _summarize_metric(
+        xs2, ys2, ax_srocc, "SROCC with resampling", first_runner_class, second_runner_class, "  "
+    )
 
     return {
         "plcc": list(zip(xs, ys)),
