@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reclaim rebuildable bulk from the local working directories, keep the evidence.
 
-The gitignored state trees (`.workingdir2/` and friends) accumulate one directory
+The gitignored state trees (`.workingdir/` and friends) accumulate one directory
 per gate run. Each holds a small amount of evidence — receipts, help dumps,
 logs, CSVs, JSON — inside a large amount of rebuildable output: Go build caches,
 meson build trees, downloaded tool binaries, a rendered mkdocs `site/`.
@@ -245,8 +245,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument(
         "state_root",
         nargs="?",
-        default=".workingdir2",
-        help="gitignored state tree to prune (default: .workingdir2)",
+        default=".workingdir",
+        help="gitignored state tree to prune (default: .workingdir)",
     )
     parser.add_argument("--apply", action="store_true", help="perform the deletions")
     parser.add_argument(

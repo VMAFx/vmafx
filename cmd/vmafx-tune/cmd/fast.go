@@ -168,7 +168,7 @@ func registerFastFlags(cmd *cobra.Command, flags *fastFlags) {
 		"Path to the libvmaf CLI binary")
 	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"vmaf model version string")
-	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/fast",
+	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir/cache/vmafx-tune/fast",
 		"Scratch dir for probe + verify encodes")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "",
 		"JSON destination for the recommendation payload (default: stdout)")

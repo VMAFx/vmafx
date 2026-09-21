@@ -6,8 +6,8 @@
  */
 
 /*
- * PU21 correctness test against the verified design dossier's worked oracle
- * (.workingdir2/rc/metrics/pu21.md). All values were independently re-derived
+ * PU21 correctness test against the worked oracle in docs/metrics/pu21.md.
+ * All values were independently re-derived
  * in fp64 by the adversarial verifier (encoder to ~1e-11, PU-PSNR exact).
  *
  * Includes pu21.c directly to reach the static encoder + PU-PSNR helpers

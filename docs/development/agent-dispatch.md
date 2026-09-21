@@ -73,7 +73,7 @@ The script lives at
 It runs three checks:
 
 1. **BACKLOG row not closed.** Parses
-   `.workingdir2/BACKLOG.md` via
+   `.workingdir/BACKLOG.md` via
    [`scripts/lib/backlog_tracker.py`](../../scripts/lib/backlog_tracker.py).
    If the row's status is DONE / CLOSED / REMOVED / BLOCKED /
    DEFERRED, exit 1.
@@ -136,7 +136,7 @@ through a typed module rather than re-grepping the file:
 ```python
 from lib.backlog_tracker import BacklogTracker, GitHubTracker, BacklogItem
 
-bk = BacklogTracker()                    # autodetects .workingdir2/BACKLOG.md
+bk = BacklogTracker()                    # autodetects .workingdir/BACKLOG.md
 
 bk.list_open()                           # -> list[BacklogItem]
 bk.list_in_flight()                      # -> list[BacklogItem]
@@ -164,7 +164,7 @@ class BacklogItem:
 
 The module is read-only — **never** writes to BACKLOG.md. Edits
 remain a manual editorial task per the global "Read AND update local
-state files" rule. If `.workingdir2/` ever migrates off Markdown
+state files" rule. If `.workingdir/` ever migrates off Markdown
 (JSON, SQLite, Linear), this module is the only file that needs to
 change.
 

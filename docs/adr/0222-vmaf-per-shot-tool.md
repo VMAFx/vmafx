@@ -10,7 +10,7 @@
 
 The fork's tiny-AI roadmap §2.4 (per-shot CRF predictor + TransNet V2
 shot boundaries) decomposes into two tasks tracked in
-[`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md):
+`.workingdir2/BACKLOG.md`:
 
 - **T6-3a** — TransNet V2 shot-boundary feature extractor (~1M params,
   100-frame window). Already proposed as PR #210 / ADR-0220 — emits
@@ -108,7 +108,7 @@ We will ship `vmaf-perShot` as a standalone executable under
 - Roadmap: [`docs/ai/roadmap.md`](../ai/roadmap.md) §2.4.
 - Sister ADR: [ADR-0220](0220-transnet-v2-shot-detector.md) (T6-3a,
   TransNet V2 extractor, in-flight).
-- Backlog: [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md)
+- Backlog: `.workingdir2/BACKLOG.md`
   row T6-2 part b T6-3b.
 - Source: `req` — direct user direction, scoping note in T6-3b
   briefing 2026-04-29.

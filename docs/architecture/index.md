@@ -49,7 +49,8 @@ vmaf/
 │   └── getting-started # Installation, first build
 │
 ├── .claude/            # Claude Code agent config (skills, hooks, agents)
-├── .workingdir2/       # Planning dossier (read-only at runtime)
+├── .workingdir/        # Ignored private state, cache, and local evidence
+├── .corpus/            # Ignored datasets and reusable derived data
 └── .github/workflows/  # CI / release / supply chain
 ```
 
@@ -65,7 +66,9 @@ vmaf/
 | Python harness scratch                 | `python/vmaf/workspace/` (see [workspace.md](workspace.md)) |
 | CI / release workflow                  | `.github/workflows/`                          |
 | Coding standards / style               | [`docs/principles.md`](../principles.md)      |
-| Planning artefacts (design docs)       | `.workingdir2/` (checked in)                  |
+| Public design and decision records     | [`docs/`](../) and [`docs/adr/`](../adr/)    |
+| Private session continuity             | `.workingdir/` (ignored; never public authority) |
+| Local datasets / reusable derived data | `.corpus/` (ignored)                         |
 
 ## C4 model
 

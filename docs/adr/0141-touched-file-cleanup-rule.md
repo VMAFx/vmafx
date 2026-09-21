@@ -118,7 +118,7 @@ on conflict.
   on, not only PR #77" + "full lint/cleaning, NOLINT only if
   not possible otherwise").
 - Historical-debt scoping:
-  [`.workingdir2/OPEN.md`](../../.workingdir2/OPEN.md) T7-5 —
+  `.workingdir2/OPEN.md` T7-5 —
   one-time sweep of 18 `readability-function-size` NOLINTs +
   upstream `_iqa_*` suppressions, gated by Netflix golden +
   `/cross-backend-diff`, queued immediately after PR #76 /

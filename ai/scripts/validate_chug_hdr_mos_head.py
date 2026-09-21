@@ -19,9 +19,9 @@ Emits a JSON report, a Markdown report, and a run-manifest sidecar.
 Reproducer::
 
     python ai/scripts/validate_chug_hdr_mos_head.py \\
-        --onnx .workingdir2/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx \\
-        --out-json  .workingdir2/training/validation/chug_held_out_test_20260527.json \\
-        --out-md    .workingdir2/training/validation/chug_held_out_test_20260527.md
+        --onnx .workingdir/evidence/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx \\
+        --out-json  .workingdir/evidence/training/validation/chug_held_out_test_20260527.json \\
+        --out-md    .workingdir/evidence/training/validation/chug_held_out_test_20260527.md
 
 Exit codes:
 
@@ -73,7 +73,8 @@ DEFAULT_ONNX = Path(
         "VMAF_CHUG_HDR_ONNX",
         str(
             REPO_ROOT
-            / ".workingdir2"
+            / ".workingdir"
+            / "evidence"
             / "training"
             / "models"
             / "chug_hdr_mos_head_v1_wide_seed20260521.onnx"
@@ -81,7 +82,7 @@ DEFAULT_ONNX = Path(
     )
 )
 DEFAULT_SHARD_DIR = REPO_ROOT / ".corpus" / "chug" / "training" / "fr_canonical_shards" / "output"
-DEFAULT_OUT_DIR = REPO_ROOT / ".workingdir2" / "training" / "validation"
+DEFAULT_OUT_DIR = REPO_ROOT / ".workingdir" / "evidence" / "training" / "validation"
 
 MANIFEST_SCHEMA = "chug-hdr-held-out-test-validator-v1"
 

@@ -119,14 +119,14 @@ on a workstation with sufficient scratch (~750 GB peak):
 
 ```bash
 bash ai/scripts/extract_k150k_features.sh \
-    --input  .workingdir2/konvid-150k/konvid_150k.jsonl \
+    --input  .corpus/konvid-150k/konvid_150k.jsonl \
     --output runs/k150k_fr_corpus.jsonl
 ```
 
 The script wraps the adapter with K150K-specific defaults
 (`crf_sweep=(18,23,28,33,38)`, `preset=medium`, scratch under
-`.workingdir2/k150k-scratch/`, encodes under
-`.workingdir2/k150k-encodes/`). Edit the script's defaults block to
+`.workingdir/cache/k150k-scratch/`, encodes under
+`.corpus/k150k-encodes/`). Edit the script's defaults block to
 override.
 
 Output JSONL is gitignored; only derived training weights ship in-tree

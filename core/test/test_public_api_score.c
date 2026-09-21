@@ -8,8 +8,7 @@
 /*
  * Public API coverage test — vmaf_score_at_index and vmaf_model_collection_load.
  *
- * The audit at .workingdir/audit-test-coverage-2026-05-16.md §2 found that
- * three public entry points have zero C-unit-test coverage:
+ * This test closes C-unit-test gaps for three public entry points:
  *
  *   - vmaf_score_at_index()             (libvmaf.h:218)
  *   - vmaf_model_collection_load()      (model.h:99)

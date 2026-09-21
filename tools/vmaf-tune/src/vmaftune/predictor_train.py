@@ -313,7 +313,7 @@ def iter_corpus_files(path: Path) -> tuple[Path, ...]:
 
     ``path`` may be either a single file or a directory containing
     sharded corpus files. Directory traversal is recursive so the
-    trainer can consume the ``.workingdir2/corpus_run`` style layout
+    trainer can consume the ``.corpus/corpus_run`` style layout
     directly without first concatenating rows by hand.
     """
     if path.is_file():

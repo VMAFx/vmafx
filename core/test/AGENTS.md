@@ -348,9 +348,9 @@ After every upstream sync or port-upstream-commit, run:
 grep "^test(" core/test/meson.build | grep -v "suite :"
 ```
 
-Any line returned is violation — add appropriate `suite:` before
-merging. See audit that identified this bug:
-`.workingdir/audit-build-matrix-symbols-2026-05-16.md` finding 5c.
+Any line returned is a violation — add the appropriate `suite:` before
+merging. Keep this check with every upstream sync because upstream does not
+carry the fork's suite classification contract.
 
 ## Pixel-format edge coverage invariant (ADR-0912)
 

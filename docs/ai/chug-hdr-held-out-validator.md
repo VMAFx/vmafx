@@ -28,13 +28,13 @@ ADR-0325 training gate and are never lowered on a miss.
 
 ```bash
 python ai/scripts/validate_chug_hdr_mos_head.py \
-    --onnx .workingdir2/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx \
-    --out-json  .workingdir2/training/validation/chug_held_out_test_YYYYMMDD.json \
-    --out-md    .workingdir2/training/validation/chug_held_out_test_YYYYMMDD.md
+    --onnx .workingdir/evidence/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx \
+    --out-json  .workingdir/evidence/training/validation/chug_held_out_test_YYYYMMDD.json \
+    --out-md    .workingdir/evidence/training/validation/chug_held_out_test_YYYYMMDD.md
 ```
 
 Default ONNX path is
-`.workingdir2/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx`.
+`.workingdir/evidence/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx`.
 Override via `VMAF_CHUG_HDR_ONNX` environment variable.
 
 Default shard directory is
@@ -48,8 +48,8 @@ Override via `--shard-dir` or pass explicit `--feature-jsonl` paths.
 | `--onnx` | see above | CHUG MOS head ONNX path |
 | `--shard-dir` | `.corpus/chug/…/output` | Dir searched for `shard_*.features.jsonl` |
 | `--feature-jsonl` | (from shard-dir) | Explicit shard path; may be repeated |
-| `--out-json` | `.workingdir2/training/validation/…json` | JSON report + run-manifest |
-| `--out-md` | `.workingdir2/training/validation/…md` | Markdown summary |
+| `--out-json` | `.workingdir/evidence/training/validation/…json` | JSON report + run-manifest |
+| `--out-md` | `.workingdir/evidence/training/validation/…md` | Markdown summary |
 | `--gate-plcc` | 0.85 | Override PLCC threshold (for testing) |
 | `--gate-srocc` | 0.82 | Override SROCC threshold |
 | `--gate-rmse` | 0.45 | Override RMSE threshold |

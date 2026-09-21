@@ -82,6 +82,6 @@ head -n 5 "$out_path" | sed 's/^/  /'
 echo
 echo "next steps:"
 echo "  1. read the full report: less $out_path"
-echo "  2. cross-reference with .workingdir2/BACKLOG.md for prioritization"
+echo "  2. cross-reference with .workingdir/BACKLOG.md for prioritization"
 echo "  3. cross-reference with docs/state.md for bug-status overlap"
 echo "  4. do NOT auto-dispatch agents on findings — the audit is a seed list, not a task queue"
