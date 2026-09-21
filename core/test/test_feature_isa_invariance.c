@@ -123,6 +123,15 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
     return 0;
 }
 
+static int close_feature_run(VmafContext *vmaf, int result)
+{
+    if (vmaf == NULL) {
+        return result;
+    }
+    const int close_result = vmaf_close(vmaf);
+    return result != 0 ? result : close_result;
+}
+
 /* Run one feature end-to-end under the given cpumask.
  *
  * Returns 0 on success and a negative libvmaf error otherwise. Failures are
@@ -133,37 +142,39 @@ static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
-    if (err)
-        return err;
+    if (err) {
+        return close_feature_run(vmaf, err);
+    }
 
     err = vmaf_use_feature(vmaf, c->feature, NULL);
-    if (err)
-        goto out;
+    if (err) {
+        return close_feature_run(vmaf, err);
+    }
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
         err = fill_pic(&ref, i, 0);
-        if (err)
-            goto out;
+        if (err) {
+            return close_feature_run(vmaf, err);
+        }
         err = fill_pic(&dist, i, 1);
         if (err) {
-            (void)vmaf_picture_unref(&ref);
-            goto out;
+            const int unref_result = vmaf_picture_unref(&ref);
+            return close_feature_run(vmaf, err != 0 ? err : unref_result);
         }
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        if (err)
-            goto out;
+        if (err) {
+            return close_feature_run(vmaf, err);
+        }
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err)
-        goto out;
+    if (err) {
+        return close_feature_run(vmaf, err);
+    }
 
     err = vmaf_feature_score_at_index(vmaf, c->score, out_score, 1u);
-
-out:
-    (void)vmaf_close(vmaf);
-    return err;
+    return close_feature_run(vmaf, err);
 }
 
 /* Bit-pattern equality of two scores — not near-equality, see the header

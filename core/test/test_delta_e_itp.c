@@ -57,6 +57,37 @@ static int close_4dp(double a, double b)
     return fabs(a - b) < 1e-4;
 }
 
+static int merge_cleanup_result(int result, int cleanup_result)
+{
+    return result != 0 ? result : cleanup_result;
+}
+
+static int cleanup_extractor_pair(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                                  VmafPicture *ref, VmafPicture *dist)
+{
+    int result = 0;
+    if (ctx) {
+        result = merge_cleanup_result(result, vmaf_feature_extractor_context_close(ctx));
+        result = merge_cleanup_result(result, vmaf_feature_extractor_context_destroy(ctx));
+    }
+    if (fc) {
+        vmaf_feature_collector_destroy(fc);
+    }
+    if (ref->ref != NULL) {
+        result = merge_cleanup_result(result, vmaf_picture_unref(ref));
+    }
+    if (dist->ref != NULL) {
+        result = merge_cleanup_result(result, vmaf_picture_unref(dist));
+    }
+    return result;
+}
+
+static double finish_extractor_pair(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                                    VmafPicture *ref, VmafPicture *dist, double score)
+{
+    return cleanup_extractor_pair(ctx, fc, ref, dist) == 0 ? score : -1.0;
+}
+
 /* ITU-R BT.2124-0 Annex 4 normative worked example: the BT.2111 58% PQ
  * BT.709-blue patch, 10-bit FULL-range PQ RGB code values [296, 201, 582].
  *
@@ -170,20 +201,25 @@ static double run_extractor_pair(uint8_t ry, uint8_t ru, uint8_t rv, uint8_t dy,
     memset(&dist, 0, sizeof(dist));
     double score = -1.0;
 
-    if (vmaf_feature_extractor_context_create(&ctx, fex, NULL)) {
-        goto cleanup;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    if (err != 0) {
+        return finish_extractor_pair(ctx, fc, &ref, &dist, score);
     }
-    if (vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, DEITP_W, DEITP_H)) {
-        goto cleanup;
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, DEITP_W, DEITP_H);
+    if (err != 0) {
+        return finish_extractor_pair(ctx, fc, &ref, &dist, score);
     }
-    if (vmaf_feature_collector_init(&fc)) {
-        goto cleanup;
+    err = vmaf_feature_collector_init(&fc);
+    if (err != 0) {
+        return finish_extractor_pair(ctx, fc, &ref, &dist, score);
     }
-    if (alloc_const_420(&ref, ry, ru, rv)) {
-        goto cleanup;
+    err = alloc_const_420(&ref, ry, ru, rv);
+    if (err != 0) {
+        return finish_extractor_pair(ctx, fc, &ref, &dist, score);
     }
-    if (alloc_const_420(&dist, dy, du, dv)) {
-        goto cleanup;
+    err = alloc_const_420(&dist, dy, du, dv);
+    if (err != 0) {
+        return finish_extractor_pair(ctx, fc, &ref, &dist, score);
     }
 
     if (!vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc)) {
@@ -191,22 +227,7 @@ static double run_extractor_pair(uint8_t ry, uint8_t ru, uint8_t rv, uint8_t dy,
             score = -1.0;
         }
     }
-
-cleanup:
-    if (ctx) {
-        (void)vmaf_feature_extractor_context_close(ctx);
-        (void)vmaf_feature_extractor_context_destroy(ctx);
-    }
-    if (fc) {
-        vmaf_feature_collector_destroy(fc);
-    }
-    if (ref.ref != NULL) {
-        vmaf_picture_unref(&ref);
-    }
-    if (dist.ref != NULL) {
-        vmaf_picture_unref(&dist);
-    }
-    return score;
+    return finish_extractor_pair(ctx, fc, &ref, &dist, score);
 }
 
 /* End-to-end: the registered extractor must load and score an identical
