@@ -51687,3 +51687,22 @@ replace `while True` with bounded loops that preserve the same EOF/error checks.
 execution order, fixtures, assertion expressions, numeric constants, expected values, tolerances,
 and parity-gate CLI/output behavior stay unchanged. An upstream textual conflict may take the
 upstream test body, then reapply the helper boundaries needed by HISS.
+
+## Python process execution and 5PL fitting are warning-free (ADR-1278)
+
+`compat/python-vmaf/tools/misc.py` must not restore upstream's forced global
+`fork` start method or its fork-only globals. `parallel_map()` uses loky,
+executor callers group equal `str(asset)` keys for serial evaluation, and FIFO
+helpers use an explicit `spawn` context. Preserve ordered results and the
+duplicate-asset serialization regression when resolving upstream conflicts.
+
+`compat/python-vmaf/core/train_test_model.py` implements the published 5PL
+curve with `b1` multiplying the sigmoid and uses `scipy.special.expit`.
+Upstream currently carries the additive-`b1`/raw-`exp` form; accepting it would
+restore an unidentifiable parameter pair, SciPy covariance warnings, and
+overflow warnings. Netflix golden assertions remain unchanged.
+
+The warning gate is load-bearing too: root `pyproject.toml` and
+`python/tox.ini` promote warnings to errors, and tox no longer disables the
+warnings plugin. Do not restore `-p no:warnings` or add `ignore` filters when an
+upstream sync starts warning; fix the emitting code or dependency usage.

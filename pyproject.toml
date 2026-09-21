@@ -149,6 +149,8 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 [tool.pytest.ini_options]
 testpaths = ["python/test", "ai/tests", "compat/vmaf/tests"]
 addopts = "-ra --strict-markers"
+filterwarnings = ["error"]
+asyncio_default_fixture_loop_scope = "function"
 # ai/src/ is the aiutils package root; add it so tests can ``import aiutils``
 # without a pip-editable install.  (ai/scripts/ is added by each test file
 # that imports a trainer script directly via sys.path.insert.)

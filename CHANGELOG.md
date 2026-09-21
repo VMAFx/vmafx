@@ -26262,6 +26262,9 @@ version reported by ``setup.py``.
 - Loosen over-pinned `numpy>=2.4.6,<2.4.7` to `numpy>=2.4.6` and `libsvm-official>=3.37.0,<=3.37` to `libsvm-official>=3.37` in `requirements.txt`.
 
 
+- Removed all warnings from the classic Python harness regression batch by dropping an unused deprecated SciPy import, replacing unsafe multithreaded `fork` execution with ordered loky/spawn workers, closing override-import temporary files deterministically, preserving duplicate-asset serialization, restoring the reference overflow-safe five-parameter logistic equation, and making warnings fatal in root/package pytest and legacy tox runs without ignore rules (ADR-1278).
+
+
 **Dead code + unused-variable cleanup after r12 PR train** — two defects introduced
 by the parallel PR 741/747 merge train:
 

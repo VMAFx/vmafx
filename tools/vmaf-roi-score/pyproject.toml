@@ -39,6 +39,7 @@ packages = ["src/vmafroiscore"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = ["error"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests legitimately compare to literal expected values.

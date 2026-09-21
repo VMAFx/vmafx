@@ -109,6 +109,23 @@ python/vmaf/
   `scripts/ci/check-python-requirements-single-source.sh --write`
   (`make python-deps-sync`); never edit manually. Renovate ignores
   `python/requirements.txt`, avoids duplicate PRs.
+- **Python worker creation is fork-free (ADR-1278).**
+  `tools.misc.parallel_map()` uses joblib's `loky` backend so local callables
+  remain supported without inheriting live threads through POSIX `fork`.
+  `Executor.run()` and `run_executors_in_parallel()` group equal
+  `str(asset)` keys into serial work units and restore input order; do not
+  replace that grouping with independently dispatched duplicates. FIFO helper
+  processes use the explicit `spawn` context. The classic 5PL curve in
+  `core/train_test_model.py` keeps `b1` as the sigmoid amplitude and uses
+  `scipy.special.expit`; additive `b1` is redundant with `b5` and a raw
+  exponential overflows.
+- **Pytest warnings are errors, without carve-outs (ADR-1278).** The root,
+  package-local, and legacy `python/tox.ini` configs all promote every warning
+  to an error. Never restore `-p no:warnings`, add an `ignore` warning filter,
+  or weaken a CI invocation to make a warning-producing test pass. Fix the
+  warning's cause instead. `tools.misc.import_python_file()` must close its
+  override temporary file before reopening it and remove the path in `finally`;
+  relying on garbage collection emits `ResourceWarning` on Python 3.14.
 
 ## Governing ADRs
 
@@ -119,3 +136,4 @@ python/vmaf/
 - [ADR-0030](../../docs/adr/0030-matlab-sources-relocated.md) — MATLAB source relocation.
 - [ADR-0038](../../docs/adr/0038-purge-upstream-matlab-mex-binaries.md) — MEX binary purge.
 - [ADR-1236](../../docs/adr/1236-version-single-source-tree.md) — single-source package versions and unify Python dependencies.
+- [ADR-1278](../../docs/adr/1278-python-safe-parallel-execution.md) — fork-free process execution and reference 5PL fitting.
