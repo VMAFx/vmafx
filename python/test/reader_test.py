@@ -136,7 +136,7 @@ class YuvReaderTest(unittest.TestCase):
             yuv_type="yuv420p",
         ) as yuv_reader:
 
-            while True:
+            for _ in range(yuv_reader.num_frms):
                 try:
                     y, u, v = yuv_reader.next()
                     y, u, v = y.astype(np.double), u.astype(np.double), v.astype(np.double)
@@ -144,6 +144,13 @@ class YuvReaderTest(unittest.TestCase):
                     y_2ndmoments.append(y.var() + y.mean() * y.mean())
                 except StopIteration:
                     break
+            else:
+                try:
+                    yuv_reader.next()
+                except StopIteration:
+                    pass
+                else:
+                    raise AssertionError("reader exceeded its declared frame count")
 
         self.assertEqual(len(y_1stmoments), 48)
         self.assertEqual(len(y_2ndmoments), 48)
@@ -162,13 +169,20 @@ class YuvReaderTest(unittest.TestCase):
             yuv_type="yuv420p",
         ) as yuv_reader:
 
-            while True:
+            for _ in range(yuv_reader.num_frms):
                 try:
                     y, u, v = yuv_reader.next(format="float")
                     y_1stmoments.append(y.mean())
                     y_2ndmoments.append(y.var() + y.mean() * y.mean())
                 except StopIteration:
                     break
+            else:
+                try:
+                    yuv_reader.next(format="float")
+                except StopIteration:
+                    pass
+                else:
+                    raise AssertionError("reader exceeded its declared frame count")
 
         self.assertEqual(len(y_1stmoments), 48)
         self.assertEqual(len(y_2ndmoments), 48)
