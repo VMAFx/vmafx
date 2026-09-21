@@ -225,6 +225,24 @@
       "draftPR": false
     },
     {
+      "description": "CUDA is a coordinated pin, not an image tag. One release is named in sixteen places across seven files in seven spellings, and scripts/ci/check-base-image-single-source.sh rejects an image tag that disagrees with CUDA_VERSION, so a tags-only pull request (#1487) is structurally unmergeable \u2014 it can never go green on its own. This rule and the \"CUDA release\" custom manager below put every site Renovate can express \u2014 CUDA_VERSION, the Jimver/cuda-toolkit inputs, the Windows installer versions, the two nvidia/cuda image pins and their four Dockerfile ARG mirrors \u2014 into one branch, so a release moves as a unit or not at all. The five derived spellings Renovate cannot write (the $cudaMajorMinor series literals, the cuda-toolkit-NN-N apt names and the OCI description label) are a pure function of CUDA_VERSION and belong to scripts/ci/check-cuda-pin-lockstep.py --write instead. Digest and pin refreshes are deliberately left to the \"Docker digests\" batch above: a new digest on the same tag needs no coordination. Jimver/cuda-toolkit's own version is NOT in this group \u2014 that is an action bump, not a CUDA release \u2014 but it does cap which CUDA versions the Linux legs can install (v0.2.36 tops out at 13.3.1), so a CUDA bump the action cannot serve needs the action raised first. See ADR-1285.",
+      "matchPackageNames": [
+        "nvidia/cuda"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "groupName": "CUDA release (coordinated pin)",
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "cuda",
+        "manual-review"
+      ]
+    },
+    {
       "description": "Renovate's own action \u2014 manual review on bumps to retain auditability of the dep-bot itself.",
       "matchPackageNames": [
         "renovatebot/github-action"
@@ -446,6 +464,23 @@
         "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "CUDA release literals that are a plain x.y.z, so Renovate can rewrite them directly: CUDA_VERSION in build-config.env, the Jimver/cuda-toolkit `cuda:` input on the Linux legs, and $cudaVersion on the Windows installer legs. They resolve as nvidia/cuda so the package rule above groups them with the image pins the base-image manager owns. extractVersion pulls the bare release out of tags like `13.3.1-devel-ubuntu26.04`: a bare `13.3.1` matches no nvidia/cuda tag, so without it the lookup returns nothing and the manager would look wired while doing nothing. Deliberately absent: the two-component $cudaMajorMinor literals, the cuda-toolkit-NN-N apt names and the OCI description label. Renovate substitutes the whole looked-up version into the matched slot, so it would write `13.4.0` where `13.4` or `13-4` belongs; scripts/ci/check-cuda-pin-lockstep.py derives and rewrites those instead and fails the build if any of them drifts. See ADR-1285 and docs/research/renovate-cuda-coordinated-pin.md.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^\\.github/workflows/[^/]+\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)CUDA_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)[ \\t]*cuda:[ \\t]+'(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)'",
+        "\\$cudaVersion[ \\t]*=[ \\t]*'(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)'"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "nvidia/cuda",
+      "extractVersionTemplate": "^(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)-devel-",
+      "versioningTemplate": "docker"
     }
   ],
   "vulnerabilityAlerts": {

@@ -104,6 +104,46 @@ pinned tag actually carries the version its knob claims, so `RELEASE_DEBIAN=13`
 cannot sit above a `debian:12` pin. That check is what would have caught the
 drift this file exists to prevent.
 
+### CUDA: a coordinated pin, not an image tag
+
+CUDA is the one knob whose value is repeated outside the Dockerfiles. One
+release is named in sixteen places across seven files, in seven spellings:
+
+| Spelling | Where | Owner |
+| --- | --- | --- |
+| `CUDA_VERSION="13.3.1"` | `build-config.env` | Renovate |
+| `nvidia/cuda:13.3.1-…@sha256:…` | `build-config.env` + four Dockerfile ARG mirrors | Renovate (base-image manager) |
+| `cuda: '13.3.1'` | the `Jimver/cuda-toolkit` input on both Linux legs | Renovate |
+| `$cudaVersion = '13.3.1'` | both Windows installer legs | Renovate |
+| `$cudaMajorMinor = '13.3'` | the same two legs | `make cuda-pin-sync` |
+| `cuda-toolkit-13-3` | `CUDA_APT_PACKAGE` + `dev/Containerfile` | `make cuda-pin-sync` |
+| `"VMAFX production CUDA 13.3.1 runtime"` | the OCI description label on the CUDA runtime image | `make cuda-pin-sync` |
+
+`scripts/ci/check-cuda-pin-lockstep.py` checks all sixteen against
+`CUDA_VERSION` on every commit, and fails on a CUDA release literal in any
+spelling it does not recognise, so a seventeenth copy cannot appear quietly.
+
+To move the release:
+
+```bash
+# 1. edit CUDA_VERSION and the two nvidia/cuda pins (tag AND digest) in build-config.env
+scripts/ci/check-base-image-single-source.sh --write   # or: make base-images-sync
+# 2. edit the Jimver inputs and $cudaVersion in the two workflows
+make cuda-pin-sync                                     # derives the rest
+```
+
+Renovate proposes the first two steps by itself: every site it can rewrite is
+grouped as `CUDA release (coordinated pin)`, so a release arrives as one branch
+rather than as the tags-only pull request that could never go green. The last
+step is still a command, because the three derived spellings want less than the
+whole version and Renovate can only write the whole version. See
+[ADR-1285](../adr/1285-cuda-coordinated-pin-lockstep.md).
+
+Raising CUDA can also require raising `Jimver/cuda-toolkit`: the action ships
+its own installer index, and v0.2.36 tops out at 13.3.1. The action bump is not
+in the CUDA group — it is an action upgrade, not a release move — so raise it
+first when the group's target is newer than the action serves.
+
 ### Formatter versions
 
 `.pre-commit-config.yaml` owns the ruff and black versions. The `Makefile`

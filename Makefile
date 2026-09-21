@@ -118,7 +118,7 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
-	base-images-sync python-deps-sync \
+	base-images-sync cuda-pin-sync python-deps-sync \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
@@ -200,6 +200,14 @@ base-images-sync:
 	scripts/ci/check-base-image-single-source.sh --write
 	scripts/ci/check-base-image-single-source.sh
 
+# Rewrite the derived CUDA spellings ($cudaMajorMinor, cuda-toolkit-NN-N, the OCI
+# description label) from build-config.env's CUDA_VERSION. Renovate owns the rest
+# of the coordinated pin; edit CUDA_VERSION and the image pins, run this, commit
+# all of it together (ADR-1285).
+cuda-pin-sync:
+	python3 scripts/ci/check-cuda-pin-lockstep.py --write
+	python3 scripts/ci/check-cuda-pin-lockstep.py
+
 # Rewrite python/requirements.txt from python/pyproject.toml [project].dependencies.
 python-deps-sync:
 	scripts/ci/check-python-requirements-single-source.sh --write
@@ -237,6 +245,7 @@ lint-sh:
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh
 	@scripts/ci/check-base-image-single-source.sh
+	@python3 scripts/ci/check-cuda-pin-lockstep.py
 	@python3 scripts/githooks/tests/test_install.py
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs

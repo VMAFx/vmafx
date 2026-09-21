@@ -1396,6 +1396,7 @@ nav:
         - "ADR-1277: workingdir-contract-cleanup": adr/1277-workingdir-contract-cleanup.md
         - "ADR-1278: python-safe-parallel-execution": adr/1278-python-safe-parallel-execution.md
         - "ADR-1280: worktree-state-sync": adr/1280-worktree-state-sync.md
+        - "ADR-1285: cuda-coordinated-pin-lockstep": adr/1285-cuda-coordinated-pin-lockstep.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
