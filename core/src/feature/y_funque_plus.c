@@ -683,24 +683,23 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    if (yf_alloc_buffers(s))
-        goto fail;
+    int err = yf_alloc_buffers(s);
+    if (!err) {
+        s->have_prev = false;
+        s->prev_approx = NULL;
+        s->prev_approx_w = s->ref_pyr[YF_LEVELS - 1u].approx.w;
+        s->prev_approx_h = s->ref_pyr[YF_LEVELS - 1u].approx.h;
 
-    s->have_prev = false;
-    s->prev_approx = NULL;
-    s->prev_approx_w = s->ref_pyr[YF_LEVELS - 1u].approx.w;
-    s->prev_approx_h = s->ref_pyr[YF_LEVELS - 1u].approx.h;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
-
-    return 0;
-
-fail:
-    yf_free_all(s);
-    return -ENOMEM;
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict) {
+            err = -ENOMEM;
+        }
+    }
+    if (err) {
+        yf_free_all(s);
+    }
+    return err;
 }
 
 /* MAD-Ref atom: mean|ref_approx_last[t] - ref_approx_last[t-1]|; 0 on the
