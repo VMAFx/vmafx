@@ -182,14 +182,26 @@ status cell, and the gate reported the file clean. The row for
 `T-STATE-MD-ROW-GATE-BLIND-2026-09-16` was one of the 24.
 
 The gate now pairs each row's section heading with the status token in
-its last cell and requires them to agree — `closed` / `fixed` /
+its status cell and requires them to agree — `closed` / `fixed` /
 `resolved` / `done` only under `## Recently closed`, `open` only under
-`## Open bugs`. Only a last cell that *is* a status token is judged;
-the row shapes that end in a verification date, a branch name or prose
-make no section claim and are not guessed at. The check fails closed on
-its one silent-disable path: if some row claims a status belonging to a
-section whose heading has been renamed or removed, the gate errors
-rather than passing over rows that have become ungated.
+`## Open bugs`. The status cell is the column a table header calls
+`Status`, or the last non-empty cell when no header names one, and the
+token read is the word that *opens* that cell: `| fixed (PR #1425) |`
+is the same misfiled row as `| fixed |` and is judged the same way. The
+row shapes that lead with no status token — a verification date, a
+branch name, prose — make no section claim and are not guessed at.
+
+What the gate does *not* do is see every misfiled row. It reads one
+cell per row, so a status the extraction does not recognise — buried
+mid-cell, in a column that is neither the last nor headed `Status`, or
+spelled outside the vocabulary — is passed over in silence and the file
+still reports clean. Of the two ways the check can be silently
+disabled, it fails closed on one: if some row claims a status belonging
+to a section whose heading has been renamed or removed, the gate errors
+rather than passing over rows that have become ungated. The other — an
+unrecognised status cell — is uncovered, and is the likelier of the
+two, since it takes a single row edit rather than a heading rename. The
+check is a floor on this class of drift, not a proof of its absence.
 
 This is an enforcement change, not a new decision — the move
 discipline was already decided here and in the file's own update

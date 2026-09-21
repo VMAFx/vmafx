@@ -369,19 +369,31 @@ hunk and kept the status edit. 24 of the 62 rows under `## Open bugs` were in
 that state on 2026-09-21.
 
 `scripts/ci/check-state-md-rows.sh` now reads the section heading each row sits
-under together with the status token in its last cell and requires them to
+under together with the status token in its status cell and requires them to
 agree:
 
 - `closed` / `fixed` / `resolved` / `done` only under `## Recently closed`
 - `open` only under `## Open bugs`
-- rows whose last cell is a verification date, a branch name or prose make no
-  status claim and are not judged
+- the status cell is the column a table header calls `Status`, or the last
+  non-empty cell when no header names one
+- the token read is the word that *opens* that cell, so `fixed (PR #1425)` is
+  judged exactly like `fixed`
+- rows that lead with no status token — a verification date, a branch name,
+  prose — make no status claim and are not judged
 
 The fix is always to **move the row**, never to rewrite its status to match
-where it landed. The check fails closed on the one way it could be silently
-disabled: if any row claims a status that belongs to a section and that
-section's heading is missing, the gate errors instead of passing over rows
-that have quietly become ungated.
+where it landed.
+
+The check is a floor on this class of drift, not a proof of its absence. It
+reads one cell per row, so a status it does not recognise — buried mid-cell, in
+a column that is neither the last nor headed `Status`, or spelled outside the
+vocabulary above — is passed over in silence and the file still reports clean.
+Of the two ways the check can be silently disabled it fails closed on one: if
+any row claims a status that belongs to a section and that section's heading is
+missing, the gate errors instead of passing over rows that have quietly become
+ungated. The other — an unrecognised status cell — is uncovered, and is the
+likelier of the two, since it takes a single row edit rather than a heading
+rename.
 
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 

@@ -59,15 +59,29 @@
 # requires them to agree: `closed` / `fixed` / `resolved` / `done` may not sit
 # under "## Open bugs", and `open` may not sit under "## Recently closed".
 #
-# Only a last cell that IS a status token is judged. Several row shapes end in
-# a verification date, a branch name or prose instead; those carry no status
-# claim and are left alone rather than guessed at.
+# The judged cell is the one the table header calls `Status`, or the last
+# non-empty cell when no header names one, and only the token that OPENS that
+# cell is read. Requiring the whole cell to BE a status token judged `| fixed |`
+# and skipped `| fixed (PR #1425) |` -- the same bug in the same shape, one
+# parenthetical later -- along with 20 other live rows whose status leads a
+# longer cell. Several row shapes make no status claim at all: a verification
+# date, a branch name, prose. Those lead with no status token and are left alone
+# rather than guessed at; guessing at them fabricates failures, and eight live
+# rows end in a branch name.
 #
-# The status check fails closed on the way it would otherwise be silently
+# What the status check does NOT guarantee is that every misfiled row is seen.
+# It reads one cell per row, so a status the extraction does not recognise --
+# buried mid-cell, sitting in a column that is neither the last nor headed
+# `Status`, or spelled outside the closed/fixed/resolved/done/open vocabulary --
+# is passed over in silence. The check is a floor, not a ceiling: it catches the
+# shapes below and says nothing about the rest.
+#
+# It does fail closed on one specific way it would otherwise be silently
 # disabled: renaming or deleting a section heading. If any row in the file
 # claims a status that belongs to a section, that section's heading has to
 # exist -- otherwise every such row would land in an ungated section and the
-# check would pass by doing nothing.
+# check would pass by doing nothing. That is one blind spot closed, not all of
+# them.
 #
 # Usage: check-state-md-rows.sh [PATH]   (default: docs/state.md)
 # Exit:  0 clean; 1 a duplicate id, a repeated row, or a row whose status
@@ -91,6 +105,7 @@ report="$(awk '
     else if (sec ~ /^Recently closed/) have_closed = 1
     prev = ""
     prevline = 0
+    statcol = 0
     next
   }
 
@@ -100,9 +115,28 @@ report="$(awk '
   # positive -- and was: it failed this gate\047s own "unique ids pass" fixture.
   /^\|[[:space:]]*:?-+:?[[:space:]]*\|/ {
     if (prev != "") { rowcount[prev]--; rowlines[prev] = "" }
-    # The header carries a column label, not a status, in its last cell
+    # The header carries a column label, not a status, in its judged cell
     # (`| Bug | Summary | Reproducer | Owner | Target |`). Drop it the same way.
+    # `prev` and `prevline` are set together and cleared together on every path,
+    # so this guard is the same one as the retraction above, not a laxer one.
     if (prevline != 0) { delete statword[prevline] }
+
+    # The header also names the columns, and the status column is not always
+    # the last: `| ... | Date | Status |` becomes `| ... | Status | PR |` the
+    # moment one column is appended, and the trailing cell then carries no
+    # status claim. When a header names a `Status` column, every row of that
+    # table is judged on it instead. No table in docs/state.md has such a
+    # header today, so this changes nothing there -- it stops the gate going
+    # blind the day one does.
+    statcol = 0
+    headsrc = prev
+    gsub(/\\\|/, "", headsrc)
+    nhead = split(headsrc, hcell, "|")
+    for (hi = 2; hi < nhead; hi++) {
+      hname = tolower(hcell[hi])
+      gsub(/[[:space:]]|\*|_|`/, "", hname)
+      if (hname == "status") statcol = hi
+    }
     prev = ""
     prevline = 0
     next
@@ -125,15 +159,38 @@ report="$(awk '
     prev = row
     prevline = NR
 
-    # The status token is the last non-empty cell. Splitting on `|` is enough
-    # for the last cell even when an inline code span in an earlier cell
-    # carries its own pipe: a mis-split can only make the tail shorter, and a
-    # cell that is not a status token is skipped anyway.
-    ncell = split($0, cell, "|")
-    last = cell[ncell]
-    if (last ~ /^[[:space:]]*$/ && ncell > 1) last = cell[ncell - 1]
-    gsub(/[[:space:]]|\*|_|`/, "", last)
-    statword[NR] = tolower(last)
+    # The status lives in the `Status` column when the table header named one,
+    # and in the last non-empty cell otherwise. `\|` inside an inline code span
+    # is an escaped pipe, not a cell boundary -- docs/state.md spells it that
+    # way (`\|img - blur(img)\|`) -- so it is dropped before the split, which
+    # keeps the cell indices aligned with what the renderer shows. An UNescaped
+    # pipe in a code span still mis-splits: harmless for the trailing cell,
+    # since a mis-split only makes the tail shorter and a cell that does not
+    # lead with a status token is skipped anyway, but it would shift a named
+    # `Status` column, and that row would then be judged on the wrong cell.
+    cellsrc = $0
+    gsub(/\\\|/, "", cellsrc)
+    ncell = split(cellsrc, cell, "|")
+    if (statcol > 1 && statcol <= ncell) {
+      last = cell[statcol]
+    } else {
+      last = cell[ncell]
+      if (last ~ /^[[:space:]]*$/ && ncell > 1) last = cell[ncell - 1]
+    }
+
+    # Read the token that OPENS the cell, not the whole cell. Demanding the
+    # whole cell judged `| fixed |` and skipped `| fixed (PR #1425) |`, which is
+    # the same misfiled row one parenthetical later, plus `| Fixed locally; ...|`
+    # and `| CLOSED 2026-06-20: fixed by PR #1022 ... |`. Reading only the
+    # leading word still leaves the no-claim shapes unjudged: a branch name
+    # leads with `fix`, not `fixed` (`fix/hip-pageable-upload-race`), a date or
+    # a parenthetical leads with no word at all (`(2026-06-04)`), and prose
+    # leads with a word outside the vocabulary (`Closes when the parity test
+    # passes`).
+    gsub(/[*_`]/, "", last)
+    sub(/^[[:space:]]+/, "", last)
+    last = tolower(last)
+    statword[NR] = (match(last, /^[a-z]+/) ? substr(last, 1, RLENGTH) : "")
     statsec[NR] = sec
     statrow[NR] = substr(row, 1, 70)
 
@@ -149,7 +206,10 @@ report="$(awk '
     }
     next
   }
-  !/^\|/ { prev = "" }
+  # A non-table line ends the table: the next `|---|` separator belongs to a
+  # different header, and `prevline` must not still point at a data row from
+  # the table above -- deleting that row\047s status would silently unjudge it.
+  !/^\|/ { prev = ""; prevline = 0; statcol = 0 }
 
   END {
     bad = 0
