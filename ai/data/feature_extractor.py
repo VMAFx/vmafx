@@ -343,15 +343,24 @@ def aggregate_clip_stats(features: np.ndarray) -> np.ndarray:
 
     Returns one row containing ``[mean..., p10..., p90..., std...]`` —
     matches what the existing SVR consumes after temporal pooling.
-    NaN frames are ignored via ``np.nanmean`` etc.; if a feature is
-    entirely NaN the corresponding stat is also NaN (caller's problem).
+    NaN frames are ignored. If a feature is entirely NaN, every corresponding
+    statistic remains NaN without asking NumPy to evaluate an empty slice.
     """
     if features.ndim != 2:
         raise ValueError(f"expected 2-D features, got shape {features.shape}")
     if features.shape[0] == 0:
         return np.full((4 * features.shape[1],), np.nan, dtype=np.float32)
-    mean = np.nanmean(features, axis=0)
-    p10 = np.nanpercentile(features, 10, axis=0)
-    p90 = np.nanpercentile(features, 90, axis=0)
-    std = np.nanstd(features, axis=0)
+    n_features = features.shape[1]
+    mean = np.full(n_features, np.nan, dtype=np.float64)
+    p10 = np.full(n_features, np.nan, dtype=np.float64)
+    p90 = np.full(n_features, np.nan, dtype=np.float64)
+    std = np.full(n_features, np.nan, dtype=np.float64)
+    for index in range(n_features):
+        valid = features[:, index]
+        valid = valid[~np.isnan(valid)]
+        if valid.size > 0:
+            mean[index] = np.mean(valid)
+            p10[index] = np.percentile(valid, 10)
+            p90[index] = np.percentile(valid, 90)
+            std[index] = np.std(valid)
     return np.concatenate([mean, p10, p90, std]).astype(np.float32)

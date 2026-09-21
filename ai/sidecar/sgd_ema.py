@@ -140,8 +140,14 @@ class SGDEMATrainer:
             self._model.train()
             self._opt.zero_grad()
 
-            preds = self._model(features)
-            loss = self._loss_fn(preds.squeeze(-1), targets.float().squeeze(-1))
+            # Flatten both sides to (batch, ...) before squeezing the trailing
+            # singleton. A bare ``squeeze(-1)`` drops the batch dimension itself
+            # when a 1-D target holds exactly one sample, which leaves the loss
+            # broadcasting a scalar against a one-element vector.
+            batch_size = features.shape[0]
+            preds = self._model(features).reshape(batch_size, -1).squeeze(-1)
+            observed = targets.float().reshape(batch_size, -1).squeeze(-1)
+            loss = self._loss_fn(preds, observed)
             loss.backward()
 
             # Gradient clipping — protects against outlier feature vectors.
@@ -162,7 +168,6 @@ class SGDEMATrainer:
                 ):
                     p_ema.data.mul_(beta).add_(p_live.data, alpha=1.0 - beta)
 
-            batch_size = features.shape[0]
             self._samples_since_ckpt += batch_size
 
         return float(loss.item())

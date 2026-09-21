@@ -103,16 +103,19 @@ class NRMetric(L.LightningModule):
             pred = out[..., 0]
             logvar = out[..., 1]
             loss = gaussian_nll(pred, y, logvar).mean()
-            self.log(f"{tag}/nll", loss, prog_bar=True, on_epoch=True)
+            if self._trainer is not None:
+                self.log(f"{tag}/nll", loss, prog_bar=True, on_epoch=True)
             with torch.no_grad():
-                self.log(
-                    f"{tag}/mse",
-                    nn.functional.mse_loss(pred, y),
-                    on_epoch=True,
-                )
+                if self._trainer is not None:
+                    self.log(
+                        f"{tag}/mse",
+                        nn.functional.mse_loss(pred, y),
+                        on_epoch=True,
+                    )
             return loss
         loss = nn.functional.mse_loss(out, y)
-        self.log(f"{tag}/mse", loss, prog_bar=True, on_epoch=True)
+        if self._trainer is not None:
+            self.log(f"{tag}/mse", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def training_step(self, batch: object, _idx: int) -> torch.Tensor:

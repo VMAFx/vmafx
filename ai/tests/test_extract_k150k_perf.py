@@ -255,19 +255,19 @@ class TestProcessClipFfprobeSkip:
 
         with (
             patch(
-                "extract_k150k_features._probe_geometry",
+                "ai.scripts.extract_k150k_features._probe_geometry",
                 side_effect=AssertionError("ffprobe must not be called"),
             ),
             patch(
-                "extract_k150k_features._decode_to_yuv",
+                "ai.scripts.extract_k150k_features._decode_to_yuv",
                 return_value=None,
             ),
             patch(
-                "extract_k150k_features._run_feature_passes",
+                "ai.scripts.extract_k150k_features._run_feature_passes",
                 return_value=dummy_frames,
             ),
             patch(
-                "extract_k150k_features._aggregate_frames",
+                "ai.scripts.extract_k150k_features._aggregate_frames",
                 return_value={f"{feat}_mean": float("nan") for feat in FEATURE_NAMES}
                 | {f"{feat}_std": float("nan") for feat in FEATURE_NAMES},
             ),
@@ -303,11 +303,14 @@ class TestProcessClipFfprobeSkip:
             return 1280, 720, "yuv420p", "30/1", {}
 
         with (
-            patch("extract_k150k_features._probe_geometry", side_effect=mock_probe),
-            patch("extract_k150k_features._decode_to_yuv", return_value=None),
-            patch("extract_k150k_features._run_feature_passes", return_value=dummy_frames),
+            patch("ai.scripts.extract_k150k_features._probe_geometry", side_effect=mock_probe),
+            patch("ai.scripts.extract_k150k_features._decode_to_yuv", return_value=None),
             patch(
-                "extract_k150k_features._aggregate_frames",
+                "ai.scripts.extract_k150k_features._run_feature_passes",
+                return_value=dummy_frames,
+            ),
+            patch(
+                "ai.scripts.extract_k150k_features._aggregate_frames",
                 return_value={f"{feat}_mean": float("nan") for feat in FEATURE_NAMES}
                 | {f"{feat}_std": float("nan") for feat in FEATURE_NAMES},
             ),
@@ -342,11 +345,14 @@ class TestProcessClipFfprobeSkip:
             return 854, 480, "yuv420p", "24/1", {}
 
         with (
-            patch("extract_k150k_features._probe_geometry", side_effect=mock_probe),
-            patch("extract_k150k_features._decode_to_yuv", return_value=None),
-            patch("extract_k150k_features._run_feature_passes", return_value=dummy_frames),
+            patch("ai.scripts.extract_k150k_features._probe_geometry", side_effect=mock_probe),
+            patch("ai.scripts.extract_k150k_features._decode_to_yuv", return_value=None),
             patch(
-                "extract_k150k_features._aggregate_frames",
+                "ai.scripts.extract_k150k_features._run_feature_passes",
+                return_value=dummy_frames,
+            ),
+            patch(
+                "ai.scripts.extract_k150k_features._aggregate_frames",
                 return_value={f"{feat}_mean": float("nan") for feat in FEATURE_NAMES}
                 | {f"{feat}_std": float("nan") for feat in FEATURE_NAMES},
             ),

@@ -419,7 +419,14 @@ def test_compute_saliency_extracts_raw_yuv_before_model(tmp_path, monkeypatch):
     assert seen["frame_samples"] == 3
 
 
-def test_predictor_synthetic_stub_detection_and_warning(tmp_path):
+def test_predictor_synthetic_stub_detection_and_warning(tmp_path, monkeypatch):
+    # Stub detection reads the model card, never the graph, so the fixtures
+    # below are placeholders rather than ONNX files. Take onnxruntime out of
+    # the picture — ``Predictor`` documents that it falls back to the
+    # analytical curve when the runtime is unavailable — otherwise the
+    # session loader rejects those placeholders before the assertion runs.
+    monkeypatch.setitem(sys.modules, "onnxruntime", None)
+
     # Stub model card
     card = tmp_path / "predictor_libx264_card.md"
     card.write_text("- **Corpus kind**: `synthetic-stub-N=100`\n", encoding="utf-8")

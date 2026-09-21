@@ -76,13 +76,15 @@ class LearnedFilter(L.LightningModule):
         deg, clean = _tensor_pair(batch)
         out = self.forward(deg)
         loss = nn.functional.l1_loss(out, clean)
-        self.log("train/l1", loss, prog_bar=True, on_epoch=True)
+        if self._trainer is not None:
+            self.log("train/l1", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch: object, _idx: int) -> None:
         deg, clean = _tensor_pair(batch)
         out = self.forward(deg)
-        self.log("val/l1", nn.functional.l1_loss(out, clean), prog_bar=True, on_epoch=True)
+        if self._trainer is not None:
+            self.log("val/l1", nn.functional.l1_loss(out, clean), prog_bar=True, on_epoch=True)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         return torch.optim.AdamW(self.parameters(), lr=self._hp["lr"])

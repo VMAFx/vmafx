@@ -24,6 +24,7 @@ the shipped ONNX files is caught here rather than at runtime.
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -365,6 +366,23 @@ def test_shipped_model_is_monotone_decreasing_in_crf(codec: str) -> None:
 # ---------------------------------------------------------------------
 
 
+class _ConstantSession:
+    """ONNX session double whose prediction is a constant 87.5.
+
+    The analytical fallback never produces that value for the features
+    below, so observing it proves the ONNX branch ran.
+    """
+
+    def __init__(self) -> None:
+        self._inputs = [type("Input", (), {"name": "input"})()]
+
+    def get_inputs(self):
+        return self._inputs
+
+    def run(self, _output_names, _inputs):
+        return [np.array([[87.5]], dtype=np.float32)]
+
+
 def test_pick_crf_uses_onnx_when_present() -> None:
     """``Predictor(model_path=...)`` routes through the ONNX session.
 
@@ -376,7 +394,15 @@ def test_pick_crf_uses_onnx_when_present() -> None:
     if not onnx_path.is_file():
         pytest.skip("shipped model not present")
 
-    p = Predictor(model_path=onnx_path)
+    # Loading a synthetic-stub model is documented to warn at the point of
+    # use, and the shipped model is one today. Capture the warning here and
+    # assert the contract rather than the current provenance of the file, so
+    # retraining it on a real corpus does not turn this test red.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        p = Predictor(model_path=onnx_path)
+    stub_warned = any("synthetic-stub model" in str(item.message) for item in caught)
+    assert stub_warned == p.is_stub, "the stub warning must track Predictor.is_stub"
     assert p._onnx_session is not None, "ONNX session must be live when model_path is set"
 
     feats = ShotFeatures(
@@ -393,19 +419,7 @@ def test_pick_crf_uses_onnx_when_present() -> None:
     # Override the ONNX session with a stub so we can prove the ONNX
     # branch executes — analytical fallback would compute a different
     # value for these inputs.
-    class _StubSession:
-        def __init__(self) -> None:
-            self._inputs = [type("Input", (), {"name": "input"})()]
-
-        def get_inputs(self):
-            return self._inputs
-
-        def run(self, _output_names, _inputs):
-            # Return a constant 87.5 — far from any analytical output
-            # for these inputs, so observing it proves the ONNX branch.
-            return [np.array([[87.5]], dtype=np.float32)]
-
-    p._onnx_session = _StubSession()
+    p._onnx_session = _ConstantSession()
     val = p.predict_vmaf(feats, 28, "libx264")
     assert val == pytest.approx(87.5)
 
