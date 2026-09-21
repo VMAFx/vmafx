@@ -2,10 +2,10 @@
 # Upstream-backlog re-audit — 2026-04-29 (T7-4)
 
 > Quarterly upstream-backlog re-audit per
-> `.workingdir2/BACKLOG.md` row T7-4.
+> the retired private backlog row T7-4.
 > Companion to the 2026-04-18 snapshot in
-> `.workingdir2/analysis/upstream-backlog-audit.md`
-> (local-only). Doubles as the deep-dive **research digest** for this
+> the archived local-only upstream backlog dossier. Doubles as the deep-dive
+> **research digest** for this
 > PR per [ADR-0108](adr/0108-deep-dive-deliverables-rule.md). Next
 > re-audit due **2026-07-29**.
 
@@ -68,8 +68,8 @@
 
 ## Recommended new T-rows
 
-The following follow-up entries are recommended for the next
-`.workingdir2/BACKLOG.md` refresh:
+The following follow-up entries are recommended for `docs/state.md` or public
+GitHub issues:
 
 - **T-NEW-1 — port `feature/speed`** (`d3647c73` `speed_chroma` +
   `speed_temporal`, `9dac0a59` alias-map for speed). The fork does
@@ -91,12 +91,11 @@ The following follow-up entries are recommended for the next
   (32-bit `extract_epi64` fallback, lifting the AVX-on-32-bit
   guard) that would let the i686 lane be **run** as well.
 - **T-NEW-4 — schedule next quarterly re-audit for 2026-07-29.**
-  Update T7-4's "next" date in `BACKLOG.md`.
+  Record the next date in the public tracker.
 
 ## What this audit did *not* cover
 
-- **Open Netflix issues / PRs.** The 2026-04-18 dossier in
-  `.workingdir2/analysis/upstream-backlog-audit.md`
+- **Open Netflix issues / PRs.** The archived private 2026-04-18 dossier
   triages every open upstream issue and PR (66 + 35 at that
   snapshot). This re-audit is scoped to **landed upstream commits
   since the last fork-side port boundary**, not the open queue.

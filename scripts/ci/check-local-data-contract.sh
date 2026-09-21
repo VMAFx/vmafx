@@ -18,9 +18,11 @@ active_paths=(
   .clang-tidy .claude/skills .codex .cursor .dockerignore .gemini .github
   .gitignore .pre-commit-config.yaml .windsurfrules AGENTS.md CLAUDE.md
   ai cmd compat core dev model pkg python renovate.json scripts tools
+  ':(glob)docs/*.md'
   docs/adr/_index_fragments/_header.md docs/ai docs/api docs/architecture
   docs/backends docs/development docs/mcp
   docs/metrics docs/principles.md docs/state.md docs/usage
+  ':(exclude)docs/rebase-notes.md'
   ':(exclude)scripts/ci/tests/test-check-local-data-contract.sh'
 )
 

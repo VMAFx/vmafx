@@ -73,6 +73,10 @@ track docs/adr/0003-history.md "historical path: \`$retired_root/\`"
 expect 'plain historical ADR text remains truthful' 0
 
 new_case
+track docs/current-audit.md "current authority: \`$retired_root/OPEN.md\`"
+expect 'top-level public docs reject the retired path' 1
+
+new_case
 track docs/adr/_index_fragments/_header.md "current path: \`$retired_root/\`"
 expect 'current ADR index header rejects retired path' 1
 
