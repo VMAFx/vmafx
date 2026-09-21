@@ -69,9 +69,12 @@
  * per_shot_record_frame() stores the frame index in a uint32_t, so a stream
  * longer than this would wrap the numbering and silently corrupt the shot
  * table; the scan reports -EFBIG instead. The bound doubles as the scan's
- * termination guarantee on an input that never reports EOF (a FIFO kept open
- * by a writer, /dev/zero), which the former `for (;;)` had no defence
- * against. */
+ * static termination guarantee (Power of 10 rule 2) on an input that never
+ * reports EOF (a FIFO kept open by a writer, /dev/zero), which the former
+ * `for (;;)` had no defence against. It is not a hang timeout: reaching it
+ * still means reading UINT32_MAX frames, so such an input still has to be
+ * interrupted by the operator. See ADR-1287 and docs/state.md
+ * (T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21). */
 #define VMAF_PER_SHOT_MAX_FRAMES UINT32_MAX
 
 /* Output format selector. */
@@ -634,6 +637,46 @@ static int per_shot_write_plan_json(FILE *out, const struct vmaf_per_shot_settin
     return 0;
 }
 
+/* Open the plan file for writing, or NULL on failure (the diagnostic is
+ * already printed).  The caller owns the returned stream.
+ *
+ * Use open() + fdopen() with explicit 0644 (rw-r--r--) on POSIX so the new
+ * file is not created world-writable per the process umask (CodeQL's "File
+ * created without restricting permissions" alert). MSVC's runtime doesn't
+ * ship <unistd.h> and Windows file permissions don't map onto Unix mode bits
+ * the same way; fall back to plain fopen() on _WIN32 where the security model
+ * is ACL-based and not affected by the umask issue. */
+static FILE *per_shot_open_plan_file(const char *path)
+{
+#ifndef _WIN32
+    const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd < 0) {
+        (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", path);
+        return NULL;
+    }
+    FILE *out = fdopen(fd, "w");
+    if (out == NULL) {
+        /* strerror() is concurrency-mt-unsafe; the path is enough
+         * context for the user to diagnose. */
+        (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", path);
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
+        (void)close(fd);
+        return NULL;
+    }
+    return out;
+#else
+    FILE *out = fopen(path, "w");
+    if (out == NULL) {
+        (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", path);
+    }
+    return out;
+#endif
+}
+
 /* Emit the plan in the requested format. Both formats encode the
  * full signal vector so a downstream encoder can override the
  * predicted CRF with a custom rule.
@@ -647,46 +690,10 @@ static int per_shot_write_plan(const struct vmaf_per_shot_settings *s,
     if (s == NULL || s->output == NULL)
         return -EINVAL;
 
-    FILE *out = NULL;
-    bool use_stdout = (strcmp(s->output, "-") == 0);
-    if (use_stdout) {
-        out = stdout;
-    } else {
-        /* Use open() + fdopen() with explicit 0644 (rw-r--r--) on POSIX
-         * so the new file is not created world-writable per the process
-         * umask (CodeQL's "File created without restricting permissions"
-         * alert). MSVC's runtime doesn't ship <unistd.h> and Windows file
-         * permissions don't map onto Unix mode bits the same way; fall
-         * back to plain fopen() on _WIN32 where the security model is
-         * ACL-based and not affected by the umask issue. */
-#ifndef _WIN32
-        int fd =
-            open(s->output, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-        if (fd < 0) {
-            (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
-            return -EIO;
-        }
-        out = fdopen(fd, "w");
-        if (out == NULL) {
-            /* strerror() is concurrency-mt-unsafe; the path is enough
-             * context for the user to diagnose. */
-            (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
-            /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
-             * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
-             * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
-             * second free.  2.21 no longer does. */
-            /* cppcheck-suppress doubleFree ; see the note above */
-            (void)close(fd);
-            return -EIO;
-        }
-#else
-        out = fopen(s->output, "w");
-        if (out == NULL) {
-            (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
-            return -EIO;
-        }
-#endif
-    }
+    const bool use_stdout = (strcmp(s->output, "-") == 0);
+    FILE *out = use_stdout ? stdout : per_shot_open_plan_file(s->output);
+    if (out == NULL)
+        return -EIO;
 
     int rc = (s->format == VMAF_PER_SHOT_FMT_CSV) ?
                  per_shot_write_plan_csv(out, shots, shot_count) :

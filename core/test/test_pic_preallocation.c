@@ -204,6 +204,29 @@ static char *test_picture_pool_fetch_unref_cycle()
     return NULL;
 }
 
+/* Fetch @p frames preallocated YUV444 picture pairs and submit them.
+ * Returns the mu_assert message of the first failure, or NULL when every
+ * frame round-trips. Lifted out of test_picture_pool_yuv444 so that test
+ * stays inside the HISS-04 / NASA rule 4 60-line function cap. */
+static char *pump_preallocated_yuv444_frames(VmafContext *vmaf, unsigned frames)
+{
+    for (unsigned i = 0; i < frames; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = vmaf_fetch_preallocated_picture(vmaf, &ref);
+        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
+        mu_assert("picture should be YUV444", ref.pix_fmt == VMAF_PIX_FMT_YUV444P);
+
+        err = vmaf_fetch_preallocated_picture(vmaf, &dist);
+        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
+        mu_assert("picture should be YUV444", dist.pix_fmt == VMAF_PIX_FMT_YUV444P);
+
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("problem during vmaf_read_pictures", !err);
+    }
+    return NULL;
+}
+
 static char *test_picture_pool_yuv444()
 {
     int err = 0;
@@ -240,20 +263,9 @@ static char *test_picture_pool_yuv444()
     err = vmaf_use_features_from_model(vmaf, model);
     mu_assert("problem during vmaf_use_features_from_model", !err);
 
-    for (unsigned i = 0; i < 5; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = vmaf_fetch_preallocated_picture(vmaf, &ref);
-        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
-        mu_assert("picture should be YUV444", ref.pix_fmt == VMAF_PIX_FMT_YUV444P);
-
-        err = vmaf_fetch_preallocated_picture(vmaf, &dist);
-        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
-        mu_assert("picture should be YUV444", dist.pix_fmt == VMAF_PIX_FMT_YUV444P);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("problem during vmaf_read_pictures", !err);
-    }
+    char *frame_err = pump_preallocated_yuv444_frames(vmaf, 5);
+    if (frame_err)
+        return frame_err;
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("problem during vmaf_read_pictures", !err);
