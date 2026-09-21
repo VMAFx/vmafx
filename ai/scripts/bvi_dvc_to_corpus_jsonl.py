@@ -38,8 +38,15 @@ import math
 import sys
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -72,7 +79,7 @@ def _row_from_cache(
     encoder: str,
     pix_fmt: str,
     vmaf_model: str = DEFAULT_MODEL,
-) -> dict:
+) -> dict[str, Any]:
     """Build one :data:`CORPUS_ROW_KEYS`-shaped row from a cached vmaf JSON."""
     payload = json.loads(cache_path.read_text())
     pooled = payload.get("pooled_metrics", {}).get("vmaf", {})
@@ -97,7 +104,7 @@ def _row_from_cache(
         canonical_aggs[f"{feature}_mean"] = float(pooled_feature.get("mean", math.nan))
         canonical_aggs[f"{feature}_std"] = float(pooled_feature.get("stddev", math.nan))
 
-    row: dict = {
+    row: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": uuid.uuid4().hex,
         "timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(),

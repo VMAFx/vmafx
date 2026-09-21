@@ -27,7 +27,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ai" / "scripts"))
 
-from extract_k150k_features import (
+from ai.scripts.extract_k150k_features import (
     FEATURE_NAMES,
     _append_row_to_staging,
     _geometry_from_sidecar,
@@ -235,7 +235,7 @@ class TestGeometryFromSidecar:
         assert _geometry_from_sidecar(meta) is None
 
     def test_none_sidecar_returns_none(self) -> None:
-        assert _geometry_from_sidecar(None) is None  # type: ignore[arg-type]
+        assert _geometry_from_sidecar(None) is None
 
     def test_empty_sidecar_returns_none(self) -> None:
         assert _geometry_from_sidecar({}) is None
@@ -294,11 +294,11 @@ class TestProcessClipFfprobeSkip:
 
     def test_ffprobe_called_when_sidecar_lacks_geometry(self, tmp_path: Path) -> None:
         """ffprobe is called when sidecar is missing geometry fields."""
-        sidecar: dict = {}  # No geometry fields.
+        sidecar: dict[str, Any] = {}  # No geometry fields.
         probe_called = []
         dummy_frames = [{"vmaf": 75.0} for _ in range(5)]
 
-        def mock_probe(mp4: Path) -> tuple:
+        def mock_probe(mp4: Path) -> tuple[Any, ...]:
             probe_called.append(mp4)
             return 1280, 720, "yuv420p", "30/1", {}
 
@@ -337,7 +337,7 @@ class TestProcessClipFfprobeSkip:
         probe_called = []
         dummy_frames = [{"vmaf": 70.0} for _ in range(5)]
 
-        def mock_probe(mp4: Path) -> tuple:
+        def mock_probe(mp4: Path) -> tuple[Any, ...]:
             probe_called.append(mp4)
             return 854, 480, "yuv420p", "24/1", {}
 

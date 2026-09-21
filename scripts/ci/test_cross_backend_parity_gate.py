@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -327,7 +328,7 @@ def test_build_command_device_none_cpu_skips_device_flag(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def _make_frame(metrics: dict[str, float]) -> dict:
+def _make_frame(metrics: dict[str, float]) -> dict[str, Any]:
     return {"metrics": metrics}
 
 

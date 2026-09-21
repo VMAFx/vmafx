@@ -85,8 +85,10 @@ import hashlib
 import random
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -95,10 +97,13 @@ import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -203,7 +208,7 @@ def _scan_duts_tr(root: Path) -> list[DutsItem]:
     mask_dir = root / "DUTS-TR-Mask"
     if not img_dir.is_dir() or not mask_dir.is_dir():
         raise FileNotFoundError(
-            f"Expected DUTS-TR layout at {root}: missing " "DUTS-TR-Image/ or DUTS-TR-Mask/"
+            f"Expected DUTS-TR layout at {root}: missing DUTS-TR-Image/ or DUTS-TR-Mask/"
         )
     items: list[DutsItem] = []
     for img in sorted(img_dir.glob("*.jpg")):
@@ -215,7 +220,7 @@ def _scan_duts_tr(root: Path) -> list[DutsItem]:
     return items
 
 
-class DutsDataset(Dataset):
+class DutsDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     """DUTS-TR with random crop+flip augmentation, ImageNet normalisation."""
 
     def __init__(
@@ -256,8 +261,8 @@ class DutsDataset(Dataset):
             mask = mask.crop((x, y, x + self.crop_size, y + self.crop_size))
             # Random horizontal flip
             if random.random() < 0.5:
-                img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                mask = mask.transpose(Image.FLIP_LEFT_RIGHT)
+                img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                mask = mask.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         else:
             # Centre crop to crop_size
             x = (new_w - self.crop_size) // 2
@@ -308,7 +313,7 @@ def iou_score(pred: torch.Tensor, target: torch.Tensor, threshold: float = 0.5) 
 
 def train_epoch(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
     opt: torch.optim.Optimizer,
     device: torch.device,
 ) -> float:
@@ -320,8 +325,10 @@ def train_epoch(
         mask = mask.to(device, non_blocking=True)
         opt.zero_grad(set_to_none=True)
         pred = model(img)
+        if not isinstance(pred, torch.Tensor):
+            raise TypeError("saliency model must return a Tensor")
         loss = bce_dice_loss(pred, mask)
-        loss.backward()
+        torch.autograd.backward(loss)
         opt.step()
         total += float(loss.item())
         n_batches += 1
@@ -331,7 +338,7 @@ def train_epoch(
 @torch.no_grad()
 def validate(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
     device: torch.device,
 ) -> tuple[float, float]:
     model.eval()
@@ -342,6 +349,8 @@ def validate(
         img = img.to(device, non_blocking=True)
         mask = mask.to(device, non_blocking=True)
         pred = model(img)
+        if not isinstance(pred, torch.Tensor):
+            raise TypeError("saliency model must return a Tensor")
         total_loss += float(bce_dice_loss(pred, mask).item())
         total_iou += iou_score(pred, mask)
         n += 1
@@ -367,7 +376,7 @@ def export_onnx(model: nn.Module, output: Path, opset: int = 17) -> None:
     # matches every other model under model/tiny/.
     torch.onnx.export(
         model,
-        dummy,
+        (dummy,),
         str(output),
         input_names=["input"],
         output_names=["saliency_map"],
@@ -403,8 +412,7 @@ def parity_check(
     diff = float(np.max(np.abs(y_pt - y_ort)))
     if diff > threshold:
         raise RuntimeError(
-            f"PyTorch <-> ONNX parity FAILED: max-abs-diff={diff:.3e}  "
-            f"threshold={threshold:.0e}"
+            f"PyTorch <-> ONNX parity FAILED: max-abs-diff={diff:.3e}  threshold={threshold:.0e}"
         )
     return diff
 
@@ -426,13 +434,13 @@ def _build_metrics_payload(
     best_val_iou: float,
     param_count: int,
     args: argparse.Namespace,
-    history: list[dict],
+    history: list[dict[str, float | int]],
     total_time_sec: float,
     onnx_bytes: int,
     onnx_sha256: str,
     pt_onnx_max_abs_diff: float,
     device: torch.device,
-    run_provenance: dict[str, object] | None = None,
+    run_provenance: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "best_val_iou": best_val_iou,
@@ -525,8 +533,8 @@ def main(argv: list[str] | None = None) -> int:
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
     best_iou = -1.0
-    best_state: dict | None = None
-    history: list[dict] = []
+    best_state: dict[str, torch.Tensor] | None = None
+    history: list[dict[str, float | int]] = []
     t0 = time.time()
     for epoch in range(1, args.epochs + 1):
         ep_t = time.time()

@@ -52,7 +52,12 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -141,7 +146,7 @@ def _parse_seed_list(raw: str) -> list[int]:
         out.append(int(token))
     if not out:
         raise argparse.ArgumentTypeError(
-            "--seeds must be a non-empty comma-separated list of ints " "(e.g. --seeds 0,1,2,3,4)"
+            "--seeds must be a non-empty comma-separated list of ints (e.g. --seeds 0,1,2,3,4)"
         )
     return out
 
@@ -341,7 +346,7 @@ def _set_seed_all(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _plcc(pred, target) -> float:
+def _plcc(pred: np.ndarray, target: np.ndarray) -> float:
     """Pearson PLCC. Returns NaN for n<2 or constant inputs."""
     import numpy as np
 
@@ -354,7 +359,7 @@ def _plcc(pred, target) -> float:
     return float(np.corrcoef(p, t)[0, 1])
 
 
-def _srocc(pred, target) -> float:
+def _srocc(pred: np.ndarray, target: np.ndarray) -> float:
     import numpy as np
 
     p = np.asarray(pred, dtype=np.float64).reshape(-1)
@@ -369,9 +374,9 @@ def _srocc(pred, target) -> float:
 
 
 def _train_one_fold(
-    x_feat,
-    x_codec,
-    y,
+    x_feat: np.ndarray,
+    x_codec: np.ndarray,
+    y: np.ndarray,
     *,
     epochs: int,
     batch_size: int,
@@ -379,7 +384,7 @@ def _train_one_fold(
     weight_decay: float,
     seed: int,
     num_codecs: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train a single FRRegressor for one LOSO fold; return the fitted model."""
     import numpy as np
     import torch
@@ -416,13 +421,13 @@ def _train_one_fold(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
-def _predict_fold(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
+def _predict_fold(model: "torch.nn.Module", x_feat: np.ndarray, x_codec: np.ndarray) -> np.ndarray:
     import numpy as np
     import torch
 
@@ -431,7 +436,7 @@ def _predict_fold(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
             torch.from_numpy(np.asarray(x_feat, dtype=np.float32)),
             torch.from_numpy(np.asarray(x_codec, dtype=np.float32)),
         )
-    return out.cpu().numpy().reshape(-1)
+    return np.asarray(out.cpu().numpy(), dtype=np.float32).reshape(-1)
 
 
 def _train_one_seed(

@@ -11,6 +11,7 @@ from types import ModuleType
 from typing import Any
 
 import pandas as pd
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -29,7 +30,7 @@ def _write_parquet(
     rows: list[dict[str, Any]] = []
     for source_idx, source in enumerate(("src_a", "src_b")):
         for row_idx in range(3):
-            row = {
+            row: dict[str, Any] = {
                 feature: float(source_idx + row_idx + idx) for idx, feature in enumerate(FEATURES)
             }
             row["source"] = source
@@ -43,7 +44,9 @@ def _write_parquet(
     return path
 
 
-def _stub_fold_metrics(_model, _mean, _std, x_val, _y_val) -> dict[str, float]:  # type: ignore[no-untyped-def]
+def _stub_fold_metrics(
+    _model: Any, _mean: Any, _std: Any, x_val: Any, _y_val: Any
+) -> dict[str, float]:
     return {"n": len(x_val), "plcc": 0.99, "srocc": 0.98, "rmse": 0.1}
 
 
@@ -56,7 +59,9 @@ def _assert_report(path: Path, entrypoint: str, input_key: str = "parquet") -> N
     assert provenance["outputs"]["report_target"] == str(path)
 
 
-def _run_single_loso_script(monkeypatch, tmp_path: Path, module: ModuleType, name: str) -> None:
+def _run_single_loso_script(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, module: ModuleType, name: str
+) -> None:
     parquet = _write_parquet(tmp_path / f"{name}.parquet")
     out_json = tmp_path / f"{name}.json"
     monkeypatch.setattr(module, "_train", lambda *_args, **_kwargs: object())
@@ -71,19 +76,25 @@ def _run_single_loso_script(monkeypatch, tmp_path: Path, module: ModuleType, nam
     _assert_report(out_json, f"ai/scripts/{name}.py")
 
 
-def test_vmaf_tiny_v3_loso_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_vmaf_tiny_v3_loso_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _run_single_loso_script(monkeypatch, tmp_path, eval_v3, "eval_loso_vmaf_tiny_v3")
 
 
-def test_vmaf_tiny_v4_loso_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_vmaf_tiny_v4_loso_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _run_single_loso_script(monkeypatch, tmp_path, eval_v4, "eval_loso_vmaf_tiny_v4")
 
 
-def test_multiseed_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_multiseed_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     parquet = _write_parquet(tmp_path / "multiseed.parquet")
     out_json = tmp_path / "multiseed.json"
 
-    def fake_run_one_seed(_df, *, sources, **_kwargs):  # type: ignore[no-untyped-def]
+    def fake_run_one_seed(_df: Any, *, sources: Any, **_kwargs: Any) -> Any:
         return {source: {"n": 3, "plcc": 0.99, "srocc": 0.98, "rmse": 0.1} for source in sources}
 
     monkeypatch.setattr(eval_ms, "_run_one_seed", fake_run_one_seed)
@@ -107,7 +118,9 @@ def test_multiseed_report_records_run_provenance(monkeypatch, tmp_path: Path) ->
     _assert_report(out_json, "ai/scripts/eval_multiseed_v3_v4.py")
 
 
-def test_vmaf_tiny_v5_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_vmaf_tiny_v5_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     base = _write_parquet(
         tmp_path / "base.parquet", with_corpus=True, teacher_model="vmaf_v1.0.16_3d0h"
     )
@@ -116,7 +129,7 @@ def test_vmaf_tiny_v5_report_records_run_provenance(monkeypatch, tmp_path: Path)
     )
     out_json = tmp_path / "v5.json"
 
-    def fake_run_loso(_df, label: str, *_args) -> dict[str, Any]:
+    def fake_run_loso(_df: Any, label: str, *_args: Any) -> dict[str, Any]:
         mean_plcc = 0.99 if label == "v5" else 0.97
         return {
             "per_fold": {"src_a": {"n": 3, "plcc": mean_plcc, "srocc": 0.98, "rmse": 0.1}},

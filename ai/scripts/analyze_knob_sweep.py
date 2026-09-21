@@ -40,12 +40,15 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Iterable, Mapping, Sequence
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 
@@ -114,10 +117,17 @@ class SweepRow:
         missing = [k for k in REQUIRED_FIELDS if k not in raw]
         if missing:
             raise ValueError(f"row missing required fields: {missing!r}")
+
+        def numeric(field: str) -> float:
+            value = raw[field]
+            if not isinstance(value, (str, int, float)):
+                raise TypeError(f"{field} has unsupported type {type(value).__name__}")
+            return float(value)
+
         try:
-            bitrate = float(raw["bitrate_kbps"])  # type: ignore[arg-type]
-            vmaf = float(raw["vmaf_score"])  # type: ignore[arg-type]
-            enc_ms = float(raw["encode_time_ms"])  # type: ignore[arg-type]
+            bitrate = numeric("bitrate_kbps")
+            vmaf = numeric("vmaf_score")
+            enc_ms = numeric("encode_time_ms")
         except (TypeError, ValueError) as exc:
             raise ValueError(f"row has non-numeric numeric field: {exc}") from exc
         if not math.isfinite(bitrate) or bitrate <= 0:
@@ -437,10 +447,14 @@ def write_summary_md(
             "(ADR-0305 / `ai/AGENTS.md` knob-sweep corpus invariant):"
         )
         lines.append("")
-        lines.append(
-            "| source | codec | rc_mode | knob_combo | " "cand vmaf | bare vmaf | Δ vmaf |"
-        )
-        lines.append("|--------|-------|---------|-----------|" "----------:|----------:|-------:|")
+        lines.append("| source | codec | rc_mode | knob_combo | cand vmaf | bare vmaf | Δ vmaf |")
+        lines.append("|--------|-------|---------|-----------|----------:|----------:|-------:|")
+
+        def numeric(value: object, field: str) -> float:
+            if not isinstance(value, (int, float, str)):
+                raise TypeError(f"regression field {field} must be numeric, got {value!r}")
+            return float(value)
+
         for reg in regressions:
             lines.append(
                 "| {source} | {codec} | {rc_mode} | "
@@ -450,9 +464,9 @@ def write_summary_md(
                     codec=reg["codec"],
                     rc_mode=reg["rc_mode"],
                     candidate_knob_combo=reg["candidate_knob_combo"],
-                    cand=float(reg["candidate_vmaf"]),
-                    bare=float(reg["bare_vmaf"]),
-                    delta=float(reg["vmaf_delta"]),
+                    cand=numeric(reg["candidate_vmaf"], "candidate_vmaf"),
+                    bare=numeric(reg["bare_vmaf"], "bare_vmaf"),
+                    delta=numeric(reg["vmaf_delta"], "vmaf_delta"),
                 )
             )
     lines.append("")
@@ -496,7 +510,7 @@ def analyze(jsonl_path: Path, out_dir: Path) -> dict[str, object]:
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = make_argument_parser(
         prog="analyze_knob_sweep.py",
-        description=("Encoder knob-space Pareto-frontier analysis " "(ADR-0305 / Research-0077)."),
+        description=("Encoder knob-space Pareto-frontier analysis (ADR-0305 / Research-0077)."),
     )
     parser.add_argument(
         "--jsonl",

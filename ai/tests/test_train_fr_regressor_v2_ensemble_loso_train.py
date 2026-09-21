@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,12 +25,15 @@ pd = pytest.importorskip("pandas")
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 
-import train_fr_regressor_v2_ensemble_loso as loso  # noqa: E402
-from train_fr_regressor_v2_ensemble_loso import _load_corpus, _train_one_seed  # noqa: E402
+from ai.scripts import train_fr_regressor_v2_ensemble_loso as loso  # noqa: E402
+from ai.scripts.train_fr_regressor_v2_ensemble_loso import (  # noqa: E402
+    _load_corpus,
+    _train_one_seed,
+)
 
 
 def _write_synthetic_corpus(path: Path) -> None:
@@ -138,12 +142,14 @@ def test_train_one_seed_min_max_consistent(tmp_path: Path) -> None:
         assert summary["max_plcc"] == pytest.approx(max(plcc_vals))
 
 
-def test_main_loso_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_main_loso_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     corpus_path = tmp_path / "synth.jsonl"
     out_dir = tmp_path / "loso"
     _write_synthetic_corpus(corpus_path)
 
-    def fake_train_one_seed(seed, corpus, args):  # type: ignore[no-untyped-def]
+    def fake_train_one_seed(seed: Any, corpus: Any, args: Any) -> Any:
         assert seed == 7
         assert corpus["n_rows"] == 24
         assert args.epochs == 3

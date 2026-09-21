@@ -32,6 +32,11 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
 
 from . import _gop_common
 
@@ -86,6 +91,7 @@ class SvtAv1Adapter:
 
     name: str = "libsvtav1"
     encoder: str = "libsvtav1"
+    adapter_version: str = "1"
     quality_knob: str = "crf"
     # SVT-AV1 nominally accepts CRF 0..63. Phase A surfaces the
     # perceptually informative window — ADR-0277 covers the choice.
@@ -243,11 +249,11 @@ class SvtAv1Adapter:
 
     def qpmap_from_saliency(
         self,
-        block_offsets: object,
-        out_path: object,
+        block_offsets: npt.NDArray[np.int32],
+        out_path: Path,
         *,
         duration_frames: int = 1,
-    ) -> object:
+    ) -> Path:
         """Write an SVT-AV1 QP-offset map file from a per-SB-block offset array.
 
         Delegates to :func:`vmaftune.saliency.write_svtav1_qpoffset_map`.
@@ -258,10 +264,6 @@ class SvtAv1Adapter:
         reduce via :func:`vmaftune.saliency.reduce_qp_map_to_blocks`
         with ``block=SVTAV1_SB_SIDE`` (ADR-0370).
         """
-        from pathlib import Path as _Path
-
         from vmaftune.saliency import write_svtav1_qpoffset_map  # local import
 
-        return write_svtav1_qpoffset_map(
-            block_offsets, _Path(out_path), duration_frames=duration_frames
-        )
+        return write_svtav1_qpoffset_map(block_offsets, out_path, duration_frames=duration_frames)

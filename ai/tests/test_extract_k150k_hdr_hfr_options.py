@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -40,39 +41,39 @@ else:
 # ---------------------------------------------------------------------------
 
 
-def test_is_hdr_source_pq_10bit():
+def test_is_hdr_source_pq_10bit() -> None:
     assert ek._is_hdr_source(
         "yuv420p10le", {"color_transfer": "smpte2084", "color_primaries": "bt2020"}
     )
 
 
-def test_is_hdr_source_hlg_10bit():
+def test_is_hdr_source_hlg_10bit() -> None:
     assert ek._is_hdr_source(
         "yuv420p10le", {"color_transfer": "arib-std-b67", "color_primaries": "bt2020"}
     )
 
 
-def test_is_hdr_source_bt2020_primaries_only():
+def test_is_hdr_source_bt2020_primaries_only() -> None:
     # When transfer is missing but primaries are BT.2020 (and bitdepth ≥ 10),
     # treat as HDR. Better to over-apply HDR options than under-apply.
     assert ek._is_hdr_source("yuv420p10le", {"color_transfer": "", "color_primaries": "bt2020"})
 
 
-def test_is_hdr_source_8bit_rejects():
+def test_is_hdr_source_8bit_rejects() -> None:
     # 8-bit can't be HDR regardless of metadata.
     assert not ek._is_hdr_source(
         "yuv420p", {"color_transfer": "smpte2084", "color_primaries": "bt2020"}
     )
 
 
-def test_is_hdr_source_10bit_sdr_rejects():
+def test_is_hdr_source_10bit_sdr_rejects() -> None:
     # 10-bit BT.709 is SDR.
     assert not ek._is_hdr_source(
         "yuv420p10le", {"color_transfer": "bt709", "color_primaries": "bt709"}
     )
 
 
-def test_is_hdr_source_missing_metadata_rejects():
+def test_is_hdr_source_missing_metadata_rejects() -> None:
     # Missing metadata fails-safe to SDR.
     assert not ek._is_hdr_source("yuv420p10le", {"color_transfer": "", "color_primaries": ""})
 
@@ -96,7 +97,7 @@ def test_is_hdr_source_missing_metadata_rejects():
         ("garbage", 0.0),
     ],
 )
-def test_parse_fps(fps_str, expected):
+def test_parse_fps(fps_str: Any, expected: Any) -> None:
     assert ek._parse_fps(fps_str) == expected
 
 
@@ -126,7 +127,7 @@ def test_parse_fps(fps_str, expected):
         (-1.0, 1.0),
     ],
 )
-def test_motion_fps_weight(fps, expected):
+def test_motion_fps_weight(fps: Any, expected: Any) -> None:
     assert ek._motion_fps_weight(fps) == expected
 
 
@@ -135,7 +136,7 @@ def test_motion_fps_weight(fps, expected):
 # ---------------------------------------------------------------------------
 
 
-def test_feature_arg_sdr_30fps_is_bare_name():
+def test_feature_arg_sdr_30fps_is_bare_name() -> None:
     """SDR + 30 fps → no options; preserves pre-fix behaviour."""
     assert ek._feature_arg("cambi", is_hdr=False, motion_fps_weight=1.0) == "cambi"
     assert ek._feature_arg("float_ms_ssim", is_hdr=False, motion_fps_weight=1.0) == "float_ms_ssim"
@@ -143,7 +144,7 @@ def test_feature_arg_sdr_30fps_is_bare_name():
     assert ek._feature_arg("vif", is_hdr=False, motion_fps_weight=1.0) == "vif"
 
 
-def test_feature_arg_hdr_cambi_gets_eotf_pq_and_full_ref():
+def test_feature_arg_hdr_cambi_gets_eotf_pq_and_full_ref() -> None:
     """CPU CAMBI accepts both ``eotf`` and ``full_ref``."""
     arg = ek._feature_arg("cambi", is_hdr=True, motion_fps_weight=1.0)
     assert arg.startswith("cambi=")
@@ -151,14 +152,14 @@ def test_feature_arg_hdr_cambi_gets_eotf_pq_and_full_ref():
     assert "full_ref=true" in arg
 
 
-def test_feature_arg_hdr_cambi_cuda_gets_eotf_only():
+def test_feature_arg_hdr_cambi_cuda_gets_eotf_only() -> None:
     """``cambi_cuda`` exposes ``eotf`` but not ``full_ref`` — the
     whitelist must drop the unsupported option silently."""
     arg = ek._feature_arg("cambi_cuda", is_hdr=True, motion_fps_weight=1.0)
     assert arg == "cambi_cuda=eotf=pq"
 
 
-def test_feature_arg_hdr_ms_ssim_cpu_only_gets_enable_db_false():
+def test_feature_arg_hdr_ms_ssim_cpu_only_gets_enable_db_false() -> None:
     """CPU ``float_ms_ssim`` accepts ``enable_db``; the CUDA twin
     doesn't expose it, so the CUDA arg drops back to bare name."""
     assert (
@@ -171,18 +172,18 @@ def test_feature_arg_hdr_ms_ssim_cpu_only_gets_enable_db_false():
     )
 
 
-def test_feature_arg_hfr_60fps_motion_gets_fps_weight():
+def test_feature_arg_hfr_60fps_motion_gets_fps_weight() -> None:
     # 60 fps → motion_fps_weight = 0.5.
     arg = ek._feature_arg("motion", is_hdr=False, motion_fps_weight=0.5)
     assert arg == "motion=motion_fps_weight=0.5000"
 
 
-def test_feature_arg_hfr_60fps_motion_v2_cuda_gets_fps_weight():
+def test_feature_arg_hfr_60fps_motion_v2_cuda_gets_fps_weight() -> None:
     arg = ek._feature_arg("motion_v2_cuda", is_hdr=False, motion_fps_weight=0.5)
     assert arg == "motion_v2_cuda=motion_fps_weight=0.5000"
 
 
-def test_feature_arg_hdr_hfr_combo_cambi():
+def test_feature_arg_hdr_hfr_combo_cambi() -> None:
     """HDR + HFR: CAMBI gets its HDR options; motion_fps_weight only
     applies to motion features, not CAMBI."""
     arg = ek._feature_arg("cambi", is_hdr=True, motion_fps_weight=0.5)
@@ -191,14 +192,14 @@ def test_feature_arg_hdr_hfr_combo_cambi():
     assert "motion_fps_weight" not in arg
 
 
-def test_feature_arg_hdr_hfr_combo_motion():
+def test_feature_arg_hdr_hfr_combo_motion() -> None:
     """Motion gets fps_weight; HDR-only options don't apply to motion."""
     arg = ek._feature_arg("motion_v2", is_hdr=True, motion_fps_weight=0.25)
     assert arg == "motion_v2=motion_fps_weight=0.2500"
     assert "eotf=pq" not in arg
 
 
-def test_feature_arg_unrelated_feature_unaffected():
+def test_feature_arg_unrelated_feature_unaffected() -> None:
     """vif / psnr / etc. don't grow options even when HDR + HFR."""
     for name in ("vif", "vif_cuda", "psnr", "psnr_cuda", "ciede", "ssimulacra2"):
         assert ek._feature_arg(name, is_hdr=True, motion_fps_weight=0.5) == name

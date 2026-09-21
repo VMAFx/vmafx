@@ -55,7 +55,7 @@ def test_probe_geometry_returns_none_on_subprocess_timeout(tmp_path: Path) -> No
     clip = tmp_path / "wedged.mp4"
     clip.write_bytes(b"\x00" * 64)
 
-    def hung_runner(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+    def hung_runner(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         # The fix passes a ``timeout=`` kwarg; a real wedged subprocess
         # would raise TimeoutExpired from inside ``subprocess.run``.
         # Simulate the same outcome here so we can assert the fallback.
@@ -75,7 +75,7 @@ def test_probe_geometry_accepts_explicit_timeout_kwarg(tmp_path: Path) -> None:
     clip.write_bytes(b"\x00")
     captured: dict[str, Any] = {}
 
-    def capturing_runner(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+    def capturing_runner(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         captured.update(kwargs)
         raise subprocess.TimeoutExpired(cmd="ffprobe", timeout=kwargs["timeout"])
 
@@ -92,7 +92,7 @@ def test_download_clip_surfaces_spawn_timeout_as_failure(tmp_path: Path) -> None
     """A wedged curl spawn must return a deterministic failure tuple."""
     dest = tmp_path / "clip.mp4"
 
-    def hung_runner(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+    def hung_runner(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         # The fix passes a ``timeout=`` greater than ``timeout_s``.
         assert "timeout" in kwargs
         assert kwargs["timeout"] > 0

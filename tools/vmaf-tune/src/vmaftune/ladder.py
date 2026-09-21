@@ -72,9 +72,9 @@ import itertools
 import json
 import math
 import tempfile
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from .defaultmodel import DEFAULT_MODEL
 from .uncertainty import ConfidenceDecision, ConfidenceThresholds, classify_interval
@@ -337,6 +337,12 @@ def _default_sampler(
         and src_height is not None
         and (src_width, src_height) != (width, height)
     )
+    resolved_src_width: int | None = None
+    resolved_src_height: int | None = None
+    if use_src_dims:
+        assert src_width is not None and src_height is not None
+        resolved_src_width = src_width
+        resolved_src_height = src_height
 
     with tempfile.TemporaryDirectory(prefix="vmaftune-ladder-") as tmp:
         tmp_path = Path(tmp)
@@ -358,8 +364,8 @@ def _default_sampler(
             framerate=float(framerate),
             duration_s=float(duration_s),
             cells=cells,
-            src_width=int(src_width) if use_src_dims else None,
-            src_height=int(src_height) if use_src_dims else None,
+            src_width=resolved_src_width,
+            src_height=resolved_src_height,
         )
         opts = CorpusOptions(
             encoder=encoder,
@@ -395,7 +401,7 @@ def _default_sampler(
     return _ladder_point_from_row(width, height, pick.row)
 
 
-def _ladder_point_from_row(width: int, height: int, row: dict) -> LadderPoint:
+def _ladder_point_from_row(width: int, height: int, row: Mapping[str, Any]) -> LadderPoint:
     """Build a ladder point from a corpus row, preserving intervals if present.
 
     When the row carries a ``vmaf_interval`` (conformal CV+ pipeline) the
@@ -407,24 +413,30 @@ def _ladder_point_from_row(width: int, height: int, row: dict) -> LadderPoint:
     the broader union would cascade through the public ladder API. The
     cast tells the type-checker about the controlled widening.
     """
-    base = {
-        "width": width,
-        "height": height,
-        "bitrate_kbps": float(row["bitrate_kbps"]),
-        "vmaf": float(row["vmaf_score"]),
-        "crf": int(row["crf"]),
-    }
+    bitrate_kbps = float(row["bitrate_kbps"])
+    vmaf = float(row["vmaf_score"])
+    crf = int(row["crf"])
     interval = row.get("vmaf_interval")
     if isinstance(interval, dict) and "low" in interval and "high" in interval:
         return cast(
             "LadderPoint",
             UncertaintyLadderPoint(
-                **base,
+                width=width,
+                height=height,
+                bitrate_kbps=bitrate_kbps,
+                vmaf=vmaf,
+                crf=crf,
                 vmaf_low=float(interval["low"]),
                 vmaf_high=float(interval["high"]),
             ),
         )
-    return LadderPoint(**base)
+    return LadderPoint(
+        width=width,
+        height=height,
+        bitrate_kbps=bitrate_kbps,
+        vmaf=vmaf,
+        crf=crf,
+    )
 
 
 # ---------------------------------------------------------------------------

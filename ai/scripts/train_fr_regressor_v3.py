@@ -69,7 +69,12 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
@@ -83,7 +88,13 @@ if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
 
 # Import the v3 vocab from the v2 trainer where it's documented as a
 # parallel constant (per ADR-0302's scaffold landed in PR #401).
-from train_fr_regressor_v2 import ENCODER_VOCAB_V3  # noqa: E402  # type: ignore[import-not-found]
+if TYPE_CHECKING:
+    from ai.scripts.train_fr_regressor_v2 import ENCODER_VOCAB_V3 as ENCODER_VOCAB_V3
+else:
+    try:
+        from ai.scripts.train_fr_regressor_v2 import ENCODER_VOCAB_V3 as ENCODER_VOCAB_V3
+    except ModuleNotFoundError:
+        from train_fr_regressor_v2 import ENCODER_VOCAB_V3 as ENCODER_VOCAB_V3
 
 # Canonical-6 libvmaf feature columns (ADR-0291 / ADR-0319).
 CANONICAL_6: tuple[str, ...] = (
@@ -188,8 +199,8 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
         # Project the ``_mean`` columns into bare-named ones and rename
         # ``vmaf_score`` -> ``vmaf`` so the rest of the module stays
         # positional.
-        for feat, col in zip(CANONICAL_6, feature_mean_cols, strict=True):
-            df[feat] = df[col]
+        for feature_name, col in zip(CANONICAL_6, feature_mean_cols, strict=True):
+            df[feature_name] = df[col]
         if "vmaf" not in df.columns:
             df = df.assign(vmaf=df["vmaf_score"])
         if "cq" not in df.columns:
@@ -219,9 +230,9 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
             "preferred path."
         )
 
-    feat = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    feat_mean = feat.mean(axis=0)
-    feat_std = feat.std(axis=0, ddof=0)
+    feature_array = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    feat_mean = feature_array.mean(axis=0)
+    feat_std = feature_array.std(axis=0, ddof=0)
     feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)
 
     codec_idx = np.array([_enc_idx_v3(str(e)) for e in df["encoder"].tolist()], dtype=np.int64)
@@ -287,7 +298,7 @@ def _set_seed_all(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _plcc(pred, target) -> float:
+def _plcc(pred: np.ndarray, target: np.ndarray) -> float:
     import numpy as np
 
     p = np.asarray(pred, dtype=np.float64).reshape(-1)
@@ -299,7 +310,7 @@ def _plcc(pred, target) -> float:
     return float(np.corrcoef(p, t)[0, 1])
 
 
-def _srocc(pred, target) -> float:
+def _srocc(pred: np.ndarray, target: np.ndarray) -> float:
     import numpy as np
 
     p = np.asarray(pred, dtype=np.float64).reshape(-1)
@@ -314,9 +325,9 @@ def _srocc(pred, target) -> float:
 
 
 def _train_fold(
-    x_feat,
-    x_codec,
-    y,
+    x_feat: np.ndarray,
+    x_codec: np.ndarray,
+    y: np.ndarray,
     *,
     epochs: int,
     batch_size: int,
@@ -324,7 +335,7 @@ def _train_fold(
     weight_decay: float,
     seed: int,
     num_codecs: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train a single FRRegressor for one LOSO fold; return the fitted model."""
     import numpy as np
     import torch
@@ -358,13 +369,13 @@ def _train_fold(
             opt.zero_grad()
             pred = model(xb, cb)
             loss = loss_fn(pred, yb)
-            loss.backward()
+            torch.autograd.backward(loss)
             opt.step()
     model.eval()
     return model
 
 
-def _predict(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
+def _predict(model: "torch.nn.Module", x_feat: np.ndarray, x_codec: np.ndarray) -> np.ndarray:
     import numpy as np
     import torch
 
@@ -373,7 +384,7 @@ def _predict(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
             torch.from_numpy(np.asarray(x_feat, dtype=np.float32)),
             torch.from_numpy(np.asarray(x_codec, dtype=np.float32)),
         )
-    return out.cpu().numpy().reshape(-1)
+    return np.asarray(out.cpu().numpy(), dtype=np.float32).reshape(-1)
 
 
 def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -457,7 +468,9 @@ def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]
     }
 
 
-def fit_full_corpus(corpus: dict[str, Any], args: argparse.Namespace):  # type: ignore[no-untyped-def]
+def fit_full_corpus(
+    corpus: dict[str, Any], args: argparse.Namespace
+) -> tuple["torch.nn.Module", dict[str, list[float]]]:
     """Fit one FRRegressor on the entire corpus; return (model, scaler)."""
     import numpy as np
 
@@ -488,7 +501,7 @@ def fit_full_corpus(corpus: dict[str, Any], args: argparse.Namespace):  # type: 
     return model, scaler
 
 
-def export_onnx(model, onnx_path: Path) -> None:  # type: ignore[no-untyped-def]
+def export_onnx(model: "torch.nn.Module", onnx_path: Path) -> None:
     """Export the v3 FRRegressor to ONNX (opset 17, two named inputs)."""
     import numpy as np
     import onnx
@@ -547,7 +560,7 @@ def write_sidecar_and_registry(
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,
-    scaler: dict,
+    scaler: dict[str, list[float]],
     loso_summary: dict[str, Any],
     corpus_path: Path,
     n_rows: int,

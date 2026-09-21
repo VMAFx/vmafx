@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from aiutils.run_manifest import (
     build_run_provenance,
@@ -23,6 +24,12 @@ from aiutils.run_manifest import (
     write_manifest_json,
     write_run_manifest,
 )
+
+
+def _json_object(value: object) -> dict[str, Any]:
+    assert isinstance(value, dict)
+    return value
+
 
 # ---------------------------------------------- normalise_manifest_value
 
@@ -48,6 +55,7 @@ def test_normalise_manifest_value_path_becomes_str(tmp_path: Path) -> None:
 def test_normalise_manifest_value_mapping_sorts_keys() -> None:
     """A Mapping is recursively normalised and key-sorted (lines 23-27)."""
     result = normalise_manifest_value({"b": 1, "a": [2, 3]})
+    assert isinstance(result, dict)
     assert list(result.keys()) == ["a", "b"]
     assert result == {"a": [2, 3], "b": 1}
 
@@ -117,8 +125,9 @@ def test_describe_paths_recurses_into_path_sequence(tmp_path: Path) -> None:
     assert isinstance(described["shards"], list)
     assert len(described["shards"]) == 2
     for entry in described["shards"]:
-        assert entry["kind"] == "file"
-        assert "sha256" in entry
+        entry_object = _json_object(entry)
+        assert entry_object["kind"] == "file"
+        assert "sha256" in entry_object
 
 
 def test_describe_paths_passes_through_scalar(tmp_path: Path) -> None:
@@ -149,7 +158,7 @@ def test_build_run_provenance_emits_inputs_with_optional_none(tmp_path: Path) ->
     inputs = payload["inputs"]
     assert isinstance(inputs, dict)
     assert inputs["optional"] is None
-    assert inputs["features"]["kind"] == "file"
+    assert _json_object(inputs["features"])["kind"] == "file"
 
 
 # ----------------------- write_run_manifest + write_manifest_json

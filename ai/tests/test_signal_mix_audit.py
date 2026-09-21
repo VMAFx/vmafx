@@ -12,22 +12,23 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-from signal_mix_audit import _is_numeric_series, audit_table, main, render_markdown
+from ai.scripts.signal_mix_audit import _is_numeric_series, audit_table, main, render_markdown
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> Path:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
     path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
     return path
 
 
-def _fixture_rows() -> list[dict]:
-    rows: list[dict] = []
+def _fixture_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for idx in range(24):
         target = 50.0 + idx
         alternating = -1.0 if idx % 2 else 1.0
@@ -50,7 +51,7 @@ def _fixture_rows() -> list[dict]:
     return rows
 
 
-def test_signal_family_coverage_and_missing_rows(tmp_path):
+def test_signal_family_coverage_and_missing_rows(tmp_path: Path) -> None:
     table = _write_jsonl(tmp_path / "features.jsonl", _fixture_rows())
     audit = audit_table("synthetic", table)
 
@@ -64,7 +65,7 @@ def test_signal_family_coverage_and_missing_rows(tmp_path):
     assert audit.family_health["hdr_display_panel"]["status"] == "weak"
 
 
-def test_redundancy_and_complementary_intersections(tmp_path):
+def test_redundancy_and_complementary_intersections(tmp_path: Path) -> None:
     table = _write_jsonl(tmp_path / "features.jsonl", _fixture_rows())
     audit = audit_table("synthetic", table, complement_threshold=0.995)
 
@@ -77,7 +78,7 @@ def test_redundancy_and_complementary_intersections(tmp_path):
     assert frozenset(("canonical_fr", "codec_encoder")) in intersection_names
 
 
-def test_markdown_reports_blind_spots_and_candidate_metrics(tmp_path):
+def test_markdown_reports_blind_spots_and_candidate_metrics(tmp_path: Path) -> None:
     table = _write_jsonl(tmp_path / "features.jsonl", _fixture_rows())
     audit = audit_table("synthetic", table)
     report = render_markdown([audit], top_k=4)
@@ -89,7 +90,9 @@ def test_markdown_reports_blind_spots_and_candidate_metrics(tmp_path):
     assert "`adm2`" in report
 
 
-def test_signal_mix_main_writes_json_and_markdown(tmp_path, monkeypatch):
+def test_signal_mix_main_writes_json_and_markdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     table = _write_jsonl(tmp_path / "features.jsonl", _fixture_rows())
     out_json = tmp_path / "audit.json"
     out_md = tmp_path / "audit.md"
@@ -119,7 +122,7 @@ def test_signal_mix_main_writes_json_and_markdown(tmp_path, monkeypatch):
     assert "Recommended Next Actions" in out_md.read_text()
 
 
-def test_custom_target_is_honoured(tmp_path):
+def test_custom_target_is_honoured(tmp_path: Path) -> None:
     rows = _fixture_rows()
     for row in rows:
         row["mos_target"] = row.pop("mos")
@@ -131,7 +134,7 @@ def test_custom_target_is_honoured(tmp_path):
     assert audit.target_correlations
 
 
-def test_second_opinion_columns_count_as_nr_mos_signal(tmp_path):
+def test_second_opinion_columns_count_as_nr_mos_signal(tmp_path: Path) -> None:
     rows = _fixture_rows()
     for idx, row in enumerate(rows):
         row["second_opinion_dover_mobile_score"] = 60.0 + idx
@@ -146,7 +149,7 @@ def test_second_opinion_columns_count_as_nr_mos_signal(tmp_path):
     assert "second_opinion_q_align_score" in health["matched_columns"]
 
 
-def test_invalid_target_leaves_report_targetless(tmp_path):
+def test_invalid_target_leaves_report_targetless(tmp_path: Path) -> None:
     table = _write_jsonl(tmp_path / "features.jsonl", _fixture_rows())
     audit = audit_table("synthetic", table, target="not_present")
 
@@ -155,7 +158,7 @@ def test_invalid_target_leaves_report_targetless(tmp_path):
     assert "No target column found" in render_markdown([audit])
 
 
-def test_pandas_string_dtype_is_not_numeric():
+def test_pandas_string_dtype_is_not_numeric() -> None:
     pd = pytest.importorskip("pandas")
 
     assert not _is_numeric_series(pd.Series(["clip-a", "clip-b"], dtype="string"))

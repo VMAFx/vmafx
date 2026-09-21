@@ -49,8 +49,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import torch
+
+    from ai.train.qat import QatConfig
 
 # Allow this script to run both as ``python ai/scripts/qat_train.py``
 # (where the ai/ package needs to be importable) and as
@@ -125,7 +131,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace):
+def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace) -> "QatConfig":
     """Build a QatConfig from YAML + CLI overrides."""
     from ai.train.qat import QatConfig
 
@@ -160,29 +166,31 @@ def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace):
     )
 
 
-def _build_model_factory(cfg_doc: dict[str, Any]):
+def _build_model_factory(cfg_doc: dict[str, Any]) -> Callable[[], Any]:
     """Return a zero-arg callable that constructs the configured model.
 
     Importing the model registry here keeps the driver lightweight
     when ``--help`` is requested.
     """
-    from ai.src.vmaf_train.train import MODEL_REGISTRY  # type: ignore[import]
+    from vmaf_train.train import MODEL_REGISTRY
 
     model_kind = cfg_doc.get("model")
     if model_kind not in MODEL_REGISTRY:
         raise SystemExit(
-            f"unknown model kind in config: {model_kind!r}; " f"valid: {sorted(MODEL_REGISTRY)}"
+            f"unknown model kind in config: {model_kind!r}; valid: {sorted(MODEL_REGISTRY)}"
         )
     model_cls = MODEL_REGISTRY[model_kind]
     model_args = cfg_doc.get("model_args", {}) or {}
 
-    def factory():
+    def factory() -> Any:
         return model_cls(**model_args)
 
     return factory
 
 
-def _build_example_inputs(cfg_doc: dict[str, Any], qat_cfg) -> tuple[Any, ...]:
+def _build_example_inputs(
+    cfg_doc: dict[str, Any], qat_cfg: "QatConfig"
+) -> tuple["torch.Tensor", ...]:
     import torch
 
     qat_block = cfg_doc.get("qat", {}) or {}
@@ -199,7 +207,7 @@ IMAGE_CACHE_INPUT_KEYS = ("x", "images", "degraded", "input")
 IMAGE_CACHE_TARGET_KEYS = ("y", "targets", "clean", "reference", "output")
 
 
-def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg) -> int:
+def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg: "QatConfig") -> int:
     """Tensor rank the configured model expects on its single input.
 
     Read from ``qat.input_shape`` — the same value
@@ -215,7 +223,9 @@ def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg) -> int:
     return len(shape)
 
 
-def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
+def _build_image_loader_factory(
+    cfg_doc: dict[str, Any], cache: Path
+) -> Callable[[], Iterable[tuple[Any, Any]]]:
     """Batch iterator over NCHW image tensors for rank-4 QAT models.
 
     Research-2029 gap 4: ``VmafTrainDataModule`` materialises rank-2 tabular
@@ -262,7 +272,7 @@ def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
 
     batch_size = max(1, int(cfg_doc.get("batch_size", 32)))
 
-    def factory():
+    def factory() -> Iterable[tuple[Any, Any]]:
         import torch
         from torch.utils.data import DataLoader, TensorDataset
 
@@ -272,7 +282,9 @@ def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
     return factory
 
 
-def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
+def _build_train_loader_factory(
+    cfg_doc: dict[str, Any], qat_cfg: "QatConfig"
+) -> Callable[[], Iterable[tuple[Any, Any]]] | None:
     """Best-effort training data loader for the QAT phases.
 
     For the smoke path this returns ``None`` — the pipeline skips both
@@ -317,9 +329,9 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
 
     # Wrap the existing Lightning data module into an iterable of (x, y)
     # tensor pairs for the minimal QAT loop.
-    from ai.src.vmaf_train.datamodule import VmafTrainDataModule  # type: ignore[import]
+    from vmaf_train.datamodule import VmafTrainDataModule
 
-    def factory():
+    def factory() -> Iterable[tuple[Any, Any]]:
         dm = VmafTrainDataModule(
             cache,
             batch_size=int(cfg_doc.get("batch_size", 32)),

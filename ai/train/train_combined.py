@@ -45,9 +45,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from ..data.netflix_loader import NetflixPair
+
+ArrayPair = tuple[np.ndarray[Any, np.dtype[np.float32]], np.ndarray[Any, np.dtype[np.float32]]]
+PayloadProvider = Callable[["NetflixPair"], dict[str, Any]]
 
 if __package__ in (None, ""):
     _here = Path(__file__).resolve()
@@ -151,7 +159,10 @@ def _split_konvid_keys(
     return train_keys, val_keys
 
 
-def _load_netflix(args, payload_provider):  # type: ignore[no-untyped-def]
+def _load_netflix(
+    args: argparse.Namespace,
+    payload_provider: PayloadProvider | None,
+) -> tuple[ArrayPair, ArrayPair]:
     """Build (train_xy, val_xy) for the Netflix slice; ``(empty, empty)`` if disabled."""
     from ..data.feature_extractor import DEFAULT_FEATURES
     from .dataset import NetflixFrameDataset
@@ -210,7 +221,7 @@ def _load_netflix(args, payload_provider):  # type: ignore[no-untyped-def]
     return train_ds.numpy_arrays(), val_xy
 
 
-def _load_konvid(args):  # type: ignore[no-untyped-def]
+def _load_konvid(args: argparse.Namespace) -> tuple[ArrayPair, ArrayPair]:
     """Build (train_xy, val_xy) for the KoNViD slice; ``(empty, empty)`` if disabled."""
     from ..data.feature_extractor import DEFAULT_FEATURES
     from .konvid_pair_dataset import KoNViDPairDataset
@@ -262,7 +273,7 @@ def _load_konvid(args):  # type: ignore[no-untyped-def]
     return train_xy, val_xy
 
 
-def _concat_xy(*pairs):  # type: ignore[no-untyped-def]
+def _concat_xy(*pairs: ArrayPair) -> ArrayPair:
     xs = [x for x, _ in pairs if x.shape[0] > 0]
     ys = [y for _, y in pairs if y.shape[0] > 0]
     if not xs:
@@ -291,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         f"feature_dim={feature_dim} val_mode={args.val_mode}"
     )
 
-    payload_provider = None
+    payload_provider: PayloadProvider | None = None
     if args.epochs == 0:
         from .dataset import _make_zero_payload
 

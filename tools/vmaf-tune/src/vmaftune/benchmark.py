@@ -16,7 +16,7 @@ import io
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, SupportsFloat, SupportsIndex
 
 from .jsonio import dumps_strict
 
@@ -40,8 +40,10 @@ class BenchmarkSummary:
 
 
 def _finite_float(value: object) -> float | None:
+    if not isinstance(value, (str, SupportsFloat, SupportsIndex)):
+        return None
     try:
-        out = float(value)  # type: ignore[arg-type]
+        out = float(value)
     except (TypeError, ValueError):
         return None
     if not math.isfinite(out):

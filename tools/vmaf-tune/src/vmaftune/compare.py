@@ -600,7 +600,9 @@ def probe_encoder_available(
     encoder_spec = parse_encoder_runtime_token(encoder, ffmpeg_bin=ffmpeg_bin)
     adapter_encoder = encoder_spec.adapter
 
-    def _default_runner(argv: Sequence[str], timeout: float = 30.0):
+    def _default_runner(
+        argv: Sequence[str], timeout: float = 30.0
+    ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             argv,
             stdout=subprocess.PIPE,
@@ -752,7 +754,7 @@ def compare_codecs_sweep(
 
     # Build the work list, substituting unavailable rows before dispatch.
     pairs: list[tuple[str, float]] = [(c, float(t)) for c in encoders for t in target_vmafs]
-    results: list[RecommendResult] = [None] * len(pairs)  # type: ignore[list-item]
+    results: list[RecommendResult | None] = [None] * len(pairs)
     target_track: list[float] = [t for _, t in pairs]
 
     dispatch_pairs: list[tuple[int, str, float]] = []
@@ -823,12 +825,15 @@ def compare_codecs_sweep(
                     row_metadata,
                 )
 
+    if any(result is None for result in results):
+        raise RuntimeError("codec sweep left an undispatched result slot")
+    complete_results = tuple(result for result in results if result is not None)
     return SweepReport(
         src=str(src_path),
         target_vmafs=tuple(float(t) for t in target_vmafs),
         tool_version=TOOL_VERSION,
         wall_time_ms=(time.monotonic() - t0) * 1000.0,
-        rows=tuple(results),
+        rows=complete_results,
         row_targets=tuple(target_track),
     )
 
@@ -920,11 +925,11 @@ def emit_sweep_markdown(report: SweepReport) -> str:
         cells: list[str] = []
         first_row = next(iter(per_target.values()))
         for t in report.target_vmafs:
-            r = per_target.get(t)
-            if r is None or not r.ok:
+            row = per_target.get(t)
+            if row is None or not row.ok:
                 cells.append("—")
             else:
-                cells.append(f"{r.bitrate_kbps:.0f} kbps")
+                cells.append(f"{row.bitrate_kbps:.0f} kbps")
         lines.append(
             f"| {codec} | {first_row.encoder_version or '—'} | "
             + " | ".join(cells)

@@ -117,9 +117,14 @@ def load_proxy_sidecar(model_id: str = DEFAULT_PROXY_MODEL_ID) -> dict[str, Any]
     if not sidecar_path.exists():
         raise ProxyError(f"proxy sidecar not found: {sidecar_path}")
     try:
-        return json.loads(sidecar_path.read_text(encoding="utf-8"))
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise ProxyError(f"failed to parse proxy sidecar {sidecar_path}: {exc}") from exc
+    if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
+        raise ProxyError(
+            f"proxy sidecar {sidecar_path} must contain a JSON object with string keys"
+        )
+    return {key: value for key, value in payload.items()}
 
 
 def normalise_features(

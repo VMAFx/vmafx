@@ -231,9 +231,9 @@ def _detect_shots_with_status(
 
     try:
         runner_fn = runner or subprocess.run
-        completed = runner_fn(  # type: ignore[operator]
-            cmd, capture_output=True, text=True, check=False
-        )
+        if not callable(runner_fn):
+            raise TypeError("runner must be callable")
+        completed = runner_fn(cmd, capture_output=True, text=True, check=False)
         rc = int(getattr(completed, "returncode", 1))
         if rc != 0:
             return _single_shot_fallback(total_frames), False
@@ -532,11 +532,13 @@ def _default_segment_preset(adapter: object) -> str:
     preset otherwise, and to ``"medium"`` for legacy stubs without a
     ``presets`` tuple.
     """
-    presets = getattr(adapter, "presets", ())
-    if presets:
-        if "medium" in presets:
-            return "medium"
-        return presets[0]
+    declared = getattr(adapter, "presets", ())
+    if isinstance(declared, tuple) and all(isinstance(item, str) for item in declared):
+        presets: tuple[str, ...] = declared
+        if presets:
+            if "medium" in presets:
+                return "medium"
+            return presets[0]
     return "medium"
 
 

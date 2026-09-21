@@ -35,7 +35,10 @@ YEAR = "2026"
 
 
 def rewrite(text: str, path: str = "x.c") -> str:
-    return REL.rewrite(text, path, lambda: YEAR)
+    result: object = REL.rewrite(text, path, lambda: YEAR)
+    if not isinstance(result, str):
+        raise TypeError("rewrite helper returned a non-string result")
+    return result
 
 
 class TagRewriting(unittest.TestCase):

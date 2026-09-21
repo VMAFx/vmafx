@@ -66,7 +66,10 @@ import statistics
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TextIO
+
+if TYPE_CHECKING:
+    from torch import nn
 
 # Codec list — must match :data:`vmaftune.predictor._DEFAULT_COEFFS`.
 # We deliberately import the dict rather than hard-code so the two
@@ -92,6 +95,8 @@ DEFAULT_OPSET = 18
 #: Codecs the predictor supports. Reads from :mod:`predictor` so
 #: the registry stays single-source.
 CODECS: tuple[str, ...] = tuple(_DEFAULT_COEFFS.keys())
+
+CorpusRow = dict[str, Any]
 
 
 # ---------------------------------------------------------------------
@@ -162,7 +167,7 @@ def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[
 # ---------------------------------------------------------------------
 
 
-def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -> list[dict]:
+def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -> list[CorpusRow]:
     """Deterministic per-codec synthetic corpus.
 
     Each row mimics a Phase A JSONL row enough to feed
@@ -182,7 +187,7 @@ def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -
     rng = random.Random(seed)
     predictor = Predictor()  # analytical fallback supplies the target
 
-    rows: list[dict] = []
+    rows: list[CorpusRow] = []
     # Sweep CRF across the codec's quality range and a handful of
     # synthetic resolutions so the trainer sees variation on every
     # input dimension.
@@ -323,14 +328,14 @@ def iter_corpus_files(path: Path) -> tuple[Path, ...]:
     return ()
 
 
-def load_corpus(path: Path, codec: str) -> list[dict]:
+def load_corpus(path: Path, codec: str) -> list[CorpusRow]:
     """Read a JSONL corpus and filter to ``codec`` rows with a usable score.
 
     Accepts both the canonical ``corpus.py`` schema
     (``encoder``/``crf``/``vmaf_score``/``bitrate_kbps``) and the
     hardware-sweep schema (``codec``/``q``/``vmaf``/``actual_kbps``).
     """
-    rows: list[dict] = []
+    rows: list[CorpusRow] = []
     for jsonl_path in iter_corpus_files(path):
         with jsonl_path.open("r", encoding="utf-8") as fh:
             for line in fh:
@@ -358,8 +363,8 @@ def load_corpus(path: Path, codec: str) -> list[dict]:
 
 
 def train_val_split(
-    rows: Sequence[dict], val_fraction: float = 0.2, seed: int = 0
-) -> tuple[list[dict], list[dict]]:
+    rows: Sequence[CorpusRow], val_fraction: float = 0.2, seed: int = 0
+) -> tuple[list[CorpusRow], list[CorpusRow]]:
     """Seeded shuffle then 80 / 20 split. Caller picks which is which."""
     if not rows:
         return ([], [])
@@ -380,10 +385,10 @@ def train_val_split(
 # ---------------------------------------------------------------------
 
 
-def _build_model():
+def _build_model() -> nn.Module:
     """Return a tiny MLP. Lazily imports torch."""
-    import torch  # type: ignore[import-not-found]
-    from torch import nn  # type: ignore[import-not-found]
+    import torch
+    from torch import nn
 
     class TinyMLP(nn.Module):
         def __init__(self) -> None:
@@ -393,6 +398,8 @@ def _build_model():
             self.fc3 = nn.Linear(HIDDEN_DIM, 1)
             # Per-feature input normalisation. Values are buffer'd so
             # they survive ``state_dict`` round-trips.
+            self.input_mean: torch.Tensor
+            self.input_std: torch.Tensor
             self.register_buffer("input_mean", torch.zeros(INPUT_DIM))
             self.register_buffer("input_std", torch.ones(INPUT_DIM))
 
@@ -448,13 +455,13 @@ def _set_seed(seed: int) -> None:
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     try:
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
 
         np.random.seed(seed)
     except ImportError:
         pass
     try:
-        import torch  # type: ignore[import-not-found]
+        import torch
 
         torch.manual_seed(seed)
     except ImportError:
@@ -468,7 +475,7 @@ def _fit(
     cfg: TrainConfig,
 ) -> None:
     """Run the training loop in place on ``model``."""
-    import torch  # type: ignore[import-not-found]
+    import torch
 
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     loss_fn = torch.nn.MSELoss()
@@ -491,7 +498,7 @@ def _fit(
 
 def _evaluate(model: Any, x_val: Any, y_val: Any) -> tuple[float, float, float]:
     """Return ``(plcc, srocc, rmse)`` on the held-out tensors."""
-    import torch  # type: ignore[import-not-found]
+    import torch
 
     model.eval()
     with torch.no_grad():
@@ -548,13 +555,13 @@ def _ranks(values: Sequence[float]) -> list[float]:
 
 def _export_onnx(model: Any, output: Path, opset: int) -> None:
     """Export ``model`` to ONNX. Caller must hand a CPU model in eval mode."""
-    import torch  # type: ignore[import-not-found]
+    import torch
 
     output.parent.mkdir(parents=True, exist_ok=True)
     dummy = torch.zeros(1, INPUT_DIM, dtype=torch.float32)
     torch.onnx.export(
         model,
-        dummy,
+        (dummy,),
         str(output),
         input_names=["input"],
         output_names=["vmaf"],
@@ -580,9 +587,7 @@ def _check_op_allowlist(onnx_path: Path) -> tuple[bool, tuple[str, ...]]:
         ai_src = repo_root / "ai" / "src"
         if ai_src.is_dir() and str(ai_src) not in sys.path:
             sys.path.insert(0, str(ai_src))
-        from vmaf_train.op_allowlist import (
-            check_model,  # type: ignore[import-not-found]
-        )
+        from vmaf_train.op_allowlist import check_model
     except ImportError:
         return (True, ())
     try:
@@ -598,7 +603,7 @@ def _set_input_normalisation(model: Any, x_train: Any) -> None:
     The buffers are part of the exported graph so ONNX inference uses
     the same normalisation the trainer fit.
     """
-    import torch  # type: ignore[import-not-found]
+    import torch
 
     mean = x_train.mean(dim=0)
     std = x_train.std(dim=0)
@@ -611,14 +616,14 @@ def _set_input_normalisation(model: Any, x_train: Any) -> None:
 
 def train_one_codec(
     codec: str,
-    rows: Sequence[dict],
+    rows: Sequence[CorpusRow],
     *,
     cfg: TrainConfig,
     output_dir: Path,
     corpus_kind: str,
 ) -> TrainResult:
     """Fit one codec, export ONNX, write the model card, return metrics."""
-    import torch  # type: ignore[import-not-found]
+    import torch
 
     _set_seed(cfg.seed)
     train_rows, val_rows = train_val_split(rows, cfg.val_fraction, cfg.seed)
@@ -688,7 +693,7 @@ def train_one_codec(
 def _count_onnx_nodes(onnx_path: Path) -> int:
     """Count graph nodes — used by the model card. Returns 0 if onnx is missing."""
     try:
-        import onnx  # type: ignore[import-not-found]
+        import onnx
     except ImportError:
         return 0
     try:
@@ -704,7 +709,7 @@ def _count_onnx_nodes(onnx_path: Path) -> int:
 
 
 def _write_model_card(
-    path: Path,
+    path: Path | TextIO,
     *,
     codec: str,
     opset: int,
@@ -860,7 +865,7 @@ def train_all_codecs(
     """
     results: list[TrainResult] = []
     for codec in CODECS:
-        rows: list[dict] = []
+        rows: list[CorpusRow] = []
         if corpus_path is not None:
             rows = load_corpus(corpus_path, codec)
         if rows:
@@ -942,7 +947,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         codec_for_stub = codecs[0]
         kind_for_stub = f"synthetic-stub-N={SYNTHETIC_CORPUS_ROWS}"
         dest_raw = args.emit_stub_card_only
-        dest: Any = sys.stdout if dest_raw == "-" else Path(dest_raw)
+        dest: Path | TextIO = sys.stdout if dest_raw == "-" else Path(dest_raw)
         _write_model_card(
             dest,
             codec=codec_for_stub,
@@ -966,7 +971,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     results: list[TrainResult] = []
     for codec in codecs:
-        rows: list[dict] = []
+        rows: list[CorpusRow] = []
         if args.corpus is not None:
             rows = load_corpus(args.corpus, codec)
         if rows:

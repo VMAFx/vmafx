@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -61,7 +62,7 @@ class LearnedFilterAuditReport:
     def ok(self) -> bool:
         return not self.warnings
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["model"] = str(self.model)
         d["ok"] = self.ok

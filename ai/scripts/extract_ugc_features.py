@@ -31,6 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -41,12 +42,14 @@ if str(REPO_ROOT) not in sys.path:
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+
 from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 SCHEMA_COLS = (*FULL_FEATURES, "teacher_model", "vmaf")
 
@@ -71,7 +74,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _ffprobe(path: Path) -> dict:
+def _ffprobe(path: Path) -> dict[str, Any]:
     cmd = [
         "ffprobe",
         "-v",
@@ -84,7 +87,13 @@ def _ffprobe(path: Path) -> dict:
         str(path),
     ]
     out = subprocess.check_output(cmd)
-    return json.loads(out)["streams"][0]
+    payload: object = json.loads(out)
+    if not isinstance(payload, dict) or not isinstance(payload.get("streams"), list):
+        raise ValueError("ffprobe output must contain a streams list")
+    streams = payload["streams"]
+    if not streams or not isinstance(streams[0], dict):
+        raise ValueError("ffprobe output contains no stream object")
+    return {str(key): value for key, value in streams[0].items()}
 
 
 def _decode_to_yuv(src: Path, dest: Path, w: int, h: int, max_frames: int) -> int:
@@ -128,8 +137,8 @@ def _run_vmaf(
     w: int,
     h: int,
     n_threads: int,
-    model: Path,
-) -> list[dict]:
+    model: Path | str,
+) -> list[dict[str, Any]]:
     """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
     if not isinstance(w, int) or isinstance(w, bool) or w <= 0:
         raise ValueError(f"w must be a positive integer, got {w!r}")
@@ -221,12 +230,15 @@ def _run_vmaf(
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with out.open() as f:
             doc = json.load(f)
-        return doc.get("frames", [])
+        frames = doc.get("frames", [])
+        if not isinstance(frames, list) or not all(isinstance(frame, dict) for frame in frames):
+            raise ValueError("vmaf output frames must be a list of objects")
+        return [{str(key): value for key, value in frame.items()} for frame in frames]
     finally:
         out.unlink(missing_ok=True)
 
 
-def _frame_row(metrics: dict, teacher_model: str = DEFAULT_MODEL) -> dict:
+def _frame_row(metrics: dict[str, Any], teacher_model: str = DEFAULT_MODEL) -> dict[str, Any]:
     """Translate libvmaf JSON metric names to our parquet schema."""
 
     def m(name: str) -> float:
@@ -241,7 +253,7 @@ def _frame_row(metrics: dict, teacher_model: str = DEFAULT_MODEL) -> dict:
                 return float(val)
         return float("nan")
 
-    row = {feature: m(feature) for feature in FULL_FEATURES}
+    row: dict[str, Any] = {feature: m(feature) for feature in FULL_FEATURES}
     row["teacher_model"] = teacher_model
     row["vmaf"] = m("vmaf")
     return row
@@ -349,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest = json.loads(args.manifest.read_text())
     print(f"[ugc-extract] manifest stems={len(manifest)}", flush=True)
 
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     pair_count = 0
     fail_count = 0
     t0 = time.monotonic()
@@ -383,8 +395,7 @@ def main(argv: list[str] | None = None) -> int:
             # clip rather than emit a `scale=0:...` error or a ZeroDivisionError
             # in _decode_to_yuv on resume (R3-18 follow-up).
             print(
-                f"  [{stem}] degenerate scaled geometry {ow}x{oh} -> "
-                f"{target_w}x{target_h}; skip",
+                f"  [{stem}] degenerate scaled geometry {ow}x{oh} -> {target_w}x{target_h}; skip",
                 flush=True,
             )
             fail_count += 1

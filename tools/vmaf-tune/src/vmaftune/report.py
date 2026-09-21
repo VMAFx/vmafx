@@ -27,12 +27,14 @@ import html
 import io
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from . import __version__ as TOOL_VERSION
 from .jsonio import dumps_strict as _portable_json_dump  # ADR-0988: shared helper
+
+PlotFn = Callable[[Any], None]
 
 
 def _html_escape(value: Any) -> str:
@@ -758,7 +760,7 @@ def build_encoder_profile(data: ReportData) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _render_chart(width_in: float, height_in: float, plot_fn) -> bytes:
+def _render_chart(width_in: float, height_in: float, plot_fn: PlotFn) -> bytes:
     """Render a matplotlib figure to PNG bytes.
 
     ``plot_fn`` is called with one ``Axes`` argument. The figure is
@@ -787,7 +789,7 @@ def _render_chart(width_in: float, height_in: float, plot_fn) -> bytes:
         plt.close(fig)
 
 
-def _render_chart_svg(width_in: float, height_in: float, plot_fn) -> str:
+def _render_chart_svg(width_in: float, height_in: float, plot_fn: PlotFn) -> str:
     """Render a matplotlib figure to SVG string for inline-HTML use.
 
     Returns an empty string when matplotlib is unavailable so the
@@ -813,8 +815,8 @@ def _render_chart_svg(width_in: float, height_in: float, plot_fn) -> str:
         plt.close(fig)
 
 
-def _ladder_plot_fn(data: ReportData):
-    def _plot(ax) -> None:
+def _ladder_plot_fn(data: ReportData) -> PlotFn:
+    def _plot(ax: Any) -> None:
         if data.ladder_samples:
             xs = [p.bitrate_kbps for p in data.ladder_samples]
             ys = [p.vmaf for p in data.ladder_samples]
@@ -842,8 +844,8 @@ def _ladder_plot_fn(data: ReportData):
     return _plot
 
 
-def _codec_plot_fn(data: ReportData):
-    def _plot(ax) -> None:
+def _codec_plot_fn(data: ReportData) -> PlotFn:
+    def _plot(ax: Any) -> None:
         # Drop failed AND non-finite-numeric rows so the bar / line
         # axes don't try to plot NaN (matplotlib would otherwise emit
         # an empty plot or a warning, depending on version). Bug #6.
@@ -953,7 +955,7 @@ def _finite_values(values: Sequence[float | int | None]) -> list[float]:
 
 
 def _set_padded_ylim(
-    ax,
+    ax: Any,
     values: Sequence[float | int | None],
     *,
     lower: float | None = None,
@@ -977,7 +979,7 @@ def _set_padded_ylim(
         ax.set_ylim(y0, y1)
 
 
-def _apply_bitrate_xaxis(ax, *, log_scale: bool = True) -> None:
+def _apply_bitrate_xaxis(ax: Any, *, log_scale: bool = True) -> None:
     from matplotlib.ticker import FuncFormatter
 
     if log_scale:
@@ -985,7 +987,7 @@ def _apply_bitrate_xaxis(ax, *, log_scale: bool = True) -> None:
     ax.xaxis.set_major_formatter(FuncFormatter(_bitrate_tick_label))
 
 
-def _apply_bitrate_yaxis(ax) -> None:
+def _apply_bitrate_yaxis(ax: Any) -> None:
     from matplotlib.ticker import FuncFormatter
 
     ax.yaxis.set_major_formatter(FuncFormatter(_bitrate_tick_label))
@@ -1055,7 +1057,7 @@ def _dedup_bisect_samples(
     return out
 
 
-def _sweep_plot_fn(data: ReportData):
+def _sweep_plot_fn(data: ReportData) -> PlotFn:
     """Rate-quality line plot — one curve per codec, pareto highlighted.
 
     Two modes (ADR-0530):
@@ -1074,7 +1076,7 @@ def _sweep_plot_fn(data: ReportData):
       mode.
     """
 
-    def _plot(ax) -> None:
+    def _plot(ax: Any) -> None:
         if not data.sweep_points:
             ax.text(0.5, 0.5, "no sweep data", ha="center", va="center")
             ax.set_axis_off()
@@ -1307,8 +1309,8 @@ def _sweep_plot_fn(data: ReportData):
     return _plot
 
 
-def _shot_plot_fn(data: ReportData):
-    def _plot(ax) -> None:
+def _shot_plot_fn(data: ReportData) -> PlotFn:
+    def _plot(ax: Any) -> None:
         if not data.shots:
             ax.text(0.5, 0.5, "no per-shot data", ha="center", va="center")
             ax.set_axis_off()
@@ -1424,7 +1426,7 @@ def _is_missing(v: float | None) -> bool:
 def _fmt_kbps(v: float | None) -> str:
     if _is_missing(v):
         return _DASH
-    v = float(v)  # type: ignore[arg-type]
+    assert v is not None
     if v >= 1000:
         return f"{v / 1000:.2f} Mbps"
     return f"{v:.0f} kbps"
@@ -1433,7 +1435,7 @@ def _fmt_kbps(v: float | None) -> str:
 def _fmt_duration(s: float | None) -> str:
     if _is_missing(s):
         return _DASH
-    s = float(s)  # type: ignore[arg-type]
+    assert s is not None
     if s < 60:
         return f"{s:.1f}s"
     m, sec = divmod(int(s), 60)
@@ -1520,9 +1522,9 @@ def _quick_takeaways(data: ReportData) -> tuple[str, ...]:
 
 def _per_codec_targets(
     points: Sequence[CodecSweepPoint], targets: Sequence[float]
-) -> dict[str, dict[float, CodecSweepPoint]]:
+) -> dict[str, dict[float, CodecSweepPoint | None]]:
     """Group sweep points by (codec, target_vmaf) for table rendering."""
-    by_codec: dict[str, dict[float, CodecSweepPoint]] = {}
+    by_codec: dict[str, dict[float, CodecSweepPoint | None]] = {}
     for p in points:
         by_codec.setdefault(p.codec, {})[p.target_vmaf] = p
     # Ensure every codec has a slot for every requested target so the
@@ -1530,7 +1532,7 @@ def _per_codec_targets(
     # em-dashes for unavailable encoders / failed bisects).
     for codec in by_codec:
         for t in targets:
-            by_codec[codec].setdefault(t, None)  # type: ignore[assignment]
+            by_codec[codec].setdefault(t, None)
     return by_codec
 
 

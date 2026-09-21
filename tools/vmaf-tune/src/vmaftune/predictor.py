@@ -36,14 +36,36 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from .codec_adapters import get_adapter
 
 if TYPE_CHECKING:
+    from .conformal import Calibration
     from .per_shot import Shot
+
+
+class _OnnxInput(Protocol):
+    """Minimal ONNX input metadata used by the predictor."""
+
+    @property
+    def name(self) -> str: ...
+
+
+@runtime_checkable
+class _OnnxSession(Protocol):
+    """Inference-session surface shared by onnxruntime and test doubles."""
+
+    def get_inputs(self) -> Sequence[_OnnxInput]: ...
+
+    def run(
+        self,
+        output_names: Sequence[str] | None,
+        input_feed: Mapping[str, object],
+    ) -> Sequence[Any]: ...
+
 
 # ``PredicateFn`` mirror — re-imported through :mod:`vmaftune.per_shot`
 # at call sites. Reproduced here to avoid an import cycle.
@@ -151,7 +173,7 @@ class Predictor:
         default_factory=lambda: dict(_DEFAULT_COEFFS)
     )
     is_stub: bool = dataclasses.field(default=False, init=False)
-    _onnx_session: object | None = dataclasses.field(default=None, init=False, repr=False)
+    _onnx_session: _OnnxSession | None = dataclasses.field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Lazy-load the ONNX session if a model path is set.
@@ -175,7 +197,7 @@ class Predictor:
                 stacklevel=2,
             )
         try:
-            import onnxruntime as ort  # type: ignore[import-not-found]
+            import onnxruntime as ort
         except ImportError:
             self._onnx_session = None
             return
@@ -187,9 +209,10 @@ class Predictor:
         # Pin the CPU provider — the per-shot predictor runs on the same
         # host as the encoder. CUDA / DirectML aren't useful here since
         # the model is tiny (~16 inputs × ~64 hidden × 1 output).
-        self._onnx_session = ort.InferenceSession(
-            str(self.model_path), providers=["CPUExecutionProvider"]
-        )
+        session = ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
+        if not isinstance(session, _OnnxSession):
+            raise TypeError("onnxruntime InferenceSession does not expose get_inputs/run")
+        self._onnx_session = session
 
     @staticmethod
     def _check_is_stub(model_path: Path) -> bool:
@@ -270,7 +293,7 @@ class Predictor:
         # session-name dict still keys by the model's input layer name.
         if self._onnx_session is None:  # pragma: no cover — guarded above
             return self._predict_analytical(features, crf, codec)
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
 
         x = np.asarray(
             [
@@ -294,8 +317,8 @@ class Predictor:
             dtype=np.float32,
         )
         # Conventional MLP input name; predictor_train.py pins it.
-        input_name = self._onnx_session.get_inputs()[0].name  # type: ignore[attr-defined]
-        out = self._onnx_session.run(None, {input_name: x})  # type: ignore[attr-defined]
+        input_name = self._onnx_session.get_inputs()[0].name
+        out = self._onnx_session.run(None, {input_name: x})
         return _clamp(float(out[0].flatten()[0]), 0.0, 100.0)
 
     def predict_mos(
@@ -369,7 +392,7 @@ class Predictor:
         target_quality: int,
         codec: str,
         *,
-        calibration: object | None = None,
+        calibration: Calibration | None = None,
         alpha: float | None = None,
     ) -> tuple[float, float, float]:
         """Predict VMAF and return ``(point, low, high)``.
@@ -395,8 +418,8 @@ class Predictor:
         if alpha is not None and cal is not None:
             # Honour an explicit alpha override by rebuilding the
             # frozen calibration tuple.
-            cal = dataclasses.replace(cal, alpha=alpha)  # type: ignore[arg-type]
-        wrapper = ConformalPredictor(base=self, calibration=cal)  # type: ignore[arg-type]
+            cal = dataclasses.replace(cal, alpha=alpha)
+        wrapper = ConformalPredictor(base=self, calibration=cal)
         interval = wrapper.predict(features, target_quality, codec)
         return interval.point, interval.low, interval.high
 
@@ -501,8 +524,13 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 # loader is module-level (cached after first call) so the per-shot
 # loop does not pay an ONNX-session cost per frame.
 
-_MOS_HEAD_FAILED = object()  # sentinel — distinguishes "not loaded" from "tried and failed"
-_MOS_HEAD_CACHE: object | None = None
+
+class _MosHeadFailed:
+    """Sentinel type distinguishing an unavailable head from an unloaded one."""
+
+
+_MOS_HEAD_FAILED = _MosHeadFailed()
+_MOS_HEAD_CACHE: _OnnxSession | _MosHeadFailed | None = None
 _MOS_HEAD_RELPATH: Path = Path("model/konvid_mos_head_v1.onnx")
 
 
@@ -522,7 +550,7 @@ def _resolve_mos_head_path() -> Path | None:
     return None
 
 
-def _maybe_load_mos_head() -> object | None:
+def _maybe_load_mos_head() -> _OnnxSession | None:
     """Load the MOS head ONNX once; return ``None`` when unavailable.
 
     Three failure modes — each silently falls back to the linear
@@ -536,11 +564,11 @@ def _maybe_load_mos_head() -> object | None:
     global _MOS_HEAD_CACHE
     if _MOS_HEAD_CACHE is not None:
         # Sentinel object means "we tried already and it failed; don't retry."
-        if _MOS_HEAD_CACHE is _MOS_HEAD_FAILED:
+        if isinstance(_MOS_HEAD_CACHE, _MosHeadFailed):
             return None
         return _MOS_HEAD_CACHE
     try:
-        import onnxruntime as ort  # type: ignore[import-not-found]
+        import onnxruntime as ort
     except ImportError:
         _MOS_HEAD_CACHE = _MOS_HEAD_FAILED
         return None
@@ -549,10 +577,14 @@ def _maybe_load_mos_head() -> object | None:
         _MOS_HEAD_CACHE = _MOS_HEAD_FAILED
         return None
     try:
-        _MOS_HEAD_CACHE = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     except Exception:  # pragma: no cover — defensive for malformed ONNX
         _MOS_HEAD_CACHE = _MOS_HEAD_FAILED
         return None
+    if not isinstance(session, _OnnxSession):
+        _MOS_HEAD_CACHE = _MOS_HEAD_FAILED
+        return None
+    _MOS_HEAD_CACHE = session
     return _MOS_HEAD_CACHE
 
 
@@ -567,7 +599,7 @@ def _reset_mos_head_cache_for_tests() -> None:
     _MOS_HEAD_CACHE = None
 
 
-def _predict_mos_via_head(head_session: object, features: ShotFeatures) -> float:
+def _predict_mos_via_head(head_session: _OnnxSession, features: ShotFeatures) -> float:
     """Run the konvid_mos_head_v1 ONNX once and clamp to ``[1, 5]``.
 
     The MOS head consumes the 11-D feature vector documented in
@@ -580,7 +612,7 @@ def _predict_mos_via_head(head_session: object, features: ShotFeatures) -> float
     they get the head's no-op behaviour and the linear-approximation
     consumers keep working.
     """
-    import numpy as np  # type: ignore[import-not-found]
+    import numpy as np
 
     # Feature vector layout — must match
     # ``train_konvid_mos_head.FEATURE_COLUMNS`` exactly.
@@ -592,9 +624,9 @@ def _predict_mos_via_head(head_session: object, features: ShotFeatures) -> float
     # available pass them through a richer feature extractor in a
     # follow-up PR).
     encoder = np.ones((1, 1), dtype=np.float32)
-    inputs = head_session.get_inputs()  # type: ignore[attr-defined]
+    inputs = head_session.get_inputs()
     feed: dict[str, object] = {inputs[0].name: x, inputs[1].name: encoder}
-    out = head_session.run(None, feed)  # type: ignore[attr-defined]
+    out = head_session.run(None, feed)
     return _clamp(float(np.asarray(out[0]).flatten()[0]), 1.0, 5.0)
 
 

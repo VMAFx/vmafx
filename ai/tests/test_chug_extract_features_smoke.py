@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -41,7 +42,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("chug_extract_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -190,7 +191,7 @@ def test_chug_extract_features_floor_below_identity_on_degraded_pair(
     )
 
 
-def _chug_rows(width: int, height: int, dis_count: int) -> list[dict]:
+def _chug_rows(width: int, height: int, dis_count: int) -> list[dict[str, Any]]:
     """One reference row + ``dis_count`` distorted rungs of the same content."""
     rows = [
         {
@@ -224,7 +225,7 @@ def _chug_rows(width: int, height: int, dis_count: int) -> list[dict]:
     return rows
 
 
-def test_run_isolates_per_clip_failures(tmp_path: Path, monkeypatch) -> None:
+def test_run_isolates_per_clip_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """R3-19: a single pair's extraction failure must be logged and skipped, not
     abort the whole batch.
 
@@ -257,7 +258,7 @@ def test_run_isolates_per_clip_failures(tmp_path: Path, monkeypatch) -> None:
 
     calls = {"n": 0}
 
-    def flaky_extract(*_args, **_kwargs):
+    def flaky_extract(*_args: Any, **_kwargs: Any) -> Any:
         calls["n"] += 1
         if calls["n"] == 1:
             raise subprocess.CalledProcessError(1, ["ffmpeg"], "boom")

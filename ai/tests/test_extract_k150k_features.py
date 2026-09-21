@@ -9,12 +9,15 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_k150k_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     # Return the cached module if it is already registered under this name.
     # Without this guard, re-executing exec_module() at collection time replaces
     # sys.modules["extract_k150k_features"] with a new module object.  Any test
@@ -36,11 +39,13 @@ def _load_module():
 K150K = _load_module()
 
 
-def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: Path) -> None:
+def test_cuda_feature_passes_split_gpu_and_cpu_residual(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """CUDA pass: vmaf_v0.6.1 model dispatched on CUDA leg; vmaf key non-NaN."""
     calls: list[list[str]] = []
 
-    def fake_run(cmd, **_kwargs):
+    def fake_run(cmd: Any, **_kwargs: Any) -> Any:
         calls.append([str(part) for part in cmd])
         out = Path(cmd[cmd.index("--output") + 1])
         names = [cmd[idx + 1] for idx, part in enumerate(cmd) if part == "--feature"]
@@ -71,7 +76,7 @@ def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: P
             metrics["cambi"] = 0.1
             assert "--no_cuda" in cmd
         out.write_text(json.dumps({"frames": [{"metrics": metrics}]}), encoding="utf-8")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        return subprocess.CompletedProcess[str](args=cmd, returncode=0)
 
     monkeypatch.setattr(K150K.subprocess, "run", fake_run)
 
@@ -96,11 +101,13 @@ def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: P
     assert merged["cambi"] == 0.1
 
 
-def test_cpu_feature_pass_uses_generic_extractors(monkeypatch, tmp_path: Path) -> None:
+def test_cpu_feature_pass_uses_generic_extractors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """CPU pass: vmaf_v0.6.1 model dispatched; vmaf key non-NaN in output."""
     calls: list[list[str]] = []
 
-    def fake_run(cmd, **_kwargs):
+    def fake_run(cmd: Any, **_kwargs: Any) -> Any:
         calls.append([str(part) for part in cmd])
         out = Path(cmd[cmd.index("--output") + 1])
         names = [cmd[idx + 1] for idx, part in enumerate(cmd) if part == "--feature"]
@@ -112,7 +119,7 @@ def test_cpu_feature_pass_uses_generic_extractors(monkeypatch, tmp_path: Path) -
             f"version={K150K.DEFAULT_MODEL}" in model_args
         ), f"--model {K150K.DEFAULT_MODEL} must be present"
         out.write_text(json.dumps({"frames": [{"metrics": {"vmaf": 83.2}}]}), encoding="utf-8")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        return subprocess.CompletedProcess[str](args=cmd, returncode=0)
 
     monkeypatch.setattr(K150K.subprocess, "run", fake_run)
 
@@ -133,11 +140,13 @@ def test_cpu_feature_pass_uses_generic_extractors(monkeypatch, tmp_path: Path) -
     assert frames == [{"vmaf": 83.2}]
 
 
-def test_vmaf_column_non_nan_in_aggregated_output(monkeypatch, tmp_path: Path) -> None:
+def test_vmaf_column_non_nan_in_aggregated_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """End-to-end: vmaf_mean and vmaf_std are non-NaN when model is dispatched."""
     import numpy as np
 
-    def fake_run(cmd, **_kwargs):
+    def fake_run(cmd: Any, **_kwargs: Any) -> Any:
         out = Path(cmd[cmd.index("--output") + 1])
         out.write_text(
             json.dumps(
@@ -151,7 +160,7 @@ def test_vmaf_column_non_nan_in_aggregated_output(monkeypatch, tmp_path: Path) -
             ),
             encoding="utf-8",
         )
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        return subprocess.CompletedProcess[str](args=cmd, returncode=0)
 
     monkeypatch.setattr(K150K.subprocess, "run", fake_run)
 
@@ -335,7 +344,9 @@ def test_write_extraction_manifest_records_run_provenance(tmp_path: Path) -> Non
     assert payload["run_provenance"]["outputs"]["parquet"]["exists"] is True
 
 
-def test_duplicate_video_name_in_scores_aborts(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_duplicate_video_name_in_scores_aborts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     # zip(strict=True) only checks equal length, NOT key uniqueness, so two
     # rows with the same video_name would silently collapse the MOS map and
     # drop one clip's label. main() must detect duplicate keys and abort with

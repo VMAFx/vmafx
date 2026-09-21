@@ -400,10 +400,10 @@ def run_encode(
     """
     cmd = build_ffmpeg_command(req, ffmpeg_bin=ffmpeg_bin)
     runner_fn = encoder_runner or runner or subprocess.run
+    if not callable(runner_fn):
+        raise TypeError("runner must be callable")
     started = time.monotonic()
-    completed = runner_fn(  # type: ignore[operator]
-        cmd, capture_output=True, text=True, check=False
-    )
+    completed = runner_fn(cmd, capture_output=True, text=True, check=False)
     elapsed_ms = (time.monotonic() - started) * 1000.0
 
     stderr = getattr(completed, "stderr", "") or ""
@@ -465,7 +465,7 @@ _PROBE_CACHE: dict[tuple[str, str], str] = {}
 # encoder was compiled in. ADR-0498 follow-up #7 extends this set to
 # cover x265 and libvpx so the ``EncoderInfo.codec_detected`` field is
 # populated for all three software encoder families.
-_VERSION_PROBE_PATTERNS: dict[str, re.Pattern] = {
+_VERSION_PROBE_PATTERNS: dict[str, re.Pattern[str]] = {
     "libx264": re.compile(r"--enable-libx264"),
     "libsvtav1": re.compile(r"--enable-libsvtav1"),
     "libx265": re.compile(r"--enable-libx265"),
@@ -517,10 +517,10 @@ def _probe_encoder_version_from_ffmpeg(ffmpeg_bin: str, encoder: str, runner_fn:
     key = (ffmpeg_bin, encoder)
     if key in _PROBE_CACHE:
         return _PROBE_CACHE[key]
+    if not callable(runner_fn):
+        raise TypeError("runner must be callable")
     try:
-        completed = runner_fn(  # type: ignore[operator]
-            [ffmpeg_bin, "-version"], capture_output=True, text=True, check=False
-        )
+        completed = runner_fn([ffmpeg_bin, "-version"], capture_output=True, text=True, check=False)
     except (OSError, ValueError):
         _PROBE_CACHE[key] = ""
         return ""
@@ -686,7 +686,9 @@ def run_encode_with_stats(
     try:
         cmd = build_pass1_stats_command(req, prefix, ffmpeg_bin=ffmpeg_bin)
         runner_fn = runner or subprocess.run
-        runner_fn(cmd, capture_output=True, text=True, check=False)  # type: ignore[operator]
+        if not callable(runner_fn):
+            raise TypeError("runner must be callable")
+        runner_fn(cmd, capture_output=True, text=True, check=False)
         stats_path = _stats_file_for(prefix)
         frames = tuple(parse_stats_file(stats_path))
         cleanup.append(stats_path)

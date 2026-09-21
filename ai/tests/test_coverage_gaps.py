@@ -74,8 +74,9 @@ def test_aiutils_init_getattr_raises_for_unknown() -> None:
     """__getattr__ re-raises AttributeError for non-parquet unknown names."""
     import aiutils
 
+    missing_name = "nonexistent_function_xyz"
     with pytest.raises(AttributeError, match="no attribute"):
-        _ = aiutils.nonexistent_function_xyz  # type: ignore[attr-defined]
+        _ = getattr(aiutils, missing_name)
 
 
 # ---------------------------------------------------------------------------

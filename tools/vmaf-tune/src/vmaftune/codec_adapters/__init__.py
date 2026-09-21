@@ -63,29 +63,50 @@ class CodecAdapter(Protocol):
     one-PR-at-a-time without touching the search loop.
     """
 
-    name: str
-    encoder: str
-    quality_knob: str
-    quality_range: tuple[int, int]
-    quality_default: int
-    invert_quality: bool
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def encoder(self) -> str: ...
+
+    @property
+    def quality_knob(self) -> str: ...
+
+    @property
+    def quality_range(self) -> tuple[int, int]: ...
+
+    @property
+    def quality_default(self) -> int: ...
+
+    @property
+    def invert_quality(self) -> bool: ...
+
     # The encoder's named preset tuple — e.g. ``("ultrafast", "fast",
     # "medium", "slow", "veryslow")`` for x264 — surfaced through the
     # ladder / sampler default-preset picker (see ``ladder.py``).
     # Every concrete adapter declares this; promoting it to the Protocol
     # so callers like ``_default_sampler_preset`` typecheck without
     # ``getattr`` indirection.
-    presets: tuple[str, ...]
+    @property
+    def presets(self) -> tuple[str, ...]: ...
+
     # Bumps when the adapter's argv shape / preset list / quality
     # window changes — see ADR-0298 (vmaf-tune cache key).
-    adapter_version: str
+    @property
+    def adapter_version(self) -> str: ...
 
     # Predictor probe-encode knobs (see _gop_common docstring).
     # The per-shot predictor consumes these to run one fast probe encode
     # per shot and read its bitrate as the complexity barometer.
-    probe_preset: str
-    probe_quality: int
-    supports_qpfile: bool
+    @property
+    def probe_preset(self) -> str: ...
+
+    @property
+    def probe_quality(self) -> int: ...
+
+    @property
+    def supports_qpfile(self) -> bool: ...
+
     # ADR-0332: opt-in to the pass-1 stats-file capture path. True
     # iff the encoder writes a parseable per-frame stats file under
     # ``-pass 1 -passlogfile <prefix>``. Software encoders that
@@ -97,7 +118,8 @@ class CodecAdapter(Protocol):
     # packet parser is contributed. The ``encoder_stats`` module
     # normalises both x264 and x265 text formats via their field
     # aliases (``q-aq``, ``icu``, ``pcu``, ``scu``).
-    supports_encoder_stats: bool
+    @property
+    def supports_encoder_stats(self) -> bool: ...
 
     # Phase F (ADR-0333). Adapters that opt into 2-pass encoding set
     # ``supports_two_pass = True`` AND override
@@ -105,7 +127,8 @@ class CodecAdapter(Protocol):
     # tuple) keeps single-pass adapters single-pass; the encode
     # driver detects the flag and falls back gracefully when
     # ``--two-pass`` is requested against a non-supporting codec.
-    supports_two_pass: bool
+    @property
+    def supports_two_pass(self) -> bool: ...
 
     def ffmpeg_codec_args(self, preset: str, quality: int) -> list[str]:
         """FFmpeg ``-c:v ...`` argv slice for one encode."""

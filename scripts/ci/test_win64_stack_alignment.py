@@ -76,7 +76,7 @@ XMM_ONLY = """
 """
 
 
-def test_flags_unrealigned_zmm_spill():
+def test_flags_unrealigned_zmm_spill() -> None:
     findings = gate.scan_disassembly(BROKEN)
     assert len(findings) == EXPECTED_BROKEN_FINDINGS, findings
     assert all(fn == "ssim_accumulate_avx512" for fn, _ in findings)
@@ -85,25 +85,25 @@ def test_flags_unrealigned_zmm_spill():
     assert any("0x1a0(%rsp),%zmm28" in insn for _, insn in findings)
 
 
-def test_accepts_frame_realignment():
+def test_accepts_frame_realignment() -> None:
     assert gate.scan_disassembly(REALIGNED) == []
 
 
-def test_accepts_rounded_scratch_pointer():
+def test_accepts_rounded_scratch_pointer() -> None:
     """gcc's other correct idiom: round a pointer inside an oversized frame."""
     assert gate.scan_disassembly(POINTER_ROUNDED) == []
 
 
-def test_accepts_fixed_function():
+def test_accepts_fixed_function() -> None:
     assert gate.scan_disassembly(FIXED) == []
 
 
-def test_ignores_128_bit_saves():
+def test_ignores_128_bit_saves() -> None:
     """16-byte alignment is exactly what the MS x64 ABI guarantees."""
     assert gate.scan_disassembly(XMM_ONLY) == []
 
 
-def test_realignment_does_not_leak_into_the_next_function():
+def test_realignment_does_not_leak_into_the_next_function() -> None:
     """A realigned frame must not excuse the function that follows it."""
     findings = gate.scan_disassembly(REALIGNED + BROKEN)
     assert len(findings) == EXPECTED_BROKEN_FINDINGS, findings

@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -99,7 +100,7 @@ def _run_vmaf(
     features: tuple[str, ...],
     *,
     timeout_s: float = _VMAF_RUN_TIMEOUT_S,
-) -> dict:
+) -> dict[str, Any]:
     feat_args: list[str] = []
     for f in _extractors_for(features):
         feat_args += ["--feature", f]
@@ -132,21 +133,27 @@ def _run_vmaf(
         # Encoding is pinned to UTF-8 so the JSON parse does not depend on
         # the calling process's locale.
         subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout_s)
-        return json.loads(out_path.read_text(encoding="utf-8"))
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
+            raise ValueError("vmaf JSON output must be an object with string keys")
+        return payload
     finally:
         out_path.unlink(missing_ok=True)
 
 
-def _lookup_feature(metrics: dict, name: str) -> float | None:
+def _lookup_feature(metrics: dict[str, Any], name: str) -> float | None:
     """vmaf's integer kernels emit `integer_<name>` in JSON; accept either.
 
     Trying the unprefixed name first keeps backwards compatibility with
     any upstream JSON we might consume, and the `integer_` fallback
     matches the shipping CPU path where only the fixed-point kernels run.
     """
-    if name in metrics:
-        return metrics[name]
-    return metrics.get(f"integer_{name}")
+    value = metrics.get(name, metrics.get(f"integer_{name}"))
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"feature {name!r} must be numeric; got {type(value).__name__}")
+    return float(value)
 
 
 def dump_features(
@@ -155,16 +162,23 @@ def dump_features(
     vmaf_binary: Path = DEFAULT_VMAF_BINARY,
     features: tuple[str, ...] = DEFAULT_FEATURES,
 ) -> Path:
-    rows: list[dict] = []
+    rows: list[dict[str, object]] = []
     for e in entries:
         doc = _run_vmaf(vmaf_binary, e, features)
-        for frame in doc.get("frames", []):
+        frames = doc.get("frames", [])
+        if not isinstance(frames, list):
+            raise ValueError("vmaf JSON field 'frames' must be a list")
+        for frame in frames:
+            if not isinstance(frame, dict) or not all(isinstance(key, str) for key in frame):
+                raise ValueError("each vmaf JSON frame must be an object with string keys")
             row: dict[str, object] = {
                 "key": e.key,
                 "frame": frame.get("frameNum"),
                 "mos": e.mos,
             }
             fmetrics = frame.get("metrics", {})
+            if not isinstance(fmetrics, dict) or not all(isinstance(key, str) for key in fmetrics):
+                raise ValueError("each vmaf JSON frame metrics field must be an object")
             for f in features:
                 row[f] = _lookup_feature(fmetrics, f)
             rows.append(row)

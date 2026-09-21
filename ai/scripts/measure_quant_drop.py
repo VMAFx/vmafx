@@ -50,7 +50,10 @@ DEFAULT_BUDGET_PLCC = 0.01
 
 
 def _load_registry() -> dict[str, Any]:
-    return json.loads(REGISTRY.read_text())
+    payload: object = json.loads(REGISTRY.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError(f"registry root must be an object: {REGISTRY}")
+    return {str(key): value for key, value in payload.items()}
 
 
 def _onnx_paths_for(entry: dict[str, Any]) -> tuple[Path, Path]:

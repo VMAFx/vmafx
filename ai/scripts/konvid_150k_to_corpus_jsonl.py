@@ -42,11 +42,17 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -304,8 +310,8 @@ def run(
     ffprobe_bin: str = "ffprobe",
     curl_bin: str = "curl",
     corpus_version: str = _DEFAULT_CORPUS_VERSION,
-    runner=subprocess.run,
-    now_fn=utc_now_iso,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    now_fn: Callable[[], str] = utc_now_iso,
     attrition_warn_threshold: float = 0.10,
     download_timeout_s: int = 120,
     min_csv_rows: int = _KONVID_150K_MIN_ROWS,

@@ -42,49 +42,30 @@ message; activate the environment used for installation.
 
 ## Python push scope
 
-The `mypy-local` hook implements the touched-file rule in
-[`AGENTS.md` §12.10](../../AGENTS.md): every added, copied, modified,
-renamed or type-changed `*.py` path under `ai/` and `scripts/` in
-`git diff origin/master...HEAD` is checked. Deleted paths are omitted.
-The strict settings in `pyproject.toml` still apply. Fetch `origin/master`
-before validating a rebased branch; a missing merge base blocks the push.
+The `mypy-local` hook implements [ADR-1279](../adr/1279-mypy-fail-closed.md):
+every tracked `.py` and `.pyi` path below `ai/` and `scripts/` is checked under
+strict Python 3.14 semantics on every push. It does not read a merge base or
+pre-commit's old-tip/new-tip file list. A one-line branch and a documentation
+branch therefore run the same owned scope as hosted `Python Lint` and
+`make lint-py`.
 
-The hook runs once on every push and derives this complete set itself.
-Pre-commit's old-remote-tip/new-tip file list can include unrelated changes
-from master and omit an unchanged branch-owned file whose imports changed
-after a rebase. Neither omission may narrow the check. This does not expand
-the explicit file policy to other Python packages or unchanged master files.
-Mypy's normal import checking still applies to the selected sources.
+The runner partitions files by runtime import root and passes
+`--explicit-package-bases`, so a file is never analysed once as a bare script
+and again as an `ai.*` package. Mypy's normal import following still applies;
+an owned script cannot hide an error in a repository package it imports.
 
 ### What makes the hook fail
 
-The hook reports only findings the branch introduces
-([ADR-1261](../adr/1261-mypy-pre-push-delta-gate.md)). It checks the selected
-files, then checks the same files again as they are at the merge base in a
-disposable worktree, and lists what is new. Line numbers are left out of the
-comparison, so inserting a line above an existing finding does not make it
-look new. The output ends with a count of the findings that were inherited and
-therefore not reported.
+Any mypy diagnostic blocks the push, including one in an unchanged owned file.
+Missing Git, missing mypy, an empty source set, a missing tracked file, or an
+internal checker failure also blocks. There is no diagnostic baseline,
+merge-base subtraction, missing-import exemption, or advisory exit path.
 
-Two consequences worth knowing:
+Install the same typed environment as hosted CI:
 
-- A file that already fails still fails for its own reasons, and you may edit
-  it. Adding a *different* finding to it is reported; the ones that were
-  already there are not.
-- A non-zero exit with nothing to attribute to a file is treated as mypy
-  breaking, and blocks the push.
-
-The reason for the delta is that `mypy` in CI is advisory
-(`|| echo "mypy advisory only on first run"` in the `Python Lint` job) because
-numpy, pandas and torch stub coverage is uneven, so how many findings a
-checkout reports depends on which of those packages it has installed. A
-blocking local hook that reported all of them rejected findings that `master`
-produces on its own files.
-
-Files under `ai/src/` are checked in a separate run with
-`--explicit-package-bases`. That directory is a `mypy_path` base, so without
-the flag mypy sees each file under two module names and refuses the run
-outright.
+```bash
+python3 -m pip install -e './ai[dev]' -e ./tools/vmaf-tune
+```
 
 Run the same check manually from the repository root:
 
@@ -92,12 +73,10 @@ Run the same check manually from the repository root:
 python3 scripts/git-hooks/pre-push-mypy.py
 ```
 
-The checked-out HEAD must match the outgoing commit supplied by pre-commit;
-push a different branch from its own checkout. Missing Git, mypy or selected
-files blocks validation. Internal symlinks retain their Git filename for
-selection and checking; their target must resolve to an existing regular file
-inside the checkout. External, dangling, looping or directory targets fail.
-The command always derives its own scope; filename arguments do not narrow it.
+Tracked internal symlinks retain their Git filename for checking; their target
+must resolve to an existing regular file inside the checkout. External,
+dangling, looping, or directory targets fail. The command always derives its
+own complete scope; filename arguments are rejected rather than narrowing it.
 
 ## Existing hooks and migration
 
@@ -159,10 +138,12 @@ framework migration, legacy hooks, native mode, and the rebase guard.
 The required `Pre-Commit` CI job runs the same fixture before the normal
 file checks. `make lint-sh` also runs it.
 
-The mypy fixture exercises a real rebase and the installed pre-commit
-framework, including an empty outgoing file list, type changes, safe and
-unsafe symlinks, ref mismatches and missing prerequisites. Its registered
-pre-commit/pre-push check also runs in required `Pre-Commit` CI.
+The mypy fixture creates a disposable Git repository and proves that every
+tracked owned source is checked, an inherited diagnostic still blocks,
+package-root invocations use explicit bases, filename arguments cannot narrow
+scope, checker/setup failures block, and Make, pre-push, hosted CI, and the
+strict configuration remain coupled. Its registered pre-commit/pre-push
+contract check also runs in required `Pre-Commit` CI.
 
 See [ADR-1241](../adr/1241-worktree-hook-dispatch.md) and the
 [research digest](../research/1241-worktree-hook-dispatch.md).

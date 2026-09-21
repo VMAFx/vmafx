@@ -22,7 +22,7 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import torch
@@ -63,7 +63,7 @@ class SGDEMAConfig:
     min_samples_per_checkpoint: int = 1_000
     """Minimum new samples required before exporting a checkpoint."""
 
-    extra: dict = field(default_factory=dict)  # forward-compat catch-all
+    extra: dict[str, Any] = field(default_factory=dict)  # forward-compat catch-all
 
 
 class SGDEMATrainer:
@@ -203,7 +203,7 @@ class SGDEMATrainer:
                 os.close(tmp_fd)
                 torch.onnx.export(
                     self._ema_model,
-                    dummy,
+                    (dummy,),
                     tmp_path,
                     opset_version=opset,
                     input_names=["features"],
@@ -270,7 +270,7 @@ class SGDEMATrainer:
     def _warmup_fraction(self) -> float:
         return min(1.0, (self._step_count + 1) / max(self._cfg.warmup_steps, 1))
 
-    def state_dict(self) -> dict:
+    def state_dict(self) -> dict[str, Any]:
         """Serialisable trainer state for pause/resume (not full checkpoint)."""
         return {
             "step_count": self._step_count,
@@ -281,7 +281,7 @@ class SGDEMATrainer:
             "optimizer": self._opt.state_dict(),
         }
 
-    def load_state_dict(self, state: dict) -> None:
+    def load_state_dict(self, state: dict[str, Any]) -> None:
         with self._lock:
             self._step_count = state["step_count"]
             self._samples_since_ckpt = state["samples_since_ckpt"]

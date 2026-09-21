@@ -118,8 +118,9 @@ def test_manifest_entry_is_frozen() -> None:
     # type='frozen_instance'.  dataclasses.FrozenInstanceError is an
     # AttributeError subclass and was the right check before the migration
     # to pydantic in PR #506 (ADR-0934).
+    frozen_field = "key"
     with pytest.raises(ValidationError):
-        entry.key = "other"  # type: ignore[misc]
+        setattr(entry, frozen_field, "other")
 
 
 def test_manifest_entry_mos_defaults_to_none() -> None:

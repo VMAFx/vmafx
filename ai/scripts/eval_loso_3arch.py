@@ -26,6 +26,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -36,12 +37,20 @@ sys.path.insert(0, str(REPO_ROOT))
 
 # Reuse the existing helpers — same constants, same load_session
 # external-data workaround, same per-clip cache loader.
-from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session  # noqa: E402
+if TYPE_CHECKING:
+    from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
+else:
+    try:
+        from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
+    except ModuleNotFoundError:
+        from eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session
 
 ARCHS = ("mlp_small", "mlp_medium", "linear")
 
 
-def _eval_arch(arch: str, loso_dir: Path, clip_xy: dict) -> dict:
+def _eval_arch(
+    arch: str, loso_dir: Path, clip_xy: dict[str, tuple[np.ndarray, np.ndarray]]
+) -> dict[str, Any]:
     """Score @p arch's 9 fold ONNXs on their respective held-out clips."""
     per_fold: dict[str, dict[str, float]] = {}
     plccs, sroccs, rmses = [], [], []
@@ -82,7 +91,7 @@ def _eval_arch(arch: str, loso_dir: Path, clip_xy: dict) -> dict:
     return {"per_fold": per_fold, "aggregate": aggregate}
 
 
-def _markdown(report: dict) -> str:
+def _markdown(report: dict[str, Any]) -> str:
     lines = ["# 3-arch LOSO evaluation — Netflix corpus\n"]
     lines.append(f"Generated: {report['generated']}\n")
     lines.append(f"Corpus: `{report['corpus']}`\n")
@@ -114,7 +123,7 @@ def _markdown(report: dict) -> str:
                 lines.append(f"| {clip} | — | — | — | — |")
                 continue
             lines.append(
-                f"| {clip} | {m['n']} | " f"{m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
+                f"| {clip} | {m['n']} | {m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
             )
     return "\n".join(lines) + "\n"
 
@@ -163,7 +172,7 @@ def main() -> int:
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
-    report: dict = {
+    report: dict[str, Any] = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "corpus": str(args.data_root),
         "archs": {},

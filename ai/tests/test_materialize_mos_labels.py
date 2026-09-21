@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,12 +21,12 @@ sys.modules["materialize_mos_labels"] = mos_labels
 _SPEC.loader.exec_module(mos_labels)
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> Path:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
     path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
     return path
 
 
-def _read_jsonl(path: Path) -> list[dict]:
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 

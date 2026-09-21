@@ -31,7 +31,18 @@ class _ResBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.block(x)
+        residual: torch.Tensor = self.block(x)
+        return x + residual
+
+
+def _tensor_pair(batch: object) -> tuple[torch.Tensor, torch.Tensor]:
+    """Validate Lightning's dynamically supplied two-tensor batch."""
+    if not isinstance(batch, (tuple, list)) or len(batch) != 2:
+        raise TypeError("LearnedFilter expects a two-item (degraded, clean) batch")
+    degraded, clean = batch
+    if not isinstance(degraded, torch.Tensor) or not isinstance(clean, torch.Tensor):
+        raise TypeError("LearnedFilter batch items must both be torch.Tensor instances")
+    return degraded, clean
 
 
 class LearnedFilter(L.LightningModule):
@@ -56,19 +67,21 @@ class LearnedFilter(L.LightningModule):
         self.exit = nn.Conv2d(width, channels, 3, padding=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        residual = self.exit(self.body(self.entry(x)))
+        entry: torch.Tensor = self.entry(x)
+        body: torch.Tensor = self.body(entry)
+        residual: torch.Tensor = self.exit(body)
         return torch.clamp(x + residual, 0.0, 1.0)
 
     def training_step(self, batch: object, _idx: int) -> torch.Tensor:
-        deg, clean = batch  # type: ignore[misc]
-        out = self(deg)
+        deg, clean = _tensor_pair(batch)
+        out = self.forward(deg)
         loss = nn.functional.l1_loss(out, clean)
         self.log("train/l1", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch: object, _idx: int) -> None:
-        deg, clean = batch  # type: ignore[misc]
-        out = self(deg)
+        deg, clean = _tensor_pair(batch)
+        out = self.forward(deg)
         self.log("val/l1", nn.functional.l1_loss(out, clean), prog_bar=True, on_epoch=True)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:

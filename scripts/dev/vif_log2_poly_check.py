@@ -42,6 +42,8 @@ reproduce 32,768 independent integer outputs to the LSB.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 
@@ -59,7 +61,7 @@ def reference_table() -> np.ndarray:
     return table
 
 
-def fit_minimax_log2(degree: int, samples: int = 4096) -> np.ndarray:
+def fit_minimax_log2(degree: int, samples: int = 4096) -> np.polynomial.chebyshev.Chebyshev:
     """Fit a polynomial p(x) ~= log2(x) on x in [32768, 65536].
 
     Uses Chebyshev least-squares on the same domain — minimax in the
@@ -73,12 +75,16 @@ def fit_minimax_log2(degree: int, samples: int = 4096) -> np.ndarray:
     return np.polynomial.chebyshev.Chebyshev.fit(t, y, deg=degree)
 
 
-def evaluate_poly_table(cheb, domain_lo: int, domain_hi: int) -> np.ndarray:
+def evaluate_poly_table(
+    cheb: np.polynomial.chebyshev.Chebyshev,
+    domain_lo: int,
+    domain_hi: int,
+) -> np.ndarray:
     """Quantise the polynomial in the same way as `log_generate()`."""
     a, b = float(domain_lo), float(domain_hi - 1)
     idx = np.arange(domain_lo, domain_hi, dtype=np.uint32)
     t = (2.0 * idx.astype(np.float64) - (a + b)) / (b - a)
-    poly_log2 = cheb(t).astype(np.float64)
+    poly_log2 = np.asarray(cheb(t), dtype=np.float64)
     # Mirror the C: cast to float32, multiply by 2048 in float32, round.
     poly_f32 = poly_log2.astype(np.float32)
     scaled = (poly_f32 * np.float32(2048.0)).astype(np.float32)
@@ -86,7 +92,7 @@ def evaluate_poly_table(cheb, domain_lo: int, domain_hi: int) -> np.ndarray:
     return rounded.astype(np.uint16)
 
 
-def report(degree: int) -> dict:
+def report(degree: int) -> dict[str, Any]:
     table = reference_table()
     cheb = fit_minimax_log2(degree)
     poly_vals = evaluate_poly_table(cheb, 32768, 65536)

@@ -46,12 +46,17 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import onnx
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    import lpips
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -64,6 +69,10 @@ class _LpipsImagenetWrapper(nn.Module):
     The C side only has to produce ImageNet-normalised tensors (it does,
     via :c:func:`vmaf_tensor_from_rgb_imagenet`).
     """
+
+    core: "lpips.LPIPS"
+    in_mean: torch.Tensor
+    in_std: torch.Tensor
 
     def __init__(self, net: str = "squeeze") -> None:
         super().__init__()
@@ -89,7 +98,7 @@ class _LpipsImagenetWrapper(nn.Module):
         ref_m11 = self._denorm(ref)
         dist_m11 = self._denorm(dist)
         # LPIPS returns [N,1,1,1] — squeeze trailing dims to a scalar per item.
-        d = self.core(ref_m11, dist_m11, normalize=False, retPerLayer=False)
+        d: torch.Tensor = self.core(ref_m11, dist_m11, normalize=False, retPerLayer=False)
         return d.reshape(-1)
 
 
@@ -185,10 +194,10 @@ def _write_sidecar(
     opset: int,
     *,
     sidecar_path: Path | None = None,
-    run_provenance: dict | None = None,
+    run_provenance: Mapping[str, object] | None = None,
 ) -> Path:
     sidecar = sidecar_path if sidecar_path is not None else onnx_path.with_suffix(".json")
-    payload: dict = {
+    payload: dict[str, object] = {
         "input_name": "ref",
         "kind": "fr",
         "name": "vmaf_tiny_lpips_sq_v1",
@@ -242,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     # Build run_provenance lazily so aiutils import errors surface only when
     # the sidecar is actually written (keeps the module importable without aiutils).
-    run_provenance: dict | None = None
+    run_provenance: Mapping[str, object] | None = None
     try:
         _ai_src = str(script_path.parent / "src")
         if _ai_src not in sys.path:

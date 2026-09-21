@@ -61,12 +61,19 @@ import argparse
 import csv
 import logging
 import os
+import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -240,18 +247,16 @@ def run(
     output: Path,
     ffprobe_bin: str = "ffprobe",
     corpus_version: str = _DEFAULT_CORPUS_VERSION,
-    runner=None,
-    now_fn=utc_now_iso,
+    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    now_fn: Callable[[], str] = utc_now_iso,
 ) -> tuple[int, int, int]:
     """Build the JSONL. Returns ``(written, skipped_broken, dedups)``."""
-    import subprocess as _sp
-
     ingest = KonViD1kIngest(
         konvid_dir=konvid_dir,
         output=output,
         ffprobe_bin=ffprobe_bin,
         corpus_version=corpus_version,
-        runner=runner or _sp.run,
+        runner=runner or subprocess.run,
         now_fn=now_fn,
         max_rows=None,
     )
@@ -335,8 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         # spares users a search through the README.
         if "Corpus directory not found" in str(exc) or "MOS CSV not found" in str(exc):
             print(
-                "hint: download KonViD-1k from "
-                "http://database.mmsp-kn.de/konvid-1k-database.html",
+                "hint: download KonViD-1k from http://database.mmsp-kn.de/konvid-1k-database.html",
                 file=sys.stderr,
             )
         return 2

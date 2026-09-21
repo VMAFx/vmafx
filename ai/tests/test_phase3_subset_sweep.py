@@ -7,16 +7,20 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-import phase3_subset_sweep
+from ai.scripts import phase3_subset_sweep
 
 
-def test_phase3_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_phase3_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     parquet = tmp_path / "features.parquet"
     out = tmp_path / "phase3.json"
     rows = []
@@ -36,7 +40,7 @@ def test_phase3_report_records_run_provenance(monkeypatch, tmp_path: Path) -> No
             )
     pd.DataFrame(rows).to_parquet(parquet)
 
-    def fake_loso_sweep(*_args, **_kwargs):
+    def fake_loso_sweep(*_args: Any, **_kwargs: Any) -> Any:
         return {
             "clip-a": {"plcc": 0.91, "srocc": 0.9, "rmse": 0.2},
             "clip-b": {"plcc": 0.93, "srocc": 0.92, "rmse": 0.3},

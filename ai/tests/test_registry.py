@@ -12,7 +12,7 @@ import pytest
 torch = pytest.importorskip("torch")
 onnx = pytest.importorskip("onnx")
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 

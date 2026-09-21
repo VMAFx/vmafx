@@ -16,10 +16,22 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+from typing import TYPE_CHECKING
 
 import numpy as np
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -283,7 +295,7 @@ def _parse_input(value: str) -> tuple[str | None, Path]:
     return None, Path(value)
 
 
-def _read_table(path: Path):
+def _read_table(path: Path) -> "pd.DataFrame":
     import pandas as pd
 
     suffix = path.suffix.lower()
@@ -321,7 +333,7 @@ def _is_signal_numeric(column: str, target: str | None) -> bool:
     return not METADATA_EXCLUDE_RE.search(column)
 
 
-def _finite_stats(series) -> dict[str, float]:
+def _finite_stats(series: "pd.Series[Any]") -> dict[str, float]:
     values = series.to_numpy(dtype=np.float64, na_value=np.nan)
     finite = values[np.isfinite(values)]
     if finite.size == 0:
@@ -341,14 +353,14 @@ def _finite_stats(series) -> dict[str, float]:
     }
 
 
-def _is_numeric_series(series) -> bool:
+def _is_numeric_series(series: "pd.Series[Any]") -> bool:
     from pandas.api.types import is_numeric_dtype
 
     dtype = series.dropna().infer_objects().dtype
     return bool(is_numeric_dtype(dtype))
 
 
-def _pearson_corr(a, b) -> float:
+def _pearson_corr(a: "pd.Series[Any]", b: "pd.Series[Any]") -> float:
     ax = a.to_numpy(dtype=np.float64, na_value=np.nan)
     bx = b.to_numpy(dtype=np.float64, na_value=np.nan)
     mask = np.isfinite(ax) & np.isfinite(bx)
@@ -361,7 +373,7 @@ def _pearson_corr(a, b) -> float:
     return float(np.corrcoef(x, y)[0, 1])
 
 
-def _spearman_corr(a, b) -> float:
+def _spearman_corr(a: "pd.Series[Any]", b: "pd.Series[Any]") -> float:
     ranked_a = a.rank(method="average")
     ranked_b = b.rank(method="average")
     return _pearson_corr(ranked_a, ranked_b)

@@ -7,10 +7,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from _script_bootstrap import bootstrap_ai_script
+import pytest
+
+from ai.scripts._script_bootstrap import bootstrap_ai_script
 
 
-def test_bootstrap_returns_expected_repo_paths(monkeypatch) -> None:
+def test_bootstrap_returns_expected_repo_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "dummy.py"
     monkeypatch.setattr(sys, "path", [])
 
@@ -34,7 +36,7 @@ def test_bootstrap_returns_expected_repo_paths(monkeypatch) -> None:
     assert str(paths.vmaf_tune_src) in sys.path
 
 
-def test_bootstrap_does_not_duplicate_paths(monkeypatch) -> None:
+def test_bootstrap_does_not_duplicate_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "dummy.py"
     repo_root = Path(__file__).resolve().parents[2]
     ai_src = repo_root / "ai" / "src"

@@ -22,6 +22,7 @@ import json
 import sys
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI_SRC = REPO_ROOT / "ai" / "src"
@@ -37,7 +38,7 @@ PREFIX = "vp9_compressed_videos/"
 SUFFIXES = ("orig", "cbr", "vod", "vodlb")
 
 
-def _list_bucket(prefix: str) -> list[dict]:
+def _list_bucket(prefix: str) -> list[dict[str, Any]]:
     url = f"{GCS_LIST_URL}?prefix={prefix}&maxResults=5000&fields=items(name,size)"
     # Defensive scheme guard — see fetch_konvid_1k.py for rationale (bandit B310).
     if not url.startswith("https://"):
@@ -45,11 +46,16 @@ def _list_bucket(prefix: str) -> list[dict]:
     # nosec B310: scheme is restricted to https above; URL is built from
     # the hardcoded GCS_LIST_URL module constant.
     with urllib.request.urlopen(url) as resp:  # nosec B310
-        data = json.loads(resp.read().decode())
-    return data.get("items", [])
+        data: object = json.loads(resp.read().decode())
+    if not isinstance(data, dict):
+        raise ValueError("GCS list response must be a JSON object")
+    items = data.get("items", [])
+    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+        raise ValueError("GCS list response 'items' must be a list of objects")
+    return [{str(key): value for key, value in item.items()} for item in items]
 
 
-def _group_by_stem(items: list[dict]) -> dict[str, list[tuple[str, int]]]:
+def _group_by_stem(items: list[dict[str, Any]]) -> dict[str, list[tuple[str, int]]]:
     groups: dict[str, list[tuple[str, int]]] = {}
     for it in items:
         n = it["name"].split("/")[-1]

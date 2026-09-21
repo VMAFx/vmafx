@@ -25,13 +25,18 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import torch
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.file_utils import sha256 as sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Guard the pytorch_lightning → torchmetrics → torchvision import chain.
@@ -58,7 +63,7 @@ C2_INPUT_HW = 224
 C3_INPUT_HW = 224
 
 
-def _load_lightning_ckpt(model_cls, ckpt: Path):  # type: ignore[no-untyped-def]
+def _load_lightning_ckpt(model_cls: type["torch.nn.Module"], ckpt: Path) -> "torch.nn.Module":
     import torch
 
     # nosec B614: Lightning checkpoints store hyper_parameters as plain
@@ -73,9 +78,9 @@ def _load_lightning_ckpt(model_cls, ckpt: Path):  # type: ignore[no-untyped-def]
     return model.eval()
 
 
-def _export_one(  # type: ignore[no-untyped-def]
+def _export_one(
     *,
-    model,
+    model: "torch.nn.Module",
     onnx_path: Path,
     in_shape: tuple[int, ...],
     input_name: str,
@@ -100,7 +105,7 @@ def _write_sidecar(
     kind: str,
     notes: str,
     *,
-    run_provenance: dict[str, object] | None = None,
+    run_provenance: Mapping[str, object] | None = None,
 ) -> Path:
     sidecar = TINY_DIR / f"{model_id}.json"
     payload = {
@@ -121,9 +126,21 @@ def _update_registry(*entries: dict[str, object]) -> None:
     if not REGISTRY.exists():
         sys.exit(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
-    by_id: dict[str, dict] = {m["id"]: m for m in doc.get("models", [])}
+    models: object = doc.get("models", [])
+    if not isinstance(models, list) or not all(isinstance(model, dict) for model in models):
+        raise ValueError(f"{REGISTRY}: models must be a list of objects")
+    by_id: dict[str, dict[str, Any]] = {}
+    for raw_model in models:
+        model = {str(key): value for key, value in raw_model.items()}
+        model_id = model.get("id")
+        if not isinstance(model_id, str):
+            raise ValueError(f"{REGISTRY}: every model needs a string id")
+        by_id[model_id] = model
     for e in entries:
-        by_id[e["id"]] = e
+        model_id = e.get("id")
+        if not isinstance(model_id, str):
+            raise ValueError("registry entry id must be a string")
+        by_id[model_id] = dict(e)
     doc["models"] = sorted(by_id.values(), key=lambda m: m["id"])
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 

@@ -28,6 +28,7 @@ import dataclasses
 import sys
 from collections.abc import Mapping
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 # pyyaml is universally available on the project's CI images and
@@ -36,10 +37,13 @@ from typing import Any
 # than an opaque ImportError on script startup. The gate scripts pass
 # a ``None`` table when calibration cannot load — the lookup falls
 # back to the existing per-feature default in that case.
+yaml: ModuleType | None
 try:
-    import yaml  # type: ignore[import-untyped]
+    import yaml as yaml_module
 except ImportError:  # pragma: no cover - exercised only when pyyaml absent
-    yaml = None  # type: ignore[assignment]
+    yaml = None
+else:
+    yaml = yaml_module
 
 
 DEFAULT_CALIBRATION_PATH = Path(__file__).parent / "gpu_ulp_calibration.yaml"
@@ -154,7 +158,7 @@ def _coerce_features(raw: Any) -> Mapping[str, float]:
     return out
 
 
-def parse_table(payload: Mapping[str, Any]) -> CalibrationTable:
+def parse_table(payload: object) -> CalibrationTable:
     """Build a ``CalibrationTable`` from an already-deserialised mapping.
 
     Split out from ``load_calibration_table`` so the unit test can

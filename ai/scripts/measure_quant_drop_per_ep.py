@@ -52,7 +52,11 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+    import onnx
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -80,7 +84,7 @@ SUPPORTED_EPS = (EP_CPU, EP_CUDA, EP_OPENVINO)
 # ---------------------------------------------------------------------------
 
 
-def _load_proto(model_path: Path):
+def _load_proto(model_path: Path) -> "onnx.ModelProto":
     """Load an ONNX proto, fixing the ``mlp_*_final`` location-rename bug.
 
     Returns the in-memory ``onnx.ModelProto`` with all external initialisers
@@ -101,7 +105,7 @@ def _load_proto(model_path: Path):
     return proto
 
 
-def _save_inlined(proto, dest: Path) -> None:
+def _save_inlined(proto: "onnx.ModelProto", dest: Path) -> None:
     """Save a proto with all initialisers inlined (no external data).
 
     Also strips ``value_info`` entries whose names collide with
@@ -151,7 +155,13 @@ class _Runner(abc.ABC):
         self.name = name
 
     @abc.abstractmethod
-    def infer(self, x: Any) -> Any:  # pragma: no cover
+    def infer(self, x: "np.ndarray[Any, Any]") -> "np.ndarray[Any, Any]":  # pragma: no cover
+        ...
+
+    @property
+    @abc.abstractmethod
+    def static_shape(self) -> tuple[int, ...]:
+        """Return the concrete input shape used for deterministic probes."""
         ...
 
 
@@ -175,21 +185,24 @@ class _OrtRunner(_Runner):
         wanted = providers[0]
         if wanted not in used or used[0] != wanted:
             raise RuntimeError(
-                f"requested EP {wanted!r} not engaged for {model_path.name}; "
-                f"providers used: {used}"
+                f"requested EP {wanted!r} not engaged for {model_path.name}; providers used: {used}"
             )
 
-    def infer(self, x):
-        return self._sess.run([self._out_name], {self._in_name: x})[0]
+    def infer(self, x: "np.ndarray[Any, Any]") -> "np.ndarray[Any, Any]":
+        import numpy as np
+
+        return np.asarray(self._sess.run([self._out_name], {self._in_name: x})[0])
 
     @property
-    def static_shape(self):
+    def static_shape(self) -> tuple[int, ...]:
         return self._static_shape
 
 
 class _OpenVinoRunner(_Runner):
     def __init__(self, name: str, model_path: Path, device: str) -> None:
-        import openvino as ov
+        import importlib
+
+        ov = importlib.import_module("openvino")
 
         super().__init__(name)
         # Materialise the proto first to dodge the location-rename bug.
@@ -211,12 +224,14 @@ class _OpenVinoRunner(_Runner):
         in_shape = in_port.partial_shape
         self._static_shape = tuple(d.get_length() if d.is_static else 1 for d in in_shape)
 
-    def infer(self, x):
+    def infer(self, x: "np.ndarray[Any, Any]") -> "np.ndarray[Any, Any]":
+        import numpy as np
+
         result = self._compiled([x])
-        return result[self._out_port]
+        return np.asarray(result[self._out_port])
 
     @property
-    def static_shape(self):
+    def static_shape(self) -> tuple[int, ...]:
         return self._static_shape
 
 

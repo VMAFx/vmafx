@@ -21,14 +21,17 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -118,7 +121,7 @@ def load_mask(path: Path) -> np.ndarray:
     max_value = float(arr.max(initial=0.0))
     if max_value > 1.0:
         arr = arr / max_value
-    return np.clip(arr, 0.0, 1.0)
+    return np.asarray(np.clip(arr, 0.0, 1.0), dtype=np.float32)
 
 
 def mask_to_blocks(mask: np.ndarray, block_size: int, threshold: float) -> np.ndarray:

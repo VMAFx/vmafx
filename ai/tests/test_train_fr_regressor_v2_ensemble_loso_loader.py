@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 pd = pytest.importorskip("pandas")
 np = pytest.importorskip("numpy")
 
-from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402
+from ai.scripts.train_fr_regressor_v2_ensemble_loso import (  # noqa: E402
     CANONICAL_6,
     CODEC_BLOCK_DIM,
     ENCODER_VOCAB,

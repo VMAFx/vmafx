@@ -23,6 +23,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -31,7 +32,12 @@ REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train  # noqa: E402
+if TYPE_CHECKING:
+    import torch
+
+    from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train
+else:
+    from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -46,7 +52,11 @@ def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
 
 
 def _eval_fold(
-    model, mean: np.ndarray, std: np.ndarray, x_val: np.ndarray, y_val: np.ndarray
+    model: "torch.nn.Module",
+    mean: np.ndarray,
+    std: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
 ) -> dict[str, float]:
     import torch
 

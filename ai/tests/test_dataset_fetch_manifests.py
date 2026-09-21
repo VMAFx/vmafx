@@ -7,12 +7,15 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _REPO_ROOT / "ai" / "scripts"
 
 
-def _load_module(name: str):
+def _load_module(name: str) -> Any:
     path = _SCRIPTS / f"{name}.py"
     spec = importlib.util.spec_from_file_location(f"{name}_manifest_test", path)
     assert spec is not None
@@ -22,7 +25,9 @@ def _load_module(name: str):
     return module
 
 
-def test_fetch_youtube_ugc_subset_writes_run_manifest(tmp_path: Path, monkeypatch) -> None:
+def test_fetch_youtube_ugc_subset_writes_run_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module("fetch_youtube_ugc_subset")
 
     bucket_items = [
@@ -73,7 +78,9 @@ def test_fetch_youtube_ugc_subset_writes_run_manifest(tmp_path: Path, monkeypatc
     )
 
 
-def test_fetch_konvid_1k_writes_fetch_manifest(tmp_path: Path, monkeypatch) -> None:
+def test_fetch_konvid_1k_writes_fetch_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module("fetch_konvid_1k")
 
     def fake_download(_url: str, dst: Path, _min_bytes: int) -> Path:

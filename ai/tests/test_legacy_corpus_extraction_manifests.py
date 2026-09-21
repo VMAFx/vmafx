@@ -10,6 +10,7 @@ import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -20,7 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_DIR = _REPO_ROOT / "ai" / "scripts"
 
 
-def _load_module(name: str):
+def _load_module(name: str) -> Any:
     path = _SCRIPT_DIR / f"{name}.py"
     spec = importlib.util.spec_from_file_location(f"{name}_manifest_test", path)
     assert spec is not None and spec.loader is not None
@@ -36,7 +37,9 @@ def _fake_executable(path: Path) -> Path:
     return path
 
 
-def test_extract_full_features_writes_manifest(tmp_path: Path, monkeypatch) -> None:
+def test_extract_full_features_writes_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_module("extract_full_features")
     data_root = tmp_path / "netflix"
     cache_dir = tmp_path / "cache"
@@ -139,7 +142,7 @@ def test_bvi_dvc_jsonl_writes_manifest(tmp_path: Path) -> None:
     assert manifest["run_provenance"]["args"]["preset"] == "8"
 
 
-def test_konvid_vmaf_pairs_writes_manifest(tmp_path: Path, monkeypatch) -> None:
+def test_konvid_vmaf_pairs_writes_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     mod = _load_module("konvid_to_vmaf_pairs")
     root = tmp_path / "konvid-1k"
     videos = root / "KoNViD_1k_videos"
@@ -150,7 +153,7 @@ def test_konvid_vmaf_pairs_writes_manifest(tmp_path: Path, monkeypatch) -> None:
     model.write_text("{}", encoding="utf-8")
     out = tmp_path / "pairs.parquet"
 
-    def fake_process_clip(*args, **_kwargs):
+    def fake_process_clip(*args: Any, **_kwargs: Any) -> Any:
         key = args[0]
         return [
             {

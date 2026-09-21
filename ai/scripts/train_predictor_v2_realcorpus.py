@@ -78,14 +78,17 @@ import os
 import random
 import statistics
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -194,7 +197,7 @@ def _resolve_codecs() -> tuple[str, ...]:
         "av1_qsv",
     )
     try:
-        from vmaftune.predictor import _DEFAULT_COEFFS  # type: ignore[import-not-found]
+        from vmaftune.predictor import _DEFAULT_COEFFS
 
         live = tuple(_DEFAULT_COEFFS.keys())
     except ImportError:
@@ -246,14 +249,14 @@ def discover_corpora(roots: Sequence[Path]) -> list[CorpusFile]:
 # ---------------------------------------------------------------------
 
 
-def load_rows(corpus_files: Sequence[CorpusFile], codec: str) -> list[dict]:
+def load_rows(corpus_files: Sequence[CorpusFile], codec: str) -> list[dict[str, Any]]:
     """Load every row matching ``encoder == codec`` across all corpus files.
 
     Mirrors ``vmaftune.predictor_train.load_corpus`` row filtering but
     accepts a list of files (so multi-corpus runs are explicit) and
     tags each row's ``_source_corpus`` provenance for the report.
     """
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for corpus in corpus_files:
         try:
             fh = corpus.path.open("r", encoding="utf-8")
@@ -294,7 +297,7 @@ def load_rows(corpus_files: Sequence[CorpusFile], codec: str) -> list[dict]:
 # ---------------------------------------------------------------------
 
 
-def row_source(row: dict) -> str:
+def row_source(row: dict[str, Any]) -> str:
     """Stable per-row source identifier used for LOSO partitioning.
 
     The Phase A schema's ``src`` field is the canonical name; we fall
@@ -308,7 +311,7 @@ def row_source(row: dict) -> str:
     return str(row.get("_source_corpus", "unknown"))
 
 
-def source_count(rows: Sequence[dict]) -> int:
+def source_count(rows: Sequence[dict[str, Any]]) -> int:
     return len({row_source(r) for r in rows})
 
 
@@ -318,8 +321,8 @@ def source_count(rows: Sequence[dict]) -> int:
 
 
 def loso_folds(
-    rows: Sequence[dict], n_folds: int = LOSO_FOLD_COUNT, seed: int = 0
-) -> list[tuple[list[dict], list[dict]]]:
+    rows: Sequence[dict[str, Any]], n_folds: int = LOSO_FOLD_COUNT, seed: int = 0
+) -> list[tuple[list[dict[str, Any]], list[dict[str, Any]]]]:
     """Partition ``rows`` into ``n_folds`` (train, val) pairs by source.
 
     Each fold holds out one bucket of distinct sources. When the
@@ -345,7 +348,7 @@ def loso_folds(
     for i, src in enumerate(shuffled):
         buckets[i % n_folds].append(src)
 
-    folds: list[tuple[list[dict], list[dict]]] = []
+    folds: list[tuple[list[dict[str, Any]], list[dict[str, Any]]]] = []
     for i in range(n_folds):
         held_out = set(buckets[i])
         val = [r for r in rows if row_source(r) in held_out]
@@ -368,7 +371,7 @@ def loso_folds(
 def _import_predictor_train() -> Any:
     """Import the PR #450 trainer module if it is on the path."""
     try:
-        from vmaftune import predictor_train  # type: ignore[import-not-found]
+        from vmaftune import predictor_train
 
         return predictor_train
     except ImportError as exc:
@@ -432,8 +435,8 @@ def _ranks(values: Sequence[float]) -> list[float]:
 
 def _train_one_fold(
     codec: str,
-    train_rows: Sequence[dict],
-    val_rows: Sequence[dict],
+    train_rows: Sequence[dict[str, Any]],
+    val_rows: Sequence[dict[str, Any]],
     *,
     epochs: int,
     seed: int,
@@ -451,7 +454,7 @@ def _train_one_fold(
     cfg = pt.TrainConfig(epochs=epochs, seed=seed)
     # Mirror predictor_train.train_one_codec but without the ONNX
     # export / card write — we just need PLCC / SROCC / RMSE per fold.
-    import torch  # type: ignore[import-not-found]
+    import torch
 
     pt._set_seed(cfg.seed)
     x_train = torch.tensor([pt.project_row(r) for r in train_rows], dtype=torch.float32)
@@ -463,7 +466,8 @@ def _train_one_fold(
     pt._set_input_normalisation(model, x_train)
     model.train()
     pt._fit(model, x_train, y_train, cfg)
-    return pt._evaluate(model, x_val, y_val)
+    plcc, srocc, rmse = pt._evaluate(model, x_val, y_val)
+    return float(plcc), float(srocc), float(rmse)
 
 
 # ---------------------------------------------------------------------
@@ -541,7 +545,7 @@ def evaluate_gate(
 
 def train_codec_loso(
     codec: str,
-    rows: Sequence[dict],
+    rows: Sequence[dict[str, Any]],
     *,
     epochs: int = 200,
     seed: int = 42,
@@ -630,7 +634,9 @@ def train_codec_loso(
 # ---------------------------------------------------------------------
 
 
-def render_report(results: Sequence[CodecResult], *, corpus_files: Sequence[CorpusFile]) -> dict:
+def render_report(
+    results: Sequence[CodecResult], *, corpus_files: Sequence[CorpusFile]
+) -> dict[str, Any]:
     """Build the JSON payload consumed by ``run_predictor_v2_training.sh``."""
     return {
         "schema_version": 1,
@@ -684,7 +690,7 @@ def render_report(results: Sequence[CodecResult], *, corpus_files: Sequence[Corp
     }
 
 
-def render_human_summary(report: dict) -> str:
+def render_human_summary(report: dict[str, Any]) -> str:
     """Single-page text summary suitable for stdout / CI logs."""
     gate = report["gate"]
     lines = [
@@ -694,10 +700,7 @@ def render_human_summary(report: dict) -> str:
         f"Per-fold min:        >= {gate['per_fold_min']:.4f}",
         f"Fold count:          {gate['loso_fold_count']}",
         "",
-        (
-            f"{'codec':<14} {'status':<22} {'mean_plcc':>9} {'spread':>7} "
-            f"{'rows':>6} {'srcs':>5}"
-        ),
+        (f"{'codec':<14} {'status':<22} {'mean_plcc':>9} {'spread':>7} {'rows':>6} {'srcs':>5}"),
     ]
     for codec_payload in report["codecs"]:
         codec = codec_payload["codec"]
@@ -707,7 +710,7 @@ def render_human_summary(report: dict) -> str:
         rows = codec_payload["n_rows_total"]
         srcs = codec_payload["n_distinct_sources"]
         lines.append(
-            f"{codec:<14} {status:<22} {mean_plcc:>9.4f} {spread:>7.4f} " f"{rows:>6} {srcs:>5}"
+            f"{codec:<14} {status:<22} {mean_plcc:>9.4f} {spread:>7.4f} {rows:>6} {srcs:>5}"
         )
         if codec_payload["failure_reasons"]:
             for reason in codec_payload["failure_reasons"]:
@@ -800,10 +803,13 @@ def _resolve_corpora(args: argparse.Namespace) -> list[CorpusFile]:
     return discover_corpora(roots)
 
 
-def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict]:
+def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict[str, Any]]:
     """Synthetic rows for the smoke path. Per-source bucketing for LOSO."""
     pt = _import_predictor_train()
-    rows = pt.generate_synthetic_corpus(codec, n_rows=n_rows)
+    generated = pt.generate_synthetic_corpus(codec, n_rows=n_rows)
+    if not isinstance(generated, list) or not all(isinstance(row, dict) for row in generated):
+        raise TypeError("predictor trainer returned a non-row synthetic corpus")
+    rows = [{str(key): value for key, value in row.items()} for row in generated]
     # Re-tag src so we get >= 5 distinct sources for LOSO.
     n_synthetic_sources = max(LOSO_FOLD_COUNT, 6)
     for i, row in enumerate(rows):
@@ -812,7 +818,7 @@ def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict]:
     return rows
 
 
-def main(argv: Iterable[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_arg_parser()
     raw_argv = collect_cli_argv(argv)
     args = parser.parse_args(raw_argv)
@@ -840,7 +846,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             rows = _synthetic_rows_for_codec(codec)
         else:
             rows = load_rows(corpus_files, codec)
-        print(f"  {codec}: {len(rows)} rows / " f"{source_count(rows)} sources", flush=True)
+        print(f"  {codec}: {len(rows)} rows / {source_count(rows)} sources", flush=True)
         try:
             result = train_codec_loso(codec, rows, epochs=args.epochs, seed=args.seed)
         except RuntimeError as exc:

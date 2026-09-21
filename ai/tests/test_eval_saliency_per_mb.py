@@ -81,7 +81,10 @@ def test_evaluate_dirs_pairs_by_stem_and_aggregates(tmp_path: Path) -> None:
     assert payload["n_pairs"] == 1
     assert payload["macro_iou"] == pytest.approx(1.0)
     assert payload["micro_iou"] == pytest.approx(1.0)
-    assert payload["rows"][0]["stem"] == "a"
+    rows = payload["rows"]
+    assert isinstance(rows, list)
+    assert rows and isinstance(rows[0], dict)
+    assert rows[0]["stem"] == "a"
 
 
 def test_load_mask_reads_ascii_pgm(tmp_path: Path) -> None:

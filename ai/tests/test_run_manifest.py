@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 from aiutils.run_manifest import (
     build_run_manifest_payload,
@@ -16,6 +17,11 @@ from aiutils.run_manifest import (
     write_manifest_json,
     write_run_manifest,
 )
+
+
+def _json_object(value: object) -> dict[str, Any]:
+    assert isinstance(value, dict)
+    return value
 
 
 def test_describe_path_hashes_existing_files_relative_to_repo(tmp_path: Path) -> None:
@@ -68,11 +74,14 @@ def test_build_run_provenance_records_inputs_outputs_and_args(tmp_path: Path) ->
     )
 
     assert provenance["schema"] == "ai-run-provenance-v1"
-    assert provenance["entrypoint"]["path"] == "ai/scripts/train.py"
-    assert provenance["entrypoint"]["sha256"]
+    entrypoint = _json_object(provenance["entrypoint"])
+    assert entrypoint["path"] == "ai/scripts/train.py"
+    assert entrypoint["sha256"]
     assert provenance["args"] == {"features": str(input_path), "out": str(output_path)}
-    assert provenance["inputs"]["features"]["kind"] == "file"
-    assert provenance["outputs"]["model"]["kind"] == "missing"
+    inputs = _json_object(provenance["inputs"])
+    outputs = _json_object(provenance["outputs"])
+    assert _json_object(inputs["features"])["kind"] == "file"
+    assert _json_object(outputs["model"])["kind"] == "missing"
 
 
 def test_write_manifest_json_is_sorted_and_newline_terminated(tmp_path: Path) -> None:
@@ -110,9 +119,12 @@ def test_build_run_manifest_payload_deduplicates_common_envelope(tmp_path: Path)
     assert payload["schema"] == "example-manifest-v1"
     assert payload["row_count"] == 7
     assert payload["config"] == {"features": ["adm2", "motion2"]}
-    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
-    assert payload["run_provenance"]["inputs"]["source"]["kind"] == "file"
-    assert payload["run_provenance"]["outputs"]["report"]["kind"] == "missing"
+    provenance = _json_object(payload["run_provenance"])
+    inputs = _json_object(provenance["inputs"])
+    outputs = _json_object(provenance["outputs"])
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert _json_object(inputs["source"])["kind"] == "file"
+    assert _json_object(outputs["report"])["kind"] == "missing"
 
 
 def test_write_run_manifest_writes_payload(tmp_path: Path) -> None:

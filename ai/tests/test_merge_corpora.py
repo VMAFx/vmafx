@@ -17,6 +17,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,7 +31,7 @@ from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
 _MERGE_PATH = _REPO_ROOT / "ai" / "scripts" / "merge_corpora.py"
 
 
-def _load_merge_module():
+def _load_merge_module() -> Any:
     spec = importlib.util.spec_from_file_location("merge_corpora", _MERGE_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -38,7 +39,7 @@ def _load_merge_module():
     return module
 
 
-def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:
+def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict[str, Any]:
     """Build a minimal :data:`CORPUS_ROW_KEYS`-complete row."""
     base = {
         "schema_version": 2,
@@ -109,7 +110,7 @@ def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:
     return base
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> None:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:
         for row in rows:

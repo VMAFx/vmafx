@@ -68,6 +68,7 @@ import json
 import math
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 from .uncertainty import (
     ConfidenceDecision,
@@ -75,6 +76,8 @@ from .uncertainty import (
     classify_interval,
     interval_excludes_target,
 )
+
+CorpusRow = dict[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -96,7 +99,7 @@ class RecommendRequest:
 class RecommendResult:
     """Single winning row + the predicate that picked it."""
 
-    row: dict
+    row: CorpusRow
     predicate: str
     margin: float
     """Predicate-specific distance from the target.
@@ -118,9 +121,9 @@ def validate_request(req: RecommendRequest) -> None:
         raise ValueError("missing target: pass --target-vmaf or --target-bitrate")
 
 
-def _filter_rows(rows: Iterable[dict], req: RecommendRequest) -> list[dict]:
+def _filter_rows(rows: Iterable[CorpusRow], req: RecommendRequest) -> list[CorpusRow]:
     """Drop rows that fail the encoder/preset filter or have NaN VMAF."""
-    out: list[dict] = []
+    out: list[CorpusRow] = []
     for row in rows:
         if req.encoder is not None and row.get("encoder") != req.encoder:
             continue
@@ -141,7 +144,7 @@ def _filter_rows(rows: Iterable[dict], req: RecommendRequest) -> list[dict]:
     return out
 
 
-def pick_target_vmaf(rows: Sequence[dict], target: float) -> RecommendResult:
+def pick_target_vmaf(rows: Sequence[CorpusRow], target: float) -> RecommendResult:
     """Smallest CRF whose VMAF clears ``target``.
 
     Falls back to the row with the highest VMAF if none clears the bar
@@ -166,7 +169,7 @@ def pick_target_vmaf(rows: Sequence[dict], target: float) -> RecommendResult:
     )
 
 
-def pick_target_bitrate(rows: Sequence[dict], target_kbps: float) -> RecommendResult:
+def pick_target_bitrate(rows: Sequence[CorpusRow], target_kbps: float) -> RecommendResult:
     """Row whose bitrate is closest to ``target_kbps`` (absolute distance).
 
     Ties on distance go to the lower CRF (higher quality), which matches
@@ -189,7 +192,7 @@ def pick_target_bitrate(rows: Sequence[dict], target_kbps: float) -> RecommendRe
     )
 
 
-def recommend(rows: Iterable[dict], req: RecommendRequest) -> RecommendResult:
+def recommend(rows: Iterable[CorpusRow], req: RecommendRequest) -> RecommendResult:
     """Top-level dispatcher: validate, filter, apply the predicate."""
     validate_request(req)
     eligible = _filter_rows(rows, req)
@@ -199,7 +202,7 @@ def recommend(rows: Iterable[dict], req: RecommendRequest) -> RecommendResult:
     return pick_target_bitrate(eligible, req.target_bitrate_kbps)
 
 
-def load_corpus_jsonl(path: Path) -> Iterator[dict]:
+def load_corpus_jsonl(path: Path) -> Iterator[CorpusRow]:
     """Stream rows from a JSONL file written by the ``corpus`` subcommand."""
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
@@ -259,7 +262,7 @@ class UncertaintyRecommendResult:
     fired and how many rows were examined before it did.
     """
 
-    row: dict
+    row: CorpusRow
     predicate: str
     margin: float
     decision: ConfidenceDecision
@@ -273,7 +276,7 @@ class UncertaintyRecommendResult:
     """
 
 
-def _row_interval(row: dict, req: UncertaintyAwareRequest) -> tuple[float, float, float]:
+def _row_interval(row: CorpusRow, req: UncertaintyAwareRequest) -> tuple[float, float, float]:
     """Resolve ``(point, low, high)`` for one row.
 
     Resolution order:
@@ -311,7 +314,7 @@ def _row_interval(row: dict, req: UncertaintyAwareRequest) -> tuple[float, float
 
 
 def pick_target_vmaf_with_uncertainty(
-    rows: Sequence[dict], req: UncertaintyAwareRequest
+    rows: Sequence[CorpusRow], req: UncertaintyAwareRequest
 ) -> UncertaintyRecommendResult:
     """Interval-aware analogue of :func:`pick_target_vmaf`.
 
@@ -343,7 +346,7 @@ def pick_target_vmaf_with_uncertainty(
       best-effort row (highest VMAF) with ``predicate=...
       (UNMET)``.
     """
-    eligible: list[dict] = []
+    eligible: list[CorpusRow] = []
     for r in rows:
         if req.encoder is not None and r.get("encoder") != req.encoder:
             continue
@@ -373,7 +376,7 @@ def pick_target_vmaf_with_uncertainty(
     # the UNMET branch can return a best-effort row without a
     # second pass.
     visited = 0
-    best_so_far: dict | None = None
+    best_so_far: CorpusRow | None = None
     best_score = -math.inf
     every_row_excludes = True
     saw_wide = False

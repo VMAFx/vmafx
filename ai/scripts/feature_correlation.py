@@ -18,9 +18,17 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from _script_bootstrap import bootstrap_ai_script
+
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -30,7 +38,7 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
-def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
+def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict[str, dict[str, float]]:
     n = len(names)
     out = {names[i]: {names[j]: 0.0 for j in range(n)} for i in range(n)}
     corr = np.corrcoef(x, rowvar=False)
@@ -40,10 +48,10 @@ def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
     return out
 
 
-def _redundant_pairs(x: np.ndarray, names: list[str], threshold: float) -> list[dict]:
+def _redundant_pairs(x: np.ndarray, names: list[str], threshold: float) -> list[dict[str, Any]]:
     """Pairs with |Pearson r| ≥ threshold — redundant signal."""
     corr = np.corrcoef(x, rowvar=False)
-    pairs: list[dict] = []
+    pairs: list[dict[str, Any]] = []
     n = len(names)
     for i in range(n):
         for j in range(i + 1, n):
@@ -146,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     print("[corr] Pearson matrix...")
     pearson = _pearson_matrix(x, feat_cols)
     redundant = _redundant_pairs(x, feat_cols, args.redundancy_threshold)
-    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): " f"{len(redundant)}")
+    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): {len(redundant)}")
     for p in redundant[:5]:
         print(f"        {p['a']:<22} ↔ {p['b']:<22} r={p['r']:+.4f}")
 

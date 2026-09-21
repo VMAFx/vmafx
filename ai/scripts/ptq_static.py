@@ -30,6 +30,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -98,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             self._cursor = 0
             self._npz = npz
 
-        def get_next(self):
+        def get_next(self) -> dict[str, "np.ndarray[Any, Any]"] | None:
             if self._cursor >= self._n:
                 return None
             sample = {n: self._npz[n][self._cursor : self._cursor + 1] for n in self._names}

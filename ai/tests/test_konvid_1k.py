@@ -22,7 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "konvid_1k_to_corpus_jsonl.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("konvid_1k_to_corpus_jsonl", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -138,7 +138,7 @@ def _make_runner(
         _ffprobe_ok_payload(),
         "",
     ),
-):
+) -> Any:
     """Return a fake ``subprocess.run`` keyed by clip basename in the cmd.
 
     ``behaviour[basename] = (returncode, stdout, stderr)``. Anything not
@@ -146,11 +146,13 @@ def _make_runner(
     """
     behaviour = behaviour or {}
 
-    def _runner(cmd, **_kw):
+    def _runner(cmd: Any, **_kw: Any) -> Any:
         # The clip path is the last positional arg in our ffprobe call.
         target = Path(cmd[-1]).name
         rc, stdout, stderr = behaviour.get(target, default)
-        return subprocess.CompletedProcess(args=cmd, returncode=rc, stdout=stdout, stderr=stderr)
+        return subprocess.CompletedProcess[str](
+            args=cmd, returncode=rc, stdout=stdout, stderr=stderr
+        )
 
     return _runner
 
@@ -228,7 +230,7 @@ def test_skips_broken_clip_continues_run(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_refuses_konvid_150k_csv(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_refuses_konvid_150k_csv(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A CSV with > 1500 rows must abort with a hint pointing at Phase 2."""
     konvid_dir = _scaffold_corpus(tmp_path, clip_names=["only_one.mp4"])
     csv_path = konvid_dir / "KoNViD_1k_metadata" / "KoNViD_1k_attributes.csv"
@@ -409,7 +411,7 @@ def test_corpus_metadata_columns_constant(tmp_path: Path) -> None:
 
 
 def test_missing_konvid_dir_returns_clear_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Pointing the script at a non-existent dir surfaces a download hint."""
     rc = KONVID.main(

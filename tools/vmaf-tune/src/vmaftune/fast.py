@@ -36,17 +36,20 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 # Optuna is an optional dependency, gated behind the ``[fast]`` install
 # extra. Importing it lazily lets the rest of vmaftune import cleanly on
 # hosts that never run the fast path.
+optuna: ModuleType | None
 try:  # pragma: no cover - import-guarded
-    import optuna  # type: ignore[import-not-found]
+    import optuna as optuna_module
 
+    optuna = optuna_module
     _OPTUNA_AVAILABLE = True
 except ImportError:  # pragma: no cover - import-guarded
-    optuna = None  # type: ignore[assignment]
+    optuna = None
     _OPTUNA_AVAILABLE = False
 
 
@@ -369,14 +372,11 @@ def _build_production_sample_extractor(
     """
     from . import CANONICAL6_FEATURES
     from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .predictor_features import _probe_video_geometry
+    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry
     from .proxy import normalise_features
     from .score import ScoreRequest, maybe_decode_distorted, run_score
 
-    class _Cfg:
-        ffprobe_bin: str = "ffprobe"
-
-    cfg = _Cfg()
+    cfg = FeatureExtractorConfig(ffprobe_bin="ffprobe")
     _score_backend: str | None = None if (backend is None or backend == "auto") else backend
 
     def _extract(src: Path, crf: int, encoder: str) -> tuple[list[float], float]:
@@ -384,7 +384,7 @@ def _build_production_sample_extractor(
             tmpdir = Path(td)
             dist = tmpdir / "dist.mp4"
 
-            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
+            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)
             if width == 0 or height == 0 or fps == 0.0:
                 raise RuntimeError(f"fast sample_extractor: ffprobe failed for {src}")
 
@@ -465,20 +465,17 @@ def _build_production_encode_runner(
     libvmaf score so the caller can compute the proxy/verify gap.
     """
     from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .predictor_features import _probe_video_geometry
+    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry
     from .score import ScoreRequest, maybe_decode_distorted, run_score
 
-    class _Cfg:
-        ffprobe_bin: str = "ffprobe"
-
-    cfg = _Cfg()
+    cfg = FeatureExtractorConfig(ffprobe_bin="ffprobe")
 
     def _run(src: Path, encoder: str, crf: int, backend: str) -> tuple[float, float]:
         with tempfile.TemporaryDirectory(prefix="vmaftune-fast-verify-") as td:
             tmpdir = Path(td)
             dist = tmpdir / "dist.mp4"
 
-            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
+            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)
             if width == 0 or height == 0 or fps == 0.0:
                 raise RuntimeError(f"fast encode_runner: ffprobe failed for {src}")
 

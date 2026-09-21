@@ -32,6 +32,11 @@ import dataclasses
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
 
 from . import _gop_common
 
@@ -61,6 +66,7 @@ class LibaomAdapter:
 
     name: str = "libaom-av1"
     encoder: str = "libaom-av1"
+    adapter_version: str = "1"
     quality_knob: str = "crf"
     # libaom accepts CRF 0..63; the full window is exposed because the
     # informative VMAF range for AV1 differs from x264 and Phase B
@@ -135,7 +141,7 @@ class LibaomAdapter:
 
     def qpfile_from_saliency(
         self,
-        block_offsets: object,
+        block_offsets: npt.NDArray[np.int32],
         out_path: Path,
         *,
         duration_frames: int = 1,

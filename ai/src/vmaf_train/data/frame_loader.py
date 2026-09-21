@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import BinaryIO, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -30,14 +30,12 @@ class FrameSource:
     pix_fmt: str = "gray"
 
 
+@runtime_checkable
 class _PopenLike(Protocol):
-    stdout: BinaryIO
+    stdout: BinaryIO | None
     stderr: BinaryIO | None
-    returncode: int | None
 
     def wait(self, timeout: float | None = ...) -> int: ...
-
-    def kill(self) -> None: ...
 
 
 _PIX_FMT_CHANNELS: dict[str, int] = {
@@ -62,7 +60,7 @@ def _frame_shape(source: FrameSource) -> tuple[int, ...]:
 def iter_frames(
     source: FrameSource,
     ffmpeg: str = "ffmpeg",
-    popen=subprocess.Popen,
+    popen: Callable[..., object] | None = None,
 ) -> Iterator[np.ndarray]:
     """Yield ffmpeg-decoded frames as uint8 numpy arrays.
 
@@ -80,22 +78,29 @@ def iter_frames(
     # Capture stderr so a non-zero exit can surface ffmpeg's diagnostic
     # rather than the generic "ffmpeg failed" the caller would otherwise
     # have to debug from logs.
-    proc: _PopenLike = popen(
-        [
-            ffmpeg,
-            "-v",
-            "error",
-            "-i",
-            str(source.path),
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            source.pix_fmt,
-            "-",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    command = [
+        ffmpeg,
+        "-v",
+        "error",
+        "-i",
+        str(source.path),
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        source.pix_fmt,
+        "-",
+    ]
+    if popen is None:
+        proc_object: object = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    else:
+        proc_object = popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if not isinstance(proc_object, _PopenLike):
+        raise TypeError("popen factory returned an incompatible process object")
+    proc = proc_object
     assert proc.stdout is not None
     try:
         while True:
@@ -110,14 +115,19 @@ def iter_frames(
             _LOG.debug("stdout.close() during iter_frames cleanup raised %s", exc)
         try:
             rc = proc.wait(timeout=_FFMPEG_WAIT_TIMEOUT_S)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as timeout_error:
             # Don't leave a runaway ffmpeg dangling — kill it and recover.
             _LOG.warning(
                 "ffmpeg failed to exit within %.1fs after stdout EOF for %s; killing",
                 _FFMPEG_WAIT_TIMEOUT_S,
                 source.path,
             )
-            proc.kill()
+            kill = getattr(proc, "kill", None)
+            if not callable(kill):
+                raise RuntimeError(
+                    "timed-out ffmpeg process does not expose kill()"
+                ) from timeout_error
+            kill()
             try:
                 rc = proc.wait(timeout=5.0)
             except subprocess.TimeoutExpired:

@@ -16,23 +16,30 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from train_konvid_mos_head import (  # noqa: E402
-    FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
-    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
-    FEATURE_SCHEMA_KONVID_V1,
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1 as FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
 )
-from train_konvid_mos_head import main as _train_mos_head_main  # noqa: E402
-
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1 as FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
+)
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    FEATURE_SCHEMA_KONVID_V1 as FEATURE_SCHEMA_KONVID_V1,
+)
+from ai.scripts.train_konvid_mos_head import main as _train_mos_head_main  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 DEFAULT_CHUG_DIR = Path(os.environ.get("VMAF_CHUG_DIR", str(REPO_ROOT / ".corpus" / "chug")))

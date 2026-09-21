@@ -66,12 +66,17 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -138,29 +143,32 @@ def _wrap_to_savedmodel(upstream_dir: Path, wrapped_dir: Path) -> None:
     base_model = tf.saved_model.load(str(upstream_dir))
 
     class Wrapper(tf.Module):
-        def __init__(self, base):
+        def __init__(self, base: Any) -> None:
             super().__init__()
             self.base = base
 
-        @tf.function(
-            input_signature=[
-                tf.TensorSpec(
-                    shape=[1, WINDOW, CHANNELS, HEIGHT, WIDTH],
-                    dtype=tf.float32,
-                    name="frames",
-                )
-            ]
-        )
-        def __call__(self, frames):
+        def __call__(self, frames: "tf.Tensor") -> "tf.Tensor":
             # NTCHW -> NTHWC: axes 0,1,2,3,4 -> 0,1,3,4,2
             x = tf.transpose(frames, perm=[0, 1, 3, 4, 2])
             out = self.base.signatures["serving_default"](input_1=x)
             logits = out["output_1"]  # (1, 100, 1)
-            return tf.squeeze(logits, axis=-1)  # (1, 100)
+            result: tf.Tensor = tf.squeeze(logits, axis=-1)
+            return result  # (1, 100)
 
     if wrapped_dir.exists():
         shutil.rmtree(wrapped_dir)
-    tf.saved_model.save(Wrapper(base_model), str(wrapped_dir))
+    wrapper = Wrapper(base_model)
+    serving = tf.function(
+        wrapper.__call__,
+        input_signature=[
+            tf.TensorSpec(
+                shape=[1, WINDOW, CHANNELS, HEIGHT, WIDTH],
+                dtype=tf.float32,
+                name="frames",
+            )
+        ],
+    )
+    tf.saved_model.save(wrapper, str(wrapped_dir), signatures={"serving_default": serving})
 
 
 def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
@@ -313,7 +321,7 @@ def _replace_segmentsum(onnx_path: Path) -> None:
 
 def _verify_op_allowlist(onnx_path: Path) -> None:
     """Cross-check the exported graph against libvmaf's op allowlist."""
-    from vmaf_train.op_allowlist import check_model  # type: ignore
+    from vmaf_train.op_allowlist import check_model
 
     report = check_model(onnx_path)
     if not report.ok:
@@ -346,7 +354,7 @@ def _verify_parity(onnx_path: Path, wrapped_sm_dir: Path, *, trials: int = 3) ->
     print(f"[parity] worst max-abs-diff {worst:.3e} < 1e-4 -> OK")
 
 
-def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None = None) -> Path:
+def _write_sidecar(onnx_path: Path, *, run_provenance: Mapping[str, object] | None = None) -> Path:
     sidecar = onnx_path.with_suffix(".json")
     payload = {
         "id": "transnet_v2",
@@ -388,7 +396,7 @@ def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
         sys.exit(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
-    models: list[dict] = doc.get("models", [])
+    models: list[dict[str, Any]] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
     digest = sha256(onnx_path)
     entry = {

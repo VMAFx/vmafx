@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ _SCRIPTS_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT = _SCRIPTS_DIR / "batch_materialize_mos_labels.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     # ``_script_bootstrap`` lives in ai/scripts/; make it importable before
     # executing the script module so the bootstrap import does not fail when
     # pytest is invoked from the repo root without PYTHONPATH=ai/scripts.

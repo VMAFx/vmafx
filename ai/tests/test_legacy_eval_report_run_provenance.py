@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -33,7 +34,9 @@ def _assert_provenance(payload: dict[str, Any], entrypoint: str) -> None:
     assert provenance["entrypoint"]["path"] == entrypoint
 
 
-def test_loso_mlp_small_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_loso_mlp_small_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     data_root = tmp_path / "netflix"
     data_root.mkdir()
     loso_dir = tmp_path / "loso"
@@ -84,7 +87,9 @@ def test_loso_mlp_small_report_records_run_provenance(monkeypatch, tmp_path: Pat
     )
 
 
-def test_loso_3arch_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_loso_3arch_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     data_root = tmp_path / "netflix"
     data_root.mkdir()
     runs_dir = tmp_path / "training_runs"
@@ -127,7 +132,9 @@ def test_loso_3arch_report_records_run_provenance(monkeypatch, tmp_path: Path) -
     assert payload["run_provenance"]["inputs"]["training_runs_dir"]["kind"] == "directory"
 
 
-def test_probabilistic_proxy_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+def test_probabilistic_proxy_report_records_run_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "ensemble.json"
     manifest = {
         "codec_vocab": ["x264", "x265"],
@@ -137,7 +144,7 @@ def test_probabilistic_proxy_report_records_run_provenance(monkeypatch, tmp_path
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     out = tmp_path / "prob.json"
 
-    def _make_session_stub(num_codecs: int = 2):
+    def _make_session_stub(num_codecs: int = 2) -> Any:
         sess = MagicMock()
         codec_input = MagicMock()
         codec_input.name = "codec_onehot"

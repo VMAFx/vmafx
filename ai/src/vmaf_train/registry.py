@@ -156,7 +156,7 @@ def _sanitize_nonfinite(obj: Any) -> Any:
     return obj
 
 
-def dumps_registry_json(payload: dict, **kwargs: Any) -> str:
+def dumps_registry_json(payload: dict[str, Any], **kwargs: Any) -> str:
     """Serialise a registry payload to a pretty-printed, non-finite-safe JSON string.
 
     NaN and Infinity values inside *payload* are replaced with ``null`` so the
@@ -176,7 +176,7 @@ def dumps_registry_json(payload: dict, **kwargs: Any) -> str:
     return json.dumps(_sanitize_nonfinite(payload), **kwargs)
 
 
-def write_registry_json(path: Path, payload: dict, **kwargs: Any) -> None:
+def write_registry_json(path: Path, payload: dict[str, Any], **kwargs: Any) -> None:
     """Write *payload* as pretty-printed, newline-terminated JSON to *path*.
 
     Convenience wrapper around :func:`dumps_registry_json` that appends a

@@ -113,9 +113,9 @@ def test_csv_no_unverified_rows() -> None:
         for col_value in row_as_dict(row).values():
             text = str(col_value).lower()
             for sentinel in sentinels:
-                assert sentinel not in text, (
-                    f"row {row.arch_name}: column contains {sentinel!r}: " f"{col_value!r}"
-                )
+                assert (
+                    sentinel not in text
+                ), f"row {row.arch_name}: column contains {sentinel!r}: {col_value!r}"
 
 
 # ---------------------------------------------------------------------------

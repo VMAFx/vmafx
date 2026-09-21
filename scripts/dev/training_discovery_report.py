@@ -37,7 +37,10 @@ class PredictorCard:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload: object = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
+        raise ValueError(f"{path} must contain a string-keyed JSON object")
+    return {key: value for key, value in payload.items() if isinstance(key, str)}
 
 
 def _float_or_none(value: Any) -> float | None:

@@ -12,6 +12,7 @@ swap in.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -23,11 +24,11 @@ from ai.train.konvid_pair_dataset import KoNViDPairDataset
 
 def _synthetic_parquet(tmp_path: Path, n_clips: int = 3, n_frames: int = 5) -> Path:
     rng = np.random.default_rng(seed=42)
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for c in range(n_clips):
         key = f"KoNViD_1k_videos_{1000 + c}"
         for i in range(n_frames):
-            row: dict = {"key": key, "frame_index": i}
+            row: dict[str, Any] = {"key": key, "frame_index": i}
             for feat in DEFAULT_FEATURES:
                 row[feat] = float(rng.standard_normal())
             row["vmaf"] = float(rng.uniform(20.0, 100.0))
@@ -85,11 +86,11 @@ def test_loader_drops_non_finite_rows(tmp_path: Path) -> None:
     # target and silently poison the regressor's loss. The loader must drop
     # such rows (with a warning) and never surface them to numpy_arrays().
     rng = np.random.default_rng(seed=7)
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for c in range(2):
         key = f"KoNViD_1k_videos_{2000 + c}"
         for i in range(4):
-            row: dict = {"key": key, "frame_index": i}
+            row: dict[str, Any] = {"key": key, "frame_index": i}
             for feat in DEFAULT_FEATURES:
                 row[feat] = float(rng.standard_normal())
             row["vmaf"] = float(rng.uniform(20.0, 100.0))

@@ -18,9 +18,9 @@ import math
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 from . import __version__
 from .bisect import bisect_target_vmaf
@@ -65,6 +65,19 @@ from .prefilter import (
 from .resolution import neg_model_for
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
 
+if TYPE_CHECKING:
+    from threading import Semaphore
+
+    from .compare import PredicateFn as ComparePredicateFn
+    from .compare import RecommendResult as CompareRecommendResult
+    from .predictor import ShotFeatures
+    from .report import CodecRow, CodecSweepPoint, SourceInfo
+    from .score_backend import NRProxyBackend
+    from .sidecar import SidecarPredictor
+
+
+JsonRow = dict[str, Any]
+
 
 class _TrackedDefaultAction(argparse.Action):
     """Argparse action that records when a flag was passed explicitly.
@@ -85,8 +98,33 @@ class _TrackedDefaultAction(argparse.Action):
     boilerplate-heavy and the use-site is narrow.
     """
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+    def __init__(
+        self,
+        option_strings: Sequence[str],
+        dest: str,
+        nargs: int | str | None = None,
+        const: Any = None,
+        default: Any = None,
+        type: Callable[[str], Any] | argparse.FileType | None = None,
+        choices: Iterable[Any] | None = None,
+        required: bool = False,
+        help: str | None = None,
+        metavar: str | tuple[str, ...] | None = None,
+        deprecated: bool = False,
+    ) -> None:
+        super().__init__(
+            option_strings=option_strings,
+            dest=dest,
+            nargs=nargs,
+            const=const,
+            default=default,
+            type=type,
+            choices=choices,
+            required=required,
+            help=help,
+            metavar=metavar,
+            deprecated=deprecated,
+        )
 
     def __call__(
         self,
@@ -1797,7 +1835,11 @@ def _build_opts(args: argparse.Namespace) -> CorpusOptions:
     )
 
 
-def _build_job(args: argparse.Namespace, src: Path, cells: tuple) -> CorpusJob:
+def _build_job(
+    args: argparse.Namespace,
+    src: Path,
+    cells: tuple[tuple[str, int], ...],
+) -> CorpusJob:
     return CorpusJob(
         source=src,
         width=args.width,
@@ -1825,7 +1867,7 @@ def _run_corpus(args: argparse.Namespace) -> int:
             return 2
         sentinel_cells = tuple((p, 0) for p in args.preset)
 
-        def _all_rows():
+        def _coarse_rows() -> Iterator[JsonRow]:
             for src in args.source:
                 job = _build_job(args, src, sentinel_cells)
                 yield from coarse_to_fine_search(
@@ -1837,7 +1879,7 @@ def _run_corpus(args: argparse.Namespace) -> int:
                     fine_step=args.fine_step,
                 )
 
-        n = write_jsonl(_all_rows(), opts.output)
+        n = write_jsonl(_coarse_rows(), opts.output)
         sys.stderr.write(f"coarse-to-fine: wrote {n} rows -> {opts.output}\n")
         return 0
 
@@ -1846,12 +1888,12 @@ def _run_corpus(args: argparse.Namespace) -> int:
         return 2
     cells = tuple(iter_grid(args.preset, args.crf))
 
-    def _all_rows():
+    def _grid_rows() -> Iterator[JsonRow]:
         for src in args.source:
             job = _build_job(args, src, cells)
             yield from iter_rows(job, opts)
 
-    n = write_jsonl(_all_rows(), opts.output)
+    n = write_jsonl(_grid_rows(), opts.output)
     sys.stderr.write(f"wrote {n} rows -> {opts.output}\n")
     return 0
 
@@ -1867,7 +1909,7 @@ def _run_recommend_from_corpus(args: argparse.Namespace) -> int:
         sys.stderr.write(f"recommend: corpus file not found: {corpus_path}\n")
         return 2
 
-    rows: list[dict] = []
+    rows: list[JsonRow] = []
     with corpus_path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -1992,9 +2034,9 @@ def _run_recommend(args: argparse.Namespace) -> int:
         return 2
     sentinel_cells = tuple((p, 0) for p in args.preset)
 
-    visited: list[dict] = []
+    visited: list[JsonRow] = []
 
-    def _capture():
+    def _capture() -> Iterator[JsonRow]:
         for src in args.source:
             job = _build_job(args, src, sentinel_cells)
             for row in coarse_to_fine_search(
@@ -2056,7 +2098,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
 
 
 def _smallest_passing_crf(
-    rows: list[dict], target_vmaf: float
+    rows: list[JsonRow], target_vmaf: float
 ) -> tuple[str, str, int, float] | None:
     """Return (src, preset, crf, vmaf) for the highest-quality passing encode.
 
@@ -2069,8 +2111,11 @@ def _smallest_passing_crf(
     """
     best: dict[tuple[str, str], tuple[int, float]] = {}
     for r in rows:
+        raw_score = r.get("vmaf_score")
+        if raw_score is None:
+            continue
         try:
-            score = float(r.get("vmaf_score"))
+            score = float(raw_score)
         except (TypeError, ValueError):
             continue
         if score < target_vmaf:
@@ -2162,7 +2207,7 @@ def _run_predict(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    def _features(shot):
+    def _features(shot: Shot) -> ShotFeatures:
         return extract_features(
             shot=shot,
             source=args.source,
@@ -2291,7 +2336,7 @@ def _run_predict(args: argparse.Namespace) -> int:
         else:
             uncalibrated = True
 
-    def _interval_for(predicted_vmaf: float) -> dict | None:
+    def _interval_for(predicted_vmaf: float) -> dict[str, float | None] | None:
         if not args.with_uncertainty:
             return None
         if calibration is None:
@@ -2629,8 +2674,8 @@ def _build_per_shot_bisect_predicate(
     *,
     scratch: Path,
     crf_range: tuple[int, int] | None,
-    decode_semaphore: object | None = None,
-    nr_proxy_backend: object | None = None,
+    decode_semaphore: Semaphore | None = None,
+    nr_proxy_backend: NRProxyBackend | None = None,
 ) -> tuple[PerShotPredicateFn, dict[tuple[int, int], float]]:
     """Build the production Phase-D predicate from Phase-B bisect.
 
@@ -3016,7 +3061,7 @@ def _resolve_compare_source_geometry(
     duration_s: float,
     framerate_was_default: bool,
     duration_was_default: bool,
-    probe_fn: object | None = None,
+    probe_fn: Callable[[Path], object] | None = None,
     warn_stream: TextIO | None = None,
 ) -> tuple[int | None, int | None, float, float]:
     """Reconcile user-supplied geometry with an ffprobe of a container source.
@@ -3060,10 +3105,13 @@ def _resolve_compare_source_geometry(
     # of CLI smoke tests that don't exercise compare.
     from .score import VMAF_RAW_SUFFIXES
 
+    _probe_source: Callable[[Path], object]
     if probe_fn is None:
-        from .report import probe_source as _probe_source
+        from .report import probe_source
+
+        _probe_source = probe_source
     else:
-        _probe_source = probe_fn  # type: ignore[assignment]
+        _probe_source = probe_fn
 
     stream = warn_stream if warn_stream is not None else sys.stderr
 
@@ -3074,7 +3122,7 @@ def _resolve_compare_source_geometry(
         return width, height, framerate, duration_s
 
     try:
-        info = _probe_source(Path(src))  # type: ignore[operator]
+        info = _probe_source(Path(src))
     except Exception as exc:
         stream.write(
             f"vmaf-tune compare: ffprobe of {src} failed ({exc}); "
@@ -3195,7 +3243,10 @@ def _run_compare(args: argparse.Namespace) -> int:
     encoders = [spec.token for spec in runtime_specs]
     runtime_by_token = {spec.token: spec for spec in runtime_specs}
 
-    def _annotate_runtime_result(result, spec: EncoderRuntimeSpec):
+    def _annotate_runtime_result(
+        result: CompareRecommendResult,
+        spec: EncoderRuntimeSpec,
+    ) -> CompareRecommendResult:
         return dataclasses.replace(
             result,
             codec=spec.token,
@@ -3283,8 +3334,9 @@ def _run_compare(args: argparse.Namespace) -> int:
             return 2
     else:
         target_vmafs = [float(args.target_vmaf)]
-    predicate = None
-    sweep_predicate = None
+    predicate: ComparePredicateFn | None = None
+    sweep_predicate: ComparePredicateFn | None = None
+    resolved_dur = float(args.duration)
     if args.predicate_module:
         try:
             loaded_predicate = _load_compare_predicate(args.predicate_module)
@@ -3294,7 +3346,11 @@ def _run_compare(args: argparse.Namespace) -> int:
             sys.stderr.write(f"vmaf-tune compare: invalid --predicate-module: {exc}\n")
             return 2
 
-        def _predicate_module_dispatcher(codec: str, src_, target_: float):
+        def _predicate_module_dispatcher(
+            codec: str,
+            src_: Path,
+            target_: float,
+        ) -> CompareRecommendResult:
             spec = runtime_by_token[codec]
             return _annotate_runtime_result(loaded_predicate(codec, src_, target_), spec)
 
@@ -3371,7 +3427,11 @@ def _run_compare(args: argparse.Namespace) -> int:
                 sys.stderr.write(f"vmaf-tune compare: --fast-nr: {exc}\n")
                 return 2
 
-        def _build_bisect_for_target(target: float, *, ffmpeg_bin: str):
+        def _build_bisect_for_target(
+            target: float,
+            *,
+            ffmpeg_bin: str,
+        ) -> ComparePredicateFn:
             return make_bisect_predicate(
                 target_vmaf=target,
                 width=resolved_w,
@@ -3398,9 +3458,13 @@ def _run_compare(args: argparse.Namespace) -> int:
         # per distinct target VMAF, so the cross-product (codec x
         # target) still gets the right ``make_bisect_predicate`` for
         # each rung.
-        _bisect_cache: dict[tuple[str, float], object] = {}
+        _bisect_cache: dict[tuple[str, float], ComparePredicateFn] = {}
 
-        def _sweep_dispatcher(codec, src_, target_):
+        def _sweep_dispatcher(
+            codec: str,
+            src_: Path,
+            target_: float,
+        ) -> CompareRecommendResult:
             spec = runtime_by_token[codec]
             target_f = float(target_)
             cache_key = (spec.ffmpeg_bin, target_f)
@@ -3409,7 +3473,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                     target_f,
                     ffmpeg_bin=spec.ffmpeg_bin,
                 )
-            result = _bisect_cache[cache_key](spec.adapter, src_, target_)  # type: ignore[operator]
+            result = _bisect_cache[cache_key](spec.adapter, src_, target_)
             return _annotate_runtime_result(result, spec)
 
         predicate = _sweep_dispatcher
@@ -3467,9 +3531,7 @@ def _run_compare(args: argparse.Namespace) -> int:
             # ``_should_pre_decode`` gates on not predicate_module, so
             # ``resolved_dur`` is always defined at this point (set by
             # ``_resolve_compare_source_geometry`` in the bisect path above).
-            _ref_dur: float | None = (
-                float(resolved_dur) if float(resolved_dur) > 0.0 else None  # type: ignore[name-defined]
-            )
+            _ref_dur: float | None = float(resolved_dur) if float(resolved_dur) > 0.0 else None
             _ref_pix_fmt = getattr(args, "pix_fmt", "yuv420p")
             _ref_ffmpeg = getattr(args, "ffmpeg_bin", "ffmpeg")
 
@@ -3508,8 +3570,8 @@ def _run_compare(args: argparse.Namespace) -> int:
 
             else:
 
-                def _probe(codec: str) -> tuple[bool, str]:
-                    spec = runtime_by_token[codec]
+                def _probe(_codec: str) -> tuple[bool, str]:
+                    spec = runtime_by_token[_codec]
                     return probe_encoder_available(
                         spec.adapter,
                         ffmpeg_bin=spec.ffmpeg_bin,
@@ -3591,7 +3653,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                     )
 
 
-def _compare_source_info(args: argparse.Namespace):
+def _compare_source_info(args: argparse.Namespace) -> SourceInfo:
     """Return source metadata for inline compare profile rendering."""
     from .report import SourceInfo, probe_source
 
@@ -3632,9 +3694,9 @@ def _write_compare_profile_report(
     if comparison_report is None and sweep_report is None:
         raise ValueError("comparison_report or sweep_report is required")
 
-    codec_rows = ()
-    sweep_points = ()
-    sweep_targets = ()
+    codec_rows: tuple[CodecRow, ...] = ()
+    sweep_points: tuple[CodecSweepPoint, ...] = ()
+    sweep_targets: tuple[float, ...] = ()
     if sweep_report is not None:
         rows = [
             r.to_row(target)
@@ -3796,7 +3858,7 @@ def _run_compare_crf_sweep(
             vaapi_device=_vaapi_device,
         )
 
-    def _encode_one(codec: str, crf: int) -> dict:
+    def _encode_one(codec: str, crf: int) -> JsonRow:
         spec = runtime_by_token[codec]
         avail, reason = availability[codec]
         if not avail:
@@ -3857,7 +3919,7 @@ def _run_compare_crf_sweep(
         }
 
     t0 = time.monotonic()
-    rows: list[dict] = []
+    rows: list[JsonRow] = []
     cells = [(codec, crf) for codec in encoders for crf in crf_values]
 
     no_parallel = getattr(args, "no_parallel", False)
@@ -3873,7 +3935,7 @@ def _run_compare_crf_sweep(
             for codec, crf in cells:
                 futures[pool.submit(_encode_one, codec, crf)] = (codec, crf)
             # Collect in submission order for deterministic output.
-            ordered: dict[tuple[str, int], dict] = {}
+            ordered: dict[tuple[str, int], JsonRow] = {}
             for fut in as_completed(futures):
                 key = futures[fut]
                 ordered[key] = fut.result()
@@ -3951,7 +4013,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_compare_predicate(spec: str):
+def _load_compare_predicate(spec: str) -> ComparePredicateFn:
     """Load ``MODULE:CALLABLE`` for ``vmaf-tune compare``."""
     if ":" not in spec:
         raise ValueError("expected MODULE:CALLABLE")
@@ -3962,7 +4024,16 @@ def _load_compare_predicate(spec: str):
     predicate = getattr(module, attr_name)
     if not callable(predicate):
         raise ValueError(f"{spec!r} is not callable")
-    return predicate
+
+    def _checked(codec: str, src: Path, target_vmaf: float) -> CompareRecommendResult:
+        from .compare import RecommendResult
+
+        result = predicate(codec, src, target_vmaf)
+        if not isinstance(result, RecommendResult):
+            raise TypeError(f"{spec!r} returned {type(result).__name__}; expected RecommendResult")
+        return result
+
+    return _checked
 
 
 def _load_per_shot_predicate(spec: str) -> PerShotPredicateFn:
@@ -3976,7 +4047,15 @@ def _load_per_shot_predicate(spec: str) -> PerShotPredicateFn:
     predicate = getattr(module, attr_name)
     if not callable(predicate):
         raise ValueError(f"{spec!r} is not callable")
-    return predicate
+
+    def _checked(shot: Shot, target_vmaf: float, encoder: str) -> tuple[int, float]:
+        result = predicate(shot, target_vmaf, encoder)
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise TypeError(f"{spec!r} must return a (crf, vmaf) pair")
+        crf, vmaf = result
+        return int(crf), float(vmaf)
+
+    return _checked
 
 
 def _run_auto(args: argparse.Namespace) -> int:
@@ -4311,7 +4390,7 @@ _CANONICAL_6_KEYS: tuple[str, ...] = (
 
 
 def _parse_canonical6_means(
-    payload: dict,
+    payload: JsonRow,
     *,
     normalise: bool = False,
     model_id: str | None = None,
@@ -4843,7 +4922,21 @@ def _read_json_object(path: Path) -> dict[str, object]:
     return doc
 
 
-def _sidecar_features_from_mapping(row: dict[str, object]):
+def _json_float(value: object) -> float:
+    """Convert a JSON scalar to float without accepting containers/null."""
+    if not isinstance(value, (str, int, float)):
+        raise ValueError(f"expected a numeric JSON scalar, got {value!r}")
+    return float(value)
+
+
+def _json_int(value: object) -> int:
+    """Convert a JSON scalar to int without accepting containers/null."""
+    if not isinstance(value, (str, int, float)):
+        raise ValueError(f"expected an integer JSON scalar, got {value!r}")
+    return int(value)
+
+
+def _sidecar_features_from_mapping(row: dict[str, object]) -> ShotFeatures:
     """Build ``ShotFeatures`` from a JSON object or a ``features`` wrapper."""
     from .predictor import ShotFeatures
 
@@ -4854,41 +4947,38 @@ def _sidecar_features_from_mapping(row: dict[str, object]):
     if missing:
         raise ValueError(f"features missing required keys: {', '.join(missing)}")
 
-    kwargs: dict[str, object] = {}
-    for field in dataclasses.fields(ShotFeatures):
-        if field.name in raw:
-            kwargs[field.name] = raw[field.name]
     try:
         return ShotFeatures(
-            probe_bitrate_kbps=float(kwargs["probe_bitrate_kbps"]),
-            probe_i_frame_avg_bytes=float(kwargs["probe_i_frame_avg_bytes"]),
-            probe_p_frame_avg_bytes=float(kwargs["probe_p_frame_avg_bytes"]),
-            probe_b_frame_avg_bytes=float(kwargs["probe_b_frame_avg_bytes"]),
-            saliency_mean=float(kwargs.get("saliency_mean", 0.0)),
-            saliency_var=float(kwargs.get("saliency_var", 0.0)),
-            frame_diff_mean=float(kwargs.get("frame_diff_mean", 0.0)),
-            y_avg=float(kwargs.get("y_avg", 0.0)),
-            y_var=float(kwargs.get("y_var", 0.0)),
-            shot_length_frames=int(kwargs.get("shot_length_frames", 0)),
-            fps=float(kwargs.get("fps", 0.0)),
-            width=int(kwargs.get("width", 0)),
-            height=int(kwargs.get("height", 0)),
+            probe_bitrate_kbps=_json_float(raw["probe_bitrate_kbps"]),
+            probe_i_frame_avg_bytes=_json_float(raw["probe_i_frame_avg_bytes"]),
+            probe_p_frame_avg_bytes=_json_float(raw["probe_p_frame_avg_bytes"]),
+            probe_b_frame_avg_bytes=_json_float(raw["probe_b_frame_avg_bytes"]),
+            saliency_mean=_json_float(raw.get("saliency_mean", 0.0)),
+            saliency_var=_json_float(raw.get("saliency_var", 0.0)),
+            frame_diff_mean=_json_float(raw.get("frame_diff_mean", 0.0)),
+            y_avg=_json_float(raw.get("y_avg", 0.0)),
+            y_var=_json_float(raw.get("y_var", 0.0)),
+            shot_length_frames=_json_int(raw.get("shot_length_frames", 0)),
+            fps=_json_float(raw.get("fps", 0.0)),
+            width=_json_int(raw.get("width", 0)),
+            height=_json_int(raw.get("height", 0)),
         )
     except (TypeError, ValueError, KeyError) as exc:
         raise ValueError(f"invalid sidecar feature value: {exc}") from exc
 
 
-def _build_sidecar_predictor(args: argparse.Namespace):
+def _build_sidecar_predictor(args: argparse.Namespace) -> SidecarPredictor:
     """Construct the configured ``SidecarPredictor`` for CLI handlers."""
     from .predictor import Predictor
     from .sidecar import SidecarConfig, SidecarPredictor
 
-    cfg_kwargs: dict[str, object] = {
-        "predictor_version": args.predictor_version,
-    }
     if args.cache_dir is not None:
-        cfg_kwargs["cache_dir"] = args.cache_dir
-    cfg = SidecarConfig(**cfg_kwargs)
+        cfg = SidecarConfig(
+            cache_dir=args.cache_dir,
+            predictor_version=args.predictor_version,
+        )
+    else:
+        cfg = SidecarConfig(predictor_version=args.predictor_version)
     predictor = Predictor(model_path=args.model)
     if predictor.is_stub:
         print(
@@ -4899,7 +4989,7 @@ def _build_sidecar_predictor(args: argparse.Namespace):
     return SidecarPredictor.for_codec(predictor, codec=args.codec, config=cfg)
 
 
-def _sidecar_status_payload(sp) -> dict[str, object]:
+def _sidecar_status_payload(sp: SidecarPredictor) -> dict[str, object]:
     """Return the machine-readable status payload for a sidecar."""
     return {
         "schema": "vmaf-tune-sidecar-status/v1",
@@ -4918,10 +5008,14 @@ def _emit_sidecar_status(payload: dict[str, object], as_json: bool) -> None:
     if as_json:
         sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
+    codec = str(payload.get("codec", ""))
+    predictor_version = str(payload.get("predictor_version", ""))
+    updates = _json_int(payload.get("n_updates", 0))
+    residual_rms = _json_float(payload.get("recent_residual_rms", 0.0))
+    state_path = str(payload.get("state_path", ""))
     sys.stdout.write(
-        "codec={codec} predictor_version={predictor_version} "
-        "updates={n_updates} residual_rms={recent_residual_rms:.6f} "
-        "state={state_path}\n".format(**payload)
+        f"codec={codec} predictor_version={predictor_version} "
+        f"updates={updates} residual_rms={residual_rms:.6f} state={state_path}\n"
     )
 
 
@@ -4989,9 +5083,11 @@ def _run_sidecar(args: argparse.Namespace) -> int:
         if args.json:
             sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         else:
+            updates = _json_int(payload.get("n_updates", 0))
+            residual = _json_float(payload.get("residual", 0.0))
+            state_path = str(payload.get("state_path", ""))
             sys.stdout.write(
-                "recorded updates={n_updates} residual={residual:.6f} "
-                "state={state_path}\n".format(**payload)
+                f"recorded updates={updates} residual={residual:.6f} state={state_path}\n"
             )
         return 0
 
@@ -5072,7 +5168,17 @@ def _coerce_finite_float(value: Any, default: float = math.nan) -> float:
     return v
 
 
-def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignore[name-defined]  # noqa: F821
+def _coerce_int(value: Any, default: int = -1) -> int:
+    """Parse an integer-like JSON field, falling back on invalid/null input."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:
     """Build a :class:`vmaftune.report.CodecSweepPoint` from a v2 row.
 
     The compare-sweep JSON row carries ``target_vmaf`` as a top-level
@@ -5100,7 +5206,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignor
             try:
                 parsed.append(
                     BisectSamplePoint(
-                        crf=int(s.get("crf") if s.get("crf") is not None else -1),
+                        crf=_coerce_int(s.get("crf")),
                         bitrate_kbps=_coerce_finite_float(s.get("bitrate_kbps")),
                         vmaf_score=_coerce_finite_float(s.get("vmaf_score")),
                         encode_time_ms=_coerce_finite_float(s.get("encode_time_ms")),
@@ -5114,7 +5220,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignor
         codec=str(r.get("codec", "")),
         encoder_version=str(r.get("encoder_version", "")),
         target_vmaf=float(r.get("target_vmaf") or 0.0),
-        best_crf=int(r.get("best_crf") if r.get("best_crf") is not None else -1),
+        best_crf=_coerce_int(r.get("best_crf")),
         bitrate_kbps=_coerce_finite_float(r.get("bitrate_kbps")),
         encode_time_ms=_coerce_finite_float(r.get("encode_time_ms")),
         vmaf_score=_coerce_finite_float(r.get("vmaf_score")),
@@ -5124,7 +5230,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignor
     )
 
 
-def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:  # type: ignore[name-defined]  # noqa: F821
+def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:
     """Build a :class:`vmaftune.report.CodecRow` from a compare JSON row.
 
     Coerces ``null`` / NaN numerics to ``NaN`` (which the renderer
@@ -5137,7 +5243,7 @@ def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:  # type: ignore[name-de
     return CodecRow(
         codec=str(r.get("codec", "")),
         encoder_version=str(r.get("encoder_version", "")),
-        best_crf=int(r.get("best_crf") if r.get("best_crf") is not None else -1),
+        best_crf=_coerce_int(r.get("best_crf")),
         bitrate_kbps=_coerce_finite_float(r.get("bitrate_kbps")),
         encode_time_ms=_coerce_finite_float(r.get("encode_time_ms")),
         vmaf_score=_coerce_finite_float(r.get("vmaf_score")),
@@ -5152,8 +5258,6 @@ def _run_report(args: argparse.Namespace) -> int:
 
     from .compare import detect_schema_version
     from .report import (
-        CodecRow,
-        CodecSweepPoint,
         LadderRung,
         LadderSample,
         ReportData,

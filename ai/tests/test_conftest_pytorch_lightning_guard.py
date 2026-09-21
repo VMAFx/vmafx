@@ -25,9 +25,11 @@ These tests verify:
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
-import conftest
 import pytest
+
+from ai.tests import conftest
 
 
 def test_probe_function_returns_none_or_str() -> None:
@@ -42,7 +44,7 @@ def test_module_level_cache_matches_probe_signature() -> None:
     assert cached is None or isinstance(cached, str)
 
 
-def test_requires_pytorch_lightning_skips_when_unavailable(monkeypatch) -> None:
+def test_requires_pytorch_lightning_skips_when_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """If the cached probe recorded an error, ``requires_pytorch_lightning``
     must raise ``pytest.skip.Exception`` (the in-process skip signal)."""
     monkeypatch.setattr(conftest, "_PYTORCH_LIGHTNING_ERROR", "synthetic-error-for-test")
@@ -50,14 +52,14 @@ def test_requires_pytorch_lightning_skips_when_unavailable(monkeypatch) -> None:
         conftest.requires_pytorch_lightning()
 
 
-def test_requires_pytorch_lightning_passes_when_available(monkeypatch) -> None:
+def test_requires_pytorch_lightning_passes_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
     """When no error was recorded, the guard returns ``None`` silently."""
     monkeypatch.setattr(conftest, "_PYTORCH_LIGHTNING_ERROR", None)
     # No exception expected.
-    assert conftest.requires_pytorch_lightning() is None
+    conftest.requires_pytorch_lightning()
 
 
-def test_probe_catches_runtimeerror_not_just_importerror(monkeypatch) -> None:
+def test_probe_catches_runtimeerror_not_just_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     """The whole point of the guard is to catch ``RuntimeError`` — torchvision's
     ABI mismatch surfaces as ``RuntimeError: operator torchvision::nms does
     not exist`` at import time, not as ``ImportError``.
@@ -67,7 +69,7 @@ def test_probe_catches_runtimeerror_not_just_importerror(monkeypatch) -> None:
     """
     real_import_module = importlib.import_module
 
-    def fake_import(name, package=None):
+    def fake_import(name: Any, package: Any = None) -> Any:
         if name == "pytorch_lightning":
             raise RuntimeError("operator torchvision::nms does not exist")
         return real_import_module(name, package)
@@ -86,7 +88,7 @@ def test_probe_catches_runtimeerror_not_just_importerror(monkeypatch) -> None:
 
     real_builtin_import = builtins.__import__
 
-    def fake_builtin_import(name, *args, **kwargs):
+    def fake_builtin_import(name: Any, *args: Any, **kwargs: Any) -> Any:
         if name == "pytorch_lightning":
             raise RuntimeError("operator torchvision::nms does not exist")
         return real_builtin_import(name, *args, **kwargs)

@@ -38,14 +38,19 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import torch
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -58,7 +63,7 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 OPSET = 17
 
 
-def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_small(in_dim: int) -> "torch.nn.Module":
     from torch import nn
 
     return nn.Sequential(
@@ -70,7 +75,9 @@ def _build_mlp_small(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-class _BundledScalerMLP:
+def _bundled_scaler_mlp(
+    mlp: "torch.nn.Module", mean: np.ndarray, std: np.ndarray
+) -> "torch.nn.Module":
     """Pure-PyTorch wrapper that prepends ``(x - mean) / std`` to the MLP.
 
     ``torch.onnx.export`` traces the wrapper to a single graph in
@@ -79,24 +86,26 @@ class _BundledScalerMLP:
     covers the calibration values too.
     """
 
-    def __new__(cls, mlp, mean, std):  # type: ignore[no-untyped-def]
-        import torch
-        from torch import nn
+    import torch
+    from torch import nn
 
-        class _Wrap(nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.mlp = mlp
-                self.register_buffer("mean", torch.from_numpy(mean.astype(np.float32)))
-                self.register_buffer("std", torch.from_numpy(std.astype(np.float32)))
+    class _Wrap(nn.Module):
+        mean: torch.Tensor
+        std: torch.Tensor
 
-            def forward(self, features):  # type: ignore[no-untyped-def]
-                # broadcast (N, 6) - (6,) and / (6,)
-                normed = (features - self.mean) / self.std
-                out = self.mlp(normed)
-                return out.squeeze(-1)
+        def __init__(self) -> None:
+            super().__init__()
+            self.mlp = mlp
+            self.register_buffer("mean", torch.from_numpy(mean.astype(np.float32)))
+            self.register_buffer("std", torch.from_numpy(std.astype(np.float32)))
 
-        return _Wrap().eval()
+        def forward(self, features: "torch.Tensor") -> "torch.Tensor":
+            # broadcast (N, 6) - (6,) and / (6,)
+            normed = (features - self.mean) / self.std
+            out: torch.Tensor = self.mlp(normed)
+            return out.squeeze(-1)
+
+    return _Wrap().eval()
 
 
 def _write_sidecar(
@@ -180,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     mlp.load_state_dict(state["state_dict"])
     mlp.eval()
 
-    wrapper = _BundledScalerMLP(mlp, mean, std)
+    wrapper = _bundled_scaler_mlp(mlp, mean, std)
 
     dummy = torch.zeros(1, in_dim, dtype=torch.float32)
     args.out_onnx.parent.mkdir(parents=True, exist_ok=True)

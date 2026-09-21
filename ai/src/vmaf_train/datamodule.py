@@ -25,7 +25,10 @@ __all__ = ["FEATURE_COLUMNS", "FeatureScoreDataset", "VmafTrainDataModule"]
 _LOG = logging.getLogger(__name__)
 
 
-class FeatureScoreDataset(Dataset):
+Sample = tuple[torch.Tensor, torch.Tensor]
+
+
+class FeatureScoreDataset(Dataset[Sample]):
     def __init__(self, cache: Path) -> None:
         cache = Path(cache)
         if cache.suffix == ".npz":
@@ -124,17 +127,17 @@ class VmafTrainDataModule(L.LightningDataModule):
             self.val = Subset(ds, perm[n_tr : n_tr + n_val])
             self.test = Subset(ds, perm[n_tr + n_val :])
 
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self) -> DataLoader[Sample]:
         return DataLoader(
             self.train, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers
         )
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> DataLoader[Sample]:
         return DataLoader(
             self.val, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers
         )
 
-    def test_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> DataLoader[Sample]:
         return DataLoader(
             self.test, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers
         )

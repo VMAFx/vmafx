@@ -36,26 +36,38 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from train_konvid_mos_head import (  # noqa: E402
-    CHUG_HDR_FEATURE_COLUMNS,
-    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
-    N_ENCODERS,
-    _load_jsonl,
-    _normalise_split,
-    _row_to_features,
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    CHUG_HDR_FEATURE_COLUMNS as CHUG_HDR_FEATURE_COLUMNS,
 )
-
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1 as FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
+)
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    N_ENCODERS as N_ENCODERS,
+)
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    _load_jsonl as _load_jsonl,
+)
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    _normalise_split as _normalise_split,
+)
+from ai.scripts.train_konvid_mos_head import (  # noqa: E402
+    _row_to_features as _row_to_features,
+)
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
@@ -421,11 +433,7 @@ def main(argv: list[str] | None = None) -> int:
     srocc = _srocc(pred, mos_arr)
     rmse = _rmse(pred, mos_arr)
 
-    print(
-        f"[validate-chug-mos] "
-        f"PLCC={plcc:.4f}  SROCC={srocc:.4f}  RMSE={rmse:.4f}"
-        f"  (n={n_rows})"
-    )
+    print(f"[validate-chug-mos] PLCC={plcc:.4f}  SROCC={srocc:.4f}  RMSE={rmse:.4f}  (n={n_rows})")
 
     # Use CLI-provided gate thresholds (supports test overrides).
     gate: dict[str, Any] = {

@@ -41,7 +41,13 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import torch
 
 import numpy as np
 
@@ -59,7 +65,7 @@ CANONICAL_6: tuple[str, ...] = (
 )
 
 
-def _build_mlp_medium(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_medium(in_dim: int) -> "torch.nn.Module":
     """v3 architecture — 6 → 32 → 16 → 1 (vendored from train_vmaf_tiny_v3.py)."""
     from torch import nn
 
@@ -72,7 +78,7 @@ def _build_mlp_medium(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-def _build_mlp_large(in_dim: int):  # type: ignore[no-untyped-def]
+def _build_mlp_large(in_dim: int) -> "torch.nn.Module":
     """v4 architecture — 6 → 64 → 32 → 16 → 1 (vendored from train_vmaf_tiny_v4.py)."""
     from torch import nn
 
@@ -87,7 +93,7 @@ def _build_mlp_large(in_dim: int):  # type: ignore[no-untyped-def]
     )
 
 
-_BUILDERS = {
+_BUILDERS: dict[str, Callable[[int], "torch.nn.Module"]] = {
     "mlp_medium": _build_mlp_medium,
     "mlp_large": _build_mlp_large,
 }
@@ -102,7 +108,7 @@ def _train(
     batch_size: int,
     lr: float,
     seed: int,
-):  # type: ignore[no-untyped-def]
+) -> "torch.nn.Module":
     """Train @p arch on the standardised feature matrix.
 
     Identical loop to v3/v4 — only the model factory differs.
@@ -147,7 +153,11 @@ def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
 
 
 def _eval_fold(
-    model, mean: np.ndarray, std: np.ndarray, x_val: np.ndarray, y_val: np.ndarray
+    model: "torch.nn.Module",
+    mean: np.ndarray,
+    std: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
 ) -> dict[str, float]:
     import torch
 
@@ -158,7 +168,7 @@ def _eval_fold(
 
 
 def _run_one_seed(
-    df,
+    df: "pd.DataFrame",
     *,
     arch: str,
     sources: list[str],
@@ -202,7 +212,7 @@ def _run_one_seed(
     return fold_metrics
 
 
-def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict:
+def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict[str, Any]:
     seeds = sorted(per_seed.keys())
     sources = sorted(per_seed[seeds[0]].keys())
 

@@ -11,9 +11,15 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from _script_bootstrap import bootstrap_ai_script
+if TYPE_CHECKING:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(
     __file__,
@@ -21,16 +27,27 @@ _SCRIPT_PATHS = bootstrap_ai_script(
     include_ai_scripts=True,
     include_vmaf_tune_src=True,
 )
-from materialize_saliency_features import (  # noqa: E402
-    REPO_ROOT,
-    SaliencyFn,
-    SaliencyMaterializeConfig,
-    SubprocessRunner,
-    materialize_rows,
-    read_table,
-    write_table,
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    REPO_ROOT as REPO_ROOT,
 )
-
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    SaliencyFn as SaliencyFn,
+)
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    SaliencyMaterializeConfig as SaliencyMaterializeConfig,
+)
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    SubprocessRunner as SubprocessRunner,
+)
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    materialize_rows as materialize_rows,
+)
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    read_table as read_table,
+)
+from ai.scripts.materialize_saliency_features import (  # noqa: E402
+    write_table as write_table,
+)
 from aiutils.cli_helpers import (  # noqa: E402
     add_batch_manifest_arguments,
     collect_cli_argv,

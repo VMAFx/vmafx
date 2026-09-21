@@ -46,14 +46,19 @@ import json
 import math
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
+    import onnxruntime as ort
+
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
@@ -138,7 +143,9 @@ def _z_for_coverage(coverage: float) -> float:
     )
 
 
-def _load_ensemble(manifest_path: Path):  # type: ignore[no-untyped-def]
+def _load_ensemble(
+    manifest_path: Path,
+) -> tuple[dict[str, Any], list["ort.InferenceSession"]]:
     """Load an ensemble manifest + open one ORT session per member.
 
     Returns ``(manifest, sessions)``.
@@ -158,7 +165,7 @@ def _load_ensemble(manifest_path: Path):  # type: ignore[no-untyped-def]
 
 
 def _predict_ensemble(
-    sessions: list,  # type: ignore[type-arg]
+    sessions: list["ort.InferenceSession"],
     features_norm: np.ndarray,
     codec_onehot: np.ndarray,
 ) -> np.ndarray:
@@ -219,7 +226,7 @@ def _synthesize_smoke_corpus(
     n_rows: int = 100,
     num_codecs: int = 6,
     seed: int = 4321,
-):  # type: ignore[no-untyped-def]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Match the trainer smoke distribution but with a different seed
     so we evaluate on out-of-training rows."""
     rng = np.random.default_rng(seed)
@@ -280,7 +287,14 @@ def main(argv: list[str] | None = None) -> int:
     if codec_input is None:
         print("error: ONNX missing codec_onehot input", file=sys.stderr)
         return 2
-    num_codecs = codec_input.shape[1]
+    raw_num_codecs = codec_input.shape[1]
+    if not isinstance(raw_num_codecs, int) or raw_num_codecs <= 0:
+        print(
+            f"error: ONNX codec_onehot width must be a positive integer, got {raw_num_codecs!r}",
+            file=sys.stderr,
+        )
+        return 2
+    num_codecs = raw_num_codecs
 
     if args.smoke or args.parquet is None:
         features, codec_onehot, target = _synthesize_smoke_corpus(num_codecs=num_codecs)

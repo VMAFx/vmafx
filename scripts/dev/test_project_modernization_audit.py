@@ -8,6 +8,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # pylint: disable=wrong-import-position
@@ -678,7 +680,9 @@ def test_skip_path_includes_archives_when_flag_set(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_main_prints_to_stdout_when_no_output_flags(tmp_path: Path, capsys) -> None:
+def test_main_prints_to_stdout_when_no_output_flags(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     _write(tmp_path / "ai" / "scripts" / "train_main.py", "raise NotImplementedError('gap')\n")
 
     rc = audit.main(

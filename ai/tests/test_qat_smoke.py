@@ -25,6 +25,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -33,7 +34,7 @@ pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")
 pytest.importorskip("yaml")
 
-from conftest import requires_pytorch_lightning
+from ai.tests.conftest import requires_pytorch_lightning
 
 requires_pytorch_lightning()
 
@@ -54,8 +55,8 @@ def test_qat_run_smoke(tmp_path: Path) -> None:
     import numpy as np
     import onnxruntime as ort
 
-    from ai.src.vmaf_train.models import LearnedFilter
     from ai.train.qat import QatConfig, run_qat
+    from vmaf_train.models import LearnedFilter
 
     int8_path = tmp_path / "smoke.int8.onnx"
     cfg = QatConfig(
@@ -66,7 +67,7 @@ def test_qat_run_smoke(tmp_path: Path) -> None:
         smoke=True,
     )
 
-    def factory():
+    def factory() -> Any:
         return LearnedFilter(channels=1, width=8, num_blocks=2)
 
     result = run_qat(

@@ -36,6 +36,7 @@ from __future__ import annotations
 import dataclasses
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from . import _gop_common
@@ -71,7 +72,10 @@ _PROBE_RECOGNIZED_NEEDLE = "Encoder av1_videotoolbox"
 
 
 def probe_av1_videotoolbox_available(
-    *, ffmpeg_bin: str | None = None, runner=subprocess.run, timeout: float = 5.0
+    *,
+    ffmpeg_bin: str | None = None,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    timeout: float = 5.0,
 ) -> bool:
     """Return ``True`` iff the host's FFmpeg recognises ``av1_videotoolbox``.
 

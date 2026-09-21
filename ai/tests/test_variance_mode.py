@@ -19,7 +19,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from conftest import requires_pytorch_lightning  # noqa: E402
+from ai.tests.conftest import requires_pytorch_lightning  # noqa: E402
 
 requires_pytorch_lightning()
 
@@ -56,6 +56,7 @@ def test_fr_variance_training_step_finite() -> None:
     # Lightning's training_step returns the loss; call it directly.
     loss = m._step((x, y), "train")
     assert torch.isfinite(loss)
+    assert isinstance(loss, torch.Tensor)
     loss.backward()
     opt.step()
 

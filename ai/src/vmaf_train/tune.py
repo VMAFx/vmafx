@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
-def _read_best_metric(df: "pd.DataFrame", col: str) -> float:  # type: ignore[name-defined]
+def _read_best_metric(df: "pd.DataFrame", col: str) -> float:
     """Return the minimum non-NaN value in *col*, or ``float("inf")`` if none exist.
 
     When every epoch produced NaN for *col* (training diverged from epoch 0),

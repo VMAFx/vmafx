@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import onnx
@@ -15,7 +16,7 @@ import pandas as pd
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build_bisect_cache.py"
 
 
-def _load_script():
+def _load_script() -> Any:
     spec = importlib.util.spec_from_file_location("build_bisect_cache", SCRIPT)
     assert spec is not None
     assert spec.loader is not None

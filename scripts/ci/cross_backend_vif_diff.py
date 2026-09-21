@@ -39,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 # The calibration loader lives next to this script; ensure the
 # script directory is on sys.path so ``python3 scripts/ci/<this>.py``
@@ -315,14 +316,22 @@ def run_vmaf(
         raise SystemExit(2)
 
 
-def load_frames(path: Path) -> list[dict]:
+def load_frames(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
-        return json.load(f)["frames"]
+        payload: object = json.load(f)
+    if not isinstance(payload, dict) or not isinstance(payload.get("frames"), list):
+        raise ValueError(f"{path} must contain a JSON object with a frames array")
+    frames: list[dict[str, Any]] = []
+    for frame in payload["frames"]:
+        if not isinstance(frame, dict) or not all(isinstance(key, str) for key in frame):
+            raise ValueError(f"{path} contains a non-object frame")
+        frames.append({key: value for key, value in frame.items() if isinstance(key, str)})
+    return frames
 
 
 def diff(
-    cpu: list[dict],
-    gpu: list[dict],
+    cpu: list[dict[str, Any]],
+    gpu: list[dict[str, Any]],
     metrics: tuple[str, ...],
     places: int,
     tolerance_override: float | None = None,

@@ -21,6 +21,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _AGG_PATH = _REPO_ROOT / "ai" / "scripts" / "aggregate_corpora.py"
 
 
-def _load_agg_module():
+def _load_agg_module() -> Any:
     spec = importlib.util.spec_from_file_location("aggregate_corpora", _AGG_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -38,7 +39,7 @@ def _load_agg_module():
 
 
 @pytest.fixture(scope="module")
-def agg():
+def agg() -> Any:
     return _load_agg_module()
 
 
@@ -47,7 +48,7 @@ def agg():
 # ---------------------------------------------------------------------------
 
 
-def _likert_row(*, src: str, sha: str, mos: float, corpus: str) -> dict:
+def _likert_row(*, src: str, sha: str, mos: float, corpus: str) -> dict[str, Any]:
     return {
         "src": src,
         "src_sha256": sha,
@@ -67,7 +68,7 @@ def _likert_row(*, src: str, sha: str, mos: float, corpus: str) -> dict:
     }
 
 
-def _waterloo_row(*, src: str, sha: str, mos: float) -> dict:
+def _waterloo_row(*, src: str, sha: str, mos: float) -> dict[str, Any]:
     return {
         "src": src,
         "src_sha256": sha,
@@ -87,7 +88,7 @@ def _waterloo_row(*, src: str, sha: str, mos: float) -> dict:
     }
 
 
-def _netflix_row(*, src: str, sha: str, score: float) -> dict:
+def _netflix_row(*, src: str, sha: str, score: float) -> dict[str, Any]:
     return {
         "src": src,
         "src_sha256": sha,
@@ -105,7 +106,7 @@ def _netflix_row(*, src: str, sha: str, score: float) -> dict:
     }
 
 
-def _write_jsonl(path: Path, rows: list[dict]) -> Path:
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:
         for r in rows:
@@ -133,17 +134,17 @@ def _write_jsonl(path: Path, rows: list[dict]) -> Path:
         ("netflix-public", 95.4, 95.4),
     ],
 )
-def test_convert_mos_per_corpus(agg, corpus, native, expected):
+def test_convert_mos_per_corpus(agg: Any, corpus: Any, native: Any, expected: Any) -> None:
     out = agg.convert_mos(native, corpus)
     assert out == pytest.approx(expected, abs=1e-9)
 
 
-def test_convert_mos_unknown_corpus_raises(agg):
+def test_convert_mos_unknown_corpus_raises(agg: Any) -> None:
     with pytest.raises(ValueError, match="unknown corpus_source"):
         agg.convert_mos(3.0, "made-up-dataset")
 
 
-def test_convert_mos_out_of_native_range_raises(agg):
+def test_convert_mos_out_of_native_range_raises(agg: Any) -> None:
     # 6.0 on a 1-5 ACR scale is implausible — refuse rather than
     # silently emit a 125.0 unified score.
     with pytest.raises(ValueError, match="outside the published"):
@@ -153,12 +154,12 @@ def test_convert_mos_out_of_native_range_raises(agg):
         agg.convert_mos(-10.0, "waterloo-ivc-4k")
 
 
-def test_convert_mos_within_slack_passes(agg):
+def test_convert_mos_within_slack_passes(agg: Any) -> None:
     # Tiny float-precision overshoot must not fail.
     assert agg.convert_mos(5.001, "konvid-1k") == pytest.approx(100.025, abs=1e-9)
 
 
-def test_scale_conversion_table_is_complete(agg):
+def test_scale_conversion_table_is_complete(agg: Any) -> None:
     """Every label declared in the docstring must exist in the table."""
     expected_labels = {
         "konvid-1k",
@@ -176,7 +177,7 @@ def test_scale_conversion_table_is_complete(agg):
 # ---------------------------------------------------------------------------
 
 
-def test_transform_row_emits_provenance_fields(agg):
+def test_transform_row_emits_provenance_fields(agg: Any) -> None:
     src = _likert_row(src="a.mp4", sha="a" * 64, mos=4.0, corpus="lsvq")
     out = agg.transform_row(
         src,
@@ -200,28 +201,28 @@ def test_transform_row_emits_provenance_fields(agg):
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_duplicate_keeps_tighter_uncertainty(agg):
+def test_resolve_duplicate_keeps_tighter_uncertainty(agg: Any) -> None:
     a = {"corpus_source": "lsvq", "mos_std_dev": 0.8, "src_sha256": "x"}
     b = {"corpus_source": "konvid-150k", "mos_std_dev": 0.3, "src_sha256": "x"}
     keep = agg.resolve_duplicate(a, b)
     assert keep["corpus_source"] == "konvid-150k"
 
 
-def test_resolve_duplicate_zero_std_loses_to_known_std(agg):
+def test_resolve_duplicate_zero_std_loses_to_known_std(agg: Any) -> None:
     a = {"corpus_source": "youtube-ugc", "mos_std_dev": 0.7, "src_sha256": "x"}
     b = {"corpus_source": "netflix-public", "mos_std_dev": 0.0, "src_sha256": "x"}
     keep = agg.resolve_duplicate(a, b)
     assert keep["corpus_source"] == "youtube-ugc"
 
 
-def test_resolve_duplicate_tie_keeps_first_seen(agg):
+def test_resolve_duplicate_tie_keeps_first_seen(agg: Any) -> None:
     a = {"corpus_source": "lsvq", "mos_std_dev": 0.5, "src_sha256": "x"}
     b = {"corpus_source": "konvid-150k", "mos_std_dev": 0.5, "src_sha256": "x"}
     keep = agg.resolve_duplicate(a, b)
     assert keep is a
 
 
-def test_aggregate_cross_corpus_dedup_end_to_end(agg, tmp_path):
+def test_aggregate_cross_corpus_dedup_end_to_end(agg: Any, tmp_path: Path) -> None:
     shared_sha = "deadbeef" * 8
     konvid_path = _write_jsonl(
         tmp_path / "konvid_150k.jsonl",
@@ -268,7 +269,9 @@ def test_aggregate_cross_corpus_dedup_end_to_end(agg, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_partial_input_missing_warns_but_succeeds(agg, tmp_path, caplog):
+def test_partial_input_missing_warns_but_succeeds(
+    agg: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     konvid_path = _write_jsonl(
         tmp_path / "konvid_150k.jsonl",
         [_likert_row(src="a.mp4", sha="a" * 64, mos=3.0, corpus="konvid-150k")],
@@ -288,7 +291,7 @@ def test_partial_input_missing_warns_but_succeeds(agg, tmp_path, caplog):
     assert any("input not found" in r.getMessage() for r in caplog.records)
 
 
-def test_all_inputs_missing_aborts(agg, tmp_path):
+def test_all_inputs_missing_aborts(agg: Any, tmp_path: Path) -> None:
     out_path = tmp_path / "unified.jsonl"
     with pytest.raises(SystemExit) as excinfo:
         agg.aggregate(
@@ -304,7 +307,7 @@ def test_all_inputs_missing_aborts(agg, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_single_shard_run_works(agg, tmp_path):
+def test_single_shard_run_works(agg: Any, tmp_path: Path) -> None:
     waterloo_path = _write_jsonl(
         tmp_path / "waterloo.jsonl",
         [
@@ -329,7 +332,7 @@ def test_single_shard_run_works(agg, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_missing_required_key_aborts(agg, tmp_path):
+def test_missing_required_key_aborts(agg: Any, tmp_path: Path) -> None:
     bad_row = _likert_row(src="x.mp4", sha="55" * 32, mos=3.0, corpus="lsvq")
     bad_row.pop("src_sha256")
     bad_path = _write_jsonl(tmp_path / "bad.jsonl", [bad_row])
@@ -343,7 +346,7 @@ def test_missing_required_key_aborts(agg, tmp_path):
     assert "missing required keys" in str(excinfo.value)
 
 
-def test_invalid_json_aborts(agg, tmp_path):
+def test_invalid_json_aborts(agg: Any, tmp_path: Path) -> None:
     bad_path = tmp_path / "bad.jsonl"
     bad_path.write_text('{"src": "a", "mos": 3.0\n')  # missing closing brace
     out_path = tmp_path / "unified.jsonl"
@@ -356,7 +359,9 @@ def test_invalid_json_aborts(agg, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_corpus_label_drops_row(agg, tmp_path, caplog):
+def test_unknown_corpus_label_drops_row(
+    agg: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     odd_row = _likert_row(src="o.mp4", sha="66" * 32, mos=3.0, corpus="weird-set")
     odd_path = _write_jsonl(tmp_path / "weird.jsonl", [odd_row])
     out_path = tmp_path / "unified.jsonl"
@@ -376,7 +381,9 @@ def test_unknown_corpus_label_drops_row(agg, tmp_path, caplog):
 
 
 @pytest.mark.parametrize("bad_mos", [None, "n/a", [1, 2]])
-def test_malformed_mos_drops_row_not_crash(agg, tmp_path, caplog, bad_mos):
+def test_malformed_mos_drops_row_not_crash(
+    agg: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture, bad_mos: Any
+) -> None:
     # A null / non-numeric mos cell satisfies the required-key schema check
     # (the key is present) but float() raises TypeError, not ValueError.
     # The aggregator must count it as dropped_bad_scale and keep going,
@@ -400,7 +407,7 @@ def test_malformed_mos_drops_row_not_crash(agg, tmp_path, caplog, bad_mos):
     assert rows[0]["src"] == "g.mp4"
 
 
-def test_corpus_source_override_wins_over_row_label(agg, tmp_path):
+def test_corpus_source_override_wins_over_row_label(agg: Any, tmp_path: Path) -> None:
     odd_row = _likert_row(src="o.mp4", sha="77" * 32, mos=4.0, corpus="weird-set")
     odd_path = _write_jsonl(tmp_path / "weird.jsonl", [odd_row])
     out_path = tmp_path / "unified.jsonl"
@@ -421,7 +428,7 @@ def test_corpus_source_override_wins_over_row_label(agg, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_output_is_deterministic_across_runs(agg, tmp_path):
+def test_output_is_deterministic_across_runs(agg: Any, tmp_path: Path) -> None:
     rows = [
         _likert_row(src="a.mp4", sha="aa" * 32, mos=3.0, corpus="konvid-150k"),
         _likert_row(src="b.mp4", sha="bb" * 32, mos=4.0, corpus="lsvq"),
@@ -444,12 +451,12 @@ def test_output_is_deterministic_across_runs(agg, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_parse_overrides_rejects_bad_label(agg):
+def test_parse_overrides_rejects_bad_label(agg: Any) -> None:
     with pytest.raises(SystemExit, match="unknown corpus-source label"):
         agg._parse_overrides(["foo.jsonl=not-real"])
 
 
-def test_parse_overrides_rejects_no_equals(agg):
+def test_parse_overrides_rejects_no_equals(agg: Any) -> None:
     with pytest.raises(SystemExit, match="PATH=LABEL"):
         agg._parse_overrides(["foo.jsonl"])
 
@@ -459,7 +466,7 @@ def test_parse_overrides_rejects_no_equals(agg):
 # ---------------------------------------------------------------------------
 
 
-def test_cli_writes_default_manifest(agg, tmp_path):
+def test_cli_writes_default_manifest(agg: Any, tmp_path: Path) -> None:
     source_path = _write_jsonl(
         tmp_path / "konvid.jsonl",
         [_likert_row(src="a.mp4", sha="aa" * 32, mos=4.0, corpus="konvid-150k")],

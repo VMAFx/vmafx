@@ -33,22 +33,28 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
+
 from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -57,7 +63,7 @@ from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -211,7 +217,7 @@ def _run_vmaf_full(
     )
 
 
-def _lookup(metrics: dict, name: str) -> float | None:
+def _lookup(metrics: dict[str, Any], name: str) -> float | None:
     value = metrics.get(name)
     if value is not None:
         return float(value)
@@ -227,12 +233,12 @@ def _lookup(metrics: dict, name: str) -> float | None:
 
 def _frames_to_rows(
     key: str, vmaf_json: Path, codec: str, teacher_model: str = DEFAULT_MODEL
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     doc = json.loads(vmaf_json.read_text())
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for frame in doc.get("frames", []):
         metrics = frame.get("metrics", {})
-        row: dict = {
+        row: dict[str, Any] = {
             "key": key,
             "frame_index": int(frame["frameNum"]),
             "codec": codec,
@@ -264,7 +270,7 @@ def _process_clip(
     scratch: Path,
     codec_label: str,
     codec_from_source: bool,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     if cache_dir is not None:
         cache_path = _cache_path(cache_dir, key, crf, teacher_name)
         if cache_path.is_file():
@@ -299,7 +305,7 @@ def _assign_folds(keys: list[str], fold_count: int) -> dict[str, str]:
 
 
 def _write_outputs(
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     out_path: Path,
     folds_out: Path | None,
     fold_count: int,
@@ -339,7 +345,7 @@ def _write_manifest(
     argv: list[str] | None,
     videos_dir: Path,
     clips_selected: int,
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     folds_out: Path | None,
     elapsed_s: float,
     teacher_model: str,
@@ -507,7 +513,7 @@ def main(argv: list[str] | None = None) -> int:
         f"[konvid-full] processing {len(clips)} clips from {videos_dir} -> {args.out}",
         flush=True,
     )
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     t0 = time.monotonic()
     for idx, clip in enumerate(clips):
         key = clip.stem

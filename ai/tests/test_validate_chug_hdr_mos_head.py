@@ -18,6 +18,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,7 @@ sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
 np = pytest.importorskip("numpy")
 
-import train_konvid_mos_head as trainer  # noqa: E402
+from ai.scripts import train_konvid_mos_head as trainer  # noqa: E402
 
 # Load validator under test without executing __main__.
 _SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "validate_chug_hdr_mos_head.py"
@@ -45,7 +46,7 @@ _SPEC.loader.exec_module(validator)
 def _write_chug_jsonl(path: Path, n_train: int, n_val: int, n_test: int) -> None:
     """Write a minimal CHUG feature JSONL with the three splits."""
     rng = np.random.default_rng(42)
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for i in range(n_train + n_val + n_test):
         if i < n_train:
             split = "train"

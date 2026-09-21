@@ -29,9 +29,10 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any
 
 # 1920x1080 YUV420p 8-bit -> 3110400 bytes/frame.
 DEFAULT_W: int = 1920
@@ -239,11 +240,11 @@ def list_sources(data_root: Path) -> list[str]:
 
 def load_or_compute(
     pair: NetflixPair,
-    compute_fn,  # type: ignore[no-untyped-def]
+    compute_fn: Callable[[NetflixPair], dict[str, Any]],
     *,
     use_cache: bool = True,
-    cache_valid=None,  # type: ignore[no-untyped-def]
-) -> dict:
+    cache_valid: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any]:
     """Read the per-clip JSON cache or call ``compute_fn(pair) -> dict``.
 
     The compute function is only invoked on cache miss. The result is
@@ -258,7 +259,10 @@ def load_or_compute(
     cache_file = cache_path_for(pair)
     if use_cache and cache_file.is_file():
         try:
-            cached = json.loads(cache_file.read_text())
+            decoded: object = json.loads(cache_file.read_text())
+            if not isinstance(decoded, dict) or not all(isinstance(key, str) for key in decoded):
+                raise json.JSONDecodeError("cache root is not an object", "", 0)
+            cached = {key: value for key, value in decoded.items() if isinstance(key, str)}
         except json.JSONDecodeError:
             # Corrupt cache — fall through to recompute and overwrite.
             cached = None

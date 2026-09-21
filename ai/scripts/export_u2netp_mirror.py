@@ -22,22 +22,25 @@ from __future__ import annotations
 import argparse
 import importlib.util
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.file_utils import sha256 as sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 UPSTREAM_REPO = "https://github.com/xuebinqin/U-2-Net"
@@ -88,8 +91,8 @@ def _load_u2netp_class(module_path: Path) -> type[nn.Module]:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     cls = getattr(module, "U2NETP", None)
-    if cls is None:
-        raise AttributeError(f"{module_path} does not define U2NETP")
+    if not isinstance(cls, type) or not issubclass(cls, nn.Module):
+        raise TypeError(f"{module_path} does not define a torch.nn.Module U2NETP class")
     return cls
 
 
@@ -146,7 +149,9 @@ class U2NetPMirrorAdapter(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         outputs = self.upstream(x)
         if isinstance(outputs, tuple | list):
-            return outputs[0]
+            outputs = outputs[0]
+        if not isinstance(outputs, torch.Tensor):
+            raise TypeError("U2NETP forward must return a Tensor or Tensor sequence")
         return outputs
 
 
@@ -155,7 +160,7 @@ def _export_onnx(adapter: nn.Module, output: Path, *, height: int, width: int, o
     dummy = torch.zeros(1, 3, height, width, dtype=torch.float32)
     torch.onnx.export(
         adapter.eval(),
-        dummy,
+        (dummy,),
         str(output),
         input_names=["input"],
         output_names=["saliency_map"],
@@ -171,7 +176,7 @@ def _export_onnx(adapter: nn.Module, output: Path, *, height: int, width: int, o
 
 def _annotate_onnx(path: Path, metadata: dict[str, str]) -> bool:
     try:
-        import onnx  # type: ignore[import-not-found]
+        import onnx
     except ImportError:
         return False
 

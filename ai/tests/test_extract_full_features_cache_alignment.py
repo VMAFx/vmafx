@@ -19,6 +19,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -31,7 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_full_features.py"
 
 
-def _load_module():
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("extract_full_features_cache_test", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -54,7 +55,9 @@ def test_cache_path_carries_feature_count() -> None:
     assert f".f{len(FULL_FEATURES)}." in p.name
 
 
-def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch) -> None:
+def test_stale_short_cache_is_not_silently_truncated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A cache whose stored feature_names no longer match FULL_FEATURES must be
     recomputed, not zipped (truncated) against the current FULL_FEATURES."""
     mod = _load_module()
@@ -77,7 +80,7 @@ def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch
     stale_path.write_text(
         json.dumps(
             {
-                "feature_names": list(FULL_FEATURES[:2]),
+                "feature_names": list[Any](FULL_FEATURES[:2]),
                 "per_frame": [[1.0, 2.0], [3.0, 4.0]],
                 "teacher_per_frame": [80.0, 81.0],
             }
