@@ -150,6 +150,56 @@ cat >"$tmp/headers.md" <<'MD'
 MD
 expect "repeated column headers do NOT fail" 0 "$tmp/headers.md"
 
+# Regression: a closed bug reads as open forever without any duplicate at all
+# when its row is filed under "## Open bugs" while its own status cell already
+# says `closed` or `fixed`. 24 of the 62 rows under "## Open bugs" were in that
+# state on 2026-09-21 -- including the row for this gate's own bug,
+# T-STATE-MD-ROW-GATE-BLIND-2026-09-16 -- and both checks above reported the
+# file clean, because nothing about it is a duplicate.
+cat >"$tmp/misfiled.md" <<'MD'
+## Open bugs
+
+| ID | Description | ADR | PR | Date | Status |
+| --- | --- | --- | --- | --- | --- |
+| **T-STATE-MD-ROW-GATE-BLIND-2026-09-16** | the gate was blind | — | PR #1425 | 2026-09-16 | fixed |
+
+## Recently closed
+
+| ID | Description | ADR | PR | Date | Status |
+| --- | --- | --- | --- | --- | --- |
+| **T-IOTA-2026-01-08** | genuinely closed | — | PR #2 | 2026-01-08 | closed |
+MD
+expect "a 'fixed' row under Open bugs fails" 1 "$tmp/misfiled.md"
+
+# The mirror case: a row that still says `open` filed under Recently closed.
+sed -e 's/| fixed |/| open |/' -e 's/| closed |/| open |/' \
+  "$tmp/misfiled.md" >"$tmp/reopened.md"
+expect "an 'open' row under Recently closed fails" 1 "$tmp/reopened.md"
+
+# Fail closed: renaming or deleting the heading must not turn the check into a
+# no-op by moving every status-bearing row into an ungated section.
+sed 's/^## Recently closed$/## Closed a while ago/' \
+  "$tmp/misfiled.md" >"$tmp/renamed.md"
+expect "a renamed section heading fails instead of skipping" 1 "$tmp/renamed.md"
+
+# Rows whose last cell is a verification date, a branch name or prose make no
+# status claim. Guessing at them would fabricate failures, so they pass.
+cat >"$tmp/nostatus.md" <<'MD'
+## Open bugs
+
+| ID | Description | Verification |
+| --- | --- | --- |
+| **T-KAPPA-2026-01-09** | still broken | Closes when the parity test passes |
+
+## Recently closed
+
+| ID | Description | Verification | Branch |
+| --- | --- | --- | --- |
+| **T-LAMBDA-2026-01-10** | closed | 12 of 12 runs pass | `fix/lambda` |
+| **T-MU-2026-01-11** | closed | reducer no longer reproduces | (2026-01-11) |
+MD
+expect "rows with no status token in the last cell pass" 0 "$tmp/nostatus.md"
+
 expect "a missing file is rc=2" 2 "$tmp/nope.md"
 
 # the real file must be clean

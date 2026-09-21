@@ -359,6 +359,30 @@ Its own regression test is
 python3 scripts/dev/test-resolve-state-md-conflict.py
 ```
 
+### The other way a closed bug reads as open
+
+A duplicate is not the only shape. A row filed under `## Open bugs` whose own
+rightmost cell already says `closed` or `fixed` reads as an open bug forever
+without any duplicate being involved — the PR appended its row to the section
+it happened to be reading instead of moving it, or a rebase dropped the move
+hunk and kept the status edit. 24 of the 62 rows under `## Open bugs` were in
+that state on 2026-09-21.
+
+`scripts/ci/check-state-md-rows.sh` now reads the section heading each row sits
+under together with the status token in its last cell and requires them to
+agree:
+
+- `closed` / `fixed` / `resolved` / `done` only under `## Recently closed`
+- `open` only under `## Open bugs`
+- rows whose last cell is a verification date, a branch name or prose make no
+  status claim and are not judged
+
+The fix is always to **move the row**, never to rewrite its status to match
+where it landed. The check fails closed on the one way it could be silently
+disabled: if any row claims a status that belongs to a section and that
+section's heading is missing, the gate errors instead of passing over rows
+that have quietly become ungated.
+
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
 Per [CLAUDE.md §12 rule 13](../../CLAUDE.md) and

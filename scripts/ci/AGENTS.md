@@ -602,3 +602,38 @@ tighten. Do not tighten; restore the `(^|/)`.
 CPU baseline = CI's `tidy-ratchet-cpu` artifact (clang-tidy 22, ubuntu-26.04),
 never a local run with another clang-tidy. GPU lanes: local `make
 tidy-ratchet-write LANE=<cuda|hip|sycl>`, advisory.
+
+## check-state-md-rows.sh — the status token belongs to the section (ADR-0165)
+
+Three independent checks, all of them widened only after a narrower version
+reported a dirty file as clean. Do not narrow any of them.
+
+1. Duplicate bug id. Matches four id shapes (`**T-ID**`, `T-ID`, `**T7-16**`,
+   `Netflix/vmaf#NNN`) and anchors on the token that OPENS the first cell, not
+   on the whole cell — most rows carry a description after the id.
+2. Verbatim repeated row, for the ~143 prose-led rows that carry no id.
+   Normalises away `_(verified YYYY-MM-DD: ...)_` before comparing.
+3. Section against status. A row's last cell, when it IS a status token, must
+   agree with the level-2 heading the row sits under: `closed` / `fixed` /
+   `resolved` / `done` only under `## Recently closed`, `open` only under
+   `## Open bugs`.
+
+Check 3 exists because checks 1 and 2 only see a *duplicate*. A resolved row
+left under `## Open bugs` with no second copy is invisible to both, and reads
+as an open bug forever; 24 of 62 rows were in that state on 2026-09-21.
+
+Invariants for check 3:
+
+- Only a last cell that is a status token is judged. Several row shapes end in
+  a verification date, a branch name (`fix/...`, `ci/...`) or prose; those make
+  no section claim. Widening the vocabulary to guess at them fabricates
+  failures — eight live rows end in a branch name.
+- It fails closed on its one silent-disable path: if a row claims a status
+  whose owning section heading is absent, the gate errors rather than passing
+  over rows that have become ungated. Renaming `## Open bugs` or
+  `## Recently closed` therefore breaks the build on purpose.
+- The fix for a hit is always to MOVE the row. Rewriting the status to match
+  where the row landed is the failure, dressed up as the repair.
+
+Header rows are excluded the same way for all three checks: a `|---|---|`
+separator retracts the record for the line immediately above it.
