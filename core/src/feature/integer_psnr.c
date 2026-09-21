@@ -252,9 +252,9 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
+        const double score = psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
 
-        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
+        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], score, index);
         if (s->enable_mse) {
             err |= vmaf_feature_collector_append(feature_collector, mse_name[p], mse, index);
         }
@@ -289,10 +289,10 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr =
+        const double score =
             psnr_from_mse(mse, (double)s->peak * s->peak, s->psnr_max[p], s->uncapped);
 
-        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
+        err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], score, index);
         if (s->enable_mse) {
             err |= vmaf_feature_collector_append(feature_collector, mse_name[p], mse, index);
         }
@@ -325,10 +325,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     PsnrState *s = fex->priv;
-    const char *apsnr_name[3] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
-
     int err = 0;
     if (s->enable_apsnr) {
+        const char *apsnr_name[3] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
         /* When chroma is disabled only luma (i=0) is accumulated; iterating
          * over disabled planes would invoke log10(0) yielding -inf / NaN.   */
         const unsigned n_planes = s->enable_chroma ? 3u : 1u;

@@ -723,6 +723,15 @@ static inline float ref_srgb_to_linear(float v)
     return vmaf_ss2_srgb_eotf(v);
 }
 
+static inline float ref_clamp_unit(float value)
+{
+    if (value < 0.0f)
+        return 0.0f;
+    if (value > 1.0f)
+        return 1.0f;
+    return value;
+}
+
 /* Scalar reference: read_plane — handles all chroma ratios + 8/16-bit. */
 static inline float ref_read_plane(const simd_plane_t *p, unsigned lw, unsigned lh, int x, int y,
                                    unsigned bpc)
@@ -761,25 +770,29 @@ static inline float ref_read_plane(const simd_plane_t *p, unsigned lw, unsigned 
     return (float)row[sx];
 }
 
-/* Scalar reference: picture_to_linear_rgb. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
-static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
-                                      const simd_plane_t planes[3], float *out)
+typedef struct RefYuvConversion {
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_offset;
+} RefYuvConversion;
+
+static RefYuvConversion ref_get_yuv_conversion(int yuv_matrix)
 {
-    const size_t plane_sz = (size_t)w * (size_t)h;
-    float *rp = out;
-    float *gp = out + plane_sz;
-    float *bp = out + 2 * plane_sz;
-    const float peak = (float)((1u << bpc) - 1u);
-    const float inv_peak = 1.0f / peak;
     float kr;
     float kg;
     float kb;
     int limited = 1;
     switch (yuv_matrix) {
     case 2:
-        limited = 0; /* fall through */
-        /* fall through */
+        limited = 0;
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
     case 0:
         kr = 0.2126f;
         kg = 0.7152f;
@@ -798,46 +811,68 @@ static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, 
         kb = 0.114f;
         break;
     }
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
+    return (RefYuvConversion){
+        .cr_r = 2.0f * (1.0f - kr),
+        .cb_b = 2.0f * (1.0f - kb),
+        .cb_g = -(2.0f * kb * (1.0f - kb)) / kg,
+        .cr_g = -(2.0f * kr * (1.0f - kr)) / kg,
+        .y_scale = limited ? (255.0f / 219.0f) : 1.0f,
+        .c_scale = limited ? (255.0f / 224.0f) : 1.0f,
+        .y_offset = limited ? (16.0f / 255.0f) : 0.0f,
+    };
+}
+
+static inline void ref_write_linear_rgb_pixel(const simd_plane_t planes[3], unsigned bpc,
+                                              unsigned width, unsigned height, unsigned x,
+                                              unsigned y, float inv_peak,
+                                              const RefYuvConversion *conversion, float *red,
+                                              float *green, float *blue)
+{
+    const float sample_y =
+        ref_read_plane(&planes[0], width, height, (int)x, (int)y, bpc) * inv_peak;
+    const float sample_u =
+        ref_read_plane(&planes[1], width, height, (int)x, (int)y, bpc) * inv_peak;
+    const float sample_v =
+        ref_read_plane(&planes[2], width, height, (int)x, (int)y, bpc) * inv_peak;
+    const float normalized_y = (sample_y - conversion->y_offset) * conversion->y_scale;
+    const float normalized_u = (sample_u - 0.5f) * conversion->c_scale;
+    const float normalized_v = (sample_v - 0.5f) * conversion->c_scale;
+
+    /* ADR-0891: explicit fmaf() — icx + `-mfma` may contract plain `a + b*c`
+     * to FMA even under `-fp-model=precise`, diverging from the SIMD
+     * implementation this reference is compared against byte-for-byte. The
+     * two-step green computation preserves the left-to-right associativity
+     * the SIMD kernel uses. Do not rewrite these as `a * b + c`. */
+    float value_r = fmaf(conversion->cr_r, normalized_v, normalized_y);
+    float value_g = fmaf(conversion->cb_g, normalized_u, normalized_y);
+    value_g = fmaf(conversion->cr_g, normalized_v, value_g);
+    float value_b = fmaf(conversion->cb_b, normalized_u, normalized_y);
+    value_r = ref_clamp_unit(value_r);
+    value_g = ref_clamp_unit(value_g);
+    value_b = ref_clamp_unit(value_b);
+
+    const size_t index = (size_t)y * (size_t)width + (size_t)x;
+    red[index] = ref_srgb_to_linear(value_r);
+    green[index] = ref_srgb_to_linear(value_g);
+    blue[index] = ref_srgb_to_linear(value_b);
+}
+
+/* Scalar reference: picture_to_linear_rgb. */
+static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
+                                      const simd_plane_t planes[3], float *out)
+{
+    const size_t plane_size = (size_t)w * (size_t)h;
+    float *const red = out;
+    float *const green = out + plane_size;
+    float *const blue = out + 2u * plane_size;
+    const float peak = (float)((1u << bpc) - 1u);
+    const float inv_peak = 1.0f / peak;
+    const RefYuvConversion conversion = ref_get_yuv_conversion(yuv_matrix);
+
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
-            const float Y = ref_read_plane(&planes[0], w, h, (int)x, (int)y, bpc) * inv_peak;
-            const float U = ref_read_plane(&planes[1], w, h, (int)x, (int)y, bpc) * inv_peak;
-            const float V = ref_read_plane(&planes[2], w, h, (int)x, (int)y, bpc) * inv_peak;
-            const float Yn = (Y - y_off) * y_scale;
-            const float Un = (U - c_off) * c_scale;
-            const float Vn = (V - c_off) * c_scale;
-            /* ADR-0891: explicit fmaf() — icx + `-mfma` may contract
-             * plain `a + b*c` to FMA even under `-fp-model=precise`,
-             * diverging from the SIMD implementation. Preserves the
-             * left-to-right associativity of the G computation. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
-            if (R < 0.0f)
-                R = 0.0f;
-            if (R > 1.0f)
-                R = 1.0f;
-            if (G < 0.0f)
-                G = 0.0f;
-            if (G > 1.0f)
-                G = 1.0f;
-            if (B < 0.0f)
-                B = 0.0f;
-            if (B > 1.0f)
-                B = 1.0f;
-            const size_t idx = (size_t)y * w + x;
-            rp[idx] = ref_srgb_to_linear(R);
-            gp[idx] = ref_srgb_to_linear(G);
-            bp[idx] = ref_srgb_to_linear(B);
+            ref_write_linear_rgb_pixel(planes, bpc, w, h, x, y, inv_peak, &conversion, red, green,
+                                       blue);
         }
     }
 }
@@ -866,22 +901,44 @@ static ptlr_fn_t pick_ptlr(void)
 }
 
 /* Test all 6 common (yuv_matrix × subsampling) combinations on small frames. */
-/* Test helper — drives all 5 format variants (420/422/444 × 8/10-bit)
- * through one parameterised entry point. Splitting would duplicate
- * the per-plane fixture setup + 3× xorshift fill + shell. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
+#if !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MINGW64__)
+static uint32_t fill_ptlr_samples(void *buffer, size_t count, unsigned bpc, uint32_t state)
+{
+    const unsigned max_value = (1u << bpc) - 1u;
+    for (size_t i = 0; i < count; i++) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        const unsigned value = state % (max_value + 1u);
+        if (bpc > 8) {
+            ((uint16_t *)buffer)[i] = (uint16_t)value;
+        } else {
+            ((uint8_t *)buffer)[i] = (uint8_t)value;
+        }
+    }
+    return state;
+}
+
+static void free_ptlr_buffers(void *luma, void *chroma_u, void *chroma_v, float *reference,
+                              float *simd)
+{
+    free(luma);
+    free(chroma_u);
+    free(chroma_v);
+    free(reference);
+    free(simd);
+}
+#endif
+
+/* TODO(ssimulacra2-ptlr-mingw): scalar fmaf() on MinGW-w64's libm (compiled
+ * without -mfma) is not guaranteed to be correctly single-rounded, so
+ * scalar-vs-AVX2 / scalar-vs-AVX-512 bit-exactness fails on Windows MinGW64 CI
+ * even after the ADR-0891 FMA unification. Skip the whole test there for now;
+ * Linux/macOS libm fmaf() is correctly rounded and the test runs fine on those
+ * hosts. Mirrors the existing skip in core/test/test_ms_ssim_decimate.c (see
+ * TODO(ms-ssim-mingw)). */
 static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsigned uh_div)
 {
-    /*
-     * TODO(ssimulacra2-ptlr-mingw): scalar fmaf() on MinGW-w64's libm
-     * (compiled without -mfma) is not guaranteed to be correctly
-     * single-rounded, so scalar-vs-AVX2 / scalar-vs-AVX-512
-     * bit-exactness fails on Windows MinGW64 CI even after the
-     * ADR-0891 FMA unification. Skip the whole test there for now;
-     * Linux/macOS libm fmaf() is correctly rounded and the test runs
-     * fine on those hosts. Mirrors the existing skip in
-     * core/test/test_ms_ssim_decimate.c (see TODO(ms-ssim-mingw)).
-     */
 #if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
     (void)yuv_matrix;
     (void)bpc;
@@ -905,47 +962,13 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     void *u_buf = calloc(c_sz, elem);
     void *v_buf = calloc(c_sz, elem);
     if (!y_buf || !u_buf || !v_buf) {
-        free(y_buf);
-        free(u_buf);
-        free(v_buf);
+        free_ptlr_buffers(y_buf, u_buf, v_buf, NULL, NULL);
         return "calloc failed";
     }
-    /* Fill with pseudo-random 8/16-bit pixel values. */
     uint32_t s = 0xabadcafeu ^ (uint32_t)(yuv_matrix * 7 + bpc * 13 + uw_div * 5 + uh_div);
-    const unsigned maxv = (1u << bpc) - 1u;
-    for (size_t i = 0; i < y_sz; i++) {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        const unsigned v = s % (maxv + 1);
-        if (bpc > 8) {
-            ((uint16_t *)y_buf)[i] = (uint16_t)v;
-        } else {
-            ((uint8_t *)y_buf)[i] = (uint8_t)v;
-        }
-    }
-    for (size_t i = 0; i < c_sz; i++) {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        const unsigned v = s % (maxv + 1);
-        if (bpc > 8) {
-            ((uint16_t *)u_buf)[i] = (uint16_t)v;
-        } else {
-            ((uint8_t *)u_buf)[i] = (uint8_t)v;
-        }
-    }
-    for (size_t i = 0; i < c_sz; i++) {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        const unsigned v = s % (maxv + 1);
-        if (bpc > 8) {
-            ((uint16_t *)v_buf)[i] = (uint16_t)v;
-        } else {
-            ((uint8_t *)v_buf)[i] = (uint8_t)v;
-        }
-    }
+    s = fill_ptlr_samples(y_buf, y_sz, bpc, s);
+    s = fill_ptlr_samples(u_buf, c_sz, bpc, s);
+    (void)fill_ptlr_samples(v_buf, c_sz, bpc, s);
     const simd_plane_t planes[3] = {
         {y_buf, (ptrdiff_t)LW * (ptrdiff_t)elem, LW, LH},
         {u_buf, (ptrdiff_t)UW * (ptrdiff_t)elem, UW, UH},
@@ -955,22 +978,14 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     float *out_ref = malloc(out_sz * sizeof(float));
     float *out_simd = malloc(out_sz * sizeof(float));
     if (!out_ref || !out_simd) {
-        free(y_buf);
-        free(u_buf);
-        free(v_buf);
-        free(out_ref);
-        free(out_simd);
+        free_ptlr_buffers(y_buf, u_buf, v_buf, out_ref, out_simd);
         return "malloc failed";
     }
     ref_picture_to_linear_rgb(yuv_matrix, bpc, LW, LH, planes, out_ref);
     fn(yuv_matrix, bpc, LW, LH, planes, out_simd);
     // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0163 byte-exact
     const int match = memcmp(out_ref, out_simd, out_sz * sizeof(float)) == 0;
-    free(y_buf);
-    free(u_buf);
-    free(v_buf);
-    free(out_ref);
-    free(out_simd);
+    free_ptlr_buffers(y_buf, u_buf, v_buf, out_ref, out_simd);
     mu_assert("picture_to_linear_rgb SIMD not bit-identical to scalar", match);
     return NULL;
 #endif /* _WIN32 / MINGW */
