@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-20T10:40:24Z",
+  "generated_at": "2026-09-22T16:08:45Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 1367,
@@ -2295,10 +2295,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/include/libvmaf/pelorus/interop.h",
-      "line_number": 74,
+      "line_number": 75,
       "symbol": "extern \"C\" {",
       "message": "Function 'extern \"C\" {' (492 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/include/libvmaf/pelorus/interop.h:74:HISS-04"
+      "fingerprint": "core/include/libvmaf/pelorus/interop.h:75:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -6595,41 +6595,41 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/interop/pelorus_interop.c",
-      "line_number": 115,
+      "line_number": 125,
       "symbol": "{",
-      "message": "Function '{' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/interop/pelorus_interop.c:115:HISS-04"
+      "message": "Function '{' (85 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/interop/pelorus_interop.c:125:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/interop/pelorus_interop.c",
-      "line_number": 220,
+      "line_number": 236,
       "symbol": "{",
-      "message": "Function '{' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/interop/pelorus_interop.c:220:HISS-04"
+      "message": "Function '{' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/interop/pelorus_interop.c:236:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/interop/pelorus_interop.c",
-      "line_number": 295,
+      "line_number": 318,
       "symbol": "{",
       "message": "Function '{' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/interop/pelorus_interop.c:295:HISS-04"
+      "fingerprint": "core/src/interop/pelorus_interop.c:318:HISS-04"
     },
     {
       "rule_id": "HISS-02",
       "file_path": "core/src/interop/pelorus_qp_report_csv.c",
-      "line_number": 120,
+      "line_number": 121,
       "message": "Legacy unbounded loop in native code",
-      "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:120:HISS-02"
+      "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:121:HISS-02"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/interop/pelorus_qp_report_csv.c",
-      "line_number": 283,
+      "line_number": 284,
       "symbol": "{",
       "message": "Function '{' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:283:HISS-04"
+      "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:284:HISS-04"
     },
     {
       "rule_id": "HISS-01",
@@ -7803,34 +7803,34 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_pelorus_interop.c",
-      "line_number": 72,
+      "line_number": 67,
       "symbol": "test_roundtrip",
       "message": "Function 'test_roundtrip' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_pelorus_interop.c:72:HISS-04"
+      "fingerprint": "core/test/test_pelorus_interop.c:67:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_pelorus_interop.c",
-      "line_number": 327,
+      "line_number": 322,
       "symbol": "test_qp_report_roundtrip",
       "message": "Function 'test_qp_report_roundtrip' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_pelorus_interop.c:327:HISS-04"
+      "fingerprint": "core/test/test_pelorus_interop.c:322:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_pelorus_interop.c",
-      "line_number": 405,
+      "line_number": 400,
       "symbol": "test_motion_conf_roundtrip",
       "message": "Function 'test_motion_conf_roundtrip' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_pelorus_interop.c:405:HISS-04"
+      "fingerprint": "core/test/test_pelorus_interop.c:400:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_pelorus_interop.c",
-      "line_number": 567,
+      "line_number": 562,
       "symbol": "test_x265_csv_reader",
       "message": "Function 'test_x265_csv_reader' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_pelorus_interop.c:567:HISS-04"
+      "fingerprint": "core/test/test_pelorus_interop.c:562:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -9822,10 +9822,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "scripts/ci/test_git_fixture_isolation.py",
-      "line_number": 122,
+      "line_number": 125,
       "symbol": "test_real_linked_worktree_hook_preserves_shared_repository",
       "message": "Function 'test_real_linked_worktree_hook_preserves_shared_repository' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "scripts/ci/test_git_fixture_isolation.py:122:HISS-04"
+      "fingerprint": "scripts/ci/test_git_fixture_isolation.py:125:HISS-04"
     },
     {
       "rule_id": "HISS-04",
