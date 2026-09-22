@@ -51935,3 +51935,16 @@ On conflict in `compat/python-vmaf/matlab/`, reapply the `static` band/parse hel
 Upstream-mirrored tests under `core/test/` (`test.h`, `test_dict.cpp`, `test_predict.c`, `test_model.c`, `test_feature.cpp`, `test_cuda_pic_preallocation.c`) keep every assertion string, expected value and registered test name; on conflict reapply the helper split rather than restoring the single bodies, and keep the added `mu_assert_msg` in `test.h`, the short reopened anonymous-namespace blocks in the C++ tests, and the shared `core/test/hip_parity_skip.h`.
 
 `core/test/test_barten_csf.c` is the explicit exception and is **not** split. Its body is the upstream `mu_assert(almost_equal(...))` sequence carried verbatim from Netflix `c70debb1`, and upstream keeps appending cases to it (`c2155d6cd` added the 2160p CSF rows). Any reshaping of that sequence turns every later upstream sync of this file into a hand-merge, which is the load-bearing invariant its cited `// NOLINTNEXTLINE(readability-function-size)` protects (ADR-0141 §2, ADR-0278). On conflict, take upstream's case list verbatim and keep the suppression.
+
+### `chore/hiss21-core-src-simd`
+
+`core/src/sycl/common.cpp` gained five same-TU `static` helpers
+(`sycl_resolve_device`, `sycl_log_fp64_note`, `sycl_profiling_enabled`,
+`sycl_queue_props`, `sycl_enqueue_plane_upload`, `sycl_shared_frame_release`,
+`sycl_any_extractor_wants_graph`, `sycl_run_compute_phase`,
+`sycl_apply_input_barriers`, `sycl_enqueue_all_phases`) to clear HISS-01/HISS-04;
+`sycl_shared_frame_release()` is now the single cleanup owner that replaced the
+`fail:` label, so a rebase must not reintroduce `goto fail` or an early return
+that skips it. The SIMD kernels under `core/src/feature/{x86,arm64}` were left
+unsplit on purpose — their per-TU `-ffp-contract=off` carve-outs and inline
+horizontal reductions are ADR-0138/ADR-0139 bit-exactness invariants.
