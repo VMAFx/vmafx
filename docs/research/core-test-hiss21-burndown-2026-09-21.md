@@ -291,10 +291,40 @@ touched list and the measured paths, not over the measured paths alone:
 a file that measures 0 carries no entry in the measurement's `warnings`
 map, so iterating that map silently skips exactly the files that were
 cleaned to zero — which is how `framesync.c` and `test_framesync.c` were
-missed on the first pass. Five headers
-(`framesync.h`, `picture_pool.h`, `ref.h`, `svm.h`, `x86/cpu.h`) do read
-one or two below theirs, and that is an artifact of measuring 37 TUs
-instead of 312: each missing diagnostic is a C++-only check
-(`modernize-use-using`, `performance-enum-size`) on a header whose
-reporting TU is outside the scoped set. The scoped write does not touch
-header allowances, so nothing was written for them.
+missed on the first pass.
+
+Several headers read one or two below theirs. A 37-TU measurement cannot
+tell a real reduction from a diagnostic whose only reporting TU is
+outside the scoped set, so the whole lane was measured instead — 316 TUs,
+zero compile failures — and the headers separate into two groups.
+
+Two are real, and both belong to this branch. `core/src/log.h` reads 0
+against a baseline of 1 and `core/src/framesync.h` reads 1 against 2; the
+diagnostic missing from each is
+`bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp` on the
+`__VMAF_SRC_LOG_H__` and `__VMAF_FRAME_SYNC_H__` include guards, which
+`fix(core): make C23 logging analyzer-clean` and `fix(ci): correct pthread
+modeling and init failures` renamed to `VMAF_SRC_LOG_H_` and
+`VMAF_FRAME_SYNC_H_`. Measuring `origin/master` on the same machine
+reproduces both diagnostics at `log.h:20:9` and `framesync.h:20:9`, so the
+reduction is the branch's, not the toolchain's.
+
+Neither can be written from this machine, and that is *Deliberate
+residue*, not an oversight. The scoped writer (ADR-1243) rewrites only the
+TU paths passed to `--only`, and a header is not a TU, so a header
+allowance moves only under a full `--write`. A full write replaces every
+entry with this machine's measurement, and this machine is not the one the
+baseline records: `cc_version` here is `cc (GCC) 16.2.1` against the
+baseline's `gcc-15 (Ubuntu 15.2.0-16ubuntu1)`, and the difference is not
+theoretical — `core/src/dict.cpp` measures 16 against a baseline of 15 and
+`core/src/feature/feature_collector.cpp` 16 against 13, on **`origin/master`
+as well as on this branch**, from `misc-const-correctness`,
+`misc-use-anonymous-namespace` and `bugprone-suspicious-stringview-data-usage`
+that gcc-16's libstdc++ headers produce and gcc-15's do not. Writing those
+three hundred entries to buy two header lines would trade a two-line
+overstatement for a tree-wide one. `lint-and-format.yml` builds this lane
+with `CC=gcc-15 CXX=g++-15` and measures it with `/usr/bin/clang-tidy-22`,
+and uploads the result as `tidy-ratchet-cpu.json` precisely so it can be
+committed as the new baseline; that artifact, not a local write, is where
+these two lines come from. The dev container has the gcc-15 half and no
+clang-tidy-22; this host has the clang-tidy-22 half and no gcc-15.

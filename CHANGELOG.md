@@ -24210,7 +24210,14 @@ The required standards gate now replays declared HISS enforcement fixtures on Li
   `test_pic_preallocation.c` 16 -> 10, `framesync.c` 7 -> 0,
   `test_framesync.c` 8 -> 0) tighten
   `scripts/ci/tidy-baseline-cpu.json` through the scoped writer rather
-  than by hand; see
+  than by hand. Two header allowances the branch also earned
+  (`core/src/log.h` 1 -> 0 and `core/src/framesync.h` 2 -> 1, from the
+  `__VMAF_*_H__` include-guard renames) are not written here: the scoped
+  writer addresses translation units only, and the full writer would
+  replace every entry with a measurement from a gcc-16 host the baseline
+  was not recorded on. They come from the CI lane's own
+  `tidy-ratchet-cpu.json`, which is measured with `gcc-15` and
+  `clang-tidy-22`. See
   `docs/research/core-test-hiss21-burndown-2026-09-21.md`.
 
 
