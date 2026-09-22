@@ -110,8 +110,12 @@ lint-tools: $(VENV_PIP)
 	@command -v shellcheck >/dev/null || \
 	   echo "note: shellcheck not found — install it via your package manager."
 
+# setuptools>=77.0.1 matches the floor python/pyproject.toml declares: the
+# PEP 639 SPDX license expression there is unreadable to older setuptools,
+# and `cythonize` below runs setup.py against this venv directly, with no
+# PEP 517 isolation to fetch a newer backend on its own.
 cythonize-deps: $(VENV_PIP)
-	$(VENV_PIP) install setuptools cython numpy || { echo "Failed to install dependencies"; exit 1; }
+	$(VENV_PIP) install 'setuptools>=77.0.1' cython numpy || { echo "Failed to install dependencies"; exit 1; }
 
 # ============================================================================
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.

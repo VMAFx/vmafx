@@ -1,5 +1,13 @@
 [build-system]
-requires = ["setuptools", "wheel", "Cython", "numpy>=2.5.3"]
+# setuptools>=77.0.1 is a hard floor, not a preference: `[project].license`
+# below is a PEP 639 SPDX expression (a bare string). setuptools only
+# learned that form in 77.0.0 (yanked; 77.0.1 is the first installable
+# release), and every earlier release rejects it outright --
+# `configuration error: project.license must be valid exactly by one
+# definition` -- so `setup.py` aborts before it can report a version.
+# Ubuntu 24.04 still ships setuptools 68.1.2, and `pip install --user`
+# does not upgrade it, which is exactly how the Coverage Gate hit this.
+requires = ["setuptools>=77.0.1", "wheel", "Cython", "numpy>=2.5.3"]
 
 [project]
 name = "vmaf"

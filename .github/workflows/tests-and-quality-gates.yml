@@ -647,8 +647,15 @@ jobs:
           # impossible >100% hit counts (e.g. dnn_api.c — 1176%). gcovr
           # also produces both Cobertura XML for CI tooling and a JSON
           # summary the gate script parses directly. See ADR-0110.
+          # setuptools>=77.0.1: the runner image ships 68.1.2 in
+          # /usr/lib/python3/dist-packages and `pip install --user` leaves it
+          # there, but python/pyproject.toml declares its license as a PEP 639
+          # SPDX expression, which only setuptools 77+ parses. Without this the
+          # ambient interpreter cannot run `python/setup.py` at all — which is
+          # how setup_metadata_test.py failed the first time this lane ran the
+          # whole Python suite to completion.
           python3 -m pip install --user -r python/requirements.txt pytest \
-            'gcovr>=8.0'
+            'gcovr>=8.0' 'setuptools>=77.0.1'
       # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
       # github.com/microsoft/onnxruntime/releases on every Coverage Gate
       # run. Key is purely the ORT version pinned in the env block of the
@@ -993,7 +1000,15 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage-gpu/src
         run: |
           export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
-          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
+          # setuptools>=77.0.1: the runner image ships 68.1.2 in
+          # /usr/lib/python3/dist-packages and `pip install --user` leaves it
+          # there, but python/pyproject.toml declares its license as a PEP 639
+          # SPDX expression, which only setuptools 77+ parses. Without this the
+          # ambient interpreter cannot run `python/setup.py` at all — which is
+          # how setup_metadata_test.py failed the first time this lane ran the
+          # whole Python suite to completion.
+          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout \
+            'setuptools>=77.0.1'
           # Scope GPU test runs with VMAF_FORCE_BACKEND away from the Netflix golden assertions
           # (ADR-0024 / AGENTS.md §8) to avoid failing on ULP-relaxed GPU float differences.
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
