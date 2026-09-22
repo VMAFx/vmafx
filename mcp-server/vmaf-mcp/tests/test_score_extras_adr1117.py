@@ -266,7 +266,7 @@ def test_vmaf_score_rejects_invalid_core_params(args: dict, match: str) -> None:
         anyio.run(lambda: srv._call_tool_dispatch("vmaf_score", args, None))
 
 
-def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def _score_fixture_pair() -> tuple[Path, Path]:
     repo = srv._repo_root()
     ref = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
     dis = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
@@ -275,6 +275,11 @@ def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.Monk
     vmaf_bin = srv._vmaf_binary()
     if not vmaf_bin.exists():
         pytest.skip(f"vmaf binary {vmaf_bin} not found")
+    return ref, dis
+
+
+def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    ref, dis = _score_fixture_pair()
 
     monkeypatch.setenv("VMAF_MCP_ALLOW", str(ref.resolve().parent))
 
@@ -334,6 +339,11 @@ def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.Monk
 
 def test_model_clip_transform_and_csv_sub_flags() -> None:
     """Verify model option flags and csv/sub output flags in Python server."""
+    _check_model_clip_transform_flags()
+    _check_csv_sub_flags()
+
+
+def _check_model_clip_transform_flags() -> None:
     # 1. disable_clip and enable_transform append to model in _build_vmaf_argv
     extras = srv._extras_from_args(
         {
@@ -376,6 +386,8 @@ def test_model_clip_transform_and_csv_sub_flags() -> None:
     idx = argv_dup.index("-m")
     assert argv_dup[idx + 1] == "version=vmaf_v0.6.1:disable_clip:enable_transform"
 
+
+def _check_csv_sub_flags() -> None:
     # 3. csv=True maps to output_fmt="csv" and emits --csv
     extras_csv = srv._extras_from_args({"csv": True})
     assert extras_csv.output_fmt == "csv"

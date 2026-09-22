@@ -104,6 +104,16 @@ Example — coarse-to-fine against a VMAF target:
     --preset medium --coarse-to-fine --target-vmaf 93 \
     --output corpus.jsonl`
 
+	registerCorpusInputFlags(cmd, flags)
+	registerCorpusSearchHDRFlags(cmd, flags)
+	markCommandFlagsRequired(cmd, "source", "width", "height", "preset")
+
+	return cmd
+}
+
+// registerCorpusInputFlags binds source, geometry, encoder, output, and
+// binary-path flags onto cmd.
+func registerCorpusInputFlags(cmd *cobra.Command, flags *corpusFlags) {
 	cmd.Flags().StringArrayVar(&flags.sources, "source", nil,
 		"Reference video (repeat for multiple sources; required)")
 	cmd.Flags().IntVar(&flags.width, "width", 0, "Rung target width in pixels (required)")
@@ -122,8 +132,8 @@ Example — coarse-to-fine against a VMAF target:
 	cmd.Flags().StringVar(&flags.output, "output", "corpus.jsonl",
 		"JSONL output path (default corpus.jsonl)")
 	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir",
-		filepath.Join(".workingdir2", "encodes"),
-		"Scratch dir for encodes (default .workingdir2/encodes, gitignored)")
+		filepath.Join(".workingdir", "cache", "vmafx-tune", "encodes"),
+		"Scratch dir for encodes (default .workingdir/cache/vmafx-tune/encodes, gitignored)")
 	cmd.Flags().BoolVar(&flags.keepEncodes, "keep-encodes", false,
 		"Retain encoded outputs after scoring (default: delete)")
 	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", corpus.Model1080P,
@@ -151,7 +161,10 @@ Example — coarse-to-fine against a VMAF target:
 		"Encode/score only the centre N-second slice of each source (default 0 = full "+
 			"source). Encode time scales linearly with the slice length; expect a 1-2 "+
 			"VMAF-point delta vs full-clip on diverse content (ADR-0297)")
+}
 
+// registerCorpusSearchHDRFlags binds coarse-to-fine search and HDR flags onto cmd.
+func registerCorpusSearchHDRFlags(cmd *cobra.Command, flags *corpusFlags) {
 	cmd.Flags().BoolVar(&flags.coarseToFine, "coarse-to-fine", false,
 		"Run a 2-pass coarse-then-fine CRF search instead of the full grid (ADR-0296)")
 	cmd.Flags().IntVar(&flags.coarseStep, "coarse-step", 10,
@@ -162,7 +175,6 @@ Example — coarse-to-fine against a VMAF target:
 	cmd.Flags().Float64Var(&flags.targetVMAF, "target-vmaf", 0,
 		"Target VMAF score; the orchestrator refines around the smallest CRF whose "+
 			"score >= target. Optional for corpus")
-
 	cmd.Flags().BoolVar(&flags.autoHDR, "auto-hdr", false,
 		"(default) probe each source via ffprobe and inject HDR codec args + the "+
 			"HDR-VMAF model when PQ / HLG signalling is detected")
@@ -173,13 +185,6 @@ Example — coarse-to-fine against a VMAF target:
 	cmd.Flags().BoolVar(&flags.forceHDRHLG, "force-hdr-hlg", false,
 		"Treat all sources as HDR HLG (ARIB STD-B67) regardless of probe")
 	cmd.MarkFlagsMutuallyExclusive("auto-hdr", "force-sdr", "force-hdr-pq", "force-hdr-hlg")
-
-	_ = cmd.MarkFlagRequired("source")
-	_ = cmd.MarkFlagRequired("width")
-	_ = cmd.MarkFlagRequired("height")
-	_ = cmd.MarkFlagRequired("preset")
-
-	return cmd
 }
 
 // resolveHDRMode maps the mutually-exclusive HDR flag group onto the

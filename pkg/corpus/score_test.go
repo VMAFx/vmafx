@@ -169,22 +169,6 @@ func TestPixFmtMapping(t *testing.T) {
 	}
 }
 
-func TestModelArg(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct{ in, want string }{
-		{in: "vmaf_v0.6.1", want: "version=vmaf_v0.6.1"},
-		{in: "vmaf_4k_v0.6.1neg", want: "version=vmaf_4k_v0.6.1neg"},
-		{in: "path=/m/hdr.json", want: "path=/m/hdr.json"},
-		{in: "version=vmaf_v0.6.1", want: "version=vmaf_v0.6.1"},
-	}
-	for _, tc := range tests {
-		if got := modelArg(tc.in); got != tc.want {
-			t.Errorf("modelArg(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestParseVMAFJSON(t *testing.T) {
 	t.Parallel()
 
@@ -470,6 +454,20 @@ func TestRunScore(t *testing.T) {
 		got := RunScore(context.Background(), req, "vmaf", stub, t.TempDir(), "")
 		if got.ExitStatus != 65 {
 			t.Errorf("ExitStatus = %d, want 65 for corrupt JSON", got.ExitStatus)
+		}
+		if !math.IsNaN(got.VMAFScore) {
+			t.Errorf("VMAFScore = %v, want NaN", got.VMAFScore)
+		}
+	})
+
+	t.Run("missing JSON on a zero exit is reported as a scoring error", func(t *testing.T) {
+		t.Parallel()
+		req := ScoreRequest{Reference: "a", Distorted: "b", Width: 8, Height: 8,
+			PixFmt: "yuv420p", Model: Model1080P}
+		stub := func(context.Context, []string) RunResult { return RunResult{} }
+		got := RunScore(context.Background(), req, "vmaf", stub, t.TempDir(), "")
+		if got.ExitStatus != 65 {
+			t.Errorf("ExitStatus = %d, want 65 for missing JSON", got.ExitStatus)
 		}
 		if !math.IsNaN(got.VMAFScore) {
 			t.Errorf("VMAFScore = %v, want NaN", got.VMAFScore)

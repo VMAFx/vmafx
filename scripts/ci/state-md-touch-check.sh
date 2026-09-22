@@ -14,7 +14,12 @@
 # The script intentionally has the same shape as
 # scripts/ci/deliverables-check.sh (single-purpose, env-driven,
 # stdin-friendly) so a developer can run it locally before
-# `gh pr create`:
+# `gh pr create`. That shape includes how it picks its input: the
+# body comes from $PR_BODY, or from stdin when fd 0 is a pipe, a
+# regular file or a socket. A terminal, a closed fd 0 and /dev/null
+# carry no body; each is named and the gate runs on the diff alone.
+# Classification lives in scripts/ci/pr-body-input.sh — see it for
+# why `[ ! -t 0 ]` is the wrong test.
 #
 #   PR_TITLE="fix: foo segfault" \
 #   PR_BODY="$(gh pr view 999 --json body -q .body)" \
@@ -38,17 +43,38 @@ if [ -z "${PR_TITLE:-}" ]; then
   exit 2
 fi
 
+# Shared with deliverables-check.sh / validate-pr-body.sh / ffmpeg-patches-
+# surface-check.sh so every gate that reads a PR body decides what fd 0 is
+# the same way. Not `[ ! -t 0 ]`: that asks whether fd 0 is a terminal, which
+# is a different question from whether anybody piped a body, and
+# `PR_BODY="$(cat)"` on a closed fd 0 does not fail — it deadlocks. See
+# scripts/ci/pr-body-input.sh.
+_state_md_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/pr-body-input.sh
+. "${_state_md_dir}/pr-body-input.sh"
+
 if [ -n "${PR_BODY:-}" ]; then
   body_src="env"
-elif [ ! -t 0 ]; then
-  PR_BODY="$(cat)"
-  body_src="stdin"
 else
-  # Empty body is legal — a PR with no description simply cannot
-  # carry an opt-out sentinel and falls through to the diff-only
-  # check.
-  PR_BODY=""
-  body_src="empty"
+  # Deliberately `-n`, not the `+x` "set counts as an answer" rule
+  # deliverables-check.sh uses. That gate reports a set-but-blank PR_BODY
+  # differently from an empty pipe; here both branches end at the same empty
+  # string, so an explicitly blank PR_BODY may still fall through to a pipe
+  # that does carry a body.
+  pr_body_classify_stdin
+  if [ "${PR_BODY_STDIN_KIND}" = "stream" ]; then
+    PR_BODY="$(pr_body_read_stdin)"
+    pr_body_close_stdin
+    body_src="stdin"
+  else
+    # Unlike deliverables-check.sh, an absent body is legal here: a PR with
+    # no description cannot carry the `no state delta:` sentinel, so the gate
+    # falls through to the diff-only check and fails closed when the trigger
+    # predicate fires. Name what fd 0 was, so a CI step that meant to pipe a
+    # body can see that it did not.
+    PR_BODY=""
+    body_src="empty (${PR_BODY_STDIN_KIND} stdin)"
+  fi
 fi
 
 # Strip HTML comments first — the PR template parks the literal

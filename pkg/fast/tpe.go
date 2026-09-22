@@ -110,33 +110,16 @@ type TPEResult struct {
 // minimised. Errors raised by Predict abort the study, matching Optuna's
 // default catch=() behaviour.
 func RunTPE(ctx context.Context, params TPEParams) (TPEResult, error) {
-	if params.Predict == nil {
-		return TPEResult{}, errors.New("fast: RunTPE requires a predictor")
-	}
-	if params.CRFLo > params.CRFHi {
-		return TPEResult{}, fmt.Errorf("fast: invalid CRF range [%d, %d]",
-			params.CRFLo, params.CRFHi)
-	}
-	if params.NTrials <= 0 {
-		return TPEResult{}, fmt.Errorf("fast: n_trials must be > 0; got %d", params.NTrials)
+	if err := params.validate(); err != nil {
+		return TPEResult{}, err
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	study, err := goptuna.CreateStudy(
-		"vmafx-tune-fast",
-		goptuna.StudyOptionDirection(goptuna.StudyDirectionMinimize),
-		goptuna.StudyOptionSampler(tpe.NewSampler(tpe.SamplerOptionSeed(params.seed()))),
-		// goptuna's default logger writes Debug-level chatter to stdout,
-		// which would corrupt the JSON payload the CLI prints there. The
-		// Python original silences Optuna the same way with
-		// optuna.logging.set_verbosity(WARNING); the CLI is the right place
-		// to surface progress.
-		goptuna.StudyOptionLogger(nil),
-	)
+	study, err := newFastStudy(params.seed())
 	if err != nil {
-		return TPEResult{}, fmt.Errorf("fast: create TPE study: %w", err)
+		return TPEResult{}, err
 	}
 
 	// The soft wall-clock budget is a deadline on the study context.
@@ -152,31 +135,37 @@ func RunTPE(ctx context.Context, params TPEParams) (TPEResult, error) {
 	defer cancel()
 	study.WithContext(studyCtx)
 
-	objective := func(trial goptuna.Trial) (float64, error) {
-		crf, suggestErr := trial.SuggestInt("crf", params.CRFLo, params.CRFHi)
-		if suggestErr != nil {
-			return 0, fmt.Errorf("suggest crf: %w", suggestErr)
-		}
-		sample, predictErr := params.Predict(crf)
-		if predictErr != nil {
-			return 0, fmt.Errorf("predict at CRF %d: %w", crf, predictErr)
-		}
-		if attrErr := trial.SetUserAttr(userAttrVMAF, formatAttr(sample.PredictedVMAF)); attrErr != nil {
-			return 0, fmt.Errorf("record predicted_vmaf: %w", attrErr)
-		}
-		if attrErr := trial.SetUserAttr(userAttrKbps, formatAttr(sample.PredictedKbps)); attrErr != nil {
-			return 0, fmt.Errorf("record predicted_kbps: %w", attrErr)
-		}
-		return objectiveValue(sample, params.TargetVMAF), nil
-	}
-
-	optErr := study.Optimize(objective, params.NTrials)
+	optErr := study.Optimize(params.objective(), params.NTrials)
 	// A tripped time budget is a normal stop, not a failure: Optuna's
 	// timeout= behaves the same way. Any other error aborts.
 	if optErr != nil && !errors.Is(optErr, context.DeadlineExceeded) {
 		return TPEResult{}, fmt.Errorf("fast: TPE search: %w", optErr)
 	}
 
+	return collectTPEResult(study, params)
+}
+
+// newFastStudy creates the minimising TPE study the fast path searches with.
+//
+// goptuna's default logger writes Debug-level chatter to stdout, which would
+// corrupt the JSON payload the CLI prints there. The Python original silences
+// Optuna the same way with optuna.logging.set_verbosity(WARNING); the CLI is
+// the right place to surface progress.
+func newFastStudy(seed int64) (*goptuna.Study, error) {
+	study, err := goptuna.CreateStudy(
+		"vmafx-tune-fast",
+		goptuna.StudyOptionDirection(goptuna.StudyDirectionMinimize),
+		goptuna.StudyOptionSampler(tpe.NewSampler(tpe.SamplerOptionSeed(seed))),
+		goptuna.StudyOptionLogger(nil),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fast: create TPE study: %w", err)
+	}
+	return study, nil
+}
+
+// collectTPEResult reads the finished study's best trial back out.
+func collectTPEResult(study *goptuna.Study, params TPEParams) (TPEResult, error) {
 	trials, trialsErr := study.GetTrials()
 	if trialsErr != nil {
 		return TPEResult{}, fmt.Errorf("fast: read TPE trials: %w", trialsErr)
@@ -203,6 +192,44 @@ func RunTPE(ctx context.Context, params TPEParams) (TPEResult, error) {
 		CompletedTrials: len(trials),
 		BestValue:       best.Value,
 	}, nil
+}
+
+// validate rejects the parameter combinations the search cannot act on.
+func (p TPEParams) validate() error {
+	if p.Predict == nil {
+		return errors.New("fast: RunTPE requires a predictor")
+	}
+	if p.CRFLo > p.CRFHi {
+		return fmt.Errorf("fast: invalid CRF range [%d, %d]", p.CRFLo, p.CRFHi)
+	}
+	if p.NTrials <= 0 {
+		return fmt.Errorf("fast: n_trials must be > 0; got %d", p.NTrials)
+	}
+	return nil
+}
+
+// objective builds the goptuna objective: suggest a CRF, run the predictor at
+// it, record the predicted VMAF and bitrate as trial attributes, and score the
+// result. A predictor error aborts the study, matching Optuna's default
+// catch=() behaviour.
+func (p TPEParams) objective() func(goptuna.Trial) (float64, error) {
+	return func(trial goptuna.Trial) (float64, error) {
+		crf, suggestErr := trial.SuggestInt("crf", p.CRFLo, p.CRFHi)
+		if suggestErr != nil {
+			return 0, fmt.Errorf("suggest crf: %w", suggestErr)
+		}
+		sample, predictErr := p.Predict(crf)
+		if predictErr != nil {
+			return 0, fmt.Errorf("predict at CRF %d: %w", crf, predictErr)
+		}
+		if attrErr := trial.SetUserAttr(userAttrVMAF, formatAttr(sample.PredictedVMAF)); attrErr != nil {
+			return 0, fmt.Errorf("record predicted_vmaf: %w", attrErr)
+		}
+		if attrErr := trial.SetUserAttr(userAttrKbps, formatAttr(sample.PredictedKbps)); attrErr != nil {
+			return 0, fmt.Errorf("record predicted_kbps: %w", attrErr)
+		}
+		return objectiveValue(sample, p.TargetVMAF), nil
+	}
 }
 
 // bestCRF extracts the integer "crf" parameter from a frozen trial. goptuna

@@ -41,10 +41,10 @@ impl Model {
             flags: 0,
         };
         let mut model: *mut RawModel = ptr::null_mut();
-        // SAFETY: `c_path` lives until the end of this call. `model` is a
-        // valid out-pointer. `cfg` is fully initialised.
-        let rc =
-            unsafe { vmaf_model_load_from_path(&raw mut model, &raw mut cfg, c_path.as_ptr()) };
+        let rc = {
+            // SAFETY: the initialized config, path, and model out-pointer live through this call.
+            unsafe { vmaf_model_load_from_path(&raw mut model, &raw mut cfg, c_path.as_ptr()) }
+        };
         Error::from_libvmaf_rc(rc)?;
         if model.is_null() {
             // libvmaf reported success but did not populate the pointer.

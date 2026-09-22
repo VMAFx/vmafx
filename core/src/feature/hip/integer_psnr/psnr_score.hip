@@ -5,9 +5,9 @@
  *
  *  HIP compute kernels for the PSNR feature extractor (T7-10b batch-1 /
  *  ADR-0372). Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/integer_psnr/psnr_score.cu`.
+ *  `core/src/feature/cuda/integer_psnr/psnr_score.cu`.
  *
- *  Algorithm (mirrors libvmaf/src/feature/integer_psnr.c::sse_line):
+ *  Algorithm (mirrors core/src/feature/integer_psnr.c::sse_line):
  *      diff = (int64)ref - (int64)dis;
  *      sse  += diff * diff;
  *

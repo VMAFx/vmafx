@@ -7,7 +7,7 @@
  *  Integer (fixed-point) twin of float_ssim_metal.mm — mirrors the
  *  float twin's two-pass dispatch scaffolding verbatim and swaps the
  *  float arithmetic for the fixed-point arithmetic of the CPU integer
- *  reference libvmaf/src/feature/integer_ssim.c (feature name `ssim`).
+ *  reference core/src/feature/integer_ssim.c (feature name `ssim`).
  *
  *  Two-pass dispatch:
  *    pass 0 -> integer_ssim_horiz_{8,16}bpc  (6 int64 moment planes)

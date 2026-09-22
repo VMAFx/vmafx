@@ -15,6 +15,7 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MODEL = ROOT / "scripts/ci/cppcheck-public-entrypoints.cfg"
@@ -22,6 +23,10 @@ COMMAND = cast(
     Callable[[str, Path, Path], list[str]],
     runpy.run_path(str(ROOT / "scripts/ci/lint-configured.py"))["cppcheck_arguments"],
 )
+MODEL_HELPERS = runpy.run_path(str(ROOT / "scripts/ci/write_cppcheck_posix_model.py"))
+CPPCHECK_FILESDIR = cast(Callable[[str], Path], MODEL_HELPERS["cppcheck_filesdir"])
+CORRECTED_MODEL = cast(Callable[[Path], bytes], MODEL_HELPERS["corrected_model"])
+WRITE_MODEL = cast(Callable[[str, Path], None], MODEL_HELPERS["write_model"])
 
 HEADERS_CONTROL = """#include "feature/feature_collector.h"
 int main(void) {
@@ -44,6 +49,99 @@ class CppcheckPosixModelTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="vmafx-cppcheck-posix-")
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
+
+    def test_pre_filesdir_cppcheck_uses_install_relative_model(self) -> None:
+        binary = self.directory / "bin/cppcheck"
+        model_root = self.directory / "share/cppcheck"
+        model = model_root / "cfg/posix.cfg"
+        model.parent.mkdir(parents=True)
+        model.write_text("<def format='2'/>", encoding="utf-8")
+        unsupported = subprocess.CompletedProcess(
+            [str(binary), "--filesdir"],
+            1,
+            stdout="",
+            stderr='cppcheck: error: unrecognized command line option: "--filesdir"\n',
+        )
+        with mock.patch.object(
+            CPPCHECK_FILESDIR.__globals__["subprocess"], "run", return_value=unsupported
+        ):
+            self.assertEqual(CPPCHECK_FILESDIR(str(binary)), model_root)
+
+    def test_model_correction_removes_only_nullable_attribute_marker(self) -> None:
+        source = self.directory / "posix.cfg"
+        source.write_text(
+            "<?xml version='1.0'?><def format='2'>"
+            "<function name='pthread_cond_init'>"
+            "<arg nr='1'><not-null/></arg>"
+            "<arg nr='2'><not-null/><valid>0:</valid></arg>"
+            "</function><function name='pthread_mutex_init'/></def>",
+            encoding="utf-8",
+        )
+        corrected = CORRECTED_MODEL(source).decode()
+        self.assertIn("<arg nr='1'><not-null/></arg>", corrected)
+        self.assertIn("<arg nr='2'><valid>0:</valid></arg>", corrected)
+        self.assertIn("<function name='pthread_mutex_init'/>", corrected)
+        self.assertEqual(corrected.count("<not-null/>"), 1)
+
+    def test_older_model_gets_nullable_condition_initializer_contract(self) -> None:
+        source = self.directory / "posix.cfg"
+        original = b"<?xml version='1.0'?><def format='2'><function name='fork'/></def>\n"
+        source.write_bytes(original)
+        corrected = CORRECTED_MODEL(source).decode()
+        self.assertIn("<function name='fork'/>", corrected)
+        self.assertIn('<function name="pthread_cond_init">', corrected)
+        self.assertIn('<arg nr="1" direction="out"><not-null/></arg>', corrected)
+        self.assertIn('<arg nr="2" direction="in"/>', corrected)
+
+    def test_already_correct_condition_initializer_is_preserved(self) -> None:
+        source = self.directory / "posix.cfg"
+        original = (
+            b"<def format='2'><function name='pthread_cond_init'>"
+            b"<arg nr='1'><not-null/></arg><arg nr='2'/></function></def>\n"
+        )
+        source.write_bytes(original)
+        self.assertEqual(CORRECTED_MODEL(source), original)
+
+    def test_unknown_model_shape_fails_without_replacing_last_valid_output(self) -> None:
+        filesdir = self.directory / "data"
+        source = filesdir / "cfg/posix.cfg"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            "<def format='2'><function name='pthread_cond_init'>"
+            "<arg nr='1'><not-null/></arg>"
+            "<arg nr='2'><not-null/><not-null/></arg></function></def>",
+            encoding="utf-8",
+        )
+        output = self.directory / "generated.cfg"
+        output.write_bytes(b"last-valid-model\n")
+        with mock.patch.dict(
+            WRITE_MODEL.__globals__, {"cppcheck_filesdir": lambda _binary: filesdir}
+        ):
+            with self.assertRaisesRegex(ValueError, "pthread_cond_init argument 2"):
+                WRITE_MODEL("cppcheck", output)
+        self.assertEqual(output.read_bytes(), b"last-valid-model\n")
+        self.assertEqual(list(self.directory.glob(".generated.cfg.*")), [])
+
+    def test_analyzer_rejection_does_not_replace_last_valid_output(self) -> None:
+        filesdir = self.directory / "data"
+        source = filesdir / "cfg/posix.cfg"
+        source.parent.mkdir(parents=True)
+        source.write_text("<def format='2'><function name='fork'/></def>\n", encoding="utf-8")
+        output = self.directory / "generated.cfg"
+        output.write_bytes(b"last-valid-model\n")
+
+        def reject(_binary: str, _model: Path, _directory: Path) -> None:
+            raise ValueError("analyzer rejected fixture")
+
+        replacements = {
+            "cppcheck_filesdir": lambda _binary: filesdir,
+            "validate_model": reject,
+        }
+        with mock.patch.dict(WRITE_MODEL.__globals__, replacements):
+            with self.assertRaisesRegex(ValueError, "analyzer rejected fixture"):
+                WRITE_MODEL("cppcheck", output)
+        self.assertEqual(output.read_bytes(), b"last-valid-model\n")
+        self.assertEqual(list(self.directory.glob(".generated.cfg.*")), [])
 
     def analyze(
         self,
@@ -170,6 +268,26 @@ class CppcheckPosixModelTests(unittest.TestCase):
                 self.assertFalse(
                     any(severity != "information" for severity, _identifier in diagnostics), output
                 )
+
+    def test_default_pthread_condition_attributes_are_nullable(self) -> None:
+        source = """#include <pthread.h>
+int main(void) {
+    pthread_cond_t condition;
+    return pthread_cond_init(&condition, NULL);
+}
+"""
+        code, diagnostics, output = self.analyze(source, language="c")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(("error", "nullPointer"), diagnostics, output)
+
+        source = """#include <pthread.h>
+int main(void) {
+    return pthread_cond_init(NULL, NULL);
+}
+"""
+        code, diagnostics, output = self.analyze(source, language="c")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(("error", "nullPointer"), diagnostics, output)
 
     def test_exhaustive_analysis_finishes_real_branch_budget_control(self) -> None:
         # Eight early returns exceed 2.21's four forward branches. Older supported

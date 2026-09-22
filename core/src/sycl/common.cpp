@@ -37,7 +37,7 @@
 #include <string>
 #include <vector>
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage) — ADR-0141 §2 load-bearing invariant: the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
@@ -190,64 +190,87 @@ extern "C" int vmaf_sycl_list_devices(void)
 /* State lifecycle                                                     */
 /* ------------------------------------------------------------------ */
 
+/* Resolve the device named by `cfg` into `out`; 0 on success, negative errno
+ * otherwise. Split out of vmaf_sycl_state_init for HISS-04. Device plumbing
+ * only — no scoring arithmetic crosses this boundary. Callers must invoke it
+ * inside their own try block: sycl::device construction throws. */
+static int sycl_resolve_device(const VmafSyclConfiguration &cfg, sycl::device &out)
+{
+    // Enumerate Level Zero GPU devices.
+    // Use gpu_selector_v which selects Intel GPU by default on oneAPI.
+    if (cfg.device_index < 0) {
+        out = sycl::device(sycl::gpu_selector_v);
+        return 0;
+    }
+
+    auto platforms = sycl::platform::get_platforms();
+    std::vector<sycl::device> gpus;
+    for (auto &p : platforms) {
+        for (auto &d : p.get_devices(sycl::info::device_type::gpu))
+            gpus.push_back(d);
+    }
+    if (static_cast<unsigned>(cfg.device_index) >= gpus.size()) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: device_index %d out of range (%zu GPUs)\n",
+                 cfg.device_index, gpus.size());
+        return -ENODEV;
+    }
+    out = gpus[cfg.device_index];
+    return 0;
+}
+
+/* T7-17 (ADR-0220): all SYCL feature kernels are designed to be fp64-free. ADM
+ * gain limiting uses an int64 Q31 fixed-point path (see integer_adm_sycl.cpp
+ * `gain_limit_to_q31`), VIF gain limiting runs entirely in fp32 (`sycl::fmin`
+ * over float operands), and CIEDE / SSIM accumulators avoid
+ * `sycl::reduction<double>`. No fp64-emulation fallback runs; the kernels are
+ * already native-fast on Intel Arc A-series, Intel iGPUs, and other fp64-less
+ * SPIR-V devices. */
+static void sycl_log_fp64_note(bool has_fp64)
+{
+    if (!has_fp64) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO, "SYCL: device lacks native fp64 — kernels already use "
+                                      "fp32 + int64 paths, no emulation overhead\n");
+    }
+}
+
+/* Profiling is on when the config asks for it or VMAF_SYCL_PROFILE=1. */
+static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
+{
+    // Allow runtime profiling via environment variable
+    if (cfg.enable_profiling)
+        return true;
+    const char *env_prof = getenv("VMAF_SYCL_PROFILE");
+    return env_prof != nullptr && env_prof[0] == '1';
+}
+
+static sycl::property_list sycl_queue_props(bool profiling)
+{
+    if (profiling) {
+        return sycl::property_list{sycl::property::queue::in_order{},
+                                   sycl::property::queue::enable_profiling{}};
+    }
+    return sycl::property_list{sycl::property::queue::in_order{}};
+}
+
 extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfiguration cfg)
 {
     if (!sycl_state)
         return -EINVAL;
 
     try {
-        // Enumerate Level Zero GPU devices.
-        // Use gpu_selector_v which selects Intel GPU by default on oneAPI.
         sycl::device dev;
-
-        if (cfg.device_index < 0) {
-            dev = sycl::device(sycl::gpu_selector_v);
-        } else {
-            auto platforms = sycl::platform::get_platforms();
-            std::vector<sycl::device> gpus;
-            for (auto &p : platforms) {
-                for (auto &d : p.get_devices(sycl::info::device_type::gpu))
-                    gpus.push_back(d);
-            }
-            if (static_cast<unsigned>(cfg.device_index) >= gpus.size()) {
-                vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: device_index %d out of range (%zu GPUs)\n",
-                         cfg.device_index, gpus.size());
-                return -ENODEV;
-            }
-            dev = gpus[cfg.device_index];
-        }
+        int const drc = sycl_resolve_device(cfg, dev);
+        if (drc != 0)
+            return drc;
 
         vmaf_log(VMAF_LOG_LEVEL_INFO, "SYCL: using device: %s\n",
                  dev.get_info<sycl::info::device::name>().c_str());
 
         bool const has_fp64 = dev.has(sycl::aspect::fp64);
-        if (!has_fp64) {
-            // T7-17 (ADR-0220): all SYCL feature kernels are designed to be
-            // fp64-free. ADM gain limiting uses an int64 Q31 fixed-point
-            // path (see integer_adm_sycl.cpp `gain_limit_to_q31`), VIF
-            // gain limiting runs entirely in fp32 (`sycl::fmin` over float
-            // operands), and CIEDE / SSIM accumulators avoid
-            // `sycl::reduction<double>`. No fp64-emulation fallback runs;
-            // the kernels are already native-fast on Intel Arc A-series,
-            // Intel iGPUs, and other fp64-less SPIR-V devices.
-            vmaf_log(VMAF_LOG_LEVEL_INFO, "SYCL: device lacks native fp64 — kernels already use "
-                                          "fp32 + int64 paths, no emulation overhead\n");
-        }
+        sycl_log_fp64_note(has_fp64);
 
-        sycl::property_list props;
-        // Allow runtime profiling via environment variable
-        bool profiling = cfg.enable_profiling;
-        const char *env_prof = getenv("VMAF_SYCL_PROFILE");
-        if (env_prof && env_prof[0] == '1')
-            profiling = true;
-        if (profiling) {
-            props = sycl::property_list{sycl::property::queue::in_order{},
-                                        sycl::property::queue::enable_profiling{}};
-        } else {
-            props = sycl::property_list{sycl::property::queue::in_order{}};
-        }
-
-        sycl::queue q(dev, props);
+        bool const profiling = sycl_profiling_enabled(cfg);
+        sycl::queue q(dev, sycl_queue_props(profiling));
 
         // Create a separate copy queue for DMA transfers.
         // Uses the same context+device so USM pointers are interoperable.
@@ -487,6 +510,26 @@ extern "C" int vmaf_sycl_queue_wait(VmafSyclState *state)
 /* Shared frame buffers                                                */
 /* ------------------------------------------------------------------ */
 
+/* Release every shared frame buffer and null the slots.
+ *
+ * HISS-01: this replaces the former `fail:` label in
+ * vmaf_sycl_shared_frame_init. The body is the former label block verbatim,
+ * so the set of buffers freed and the order they are freed in is unchanged on
+ * every error exit: i=0 ref then dis, i=1 ref then dis, each guarded by its own
+ * null check. Partially-allocated states are handled by those null checks
+ * exactly as before, and the helper is idempotent. */
+static void sycl_shared_frame_release(VmafSyclState *state)
+{
+    for (int i = 0; i < 2; i++) {
+        if (state->shared_ref_buf[i])
+            vmaf_sycl_free(state, state->shared_ref_buf[i]);
+        if (state->shared_dis_buf[i])
+            vmaf_sycl_free(state, state->shared_dis_buf[i]);
+        state->shared_ref_buf[i] = nullptr;
+        state->shared_dis_buf[i] = nullptr;
+    }
+}
+
 extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, unsigned h,
                                            unsigned bpc)
 {
@@ -506,11 +549,15 @@ extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, uns
     // Buffer [cur_upload] receives H2D data while compute reads [cur_compute].
     for (int i = 0; i < 2; i++) {
         state->shared_ref_buf[i] = vmaf_sycl_malloc_device(state, buf_size);
-        if (!state->shared_ref_buf[i])
-            goto fail;
+        if (!state->shared_ref_buf[i]) {
+            sycl_shared_frame_release(state);
+            return -ENOMEM;
+        }
         state->shared_dis_buf[i] = vmaf_sycl_malloc_device(state, buf_size);
-        if (!state->shared_dis_buf[i])
-            goto fail;
+        if (!state->shared_dis_buf[i]) {
+            sycl_shared_frame_release(state);
+            return -ENOMEM;
+        }
     }
 
     state->shared_buf_size = buf_size;
@@ -532,17 +579,6 @@ extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, uns
     }
 
     return 0;
-
-fail:
-    for (int i = 0; i < 2; i++) {
-        if (state->shared_ref_buf[i])
-            vmaf_sycl_free(state, state->shared_ref_buf[i]);
-        if (state->shared_dis_buf[i])
-            vmaf_sycl_free(state, state->shared_dis_buf[i]);
-        state->shared_ref_buf[i] = nullptr;
-        state->shared_dis_buf[i] = nullptr;
-    }
-    return -ENOMEM;
 }
 
 extern "C" int vmaf_sycl_shared_frame_get(VmafSyclState *state, void **ref, void **dis)
@@ -559,6 +595,31 @@ extern "C" int vmaf_sycl_shared_frame_get(VmafSyclState *state, void **ref, void
         *dis = state->shared_dis_buf[idx];
 
     return 0;
+}
+
+/* Enqueue one plane's H2D copy on the copy queue and return the last event.
+ * Single memcpy when the source stride already matches the packed row length,
+ * row-by-row otherwise. Extracted from vmaf_sycl_shared_frame_upload for
+ * HISS-04: the stride comparison keeps the original `static_cast<unsigned>`
+ * narrowing verbatim, and callers preserve the ref-before-dis enqueue order
+ * the in-order copy queue depends on. */
+static sycl::event sycl_enqueue_plane_upload(VmafSyclState *state, void *dst_buf,
+                                             const void *src_data, ptrdiff_t src_stride,
+                                             size_t row_bytes)
+{
+    // If stride matches width, single memcpy; otherwise row-by-row
+    if (static_cast<unsigned>(src_stride) == row_bytes)
+        return state->copy_queue.memcpy(dst_buf, src_data, state->shared_buf_size);
+
+    auto *dst = static_cast<uint8_t *>(dst_buf);
+    const auto *src = static_cast<const uint8_t *>(src_data);
+    sycl::event last_ev;
+    for (unsigned y = 0; y < state->frame_h; y++) {
+        last_ev = state->copy_queue.memcpy(dst, src, row_bytes);
+        dst += row_bytes;
+        src += src_stride;
+    }
+    return last_ev;
 }
 
 extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *ref,
@@ -578,35 +639,13 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
     size_t const row_bytes = static_cast<size_t>(state->frame_w) * bytes_per_pixel;
 
     try {
-        // If stride matches width, single memcpy; otherwise row-by-row
-        if (static_cast<unsigned>(ref->stride[0]) == row_bytes) {
-            state->copy_queue.memcpy(state->shared_ref_buf[ui], ref->data[0],
-                                     state->shared_buf_size);
-        } else {
-            auto *dst = static_cast<uint8_t *>(state->shared_ref_buf[ui]);
-            const auto *src = static_cast<const uint8_t *>(ref->data[0]);
-            for (unsigned y = 0; y < state->frame_h; y++) {
-                state->copy_queue.memcpy(dst, src, row_bytes);
-                dst += row_bytes;
-                src += ref->stride[0];
-            }
-        }
+        (void)sycl_enqueue_plane_upload(state, state->shared_ref_buf[ui], ref->data[0],
+                                        ref->stride[0], row_bytes);
 
         double const t1 = monotonic_ms();
 
-        sycl::event last_ev;
-        if (static_cast<unsigned>(dis->stride[0]) == row_bytes) {
-            last_ev = state->copy_queue.memcpy(state->shared_dis_buf[ui], dis->data[0],
-                                               state->shared_buf_size);
-        } else {
-            auto *dst = static_cast<uint8_t *>(state->shared_dis_buf[ui]);
-            const auto *src = static_cast<const uint8_t *>(dis->data[0]);
-            for (unsigned y = 0; y < state->frame_h; y++) {
-                last_ev = state->copy_queue.memcpy(dst, src, row_bytes);
-                dst += row_bytes;
-                src += dis->stride[0];
-            }
-        }
+        sycl::event const last_ev = sycl_enqueue_plane_upload(
+            state, state->shared_dis_buf[ui], dis->data[0], dis->stride[0], row_bytes);
 
         double const t2 = monotonic_ms();
 
@@ -911,6 +950,130 @@ static void record_combined_graphs(VmafSyclState *state)
              state->num_graph_extractors);
 }
 
+/* Decide whether this state should record the combined graph this frame.
+ *
+ * frame_counter is incremented in upload/advance, so frame 0 → 1, frame 1 → 2.
+ * Record combined graph on frame 2 for both host-upload and VA-import paths.
+ * Both slots (0 and 1) are recorded by record_combined_graphs(); graph_submit
+ * replays combined_exec_graph[cur_compute], which toggles 0/1 each frame after
+ * FIX-01 (vmaf_sycl_advance_frame now promotes cur_upload→cur_compute).
+ *
+ * Per-feature dispatch decision via the global feature-characteristics
+ * registry (ADR-0181 / T7-26). Aggregation rule: if ANY registered
+ * graph_extractor's descriptor selects GRAPH_REPLAY for the current frame
+ * size, the whole state records the combined graph; otherwise every extractor
+ * submits directly. This preserves the existing "single graph per state"
+ * architecture while moving the decision axis from per-context
+ * resolution-area to per-feature-and-area.
+ *
+ * Env overrides honoured by vmaf_sycl_select_strategy():
+ *   VMAF_SYCL_DISPATCH=<feature>:graph,<feature>:direct,...
+ *     Per-feature override (highest precedence).
+ *   VMAF_SYCL_USE_GRAPH=1 — legacy global force-graph (deprecated).
+ *   VMAF_SYCL_NO_GRAPH=1  — legacy global force-direct (deprecated).
+ * The zero-copy VA-import path (state->has_imported) defaults to DIRECT —
+ * the combined graph is a net throughput loss there, byte-identical output
+ * (ADR-1121). Passed as the va_import_path arg below; env overrides still win. */
+static bool sycl_any_extractor_wants_graph(VmafSyclState *state, uint64_t frame)
+{
+    if (frame != 2 || !(state->has_uploaded || state->has_imported))
+        return false;
+
+    for (int i = 0; i < state->num_graph_extractors; ++i) {
+        const auto &ge = state->graph_extractors[i];
+        const VmafFeatureCharacteristics *chars = nullptr;
+        if (ge.name) {
+            VmafFeatureExtractor const *fex = vmaf_get_feature_extractor_by_name(ge.name);
+            if (fex)
+                chars = &fex->chars;
+        }
+        const VmafSyclDispatchStrategy s = vmaf_sycl_select_strategy(
+            ge.name, chars, state->frame_w, state->frame_h, state->has_imported);
+        if (s == VMAF_SYCL_DISPATCH_GRAPH_REPLAY)
+            return true;
+    }
+    return false;
+}
+
+/* Enqueue the compute kernels: graph replay when a combined graph has been
+ * recorded, otherwise a direct per-extractor submit. Extracted from
+ * vmaf_sycl_graph_submit for HISS-04. The caller invokes this at the same
+ * point in the same try block, so the enqueue order on the in-order queue is
+ * unchanged. */
+static void sycl_run_compute_phase(sycl::queue &q, VmafSyclState *state)
+{
+    if (!state->combined_graphs_recorded) {
+        void *ref = state->shared_ref_buf[state->cur_compute];
+        void *dis = state->shared_dis_buf[state->cur_compute];
+
+        for (int i = 0; i < state->num_graph_extractors; i++) {
+            auto &ge = state->graph_extractors[i];
+            ge.enqueue_fn(&q, ge.priv, ref, dis);
+        }
+        return;
+    }
+
+    // Barrier to ensure pre_fn memsets complete before graph replay.
+    // Required because graph replay doesn't honour in-order queue
+    // dependencies with non-graph operations on Level Zero.
+    q.ext_oneapi_submit_barrier();
+    // Replay the pre-recorded combined graph
+    int const slot = state->cur_compute;
+    q.ext_oneapi_graph(*state->combined_exec_graph[slot]);
+    // Barrier after replay to ensure graph completes before post_fn
+    q.ext_oneapi_submit_barrier();
+}
+
+/* GPU-side barriers so the compute queue observes the last DMA upload and the
+ * last de-tile kernel without blocking the CPU. Extracted from
+ * vmaf_sycl_graph_submit for HISS-04; both barriers keep their original order
+ * (upload barrier before de-tile barrier). */
+static void sycl_apply_input_barriers(sycl::queue &q, VmafSyclState *state)
+{
+    // GPU-side barrier: compute queue waits for the last DMA upload event
+    // without blocking the CPU.  This enables DMA/compute overlap.
+    if (state->has_uploaded) {
+        q.ext_oneapi_submit_barrier({state->last_upload_event});
+    }
+
+    // GPU-side barrier: compute queue waits for the last de-tile kernel
+    // on the primary queue.  The de-tile writes shared ref/dis buffers;
+    // extractors on the compute queue must see those writes.
+    if (state->has_imported) {
+        q.ext_oneapi_submit_barrier({state->last_detile_event});
+    }
+}
+
+/* Optional graph recording followed by the three enqueue phases, in order.
+ * Extracted from vmaf_sycl_graph_submit for HISS-04. The caller invokes this
+ * from inside its try block, so every SYCL exception still unwinds into the
+ * same handlers and never escapes through the C dispatch frame. */
+static void sycl_enqueue_all_phases(sycl::queue &q, VmafSyclState *state, bool any_wants_graph)
+{
+    // Graph recording issues SYCL graph APIs (begin_recording / finalize)
+    // that can throw sycl::exception; keep it inside the try so the throw
+    // does not escape through the C dispatch frame (UB / std::terminate).
+    if (any_wants_graph)
+        record_combined_graphs(state);
+
+    // Phase 1: Pre-graph — memset operations (always direct, never in graph)
+    for (int i = 0; i < state->num_graph_extractors; i++) {
+        auto &ge = state->graph_extractors[i];
+        if (ge.pre_fn)
+            ge.pre_fn(&q, ge.priv);
+    }
+
+    // Phase 2: Compute kernels — graph replay when available, else direct
+    sycl_run_compute_phase(q, state);
+
+    // Phase 3: Post-graph — D2H memcpy operations (always direct)
+    for (int i = 0; i < state->num_graph_extractors; i++) {
+        auto &ge = state->graph_extractors[i];
+        if (ge.post_fn)
+            ge.post_fn(&q, ge.priv);
+    }
+}
+
 extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
 {
     if (!state || !state->combined_queue)
@@ -933,104 +1096,14 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
 
     sycl::queue &q = *state->combined_queue;
 
-    // GPU-side barrier: compute queue waits for the last DMA upload event
-    // without blocking the CPU.  This enables DMA/compute overlap.
-    if (state->has_uploaded) {
-        q.ext_oneapi_submit_barrier({state->last_upload_event});
-    }
+    sycl_apply_input_barriers(q, state);
 
-    // GPU-side barrier: compute queue waits for the last de-tile kernel
-    // on the primary queue.  The de-tile writes shared ref/dis buffers;
-    // extractors on the compute queue must see those writes.
-    if (state->has_imported) {
-        q.ext_oneapi_submit_barrier({state->last_detile_event});
-    }
-
-    // frame_counter is incremented in upload/advance, so frame 0 → 1, frame 1 → 2
-    // Record combined graph on frame 2 for both host-upload and VA-import paths.
-    // Both slots (0 and 1) are recorded in the loop below; graph_submit replays
-    // combined_exec_graph[cur_compute], which toggles 0/1 each frame after FIX-01
-    // (vmaf_sycl_advance_frame now promotes cur_upload→cur_compute).
-    //
-    // Per-feature dispatch decision via the global feature-characteristics
-    // registry (ADR-0181 / T7-26). Aggregation rule: if ANY registered
-    // graph_extractor's descriptor selects GRAPH_REPLAY for the current
-    // frame size, the whole state records the combined graph; otherwise
-    // every extractor submits directly. This preserves the existing
-    // "single graph per state" architecture while moving the decision
-    // axis from per-context resolution-area to per-feature-and-area.
-    //
-    // Env overrides honoured by vmaf_sycl_select_strategy():
-    //   VMAF_SYCL_DISPATCH=<feature>:graph,<feature>:direct,...
-    //     Per-feature override (highest precedence).
-    //   VMAF_SYCL_USE_GRAPH=1 — legacy global force-graph (deprecated).
-    //   VMAF_SYCL_NO_GRAPH=1  — legacy global force-direct (deprecated).
-    // The zero-copy VA-import path (state->has_imported) defaults to DIRECT —
-    // the combined graph is a net throughput loss there, byte-identical output
-    // (ADR-1121). Passed as the va_import_path arg below; env overrides still win.
-    bool any_wants_graph = false;
-    if (frame == 2 && (state->has_uploaded || state->has_imported)) {
-        for (int i = 0; i < state->num_graph_extractors; ++i) {
-            const auto &ge = state->graph_extractors[i];
-            const VmafFeatureCharacteristics *chars = nullptr;
-            if (ge.name) {
-                VmafFeatureExtractor const *fex = vmaf_get_feature_extractor_by_name(ge.name);
-                if (fex)
-                    chars = &fex->chars;
-            }
-            const VmafSyclDispatchStrategy s = vmaf_sycl_select_strategy(
-                ge.name, chars, state->frame_w, state->frame_h, state->has_imported);
-            if (s == VMAF_SYCL_DISPATCH_GRAPH_REPLAY) {
-                any_wants_graph = true;
-                break;
-            }
-        }
-    }
+    bool const any_wants_graph = sycl_any_extractor_wants_graph(state, frame);
 
     state->t_submit_start = monotonic_ms();
 
     try {
-        // Graph recording issues SYCL graph APIs (begin_recording / finalize)
-        // that can throw sycl::exception; keep it inside the try so the throw
-        // does not escape through the C dispatch frame (UB / std::terminate).
-        if (any_wants_graph)
-            record_combined_graphs(state);
-
-        // Phase 1: Pre-graph — memset operations (always direct, never in graph)
-        for (int i = 0; i < state->num_graph_extractors; i++) {
-            auto &ge = state->graph_extractors[i];
-            if (ge.pre_fn)
-                ge.pre_fn(&q, ge.priv);
-        }
-
-        // Phase 2: Compute kernels — graph replay when available, else direct
-        if (!state->combined_graphs_recorded) {
-            void *ref = state->shared_ref_buf[state->cur_compute];
-            void *dis = state->shared_dis_buf[state->cur_compute];
-
-            for (int i = 0; i < state->num_graph_extractors; i++) {
-                auto &ge = state->graph_extractors[i];
-                ge.enqueue_fn(&q, ge.priv, ref, dis);
-            }
-        } else {
-            // Barrier to ensure pre_fn memsets complete before graph replay.
-            // Required because graph replay doesn't honour in-order queue
-            // dependencies with non-graph operations on Level Zero.
-            q.ext_oneapi_submit_barrier();
-            // Replay the pre-recorded combined graph
-            int const slot = state->cur_compute;
-            q.ext_oneapi_graph(*state->combined_exec_graph[slot]);
-            // Barrier after replay to ensure graph completes before post_fn
-            q.ext_oneapi_submit_barrier();
-        }
-
-        // Phase 3: Post-graph — D2H memcpy operations (always direct)
-        for (int i = 0; i < state->num_graph_extractors; i++) {
-            auto &ge = state->graph_extractors[i];
-            if (ge.post_fn)
-                ge.post_fn(&q, ge.priv);
-        }
-
+        sycl_enqueue_all_phases(q, state, any_wants_graph);
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "libvmaf SYCL exception in graph_submit: %s\n", e.what());
         return -EIO;

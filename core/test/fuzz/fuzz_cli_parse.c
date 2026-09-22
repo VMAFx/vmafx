@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: EUPL-1.2
  *
  * libFuzzer harness for the `vmaf` CLI argument parser
- * (libvmaf/tools/cli_parse.c) — exercised through the public
+ * (core/tools/cli_parse.cpp) — exercised through the public
  * `cli_parse` / `cli_free` surface.
  *
  * Rationale: `cli_parse` is attacker-reachable whenever a host
@@ -55,7 +55,7 @@
 extern int optind;
 
 /* Disable AddressSanitizer's leak detector for this harness. The
- * upstream-mirror `cli_free` (libvmaf/tools/cli_parse.c) is known
+ * upstream-mirror `cli_free` (core/tools/cli_parse.cpp) is known
  * to leave the per-feature / per-model `VmafFeatureDictionary`
  * allocations behind on the success path; we mirror an audited
  * cleanup at the bottom of `LLVMFuzzerTestOneInput`, but the

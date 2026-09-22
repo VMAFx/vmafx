@@ -46,125 +46,139 @@ constexpr uint32_t INDTERM_WG = 256u;
 constexpr uint32_t SCORE_WG = 256u;
 constexpr uint32_t SOLVE_WG = 32u; /* one warp per column */
 
+struct CovarianceArgs {
+    const float *plane;
+    const float *means;
+    float *matrix;
+    uint32_t stride;
+    uint32_t width;
+    uint32_t height;
+};
+
+struct FloatExpansion {
+    float high;
+    float low;
+};
+
+} // namespace
+
 /* ------------------------------------------------------------------ */
 /* SYCL GPU kernels                                                    */
 /* ------------------------------------------------------------------ */
 
-/* Kernel 2: covariance matrix (625 work-groups, one per (x_index, y_index))
- *
- * CPU parity (compute_covariance): one GLOBAL submatrix sweep with the scalar
- * global means, divided by N once. The historic per-tile loop (displaced
- * origins tile_y*5 + xr, per-tile means, per-tile /N) summed num_blocks
- * block-local covariances instead — wrong matrix, ~7x-low scores. The work-
- * group's threads stride over the submatrix_h × submatrix_w pixels at
- * (xr+i, xc+j)/(yr+i, yc+j), reduce in local memory, and divide by N once. */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static void launch_cov(sycl::queue &q, const float *plane, const float *means, float *cov_mat,
-                       uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
-                       uint32_t submatrix_w, uint32_t submatrix_h)
+namespace
 {
-    (void)num_blocks_h;
-    (void)num_blocks;
-    /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
-    const size_t total_wg = (size_t)SP_ELEMENTS * SP_ELEMENTS;
-    q.submit([&](sycl::handler &cgh) {
-        /* Two local arrays, not one: the accumulator is a compensated (hi, lo)
-         * float pair. See the note in the kernel. */
-        sycl::local_accessor<float, 1> const s_partial(sycl::range<1>(COV_WG), cgh);
-        sycl::local_accessor<float, 1> const s_partial_lo(sycl::range<1>(COV_WG), cgh);
-        cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
-            const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
-            const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
-            const uint32_t tid = (uint32_t)it.get_local_id(0);
 
-            const uint32_t xr = x_index / SP_BLOCK_SIZE;
-            const uint32_t xc = x_index % SP_BLOCK_SIZE;
-            const uint32_t yr = y_index / SP_BLOCK_SIZE;
-            const uint32_t yc = y_index % SP_BLOCK_SIZE;
-            const float mean_x = means[x_index];
-            const float mean_y = means[y_index];
+static inline FloatExpansion add_product(FloatExpansion sum, float lhs, float rhs)
+{
+    const float product = lhs * rhs;
+    const float product_error = sycl::fma(lhs, rhs, -product);
+    const float high = sum.high + product;
+    const float bias = high - sum.high;
+    const float add_error = (sum.high - (high - bias)) + (product - bias);
+    const float tail = sum.low + product_error + add_error;
+    const float normalized = high + tail;
+    return {.high = normalized, .low = tail - (normalized - high)};
+}
 
-            /* CPU-parity accumulation.
-             *
-             * `si_compute_covariance` in speed_internal.c promotes both pixels
-             * and both means to double, so every product is exact (a float
-             * product needs 48 bits, which double holds) and ~45,000 of them
-             * are summed with double rounding. `submatrix_w * submatrix_h` is
-             * nearly the whole plane, so plain fp32 accumulation drifted
-             * 1.37e-4 on the 576x324 fixture — past the places=4 parity
-             * tolerance the test asserts.
-             *
-             * This device has no fp64 (`aspect::fp64` is false on Arc A380, and
-             * a double kernel is rejected outright), so the sum is carried as a
-             * compensated (hi, lo) float pair instead: each product is split
-             * exactly with one FMA, and each addition is a two-sum whose
-             * rounding error is folded into `lo`. That removes both the
-             * per-term product rounding and the O(N * eps) summation drift
-             * using only fp32 arithmetic the device has. */
-            const uint32_t total = submatrix_h * submatrix_w;
-            float hi = 0.0f;
-            float lo = 0.0f;
-            for (uint32_t p = tid; p < total; p += COV_WG) {
-                const uint32_t i = p / submatrix_w;
-                const uint32_t j = p % submatrix_w;
-                const float vx = plane[(xr + i) * stride_px + (xc + j)];
-                const float vy = plane[(yr + i) * stride_px + (yc + j)];
-                const float dx = vx - mean_x;
-                const float dy = vy - mean_y;
-                /* two_product: dx * dy == prod + perr, exactly. */
-                const float prod = dx * dy;
-                const float perr = sycl::fma(dx, dy, -prod);
-                /* Add (prod, perr) into the (hi, lo) expansion and RENORMALISE.
-                 * Folding the errors into `lo` without renormalising lets `lo`
-                 * itself lose precision over the ~45,000 terms, which is what
-                 * left the stored covariance one ulp out. */
-                const float sum_hi = hi + prod;
-                const float bias = sum_hi - hi;
-                const float err = (hi - (sum_hi - bias)) + (prod - bias);
-                const float t = lo + perr + err;
-                const float renorm = sum_hi + t;
-                lo = t - (renorm - sum_hi);
-                hi = renorm;
-            }
-            {
-                const float t = hi + lo;
-                lo = lo - (t - hi);
-                hi = t;
-            }
-            s_partial[tid] = hi;
-            s_partial_lo[tid] = lo;
-            it.barrier(sycl::access::fence_space::local_space);
+} // namespace
 
-            for (uint32_t s = COV_WG / 2u; s > 0u; s >>= 1u) {
-                if (tid < s) {
-                    /* Combine two (hi, lo) expansions and RENORMALISE, the same
-                     * way the per-work-item loop does. Adding the `lo` halves
-                     * without folding the result back into `hi` loses the
-                     * compensation across the eight reduction levels. */
-                    const float a_hi = s_partial[tid];
-                    const float a_lo = s_partial_lo[tid];
-                    const float b_hi = s_partial[tid + s];
-                    const float b_lo = s_partial_lo[tid + s];
-                    const float sum_hi = a_hi + b_hi;
-                    const float bias = sum_hi - a_hi;
-                    const float err = (a_hi - (sum_hi - bias)) + (b_hi - bias);
-                    const float t = a_lo + b_lo + err;
-                    const float renorm = sum_hi + t;
-                    s_partial[tid] = renorm;
-                    s_partial_lo[tid] = t - (renorm - sum_hi);
-                }
-                it.barrier(sycl::access::fence_space::local_space);
-            }
-            if (tid == 0u) {
-                const float denom = (float)total;
-                cov_mat[x_index * SP_ELEMENTS + y_index] =
-                    s_partial[0] / denom + s_partial_lo[0] / denom;
-            }
-        });
+namespace
+{
+
+static inline FloatExpansion add_expansions(FloatExpansion lhs, FloatExpansion rhs)
+{
+    const float high = lhs.high + rhs.high;
+    const float bias = high - lhs.high;
+    const float error = (lhs.high - (high - bias)) + (rhs.high - bias);
+    const float tail = lhs.low + rhs.low + error;
+    const float normalized = high + tail;
+    return {.high = normalized, .low = tail - (normalized - high)};
+}
+
+} // namespace
+
+namespace
+{
+
+static inline FloatExpansion covariance_sum(const CovarianceArgs &args, uint32_t x_index,
+                                            uint32_t y_index, uint32_t thread)
+{
+    const uint32_t x_row = x_index / SP_BLOCK_SIZE;
+    const uint32_t x_column = x_index % SP_BLOCK_SIZE;
+    const uint32_t y_row = y_index / SP_BLOCK_SIZE;
+    const uint32_t y_column = y_index % SP_BLOCK_SIZE;
+    const uint32_t total = args.height * args.width;
+    FloatExpansion sum{};
+    for (uint32_t position = thread; position < total; position += COV_WG) {
+        const uint32_t row = position / args.width;
+        const uint32_t column = position % args.width;
+        const float x = args.plane[(x_row + row) * args.stride + x_column + column];
+        const float y = args.plane[(y_row + row) * args.stride + y_column + column];
+        sum = add_product(sum, x - args.means[x_index], y - args.means[y_index]);
+    }
+    return add_expansions(sum, {});
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void reduce_covariance(sycl::nd_item<1> item, const CovarianceArgs &args,
+                                     const sycl::local_accessor<float, 1> &high,
+                                     const sycl::local_accessor<float, 1> &low)
+{
+    const uint32_t thread = (uint32_t)item.get_local_id(0);
+    for (uint32_t span = COV_WG / 2u; span > 0u; span >>= 1u) {
+        if (thread < span) {
+            FloatExpansion const combined =
+                add_expansions({.high = high[thread], .low = low[thread]},
+                               {.high = high[thread + span], .low = low[thread + span]});
+            high[thread] = combined.high;
+            low[thread] = combined.low;
+        }
+        item.barrier(sycl::access::fence_space::local_space);
+    }
+    if (thread == 0u) {
+        const uint32_t x_index = (uint32_t)(item.get_group(0) / SP_ELEMENTS);
+        const uint32_t y_index = (uint32_t)(item.get_group(0) % SP_ELEMENTS);
+        const float denominator = (float)(args.height * args.width);
+        args.matrix[x_index * SP_ELEMENTS + y_index] = high[0] / denominator + low[0] / denominator;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static void launch_cov(sycl::queue &queue, const CovarianceArgs &args)
+{
+    const size_t groups = (size_t)SP_ELEMENTS * SP_ELEMENTS;
+    queue.submit([&](sycl::handler &handler) {
+        sycl::local_accessor<float, 1> const high(sycl::range<1>(COV_WG), handler);
+        sycl::local_accessor<float, 1> const low(sycl::range<1>(COV_WG), handler);
+        handler.parallel_for(
+            sycl::nd_range<1>(groups * COV_WG, COV_WG), [=](sycl::nd_item<1> item) {
+                const uint32_t x_index = (uint32_t)(item.get_group(0) / SP_ELEMENTS);
+                const uint32_t y_index = (uint32_t)(item.get_group(0) % SP_ELEMENTS);
+                const uint32_t thread = (uint32_t)item.get_local_id(0);
+                FloatExpansion const sum = covariance_sum(args, x_index, y_index, thread);
+                high[thread] = sum.high;
+                low[thread] = sum.low;
+                item.barrier(sycl::access::fence_space::local_space);
+                reduce_covariance(item, args, high, low);
+            });
     });
 }
 
+} // namespace
+
 /* Kernel 3: independent term */
+namespace
+{
+
 static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, uint32_t stride_px,
                            uint32_t num_blocks_h, uint32_t num_blocks)
 {
@@ -188,47 +202,50 @@ static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, u
     });
 }
 
+} // namespace
+
 /* Kernel 4: backward substitution (one sub-group per column) */
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t num_blocks)
+namespace
 {
-    /* Each warp (32 threads) handles one column; threads 25-31 idle. */
-    const size_t warps = (size_t)((num_blocks + 7u) / 8u) * 8u; /* round up to 8 warps per block */
-    const size_t global = warps * SOLVE_WG;
-    const size_t local = (size_t)SOLVE_WG * 8u;
-    q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(sycl::nd_range<1>(global, local), [=](sycl::nd_item<1> it) {
-            const uint32_t warp_id = (uint32_t)(it.get_global_id(0) / SOLVE_WG);
-            const uint32_t lane = (uint32_t)(it.get_global_id(0) % SOLVE_WG);
-            /* group_barrier below is a work-GROUP collective: EVERY work-item in
-             * the group must execute it on every iteration. Returning early for
-             * idle lanes (lane >= SP_ELEMENTS, i.e. 25-31) or surplus warps
-             * (warp_id >= num_blocks) made those work-items skip the barrier,
-             * deadlocking the group on devices with strict barrier semantics
-             * (Intel Arc -> UR_RESULT_ERROR_DEVICE_LOST). Gate only the WORK with
-             * `active`; keep all work-items in the barrier loop. */
-            const bool active = (warp_id < num_blocks && lane < SP_ELEMENTS);
-            const uint32_t col = warp_id;
-            for (int32_t i = (int32_t)(SP_ELEMENTS - 1u); i >= 0; --i) {
-                if (active && std::cmp_equal(lane, i)) {
-                    float val = rhs[(uint32_t)i * num_blocks + col];
-                    const float denom = R[(uint32_t)i * SP_ELEMENTS + (uint32_t)i];
-                    for (uint32_t k = (uint32_t)(i + 1); k < SP_ELEMENTS; ++k)
-                        val -= rhs[k * num_blocks + col] * R[(uint32_t)i * SP_ELEMENTS + k];
-                    /* Same epsilon as the CPU reference. The host-side pivot
-                     * check in run_channel() means this branch is unreachable
-                     * in practice, but it must not disagree with it: it used to
-                     * say 1e-8f, so a pivot between the two thresholds was
-                     * regular here and singular on the CPU. */
-                    rhs[(uint32_t)i * num_blocks + col] =
-                        (sycl::fabs(denom) > SPEED_INTERNAL_EIGENVALUE_EPS) ? val / denom : 0.0f;
-                }
-                /* Fence to ensure row-i result is visible before row i-1. */
-                sycl::group_barrier(it.get_group());
+
+static inline void solve_column(sycl::nd_item<1> item, const float *matrix, float *rhs,
+                                uint32_t columns)
+{
+    const uint32_t column = (uint32_t)(item.get_global_id(0) / SOLVE_WG);
+    const uint32_t lane = (uint32_t)(item.get_global_id(0) % SOLVE_WG);
+    const bool active = column < columns && lane < SP_ELEMENTS;
+    for (int32_t row = (int32_t)(SP_ELEMENTS - 1u); row >= 0; --row) {
+        if (active && std::cmp_equal(lane, row)) {
+            float value = rhs[(uint32_t)row * columns + column];
+            const float pivot = matrix[(uint32_t)row * SP_ELEMENTS + (uint32_t)row];
+            for (uint32_t k = (uint32_t)(row + 1); k < SP_ELEMENTS; ++k) {
+                value -= rhs[k * columns + column] * matrix[(uint32_t)row * SP_ELEMENTS + k];
             }
-        });
+            rhs[(uint32_t)row * columns + column] =
+                sycl::fabs(pivot) > SPEED_INTERNAL_EIGENVALUE_EPS ? value / pivot : 0.0f;
+        }
+        sycl::group_barrier(item.get_group());
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static void launch_solve(sycl::queue &queue, const float *matrix, float *rhs, uint32_t columns)
+{
+    /* Eight sub-groups share a work-group; every lane reaches each barrier. */
+    const size_t subgroups = (size_t)((columns + 7u) / 8u) * 8u;
+    const size_t local = (size_t)SOLVE_WG * 8u;
+    queue.submit([&](sycl::handler &handler) {
+        handler.parallel_for(
+            sycl::nd_range<1>(subgroups * SOLVE_WG, local),
+            [=](sycl::nd_item<1> item) { solve_column(item, matrix, rhs, columns); });
     });
 }
+
+} // namespace
 
 /* Kernel 5: per-tile entropy + score
  *
@@ -236,6 +253,9 @@ static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t nu
  * dis covariance matrices, so the ref entropy uses ref_eigenvalues and the dis
  * entropy uses dis_eigenvalues — they are NOT shared. The previous single-
  * eigenvalue-array signature reused the dis eigenvalues for both entropies. */
+namespace
+{
+
 static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const float *dis_eigenvalues,
                          const float *ref_sol, const float *dis_sol, const float *ref_indterm,
                          const float *dis_indterm, float *ref_ent, float *ref_var, float *dis_ent,
@@ -280,18 +300,20 @@ static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const flo
     });
 }
 
+} // namespace
+
 /* ------------------------------------------------------------------ */
 /* Per-extractor state                                                 */
 /* ------------------------------------------------------------------ */
 
+namespace
+{
+
 struct SpeedChromaSyclState {
     VmafSyclState *sycl_state;
-
     SpeedInternalDimensions dim;
     SpeedInternalOptions opt;
     size_t float_stride;
-
-    /* Device USM buffers. */
     float *d_plane;
     float *d_means;
     float *d_cov_mat;
@@ -306,18 +328,12 @@ struct SpeedChromaSyclState {
     float *d_ref_var;
     float *d_dis_ent;
     float *d_dis_var;
-
-    /* Shared host ↔ device (host_alloc for D2H). */
     float *h_cov_mat;
     float *h_ref_ent;
     float *h_ref_var;
     float *h_dis_ent;
     float *h_dis_var;
-
-    /* Singular covariance matrices are counted, not logged per solve. */
     SpeedInternalSingularTally singular_tally;
-
-    /* CPU-only scratch buffers. */
     float *h_plane_ref;
     float *h_plane_dis;
     float *h_eigenvalues;
@@ -328,8 +344,6 @@ struct SpeedChromaSyclState {
     float *h_indterm_ref;
     float *h_indterm_dis;
     float *h_qt_scratch;
-
-    /* User options. */
     double speed_chroma_kernelscale;
     double speed_chroma_prescale;
     char *speed_chroma_prescale_method;
@@ -341,58 +355,67 @@ struct SpeedChromaSyclState {
     VmafDictionary *feature_name_dict;
 };
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+} // namespace
+
+namespace
+{
+
+template <typename T> static void free_usm(sycl::queue const &queue, T *&pointer)
+{
+    if (pointer) {
+        sycl::free(pointer, queue);
+        pointer = nullptr;
+    }
+}
+
+template <typename T> static void free_aligned(T *&pointer)
+{
+    if (pointer) {
+        aligned_free(pointer);
+        pointer = nullptr;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
 static void free_sycl_state(SpeedChromaSyclState *s)
 {
-    sycl::queue const *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
-#define FREE_D(p)                                                                                  \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            sycl::free((p), *q);                                                                   \
-            (p) = nullptr;                                                                         \
-        }                                                                                          \
-    } while (0)
-#define FREE_A(p)                                                                                  \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            aligned_free((p));                                                                     \
-            (p) = nullptr;                                                                         \
-        }                                                                                          \
-    } while (0)
-
-    FREE_D(s->d_plane);
-    FREE_D(s->d_means);
-    FREE_D(s->d_cov_mat);
-    FREE_D(s->d_indterm_ref);
-    FREE_D(s->d_indterm_dis);
-    FREE_D(s->d_sol_ref);
-    FREE_D(s->d_sol_dis);
-    FREE_D(s->d_R);
-    FREE_D(s->d_eigenvalues);
-    FREE_D(s->d_eigenvalues_ref);
-    FREE_D(s->d_ref_ent);
-    FREE_D(s->d_ref_var);
-    FREE_D(s->d_dis_ent);
-    FREE_D(s->d_dis_var);
-    FREE_D(s->h_cov_mat);
-    FREE_D(s->h_ref_ent);
-    FREE_D(s->h_ref_var);
-    FREE_D(s->h_dis_ent);
-    FREE_D(s->h_dis_var);
-    FREE_A(s->h_plane_ref);
-    FREE_A(s->h_plane_dis);
-    FREE_A(s->h_eigenvalues);
-    FREE_A(s->h_eig_scratch);
-    FREE_A(s->h_Q);
-    FREE_A(s->h_R);
-    FREE_A(s->h_qr_scratch);
-    FREE_A(s->h_indterm_ref);
-    FREE_A(s->h_indterm_dis);
-    FREE_A(s->h_qt_scratch);
-
-#undef FREE_D
-#undef FREE_A
+    const sycl::queue &queue = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    free_usm(queue, s->d_plane);
+    free_usm(queue, s->d_means);
+    free_usm(queue, s->d_cov_mat);
+    free_usm(queue, s->d_indterm_ref);
+    free_usm(queue, s->d_indterm_dis);
+    free_usm(queue, s->d_sol_ref);
+    free_usm(queue, s->d_sol_dis);
+    free_usm(queue, s->d_R);
+    free_usm(queue, s->d_eigenvalues);
+    free_usm(queue, s->d_eigenvalues_ref);
+    free_usm(queue, s->d_ref_ent);
+    free_usm(queue, s->d_ref_var);
+    free_usm(queue, s->d_dis_ent);
+    free_usm(queue, s->d_dis_var);
+    free_usm(queue, s->h_cov_mat);
+    free_usm(queue, s->h_ref_ent);
+    free_usm(queue, s->h_ref_var);
+    free_usm(queue, s->h_dis_ent);
+    free_usm(queue, s->h_dis_var);
+    free_aligned(s->h_plane_ref);
+    free_aligned(s->h_plane_dis);
+    free_aligned(s->h_eigenvalues);
+    free_aligned(s->h_eig_scratch);
+    free_aligned(s->h_Q);
+    free_aligned(s->h_R);
+    free_aligned(s->h_qr_scratch);
+    free_aligned(s->h_indterm_ref);
+    free_aligned(s->h_indterm_dis);
+    free_aligned(s->h_qt_scratch);
 }
+
+} // namespace
 
 /* ------------------------------------------------------------------ */
 /* GPU + CPU pipeline for one plane                                   */
@@ -400,6 +423,9 @@ static void free_sycl_state(SpeedChromaSyclState *s)
 
 /* uv from u and v, imputing across a singular channel exactly as extract_fex()
  * in speed.c does. */
+namespace
+{
+
 static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bool singular_v)
 {
     if (singular_u && !singular_v)
@@ -409,301 +435,352 @@ static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bo
     return (score_u + score_v) * 0.5f;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm, float *d_indterm,
-                       float *d_sol, bool *singular_out)
+} // namespace
+
+namespace
 {
-    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
-    const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
-    const uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
-    const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
-    const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
-    const size_t plane_bytes = s->dim.truncated_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = (size_t)SP_ELEMENTS * num_blocks * sizeof(float);
 
-    /* H2D upload. */
-    q.memcpy(s->d_plane, h_plane, plane_bytes);
-    q.wait();
-
-    /* The per-element means are computed on the HOST with the CPU reference's
-     * own routine, then uploaded.
-     *
-     * They are 1/25th of the covariance work — 25 elements against 625 pairs
-     * over the same submatrix — so offloading them buys nothing, and a device
-     * reduction that differs from the CPU's by one ulp propagates that ulp into
-     * every covariance term. This matters here more than the magnitudes suggest:
-     * the covariance is 25x25 estimated from a submatrix that can be as small as
-     * 6x6 (the parity fixture reduces to a 10x10 plane), so the system is badly
-     * under-determined and the downstream eigen/QR/solve amplifies a single ulp
-     * by ~70x on the final score. Using the CPU routine makes the means
-     * bit-identical by construction rather than by coincidence. */
-    float h_means[SP_ELEMENTS];
-    speed_internal_compute_means(&s->dim, h_plane, h_means, stride_px);
-    q.memcpy(s->d_means, h_means, sizeof(h_means));
-    q.wait();
-
-    /* GPU kernels. */
-    launch_cov(q, s->d_plane, s->d_means, s->d_cov_mat, stride_px, num_blocks_h, num_blocks,
-               submatrix_w, submatrix_h);
-    launch_indterm(q, s->d_plane, d_indterm, stride_px, num_blocks_h, num_blocks);
-    q.wait();
-
-    /* D2H: cov_mat and indterm. */
-    q.memcpy(s->h_cov_mat, s->d_cov_mat, (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float));
-    q.memcpy(h_indterm, d_indterm, indterm_bytes);
-    q.wait();
-
-    /* CPU: eigendecomp. */
-    const int sz = (int)SP_ELEMENTS;
-    const int nb = (int)num_blocks;
-    speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
-    bool const regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
-
-    /* A singular covariance matrix is NOT a failure: the CPU reference zeroes
-     * the solution and reports it separately so the caller can impute. The
-     * return value stays reserved for hard failures. See ADR-1202. */
-    *singular_out = !regular;
-    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_chroma_sycl");
-    if (!regular) {
-        /* Zero the DEVICE solution, not the host staging buffer. The score
-         * kernel reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm`
-         * at the top of every pipeline run, so zeroing it changed nothing.
-         * `sycl::malloc_device` memory is explicitly uninitialised, so without
-         * this the first singular frame scored against whatever the allocator
-         * handed back. ADR-1218. */
-        q.memset(d_sol, 0, indterm_bytes);
-        q.wait();
-    } else {
-        speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
-        /* CPU parity. `speed_internal_backward_substitution` returns -EINVAL if
-         * any R diagonal pivot is below SPEED_INTERNAL_EIGENVALUE_EPS, and
-         * est_params() folds that into `cannot_invert` — the SAME path a
-         * non-regular covariance takes. The device kernel has no way to report
-         * failure and used to zero just that row and carry on, with a threshold
-         * two orders looser (1e-8f), so a pivot between the two produced a
-         * solution the CPU never computes. The eigenvalue regularity check
-         * above does not cover it: those are eigenvalues of the covariance, not
-         * the diagonal of its QR R factor. `h_R` is already on the host here, so
-         * the check costs 25 comparisons. */
-        bool pivot_singular = false;
-        for (int i = 0; i < sz; i++) {
-            if (std::fabs(s->h_R[i * sz + i]) < SPEED_INTERNAL_EIGENVALUE_EPS) {
-                pivot_singular = true;
-                break;
-            }
-        }
-        if (pivot_singular) {
-            *singular_out = true;
-            vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                     "speed_chroma_sycl: R pivot below regularity epsilon, zeroing solution\n");
-            q.memset(d_sol, 0, indterm_bytes);
-            q.wait();
-            return 0;
-        }
-        speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
-        /* H2D: R and Q^T×indterm. */
-        q.memcpy(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float));
-        q.memcpy(d_sol, h_indterm, indterm_bytes);
-        q.wait();
-        launch_solve(q, s->d_R, d_sol, num_blocks);
-        q.wait();
-    }
-
-    /* H2D: eigenvalues. */
-    q.memcpy(s->d_eigenvalues, s->h_eigenvalues, (size_t)sz * sizeof(float));
-    q.wait();
-    return 0;
+static void upload_channel(SpeedChromaSyclState *s, sycl::queue &queue, float *plane)
+{
+    const uint32_t stride = (uint32_t)(s->float_stride / sizeof(float));
+    const size_t bytes = s->dim.truncated_height * stride * sizeof(float);
+    queue.memcpy(s->d_plane, plane, bytes);
+    queue.wait();
+    float means[SP_ELEMENTS];
+    speed_internal_compute_means(&s->dim, plane, means, stride);
+    queue.memcpy(s->d_means, means, sizeof(means));
+    queue.wait();
 }
+
+} // namespace
+
+namespace
+{
+
+static void compute_channel_statistics(SpeedChromaSyclState *s, sycl::queue &queue,
+                                       float *host_indterm, float *device_indterm)
+{
+    const uint32_t blocks = (uint32_t)s->dim.num_blocks;
+    const uint32_t block_columns = (uint32_t)s->dim.num_blocks_horizontal;
+    const uint32_t stride = (uint32_t)(s->float_stride / sizeof(float));
+    launch_cov(queue, {.plane = s->d_plane,
+                       .means = s->d_means,
+                       .matrix = s->d_cov_mat,
+                       .stride = stride,
+                       .width = (uint32_t)s->dim.submatrix_width,
+                       .height = (uint32_t)s->dim.submatrix_height});
+    launch_indterm(queue, s->d_plane, device_indterm, stride, block_columns, blocks);
+    queue.wait();
+    const size_t matrix_bytes = (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
+    const size_t indterm_bytes = (size_t)SP_ELEMENTS * blocks * sizeof(float);
+    queue.memcpy(s->h_cov_mat, s->d_cov_mat, matrix_bytes);
+    queue.memcpy(host_indterm, device_indterm, indterm_bytes);
+    queue.wait();
+}
+
+} // namespace
+
+namespace
+{
+
+static bool has_singular_pivot(const float *matrix)
+{
+    for (uint32_t row = 0; row < SP_ELEMENTS; ++row) {
+        if (std::fabs(matrix[row * SP_ELEMENTS + row]) < SPEED_INTERNAL_EIGENVALUE_EPS) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+namespace
+{
+
+static void solve_regular_channel(SpeedChromaSyclState *s, sycl::queue &queue, float *host_indterm,
+                                  float *device_solution)
+{
+    const int size = (int)SP_ELEMENTS;
+    const uint32_t blocks = (uint32_t)s->dim.num_blocks;
+    const size_t matrix_bytes = (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
+    const size_t indterm_bytes = (size_t)SP_ELEMENTS * blocks * sizeof(float);
+    speed_internal_qt_multiply(s->h_Q, host_indterm, size, (int)blocks, s->h_qt_scratch);
+    queue.memcpy(s->d_R, s->h_R, matrix_bytes);
+    queue.memcpy(device_solution, host_indterm, indterm_bytes);
+    queue.wait();
+    launch_solve(queue, s->d_R, device_solution, blocks);
+    queue.wait();
+}
+
+} // namespace
+
+namespace
+{
+
+static void solve_channel(SpeedChromaSyclState *s, sycl::queue &queue, float *host_indterm,
+                          float *device_solution, bool *singular)
+{
+    const int size = (int)SP_ELEMENTS;
+    const size_t solution_bytes = (size_t)SP_ELEMENTS * s->dim.num_blocks * sizeof(float);
+    speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, size, s->h_eig_scratch);
+    *singular = !speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
+    speed_internal_tally_solve(&s->singular_tally, *singular, "speed_chroma_sycl");
+    if (*singular) {
+        queue.memset(device_solution, 0, solution_bytes);
+        queue.wait();
+        return;
+    }
+    speed_internal_qr_factorize(s->h_cov_mat, size, s->h_Q, s->h_R, s->h_qr_scratch);
+    if (has_singular_pivot(s->h_R)) {
+        *singular = true;
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "speed_chroma_sycl: R pivot below regularity epsilon, zeroing solution\n");
+        queue.memset(device_solution, 0, solution_bytes);
+        queue.wait();
+        return;
+    }
+    solve_regular_channel(s, queue, host_indterm, device_solution);
+}
+
+} // namespace
+
+namespace
+{
+
+static void run_channel(SpeedChromaSyclState *s, float *host_plane, float *host_indterm,
+                        float *device_indterm, float *device_solution, bool *singular)
+{
+    sycl::queue &queue = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    upload_channel(s, queue, host_plane);
+    compute_channel_statistics(s, queue, host_indterm, device_indterm);
+    solve_channel(s, queue, host_indterm, device_solution, singular);
+    queue.memcpy(s->d_eigenvalues, s->h_eigenvalues, SP_ELEMENTS * sizeof(float));
+    queue.wait();
+}
+
+} // namespace
 
 /* ------------------------------------------------------------------ */
 /* Lifecycle (C wrappers)                                             */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+namespace
+{
+
+static std::pair<float, float> weighted_scores(float ref_entropy, float dis_entropy,
+                                               float ref_variance, float dis_variance, int mode)
+{
+    if (mode == 0) {
+        return {ref_entropy * std::log2f(1.0f + ref_variance),
+                dis_entropy * std::log2f(1.0f + dis_variance)};
+    }
+    if (mode == 1) {
+        return {ref_entropy * std::log2f(1.0f + ref_variance),
+                dis_entropy * std::log2f(1.0f + ref_variance)};
+    }
+    if (mode == 2) {
+        return {ref_entropy * std::log2f(1.0f + dis_variance),
+                dis_entropy * std::log2f(1.0f + dis_variance)};
+    }
+    const float mean = (ref_variance + dis_variance) * 0.5f;
+    if (mode == 3) {
+        return {ref_entropy * std::log2f(1.0f + mean), dis_entropy * std::log2f(1.0f + mean)};
+    }
+    float dis_weight = mean;
+    if (mode == 5) {
+        dis_weight = 0.75f * ref_variance + 0.25f * dis_variance;
+    } else if (mode == 6) {
+        dis_weight = 0.25f * ref_variance + 0.75f * dis_variance;
+    }
+    return {ref_entropy * std::log2f(1.0f + ref_variance),
+            dis_entropy * std::log2f(1.0f + dis_weight)};
+}
+
+} // namespace
+
+namespace
+{
+
+static float block_score(const SpeedChromaSyclState *s, uint32_t block, float entropy_floor)
+{
+    const float ref_entropy = s->h_ref_ent[block];
+    const float dis_entropy = s->h_dis_ent[block];
+    if (ref_entropy < entropy_floor && dis_entropy < entropy_floor) {
+        return 0.0f;
+    }
+    auto const [ref_score, dis_score] =
+        weighted_scores(ref_entropy, dis_entropy, s->h_ref_var[block], s->h_dis_var[block],
+                        s->opt.speed_weight_var_mode);
+    return std::fabs(ref_score - dis_score);
+}
+
+} // namespace
+
+namespace
+{
+
 static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
 {
-    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
-    const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
-    const float sigma_nn = (float)s->opt.speed_sigma_nn;
-
-    /* The kernel reads d_eigenvalues_ref for the ref entropy and d_eigenvalues
-     * (now holding the dis eigenvalues) for the dis entropy. */
-    launch_score(q, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
+    sycl::queue &queue = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    const uint32_t blocks = (uint32_t)s->dim.num_blocks;
+    launch_score(queue, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
                  s->d_indterm_ref, s->d_indterm_dis, s->d_ref_ent, s->d_ref_var, s->d_dis_ent,
-                 s->d_dis_var, num_blocks, sigma_nn);
-
-    const size_t ab = (size_t)num_blocks * sizeof(float);
-    q.memcpy(s->h_ref_ent, s->d_ref_ent, ab);
-    q.memcpy(s->h_ref_var, s->d_ref_var, ab);
-    q.memcpy(s->h_dis_ent, s->d_dis_ent, ab);
-    q.memcpy(s->h_dis_var, s->d_dis_var, ab);
-    q.wait();
-
-    const float base_entropy =
+                 s->d_dis_var, blocks, (float)s->opt.speed_sigma_nn);
+    const size_t bytes = (size_t)blocks * sizeof(float);
+    queue.memcpy(s->h_ref_ent, s->d_ref_ent, bytes);
+    queue.memcpy(s->h_ref_var, s->d_ref_var, bytes);
+    queue.memcpy(s->h_dis_ent, s->d_dis_ent, bytes);
+    queue.memcpy(s->h_dis_var, s->d_dis_var, bytes);
+    queue.wait();
+    const float entropy_floor =
         (float)SP_ELEMENTS *
         (std::log2f((1.0f + (float)s->opt.speed_nn_floor) * (float)s->opt.speed_sigma_nn) +
          std::log2f(2.0f * std::numbers::pi_v<float> * std::numbers::e_v<float>));
-
     float total = 0.0f;
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        float const re = s->h_ref_ent[i];
-        float const de = s->h_dis_ent[i];
-        if (re < base_entropy && de < base_entropy)
-            continue;
-        float const rv = s->h_ref_var[i];
-        float const dv = s->h_dis_var[i];
-        const int wvm = s->opt.speed_weight_var_mode;
-        float sr = 0.0f;
-        float sd = 0.0f;
-        if (wvm == 0) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + dv);
-        } else if (wvm == 1) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + rv);
-        } else if (wvm == 2) {
-            sr = re * std::log2f(1.0f + dv);
-            sd = de * std::log2f(1.0f + dv);
-        } else if (wvm == 3) {
-            float const mv = (rv + dv) * 0.5f;
-            sr = re * std::log2f(1.0f + mv);
-            sd = de * std::log2f(1.0f + mv);
-        } else if (wvm == 4) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + (rv + dv) * 0.5f);
-        } else if (wvm == 5) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + 0.75f * rv + 0.25f * dv);
-        } else if (wvm == 6) {
-            sr = re * std::log2f(1.0f + rv);
-            sd = de * std::log2f(1.0f + 0.25f * rv + 0.75f * dv);
-        }
-        total += std::fabs(sr - sd);
+    for (uint32_t block = 0; block < blocks; ++block) {
+        total += block_score(s, block, entropy_floor);
     }
-    *score_out = total / (float)num_blocks;
+    *score_out = total / (float)blocks;
     return 0;
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
-
+static const VmafOption option_kernelscale = {
+    .name = "speed_kernelscale",
+    .help = "scaling factor for the Gaussian kernel",
+    .alias = "ks",
+    .offset = offsetof(SpeedChromaSyclState, speed_chroma_kernelscale),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 1.0},
+    .min = 0.1,
+    .max = 4.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+static const VmafOption option_prescale = {
+    .name = "speed_prescale",
+    .help = "scaling factor for the frame",
+    .alias = "ps",
+    .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 1.0},
+    .min = 0.1,
+    .max = 4.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+static const VmafOption option_prescale_method = {
+    .name = "speed_prescale_method",
+    .help = "scaling method",
+    .alias = "psm",
+    .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale_method),
+    .type = VMAF_OPT_TYPE_STRING,
+    .default_val = {.s = "nearest"},
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+static const VmafOption option_sigma_nn = {
+    .name = "speed_sigma_nn",
+    .help = "standard deviation of neural noise",
+    .alias = "snn",
+    .offset = offsetof(SpeedChromaSyclState, speed_chroma_sigma_nn),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 0.29},
+    .min = 0.1,
+    .max = 2.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+static const VmafOption option_nn_floor = {
+    .name = "speed_nn_floor",
+    .help = "neural noise floor fraction",
+    .alias = "nnf",
+    .offset = offsetof(SpeedChromaSyclState, speed_chroma_nn_floor),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 0.0},
+    .min = 0.0,
+    .max = 1.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+static const VmafOption option_maximum = {
+    .name = "speed_max_val",
+    .help = "clip output to this maximum",
+    .alias = "mxv",
+    .offset = offsetof(SpeedChromaSyclState, speed_chroma_max_val),
+    .type = VMAF_OPT_TYPE_DOUBLE,
+    .default_val = {.d = 1000.0},
+    .min = 0.0,
+    .max = 1000.0,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
+static const VmafOption option_weight_mode = {
+    .name = "speed_weight_var_mode",
+    .help = "variance weighting mode (0-6)",
+    .alias = "wvm",
+    .offset = offsetof(SpeedChromaSyclState, speed_weight_var_mode),
+    .type = VMAF_OPT_TYPE_INT,
+    .default_val = {.i = 0},
+    .min = 0,
+    .max = 6,
+    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+};
 static const VmafOption options_chroma[] = {
-    {
-        .name = "speed_kernelscale",
-        .help = "scaling factor for the Gaussian kernel",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_kernelscale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1.0},
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ks",
-    },
-    {
-        .name = "speed_prescale",
-        .help = "scaling factor for the frame",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1.0},
-        .min = 0.1,
-        .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ps",
-    },
-    {
-        .name = "speed_prescale_method",
-        .help = "scaling method",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_prescale_method),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val = {.s = "nearest"},
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "psm",
-    },
-    {
-        .name = "speed_sigma_nn",
-        .help = "standard deviation of neural noise",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_sigma_nn),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 0.29},
-        .min = 0.1,
-        .max = 2.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "snn",
-    },
-    {
-        .name = "speed_nn_floor",
-        .help = "neural noise floor fraction",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_nn_floor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 0.0},
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "nnf",
-    },
-    {
-        .name = "speed_max_val",
-        .help = "clip output to this maximum",
-        .offset = offsetof(SpeedChromaSyclState, speed_chroma_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val = {.d = 1000.0},
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mxv",
-    },
-    {
-        .name = "speed_weight_var_mode",
-        .help = "variance weighting mode (0-6)",
-        .offset = offsetof(SpeedChromaSyclState, speed_weight_var_mode),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val = {.d = 0},
-        .min = 0,
-        .max = 6,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "wvm",
-    },
-    {.name = nullptr},
+    option_kernelscale, option_prescale, option_prescale_method, option_sigma_nn,
+    option_nn_floor,    option_maximum,  option_weight_mode,     {.name = nullptr},
 };
 
-/* forward decl for init failure cleanup — SY-2a */
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_chroma_sycl` / `extract_chroma_sycl` / `close_chroma_sycl` entry points
-// and the `provided_features_chroma` table use C-style `static` rather than an
-// anonymous namespace because their addresses are stored in the
-// `extern "C" VmafFeatureExtractor` struct at the bottom of this file, which the
-// C ABI consumes through the function-pointer types in `feature_extractor.h`.
-// Same band, same reason, as integer_motion_sycl.cpp and integer_adm_sycl.cpp.
-// Per CLAUDE.md section 12 r12 these are load-bearing invariants of the
-// SYCL <-> libvmaf C-API ABI.
+namespace
+{
+
 static int close_chroma_sycl(VmafFeatureExtractor *fex);
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                            unsigned w, unsigned h)
-{
-    (void)bpc;
-    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
+struct AllocationSizes {
+    size_t plane;
+    size_t indterm;
+    size_t covariance;
+    size_t score;
+};
 
-    unsigned cw = w;
-    unsigned ch = h;
-    switch (pix_fmt) {
+} // namespace
+
+namespace
+{
+
+static int chroma_dimensions(enum VmafPixelFormat format, unsigned width, unsigned height,
+                             unsigned *chroma_width, unsigned *chroma_height)
+{
+    *chroma_width = width;
+    *chroma_height = height;
+    switch (format) {
     case VMAF_PIX_FMT_UNKNOWN:
     case VMAF_PIX_FMT_YUV400P:
         return -EINVAL;
     case VMAF_PIX_FMT_YUV420P:
-        cw /= 2u;
-        ch /= 2u;
+        *chroma_width /= 2u;
+        *chroma_height /= 2u;
         break;
     case VMAF_PIX_FMT_YUV422P:
-        cw /= 2u;
+        *chroma_width /= 2u;
         break;
     case VMAF_PIX_FMT_YUV444P:
         break;
     }
+    return 0;
+}
 
+} // namespace
+
+namespace
+{
+
+static int configure_chroma(SpeedChromaSyclState *s, VmafFeatureExtractor *fex,
+                            enum VmafPixelFormat format, unsigned width, unsigned height)
+{
+    unsigned chroma_width = 0;
+    unsigned chroma_height = 0;
+    const int dimension_error =
+        chroma_dimensions(format, width, height, &chroma_width, &chroma_height);
+    if (dimension_error) {
+        return dimension_error;
+    }
     s->sycl_state = fex->sycl_state;
     s->opt = SpeedInternalOptions{
         .speed_kernelscale = s->speed_chroma_kernelscale,
@@ -713,187 +790,224 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
         .speed_nn_floor = s->speed_chroma_nn_floor,
         .speed_weight_var_mode = s->speed_weight_var_mode,
     };
+    const int error = speed_internal_init_dimensions(&s->dim, (int)chroma_width, (int)chroma_height,
+                                                     s->opt.speed_prescale);
+    if (!error) {
+        s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+    }
+    return error;
+}
 
-    int const err =
-        speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
-    if (err)
-        return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+} // namespace
 
-    sycl::queue const &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t nb = s->dim.num_blocks;
-    const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = SP_ELEMENTS * nb * sizeof(float);
-    const size_t cov_bytes = (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
-    const size_t score_bytes = nb * sizeof(float);
+namespace
+{
 
-#define ALLOC_D(field, sz) s->field = sycl::malloc_device<float>((sz) / sizeof(float), q)
-#define ALLOC_H(field, sz) s->field = sycl::malloc_host<float>((sz) / sizeof(float), q)
-#define ALLOC_A(field, sz) s->field = (float *)aligned_malloc((sz), 32)
+static AllocationSizes allocation_sizes(const SpeedChromaSyclState *s)
+{
+    const size_t stride = s->float_stride / sizeof(float);
+    const size_t blocks = s->dim.num_blocks;
+    return {
+        .plane = s->dim.alloc_height * stride * sizeof(float),
+        .indterm = SP_ELEMENTS * blocks * sizeof(float),
+        .covariance = (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float),
+        .score = blocks * sizeof(float),
+    };
+}
 
-    ALLOC_D(d_plane, plane_bytes);
-    ALLOC_D(d_means, indterm_bytes);
-    ALLOC_D(d_cov_mat, cov_bytes);
-    ALLOC_D(d_indterm_ref, indterm_bytes);
-    ALLOC_D(d_indterm_dis, indterm_bytes);
-    ALLOC_D(d_sol_ref, indterm_bytes);
-    ALLOC_D(d_sol_dis, indterm_bytes);
-    ALLOC_D(d_R, cov_bytes);
-    ALLOC_D(d_eigenvalues, SP_ELEMENTS * sizeof(float));
-    ALLOC_D(d_eigenvalues_ref, SP_ELEMENTS * sizeof(float));
-    ALLOC_D(d_ref_ent, score_bytes);
-    ALLOC_D(d_ref_var, score_bytes);
-    ALLOC_D(d_dis_ent, score_bytes);
-    ALLOC_D(d_dis_var, score_bytes);
-    ALLOC_H(h_cov_mat, cov_bytes);
-    ALLOC_H(h_ref_ent, score_bytes);
-    ALLOC_H(h_ref_var, score_bytes);
-    ALLOC_H(h_dis_ent, score_bytes);
-    ALLOC_H(h_dis_var, score_bytes);
-    ALLOC_A(h_plane_ref, plane_bytes);
-    ALLOC_A(h_plane_dis, plane_bytes);
-    ALLOC_A(h_eigenvalues, SP_ELEMENTS * sizeof(float));
-    ALLOC_A(h_eig_scratch, (SP_ELEMENTS * SP_ELEMENTS + 4u * SP_ELEMENTS) * sizeof(float));
-    ALLOC_A(h_Q, cov_bytes);
-    ALLOC_A(h_R, cov_bytes);
-    ALLOC_A(h_qr_scratch, 4u * cov_bytes);
-    ALLOC_A(h_indterm_ref, indterm_bytes);
-    ALLOC_A(h_indterm_dis, indterm_bytes);
-    ALLOC_A(h_qt_scratch, indterm_bytes);
+} // namespace
 
-#undef ALLOC_D
-#undef ALLOC_H
-#undef ALLOC_A
+namespace
+{
 
-    if (!s->d_plane || !s->h_plane_ref || !s->h_eigenvalues || !s->h_Q || !s->h_R) {
+static void allocate_device_buffers(SpeedChromaSyclState *s, sycl::queue const &queue,
+                                    const AllocationSizes &sizes)
+{
+    s->d_plane = sycl::malloc_device<float>(sizes.plane / sizeof(float), queue);
+    s->d_means = sycl::malloc_device<float>(sizes.indterm / sizeof(float), queue);
+    s->d_cov_mat = sycl::malloc_device<float>(sizes.covariance / sizeof(float), queue);
+    s->d_indterm_ref = sycl::malloc_device<float>(sizes.indterm / sizeof(float), queue);
+    s->d_indterm_dis = sycl::malloc_device<float>(sizes.indterm / sizeof(float), queue);
+    s->d_sol_ref = sycl::malloc_device<float>(sizes.indterm / sizeof(float), queue);
+    s->d_sol_dis = sycl::malloc_device<float>(sizes.indterm / sizeof(float), queue);
+    s->d_R = sycl::malloc_device<float>(sizes.covariance / sizeof(float), queue);
+    s->d_eigenvalues = sycl::malloc_device<float>(SP_ELEMENTS, queue);
+    s->d_eigenvalues_ref = sycl::malloc_device<float>(SP_ELEMENTS, queue);
+    s->d_ref_ent = sycl::malloc_device<float>(sizes.score / sizeof(float), queue);
+    s->d_ref_var = sycl::malloc_device<float>(sizes.score / sizeof(float), queue);
+    s->d_dis_ent = sycl::malloc_device<float>(sizes.score / sizeof(float), queue);
+    s->d_dis_var = sycl::malloc_device<float>(sizes.score / sizeof(float), queue);
+}
+
+} // namespace
+
+namespace
+{
+
+static void allocate_host_buffers(SpeedChromaSyclState *s, sycl::queue const &queue,
+                                  const AllocationSizes &sizes)
+{
+    s->h_cov_mat = sycl::malloc_host<float>(sizes.covariance / sizeof(float), queue);
+    s->h_ref_ent = sycl::malloc_host<float>(sizes.score / sizeof(float), queue);
+    s->h_ref_var = sycl::malloc_host<float>(sizes.score / sizeof(float), queue);
+    s->h_dis_ent = sycl::malloc_host<float>(sizes.score / sizeof(float), queue);
+    s->h_dis_var = sycl::malloc_host<float>(sizes.score / sizeof(float), queue);
+    s->h_plane_ref = static_cast<float *>(aligned_malloc(sizes.plane, 32));
+    s->h_plane_dis = static_cast<float *>(aligned_malloc(sizes.plane, 32));
+    s->h_eigenvalues = static_cast<float *>(aligned_malloc(SP_ELEMENTS * sizeof(float), 32));
+    const size_t eigen_scratch = (SP_ELEMENTS * SP_ELEMENTS + 4u * SP_ELEMENTS) * sizeof(float);
+    s->h_eig_scratch = static_cast<float *>(aligned_malloc(eigen_scratch, 32));
+    s->h_Q = static_cast<float *>(aligned_malloc(sizes.covariance, 32));
+    s->h_R = static_cast<float *>(aligned_malloc(sizes.covariance, 32));
+    s->h_qr_scratch = static_cast<float *>(aligned_malloc(4u * sizes.covariance, 32));
+    s->h_indterm_ref = static_cast<float *>(aligned_malloc(sizes.indterm, 32));
+    s->h_indterm_dis = static_cast<float *>(aligned_malloc(sizes.indterm, 32));
+    s->h_qt_scratch = static_cast<float *>(aligned_malloc(sizes.indterm, 32));
+}
+
+} // namespace
+
+namespace
+{
+
+static bool allocations_complete(const SpeedChromaSyclState *s)
+{
+    return s->d_plane && s->d_means && s->d_cov_mat && s->d_indterm_ref && s->d_indterm_dis &&
+           s->d_sol_ref && s->d_sol_dis && s->d_R && s->d_eigenvalues && s->d_eigenvalues_ref &&
+           s->d_ref_ent && s->d_ref_var && s->d_dis_ent && s->d_dis_var && s->h_cov_mat &&
+           s->h_ref_ent && s->h_ref_var && s->h_dis_ent && s->h_dis_var && s->h_plane_ref &&
+           s->h_plane_dis && s->h_eigenvalues && s->h_eig_scratch && s->h_Q && s->h_R &&
+           s->h_qr_scratch && s->h_indterm_ref && s->h_indterm_dis && s->h_qt_scratch;
+}
+
+} // namespace
+
+namespace
+{
+
+static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat format, unsigned bpc,
+                            unsigned width, unsigned height)
+{
+    (void)bpc;
+    auto *s = static_cast<SpeedChromaSyclState *>(fex->priv);
+    const int config_error = configure_chroma(s, fex, format, width, height);
+    if (config_error) {
+        return config_error;
+    }
+    const sycl::queue &queue = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    const AllocationSizes sizes = allocation_sizes(s);
+    allocate_device_buffers(s, queue, sizes);
+    allocate_host_buffers(s, queue, sizes);
+    if (!allocations_complete(s)) {
         close_chroma_sycl(fex);
         return -ENOMEM;
     }
-
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
         close_chroma_sycl(fex);
         return -ENOMEM;
     }
-
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                               VmafPicture *dist_pic_90, unsigned index,
-                               VmafFeatureCollector *feature_collector)
+} // namespace
+
+namespace
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
 
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t tmp_size = 2u * s->dim.alloc_height * stride_px;
-    float *tmp_filter = (float *)aligned_malloc(tmp_size * sizeof(float), 32);
-    if (!tmp_filter)
-        return -ENOMEM;
+struct ChromaResult {
+    float score;
+    int error;
+    bool singular;
+};
 
-    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
-    float score_u = 0.0f;
-    float score_v = 0.0f;
-    int err_u = 0;
-    int err_v = 0;
-    bool singular_u = false;
-    bool singular_v = false;
-
-    for (int ch = 1; ch <= 2; ++ch) {
-        float const *h_plane = (ch == 1) ? s->h_plane_ref : s->h_plane_dis;
-        float const *h_plane_d = (ch == 1) ? s->h_plane_dis : nullptr;
-        /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
-        picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
-        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
-                                            s->float_stride);
-        picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, ch);
-        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
-                                            s->float_stride);
-        (void)h_plane;
-        (void)h_plane_d;
-
-        /* Reference channel: GPU pipeline + CPU linalg uploads ref eigenvalues
-         * into the shared s->d_eigenvalues buffer. */
-        bool singular_ref = false;
-        int e = run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
-                            &singular_ref);
-        if (e) {
-            if (ch == 1) {
-                err_u = e;
-            } else {
-                err_v = e;
-            }
-            continue;
-        }
-        /* Stash the reference eigenvalues aside before the distorted linalg pass
-         * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
-         * computes SEPARATE ref and dis covariance + eigenvalues; the score
-         * kernel needs both. run_channel q.wait()'d its eigenvalue H2D, so the
-         * DtoD copy is ordered after it. */
-        q.memcpy(s->d_eigenvalues_ref, s->d_eigenvalues, SP_ELEMENTS * sizeof(float));
-        q.wait();
-
-        /* Distorted channel: keeps the DIS covariance in h_cov_mat (no
-         * save/restore of the ref covariance) and uploads dis eigenvalues into
-         * s->d_eigenvalues. */
-        bool singular_dis = false;
-        e = run_channel(s, s->h_plane_dis, s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis,
-                        &singular_dis);
-
-        /* Exactly one side numerically unstable: report 0 rather than the
-         * inflated score a zeroed solution on one side produces. Verbatim the
-         * CPU rule in speed_extract_score() (speed.c), which this twin matches. */
-        float sc = 0.0f;
-        if (!e && singular_ref == singular_dis)
-            e = score_aggregate(s, &sc);
-
-        if (ch == 1) {
-            err_u = e;
-            score_u = sc;
-            singular_u = singular_ref || singular_dis;
-        } else {
-            err_v = e;
-            score_v = sc;
-            singular_v = singular_ref || singular_dis;
-        }
+static ChromaResult process_chroma_plane(SpeedChromaSyclState *s, VmafPicture *reference,
+                                         VmafPicture *distorted, float *filter, int plane)
+{
+    picture_copy(s->h_plane_ref, s->float_stride, reference, -128, reference->bpc, plane);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, filter, s->float_stride);
+    picture_copy(s->h_plane_dis, s->float_stride, distorted, -128, distorted->bpc, plane);
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, filter, s->float_stride);
+    bool reference_singular = false;
+    run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
+                &reference_singular);
+    sycl::queue &queue = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    queue.memcpy(s->d_eigenvalues_ref, s->d_eigenvalues, SP_ELEMENTS * sizeof(float));
+    queue.wait();
+    bool distorted_singular = false;
+    run_channel(s, s->h_plane_dis, s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis,
+                &distorted_singular);
+    float score = 0.0f;
+    int error = 0;
+    if (reference_singular == distorted_singular) {
+        error = score_aggregate(s, &score);
     }
-
-    aligned_free(tmp_filter);
-
-    /* A hard failure (SYCL error, allocation failure) fails the frame, and is NOT
-     * the singular-matrix condition -- conflating the two is what made ADR-1202's
-     * CUDA launch failure surface as three silent 0.0 scores on an exit-0 run.
-     * Singularity arrives via `singular_u` / `singular_v`. */
-    if (err_u)
-        return err_u;
-    if (err_v)
-        return err_v;
-
-    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
-
-    const double mxv = s->speed_chroma_max_val;
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_u_score",
-        (double)score_u < mxv ? (double)score_u : mxv, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_v_score",
-        (double)score_v < mxv ? (double)score_v : mxv, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_uv_score",
-        (double)score_uv < mxv ? (double)score_uv : mxv, index);
-    return err;
+    return {.score = score, .error = error, .singular = reference_singular || distorted_singular};
 }
+
+} // namespace
+
+namespace
+{
+
+static int append_chroma_scores(SpeedChromaSyclState *s, VmafFeatureCollector *collector,
+                                unsigned index, ChromaResult u, ChromaResult v)
+{
+    const float uv = combine_chroma_uv(u.score, v.score, u.singular, v.singular);
+    const double maximum = s->speed_chroma_max_val;
+    int error = 0;
+    error |= vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_u_score",
+        (double)u.score < maximum ? (double)u.score : maximum, index);
+    error |= vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_v_score",
+        (double)v.score < maximum ? (double)v.score : maximum, index);
+    error |= vmaf_feature_collector_append_with_dict(
+        collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_uv_score",
+        (double)uv < maximum ? (double)uv : maximum, index);
+    return error;
+}
+
+} // namespace
+
+namespace
+{
+
+static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
+                               VmafPicture *reference_90, VmafPicture *distorted,
+                               VmafPicture *distorted_90, unsigned index,
+                               VmafFeatureCollector *collector)
+{
+    (void)reference_90;
+    (void)distorted_90;
+    auto *s = static_cast<SpeedChromaSyclState *>(fex->priv);
+    const size_t stride = s->float_stride / sizeof(float);
+    const size_t filter_elements = 2u * s->dim.alloc_height * stride;
+    float *filter = static_cast<float *>(aligned_malloc(filter_elements * sizeof(float), 32));
+    if (!filter) {
+        return -ENOMEM;
+    }
+    const ChromaResult u = process_chroma_plane(s, reference, distorted, filter, 1);
+    const ChromaResult v = process_chroma_plane(s, reference, distorted, filter, 2);
+    aligned_free(filter);
+    if (u.error) {
+        return u.error;
+    }
+    if (v.error) {
+        return v.error;
+    }
+    return append_chroma_scores(s, collector, index, u, v);
+}
+
+} // namespace
+
+namespace
+{
 
 static int close_chroma_sycl(VmafFeatureExtractor *fex)
 {
-    SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
+    auto *s = static_cast<SpeedChromaSyclState *>(fex->priv);
     speed_internal_report_singular(&s->singular_tally, "speed_chroma_sycl");
     if (s->sycl_state)
         free_sycl_state(s);
@@ -909,18 +1023,17 @@ static const char *provided_features_chroma[] = {
     nullptr,
 };
 
-/* ADR-0567: real SYCL GPU kernels for speed_chroma. */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
+} // namespace
 
-VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
+/* ADR-0567: real SYCL GPU kernels for speed_chroma. */
+
+extern "C" VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
     .name = "speed_chroma_sycl",
     .init = init_chroma_sycl,
     .extract = extract_chroma_sycl,
     .close = close_chroma_sycl,
     .options = options_chroma,
     .priv_size = sizeof(SpeedChromaSyclState),
-    .provided_features = provided_features_chroma,
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
+    .provided_features = provided_features_chroma,
 };
-
-} /* extern "C" */

@@ -35,6 +35,12 @@ concurrency:
 
 jobs:
   dev-container-build:
+    # ADR-1297 — required. Agent hard rule 12 makes this container the default
+    # execution environment and ADR-1102 makes it canonical for published
+    # artifacts; the image that every contributor and every release artifact
+    # comes out of must not be allowed to stop building silently. Path-filtered
+    # on dev/**, so absence elsewhere is an ADR-0313 path skip.
+    # required-aggregator
     name: Dev Container Build
     # Skip draft PRs — consistent with the other workflow gates.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false

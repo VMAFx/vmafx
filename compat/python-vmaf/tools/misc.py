@@ -7,7 +7,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from concurrent.futures import ProcessPoolExecutor
 from fnmatch import fnmatch
 from pathlib import Path
 from time import (  # noqa: F401  `sleep` re-exported for callers in `vmaf/core/` and tests; codeql sweep dropped it as "unused" but downstream modules import it from here.
@@ -16,6 +15,7 @@ from time import (  # noqa: F401  `sleep` re-exported for callers in `vmaf/core/
 )
 
 import numpy as np
+from joblib import Parallel, delayed
 
 from vmaf import (  # noqa: F401  re-exported for `vmaf/core/matlab_feature_extractor.py`, `python/test/command_line_test.py`; codeql sweep dropped it as "unused" but downstream `from vmaf.tools.misc import run_process` callers expect it here.
     run_process,
@@ -24,13 +24,6 @@ from vmaf.tools.scanf import FormatError, IncompleteCaptureError, sscanf
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
-
-try:
-    multiprocessing.set_start_method("fork")
-except ValueError:  # If platform does not support, just ignore
-    pass
-except RuntimeError:  # If context has already being set, just ignore
-    pass
 
 
 def get_stdout_logger():
@@ -207,11 +200,11 @@ def import_python_file(filepath: str, override: dict = None):
         return ret
     else:
         override_ = override.copy()
-        tmpfile = tempfile.NamedTemporaryFile(delete=False, suffix=".py")
-        with open(filepath, "r") as fin:
-            with open(tmpfile.name, "w") as fout:
-                while True:
-                    line = fin.readline()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmpfile:
+            tmpfile_name = tmpfile.name
+        try:
+            with open(filepath, "r") as fin, open(tmpfile_name, "w") as fout:
+                for line in fin:
                     if len(override_) > 0:
                         suffixes = []
                         for key in list(override_.keys()):
@@ -226,8 +219,6 @@ def import_python_file(filepath: str, override: dict = None):
                         if len(suffixes) > 0:
                             line = "\n".join([line.strip()] + suffixes) + "\n"
                     fout.write(line)
-                    if not line:
-                        break
                 if len(override_) > 0:
                     for key in override_:
                         s = (
@@ -237,9 +228,40 @@ def import_python_file(filepath: str, override: dict = None):
                         )
                         s += "\n"
                         fout.write(s)
-        ret = import_python_file(tmpfile.name)
-        os.remove(tmpfile.name)
-        return ret
+            return import_python_file(tmpfile_name)
+        finally:
+            os.remove(tmpfile_name)
+
+
+def _import_dataset_and_filter(dataset_filepath, content_ids=None, asset_ids=None):
+    """
+    Import a subjective-test dataset file and apply sureal's content/asset filters.
+
+    This mirrors ``sureal.subjective_model.SubjectiveModel._import_dataset_and_filter``
+    exactly, except that the import goes through :func:`import_python_file`.
+    sureal's own helper still loads the dataset with
+    ``importlib.machinery.SourceFileLoader.load_module()``, which has been
+    deprecated since Python 3.4, raises ``DeprecationWarning`` on 3.12+ and is
+    scheduled for removal in 3.15 — fatal under the harness's
+    warnings-are-errors policy (ADR-1278). Callers therefore import the dataset
+    here and hand the already-parsed module to the sureal dataset reader instead
+    of calling ``SubjectiveModel.from_dataset_file()``.
+
+    :param dataset_filepath: path of the dataset ``.py`` file to import.
+    :param content_ids: if not None, keep only ``dis_videos`` with these content ids.
+    :param asset_ids: if not None, keep only ``dis_videos`` with these asset ids.
+    :return: the imported dataset module, filtered in place.
+    """
+    dataset = import_python_file(dataset_filepath)
+    if content_ids is not None:
+        dataset.dis_videos = [
+            dis_video for dis_video in dataset.dis_videos if dis_video["content_id"] in content_ids
+        ]
+    if asset_ids is not None:
+        dataset.dis_videos = [
+            dis_video for dis_video in dataset.dis_videos if dis_video["asset_id"] in asset_ids
+        ]
+    return dataset
 
 
 def make_absolute_path(path: str, current_dir: str) -> str:
@@ -318,46 +340,63 @@ def index_and_value_of_min(l):
     return min(enumerate(l), key=lambda x: x[1])
 
 
-_pm_return_dict = None
-_pm_func = None
-_pm_list_args = None
-
-
-def _parallel_map_rt(idx):
-    _pm_return_dict[idx] = _pm_func(_pm_list_args[idx])
-
-
 def parallel_map(func, list_args, processes=None):
     """
-    Use multiprocessing.Pool to create a fast parallel map that doesn't pickle arguments
-    Note: only works on Unix! fork() used to propagate unpickleable data
+    Apply ``func`` in separate loky workers and return results in input order.
+
+    Loky's cloudpickle transport preserves support for local functions without
+    inheriting the caller's live threads through ``fork()``.
     """
+    if not list_args:
+        return []
 
-    context = multiprocessing
+    if processes is None:
+        process_cpu_count = getattr(os, "process_cpu_count", os.cpu_count)
+        processes = process_cpu_count() or 1
+    processes = min(processes, len(list_args))
 
-    if getattr(multiprocessing, "get_context", None) is None:
-        assert os.name == "posix", "parallel_map() requires fork() support, but not running on Unix"
-    else:
-        assert (
-            "fork" in multiprocessing.get_all_start_methods()
-        ), "parallel_map() requires fork() support"
-        context = multiprocessing.get_context("fork")
+    package_parent = str(Path(__file__).resolve().parents[2])
 
-    # create shared dictionary
-    return_dict = context.Manager().dict()
+    def initialize_worker():
+        if package_parent in sys.path:
+            sys.path.remove(package_parent)
+        sys.path.insert(0, package_parent)
+        # Loky leaves the worker's default start method set to its own
+        # "loky" context. That name only resolves in an interpreter that has
+        # already imported loky, so any *stdlib* process the worker starts
+        # afterwards -- `vmaf.core.executor` opens its fifo work/proc files
+        # through a spawn context -- records "loky" in its preparation data
+        # and dies in `prepare()` with "cannot find context for 'loky'"
+        # before it can release the semaphore the parent is waiting on.
+        # Pinning the default back to a start method the child can resolve
+        # keeps nested process creation working; loky itself always passes
+        # its own context explicitly and is unaffected.
+        multiprocessing.set_start_method("spawn", force=True)
 
-    def pool_init():
-        global _pm_func, _pm_list_args, _pm_return_dict
-        _pm_func = func
-        _pm_list_args = list_args
-        _pm_return_dict = return_dict
+    return Parallel(
+        n_jobs=processes,
+        backend="loky",
+        return_as="list",
+        initializer=initialize_worker,
+    )(delayed(func)(arg) for arg in list_args)
 
-    with ProcessPoolExecutor(processes, mp_context=context, initializer=pool_init) as pool:
-        # ProcessPoolExecutor prevents hanging on the slowest processes that get too much work - delegates one at a time
-        for _ in pool.map(_parallel_map_rt, range(len(list_args))):
-            pass
 
-    return [return_dict[i] for i in range(len(list_args))]
+def _parallel_map_serialized(func, list_args, serialization_keys, processes=None):
+    """Parallel-map independent keys while evaluating equal keys sequentially."""
+    assert len(list_args) == len(serialization_keys)
+    grouped_args = {}
+    for idx, (arg, key) in enumerate(zip(list_args, serialization_keys)):
+        grouped_args.setdefault(key, []).append((idx, arg))
+
+    def run_group(group):
+        return [(idx, func(arg)) for idx, arg in group]
+
+    indexed_results = parallel_map(run_group, list(grouped_args.values()), processes=processes)
+    result_by_index = {
+        idx: result for group_results in indexed_results for idx, result in group_results
+    }
+
+    return [result_by_index[idx] for idx in range(len(list_args))]
 
 
 def check_program_exist(program):
@@ -647,77 +686,79 @@ def find_linear_function_parameters(p1, p2):
     return alpha, beta
 
 
+_PIECEWISE_LINEAR_MAPPING_DOC = """
+A piecewise linear mapping function, defined by the boundary points of each segment. For example,
+a function consisting of 3 segments is defined by 4 points. The x-coordinate of each point need to be
+greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
+The function continues with the same slope for the values below the first point and above the last point.
+INPUT:
+    x_in - np.array of values to be mapped
+    knots - list of (at least 2) lists with x and y coordinates [[x0, y0], [x1, y1], ...]
+
+>>> x = np.arange(0.0, 110.0)
+>>> try:
+...     piecewise_linear_mapping(x, [[0, 1], [1, 2], [1, 3]])
+... except AssertionError as exc:
+...     print(str(exc).splitlines()[0])
+The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
+>>> try:
+...     piecewise_linear_mapping(x, [[0, 0], []])
+... except AssertionError as exc:
+...     print(str(exc).splitlines()[0])
+Each point needs to have two coordinates [x, y]
+>>> try:
+...     piecewise_linear_mapping(x, [0, 0])
+... except AssertionError as exc:
+...     print(str(exc).splitlines()[0])
+knots needs to be list of lists
+>>> try:
+...     piecewise_linear_mapping(x, [[0, 2], [1, 1]])
+... except AssertionError as exc:
+...     print(str(exc).splitlines()[0])
+The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
+
+>>> knots2160p = [[0.0, -55.0], [95.0, 87.5], [105.0, 105.0], [110.0, 110.0]]
+>>> knots1080p = [[0.0, -36.66], [90.0, 83.04], [95.0, 95.0], [100.0, 100.0]]
+
+>>> x0 = np.arange(0.0, 95.0, 0.1)
+>>> y0_true = 1.5 * x0 - 55.0
+>>> y0 = piecewise_linear_mapping(x0, knots2160p)
+>>> float(np.sqrt(np.mean((y0 - y0_true)**2)))
+0.0
+>>> x1 = np.arange(0.0, 90.0, 0.1)
+>>> y1_true = 1.33 * x1 - 36.66
+>>> y1 = piecewise_linear_mapping(x1, knots1080p)
+>>> float(np.sqrt(np.mean((y1 - y1_true) ** 2)))
+0.0
+
+>>> x0 = np.arange(95.0, 105.0, 0.1)
+>>> y0_true = 1.75 * x0 - 78.75
+>>> y0 = piecewise_linear_mapping(x0, knots2160p)
+>>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
+0.0
+>>> x1 = np.arange(90.0, 95.0, 0.1)
+>>> y1_true = 2.392 * x1 - 132.24
+>>> y1 = piecewise_linear_mapping(x1, knots1080p)
+>>> np.testing.assert_almost_equal(np.sqrt(np.mean((y1 - y1_true) ** 2)), 0.0)
+
+>>> x0 = np.arange(105.0, 110.0, 0.1)
+>>> y0 = piecewise_linear_mapping(x0, knots2160p)
+>>> float(np.sqrt(np.mean((y0 - x0) ** 2)))
+0.0
+>>> x1 = np.arange(95.0, 100.0, 0.1)
+>>> y1 = piecewise_linear_mapping(x1, knots1080p)
+>>> float(np.sqrt(np.mean((y1 - x1) ** 2)))
+0.0
+>>> knots_single = [[10.0, 10.0], [50.0, 60.0]]
+>>> x0 = np.arange(0.0, 110.0, 0.1)
+>>> y0 = piecewise_linear_mapping(x0, knots_single)
+>>> y0_true = 1.25 * x0 - 2.5
+>>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
+0.0
+"""
+
+
 def piecewise_linear_mapping(x, knots):
-    """
-    A piecewise linear mapping function, defined by the boundary points of each segment. For example,
-    a function consisting of 3 segments is defined by 4 points. The x-coordinate of each point need to be
-    greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-    The function continues with the same slope for the values below the first point and above the last point.
-    INPUT:
-        x_in - np.array of values to be mapped
-        knots - list of (at least 2) lists with x and y coordinates [[x0, y0], [x1, y1], ...]
-
-    >>> x = np.arange(0.0, 110.0)
-    >>> try:
-    ...     piecewise_linear_mapping(x, [[0, 1], [1, 2], [1, 3]])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-    >>> try:
-    ...     piecewise_linear_mapping(x, [[0, 0], []])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    Each point needs to have two coordinates [x, y]
-    >>> try:
-    ...     piecewise_linear_mapping(x, [0, 0])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    knots needs to be list of lists
-    >>> try:
-    ...     piecewise_linear_mapping(x, [[0, 2], [1, 1]])
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
-    The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-
-    >>> knots2160p = [[0.0, -55.0], [95.0, 87.5], [105.0, 105.0], [110.0, 110.0]]
-    >>> knots1080p = [[0.0, -36.66], [90.0, 83.04], [95.0, 95.0], [100.0, 100.0]]
-
-    >>> x0 = np.arange(0.0, 95.0, 0.1)
-    >>> y0_true = 1.5 * x0 - 55.0
-    >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> float(np.sqrt(np.mean((y0 - y0_true)**2)))
-    0.0
-    >>> x1 = np.arange(0.0, 90.0, 0.1)
-    >>> y1_true = 1.33 * x1 - 36.66
-    >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> float(np.sqrt(np.mean((y1 - y1_true) ** 2)))
-    0.0
-
-    >>> x0 = np.arange(95.0, 105.0, 0.1)
-    >>> y0_true = 1.75 * x0 - 78.75
-    >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
-    0.0
-    >>> x1 = np.arange(90.0, 95.0, 0.1)
-    >>> y1_true = 2.392 * x1 - 132.24
-    >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> np.testing.assert_almost_equal(np.sqrt(np.mean((y1 - y1_true) ** 2)), 0.0)
-
-    >>> x0 = np.arange(105.0, 110.0, 0.1)
-    >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> float(np.sqrt(np.mean((y0 - x0) ** 2)))
-    0.0
-    >>> x1 = np.arange(95.0, 100.0, 0.1)
-    >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> float(np.sqrt(np.mean((y1 - x1) ** 2)))
-    0.0
-    >>> knots_single = [[10.0, 10.0], [50.0, 60.0]]
-    >>> x0 = np.arange(0.0, 110.0, 0.1)
-    >>> y0 = piecewise_linear_mapping(x0, knots_single)
-    >>> y0_true = 1.25 * x0 - 2.5
-    >>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
-    0.0
-    """
     assert len(knots) > 1
     n_seg = len(knots) - 1
 
@@ -764,6 +805,9 @@ def piecewise_linear_mapping(x, knots):
                 y[x > knots[idx + 1][0]] = slope * x[x > knots[idx + 1][0]] + offset
 
     return y
+
+
+piecewise_linear_mapping.__doc__ = _PIECEWISE_LINEAR_MAPPING_DOC
 
 
 def round_up_to_odd(f):

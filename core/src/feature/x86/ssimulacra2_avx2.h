@@ -18,7 +18,7 @@
  * AVX2 variants of the SSIMULACRA 2 pointwise, reduction, and
  * separable-IIR kernels. Each function produces byte-for-byte
  * identical output to its scalar counterpart in
- * libvmaf/src/feature/ssimulacra2.c under FLT_EVAL_METHOD == 0
+ * core/src/feature/ssimulacra2.c under FLT_EVAL_METHOD == 0
  * — transcendental calls (cbrtf / powf) are applied per-lane
  * via scalar libm to preserve bit-exactness with the scalar
  * reference.

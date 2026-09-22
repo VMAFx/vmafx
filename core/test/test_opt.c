@@ -2,7 +2,7 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: EUPL-1.2
  *
- *  Exhaustive branch coverage for libvmaf/src/opt.c. The TU has four
+ *  Exhaustive branch coverage for core/src/opt.cpp. The TU has four
  *  static type-specific helpers (bool / int / double / string) and a
  *  single public dispatch `vmaf_option_set`. Each helper has the same
  *  shape — NULL `val` returns the default, parse-fail returns -EINVAL,

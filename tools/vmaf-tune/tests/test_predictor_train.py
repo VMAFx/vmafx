@@ -175,7 +175,7 @@ def test_load_corpus_accepts_hardware_sweep_aliases(tmp_path: Path) -> None:
 
 
 def test_iter_corpus_files_accepts_directory_shards(tmp_path: Path) -> None:
-    """Training can consume the sharded ``.workingdir2/corpus_run`` layout."""
+    """Training can consume the sharded ``.corpus/corpus_run`` layout."""
     corpus_dir = tmp_path / "corpus"
     nested = corpus_dir / "nested"
     nested.mkdir(parents=True)

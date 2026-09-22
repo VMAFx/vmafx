@@ -1,0 +1,1 @@
+- Removed the MCP subprocess-timeout test's `RuntimeWarning` suppression and made it prove that the post-kill `communicate()` drain is awaited exactly once.

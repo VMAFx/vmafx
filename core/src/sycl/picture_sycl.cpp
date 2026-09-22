@@ -205,7 +205,7 @@ struct VmafSyclPicturePool {
  * so wrap it with the priv + ref cleanup the old SYCL-specific close
  * loop did. */
 extern "C" {
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage) — ADR-0141 §2 load-bearing invariant: the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
 // entry points use C-style `static` rather than an anonymous namespace because
 // their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at

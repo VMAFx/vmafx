@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"sort"
@@ -238,7 +239,14 @@ func LoadCorpusJSONL(path string) ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		// Read handle: the rows are already parsed by the time this runs, so
+		// a close failure has nothing left to invalidate. Report it rather
+		// than drop it.
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("benchmark: close corpus jsonl", "path", path, "error", closeErr)
+		}
+	}()
 	return ParseCorpusJSONL(f)
 }
 
@@ -425,14 +433,7 @@ func Summarize(rows []Row, targetVMAF float64, baselineEncoder string) ([]Summar
 		return nil, ErrNoEligibleRows
 	}
 
-	byEncoder := map[string][]Row{}
-	for _, row := range eligible {
-		enc := pyStr(row.get("encoder", ""))
-		if enc == "" {
-			continue
-		}
-		byEncoder[enc] = append(byEncoder[enc], row)
-	}
+	byEncoder := groupByEncoder(eligible)
 	if len(byEncoder) == 0 {
 		return nil, ErrNoEncoderNames
 	}
@@ -445,35 +446,7 @@ func Summarize(rows []Row, targetVMAF float64, baselineEncoder string) ([]Summar
 
 	raw := make([]Summary, 0, len(encoders))
 	for _, enc := range encoders {
-		group := byEncoder[enc]
-		status, row := bestRow(group, targetVMAF)
-		bitrate, _ := finiteFloat(row["bitrate_kbps"])
-		vmaf, _ := finiteFloat(row["vmaf_score"])
-
-		srcs := map[string]struct{}{}
-		presets := map[string]struct{}{}
-		encodeSamples := make([]*float64, 0, len(group))
-		scoreSamples := make([]*float64, 0, len(group))
-		for _, r := range group {
-			srcs[pyStr(r.get("src", ""))] = struct{}{}
-			presets[pyStr(r.get("preset", ""))] = struct{}{}
-			encodeSamples = append(encodeSamples, rowEncodeFPS(r))
-			scoreSamples = append(scoreSamples, rowScoreFPS(r))
-		}
-
-		raw = append(raw, Summary{
-			Encoder:     enc,
-			Status:      status,
-			Rows:        len(group),
-			SourceCount: len(srcs),
-			PresetCount: len(presets),
-			BestRow:     row,
-			TargetVMAF:  targetVMAF,
-			Margin:      vmaf - targetVMAF,
-			BitratekBps: bitrate,
-			EncodeFPS:   meanPositive(encodeSamples),
-			ScoreFPS:    meanPositive(scoreSamples),
-		})
+		raw = append(raw, summariseEncoder(enc, byEncoder[enc], targetVMAF))
 	}
 
 	baseline, err := resolveBaseline(raw, baselineEncoder)
@@ -490,6 +463,54 @@ func Summarize(rows []Row, targetVMAF float64, baselineEncoder string) ([]Summar
 
 	sortSummaries(raw)
 	return raw, nil
+}
+
+// groupByEncoder buckets the eligible rows by their encoder token. Rows that
+// carry no encoder name are dropped: they cannot be attributed to a bucket.
+func groupByEncoder(eligible []Row) map[string][]Row {
+	byEncoder := map[string][]Row{}
+	for _, row := range eligible {
+		enc := pyStr(row.get("encoder", ""))
+		if enc == "" {
+			continue
+		}
+		byEncoder[enc] = append(byEncoder[enc], row)
+	}
+	return byEncoder
+}
+
+// summariseEncoder collapses one encoder's rows into its matched-quality point:
+// the best row against the target, plus the corpus coverage and throughput
+// means the report shows alongside it.
+func summariseEncoder(enc string, group []Row, targetVMAF float64) Summary {
+	status, row := bestRow(group, targetVMAF)
+	bitrate, _ := finiteFloat(row["bitrate_kbps"])
+	vmaf, _ := finiteFloat(row["vmaf_score"])
+
+	srcs := map[string]struct{}{}
+	presets := map[string]struct{}{}
+	encodeSamples := make([]*float64, 0, len(group))
+	scoreSamples := make([]*float64, 0, len(group))
+	for _, r := range group {
+		srcs[pyStr(r.get("src", ""))] = struct{}{}
+		presets[pyStr(r.get("preset", ""))] = struct{}{}
+		encodeSamples = append(encodeSamples, rowEncodeFPS(r))
+		scoreSamples = append(scoreSamples, rowScoreFPS(r))
+	}
+
+	return Summary{
+		Encoder:     enc,
+		Status:      status,
+		Rows:        len(group),
+		SourceCount: len(srcs),
+		PresetCount: len(presets),
+		BestRow:     row,
+		TargetVMAF:  targetVMAF,
+		Margin:      vmaf - targetVMAF,
+		BitratekBps: bitrate,
+		EncodeFPS:   meanPositive(encodeSamples),
+		ScoreFPS:    meanPositive(scoreSamples),
+	}
 }
 
 // resolveBaseline picks the reference encoder for bitrate deltas. A named

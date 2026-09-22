@@ -4,7 +4,7 @@
 #
 # Operator-run orchestration for multi-corpus aggregated training.
 # ADR-0340. Discovers which per-corpus MOS JSONLs are present under
-# .workingdir2/, runs ai/scripts/aggregate_corpora.py to produce a
+# .corpus/, runs ai/scripts/aggregate_corpora.py to produce a
 # single unified-scale JSONL, and kicks off the predictor v2
 # real-corpus trainer (#487) on the result.
 #
@@ -18,7 +18,7 @@
 #
 # Environment variables:
 #   VMAF_AGG_OUT      destination for the unified JSONL
-#                     (default: .workingdir2/aggregated/unified_corpus.jsonl)
+#                     (default: .corpus/aggregated/unified_corpus.jsonl)
 #   VMAF_AGG_DRY_RUN  if set non-empty, run aggregation but skip the
 #                     trainer kick-off (useful for CI / smoke tests)
 #   VMAF_AGG_TRAINER  trainer entrypoint
@@ -34,19 +34,19 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-agg_out="${VMAF_AGG_OUT:-$repo_root/.workingdir2/aggregated/unified_corpus.jsonl}"
+agg_out="${VMAF_AGG_OUT:-$repo_root/.corpus/aggregated/unified_corpus.jsonl}"
 trainer="${VMAF_AGG_TRAINER:-$repo_root/ai/scripts/train_predictor_v2_realcorpus.py}"
 
 # Conventional per-corpus JSONL locations. Order matters for
 # deterministic dedup-tie-breaking (first-seen wins on equal MOS
 # uncertainty).
 declare -a candidate_paths=(
-  "$repo_root/.workingdir2/netflix/netflix_public.jsonl"
-  "$repo_root/.workingdir2/konvid-1k/konvid_1k.jsonl"
-  "$repo_root/.workingdir2/konvid-150k/konvid_150k.jsonl"
-  "$repo_root/.workingdir2/lsvq/lsvq.jsonl"
-  "$repo_root/.workingdir2/youtube-ugc/youtube_ugc.jsonl"
-  "$repo_root/.workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl"
+  "$repo_root/.corpus/netflix/netflix_public.jsonl"
+  "$repo_root/.corpus/konvid-1k/konvid_1k.jsonl"
+  "$repo_root/.corpus/konvid-150k/konvid_150k.jsonl"
+  "$repo_root/.corpus/lsvq/lsvq.jsonl"
+  "$repo_root/.corpus/youtube-ugc/youtube_ugc.jsonl"
+  "$repo_root/.corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl"
 )
 
 declare -a present_paths=()
@@ -71,7 +71,7 @@ if ((${#missing_paths[@]} > 0)); then
 fi
 
 if ((${#present_paths[@]} == 0)); then
-  echo "error: no per-corpus JSONLs found under .workingdir2/." >&2
+  echo "error: no per-corpus JSONLs found under .corpus/." >&2
   echo "Run at least one ingestion script first (see docs/ai/multi-corpus-aggregation.md)." >&2
   exit 2
 fi

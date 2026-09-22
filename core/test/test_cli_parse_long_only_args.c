@@ -10,7 +10,7 @@
  * Bug: invalid `optarg` for `--threads` / `--subsample` /
  * `--cpumask` (e.g. `--threads abc`, or the `--th=foosoxe`
  * abbreviation captured at
- * `libvmaf/test/fuzz/cli_parse_known_crashes/`) used to trip
+ * `core/test/fuzz/cli_parse_known_crashes/`) used to trip
  * `error()`'s `assert(long_opts[n].name)` because the
  * call-site passed a synthesised short-option char (`'t'` /
  * `'s'` / `'c'`) that does not appear in `long_opts[]`. Fix
@@ -171,7 +171,7 @@ static char *test_cpumask_invalid_optarg_does_not_assert()
 }
 
 /* Mirrors the parked fuzzer reproducer at
- * libvmaf/test/fuzz/cli_parse_corpus/cli_threads_abbrev_assert.argv:
+ * core/test/fuzz/cli_parse_corpus/cli_threads_abbrev_assert.argv:
  * `--th=foosoxe` (getopt unique-prefix abbreviation of
  * `--threads`). This is the exact shape PR #408's fuzzer
  * surfaced; promoting the file to the corpus protects the

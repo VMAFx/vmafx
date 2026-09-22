@@ -13,16 +13,59 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+# Concurrency is per job, not workflow-wide. GitHub's Pages starter workflow
+# puts the whole file in one global `pages` group, which is correct for the
+# deployment (Pages permits one at a time) and wrong for the build: the group is
+# not scoped by ref, so every open PR and every master push contend for one
+# slot. A group holds at most one pending run, so a third arrival evicts the
+# waiting one. Measured 2026-09-22: run 35739609377 (PR #1518 at 160ddfc3d,
+# started 14:20) was cancelled at 14:30:20 inside upload-pages-artifact by run
+# 35740184612 (a Renovate digest bump at 31a5f502b, started 14:25). Neither
+# `mkdocs build --strict` nor `make docs-fragments-check` ran to completion for
+# that PR, and the check reported `cancelled` rather than a failure — a gate
+# that did not run, which HISS-18 forbids reporting as satisfied. See ADR-1294.
+#
+# ADR-1297 makes this check required, which is what gives ADR-1294 teeth:
+# `cancelled` is not in the aggregator's accepted set, so a cross-PR
+# cancellation is now a hard merge block instead of a green button. The two
+# changes must travel together — a rebase that keeps the gate and drops the
+# ref-scoped group below turns every contended docs build into a blocked merge.
+#
 
 jobs:
   build:
+    # ADR-1297 — required check. The job id `build` was the reported check
+    # name, because the job had no `name:`; that name is ambiguous (build.yml's
+    # job id is also `build`, saved only by its `name: ${{ matrix.name }}`) and
+    # would let any future unnamed `build` job share the context and mask this
+    # one. The explicit name below is the required context; the id stays
+    # `build` so `needs: build` in `deploy` keeps resolving.
+    # required-aggregator
+    name: Docs Site Build
     outputs:
       docs: ${{ steps.impact.outputs.docs }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 25, not 10. Every run that actually built docs hit the 10-minute ceiling,
+    # and GitHub reports a timed-out job as `cancelled`, which reads like
+    # contention rather than a budget. Measured 2026-09-22 at job level:
+    #   48300e324  19:29:21 -> 19:39:31  10m10s  cancelled
+    #   d9805a64f  18:05:31 -> 18:15:34  10m03s  cancelled
+    #   2487da308  17:58:19 -> 17:58:39     20s  success
+    # The one that passed is a dependency bump whose diff touches no docs, so
+    # the ADR-1140 impact planner skipped the build -- it never ran mkdocs. In
+    # the runs that did, `mkdocs build --strict` alone reported "Documentation
+    # built in 562.22 seconds", leaving about 38 s of the 600 s budget for
+    # checkout, setup-python, `pip install -r docs/requirements.txt` and
+    # `make docs-fragments-check`. The site carries ~1300 ADRs and grows every
+    # time one lands, so this ceiling was always going to be crossed. 25
+    # minutes is about 2.5x the measured build, with room for the
+    # hosted-runner spread (measured at up to 2.3x on the Coverage Gate).
+    timeout-minutes: 25
+    # Ref-scoped: one docs build per branch, superseded only by a newer push to
+    # that same branch. No cross-PR contention.
+    concurrency:
+      group: docs-build-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -55,8 +98,14 @@ jobs:
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict
+      # Only `deploy` consumes this, and `deploy` runs on `push` to master
+      # only, so a pull request uploading it gains nothing -- the artifact is
+      # named `github-pages`, repository-unique, with no consumer on the other
+      # end. Scoping it to deploying runs is right on its own terms, and it
+      # also saves a minute of the build's budget. It is NOT what fixed the
+      # cancellations; those were the 10-minute job timeout, see the note above.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
-        if: steps.impact.outputs.docs == 'true'
+        if: steps.impact.outputs.docs == 'true' && github.event_name == 'push'
         with:
           path: build-docs/site
 
@@ -65,6 +114,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The global `pages` group belongs here and only here: GitHub Pages accepts
+    # one concurrent deployment per repository. `cancel-in-progress: false` so a
+    # deployment already writing to Pages is never torn down mid-write. This job
+    # runs on `push` to master only, so it is not a source of PR contention.
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

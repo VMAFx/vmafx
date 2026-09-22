@@ -253,6 +253,75 @@ def _build_ssl_context() -> ssl.SSLContext | None:
     return None
 
 
+def _body_size_rejection(aiohttp: Any, request: Any) -> Any:
+    """413 response when ``Content-Length`` already exceeds the limit, else None.
+
+    Chunked or unknown-length bodies are not covered here: ``client_max_size``
+    on the aiohttp ``Application`` catches those inside ``request.json()``.
+    """
+    content_length = request.content_length
+    if content_length is None or content_length <= MAX_REQUEST_BODY_BYTES:
+        return None
+    return aiohttp.web.Response(
+        status=413,
+        content_type="application/json",
+        text=json.dumps(
+            {
+                "error": (
+                    f"Request body too large: Content-Length {content_length} "
+                    f"exceeds limit {MAX_REQUEST_BODY_BYTES}"
+                )
+            }
+        ),
+    )
+
+
+def _auth_rejection(aiohttp: Any, request: Any) -> Any:
+    """401 response when the bearer-token gate rejects the request, else None."""
+    if _no_auth_mode():
+        return None
+
+    expected_token = _resolve_auth_token()
+    if expected_token is None:
+        # No token configured and no explicit opt-out: refuse all traffic.
+        _log.warning(
+            "VMAFX_MCP_HTTP_TOKEN is unset and VMAFX_MCP_HTTP_NO_AUTH!=1; "
+            "rejecting request (set the token or set NO_AUTH=1 to accept "
+            "unauthenticated traffic)",
+            extra={"request_id": "-"},
+        )
+        return aiohttp.web.Response(
+            status=401,
+            content_type="application/json",
+            text=json.dumps(
+                {
+                    "error": (
+                        "Unauthorized: server requires VMAFX_MCP_HTTP_TOKEN "
+                        "or VMAFX_MCP_HTTP_NO_AUTH=1"
+                    )
+                }
+            ),
+        )
+
+    auth_header = request.headers.get("Authorization", "")
+    # Compare the tokens as UTF-8 bytes, never as str: hmac.compare_digest
+    # raises TypeError on str operands containing any code point > 255
+    # (e.g. a token with a non-ASCII character), which would otherwise
+    # propagate uncaught and turn every request into an HTTP 500 — a
+    # total auth/availability outage. Equal-typed bytes never raise.
+    provided_token = auth_header[len("Bearer ") :].encode("utf-8")
+    if not auth_header.startswith("Bearer ") or not hmac.compare_digest(
+        provided_token, expected_token.encode("utf-8")
+    ):
+        return aiohttp.web.Response(
+            status=401,
+            content_type="application/json",
+            text=json.dumps({"error": "Unauthorized: invalid or missing Bearer token"}),
+        )
+
+    return None
+
+
 def _make_security_middleware() -> Any:
     """Return an aiohttp ``@web.middleware`` that enforces body size + bearer auth.
 
@@ -286,59 +355,14 @@ def _make_security_middleware() -> Any:
     @aiohttp.web.middleware
     async def _security_middleware(request: Any, handler: Any) -> Any:
         # --- Body-size pre-flight via Content-Length header -------------------
-        content_length = request.content_length
-        if content_length is not None and content_length > MAX_REQUEST_BODY_BYTES:
-            return aiohttp.web.Response(
-                status=413,
-                content_type="application/json",
-                text=json.dumps(
-                    {
-                        "error": (
-                            f"Request body too large: Content-Length {content_length} "
-                            f"exceeds limit {MAX_REQUEST_BODY_BYTES}"
-                        )
-                    }
-                ),
-            )
+        rejection = _body_size_rejection(aiohttp, request)
+        if rejection is not None:
+            return rejection
 
         # --- Auth gate --------------------------------------------------------
-        if not _no_auth_mode():
-            expected_token = _resolve_auth_token()
-            if expected_token is None:
-                # No token configured and no explicit opt-out: refuse all traffic.
-                _log.warning(
-                    "VMAFX_MCP_HTTP_TOKEN is unset and VMAFX_MCP_HTTP_NO_AUTH!=1; "
-                    "rejecting request (set the token or set NO_AUTH=1 to accept "
-                    "unauthenticated traffic)",
-                    extra={"request_id": "-"},
-                )
-                return aiohttp.web.Response(
-                    status=401,
-                    content_type="application/json",
-                    text=json.dumps(
-                        {
-                            "error": (
-                                "Unauthorized: server requires VMAFX_MCP_HTTP_TOKEN "
-                                "or VMAFX_MCP_HTTP_NO_AUTH=1"
-                            )
-                        }
-                    ),
-                )
-            auth_header = request.headers.get("Authorization", "")
-            # Compare the tokens as UTF-8 bytes, never as str: hmac.compare_digest
-            # raises TypeError on str operands containing any code point > 255
-            # (e.g. a token with a non-ASCII character), which would otherwise
-            # propagate uncaught and turn every request into an HTTP 500 — a
-            # total auth/availability outage. Equal-typed bytes never raise.
-            provided_token = auth_header[len("Bearer ") :].encode("utf-8")
-            if not auth_header.startswith("Bearer ") or not hmac.compare_digest(
-                provided_token, expected_token.encode("utf-8")
-            ):
-                return aiohttp.web.Response(
-                    status=401,
-                    content_type="application/json",
-                    text=json.dumps({"error": "Unauthorized: invalid or missing Bearer token"}),
-                )
+        rejection = _auth_rejection(aiohttp, request)
+        if rejection is not None:
+            return rejection
 
         return await handler(request)
 
@@ -413,6 +437,125 @@ async def _handle_metrics(request: Any) -> Any:
     )
 
 
+def _score_error(
+    aiohttp: Any, metrics: dict[str, Any], status: int, error: str, request_id: str
+) -> Any:
+    """A JSON error response that also bumps the per-status /v1/score counter."""
+    metrics["scoring_requests_total"].labels(endpoint="/v1/score", status=str(status)).inc()
+    return aiohttp.web.Response(
+        status=status,
+        content_type="application/json",
+        text=json.dumps({"error": error, "request_id": request_id}),
+    )
+
+
+async def _read_score_body(
+    aiohttp: Any, request: Any, metrics: dict[str, Any], request_id: str
+) -> tuple[Any, Any]:
+    """Parse and shape-check the request body; returns (body, error_response)."""
+    try:
+        body = await request.json()
+    except aiohttp.web.HTTPRequestEntityTooLarge:
+        # Chunked body exceeded client_max_size — re-raise so aiohttp converts it
+        # to the correct 413 response.  The bare ``except Exception`` below would
+        # catch this and mis-report it as 400 "invalid JSON" (ADR-1075 bug A).
+        raise
+    except Exception as exc:
+        _log_with_rid(logging.WARNING, f"invalid JSON body: {exc}", request_id)
+        return None, _score_error(aiohttp, metrics, 400, "invalid JSON body", request_id)
+
+    # Reject non-object JSON payloads (null, arrays, scalars).  ``request.json()``
+    # succeeds for any valid JSON type; a non-dict body would cause a TypeError
+    # on the ``f not in body`` membership check below — uncaught and thus an
+    # uncontrolled 500 (ADR-1075 bug B).
+    if not isinstance(body, dict):
+        _log_with_rid(
+            logging.WARNING,
+            f"expected JSON object, got {type(body).__name__}",
+            request_id,
+        )
+        return None, _score_error(
+            aiohttp,
+            metrics,
+            400,
+            f"expected JSON object, got {type(body).__name__}; "
+            "request body must be a JSON object",
+            request_id,
+        )
+
+    # Validate required fields.
+    missing = [f for f in ("reference", "distorted") if f not in body]
+    if missing:
+        return None, _score_error(
+            aiohttp, metrics, 400, f"missing required fields: {missing}", request_id
+        )
+
+    # Width/height: required unless reference is an encoded video path.
+    # For raw YUV scoring (this endpoint) they are required.
+    for field in ("width", "height", "pixfmt", "bitdepth"):
+        if field not in body:
+            return None, _score_error(
+                aiohttp, metrics, 400, f"missing required field: {field!r}", request_id
+            )
+
+    return body, None
+
+
+def _build_score_request(
+    aiohttp: Any, metrics: dict[str, Any], body: dict[str, Any], request_id: str
+) -> tuple[Any, Any]:
+    """Build the ScoreRequest from a validated body; returns (request, error_response)."""
+    from vmaf_mcp.server import ScoreRequest, _validate_path
+
+    try:
+        ref_path = _validate_path(str(body["reference"]))
+        dis_path = _validate_path(str(body["distorted"]))
+        score_req = ScoreRequest(
+            ref=ref_path,
+            dis=dis_path,
+            width=int(body["width"]),
+            height=int(body["height"]),
+            pixfmt=str(body["pixfmt"]),
+            bitdepth=int(body["bitdepth"]),
+            model=str(body.get("model", "version=vmaf_v0.6.1")),
+            backend=str(body.get("backend", "auto")),
+            # "legacy" (%.6f) is the documented C-CLI default (ADR-0119) and the
+            # ScoreRequest default; keep the HTTP path aligned with the stdio /
+            # subprocess paths so a client gets the same numeric format from
+            # either transport.
+            precision=str(body.get("precision", "legacy")),
+        )
+    except (TypeError, ValueError, FileNotFoundError) as exc:
+        # TypeError covers int(None) / int([...]) when the caller sends a
+        # non-integer JSON value for width/height/bitdepth (e.g. null or an
+        # array); ValueError covers int("abc") and path-validation failures.
+        # Log full detail server-side; return generic message to the client to
+        # avoid leaking internal paths or exception text (stack-trace exposure).
+        _log_with_rid(logging.WARNING, f"bad request parameters: {exc}", request_id)
+        return None, _score_error(aiohttp, metrics, 400, "invalid request parameters", request_id)
+
+    return score_req, None
+
+
+def _score_success_response(
+    aiohttp: Any, metrics: dict[str, Any], result: dict[str, Any], request_id: str, elapsed: float
+) -> Any:
+    """200 response for a completed score, with the success counter recorded."""
+    from vmaf_mcp.server import _dumps_strict
+
+    _log_with_rid(logging.INFO, f"POST /v1/score done in {elapsed:.0f}ms", request_id)
+    metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="200").inc()
+    result["request_id"] = request_id
+    # Use _dumps_strict (NaN/Infinity → null) to produce RFC 8259-compliant
+    # JSON; bare json.dumps() with allow_nan=True emits bare NaN/Infinity
+    # tokens which are not valid JSON per RFC 8259.
+    return aiohttp.web.Response(
+        status=200,
+        content_type="application/json",
+        text=_dumps_strict(result),
+    )
+
+
 async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
     """POST /v1/score — single scoring request.
 
@@ -440,109 +583,19 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
     inside ``request.json()``).
     """
     aiohttp = _require_aiohttp()
-    from vmaf_mcp.server import ScoreRequest, _dumps_strict, _run_vmaf_score, _validate_path
+    from vmaf_mcp.server import _run_vmaf_score
 
     request_id = str(uuid.uuid4())[:8]
     t0 = time.monotonic()
     _log_with_rid(logging.INFO, "POST /v1/score received", request_id)
 
-    try:
-        body = await request.json()
-    except aiohttp.web.HTTPRequestEntityTooLarge:
-        # Chunked body exceeded client_max_size — re-raise so aiohttp converts it
-        # to the correct 413 response.  The bare ``except Exception`` below would
-        # catch this and mis-report it as 400 "invalid JSON" (ADR-1075 bug A).
-        raise
-    except Exception as exc:
-        _log_with_rid(logging.WARNING, f"invalid JSON body: {exc}", request_id)
-        metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
-        return aiohttp.web.Response(
-            status=400,
-            content_type="application/json",
-            text=json.dumps({"error": "invalid JSON body", "request_id": request_id}),
-        )
+    body, rejection = await _read_score_body(aiohttp, request, metrics, request_id)
+    if rejection is not None:
+        return rejection
 
-    # Reject non-object JSON payloads (null, arrays, scalars).  ``request.json()``
-    # succeeds for any valid JSON type; a non-dict body would cause a TypeError
-    # on the ``f not in body`` membership check below — uncaught and thus an
-    # uncontrolled 500 (ADR-1075 bug B).
-    if not isinstance(body, dict):
-        _log_with_rid(
-            logging.WARNING,
-            f"expected JSON object, got {type(body).__name__}",
-            request_id,
-        )
-        metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
-        return aiohttp.web.Response(
-            status=400,
-            content_type="application/json",
-            text=json.dumps(
-                {
-                    "error": (
-                        f"expected JSON object, got {type(body).__name__}; "
-                        "request body must be a JSON object"
-                    ),
-                    "request_id": request_id,
-                }
-            ),
-        )
-
-    # Validate required fields.
-    missing = [f for f in ("reference", "distorted") if f not in body]
-    if missing:
-        metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
-        return aiohttp.web.Response(
-            status=400,
-            content_type="application/json",
-            text=json.dumps(
-                {"error": f"missing required fields: {missing}", "request_id": request_id}
-            ),
-        )
-
-    # Width/height: required unless reference is an encoded video path.
-    # For raw YUV scoring (this endpoint) they are required.
-    for field in ("width", "height", "pixfmt", "bitdepth"):
-        if field not in body:
-            metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
-            return aiohttp.web.Response(
-                status=400,
-                content_type="application/json",
-                text=json.dumps(
-                    {"error": f"missing required field: {field!r}", "request_id": request_id}
-                ),
-            )
-
-    try:
-        ref_path = _validate_path(str(body["reference"]))
-        dis_path = _validate_path(str(body["distorted"]))
-        score_req = ScoreRequest(
-            ref=ref_path,
-            dis=dis_path,
-            width=int(body["width"]),
-            height=int(body["height"]),
-            pixfmt=str(body["pixfmt"]),
-            bitdepth=int(body["bitdepth"]),
-            model=str(body.get("model", "version=vmaf_v0.6.1")),
-            backend=str(body.get("backend", "auto")),
-            # "legacy" (%.6f) is the documented C-CLI default (ADR-0119) and the
-            # ScoreRequest default; keep the HTTP path aligned with the stdio /
-            # subprocess paths so a client gets the same numeric format from
-            # either transport.
-            precision=str(body.get("precision", "legacy")),
-        )
-    except (TypeError, ValueError, FileNotFoundError) as exc:
-        # TypeError covers int(None) / int([...]) when the caller sends a
-        # non-integer JSON value for width/height/bitdepth (e.g. null or an
-        # array); ValueError covers int("abc") and path-validation failures.
-        # Log full detail server-side; return generic message to the client to
-        # avoid leaking internal paths or exception text (stack-trace exposure).
-        _log_with_rid(logging.WARNING, f"bad request parameters: {exc}", request_id)
-        metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
-        return aiohttp.web.Response(
-            status=400,
-            content_type="application/json",
-            text=json.dumps({"error": "invalid request parameters", "request_id": request_id}),
-        )
+    score_req, rejection = _build_score_request(aiohttp, metrics, body, request_id)
+    if rejection is not None:
+        return rejection
 
     # Run the scorer.
     try:
@@ -553,26 +606,14 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
         # Log full exception detail server-side; return generic message to the
         # client to avoid leaking internal exception text (stack-trace exposure).
         _log_with_rid(logging.ERROR, f"scoring failed in {elapsed:.0f}ms: {exc}", request_id)
-        metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="500").inc()
-        metrics["scoring_errors_total"].inc()
-        return aiohttp.web.Response(
-            status=500,
-            content_type="application/json",
-            text=json.dumps({"error": "scoring failed; see server logs", "request_id": request_id}),
+        rejection = _score_error(
+            aiohttp, metrics, 500, "scoring failed; see server logs", request_id
         )
+        metrics["scoring_errors_total"].inc()
+        return rejection
 
     elapsed = (time.monotonic() - t0) * 1000
-    _log_with_rid(logging.INFO, f"POST /v1/score done in {elapsed:.0f}ms", request_id)
-    metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="200").inc()
-    result["request_id"] = request_id
-    # Use _dumps_strict (NaN/Infinity → null) to produce RFC 8259-compliant
-    # JSON; bare json.dumps() with allow_nan=True emits bare NaN/Infinity
-    # tokens which are not valid JSON per RFC 8259.
-    return aiohttp.web.Response(
-        status=200,
-        content_type="application/json",
-        text=_dumps_strict(result),
-    )
+    return _score_success_response(aiohttp, metrics, result, request_id, elapsed)
 
 
 # ---------------------------------------------------------------------------

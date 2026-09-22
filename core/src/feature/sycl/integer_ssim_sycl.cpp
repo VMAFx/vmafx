@@ -52,16 +52,21 @@
 namespace
 {
 
-static constexpr size_t SSIM_WG_X = 16;
+constexpr size_t SSIM_WG_X = 16;
 static constexpr size_t SSIM_WG_Y = 8;
 static constexpr int SSIM_K = 11;
 
 /* Same 11-tap normalised Gaussian as the Vulkan + CUDA twins —
  * matches g_gaussian_window_h in iqa/ssim_tools.h byte-for-byte. */
-static constexpr float G[SSIM_K] = {
+constexpr float G[SSIM_K] = {
     0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
     0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f,
 };
+
+} // namespace
+
+namespace
+{
 
 struct SsimStateSycl {
     /* Frame geometry. */
@@ -105,6 +110,8 @@ struct SsimStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+} // namespace
+
 /* Tile width for the horizontal SLM staging (SY-2, ADR-0458):
  * each WG of SSIM_WG_X columns needs SSIM_WG_X + (SSIM_K-1) input
  * floats per row to cover the 11-tap apron.  Two SLM arrays (ref,
@@ -112,194 +119,229 @@ struct SsimStateSycl {
  * the five output channels are computed from SLM with no extra arrays.
  * This eliminates 11 global-memory loads per output channel per pixel
  * (total 55 → 26 loads per pixel pair on Arc A380). */
-static constexpr size_t SSIM_TILE_W = SSIM_WG_X + (size_t)(SSIM_K - 1); /* 26 */
-
-static void launch_horiz(sycl::queue &q, const float *d_ref, const float *d_cmp, float *d_ref_mu,
-                         float *d_cmp_mu, float *d_ref_sq, float *d_cmp_sq, float *d_refcmp,
-                         unsigned width, unsigned w_horiz, unsigned h_horiz)
+namespace
 {
-    /* nd_range with SSIM_WG_X × SSIM_WG_Y work-groups; work-item count
-     * rounded up to WG multiples.  Guard threads write nothing. */
-    const size_t global_x = ((w_horiz + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
-    const size_t global_y = ((h_horiz + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
-    const unsigned e_w = width;
-    const unsigned e_w_horiz = w_horiz;
-    const unsigned e_h_horiz = h_horiz;
-    const float *e_ref = d_ref;
-    const float *e_cmp = d_cmp;
-    float *e_ref_mu = d_ref_mu;
-    float *e_cmp_mu = d_cmp_mu;
-    float *e_ref_sq = d_ref_sq;
-    float *e_cmp_sq = d_cmp_sq;
-    float *e_refcmp = d_refcmp;
 
-    q.submit([&](sycl::handler &cgh) {
-        /* Two SLM tiles: one for ref, one for cmp.
-         * Size = SSIM_WG_Y rows × SSIM_TILE_W cols = 8 × 26 floats each.
-         * Total SLM per WG = 2 × 208 × 4 B = 1664 B — well within Arc A380
-         * local-memory limits (64 KB per compute unit). */
-        sycl::local_accessor<float, 1> const s_ref(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_cmp(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W), cgh);
+constexpr size_t SSIM_TILE_W = SSIM_WG_X + (size_t)(SSIM_K - 1); /* 26 */
 
-        cgh.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const size_t gx = it.get_global_id(1);
-            const size_t gy = it.get_global_id(0);
-            const size_t lx = it.get_local_id(1);
-            const size_t ly = it.get_local_id(0);
-            const size_t lid = ly * SSIM_WG_X + lx; /* linear local id */
+struct FloatHorizArgs {
+    const float *reference;
+    const float *comparison;
+    float *reference_mean;
+    float *comparison_mean;
+    float *reference_square;
+    float *comparison_square;
+    float *cross_product;
+    unsigned width;
+    unsigned output_width;
+    unsigned output_height;
+};
 
-            /* Phase 1: cooperative tile load.
-             * The WG covers output columns [wg_ox, wg_ox + SSIM_WG_X).
-             * Input columns needed: [wg_ox, wg_ox + SSIM_WG_X + SSIM_K - 1).
-             * wg_ox is the WG's global x-origin mapped to input-space
-             * (which equals output-space because input[x..x+SSIM_K-1]
-             *  produces output[x]). */
-            const size_t wg_ox = it.get_group(1) * SSIM_WG_X;
-            const size_t wg_oy = it.get_group(0) * SSIM_WG_Y;
-            const size_t tile_elems = SSIM_WG_Y * SSIM_TILE_W;
-            const size_t wg_size = SSIM_WG_X * SSIM_WG_Y;
+struct FloatVertArgs {
+    const float *reference_mean;
+    const float *comparison_mean;
+    const float *reference_square;
+    const float *comparison_square;
+    const float *cross_product;
+    float *partials;
+    unsigned horizontal_width;
+    unsigned final_width;
+    unsigned final_height;
+    size_t group_columns;
+    float c1;
+    float c2;
+};
 
-            for (size_t i = lid; i < tile_elems; i += wg_size) {
-                const size_t tr = i / SSIM_TILE_W; /* row within tile */
-                const size_t tc = i % SSIM_TILE_W; /* col within tile */
-                const size_t gy_load = wg_oy + tr;
-                const size_t gx_load = wg_ox + tc; /* no clamping needed:
-                                                      * wg_ox + SSIM_TILE_W - 1
-                                                      * == wg_ox + SSIM_WG_X + SSIM_K - 2
-                                                      * < width  (w_horiz = width - SSIM_K + 1,
-                                                      *   last valid wg_ox = w_horiz -
-                                                      *   SSIM_WG_X → wg_ox + SSIM_TILE_W - 1
-                                                      *   <= width - 1). */
-                if (gy_load < (size_t)e_h_horiz && gx_load < (size_t)e_w) {
-                    const size_t idx = gy_load * (size_t)e_w + gx_load;
-                    s_ref[i] = e_ref[idx];
-                    s_cmp[i] = e_cmp[idx];
-                } else {
-                    s_ref[i] = 0.0f;
-                    s_cmp[i] = 0.0f;
-                }
-            }
-            it.barrier(sycl::access::fence_space::local_space);
+struct SsimMoments {
+    float reference_mean;
+    float comparison_mean;
+    float reference_square;
+    float comparison_square;
+    float cross_product;
+};
 
-            /* Phase 2: compute 11-tap horizontal convolution from SLM. */
-            if (gx < (size_t)e_w_horiz && gy < (size_t)e_h_horiz) {
-                float ref_mu_h = 0.0f;
-                float cmp_mu_h = 0.0f;
-                float ref_sq_h = 0.0f;
-                float cmp_sq_h = 0.0f;
-                float refcmp_h = 0.0f;
-                for (int u = 0; u < SSIM_K; u++) {
-                    /* SLM index: row ly, column lx + u. */
-                    const size_t si = ly * SSIM_TILE_W + lx + (size_t)u;
-                    const float r = s_ref[si];
-                    const float c = s_cmp[si];
-                    const float gw = G[u];
-                    ref_mu_h += gw * r;
-                    cmp_mu_h += gw * c;
-                    ref_sq_h += gw * (r * r);
-                    cmp_sq_h += gw * (c * c);
-                    refcmp_h += gw * (r * c);
-                }
-                const size_t dst_idx = gy * (size_t)e_w_horiz + gx;
-                e_ref_mu[dst_idx] = ref_mu_h;
-                e_cmp_mu[dst_idx] = cmp_mu_h;
-                e_ref_sq[dst_idx] = ref_sq_h;
-                e_cmp_sq[dst_idx] = cmp_sq_h;
-                e_refcmp[dst_idx] = refcmp_h;
-            }
+} // namespace
+
+namespace
+{
+
+static inline void load_float_tile(sycl::nd_item<2> item, const FloatHorizArgs &args,
+                                   const sycl::local_accessor<float, 1> &reference,
+                                   const sycl::local_accessor<float, 1> &comparison)
+{
+    const size_t local = item.get_local_id(0) * SSIM_WG_X + item.get_local_id(1);
+    const size_t origin_x = item.get_group(1) * SSIM_WG_X;
+    const size_t origin_y = item.get_group(0) * SSIM_WG_Y;
+    const size_t group_size = SSIM_WG_X * SSIM_WG_Y;
+    for (size_t offset = local; offset < SSIM_WG_Y * SSIM_TILE_W; offset += group_size) {
+        const size_t y = origin_y + offset / SSIM_TILE_W;
+        const size_t x = origin_x + offset % SSIM_TILE_W;
+        if (y < args.output_height && x < args.width) {
+            const size_t index = y * args.width + x;
+            reference[offset] = args.reference[index];
+            comparison[offset] = args.comparison[index];
+        } else {
+            reference[offset] = 0.0f;
+            comparison[offset] = 0.0f;
+        }
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static inline SsimMoments horizontal_moments(size_t local_x, size_t local_y,
+                                             const sycl::local_accessor<float, 1> &reference,
+                                             const sycl::local_accessor<float, 1> &comparison)
+{
+    SsimMoments result{};
+    for (int tap = 0; tap < SSIM_K; ++tap) {
+        const size_t index = local_y * SSIM_TILE_W + local_x + (size_t)tap;
+        const float ref = reference[index];
+        const float cmp = comparison[index];
+        const float weight = G[tap];
+        result.reference_mean += weight * ref;
+        result.comparison_mean += weight * cmp;
+        result.reference_square += weight * (ref * ref);
+        result.comparison_square += weight * (cmp * cmp);
+        result.cross_product += weight * (ref * cmp);
+    }
+    return result;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void store_horizontal_moments(sycl::nd_item<2> item, const FloatHorizArgs &args,
+                                            const sycl::local_accessor<float, 1> &reference,
+                                            const sycl::local_accessor<float, 1> &comparison)
+{
+    const size_t x = item.get_global_id(1);
+    const size_t y = item.get_global_id(0);
+    if (x >= args.output_width || y >= args.output_height) {
+        return;
+    }
+    const SsimMoments moments =
+        horizontal_moments(item.get_local_id(1), item.get_local_id(0), reference, comparison);
+    const size_t index = y * args.output_width + x;
+    args.reference_mean[index] = moments.reference_mean;
+    args.comparison_mean[index] = moments.comparison_mean;
+    args.reference_square[index] = moments.reference_square;
+    args.comparison_square[index] = moments.comparison_square;
+    args.cross_product[index] = moments.cross_product;
+}
+
+} // namespace
+
+namespace
+{
+
+static void launch_horiz(sycl::queue &queue, const FloatHorizArgs &args)
+{
+    const size_t global_x = ((args.output_width + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
+    const size_t global_y = ((args.output_height + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
+    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x},
+                                  sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
+    queue.submit([&](sycl::handler &handler) {
+        sycl::local_accessor<float, 1> const reference(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W),
+                                                       handler);
+        sycl::local_accessor<float, 1> const comparison(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W),
+                                                        handler);
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            load_float_tile(item, args, reference, comparison);
+            item.barrier(sycl::access::fence_space::local_space);
+            store_horizontal_moments(item, args, reference, comparison);
         });
     });
 }
 
-static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const float *d_cmp_mu,
-                                const float *d_ref_sq, const float *d_cmp_sq, const float *d_refcmp,
-                                float *d_partials, unsigned w_horiz, unsigned w_final,
-                                unsigned h_final, float c1, float c2)
-{
-    /* Round work-item count up to WG-multiples. Per-WG sum
-     * via sycl::reduce_over_group; one float per WG written
-     * to partials. fp64-free (Arc A380). */
-    const size_t global_x = ((w_final + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
-    const size_t global_y = ((h_final + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
-    const size_t wg_count_x = global_x / SSIM_WG_X;
-    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x},
-                                sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
-    const unsigned e_w_horiz = w_horiz;
-    const unsigned e_w_final = w_final;
-    const unsigned e_h_final = h_final;
-    const float e_c1 = c1;
-    const float e_c2 = c2;
-    const size_t e_wg_count_x = wg_count_x;
-    const float *e_ref_mu = d_ref_mu;
-    const float *e_cmp_mu = d_cmp_mu;
-    const float *e_ref_sq = d_ref_sq;
-    const float *e_cmp_sq = d_cmp_sq;
-    const float *e_refcmp = d_refcmp;
-    float *e_partials = d_partials;
+} // namespace
 
-    q.submit([=](sycl::handler &h) {
-        h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const size_t x = it.get_global_id(1);
-            const size_t y = it.get_global_id(0);
-            float my_ssim = 0.0f;
-            if (x < (size_t)e_w_final && y < (size_t)e_h_final) {
-                float ref_mu = 0.0f;
-                float cmp_mu = 0.0f;
-                float ref_sq = 0.0f;
-                float cmp_sq = 0.0f;
-                float refcmp = 0.0f;
-                for (int v = 0; v < SSIM_K; v++) {
-                    const size_t src_idx = (y + (size_t)v) * (size_t)e_w_horiz + x;
-                    const float w = G[v];
-                    ref_mu += w * e_ref_mu[src_idx];
-                    cmp_mu += w * e_cmp_mu[src_idx];
-                    ref_sq += w * e_ref_sq[src_idx];
-                    cmp_sq += w * e_cmp_sq[src_idx];
-                    refcmp += w * e_refcmp[src_idx];
-                }
-                const float ref_var = ref_sq - ref_mu * ref_mu;
-                const float cmp_var = cmp_sq - cmp_mu * cmp_mu;
-                const float covar = refcmp - ref_mu * cmp_mu;
-                const float mu_xy = ref_mu * cmp_mu;
-                /* Wang et al. (2004) Eq.(13) combined SSIM formula.
-                 * NOTE: this differs from the CPU scalar path (float_ssim.c /
-                 * iqa_ssim), which uses the L×C×S decomposition with
-                 * sigma_comb = sqrt(var_ref * var_cmp) for the contrast term.
-                 * Using 2*covar here instead of 2*sqrt(var_ref*var_cmp) is an
-                 * intentional design choice for GPU kernels (avoids a per-pixel
-                 * sqrt). This produces a systematic divergence of ~2–3e-4 from
-                 * the CPU path at 576×324 on Arc A380 (fp64-less hardware) and
-                 * ~1e-5 on fp64-capable hardware. The CUDA and Vulkan twins use
-                 * the same formula. See Research-0985 §3.2 and ADR-0188. */
-                const float num = (2.0f * mu_xy + e_c1) * (2.0f * covar + e_c2);
-                const float den =
-                    (ref_mu * ref_mu + cmp_mu * cmp_mu + e_c1) * (ref_var + cmp_var + e_c2);
-                my_ssim = num / den;
-            }
-            float const wg_sum =
-                sycl::reduce_over_group(it.get_group(), my_ssim, sycl::plus<float>{});
-            if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
-                const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
-                e_partials[wg_idx] = wg_sum;
-            }
+namespace
+{
+
+static inline SsimMoments vertical_moments(const FloatVertArgs &args, size_t x, size_t y)
+{
+    SsimMoments result{};
+    for (int tap = 0; tap < SSIM_K; ++tap) {
+        const size_t index = (y + (size_t)tap) * args.horizontal_width + x;
+        const float weight = G[tap];
+        result.reference_mean += weight * args.reference_mean[index];
+        result.comparison_mean += weight * args.comparison_mean[index];
+        result.reference_square += weight * args.reference_square[index];
+        result.comparison_square += weight * args.comparison_square[index];
+        result.cross_product += weight * args.cross_product[index];
+    }
+    return result;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline float float_ssim_value(const FloatVertArgs &args, size_t x, size_t y)
+{
+    const SsimMoments moments = vertical_moments(args, x, y);
+    const float reference_variance =
+        moments.reference_square - moments.reference_mean * moments.reference_mean;
+    const float comparison_variance =
+        moments.comparison_square - moments.comparison_mean * moments.comparison_mean;
+    const float covariance =
+        moments.cross_product - moments.reference_mean * moments.comparison_mean;
+    const float mean_product = moments.reference_mean * moments.comparison_mean;
+    const float numerator = (2.0f * mean_product + args.c1) * (2.0f * covariance + args.c2);
+    const float denominator = (moments.reference_mean * moments.reference_mean +
+                               moments.comparison_mean * moments.comparison_mean + args.c1) *
+                              (reference_variance + comparison_variance + args.c2);
+    return numerator / denominator;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void store_float_group(sycl::nd_item<2> item, const FloatVertArgs &args, float value)
+{
+    const float sum = sycl::reduce_over_group(item.get_group(), value, sycl::plus<float>{});
+    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
+        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
+        args.partials[index] = sum;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
+{
+    const size_t global_x = ((args.final_width + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
+    const size_t global_y = ((args.final_height + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
+    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x},
+                                  sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const size_t x = item.get_global_id(1);
+            const size_t y = item.get_global_id(0);
+            const float value =
+                x < args.final_width && y < args.final_height ? float_ssim_value(args, x, y) : 0.0f;
+            store_float_group(item, args, value);
         });
     });
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
+namespace
+{
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
-// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 static int round_to_int(float x)
 {
     return (int)(x + (x < 0.0f ? -0.5f : 0.5f));
@@ -310,11 +352,14 @@ static int min_int(int a, int b)
 }
 static int compute_scale(unsigned w, unsigned h, int override_)
 {
-    if (override_ > 0)
+    if (override_ > 0) {
         return override_;
+    }
     int const scaled = round_to_int((float)min_int((int)w, (int)h) / 256.0f);
     return scaled < 1 ? 1 : scaled;
 }
+
+} // namespace
 
 static const VmafOption options_ssim_sycl[] = {
     {
@@ -323,84 +368,135 @@ static const VmafOption options_ssim_sycl[] = {
                 "v1: GPU path requires scale=1; auto-detect rejects scale>1 with -EINVAL.",
         .offset = offsetof(SsimStateSycl, scale_override),
         .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
+        .default_val = {.i = 0},
         .min = 0,
         .max = 10,
     },
-    {nullptr},
+    {.name = nullptr},
 };
 
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+namespace
 {
-    (void)pix_fmt;
-    auto *s = static_cast<SsimStateSycl *>(fex->priv);
 
-    int const scale = compute_scale(w, h, s->scale_override);
+static int configure_float_ssim(SsimStateSycl *s, unsigned bpc, unsigned width, unsigned height)
+{
+    const int scale = compute_scale(width, height, s->scale_override);
     if (scale != 1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "ssim_sycl: v1 supports scale=1 only (auto-detected scale=%d at %ux%u). "
                  "Pin --feature float_ssim_sycl:scale=1 if intended.\n",
-                 scale, w, h);
+                 scale, width, height);
         return -EINVAL;
     }
-    if (w < (unsigned)SSIM_K || h < (unsigned)SSIM_K) {
+    if (width < (unsigned)SSIM_K || height < (unsigned)SSIM_K) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_sycl: input %ux%u smaller than 11x11 Gaussian footprint.\n", w, h);
+                 "ssim_sycl: input %ux%u smaller than 11x11 Gaussian footprint.\n", width, height);
         return -EINVAL;
     }
-
-    s->width = w;
-    s->height = h;
+    s->width = width;
+    s->height = height;
     s->bpc = bpc;
-    s->w_horiz = w - (SSIM_K - 1);
-    s->h_horiz = h;
-    s->w_final = w - (SSIM_K - 1);
-    s->h_final = h - (SSIM_K - 1);
+    s->w_horiz = width - (SSIM_K - 1);
+    s->h_horiz = height;
+    s->w_final = width - (SSIM_K - 1);
+    s->h_final = height - (SSIM_K - 1);
     s->wg_count_x = (s->w_final + (unsigned)SSIM_WG_X - 1) / (unsigned)SSIM_WG_X;
     s->wg_count_y = (s->h_final + (unsigned)SSIM_WG_Y - 1) / (unsigned)SSIM_WG_Y;
     s->wg_count = s->wg_count_x * s->wg_count_y;
-    const float L = 255.0f;
-    const float K1 = 0.01f;
-    const float K2 = 0.03f;
-    s->c1 = (K1 * L) * (K1 * L);
-    s->c2 = (K2 * L) * (K2 * L);
+    const float range = 255.0f;
+    const float k1 = 0.01f;
+    const float k2 = 0.03f;
+    s->c1 = (k1 * range) * (k1 * range);
+    s->c2 = (k2 * range) * (k2 * range);
+    return 0;
+}
 
+} // namespace
+
+namespace
+{
+
+template <typename T> static T *allocate_host(VmafSyclState *state, size_t bytes)
+{
+    return static_cast<T *>(vmaf_sycl_malloc_host(state, bytes));
+}
+
+template <typename T> static T *allocate_device(VmafSyclState *state, size_t bytes)
+{
+    return static_cast<T *>(vmaf_sycl_malloc_device(state, bytes));
+}
+
+} // namespace
+
+namespace
+{
+
+static void allocate_float_ssim(SsimStateSycl *s)
+{
+    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
+    const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
+    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
+    s->h_ref = allocate_host<float>(s->sycl_state, input_bytes);
+    s->h_cmp = allocate_host<float>(s->sycl_state, input_bytes);
+    s->d_ref = allocate_device<float>(s->sycl_state, input_bytes);
+    s->d_cmp = allocate_device<float>(s->sycl_state, input_bytes);
+    s->d_ref_mu = allocate_device<float>(s->sycl_state, horiz_bytes);
+    s->d_cmp_mu = allocate_device<float>(s->sycl_state, horiz_bytes);
+    s->d_ref_sq = allocate_device<float>(s->sycl_state, horiz_bytes);
+    s->d_cmp_sq = allocate_device<float>(s->sycl_state, horiz_bytes);
+    s->d_refcmp = allocate_device<float>(s->sycl_state, horiz_bytes);
+    s->d_partials = allocate_device<float>(s->sycl_state, partials_bytes);
+    s->h_partials = allocate_host<float>(s->sycl_state, partials_bytes);
+}
+
+} // namespace
+
+namespace
+{
+
+static bool float_ssim_allocations_complete(const SsimStateSycl *s)
+{
+    return s->h_ref && s->h_cmp && s->d_ref && s->d_cmp && s->d_ref_mu && s->d_cmp_mu &&
+           s->d_ref_sq && s->d_cmp_sq && s->d_refcmp && s->d_partials && s->h_partials;
+}
+
+} // namespace
+
+namespace
+{
+
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned width, unsigned height)
+{
+    (void)pix_fmt;
+    auto *s = static_cast<SsimStateSycl *>(fex->priv);
+    const int config_error = configure_float_ssim(s, bpc, width, height);
+    if (config_error) {
+        return config_error;
+    }
     if (!fex->sycl_state) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: no SYCL state\n");
         return -EINVAL;
     }
     s->sycl_state = fex->sycl_state;
-
-    const size_t input_bytes = (size_t)w * h * sizeof(float);
-    const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
-
-    s->h_ref = (float *)vmaf_sycl_malloc_host(s->sycl_state, input_bytes);
-    s->h_cmp = (float *)vmaf_sycl_malloc_host(s->sycl_state, input_bytes);
-    s->d_ref = (float *)vmaf_sycl_malloc_device(s->sycl_state, input_bytes);
-    s->d_cmp = (float *)vmaf_sycl_malloc_device(s->sycl_state, input_bytes);
-    s->d_ref_mu = (float *)vmaf_sycl_malloc_device(s->sycl_state, horiz_bytes);
-    s->d_cmp_mu = (float *)vmaf_sycl_malloc_device(s->sycl_state, horiz_bytes);
-    s->d_ref_sq = (float *)vmaf_sycl_malloc_device(s->sycl_state, horiz_bytes);
-    s->d_cmp_sq = (float *)vmaf_sycl_malloc_device(s->sycl_state, horiz_bytes);
-    s->d_refcmp = (float *)vmaf_sycl_malloc_device(s->sycl_state, horiz_bytes);
-    s->d_partials = (float *)vmaf_sycl_malloc_device(s->sycl_state, partials_bytes);
-    s->h_partials = (float *)vmaf_sycl_malloc_host(s->sycl_state, partials_bytes);
-    if (!s->h_ref || !s->h_cmp || !s->d_ref || !s->d_cmp || !s->d_ref_mu || !s->d_cmp_mu ||
-        !s->d_ref_sq || !s->d_cmp_sq || !s->d_refcmp || !s->d_partials || !s->h_partials) {
+    allocate_float_ssim(s);
+    if (!float_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
-
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
-
+    }
     s->has_pending = false;
     return 0;
 }
+
+} // namespace
+
+namespace
+{
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
@@ -425,10 +521,28 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     q.memcpy(s->d_ref, s->h_ref, input_bytes);
     q.memcpy(s->d_cmp, s->h_cmp, input_bytes);
 
-    launch_horiz(q, s->d_ref, s->d_cmp, s->d_ref_mu, s->d_cmp_mu, s->d_ref_sq, s->d_cmp_sq,
-                 s->d_refcmp, s->width, s->w_horiz, s->h_horiz);
-    launch_vert_combine(q, s->d_ref_mu, s->d_cmp_mu, s->d_ref_sq, s->d_cmp_sq, s->d_refcmp,
-                        s->d_partials, s->w_horiz, s->w_final, s->h_final, s->c1, s->c2);
+    launch_horiz(q, {.reference = s->d_ref,
+                     .comparison = s->d_cmp,
+                     .reference_mean = s->d_ref_mu,
+                     .comparison_mean = s->d_cmp_mu,
+                     .reference_square = s->d_ref_sq,
+                     .comparison_square = s->d_cmp_sq,
+                     .cross_product = s->d_refcmp,
+                     .width = s->width,
+                     .output_width = s->w_horiz,
+                     .output_height = s->h_horiz});
+    launch_vert_combine(q, {.reference_mean = s->d_ref_mu,
+                            .comparison_mean = s->d_cmp_mu,
+                            .reference_square = s->d_ref_sq,
+                            .comparison_square = s->d_cmp_sq,
+                            .cross_product = s->d_refcmp,
+                            .partials = s->d_partials,
+                            .horizontal_width = s->w_horiz,
+                            .final_width = s->w_final,
+                            .final_height = s->h_final,
+                            .group_columns = s->wg_count_x,
+                            .c1 = s->c1,
+                            .c2 = s->c2});
 
     q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
 
@@ -436,6 +550,11 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     s->has_pending = true;
     return 0;
 }
+
+} // namespace
+
+namespace
+{
 
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
@@ -459,39 +578,48 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                                                    "float_ssim", score, index);
 }
 
+} // namespace
+
+namespace
+{
+
+template <typename T> static void release_buffer(VmafSyclState *state, T *pointer)
+{
+    if (pointer) {
+        vmaf_sycl_free(state, pointer);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<SsimStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref)
-            vmaf_sycl_free(s->sycl_state, s->h_ref);
-        if (s->h_cmp)
-            vmaf_sycl_free(s->sycl_state, s->h_cmp);
-        if (s->d_ref)
-            vmaf_sycl_free(s->sycl_state, s->d_ref);
-        if (s->d_cmp)
-            vmaf_sycl_free(s->sycl_state, s->d_cmp);
-        if (s->d_ref_mu)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_mu);
-        if (s->d_cmp_mu)
-            vmaf_sycl_free(s->sycl_state, s->d_cmp_mu);
-        if (s->d_ref_sq)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_sq);
-        if (s->d_cmp_sq)
-            vmaf_sycl_free(s->sycl_state, s->d_cmp_sq);
-        if (s->d_refcmp)
-            vmaf_sycl_free(s->sycl_state, s->d_refcmp);
-        if (s->d_partials)
-            vmaf_sycl_free(s->sycl_state, s->d_partials);
-        if (s->h_partials)
-            vmaf_sycl_free(s->sycl_state, s->h_partials);
+        release_buffer(s->sycl_state, s->h_ref);
+        release_buffer(s->sycl_state, s->h_cmp);
+        release_buffer(s->sycl_state, s->d_ref);
+        release_buffer(s->sycl_state, s->d_cmp);
+        release_buffer(s->sycl_state, s->d_ref_mu);
+        release_buffer(s->sycl_state, s->d_cmp_mu);
+        release_buffer(s->sycl_state, s->d_ref_sq);
+        release_buffer(s->sycl_state, s->d_cmp_sq);
+        release_buffer(s->sycl_state, s->d_refcmp);
+        release_buffer(s->sycl_state, s->d_partials);
+        release_buffer(s->sycl_state, s->h_partials);
     }
-    if (s->feature_name_dict)
+    if (s->feature_name_dict) {
         vmaf_dictionary_free(&s->feature_name_dict);
+    }
     return 0;
 }
 
 static const char *provided_features_ssim_sycl[] = {"float_ssim", nullptr};
+
+} // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
     .name = "float_ssim_sycl",
@@ -513,8 +641,6 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-} /* extern "C" */
 
 /* ============================================================
  * Real integer_ssim SYCL extractor (ADR-0564)
@@ -540,13 +666,18 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
 namespace
 {
 
-static constexpr size_t ISSIM_WG_X = 16;
+constexpr size_t ISSIM_WG_X = 16;
 static constexpr size_t ISSIM_WG_Y = 8;
 /* 9-tap integer Gaussian kernel matching gaussian_filter_init(sigma=1.5, max_len=5):
  * [2, 9, 28, 55, 68, 55, 28, 9, 2], sum=256, kernel_len=4. */
 static constexpr int ISSIM_HALF_K = 4;
 static constexpr int ISSIM_K_SZ = 9;
-static constexpr int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
+constexpr int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
+
+} // namespace
+
+namespace
+{
 
 struct IssimStateSycl {
     unsigned width;
@@ -592,7 +723,12 @@ struct IssimStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+} // namespace
+
 /* Pass 1 (8bpc): horizontal 9-tap int64 moment accumulation. */
+namespace
+{
+
 static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const uint8_t *d_cmp,
                                     int64_t *d_mux, int64_t *d_muy, int64_t *d_x2, int64_t *d_xy,
                                     int64_t *d_y2, int64_t *d_w, unsigned width, unsigned height)
@@ -642,7 +778,12 @@ static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const 
     });
 }
 
+} // namespace
+
 /* Pass 1 (>8bpc): same as above but reads uint16_t. */
+namespace
+{
+
 static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, const uint16_t *d_cmp,
                                      int64_t *d_mux, int64_t *d_muy, int64_t *d_x2, int64_t *d_xy,
                                      int64_t *d_y2, int64_t *d_w, unsigned width, unsigned height)
@@ -692,161 +833,305 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
     });
 }
 
-/* Pass 2: vertical 9-tap int64 accumulation + float SSIM formula
- * (fp64-free: ADR-0220) + per-WG float/int64 partial sums.
- * Host accumulates: ssim = sum(partials * wgt) / sum(wgt). */
-static void launch_issim_vert_combine(sycl::queue &q, const int64_t *d_mux_h,
-                                      const int64_t *d_muy_h, const int64_t *d_x2_h,
-                                      const int64_t *d_xy_h, const int64_t *d_y2_h,
-                                      const int64_t *d_w_h, float *d_partials, int64_t *d_wgt,
-                                      unsigned width, unsigned height, int64_t samplemax,
-                                      size_t wg_count_x)
-{
-    const size_t gx = ((width + ISSIM_WG_X - 1) / ISSIM_WG_X) * ISSIM_WG_X;
-    const size_t gy = ((height + ISSIM_WG_Y - 1) / ISSIM_WG_Y) * ISSIM_WG_Y;
-    const unsigned e_width = width;
-    const unsigned e_height = height;
-    const size_t e_wg_count_x = wg_count_x;
-    /* Convert samplemax to float for the SSIM formula (fp64-free). */
-    const float sm_f = (float)samplemax;
-    q.submit([=](sycl::handler &h) {
-        h.parallel_for(
-            sycl::nd_range<2>{sycl::range<2>{gy, gx}, sycl::range<2>{ISSIM_WG_Y, ISSIM_WG_X}},
-            [=](sycl::nd_item<2> it) {
-                const unsigned x = (unsigned)it.get_global_id(1);
-                const unsigned y = (unsigned)it.get_global_id(0);
-                float my_ssim = 0.0f;
-                /* int64 weight accumulated as int64_t, then cast to float
-                 * for reduce_over_group (no int64 reduction in SYCL fp64-free
-                 * tier). Host re-reads the int64 column separately. */
-                float my_wgt_f = 0.0f;
+} // namespace
 
-                if (x < e_width && y < e_height) {
-                    const int k_min = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
-                    const int k_max = ((int)y + ISSIM_HALF_K >= (int)e_height) ?
-                                          ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)e_height + 1) :
-                                          ISSIM_K_SZ;
-                    int64_t mux = 0LL;
-                    int64_t muy = 0LL;
-                    int64_t x2 = 0LL;
-                    int64_t xy = 0LL;
-                    int64_t y2 = 0LL;
-                    int64_t w = 0LL;
-                    for (int k = k_min; k < k_max; k++) {
-                        const unsigned src_y = (unsigned)((int)y - ISSIM_HALF_K + k);
-                        const size_t hidx = (size_t)src_y * e_width + x;
-                        const int64_t vk = (int64_t)ISSIM_KERNEL[k];
-                        mux += vk * d_mux_h[hidx];
-                        muy += vk * d_muy_h[hidx];
-                        x2 += vk * d_x2_h[hidx];
-                        xy += vk * d_xy_h[hidx];
-                        y2 += vk * d_y2_h[hidx];
-                        w += vk * d_w_h[hidx];
-                    }
-                    /* SSIM formula in float32 (fp64-free constraint ADR-0220).
-                     * Places=4-5 vs CPU double formula — documented ADR-0564. */
-                    const float w_f = (float)w;
-                    const float c1 = sm_f * sm_f * 0.0001f * w_f * w_f;
-                    const float c2 = sm_f * sm_f * 0.0009f * w_f * w_f;
-                    const float dmux = (float)mux;
-                    const float dmuy = (float)muy;
-                    const float dx2 = (float)x2;
-                    const float dxy = (float)xy;
-                    const float dy2 = (float)y2;
-                    const float mxy = dmux * dmuy;
-                    const float num = (2.0f * mxy + c1) * (2.0f * (dxy * w_f - mxy) + c2);
-                    const float den = (dmux * dmux + dmuy * dmuy + c1) *
-                                      (dx2 * w_f - dmux * dmux + dy2 * w_f - dmuy * dmuy + c2);
-                    if (den != 0.0f && w > 0LL) {
-                        my_ssim = w_f * (num / den);
-                        my_wgt_f = w_f;
-                    }
-                }
-                const float wg_ssim =
-                    sycl::reduce_over_group(it.get_group(), my_ssim, sycl::plus<float>{});
-                const float wg_wgt_f =
-                    sycl::reduce_over_group(it.get_group(), my_wgt_f, sycl::plus<float>{});
-                if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
-                    const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
-                    d_partials[wg_idx] = wg_ssim;
-                    /* Store weight as int64 for host reduction. Cast from float
-                     * is safe: weights are bounded by (kernel_weight^2 * pixels_per_block)
-                     * well within float32's 24-bit mantissa for 128-thread blocks. */
-                    d_wgt[wg_idx] = (int64_t)wg_wgt_f;
-                }
-            });
+namespace
+{
+
+struct IntegerVertArgs {
+    const int64_t *reference_mean;
+    const int64_t *comparison_mean;
+    const int64_t *reference_square;
+    const int64_t *cross_product;
+    const int64_t *comparison_square;
+    const int64_t *weight;
+    float *partials;
+    int64_t *weight_partials;
+    unsigned width;
+    unsigned height;
+    float sample_max;
+    size_t group_columns;
+};
+
+struct IntegerMoments {
+    int64_t reference_mean;
+    int64_t comparison_mean;
+    int64_t reference_square;
+    int64_t cross_product;
+    int64_t comparison_square;
+    int64_t weight;
+};
+
+struct IssimContribution {
+    float weighted_score;
+    float weight;
+};
+
+} // namespace
+
+namespace
+{
+
+static inline IntegerMoments vertical_integer_moments(const IntegerVertArgs &args, unsigned x,
+                                                      unsigned y)
+{
+    const int first = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
+    const int last = ((int)y + ISSIM_HALF_K >= (int)args.height) ?
+                         ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)args.height + 1) :
+                         ISSIM_K_SZ;
+    IntegerMoments result{};
+    for (int tap = first; tap < last; ++tap) {
+        const unsigned source_y = (unsigned)((int)y - ISSIM_HALF_K + tap);
+        const size_t index = (size_t)source_y * args.width + x;
+        const int64_t coefficient = (int64_t)ISSIM_KERNEL[tap];
+        result.reference_mean += coefficient * args.reference_mean[index];
+        result.comparison_mean += coefficient * args.comparison_mean[index];
+        result.reference_square += coefficient * args.reference_square[index];
+        result.cross_product += coefficient * args.cross_product[index];
+        result.comparison_square += coefficient * args.comparison_square[index];
+        result.weight += coefficient * args.weight[index];
+    }
+    return result;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs &args, unsigned x,
+                                                          unsigned y)
+{
+    const IntegerMoments moments = vertical_integer_moments(args, x, y);
+    const float weight = (float)moments.weight;
+    const float c1 = args.sample_max * args.sample_max * 0.0001f * weight * weight;
+    const float c2 = args.sample_max * args.sample_max * 0.0009f * weight * weight;
+    const float reference_mean = (float)moments.reference_mean;
+    const float comparison_mean = (float)moments.comparison_mean;
+    const float reference_square = (float)moments.reference_square;
+    const float cross_product = (float)moments.cross_product;
+    const float comparison_square = (float)moments.comparison_square;
+    const float mean_product = reference_mean * comparison_mean;
+    const float numerator =
+        (2.0f * mean_product + c1) * (2.0f * (cross_product * weight - mean_product) + c2);
+    const float denominator =
+        (reference_mean * reference_mean + comparison_mean * comparison_mean + c1) *
+        (reference_square * weight - reference_mean * reference_mean + comparison_square * weight -
+         comparison_mean * comparison_mean + c2);
+    if (denominator == 0.0f || moments.weight <= 0LL) {
+        return {};
+    }
+    return {.weighted_score = weight * (numerator / denominator), .weight = weight};
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void store_integer_group(sycl::nd_item<2> item, const IntegerVertArgs &args,
+                                       IssimContribution contribution)
+{
+    const float score =
+        sycl::reduce_over_group(item.get_group(), contribution.weighted_score, sycl::plus<float>{});
+    const float weight =
+        sycl::reduce_over_group(item.get_group(), contribution.weight, sycl::plus<float>{});
+    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
+        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
+        args.partials[index] = score;
+        args.weight_partials[index] = (int64_t)weight;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static void launch_issim_vert_combine(sycl::queue &queue, const IntegerVertArgs &args)
+{
+    const size_t global_x = ((args.width + ISSIM_WG_X - 1) / ISSIM_WG_X) * ISSIM_WG_X;
+    const size_t global_y = ((args.height + ISSIM_WG_Y - 1) / ISSIM_WG_Y) * ISSIM_WG_Y;
+    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x},
+                                  sycl::range<2>{ISSIM_WG_Y, ISSIM_WG_X}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const unsigned x = (unsigned)item.get_global_id(1);
+            const unsigned y = (unsigned)item.get_global_id(0);
+            IssimContribution contribution{};
+            if (x < args.width && y < args.height) {
+                contribution = integer_ssim_contribution(args, x, y);
+            }
+            store_integer_group(item, args, contribution);
+        });
     });
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
+namespace
+{
+
+struct IntegerBufferSizes {
+    size_t pixels8;
+    size_t pixels16;
+    size_t moments;
+    size_t partials;
+    size_t weights;
+};
+
+static int configure_integer_ssim(IssimStateSycl *s, unsigned bpc, unsigned width, unsigned height)
+{
+    if (width < 1u || height < 1u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: zero-dimension input %ux%u\n", width,
+                 height);
+        return -EINVAL;
+    }
+    s->width = width;
+    s->height = height;
+    s->bpc = bpc;
+    s->wg_count_x = (unsigned)((width + ISSIM_WG_X - 1) / ISSIM_WG_X);
+    s->wg_count_y = (unsigned)((height + ISSIM_WG_Y - 1) / ISSIM_WG_Y);
+    s->wg_count = s->wg_count_x * s->wg_count_y;
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static IntegerBufferSizes integer_buffer_sizes(const IssimStateSycl *s)
+{
+    const size_t pixels = (size_t)s->width * s->height;
+    return {
+        .pixels8 = pixels * sizeof(uint8_t),
+        .pixels16 = pixels * sizeof(uint16_t),
+        .moments = pixels * sizeof(int64_t),
+        .partials = (size_t)s->wg_count * sizeof(float),
+        .weights = (size_t)s->wg_count * sizeof(int64_t),
+    };
+}
+
+} // namespace
+
+namespace
+{
+
+static void allocate_integer_ssim(IssimStateSycl *s, const IntegerBufferSizes &bytes)
+{
+    s->h_ref_u8 = allocate_host<uint8_t>(s->sycl_state, bytes.pixels8);
+    s->h_cmp_u8 = allocate_host<uint8_t>(s->sycl_state, bytes.pixels8);
+    s->h_ref_u16 = allocate_host<uint16_t>(s->sycl_state, bytes.pixels16);
+    s->h_cmp_u16 = allocate_host<uint16_t>(s->sycl_state, bytes.pixels16);
+    s->d_ref_u8 = allocate_device<uint8_t>(s->sycl_state, bytes.pixels8);
+    s->d_cmp_u8 = allocate_device<uint8_t>(s->sycl_state, bytes.pixels8);
+    s->d_ref_u16 = allocate_device<uint16_t>(s->sycl_state, bytes.pixels16);
+    s->d_cmp_u16 = allocate_device<uint16_t>(s->sycl_state, bytes.pixels16);
+    s->d_mux = allocate_device<int64_t>(s->sycl_state, bytes.moments);
+    s->d_muy = allocate_device<int64_t>(s->sycl_state, bytes.moments);
+    s->d_x2 = allocate_device<int64_t>(s->sycl_state, bytes.moments);
+    s->d_xy = allocate_device<int64_t>(s->sycl_state, bytes.moments);
+    s->d_y2 = allocate_device<int64_t>(s->sycl_state, bytes.moments);
+    s->d_w = allocate_device<int64_t>(s->sycl_state, bytes.moments);
+    s->d_partials = allocate_device<float>(s->sycl_state, bytes.partials);
+    s->h_partials = allocate_host<float>(s->sycl_state, bytes.partials);
+    s->d_wgt = allocate_device<int64_t>(s->sycl_state, bytes.weights);
+    s->h_wgt = allocate_host<int64_t>(s->sycl_state, bytes.weights);
+}
+
+} // namespace
+
+namespace
+{
+
+static bool integer_ssim_allocations_complete(const IssimStateSycl *s)
+{
+    return s->h_ref_u8 && s->h_cmp_u8 && s->h_ref_u16 && s->h_cmp_u16 && s->d_ref_u8 &&
+           s->d_cmp_u8 && s->d_ref_u16 && s->d_cmp_u16 && s->d_mux && s->d_muy && s->d_x2 &&
+           s->d_xy && s->d_y2 && s->d_w && s->d_partials && s->h_partials && s->d_wgt && s->h_wgt;
+}
+
+} // namespace
+
+namespace
+{
 
 static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
-                               unsigned bpc, unsigned w, unsigned h)
+                               unsigned bpc, unsigned width, unsigned height)
 {
     (void)pix_fmt;
     auto *s = static_cast<IssimStateSycl *>(fex->priv);
-
-    if (w < 1u || h < 1u) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: zero-dimension input %ux%u\n", w, h);
-        return -EINVAL;
+    const int config_error = configure_integer_ssim(s, bpc, width, height);
+    if (config_error) {
+        return config_error;
     }
-
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    s->wg_count_x = (unsigned)((w + ISSIM_WG_X - 1) / ISSIM_WG_X);
-    s->wg_count_y = (unsigned)((h + ISSIM_WG_Y - 1) / ISSIM_WG_Y);
-    s->wg_count = s->wg_count_x * s->wg_count_y;
-
     if (!fex->sycl_state) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: no SYCL state\n");
         return -EINVAL;
     }
     s->sycl_state = fex->sycl_state;
-
-    const size_t pix8_bytes = (size_t)w * h * sizeof(uint8_t);
-    const size_t pix16_bytes = (size_t)w * h * sizeof(uint16_t);
-    const size_t int64_plane_bytes = (size_t)w * h * sizeof(int64_t);
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
-    const size_t wgt_bytes = (size_t)s->wg_count * sizeof(int64_t);
-
-    s->h_ref_u8 = (uint8_t *)vmaf_sycl_malloc_host(s->sycl_state, pix8_bytes);
-    s->h_cmp_u8 = (uint8_t *)vmaf_sycl_malloc_host(s->sycl_state, pix8_bytes);
-    s->h_ref_u16 = (uint16_t *)vmaf_sycl_malloc_host(s->sycl_state, pix16_bytes);
-    s->h_cmp_u16 = (uint16_t *)vmaf_sycl_malloc_host(s->sycl_state, pix16_bytes);
-    s->d_ref_u8 = (uint8_t *)vmaf_sycl_malloc_device(s->sycl_state, pix8_bytes);
-    s->d_cmp_u8 = (uint8_t *)vmaf_sycl_malloc_device(s->sycl_state, pix8_bytes);
-    s->d_ref_u16 = (uint16_t *)vmaf_sycl_malloc_device(s->sycl_state, pix16_bytes);
-    s->d_cmp_u16 = (uint16_t *)vmaf_sycl_malloc_device(s->sycl_state, pix16_bytes);
-    s->d_mux = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, int64_plane_bytes);
-    s->d_muy = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, int64_plane_bytes);
-    s->d_x2 = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, int64_plane_bytes);
-    s->d_xy = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, int64_plane_bytes);
-    s->d_y2 = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, int64_plane_bytes);
-    s->d_w = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, int64_plane_bytes);
-    s->d_partials = (float *)vmaf_sycl_malloc_device(s->sycl_state, partials_bytes);
-    s->h_partials = (float *)vmaf_sycl_malloc_host(s->sycl_state, partials_bytes);
-    s->d_wgt = (int64_t *)vmaf_sycl_malloc_device(s->sycl_state, wgt_bytes);
-    s->h_wgt = (int64_t *)vmaf_sycl_malloc_host(s->sycl_state, wgt_bytes);
-
-    if (!s->h_ref_u8 || !s->h_cmp_u8 || !s->h_ref_u16 || !s->h_cmp_u16 || !s->d_ref_u8 ||
-        !s->d_cmp_u8 || !s->d_ref_u16 || !s->d_cmp_u16 || !s->d_mux || !s->d_muy || !s->d_x2 ||
-        !s->d_xy || !s->d_y2 || !s->d_w || !s->d_partials || !s->h_partials || !s->d_wgt ||
-        !s->h_wgt) {
+    allocate_integer_ssim(s, integer_buffer_sizes(s));
+    if (!integer_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
-
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
-
+    }
     s->has_pending = false;
     return 0;
 }
+
+} // namespace
+
+namespace
+{
+
+template <typename T>
+static void pack_integer_plane(T *destination, const VmafPicture *picture, unsigned width,
+                               unsigned height)
+{
+    const auto *source = static_cast<const uint8_t *>(picture->data[0]);
+    for (unsigned y = 0; y < height; ++y) {
+        __builtin_memcpy(destination + (size_t)y * width, source + (size_t)y * picture->stride[0],
+                         (size_t)width * sizeof(T));
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+template <typename Picture>
+static void submit_integer_horizontal(IssimStateSycl *s, sycl::queue &queue, Picture *reference,
+                                      Picture *comparison)
+{
+    const size_t pixels = (size_t)s->width * s->height;
+    if (s->bpc == 8u) {
+        pack_integer_plane(s->h_ref_u8, reference, s->width, s->height);
+        pack_integer_plane(s->h_cmp_u8, comparison, s->width, s->height);
+        queue.memcpy(s->d_ref_u8, s->h_ref_u8, pixels * sizeof(uint8_t));
+        queue.memcpy(s->d_cmp_u8, s->h_cmp_u8, pixels * sizeof(uint8_t));
+        launch_issim_horiz_8bpc(queue, s->d_ref_u8, s->d_cmp_u8, s->d_mux, s->d_muy, s->d_x2,
+                                s->d_xy, s->d_y2, s->d_w, s->width, s->height);
+        return;
+    }
+    pack_integer_plane(s->h_ref_u16, reference, s->width, s->height);
+    pack_integer_plane(s->h_cmp_u16, comparison, s->width, s->height);
+    queue.memcpy(s->d_ref_u16, s->h_ref_u16, pixels * sizeof(uint16_t));
+    queue.memcpy(s->d_cmp_u16, s->h_cmp_u16, pixels * sizeof(uint16_t));
+    launch_issim_horiz_16bpc(queue, s->d_ref_u16, s->d_cmp_u16, s->d_mux, s->d_muy, s->d_x2,
+                             s->d_xy, s->d_y2, s->d_w, s->width, s->height);
+}
+
+} // namespace
+
+namespace
+{
 
 static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                                  VmafPicture *ref_pic_90, VmafPicture *dist_pic,
@@ -860,39 +1145,19 @@ static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
         return -EINVAL;
     sycl::queue &q = *qptr;
 
-    const size_t npix = (size_t)s->width * s->height;
-    if (s->bpc == 8u) {
-        /* Pack 8bpc pixels (strided) into tight uint8 staging. */
-        const uint8_t *rp = (const uint8_t *)ref_pic->data[0];
-        const uint8_t *dp = (const uint8_t *)dist_pic->data[0];
-        for (unsigned y = 0; y < s->height; y++) {
-            __builtin_memcpy(s->h_ref_u8 + y * s->width, rp + y * ref_pic->stride[0], s->width);
-            __builtin_memcpy(s->h_cmp_u8 + y * s->width, dp + y * dist_pic->stride[0], s->width);
-        }
-        q.memcpy(s->d_ref_u8, s->h_ref_u8, npix * sizeof(uint8_t));
-        q.memcpy(s->d_cmp_u8, s->h_cmp_u8, npix * sizeof(uint8_t));
-        launch_issim_horiz_8bpc(q, s->d_ref_u8, s->d_cmp_u8, s->d_mux, s->d_muy, s->d_x2, s->d_xy,
-                                s->d_y2, s->d_w, s->width, s->height);
-    } else {
-        /* Pack >8bpc pixels (uint16, strided) into tight staging. */
-        const uint8_t *rp = (const uint8_t *)ref_pic->data[0];
-        const uint8_t *dp = (const uint8_t *)dist_pic->data[0];
-        for (unsigned y = 0; y < s->height; y++) {
-            __builtin_memcpy(s->h_ref_u16 + y * s->width, rp + y * ref_pic->stride[0],
-                             s->width * 2u);
-            __builtin_memcpy(s->h_cmp_u16 + y * s->width, dp + y * dist_pic->stride[0],
-                             s->width * 2u);
-        }
-        q.memcpy(s->d_ref_u16, s->h_ref_u16, npix * sizeof(uint16_t));
-        q.memcpy(s->d_cmp_u16, s->h_cmp_u16, npix * sizeof(uint16_t));
-        launch_issim_horiz_16bpc(q, s->d_ref_u16, s->d_cmp_u16, s->d_mux, s->d_muy, s->d_x2,
-                                 s->d_xy, s->d_y2, s->d_w, s->width, s->height);
-    }
-
-    const int64_t samplemax = (int64_t)((1u << s->bpc) - 1u);
-    launch_issim_vert_combine(q, s->d_mux, s->d_muy, s->d_x2, s->d_xy, s->d_y2, s->d_w,
-                              s->d_partials, s->d_wgt, s->width, s->height, samplemax,
-                              s->wg_count_x);
+    submit_integer_horizontal(s, q, ref_pic, dist_pic);
+    launch_issim_vert_combine(q, {.reference_mean = s->d_mux,
+                                  .comparison_mean = s->d_muy,
+                                  .reference_square = s->d_x2,
+                                  .cross_product = s->d_xy,
+                                  .comparison_square = s->d_y2,
+                                  .weight = s->d_w,
+                                  .partials = s->d_partials,
+                                  .weight_partials = s->d_wgt,
+                                  .width = s->width,
+                                  .height = s->height,
+                                  .sample_max = (float)((1u << s->bpc) - 1u),
+                                  .group_columns = s->wg_count_x});
 
     q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
     q.memcpy(s->h_wgt, s->d_wgt, (size_t)s->wg_count * sizeof(int64_t));
@@ -901,6 +1166,11 @@ static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
     s->has_pending = true;
     return 0;
 }
+
+} // namespace
+
+namespace
+{
 
 static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
                                   VmafFeatureCollector *feature_collector)
@@ -925,67 +1195,53 @@ static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
                                                    score, index);
 }
 
+} // namespace
+
+namespace
+{
+
 static int close_fex_issim_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<IssimStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref_u8)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_u8);
-        if (s->h_cmp_u8)
-            vmaf_sycl_free(s->sycl_state, s->h_cmp_u8);
-        if (s->h_ref_u16)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_u16);
-        if (s->h_cmp_u16)
-            vmaf_sycl_free(s->sycl_state, s->h_cmp_u16);
-        if (s->d_ref_u8)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_u8);
-        if (s->d_cmp_u8)
-            vmaf_sycl_free(s->sycl_state, s->d_cmp_u8);
-        if (s->d_ref_u16)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_u16);
-        if (s->d_cmp_u16)
-            vmaf_sycl_free(s->sycl_state, s->d_cmp_u16);
-        if (s->d_mux)
-            vmaf_sycl_free(s->sycl_state, s->d_mux);
-        if (s->d_muy)
-            vmaf_sycl_free(s->sycl_state, s->d_muy);
-        if (s->d_x2)
-            vmaf_sycl_free(s->sycl_state, s->d_x2);
-        if (s->d_xy)
-            vmaf_sycl_free(s->sycl_state, s->d_xy);
-        if (s->d_y2)
-            vmaf_sycl_free(s->sycl_state, s->d_y2);
-        if (s->d_w)
-            vmaf_sycl_free(s->sycl_state, s->d_w);
-        if (s->d_partials)
-            vmaf_sycl_free(s->sycl_state, s->d_partials);
-        if (s->h_partials)
-            vmaf_sycl_free(s->sycl_state, s->h_partials);
-        if (s->d_wgt)
-            vmaf_sycl_free(s->sycl_state, s->d_wgt);
-        if (s->h_wgt)
-            vmaf_sycl_free(s->sycl_state, s->h_wgt);
+        release_buffer(s->sycl_state, s->h_ref_u8);
+        release_buffer(s->sycl_state, s->h_cmp_u8);
+        release_buffer(s->sycl_state, s->h_ref_u16);
+        release_buffer(s->sycl_state, s->h_cmp_u16);
+        release_buffer(s->sycl_state, s->d_ref_u8);
+        release_buffer(s->sycl_state, s->d_cmp_u8);
+        release_buffer(s->sycl_state, s->d_ref_u16);
+        release_buffer(s->sycl_state, s->d_cmp_u16);
+        release_buffer(s->sycl_state, s->d_mux);
+        release_buffer(s->sycl_state, s->d_muy);
+        release_buffer(s->sycl_state, s->d_x2);
+        release_buffer(s->sycl_state, s->d_xy);
+        release_buffer(s->sycl_state, s->d_y2);
+        release_buffer(s->sycl_state, s->d_w);
+        release_buffer(s->sycl_state, s->d_partials);
+        release_buffer(s->sycl_state, s->h_partials);
+        release_buffer(s->sycl_state, s->d_wgt);
+        release_buffer(s->sycl_state, s->h_wgt);
     }
-    if (s->feature_name_dict)
+    if (s->feature_name_dict) {
         (void)vmaf_dictionary_free(&s->feature_name_dict);
+    }
     return 0;
 }
 
-} /* anonymous namespace */
-
-extern "C" {
-
 static const VmafOption options_issim_sycl[] = {
-    {nullptr},
+    {.name = nullptr},
 };
 
 static const char *provided_features_issim_sycl[] = {"ssim", nullptr};
+
+} // namespace
 
 /* Real integer_ssim SYCL extractor (ADR-0564). Uses 9-tap int64 moments
  * matching the CPU algorithm. The SSIM formula is computed in float32
  * (fp64-free constraint, ADR-0220); expected precision is places=4-5 vs
  * CPU. Load-bearing: declared via extern in feature_extractor.c. */
-VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
+extern "C" VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
     .name = "integer_ssim_sycl",
     .init = init_fex_issim_sycl,
     .extract = nullptr,
@@ -1005,6 +1261,3 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-} /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

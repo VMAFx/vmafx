@@ -5,7 +5,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  Metal compute kernels for float_ssim (T8-1j / ADR-0421).
- *  Direct port of `libvmaf/src/feature/vulkan/shaders/ssim.comp`.
+ *  Direct port of `core/src/feature/vulkan/shaders/ssim.comp`.
  *
  *  Algorithm: separable 11-tap Gaussian convolution on five SSIM
  *  statistics (μ_r, μ_d, σ_r², σ_d², σ_rd), then per-pixel SSIM

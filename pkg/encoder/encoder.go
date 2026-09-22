@@ -235,41 +235,12 @@ func runEncodeArgv(
 	bin := ffmpegBin(params)
 	dir := outputDir(params)
 
-	outPath := params.OutputPath
-	if outPath == "" {
-		// Create a temp file with the right extension.
-		tmpFile, err := os.CreateTemp(dir, fmt.Sprintf("vmafx-tune-%s-crf%d-*.mkv", codec, params.CRF))
-		if err != nil {
-			return EncodeResult{}, fmt.Errorf("create temp output: %w", err)
-		}
-		outPath = tmpFile.Name()
-		// Close immediately; ffmpeg will write to it.
-		if closeErr := tmpFile.Close(); closeErr != nil {
-			return EncodeResult{}, fmt.Errorf("close temp file: %w", closeErr)
-		}
-		// Remove the empty placeholder so ffmpeg can create the real file.
-		if removeErr := os.Remove(outPath); removeErr != nil {
-			return EncodeResult{}, fmt.Errorf("remove temp placeholder: %w", removeErr)
-		}
-	} else {
-		// G301: 0o750 keeps the encode scratch dir owner/group-only.
-		if mkErr := os.MkdirAll(filepath.Dir(outPath), 0o750); mkErr != nil {
-			return EncodeResult{}, fmt.Errorf("create output dir for %q: %w", outPath, mkErr)
-		}
+	outPath, prepErr := prepareOutputPath(params, dir, codec)
+	if prepErr != nil {
+		return EncodeResult{}, prepErr
 	}
 
-	argv := []string{
-		bin,
-		"-hide_banner",
-		"-loglevel", "warning",
-		"-y",
-	}
-	// Input options must precede "-i"; see EncodeParams.InputArgs.
-	argv = append(argv, params.InputArgs...)
-	argv = append(argv, "-i", src, "-an") // -an drops audio
-	argv = append(argv, codecArgs...)
-	argv = append(argv, params.ExtraArgs...)
-	argv = append(argv, outPath)
+	argv := buildFFmpegArgv(bin, src, outPath, params, codecArgs)
 
 	ctx := context.Background()
 	cancel := func() {}
@@ -289,24 +260,8 @@ func runEncodeArgv(
 	elapsed := time.Since(t0)
 
 	if runErr != nil {
-		// Clean up temp file if encode failed. Surface any cleanup failure
-		// via errors.Join so a disk-leak does not get silently swallowed by
-		// the primary encode error.
-		var ffErr error
-		if ctx.Err() == context.DeadlineExceeded {
-			ffErr = fmt.Errorf("ffmpeg encode timed out after %s (crf=%d, codec=%s): %w\n%s",
-				encodeTimeout(), params.CRF, codec, runErr, string(stderrBytes))
-		} else {
-			ffErr = fmt.Errorf("ffmpeg encode failed (crf=%d, codec=%s): %w\n%s",
-				params.CRF, codec, runErr, string(stderrBytes))
-		}
-		if rmErr := os.Remove(outPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-			return EncodeResult{}, errors.Join(
-				ffErr,
-				fmt.Errorf("remove failed-encode temp %q: %w", outPath, rmErr),
-			)
-		}
-		return EncodeResult{}, ffErr
+		return EncodeResult{}, failedEncodeError(
+			ctx, params, codec, outPath, stderrBytes, runErr)
 	}
 
 	bitrateKbps := probeBitrateKbps(outPath, bin)
@@ -326,6 +281,75 @@ func runEncodeArgv(
 		EncodeTimeMS:    float64(elapsed.Milliseconds()),
 		OutputSizeBytes: sizeBytes,
 	}, nil
+}
+
+// prepareOutputPath resolves where the encode lands.
+//
+// With no caller-supplied path, a temp file is created for its name and then
+// unlinked again so ffmpeg can create the real file itself. With one, only its
+// parent directory is ensured; G301's 0o750 keeps the encode scratch dir
+// owner/group-only.
+func prepareOutputPath(params EncodeParams, dir, codec string) (string, error) {
+	if params.OutputPath != "" {
+		if mkErr := os.MkdirAll(filepath.Dir(params.OutputPath), 0o750); mkErr != nil {
+			return "", fmt.Errorf("create output dir for %q: %w", params.OutputPath, mkErr)
+		}
+		return params.OutputPath, nil
+	}
+
+	tmpFile, err := os.CreateTemp(dir, fmt.Sprintf("vmafx-tune-%s-crf%d-*.mkv", codec, params.CRF))
+	if err != nil {
+		return "", fmt.Errorf("create temp output: %w", err)
+	}
+	outPath := tmpFile.Name()
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		return "", fmt.Errorf("close temp file: %w", closeErr)
+	}
+	if removeErr := os.Remove(outPath); removeErr != nil {
+		return "", fmt.Errorf("remove temp placeholder: %w", removeErr)
+	}
+	return outPath, nil
+}
+
+// buildFFmpegArgv assembles the encode command line. Input options must
+// precede "-i" (see EncodeParams.InputArgs), and "-an" drops audio.
+func buildFFmpegArgv(
+	bin, src, outPath string, params EncodeParams, codecArgs []string,
+) []string {
+	argv := []string{
+		bin,
+		"-hide_banner",
+		"-loglevel", "warning",
+		"-y",
+	}
+	argv = append(argv, params.InputArgs...)
+	argv = append(argv, "-i", src, "-an")
+	argv = append(argv, codecArgs...)
+	argv = append(argv, params.ExtraArgs...)
+	return append(argv, outPath)
+}
+
+// failedEncodeError reports a failed encode and cleans up after it.
+//
+// Any cleanup failure is surfaced via errors.Join so a disk leak does not get
+// silently swallowed by the primary encode error.
+func failedEncodeError(
+	ctx context.Context,
+	params EncodeParams,
+	codec, outPath string,
+	stderrBytes []byte,
+	runErr error,
+) error {
+	ffErr := fmt.Errorf("ffmpeg encode failed (crf=%d, codec=%s): %w\n%s",
+		params.CRF, codec, runErr, string(stderrBytes))
+	if ctx.Err() == context.DeadlineExceeded {
+		ffErr = fmt.Errorf("ffmpeg encode timed out after %s (crf=%d, codec=%s): %w\n%s",
+			encodeTimeout(), params.CRF, codec, runErr, string(stderrBytes))
+	}
+	if rmErr := os.Remove(outPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+		return errors.Join(ffErr, fmt.Errorf("remove failed-encode temp %q: %w", outPath, rmErr))
+	}
+	return ffErr
 }
 
 // LibX264Encoder implements Encoder for libx264.

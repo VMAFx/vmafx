@@ -22,7 +22,7 @@ model weights. It is exercised in `core/test/` as part of the
 | Input | `features` — float32 `[N, …]` |
 | Output | `score` — float32 `[N]` |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `smoke_v0` in `model/tiny/registry.json` (`"smoke": true`) |
 | SHA-256 | `c83a5f217fa3736bf575c52f7f4c187a6201951e8ddccb51bdcdcc136108fbe0` |
 

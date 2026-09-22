@@ -186,7 +186,7 @@ per-model design work, per ADR-0207's "third quant tier" goal.
   PTQ template; this ADR mirrors that template for QAT.
 - [Research-0006](../research/0006-tinyai-ptq-accuracy-targets.md)
   §1 Table 1 — accuracy-budget origin (0.002 PLCC drop for QAT).
-- [Section-A audit decisions](../../.workingdir2/decisions/section-a-decisions-2026-04-28.md)
+- Section-A audit decisions
   §A.2.1 — *"implement it? ffs"*. Captured per ADR-0207.
 - PyTorch open issue [pytorch/pytorch#issue
   Conv2dPackedParamsBase obj_flatten] — context for the

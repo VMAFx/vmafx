@@ -154,7 +154,7 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
 >    serves both roles.
 > 3. **`--clips-dir` named `clips/`, which is unusable from inside the
 >    container.** Its 153,841 entries are symlinks to *host* absolute paths under
->    `/home/kilian/dev/vmaf/.workingdir2/konvid-150k/…`, which do not resolve in
+>    `/home/kilian/dev/vmaf/.corpus/konvid-150k/…`, which do not resolve in
 >    the container mount. Every clip failed `ffprobe … returned non-zero exit
 >    status 1`, which reads like corrupt media and is really a dangling link. The
 >    real files are in `k150ka_extracted/` (152,265 files, e.g. 465,490 bytes,
@@ -286,7 +286,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/bvi_dvc_to_full_features.py \
-  --bvi-dir /workspace/.workingdir2/bvi-dvc-extracted \
+  --bvi-dir /workspace/.corpus/bvi-dvc-extracted \
   --tier all \
   --vmaf-bin /usr/local/bin/vmaf \
   --cpu-vmaf-bin /usr/local/bin/vmaf \
@@ -309,7 +309,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/b
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_ugc_features.py \
-  --manifest /workspace/.workingdir2/youtube-ugc/manifest.csv \
+  --manifest /workspace/.corpus/youtube-ugc/manifest.csv \
   --yuv-dir /tmp/ugc_yuv_scratch \
   --vmaf-bin /usr/local/bin/vmaf \
   --cpu-vmaf-bin /usr/local/bin/vmaf \
@@ -330,8 +330,8 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/chug_extract_features.py \
-  --input /workspace/.workingdir2/chug/chug.jsonl \
-  --clips-dir /workspace/.workingdir2/chug/clips \
+  --input /workspace/.corpus/chug/chug.jsonl \
+  --clips-dir /workspace/.corpus/chug/clips \
   --output /workspace/runs/shards/full_features_chug.parquet \
   --full \
   --feature-set full \
@@ -465,7 +465,7 @@ docker exec vmaf-dev-mcp env PYTHONPATH=/workspace/ai/src /opt/vmaf-venv/bin/pyt
 
 ```bash
 docker exec vmaf-dev-mcp env PYTHONPATH=/workspace/ai/src /opt/vmaf-venv/bin/python /workspace/ai/scripts/train_konvid_mos_head.py \
-  --konvid-1k /workspace/.workingdir2/konvid-1k/konvid_1k.jsonl \
+  --konvid-1k /workspace/.corpus/konvid-1k/konvid_1k.jsonl \
   --feature-parquet /workspace/runs/full_features_combined_v1.parquet \
   --device cuda \
   --out-onnx /workspace/model/tiny/nr_metric_v1.onnx
@@ -593,7 +593,7 @@ in compliance with the 5-point bar of [ADR-0042](../adr/0042-tinyai-docs-require
 1. Plain-English functional summary.
 2. Output range and qualitative interpretation.
 3. Runnable usage example (CLI, C API, or Python).
-4. Full provenance: trained against teacher `vmaf_v1.0.16_3d0h`, dataset composition, git SHA, license (`BSD-3-Clause-Plus-Patent`).
+4. Full provenance: trained against teacher `vmaf_v1.0.16_3d0h`, dataset composition, git SHA, license (`BSD-2-Clause-Patent`).
 5. Known limitations (geometry bounds, color spaces, unsupported options).
 
 ---

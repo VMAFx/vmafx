@@ -209,13 +209,11 @@ func (fc *FeedbackClient) Delivered() int64 { return fc.delivered.Load() }
 // On connection failure it waits with exponential backoff (feedbackRetryBase …
 // feedbackRetryMax) before retrying.  A successful connection resets the
 // backoff to the base interval (ADR-1049).
-// It exits when ctx is cancelled.
+// It exits when ctx is cancelled, which is the loop's exit condition; the inner
+// ctx.Err() checks are the same test applied after a step that may have blocked.
 func (fc *FeedbackClient) drainLoop(ctx context.Context) {
 	backoff := feedbackRetryBase
-	for {
-		if ctx.Err() != nil {
-			return
-		}
+	for ctx.Err() == nil {
 		conn, err := fc.dial(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -243,13 +241,26 @@ func (fc *FeedbackClient) drainLoop(ctx context.Context) {
 		fc.log.Info("sidecar connected", slog.String("socket", fc.socketPath))
 		if err := fc.pump(ctx, conn); err != nil {
 			if ctx.Err() != nil {
-				_ = conn.Close()
+				fc.closeConn(conn)
 				return
 			}
 			fc.log.Warn("sidecar connection lost — reconnecting",
 				slog.String("err", err.Error()))
 		}
-		_ = conn.Close()
+		fc.closeConn(conn)
+	}
+}
+
+// closeConn releases a sidecar connection, recording a close failure on the client's log.
+//
+// The caller is either about to redial or about to stop, so a failed close changes nothing
+// it could act on; leaving it unreported would hide a socket that the kernel refused to
+// release, which is exactly the shape that shows up later as fd exhaustion.
+func (fc *FeedbackClient) closeConn(conn net.Conn) {
+	if err := conn.Close(); err != nil {
+		fc.log.Warn("closing sidecar connection failed",
+			slog.String("socket", fc.socketPath),
+			slog.String("err", err.Error()))
 	}
 }
 
@@ -260,10 +271,14 @@ func (fc *FeedbackClient) dial(ctx context.Context) (net.Conn, error) {
 }
 
 // pump reads messages from the queue and writes them to conn.
-// Returns a non-nil error when the connection breaks or ctx is cancelled.
+// Returns a non-nil error when the connection breaks, and nil when ctx is cancelled.
+//
+// Cancellation is the loop's exit condition and is stated twice on purpose: ctx.Err()
+// ends the loop between messages, and the ctx.Done() arm of the select ends it while the
+// goroutine is parked waiting for the next queued message.
 func (fc *FeedbackClient) pump(ctx context.Context, conn net.Conn) error {
 	reader := bufio.NewReader(conn)
-	for {
+	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -281,6 +296,7 @@ func (fc *FeedbackClient) pump(ctx context.Context, conn net.Conn) error {
 			fc.delivered.Add(1)
 		}
 	}
+	return nil
 }
 
 // sendOne serialises msg as JSON, writes it to conn, and reads the ACK.

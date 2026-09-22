@@ -871,22 +871,47 @@ typedef struct WarpShiftHip {
     uint32_t add_shift_sq[3];
 } WarpShiftHip;
 
+/* The scales 1-3 CM active region: the band minus the ADM border, clamped so
+ * the 3x3 threshold window always has a neighbour on each side. Scale 0 clamps
+ * differently (adm_cm_device_hip below), which is why this is not shared. */
+typedef struct I4AdmCmRegionHip {
+    int left;
+    int top;
+    int right;
+    int bottom;
+    int start_col;
+    int end_col;
+    int start_row;
+    int end_row;
+    int buffer_stride;
+    int buffer_h;
+} I4AdmCmRegionHip;
+
+/* Lifted whole out of i4_adm_cm_device_hip (HISS-04). Every statement moved
+ * unchanged and in the same order, so the launch geometry is identical. */
+static I4AdmCmRegionHip i4_adm_cm_region_hip(int w, int h)
+{
+    I4AdmCmRegionHip r;
+    r.left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
+    r.top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
+    r.right = w - r.left;
+    r.bottom = h - r.top;
+
+    r.start_col = (r.left > 1) ? r.left : ((r.left <= 0) ? 0 : 1);
+    r.end_col = (r.right < (w - 1)) ? r.right : ((r.right > (w - 1)) ? w : w - 1);
+    r.start_row = (r.top > 1) ? r.top : ((r.top <= 0) ? 0 : 1);
+    r.end_row = (r.bottom < (h - 1)) ? r.bottom : ((r.bottom > (h - 1)) ? h : h - 1);
+
+    r.buffer_stride = r.end_col - r.start_col;
+    r.buffer_h = r.end_row - r.start_row;
+    return r;
+}
+
 static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
                                 int csf_a_stride, int scale, AdmFixedParametersHip *p,
                                 hipStream_t c_stream)
 {
-    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int right = w - left;
-    int bottom = h - top;
-
-    int start_col = (left > 1) ? left : ((left <= 0) ? 0 : 1);
-    int end_col = (right < (w - 1)) ? right : ((right > (w - 1)) ? w : w - 1);
-    int start_row = (top > 1) ? top : ((top <= 0) ? 0 : 1);
-    int end_row = (bottom < (h - 1)) ? bottom : ((bottom > (h - 1)) ? h : h - 1);
-
-    int buffer_stride = end_col - start_col;
-    int buffer_h = end_row - start_row;
+    I4AdmCmRegionHip r = i4_adm_cm_region_hip(w, h);
 
     /* inner CM kernel */
     {
@@ -894,24 +919,24 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
         void *args[] = {(void *)&s->buf_dev,
                         &h,
                         &w,
-                        &top,
-                        &bottom,
-                        &left,
-                        &right,
-                        &start_row,
-                        &end_row,
-                        &start_col,
-                        &end_col,
+                        &r.top,
+                        &r.bottom,
+                        &r.left,
+                        &r.right,
+                        &r.start_row,
+                        &r.end_row,
+                        &r.start_col,
+                        &r.end_col,
                         &src_stride,
                         &csf_a_stride,
                         &scale,
-                        &buffer_h,
-                        &buffer_stride,
+                        &r.buffer_h,
+                        &r.buffer_stride,
                         (void *)&buf->tmp_accum,
                         p};
         hipError_t rc = hipModuleLaunchKernel(
-            s->func_i4_adm_cm_line_kernel, (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX),
-            (uint32_t)buffer_h, 3, (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
+            s->func_i4_adm_cm_line_kernel, (uint32_t)DIV_ROUND_UP(r.buffer_stride, BLOCKX),
+            (uint32_t)r.buffer_h, 3, (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
     }
@@ -923,12 +948,12 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
         void *args[] = {&h,
                         &w,
                         &scale,
-                        &buffer_h,
-                        &buffer_stride,
+                        &r.buffer_h,
+                        &r.buffer_stride,
                         (void *)&buf->tmp_accum,
                         (void *)&buf->adm_cm[scale]};
         hipError_t rc =
-            hipModuleLaunchKernel(s->func_adm_cm_reduce_line_kernel_4, 1, (uint32_t)buffer_h, 3,
+            hipModuleLaunchKernel(s->func_adm_cm_reduce_line_kernel_4, 1, (uint32_t)r.buffer_h, 3,
                                   (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);

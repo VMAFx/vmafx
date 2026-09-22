@@ -203,7 +203,7 @@ def _scaffold_corpus(
     n_csv_rows: int | None = None,
     omit_url_column: bool = False,
 ) -> Path:
-    """Build a minimal ``.workingdir2/youtube-ugc/``-shaped tree under tmp_path.
+    """Build a minimal ``.corpus/youtube-ugc/``-shaped tree under tmp_path.
 
     By default no clips are pre-staged on disk — the run must
     download them via the mocked curl. Pass ``pre_existing_clips``

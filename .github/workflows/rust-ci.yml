@@ -30,6 +30,16 @@ permissions:
 
 jobs:
   rust-vmafx-sys:
+    # ADR-1297 — required. Builds and installs libvmaf, then runs cargo fmt
+    # --check, clippy -D warnings, build, the test suite and the Netflix golden
+    # smoke example over the Rust FFI binding. It reported `cancelled` on
+    # PR #1518 only because a newer push superseded it; the aggregator's
+    # newest-run-per-name filter drops a superseded run, so that is not a
+    # structural reason to leave the binding ungated.
+    # Known gap this gate does NOT close: the `paths:` filter above does not
+    # include core/include/libvmaf/**, although the binding binds that header.
+    # Tracked in docs/state.md; widening the filter is a separate change.
+    # required-aggregator
     name: vmafx-sys CI
     runs-on: ubuntu-26.04
     timeout-minutes: 30
@@ -111,6 +121,9 @@ jobs:
         run: cargo run --example score
 
   cargo-deny:
+    # ADR-1297 — required. A supply-chain policy nobody has to pass is not a
+    # policy.
+    # required-aggregator
     name: cargo-deny
     runs-on: ubuntu-26.04
     timeout-minutes: 30

@@ -93,9 +93,9 @@ frame. AVX-512 closes as AVX2 ceiling for both kernels.
   matrix gap now updates the matrix in the same diff (ADR-0179
   set the precedent; T7-19 closure carries the example).
 - **Neutral / follow-ups**: matrix corrections land in
-  [`.workingdir2/analysis/metrics-backends-matrix.md`](../../.workingdir2/analysis/metrics-backends-matrix.md)
+  `.workingdir2/analysis/metrics-backends-matrix.md`
   (gitignored — planning surface). Backlog corrections land in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md):
+  `.workingdir2/BACKLOG.md`:
   T7-21 → CLOSED (AVX2 ceiling), T7-22 → CLOSED (already done),
   the cambi/motion_v2/integer_ansnr items had no backlog rows.
   The remaining real backlog items in the CPU SIMD column are
@@ -112,9 +112,9 @@ frame. AVX-512 closes as AVX2 ceiling for both kernels.
   AVX-512 — kernel is memory-bound" reasoning, applied to two
   more kernels with the same shape.
 - Backlog rows: T7-21, T7-22 in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md) —
+  `.workingdir2/BACKLOG.md` —
   both closed by this ADR.
-- Matrix: [`metrics-backends-matrix.md`](../../.workingdir2/analysis/metrics-backends-matrix.md)
+- Matrix: `metrics-backends-matrix.md`
   — five rows / bullets corrected.
 - Files re-verified during audit:
   [`float_ms_ssim.c:88`](../../core/src/feature/float_ms_ssim.c#L88),

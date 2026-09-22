@@ -77,12 +77,16 @@ core/
 
 - **`meson_version` is pinned to `>= 1.4.0`, not upstream's value**
   (fork-local, ADR-0692 / T-CI-MESON-C23-APT-2026-08-30):
-  [`meson.build`](meson.build) sets `default_options: ['c_std=c23', …]`,
-  and `c23` is only recognised `c_std` value from meson 1.4.0 onward
-  (verified: 1.3.2 rejects it, 1.4.0 accepts it). Declared
-  `meson_version` must stay at or above 1.4.0 for as long as fork
-  keeps `c_std=c23`, which upstream does not set. Upstream sync that
-  rewrites `project()` call will conflict here — keep fork's
+  [`meson.build`](meson.build) sets Meson's built-in fallback list
+  `c_std=c23,c2x,c17,none`. Meson selects the first spelling supported by the
+  active compiler; MSVC-syntax drivers then receive `/std:clatest` as a narrow
+  override. Keep `none` last: Meson's `intel-llvm-cl` backend advertises only
+  `c89`/`c99`/`c11`, so a list without a value every backend accepts aborts
+  configure on the Windows MSVC+SYCL leg.
+  `c23` is only recognised from Meson 1.4.0 onward (verified: 1.3.2 rejects
+  it, 1.4.0 accepts it). Declared `meson_version` must stay at or above 1.4.0
+  for as long as the fork keeps this standard policy. Upstream sync that
+  rewrites `project()` will conflict here — keep the fork's
   `>= 1.4.0`. Lowering it does not fail loudly: build instead dies
   much later at configure with cryptic
   `ERROR: Unknown C std ['c23']`, which is what took out seven CI
@@ -377,7 +381,7 @@ core/
   `core/src/feature/sycl/**` files; it injects oneAPI SYCL
   include path + `-D__SYCL_DEVICE_ONLY__=0` so stock LLVM clang-tidy
   resolves `<sycl/sycl.hpp>`. CI lane
-  `Tidy SYCL (advisory)` in
+  `Tidy SYCL` in
   [`.github/workflows/lint-and-format.yml`](../.github/workflows/lint-and-format.yml)
   runs wrapper over SYCL build tree; never invoke stock
   `clang-tidy` directly against SYCL TUs (will surface
@@ -472,21 +476,17 @@ core/
   yet wired — can be added later once at least 5 parsers carry
   harnesses.
 
-- **`meson.build` C++ standard is injected via `add_project_arguments`, not
-  `default_options`** (ADR-1056, 2026-06-04): `cpp_std=c++23` was removed
-  from `default_options` because meson's MSVC backend rejects `c++23` (it
-  only accepts `c++11/14/17/20/vc++latest`). Standard is now set by
-  `if get_option('cpp_std') == 'none'` block that injects `/std:c++latest`
-  on MSVC and `-std=c++23` on everything else. Three invariants that must
-  survive any rebase:
-  (1) guard condition `get_option('cpp_std') == 'none'` must be
-  preserved — removing it causes SYCL leg's `-Dcpp_std=c++latest` override
-  to conflict with injected `-std=c++23` flag;
-  (2) block must remain between `cxx = meson.get_compiler('cpp')` and
-  first `cc.check_header` call so compiler is defined before
-  branch;
-  (3) never re-add `cpp_std=c++23` to `default_options` — meson
-  configure step will fail on any Windows + MSVC matrix leg.
+- **Language standards are Meson built-in fallback lists** (ADR-1056,
+  2026-06-04): `project()` owns `c_std=c23,c2x,c17,none` and
+  `cpp_std=c++26,c++23,c++latest`. Do not restore manual `-std=` probing or
+  injection: it bypasses Meson's compiler checks, duplicates flags, and emits
+  configure-time warnings on current Meson. Callers may still override either
+  built-in option. The trailing `none` is not optional — it is the only value
+  every backend accepts, and `intel-llvm-cl` (icx-cl) reaches no other entry
+  in the list. The only platform exception is the MSVC-style C driver: after
+  Meson selects `c17` (cl.exe) or `none` (icx-cl), `/std:clatest` is appended
+  both to project arguments and feature probes so the fork retains its
+  newest-C contract.
 
 Backend-specific orientation:
 

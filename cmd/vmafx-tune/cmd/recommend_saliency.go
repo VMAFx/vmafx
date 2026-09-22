@@ -84,6 +84,15 @@ Example:
     --src ref.yuv --width 1920 --height 1080 --duration-frames 240 \
     --encoder libx264 --saliency-aware --output out.mp4`
 
+	registerRecommendSaliencyFlags(cmd, flags)
+
+	markCommandFlagsRequired(cmd, "src", "width", "height", "duration-frames", "output")
+
+	return cmd
+}
+
+// registerRecommendSaliencyFlags registers the flags of the recommend-saliency subcommand.
+func registerRecommendSaliencyFlags(cmd *cobra.Command, flags *recommendSaliencyFlags) {
 	cmd.Flags().StringVar(&flags.src, "src", "", "Raw YUV reference (required)")
 	cmd.Flags().IntVar(&flags.width, "width", 0, "Reference width (required)")
 	cmd.Flags().IntVar(&flags.height, "height", 0, "Reference height (required)")
@@ -113,14 +122,6 @@ Example:
 	cmd.Flags().StringVar(&flags.output, "output", "",
 		"Encode destination (mp4 / mkv / ...); a .json path writes the report "+
 			"there and encodes to a sibling _encoded.mp4 (required)")
-
-	_ = cmd.MarkFlagRequired("src")
-	_ = cmd.MarkFlagRequired("width")
-	_ = cmd.MarkFlagRequired("height")
-	_ = cmd.MarkFlagRequired("duration-frames")
-	_ = cmd.MarkFlagRequired("output")
-
-	return cmd
 }
 
 // saliencyPayload is the emitted JSON report. Keys and ordering reproduce the
@@ -141,42 +142,12 @@ type saliencyPayload struct {
 
 // runRecommendSaliency drives one saliency-aware encode end to end.
 func runRecommendSaliency(ctx context.Context, d deps, flags *recommendSaliencyFlags) error {
-	if flags.src == "" || flags.output == "" {
-		return errors.New("--src and --output are required")
-	}
-	if flags.width <= 0 || flags.height <= 0 {
-		return errors.New("--width and --height must be positive")
-	}
-	if flags.durationFrames <= 0 {
-		return errors.New("--duration-frames must be positive")
-	}
-	adapter, adapterErr := codecadapter.Get(flags.encoder)
-	if adapterErr != nil {
-		return adapterErr
-	}
-	crf := flags.crf
-	if crf < 0 {
-		crf = adapter.QualityDefault
-	}
-
-	cfg := saliency.DefaultConfig()
-	cfg.ForegroundOffset = flags.saliencyOffset
-	cfg.TemporalAggregator = saliency.Aggregator(flags.saliencyAggregator)
-	cfg.EMAAlpha = flags.saliencyEMAAlpha
-	cfg.AllowUnsupportedEncoderFallback = flags.fallbackPlain
-	if err := cfg.Validate(); err != nil {
+	crf, cfg, err := resolveSaliencyRun(flags)
+	if err != nil {
 		return err
 	}
 
-	// A .json --output names a report destination, not a container: encode to
-	// a sibling _encoded.mp4 so ffmpeg gets a valid muxer.
-	outputPath := flags.output
-	jsonReportPath := ""
-	if strings.EqualFold(filepath.Ext(outputPath), ".json") {
-		jsonReportPath = outputPath
-		stem := strings.TrimSuffix(outputPath, filepath.Ext(outputPath))
-		outputPath = stem + "_encoded.mp4"
-	}
+	outputPath, jsonReportPath := splitSaliencyOutput(flags.output)
 
 	req := ffencode.Request{
 		Source: flags.src, Width: flags.width, Height: flags.height,
@@ -210,6 +181,76 @@ func runRecommendSaliency(ctx context.Context, d deps, flags *recommendSaliencyF
 		return encErr
 	}
 
+	if err := emitSaliencyReport(res, flags, saliencyApplied, jsonReportPath); err != nil {
+		return err
+	}
+
+	if res.ExitStatus != 0 {
+		return &exitCodeError{
+			code: res.ExitStatus,
+			err:  fmt.Errorf("encode failed with exit status %d", res.ExitStatus),
+		}
+	}
+	return nil
+}
+
+// resolveSaliencyRun validates the request and resolves the two derived values the encode
+// needs: the effective CRF and the saliency configuration.
+func resolveSaliencyRun(flags *recommendSaliencyFlags) (int, saliency.Config, error) {
+	var noCfg saliency.Config
+	if flags.src == "" || flags.output == "" {
+		return 0, noCfg, errors.New("--src and --output are required")
+	}
+	if flags.width <= 0 || flags.height <= 0 {
+		return 0, noCfg, errors.New("--width and --height must be positive")
+	}
+	if flags.durationFrames <= 0 {
+		return 0, noCfg, errors.New("--duration-frames must be positive")
+	}
+	adapter, adapterErr := codecadapter.Get(flags.encoder)
+	if adapterErr != nil {
+		return 0, noCfg, adapterErr
+	}
+	crf := flags.crf
+	if crf < 0 {
+		crf = adapter.QualityDefault
+	}
+
+	cfg := saliency.DefaultConfig()
+	cfg.ForegroundOffset = flags.saliencyOffset
+	cfg.TemporalAggregator = saliency.Aggregator(flags.saliencyAggregator)
+	cfg.EMAAlpha = flags.saliencyEMAAlpha
+	cfg.AllowUnsupportedEncoderFallback = flags.fallbackPlain
+	if err := cfg.Validate(); err != nil {
+		return 0, noCfg, err
+	}
+	return crf, cfg, nil
+}
+
+// splitSaliencyOutput separates the encode destination from the report destination.
+//
+// A .json --output names a report destination, not a container: the encode goes to a
+// sibling _encoded.mp4 so ffmpeg gets a valid muxer.
+func splitSaliencyOutput(output string) (encodePath, jsonReportPath string) {
+	if !strings.EqualFold(filepath.Ext(output), ".json") {
+		return output, ""
+	}
+	stem := strings.TrimSuffix(output, filepath.Ext(output))
+	return stem + "_encoded.mp4", output
+}
+
+// emitSaliencyReport renders the machine-readable result and sends it to the report file
+// or to stdout.
+//
+// saliencyApplied is the outcome, not the request: applySaliencyROI has three paths that
+// fall back to a plain encode without an error, and reporting the flag instead made the
+// JSON claim "saliency_aware": true for an encode that had no ROI map at all.
+func emitSaliencyReport(
+	res ffencode.Result,
+	flags *recommendSaliencyFlags,
+	saliencyApplied bool,
+	jsonReportPath string,
+) error {
 	payload := saliencyPayload{
 		CRF:                res.Request.CRF,
 		EncodeSizeBytes:    res.EncodeSizeBytes,
@@ -233,20 +274,11 @@ func runRecommendSaliency(ctx context.Context, d deps, flags *recommendSaliencyF
 		if err := writeOutput(jsonReportPath, string(rendered)+"\n"); err != nil {
 			return err
 		}
-		if _, printErr := fmt.Println(jsonReportPath); printErr != nil {
-			return printErr
-		}
-	} else if _, printErr := fmt.Print(string(rendered) + "\n"); printErr != nil {
+		_, printErr := fmt.Println(jsonReportPath)
 		return printErr
 	}
-
-	if res.ExitStatus != 0 {
-		return &exitCodeError{
-			code: res.ExitStatus,
-			err:  fmt.Errorf("encode failed with exit status %d", res.ExitStatus),
-		}
-	}
-	return nil
+	_, printErr := fmt.Print(string(rendered) + "\n")
+	return printErr
 }
 
 // applySaliencyROI computes the saliency map, builds the encoder's ROI
@@ -263,12 +295,58 @@ func applySaliencyROI(
 	cfg saliency.Config,
 	req ffencode.Request,
 ) (ffencode.Request, func(), bool, error) {
+	augment, ok, augErr := buildSaliencyAugment(ctx, d, flags, cfg)
+	if augErr != nil {
+		return req, nil, false, augErr
+	}
+	if !ok {
+		return req, nil, false, nil
+	}
+
+	// Argv-only encoders (libx265 zones) need no sidecar file.
+	if augment.SidecarBody == "" {
+		req.ExtraParams = append(append([]string(nil), req.ExtraParams...),
+			augment.ExtraParams...)
+		return req, nil, false, nil
+	}
+
+	sidecarPath, cleanup, sidecarErr := prepareROISidecar(ctx, d, cfg, req.Output, augment.SidecarSuffix)
+	if sidecarErr != nil {
+		return req, nil, false, sidecarErr
+	}
+	if err := saliency.WriteSidecar(augment, sidecarPath); err != nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		return req, nil, false, err
+	}
+	req.ExtraParams = append(append([]string(nil), req.ExtraParams...),
+		saliency.ExtraParamsFor(flags.encoder, sidecarPath)...)
+	d.Log.InfoContext(ctx, "wrote saliency ROI sidecar",
+		"path", sidecarPath, "encoder", flags.encoder)
+	return req, cleanup, true, nil
+}
+
+// buildSaliencyAugment computes the saliency map and turns it into the encoder's ROI
+// augmentation.
+//
+// The bool reports whether an augmentation was produced. False with a nil error is the
+// documented demotion to a plain encode: no inference session, inference unavailable, or
+// an encoder without ROI dispatch when the fallback was opted into. An encoder without ROI
+// dispatch and no opt-in is an exit-2 error instead.
+func buildSaliencyAugment(
+	ctx context.Context,
+	d deps,
+	flags *recommendSaliencyFlags,
+	cfg saliency.Config,
+) (saliency.Augment, bool, error) {
+	var none saliency.Augment
 	session, sessionErr := saliencySessionFactory(flags.saliencyModel)
 	if sessionErr != nil {
 		d.Log.WarnContext(ctx,
 			"saliency inference unavailable; falling back to a plain encode",
 			"reason", sessionErr.Error())
-		return req, nil, false, nil
+		return none, false, nil
 	}
 
 	mask, mapErr := saliency.ComputeMap(flags.src, flags.width, flags.height, session,
@@ -282,66 +360,56 @@ func applySaliencyROI(
 			d.Log.WarnContext(ctx,
 				"saliency inference failed; falling back to a plain encode",
 				"error", mapErr)
-			return req, nil, false, nil
+			return none, false, nil
 		}
-		return req, nil, false, mapErr
+		return none, false, mapErr
 	}
 
 	qpMap := saliency.ToQPMap(mask, cfg.ForegroundOffset)
 	augment, buildErr := saliency.BuildAugment(
 		flags.encoder, qpMap, flags.width, flags.height, flags.durationFrames)
-	if buildErr != nil {
-		var unsupported *saliency.UnsupportedEncoderError
-		if errors.As(buildErr, &unsupported) {
-			if !saliency.FallbackAllowed(cfg) {
-				return req, nil, false, &exitCodeError{code: 2, err: buildErr}
-			}
-			d.Log.ErrorContext(ctx,
-				"saliency ROI is not implemented for this encoder; "+
-					"falling back to a plain encode",
-				"encoder", flags.encoder,
-				"supported", saliency.SupportedEncoders())
-			return req, nil, false, nil
-		}
-		return req, nil, false, buildErr
+	if buildErr == nil {
+		return augment, true, nil
 	}
-
-	// Argv-only encoders (libx265 zones) need no sidecar file.
-	if augment.SidecarBody == "" {
-		req.ExtraParams = append(append([]string(nil), req.ExtraParams...),
-			augment.ExtraParams...)
-		return req, nil, false, nil
+	var unsupported *saliency.UnsupportedEncoderError
+	if !errors.As(buildErr, &unsupported) {
+		return none, false, buildErr
 	}
+	if !saliency.FallbackAllowed(cfg) {
+		return none, false, &exitCodeError{code: 2, err: buildErr}
+	}
+	d.Log.ErrorContext(ctx,
+		"saliency ROI is not implemented for this encoder; "+
+			"falling back to a plain encode",
+		"encoder", flags.encoder,
+		"supported", saliency.SupportedEncoders())
+	return none, false, nil
+}
 
-	var sidecarPath string
-	var cleanup func()
+// prepareROISidecar names the file the ROI map will be written to, returning a cleanup for
+// the ephemeral case and nil when the sidecar is meant to persist beside the output.
+func prepareROISidecar(
+	ctx context.Context,
+	d deps,
+	cfg saliency.Config,
+	output, suffix string,
+) (string, func(), error) {
 	if cfg.PersistSidecar {
-		sidecarPath = saliency.PersistedSidecarPath(req.Output, augment.SidecarSuffix)
-	} else {
-		tmp, err := os.CreateTemp("", "vmafx-tune-roi-*"+augment.SidecarSuffix)
-		if err != nil {
-			return req, nil, false, fmt.Errorf("create ROI sidecar: %w", err)
-		}
-		sidecarPath = tmp.Name()
-		if closeErr := tmp.Close(); closeErr != nil {
-			return req, nil, false, fmt.Errorf("close ROI sidecar: %w", closeErr)
-		}
-		cleanup = func() {
-			if rmErr := os.Remove(sidecarPath); rmErr != nil && !os.IsNotExist(rmErr) {
-				d.Log.WarnContext(ctx, "remove ROI sidecar",
-					"path", sidecarPath, "error", rmErr)
-			}
+		return saliency.PersistedSidecarPath(output, suffix), nil, nil
+	}
+	tmp, err := os.CreateTemp("", "vmafx-tune-roi-*"+suffix)
+	if err != nil {
+		return "", nil, fmt.Errorf("create ROI sidecar: %w", err)
+	}
+	sidecarPath := tmp.Name()
+	if closeErr := tmp.Close(); closeErr != nil {
+		return "", nil, fmt.Errorf("close ROI sidecar: %w", closeErr)
+	}
+	cleanup := func() {
+		if rmErr := os.Remove(sidecarPath); rmErr != nil && !os.IsNotExist(rmErr) {
+			d.Log.WarnContext(ctx, "remove ROI sidecar",
+				"path", sidecarPath, "error", rmErr)
 		}
 	}
-	if err := saliency.WriteSidecar(augment, sidecarPath); err != nil {
-		if cleanup != nil {
-			cleanup()
-		}
-		return req, nil, false, err
-	}
-	req.ExtraParams = append(append([]string(nil), req.ExtraParams...),
-		saliency.ExtraParamsFor(flags.encoder, sidecarPath)...)
-	d.Log.InfoContext(ctx, "wrote saliency ROI sidecar",
-		"path", sidecarPath, "encoder", flags.encoder)
-	return req, cleanup, true, nil
+	return sidecarPath, cleanup, nil
 }

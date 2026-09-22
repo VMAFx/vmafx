@@ -3,7 +3,7 @@
 # Runs alongside libvmaf-build-matrix.yml, which keeps the per-backend, ARM,
 # static, DNN and required lanes; ADR-0710 meant this file to replace it, but
 # that never happened and ADR-1259 records both as they run.
-# Three matrix rows, none of them a required check:
+# Three matrix rows, every one of them a required check since ADR-1297:
 #   - Linux Intel LLVM:    Intel LLVM + ALL Linux backends (CUDA + SYCL + HIP + CPU + DNN)
 #   - macOS Clang+Metal:   Apple Clang + CPU + Metal scaffold
 #   - Windows MSVC+CUDA (full): MSVC + CPU + CUDA, static, with the CPU
@@ -12,19 +12,12 @@
 #     shared name let either job mask the other's failure
 #     (scripts/ci/check-aggregator-names.sh now rejects a shared required name).
 #
-# Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
-# production artefact is the `vmafx-dev-mcp` image, not a per-backend binary;
-# these rows prove the whole stack builds on each OS.
+# The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
+# without the gating that gave it a point: all three rows reported and none of
+# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
+# that file's `strictMustReport` list, because the `paths-ignore` below lets a
+# doc-only pull request legitimately produce no run at all (ADR-0313).
 #
-# Netflix golden assertions are pinned to the dedicated CPU/GCC jobs in
-# tests-and-quality-gates.yml and libvmaf-build-matrix.yml. The all-backend
-# lane below runs the native Meson suite, but deliberately does not compare
-# Intel LLVM output against GCC-authored Python numeric snapshots.
-#
-# CI runners are on ubuntu-26.04, the same generation as the Docker base images.
-# The note that used to sit here said 26.04 was a preview without Python 3.14 or
-# a full toolchain; both stopped being true, and every lane now runs there. The
-# Python version comes from actions/setup-python, not from the image.
 
 name: Build
 
@@ -39,7 +32,6 @@ on:
       - '**/*.md'
       - 'changelog.d/**'
       - 'CHANGELOG.md'
-      - '.workingdir2/**'
   workflow_dispatch:
 
 permissions:
@@ -65,6 +57,7 @@ jobs:
           # SYCL project-level linking requires one Intel LLVM compiler
           # identity; CUDA and HIP custom targets invoke their own tools.
           # ──────────────────────────────────────────────────────────────
+          # required-aggregator
           - os: ubuntu-26.04
             name: Linux Intel LLVM
             CC: icx
@@ -87,6 +80,7 @@ jobs:
           # Proves Apple Silicon builds. Metal scaffold always present on
           # macos-latest (Metal.framework guaranteed in system frameworks).
           # ──────────────────────────────────────────────────────────────
+          # required-aggregator
           - os: macos-latest
             name: macOS Clang+Metal
             CC: ccache clang
@@ -102,6 +96,7 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
+          # required-aggregator
           - os: windows-2025
             name: Windows MSVC+CUDA (full)
             cuda: true

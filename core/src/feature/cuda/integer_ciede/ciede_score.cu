@@ -6,7 +6,7 @@
  *
  *  CUDA compute kernel for the ciede2000 feature extractor
  *  (T7-23 / batch 1c part 2). Mirrors the per-pixel portion of
- *  libvmaf/src/feature/ciede.c — converts each YUV pixel to
+ *  core/src/feature/ciede.c — converts each YUV pixel to
  *  BT.709 RGB, then to XYZ, then to L*a*b*, computes the
  *  CIEDE2000 ΔE between ref and dis, accumulates per-warp.
  *  Lane 0 of each warp atomicAdd's its warp sum to a single

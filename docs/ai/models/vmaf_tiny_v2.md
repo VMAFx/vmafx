@@ -36,7 +36,7 @@ classic SVM regressor.
 | Output | `vmaf` — float32 `[N]` |
 | ONNX opset | 17 |
 | Quantisation | fp32 (size already <2 KB; 8-bit has no shipping payoff) |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `vmaf_tiny_v2` in `model/tiny/registry.json` |
 | Sidecar | `model/tiny/vmaf_tiny_v2.json` |
 | Exporter | `ai/scripts/export_vmaf_tiny_v2.py` |

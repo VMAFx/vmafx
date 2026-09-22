@@ -7,7 +7,7 @@
 # Upstream: https://github.com/quortex/x264-pVMAF (Nov 2024).
 # Upstream license: GPL-2.0.
 #
-# This fork is BSD-3-Clause-Plus-Patent. To preserve the licence
+# To preserve the licence
 # boundary documented in ADR-0332 ("External-competitor benchmark
 # wrapper-only architecture") this script:
 #

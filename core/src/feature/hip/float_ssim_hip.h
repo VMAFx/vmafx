@@ -8,7 +8,7 @@
  *  HIP host glue for the float_ssim feature extractor — eighth
  *  kernel-template consumer (T7-10b follow-up / ADR-0274).
  *
- *  Mirrors libvmaf/src/feature/cuda/integer_ssim_cuda.h. The HIP
+ *  Mirrors core/src/feature/cuda/integer_ssim_cuda.h. The HIP
  *  kernel artefact (`ssim_score.hip`) is compiled by hipcc to a HSACO
  *  fat binary and embedded as a C byte array when `enable_hipcc=true`.
  *  The host code loads it via `hipModuleLoadData` +

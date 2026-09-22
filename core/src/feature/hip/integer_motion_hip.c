@@ -6,7 +6,7 @@
  *
  *  integer_motion feature extractor on the HIP backend.
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/integer_motion_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/integer_motion_cuda.c`
  *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined the real HIP
  *  Module API path is active: module load, ping-pong uint16 blurred-frame
  *  buffers (`blur[2]`) and a uint64 SAD accumulator via `hipMalloc`,

@@ -6,8 +6,8 @@
  *  Metal compute kernel for integer_psnr (T8-1g / ADR-0421).
  *  Emits `psnr_y`, `psnr_cb`, `psnr_cr` — one kernel invocation per plane.
  *
- *  Algorithm (must match CPU libvmaf/src/feature/integer_psnr.c::sse_line_*
- *  and CUDA twin libvmaf/src/feature/cuda/float_psnr/float_psnr_score.cu):
+ *  Algorithm (must match CPU core/src/feature/integer_psnr.c::sse_line_*
+ *  and CUDA twin core/src/feature/cuda/float_psnr/float_psnr_score.cu):
  *    diff = (int64)(ref_px) - (int64)(dis_px)
  *    sse  += diff * diff        (exact integer)
  *    mse  = sse / (W * H)

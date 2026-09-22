@@ -22,6 +22,13 @@ under [`../../meson.build`](../../meson.build) adds
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md) +
   [../../AGENTS.md](../../AGENTS.md) +
   [`../../sycl/AGENTS.md`](../../sycl/AGENTS.md)).
+- **Every TU is strict-clean regardless of origin or age.** A file ported from
+  Netflix, copied from another backend, or present before the ratchet has no
+  warning exemption. Its oneAPI compile, SYCL clang-tidy projection, cppcheck,
+  and HISS audit must report no file-local diagnostic when touched. Split
+  oversized helpers at cohesive phase boundaries; do not add `NOLINT`, lower a
+  baseline, or filter a diagnostic to make a lane green. Regenerate the SYCL
+  database with `scripts/ci/gen-sycl-compile-commands.py` before clang-tidy.
 - **`-fp-model=precise` on SYCL feature line load-bearing.**
   Removing it allows `icpx` to FMA-contract inside kernel
   lambdas, drifting `float_adm_sycl` past `places=4` at scale 2
@@ -49,12 +56,14 @@ under [`../../meson.build`](../../meson.build) adds
 
 ## Twin-update rules
 
-Every SYCL TU here has CUDA + Vulkan twins. Complete
-table lives in [`../cuda/AGENTS.md`](../cuda/AGENTS.md); changes to
-SYCL TU **must** ship with matching changes to CUDA + Vulkan
-twins in **same PR**. Cross-backend parity gate at `places=4`
+When a SYCL TU has a live CUDA, HIP, or Metal twin, user-visible behavior and
+numeric fixes must be reviewed across those twins in the same PR. Vulkan was
+removed in ADR-0726 and is not a live twin. The complete CUDA mapping lives in
+[`../cuda/AGENTS.md`](../cuda/AGENTS.md). The cross-backend parity gate at
+`places=4`
 ([`scripts/ci/cross_backend_parity_gate.py`](../../../../scripts/ci/cross_backend_parity_gate.py),
-ADR-0214) catches drift but only after full GPU run.
+ADR-0214) catches drift only after a full GPU run; it does not replace that
+source review.
 
 ## Parity invariant — motion3 CPU and SYCL moving-average paths
 
@@ -105,6 +114,20 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   downsampling path, ensure all three sites (two kernel variants + allocation) use
   same ceiling formula. For even widths/heights result identical to
   truncating division.
+
+- **`integer_vif_sycl.cpp` warning-clean phase boundaries are load-bearing.**
+  Keep `dev_vert_accumulate`, `dev_hori_item_step`, `vif_init_resources`,
+  `vif_configure_device`, and `vif_register_graph` as bounded phases. The
+  strict C++ profile requires private declarations in anonymous namespaces,
+  while HISS-04 applies its 60-line limit to each namespace block as well as
+  each function; do not collapse these blocks or replace them with `NOLINT`.
+  The tap loops deliberately have no forced-unroll pragma: oneAPI 2026 emits a
+  failed-unroll diagnostic for supported target instances and remains free to
+  unroll them when profitable. Preserve the `float` device gain in
+  `VifHoriLaunchParams`, the arithmetic order inside each phase, and the
+  cleanup points in the three init helpers. Base-vs-refactor proof covers
+  default and fused modes on 8-bit and 10-bit inputs at zero full-precision
+  delta; rerun both modes after an upstream conflict.
 
 - **`integer_psnr_sycl.cpp` honours `enable_chroma` option parity**
   (ADR-0453). `enable_chroma` option (default `true`) clamps `n_planes`
@@ -271,7 +294,8 @@ Stock LLVM `clang-tidy` cannot resolve `<sycl/sycl.hpp>`. Use
 which injects oneAPI SYCL include path +
 `-D__SYCL_DEVICE_ONLY__=0`, locates `icpx` via `$ICPX_ROOT` (or
 `/opt/intel/oneapi/compiler/latest`). CI lane
-`Tidy SYCL (advisory)` runs wrapper.
+`Tidy SYCL` runs wrapper. Required check since ADR-1297;
+no longer advisory, no `continue-on-error`.
 Adding new SYCL TU needs no AGENTS.md update — wrapper
 finds it via changed-file diff. See
 [ADR-0217](../../../../docs/adr/0217-sycl-toolchain-cleanup.md).

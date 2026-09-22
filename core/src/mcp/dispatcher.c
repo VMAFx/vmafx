@@ -52,7 +52,7 @@ extern VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name
  * v2 will replace this with a public iterator.
  *
  * NOTE: lint justification (ADR-0209 / ADR-0278): this static table mirrors the
- * canonical extractor list in libvmaf/src/feature/feature_extractor.c.
+ * canonical extractor list in core/src/feature/feature_extractor.cpp.
  * Its drift cost is bounded — a missing extractor only shortens
  * the MCP listing; bit-exact correctness is unaffected.
  */

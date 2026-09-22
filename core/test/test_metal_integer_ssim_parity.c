@@ -10,7 +10,7 @@
  * gate; ADR-0421 first-kernel Metal scaffolding).
  *
  * The integer (fixed-point) SSIM extractor is registered under the name
- * `ssim` on the CPU (libvmaf/src/feature/integer_ssim.c) and emits the
+ * `ssim` on the CPU (core/src/feature/integer_ssim.c) and emits the
  * feature key `ssim`. The Metal twin `integer_ssim_metal`
  * (core/src/feature/metal/integer_ssim_metal.mm +
  *  core/src/feature/metal/integer_ssim.metal) mirrors the float_ssim_metal

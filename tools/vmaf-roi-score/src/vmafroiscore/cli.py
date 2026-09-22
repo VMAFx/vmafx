@@ -18,22 +18,15 @@ from pathlib import Path
 
 from . import ROI_RESULT_KEYS, SCHEMA_VERSION, __version__, blend_scores
 from .defaultmodel import DEFAULT_MODEL
-from .score import ScoreRequest, run_score
+from .score import ScoreRequest, ScoreResult, run_score
+
+# Exit status for a saliency-mask materialisation failure. Distinct from any
+# `vmaf` binary exit status so a wrapper can tell the two apart.
+_MASK_FAILURE_EXIT = 64
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="vmaf-roi-score",
-        description=(
-            "Region-of-interest VMAF score (Option C). Combines "
-            "a full-frame VMAF run with a saliency-masked VMAF run via a "
-            "user-supplied weight. Useful for content where bad "
-            "background should not penalise a good salient region. "
-            "Distinct from the core/tools/vmaf_roi binary (ADR-0247), "
-            "which emits encoder QP-offset sidecars."
-        ),
-    )
-    parser.add_argument("--version", action="version", version=__version__)
+def _add_source_args(parser: argparse.ArgumentParser) -> None:
+    """Register the raw-YUV pair and its geometry."""
     parser.add_argument(
         "--reference",
         type=Path,
@@ -53,6 +46,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default="yuv420p",
         help="ffmpeg pix_fmt (default yuv420p)",
     )
+
+
+def _add_saliency_args(parser: argparse.ArgumentParser) -> None:
+    """Register the mask-source selector and the combine-math knobs."""
     parser.add_argument(
         "--saliency-model",
         type=Path,
@@ -92,6 +89,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default=0.1,
         help="saliency fade band above --threshold in [0, 1] (default 0.1)",
     )
+
+
+def _add_runner_args(parser: argparse.ArgumentParser) -> None:
+    """Register the `vmaf` binary selection and the result sink."""
     parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
@@ -108,6 +109,31 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="write JSON result to this file; default writes to stdout",
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Assemble the full parser.
+
+    The three ``_add_*_args`` helpers are called in the order their
+    options must appear in ``--help``; argparse renders options in
+    registration order, so reordering these calls is a user-visible
+    change.
+    """
+    parser = argparse.ArgumentParser(
+        prog="vmaf-roi-score",
+        description=(
+            "Region-of-interest VMAF score (Option C). Combines "
+            "a full-frame VMAF run with a saliency-masked VMAF run via a "
+            "user-supplied weight. Useful for content where bad "
+            "background should not penalise a good salient region. "
+            "Distinct from the core/tools/vmaf_roi binary (ADR-0247), "
+            "which emits encoder QP-offset sidecars."
+        ),
+    )
+    parser.add_argument("--version", action="version", version=__version__)
+    _add_source_args(parser)
+    _add_saliency_args(parser)
+    _add_runner_args(parser)
     return parser
 
 
@@ -137,84 +163,85 @@ def _validate(ns: argparse.Namespace) -> None:
         raise SystemExit(f"vmaf-roi-score: --fade must be in [0, 1], got {ns.fade}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = _build_parser()
-    ns = parser.parse_args(argv)
-    _validate(ns)
+class _MaskError(Exception):
+    """Saliency-mask materialisation failed.
 
-    score_req = ScoreRequest(
+    Deliberately not a ``RuntimeError``: :func:`_materialise_mask` catches
+    ``RuntimeError`` from the mask backend, and a sibling base class keeps
+    this wrapper from being swallowed by that handler.
+    """
+
+
+def _score_request(ns: argparse.Namespace, distorted: Path) -> ScoreRequest:
+    """Build the scoring request for `distorted`; geometry comes from the CLI."""
+    return ScoreRequest(
         reference=ns.reference,
-        distorted=ns.distorted,
+        distorted=distorted,
         width=ns.width,
         height=ns.height,
         pix_fmt=ns.pix_fmt,
         model=ns.model,
     )
 
-    full = run_score(score_req, vmaf_bin=ns.vmaf_bin)
-    if full.exit_status != 0:
-        sys.stderr.write(
-            f"vmaf-roi-score: full-frame vmaf run failed (exit={full.exit_status}); "
-            f"stderr tail:\n{full.stderr_tail}\n"
-        )
-        return full.exit_status
 
+def _materialise_mask(ns: argparse.Namespace, masked_yuv: Path) -> None:
+    """Write the saliency-masked distorted YUV to `masked_yuv`.
+
+    ``vmafroiscore.mask`` is imported lazily: it lives behind the
+    ``[runtime]`` extra (onnxruntime + numpy), and ``--synthetic-mask``
+    must stay usable without it. Raises :class:`_MaskError` on any
+    backend failure.
+    """
+    try:
+        from .mask import MaskRequest, apply_saliency_mask, synthesise_uniform_mask
+
+        inference = None
+        saliency_model = ns.saliency_model if ns.saliency_model is not None else Path("synthetic")
+        if ns.synthetic_mask is not None:
+            fill = float(ns.synthetic_mask)
+            saliency_model = Path("synthetic")
+
+            def _synthetic_mask(_rgb: bytes, width: int, height: int) -> list[list[float]]:
+                return synthesise_uniform_mask(width, height, fill=fill)
+
+            inference = _synthetic_mask
+
+        apply_saliency_mask(
+            MaskRequest(
+                reference=ns.reference,
+                distorted=ns.distorted,
+                output=masked_yuv,
+                width=ns.width,
+                height=ns.height,
+                pix_fmt=ns.pix_fmt,
+                saliency_model=saliency_model,
+                threshold=ns.threshold,
+                fade=ns.fade,
+            ),
+            inference=inference,
+        )
+    except (ImportError, RuntimeError, ValueError) as exc:
+        raise _MaskError(f"vmaf-roi-score: saliency mask failed: {exc}") from exc
+
+
+def _score_masked(ns: argparse.Namespace) -> ScoreResult:
+    """Materialise the mask into a temp dir and score the distorted pair against it.
+
+    The `vmaf` run stays inside the ``TemporaryDirectory`` block so the
+    masked YUV still exists when the binary reads it; only the result
+    outlives the scratch directory.
+    """
     with tempfile.TemporaryDirectory(prefix="vmaf_roi_score_") as tmp:
         masked_yuv = Path(tmp) / "distorted.saliency-masked.yuv"
-        try:
-            from .mask import MaskRequest, apply_saliency_mask, synthesise_uniform_mask
+        _materialise_mask(ns, masked_yuv)
+        return run_score(_score_request(ns, masked_yuv), vmaf_bin=ns.vmaf_bin)
 
-            inference = None
-            saliency_model = (
-                ns.saliency_model if ns.saliency_model is not None else Path("synthetic")
-            )
-            if ns.synthetic_mask is not None:
-                fill = float(ns.synthetic_mask)
-                saliency_model = Path("synthetic")
 
-                def _synthetic_mask(_rgb: bytes, width: int, height: int) -> list[list[float]]:
-                    return synthesise_uniform_mask(width, height, fill=fill)
-
-                inference = _synthetic_mask
-
-            apply_saliency_mask(
-                MaskRequest(
-                    reference=ns.reference,
-                    distorted=ns.distorted,
-                    output=masked_yuv,
-                    width=ns.width,
-                    height=ns.height,
-                    pix_fmt=ns.pix_fmt,
-                    saliency_model=saliency_model,
-                    threshold=ns.threshold,
-                    fade=ns.fade,
-                ),
-                inference=inference,
-            )
-        except (ImportError, RuntimeError, ValueError) as exc:
-            sys.stderr.write(f"vmaf-roi-score: saliency mask failed: {exc}\n")
-            return 64
-
-        masked_req = ScoreRequest(
-            reference=ns.reference,
-            distorted=masked_yuv,
-            width=ns.width,
-            height=ns.height,
-            pix_fmt=ns.pix_fmt,
-            model=ns.model,
-        )
-        masked = run_score(masked_req, vmaf_bin=ns.vmaf_bin)
-
-    if masked.exit_status != 0:
-        sys.stderr.write(
-            f"vmaf-roi-score: saliency-masked vmaf run failed (exit={masked.exit_status}); "
-            f"stderr tail:\n{masked.stderr_tail}\n"
-        )
-        return masked.exit_status
-
-    roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
-
-    payload = {
+def _build_payload(
+    ns: argparse.Namespace, full: ScoreResult, masked: ScoreResult, roi: float
+) -> dict[str, object]:
+    """Assemble the JSON record, pinned to the canonical key order."""
+    payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "vmaf_full": full.vmaf_score,
         "vmaf_masked": masked.vmaf_score,
@@ -226,13 +253,47 @@ def main(argv: list[str] | None = None) -> int:
         "distorted": str(ns.distorted),
     }
     # Pin key order to the canonical schema; tests assert on this.
-    payload = {k: payload[k] for k in ROI_RESULT_KEYS}
+    return {k: payload[k] for k in ROI_RESULT_KEYS}
 
+
+def _emit(ns: argparse.Namespace, payload: dict[str, object]) -> None:
+    """Write the record to `--output`, or to stdout when it is unset."""
     text = json.dumps(payload, indent=2)
     if ns.output is None:
         sys.stdout.write(text + "\n")
     else:
         ns.output.write_text(text + "\n", encoding="utf-8")
+
+
+def _report_run_failure(label: str, result: ScoreResult) -> int:
+    """Print the failing `vmaf` run's stderr tail and hand back its exit status."""
+    sys.stderr.write(
+        f"vmaf-roi-score: {label} vmaf run failed (exit={result.exit_status}); "
+        f"stderr tail:\n{result.stderr_tail}\n"
+    )
+    return result.exit_status
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    ns = parser.parse_args(argv)
+    _validate(ns)
+
+    full = run_score(_score_request(ns, ns.distorted), vmaf_bin=ns.vmaf_bin)
+    if full.exit_status != 0:
+        return _report_run_failure("full-frame", full)
+
+    try:
+        masked = _score_masked(ns)
+    except _MaskError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return _MASK_FAILURE_EXIT
+
+    if masked.exit_status != 0:
+        return _report_run_failure("saliency-masked", masked)
+
+    roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+    _emit(ns, _build_payload(ns, full, masked, roi))
     return 0
 
 

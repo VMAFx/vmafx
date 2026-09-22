@@ -7,11 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/golusoris/golusoris/core/clikit"
@@ -19,6 +19,7 @@ import (
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"github.com/VMAFx/vmafx/pkg/prefilter"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/scorecli"
@@ -92,6 +93,13 @@ Example:
     --src ref.yuv --width 1920 --height 1080 --duration 10 \
     --target-vmaf 93 --encoder libx264 --output rec.json`
 
+	registerPrefilterFlags(cmd, flags)
+
+	return cmd
+}
+
+// registerPrefilterFlags binds all prefilter-subcommand flags onto cmd.
+func registerPrefilterFlags(cmd *cobra.Command, flags *prefilterFlags) {
 	cmd.Flags().StringVar(&flags.src, "src", "",
 		"Source video; required for the live loop, optional with --smoke")
 	cmd.Flags().IntVar(&flags.width, "width", 0,
@@ -136,12 +144,10 @@ Example:
 	cmd.Flags().StringVar(&flags.vmafBin, "vmaf-bin", "vmaf", "libvmaf CLI binary")
 	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"libvmaf model version string")
-	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/prefilter",
+	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir/cache/vmafx-tune/prefilter",
 		"Scratch directory for the probe encodes")
 	cmd.Flags().StringVar(&flags.output, "output", "",
 		"JSON destination for the recommendation (default: stdout)")
-
-	return cmd
 }
 
 // runPrefilter validates the flags, builds the probe and runs the search.
@@ -173,33 +179,9 @@ func runPrefilter(ctx context.Context, d deps, flags *prefilterFlags) error {
 	}
 
 	if !flags.smoke {
-		if flags.src == "" {
-			return &exitCodeError{code: 2, err: errors.New(
-				"--src is required for the live loop")}
+		if err := attachPrefilterLiveProbe(ctx, d, flags, &opts); err != nil {
+			return err
 		}
-		if flags.width <= 0 || flags.height <= 0 {
-			return &exitCodeError{code: 2, err: errors.New(
-				"--width / --height are required for the live loop (raw-YUV geometry)")}
-		}
-		if !prefilter.FilterAvailable(ctx, flags.ffmpegBin, prefilter.FilterName) {
-			return &exitCodeError{code: 2, err: fmt.Errorf(
-				"%w: %q is not in this ffmpeg build (%s). Build ffmpeg with the "+
-					"Pelorus Vulkan filter, or use --smoke to exercise the search "+
-					"loop without a live encode (ADR-1116 / pelorus ADR-0110)",
-				prefilter.ErrFilterUnavailable, prefilter.FilterName, flags.ffmpegBin)}
-		}
-		backend := flags.scoreBackend
-		if backend == "auto" {
-			backend = ""
-		}
-		d.Log.InfoContext(ctx, "prefilter live loop",
-			"score_backend", flags.scoreBackend, "encoder", flags.encoder)
-
-		probe, probeErr := buildPrefilterProbe(d, flags, backend)
-		if probeErr != nil {
-			return &exitCodeError{code: 2, err: probeErr}
-		}
-		opts.Probe = probe
 	}
 
 	result, err := prefilter.RecommendPrefilter(ctx, opts)
@@ -223,6 +205,43 @@ func runPrefilter(ctx context.Context, d deps, flags *prefilterFlags) error {
 	return printErr
 }
 
+// attachPrefilterLiveProbe validates live-loop flags, checks that the Pelorus
+// deband filter is available in the ffmpeg build, and wires a real probe
+// function into opts. It returns a usage-exit-2 error on any validation
+// failure or when the filter is missing from the build.
+func attachPrefilterLiveProbe(
+	ctx context.Context, d deps, flags *prefilterFlags, opts *prefilter.Options,
+) error {
+	if flags.src == "" {
+		return &exitCodeError{code: 2, err: errors.New(
+			"--src is required for the live loop")}
+	}
+	if flags.width <= 0 || flags.height <= 0 {
+		return &exitCodeError{code: 2, err: errors.New(
+			"--width / --height are required for the live loop (raw-YUV geometry)")}
+	}
+	if !prefilter.FilterAvailable(ctx, flags.ffmpegBin, prefilter.FilterName) {
+		return &exitCodeError{code: 2, err: fmt.Errorf(
+			"%w: %q is not in this ffmpeg build (%s). Build ffmpeg with the "+
+				"Pelorus Vulkan filter, or use --smoke to exercise the search "+
+				"loop without a live encode (ADR-1116 / pelorus ADR-0110)",
+			prefilter.ErrFilterUnavailable, prefilter.FilterName, flags.ffmpegBin)}
+	}
+	backend := flags.scoreBackend
+	if backend == "auto" {
+		backend = ""
+	}
+	d.Log.InfoContext(ctx, "prefilter live loop",
+		"score_backend", flags.scoreBackend, "encoder", flags.encoder)
+
+	probe, probeErr := buildPrefilterProbe(d, flags, backend)
+	if probeErr != nil {
+		return &exitCodeError{code: 2, err: probeErr}
+	}
+	opts.Probe = probe
+	return nil
+}
+
 // buildPrefilterProbe builds the live (deband, crf) -> ProbeResult loop.
 //
 // Each call emits the deband -vf fragment through the filter adapter, runs
@@ -241,83 +260,135 @@ func buildPrefilterProbe(d deps, flags *prefilterFlags, backend string) (prefilt
 		return nil, fmt.Errorf("create probe workdir: %w", mkErr)
 	}
 	sourceIsContainer := scorecli.NeedsDecode(flags.src)
+	runner := &prefilterProbeRunner{
+		d: d, flags: flags, backend: backend, adapter: adapter,
+		workdir: workdir, sourceIsContainer: sourceIsContainer,
+	}
+	return runner.run, nil
+}
 
-	return func(ctx context.Context, deband map[string]float64, crf int) (prefilter.ProbeResult, error) {
-		fragment, fragErr := adapter.VFFragment(deband, false)
-		if fragErr != nil {
-			return prefilter.ProbeResult{}, fragErr
-		}
-		slot := filepath.Join(workdir,
-			fmt.Sprintf("probe_crf%d_%06x.mp4", crf, fragmentTag(fragment)))
+type prefilterProbeRunner struct {
+	d                 deps
+	flags             *prefilterFlags
+	backend           string
+	adapter           prefilter.Adapter
+	workdir           string
+	sourceIsContainer bool
+	sequence          atomic.Uint64
+	encodeFn          prefilterEncodeFn
+}
 
-		encRes, encErr := ffencode.Run(ctx, ffencode.Request{
-			Source: flags.src, Width: flags.width, Height: flags.height,
-			PixFmt: flags.pixFmt, Framerate: flags.framerate,
-			DurationS: flags.durationS,
-			Encoder:   flags.encoder, Preset: flags.preset, CRF: crf,
-			Output: slot,
-			// The deband fragment is injected as an input filter chain ahead
-			// of the encoder; extra params land after the codec args and
-			// before the output.
-			ExtraParams:       []string{"-vf", fragment},
-			SourceIsContainer: sourceIsContainer,
-		}, flags.ffmpegBin, nil)
-		if encErr != nil {
-			return prefilter.ProbeResult{}, encErr
-		}
-		defer func() {
-			if rmErr := os.Remove(slot); rmErr != nil && !os.IsNotExist(rmErr) {
-				d.Log.WarnContext(ctx, "remove probe encode",
-					"path", slot, "error", rmErr)
-			}
-		}()
+type prefilterEncodeFn func(
+	ctx context.Context, slot string, fragment string, crf int,
+) (ffencode.Result, error)
 
-		if encRes.ExitStatus != 0 || encRes.EncodeSizeBytes == 0 {
-			// A failed probe scores 0 VMAF so the sampler steers away from
-			// that region rather than aborting the whole sweep.
-			d.Log.WarnContext(ctx, "probe encode failed; scoring it 0 VMAF",
-				"crf", crf, "exit_status", encRes.ExitStatus,
-				"stderr_tail", encRes.StderrTail)
-			return prefilter.ProbeResult{VMAF: 0.0, Kbps: 0.0, VFFragment: fragment}, nil
-		}
-		observedKbps := ffencode.BitrateKbps(encRes.EncodeSizeBytes, flags.durationS)
+func (p *prefilterProbeRunner) run(
+	ctx context.Context, deband map[string]float64, crf int,
+) (prefilter.ProbeResult, error) {
+	fragment, err := p.adapter.VFFragment(deband, false)
+	if err != nil {
+		return prefilter.ProbeResult{}, err
+	}
+	slot := p.slotPath(fragment, crf)
+	defer p.removePath(ctx, slot)
+	encRes, err := p.encode(ctx, slot, fragment, crf)
+	if err != nil {
+		return prefilter.ProbeResult{}, err
+	}
+	if encRes.ExitStatus != 0 || encRes.EncodeSizeBytes == 0 {
+		p.d.Log.WarnContext(ctx, "probe encode failed; scoring it 0 VMAF",
+			"crf", crf, "exit_status", encRes.ExitStatus,
+			"stderr_tail", encRes.StderrTail)
+		return prefilter.ProbeResult{VMAF: 0.0, Kbps: 0.0, VFFragment: fragment}, nil
+	}
+	observedKbps := ffencode.BitrateKbps(encRes.EncodeSizeBytes, p.flags.durationS)
+	distorted, decoded, decodeErr := p.decode(ctx, slot, crf)
+	if distorted != slot {
+		defer p.removePath(ctx, distorted)
+	}
+	if decodeErr != nil {
+		return prefilter.ProbeResult{}, decodeErr
+	}
+	if !decoded {
+		return prefilter.ProbeResult{VMAF: 0.0, Kbps: observedKbps, VFFragment: fragment}, nil
+	}
+	return p.score(ctx, distorted, fragment, observedKbps)
+}
 
-		distorted := slot
-		if scorecli.NeedsDecode(slot) {
-			decoded := strings.TrimSuffix(slot, filepath.Ext(slot)) + ".decoded.yuv"
-			argv := scorecli.DecodeCommand(
-				slot, decoded, flags.pixFmt, flags.ffmpegBin, flags.durationS)
-			_, _, exitStatus, decodeErr := runCommand(ctx, argv)
-			if decodeErr != nil || exitStatus != 0 {
-				d.Log.WarnContext(ctx, "probe decode failed; scoring it 0 VMAF",
-					"crf", crf, "exit_status", exitStatus)
-				return prefilter.ProbeResult{VMAF: 0.0, Kbps: observedKbps, VFFragment: fragment}, nil
-			}
-			defer func() {
-				if rmErr := os.Remove(decoded); rmErr != nil && !os.IsNotExist(rmErr) {
-					d.Log.WarnContext(ctx, "remove decoded probe",
-						"path", decoded, "error", rmErr)
-				}
-			}()
-			distorted = decoded
-		}
+func (p *prefilterProbeRunner) encode(
+	ctx context.Context, slot string, fragment string, crf int,
+) (ffencode.Result, error) {
+	if p.encodeFn != nil {
+		return p.encodeFn(ctx, slot, fragment, crf)
+	}
+	return ffencode.Run(ctx, ffencode.Request{
+		Source: p.flags.src, Width: p.flags.width, Height: p.flags.height,
+		PixFmt: p.flags.pixFmt, Framerate: p.flags.framerate,
+		DurationS: p.flags.durationS,
+		Encoder:   p.flags.encoder, Preset: p.flags.preset, CRF: crf,
+		Output:            slot,
+		ExtraParams:       []string{"-vf", fragment},
+		SourceIsContainer: p.sourceIsContainer,
+	}, p.flags.ffmpegBin, nil)
+}
 
-		scoreRes, scoreErr := scorecli.Run(ctx, scorecli.Request{
-			Reference: flags.src, Distorted: distorted,
-			Width: flags.width, Height: flags.height, PixFmt: flags.pixFmt,
-			Model: flags.vmafModel, DurationS: flags.durationS,
-		}, flags.vmafBin, backend, nil)
-		if scoreErr != nil {
-			return prefilter.ProbeResult{}, scoreErr
-		}
-		vmaf := scoreRes.VMAFScore
-		if math.IsNaN(vmaf) {
-			vmaf = 0.0
-		}
-		return prefilter.ProbeResult{
-			VMAF: vmaf, Kbps: observedKbps, VFFragment: fragment,
-		}, nil
+func (p *prefilterProbeRunner) decode(
+	ctx context.Context, slot string, crf int,
+) (string, bool, error) {
+	if !scorecli.NeedsDecode(slot) {
+		return slot, true, nil
+	}
+	decoded := strings.TrimSuffix(slot, filepath.Ext(slot)) + ".decoded.yuv"
+	if err := ctx.Err(); err != nil {
+		return decoded, false, err
+	}
+	argv := scorecli.DecodeCommand(
+		slot, decoded, p.flags.pixFmt, p.flags.ffmpegBin, p.flags.durationS)
+	_, _, exitStatus, err := runCommand(ctx, argv)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return decoded, false, ctxErr
+	}
+	if err != nil {
+		return decoded, false, fmt.Errorf("decode probe crf %d: %w", crf, err)
+	}
+	if exitStatus != 0 {
+		p.d.Log.WarnContext(ctx, "probe decode failed; scoring it 0 VMAF",
+			"crf", crf, "exit_status", exitStatus)
+		return decoded, false, nil
+	}
+	return decoded, true, nil
+}
+
+func (p *prefilterProbeRunner) score(
+	ctx context.Context, distorted string, fragment string, observedKbps float64,
+) (prefilter.ProbeResult, error) {
+	result, err := scorecli.Run(ctx, scorecli.Request{
+		Reference: p.flags.src, Distorted: distorted,
+		Width: p.flags.width, Height: p.flags.height, PixFmt: p.flags.pixFmt,
+		Model: p.flags.vmafModel, DurationS: p.flags.durationS,
+	}, p.flags.vmafBin, p.backend, nil)
+	if err != nil {
+		return prefilter.ProbeResult{}, err
+	}
+	vmaf := result.VMAFScore
+	if math.IsNaN(vmaf) {
+		vmaf = 0.0
+	}
+	return prefilter.ProbeResult{
+		VMAF: vmaf, Kbps: observedKbps, VFFragment: fragment,
 	}, nil
+}
+
+func (p *prefilterProbeRunner) removePath(ctx context.Context, path string) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		p.d.Log.WarnContext(ctx, "remove probe file", "path", path, "error", err)
+	}
+}
+
+func (p *prefilterProbeRunner) slotPath(fragment string, crf int) string {
+	sequence := p.sequence.Add(1)
+	return filepath.Join(p.workdir, fmt.Sprintf(
+		"probe_crf%d_%06x_%08x.mp4", crf, fragmentTag(fragment), sequence))
 }
 
 // fragmentTag derives a short, stable filename tag from a -vf fragment so

@@ -1,0 +1,1 @@
+| [ADR-1288](1288-mcp-tool-schema-fail-closed.md) | An MCP tool schema that fails to marshal aborts registration and startup; no permissive default is ever substituted. | Accepted | mcp, agents, security, api |

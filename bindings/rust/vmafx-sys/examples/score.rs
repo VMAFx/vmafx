@@ -16,33 +16,66 @@
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use vmafx_sys::safe::{VmafContext, VmafModel, alloc_yuv420p_8bit, unref_picture, version};
 
 const WIDTH: u32 = 576;
 const HEIGHT: u32 = 324;
-const N_FRAMES: usize = 240;
+const N_FRAMES: u32 = 240;
+
+struct InputPaths {
+    reference: String,
+    distorted: String,
+    model: String,
+}
 
 fn repo_root() -> PathBuf {
     if let Ok(v) = env::var("VMAFX_REPO") {
         return PathBuf::from(v);
     }
-    // Walk up from the manifest directory until we find a meson.build at root.
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        if dir.join("meson.build").exists() || dir.join("Cargo.toml").exists() {
-            // Check this is actually the repo root (has a model/ dir).
-            if dir.join("model").exists() {
-                return dir;
-            }
-        }
-        if !dir.pop() {
-            break;
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .ancestors()
+        .find(|dir| {
+            (dir.join("meson.build").exists() || dir.join("Cargo.toml").exists())
+                && dir.join("model").exists()
+        })
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+}
+
+fn resolve_inputs(root: &Path) -> InputPaths {
+    InputPaths {
+        reference: env::var("VMAFX_YUV_REF").unwrap_or_else(|_| {
+            root.join("python/test/resource/yuv/src01_hrc00_576x324.yuv")
+                .to_string_lossy()
+                .into_owned()
+        }),
+        distorted: env::var("VMAFX_YUV_DIST").unwrap_or_else(|_| {
+            root.join("python/test/resource/yuv/src01_hrc01_576x324.yuv")
+                .to_string_lossy()
+                .into_owned()
+        }),
+        model: env::var("VMAFX_MODEL").unwrap_or_else(|_| {
+            root.join("model/vmaf_v0.6.1.json")
+                .to_string_lossy()
+                .into_owned()
+        }),
+    }
+}
+
+fn inputs_available(paths: &InputPaths) -> bool {
+    for (label, path) in [
+        ("reference YUV", &paths.reference),
+        ("distorted YUV", &paths.distorted),
+        ("model", &paths.model),
+    ] {
+        if !Path::new(path).exists() {
+            eprintln!("SKIP: {label} not found at {path} — test fixtures absent");
+            return false;
         }
     }
-    // Fallback: assume we are running from the repo root.
-    PathBuf::from(".")
+    true
 }
 
 // similar_names: cb_plane/cr_plane and src_cb/src_cr are standard YUV
@@ -75,6 +108,7 @@ fn read_yuv_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> std::io:
     // Copy into the VmafPicture planes.
     // cast_sign_loss: libvmaf strides are always non-negative for a valid picture.
     #[allow(clippy::cast_sign_loss)]
+    // SAFETY: allocated picture planes cover the declared dimensions and strides.
     unsafe {
         let luma_plane = pic.data[0].cast::<u8>();
         let cb_plane = pic.data[1].cast::<u8>();
@@ -101,58 +135,18 @@ fn read_yuv_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> std::io:
     Ok(true)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = repo_root();
-
-    let yuv_ref_path = env::var("VMAFX_YUV_REF").unwrap_or_else(|_| {
-        root.join("python/test/resource/yuv/src01_hrc00_576x324.yuv")
-            .to_string_lossy()
-            .into_owned()
-    });
-    let yuv_dist_path = env::var("VMAFX_YUV_DIST").unwrap_or_else(|_| {
-        root.join("python/test/resource/yuv/src01_hrc01_576x324.yuv")
-            .to_string_lossy()
-            .into_owned()
-    });
-    let model_path = env::var("VMAFX_MODEL").unwrap_or_else(|_| {
-        root.join("model/vmaf_v0.6.1.json")
-            .to_string_lossy()
-            .into_owned()
-    });
-
-    println!("vmafx-sys version: {}", version());
-    println!("Reference:  {yuv_ref_path}");
-    println!("Distorted:  {yuv_dist_path}");
-    println!("Model:      {model_path}");
-
-    // Graceful skip when YUV fixtures are absent (CI without full test resources).
-    // Pattern mirrors integration_test.rs: print SKIP and return Ok(()) so the
-    // example exits 0 rather than failing with a misleading file-not-found error.
-    if !std::path::Path::new(&yuv_ref_path).exists() {
-        eprintln!("SKIP: reference YUV not found at {yuv_ref_path} — test fixtures absent");
-        return Ok(());
-    }
-    if !std::path::Path::new(&yuv_dist_path).exists() {
-        eprintln!("SKIP: distorted YUV not found at {yuv_dist_path} — test fixtures absent");
-        return Ok(());
-    }
-    if !std::path::Path::new(&model_path).exists() {
-        eprintln!("SKIP: model not found at {model_path} — model files absent");
-        return Ok(());
-    }
-
+fn score_inputs(paths: &InputPaths) -> Result<(u32, f64), Box<dyn std::error::Error>> {
     let mut ctx = VmafContext::new()?;
-    let mut model = VmafModel::from_path(&model_path)?;
-
+    let mut model = VmafModel::from_path(&paths.model)?;
     ctx.use_features_from_model(&mut model)?;
 
-    let mut ref_file = File::open(&yuv_ref_path)
-        .map_err(|e| format!("Cannot open reference YUV {yuv_ref_path}: {e}"))?;
-    let mut dist_file = File::open(&yuv_dist_path)
-        .map_err(|e| format!("Cannot open distorted YUV {yuv_dist_path}: {e}"))?;
+    let mut ref_file = File::open(&paths.reference)
+        .map_err(|e| format!("Cannot open reference YUV {}: {e}", paths.reference))?;
+    let mut dist_file = File::open(&paths.distorted)
+        .map_err(|e| format!("Cannot open distorted YUV {}: {e}", paths.distorted))?;
 
     let mut n_frames = 0u32;
-    loop {
+    for frame_index in 0..N_FRAMES {
         let mut ref_pic = alloc_yuv420p_8bit(WIDTH, HEIGHT)?;
         let mut dist_pic = alloc_yuv420p_8bit(WIDTH, HEIGHT)?;
 
@@ -179,22 +173,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Pass by move: ownership of both pictures transfers to libvmaf.
-        ctx.read_pictures(ref_pic, dist_pic, n_frames)?;
-        n_frames += 1;
-
-        if n_frames as usize >= N_FRAMES {
-            break;
-        }
+        ctx.read_pictures(ref_pic, dist_pic, frame_index)?;
+        n_frames = frame_index + 1;
     }
 
     ctx.flush()?;
-
     if n_frames == 0 {
         eprintln!("ERROR: no frames read — check that the YUV paths are correct.");
         std::process::exit(1);
     }
-
     let score = ctx.score_pooled(&mut model, 0, n_frames - 1)?;
+    Ok((n_frames, score))
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let paths = resolve_inputs(&repo_root());
+    println!("vmafx-sys version: {}", version());
+    println!("Reference:  {}", paths.reference);
+    println!("Distorted:  {}", paths.distorted);
+    println!("Model:      {}", paths.model);
+
+    if !inputs_available(&paths) {
+        return Ok(());
+    }
+
+    let (n_frames, score) = score_inputs(&paths)?;
     println!("Frames processed: {n_frames}");
     println!("Mean VMAF score:  {score:.4}");
 

@@ -15,7 +15,8 @@
 //     TestAppStartsAndStops populates the *http.Server and asserts its bound
 //     Addr is non-empty so a regression can never silently drop the HTTP surface.
 //  3. R1 (cgo lifetime): the gRPC server drains BEFORE the libvmaf scorer is
-//     closed. The scorer-close OnStop hook is appended inside provideScorer; a
+//     closed. The scorer-close OnStop hook is appended inside the shared
+//     scoringservice.ProvideScorer; a
 //     standalone fx.Invoke(func(_ *libvmaf.Scorer){}) placed BEFORE the gRPC
 //     registration invoke forces the scorer to be constructed (and its hook
 //     appended) ahead of golusoris grpc.Module's GracefulStop hook. fx runs
@@ -42,17 +43,12 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/fx/fxtest"
-	googlegrpc "google.golang.org/grpc"
 
-	"github.com/golusoris/golusoris"
 	"github.com/golusoris/golusoris/core/clock"
-	grpcmod "github.com/golusoris/golusoris/grpc"
 	"github.com/golusoris/golusoris/k8s/health"
 	"github.com/golusoris/golusoris/observability/statuspage"
 	"github.com/golusoris/golusoris/otel"
 
-	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
-	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
@@ -80,36 +76,10 @@ func writeVmafStubForApp(t *testing.T) {
 	t.Setenv("VMAFX_LOG_LEVEL", "ERROR")
 }
 
-// productionGraph returns the exact provider/invoke set used by main(), minus
-// the .Run() blocking call. Kept in lockstep with main() so the tests exercise
-// the real composition — including the standalone *http.Server invoke (F1) in
-// the same relative position (after the gRPC registration invoke and after
-// mountHTTPRoutes).
+// productionGraph uses the exact provider/invoke set from main(), replacing
+// only the watched production config with a test-local non-watching config.
 func productionGraph() fx.Option {
-	return fx.Options(
-		bootstrap.Base,
-		fx.Replace(serverEnvOptions(false)),
-		golusoris.HTTP,
-		bootstrap.HTTPTracing,
-		grpcmod.Module,
-		fx.Provide(
-			provideScorer,
-			provideMetrics,
-			provideScoreLimiter,
-			provideStatusRegistry,
-			newGRPCServerImpl,
-		),
-		// R1 ordering invoke: realise the Scorer before the gRPC server.
-		fx.Invoke(func(_ *libvmaf.Scorer) {}),
-		fx.Invoke(func(impl *grpcServer, s *googlegrpc.Server) {
-			vmafxv1.RegisterVmafxScoringServer(s, impl)
-		}),
-		fx.Invoke(mountHTTPRoutes),
-		fx.Invoke(registerHealthChecks),
-		// F1 / DTL-2: force construction of the golusoris graceful *http.Server so
-		// its OnStart listener binds. Placed last so its OnStop fires first.
-		fx.Invoke(func(_ *http.Server) {}),
-	)
+	return fx.Options(productionOptions(fx.Replace(serverEnvOptions(false)))...)
 }
 
 // TestAppGraphValidates asserts the production dependency graph is satisfiable
@@ -147,7 +117,8 @@ func TestAppStartsAndStops(t *testing.T) {
 // orderRecorder is a minimal fxevent.Logger that records the CallerName of each
 // OnStop hook as it begins executing. CallerName is the name of the function
 // that *scheduled* the hook, so the scorer's real Close hook (scheduled inside
-// provideScorer) and golusoris grpc.Module's GracefulStop hook (scheduled inside
+// scoringservice.ProvideScorer) and golusoris grpc.Module's GracefulStop hook
+// (scheduled inside
 // the framework's newServer) are distinguishable without injecting proxy hooks.
 type orderRecorder struct {
 	mu    sync.Mutex
@@ -168,8 +139,9 @@ func (r *orderRecorder) LogEvent(e fxevent.Event) {
 //
 // Unlike a proxy-hook approach, this observes the REAL hook firing order: an
 // fxevent.Logger records the CallerName of every OnStop hook as it fires. The
-// scorer's actual Close hook is scheduled inside provideScorer (CallerName
-// contains "provideScorer"); golusoris grpc.Module's actual GracefulStop hook is
+// scorer's actual Close hook is scheduled inside scoringservice.ProvideScorer
+// (CallerName contains "scoringservice.ProvideScorer"); golusoris grpc.Module's
+// actual GracefulStop hook is
 // scheduled inside the framework's gRPC server constructor (CallerName contains
 // "golusoris/grpc"). A regression that constructs the gRPC server before the
 // scorer flips the firing sequence and fails the inversion check below.
@@ -194,7 +166,7 @@ func TestStopOrderScorerAfterGRPC(t *testing.T) {
 	grpcIdx, scorerIdx := -1, -1
 	for i, caller := range rec.order {
 		switch {
-		case strings.Contains(caller, "provideScorer"):
+		case strings.Contains(caller, "scoringservice.ProvideScorer"):
 			if scorerIdx == -1 {
 				scorerIdx = i
 			}
@@ -208,7 +180,7 @@ func TestStopOrderScorerAfterGRPC(t *testing.T) {
 		t.Fatalf("did not observe a golusoris/grpc OnStop hook; callers=%v", rec.order)
 	}
 	if scorerIdx == -1 {
-		t.Fatalf("did not observe a provideScorer OnStop hook; callers=%v", rec.order)
+		t.Fatalf("did not observe a scoringservice.ProvideScorer OnStop hook; callers=%v", rec.order)
 	}
 	if grpcIdx > scorerIdx {
 		t.Errorf("R1 violated: gRPC GracefulStop (idx %d) ran AFTER scorer Close (idx %d); callers=%v",
@@ -231,7 +203,9 @@ func TestProductionGraphBadHTTPAddrFailsStart(t *testing.T) {
 
 	if err := app.Start(ctx); err == nil {
 		// Make sure we don't leak a started app if Start unexpectedly succeeds.
-		_ = app.Stop(context.Background())
+		if stopErr := app.Stop(context.Background()); stopErr != nil {
+			t.Errorf("stop unexpectedly-started app: %v", stopErr)
+		}
 		t.Fatal("expected app.Start to fail with an unbindable HTTP address, got nil")
 	}
 }

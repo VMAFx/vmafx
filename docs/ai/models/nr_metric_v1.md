@@ -44,7 +44,7 @@ reference stream.
 | Training corpus | KoNViD-1k (1 200 clips; CC BY 4.0; not redistributed in-tree) |
 | Val MSE | ~0.382 (RMSE ≈ 0.62 on 1–5 MOS, KoNViD-1k validation split) |
 | Quantisation | Dynamic-PTQ INT8 via `ai/scripts/ptq_dynamic.py`; `quant_accuracy_budget_plcc = 0.01` |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Trainer / exporter | `ai/scripts/train_konvid.py` + `ai/scripts/export_tiny_models.py` |
 
 Fresh exports from `ai/scripts/export_tiny_models.py` add ADR-0661

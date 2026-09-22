@@ -244,6 +244,24 @@ VMAFX_MCP_TRANSPORT=http VMAFX_MCP_HTTP_ADDR=:8080 vmafx-mcp
 | Binary size | ~50 MB Python env | ~10 MB static binary |
 | Startup time | ~300 ms (Python import) | ~10 ms |
 
+### Startup contract: all tools or none
+
+`vmafx-mcp` serves the complete 24-tool surface or it does not start. Every
+tool's input schema is serialised during startup, and a schema that fails to
+serialise aborts the whole registration: the process writes the failing tool's
+name to stderr and exits non-zero rather than starting.
+
+This matters for clients because the alternative — starting anyway with that
+one tool's schema replaced by a permissive `{"type": "object"}` — would look
+identical over the wire to a healthy server, while the affected tool silently
+accepted every argument map, including ones it cannot run. A tool that is
+listed is therefore a tool whose declared arguments were validated as written.
+
+The failure is a defect in the server's own schema literals, not something an
+operator can configure, so there is no flag to relax it. If `vmafx-mcp` exits
+at startup with `registering the MCP tool surface: tool "<name>": ...`, report
+the tool name — nothing in the environment can cause or fix it.
+
 ### Environment variables
 
 Tool-handler variables are the same as the Python server (`VMAF_BIN`,

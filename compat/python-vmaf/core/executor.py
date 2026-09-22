@@ -10,11 +10,11 @@ from vmaf.core.asset import Asset
 from vmaf.core.mixin import TypeVersionEnabled
 from vmaf.tools.decorator import deprecated, override
 from vmaf.tools.misc import (
+    _parallel_map_serialized,
     get_dir_without_last_slash,
     get_file_name_extension,
     make_parent_dirs_if_nonexist,
     match_any_files,
-    parallel_map,
     run_process,
 )
 from vmaf.tools.reader import YuvReader
@@ -22,6 +22,8 @@ from vmaf.tools.writer import YuvWriter
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+
+_MULTIPROCESSING_CONTEXT = multiprocessing.get_context("spawn")
 
 
 class Executor(TypeVersionEnabled):
@@ -180,28 +182,12 @@ class Executor(TypeVersionEnabled):
         assert processes is None or (isinstance(processes, int) and processes >= 1)
 
         if parallelize:
-            # create locks for unique assets (uniqueness is identified by str(asset))
-            map_asset_lock = {}
-            locks = []
-            for asset in self.assets:
-                asset_str = str(asset)
-                if asset_str not in map_asset_lock:
-                    map_asset_lock[asset_str] = multiprocessing.Lock()
-                locks.append(map_asset_lock[asset_str])
-
-            # pack key arguments to be used as inputs to map function
-            list_args = []
-            for asset, lock in zip(self.assets, locks):
-                list_args.append([asset, lock])
-
-            def _run(asset_lock):
-                asset, lock = asset_lock
-                lock.acquire()
-                result = self._run_on_asset(asset)
-                lock.release()
-                return result
-
-            self.results = parallel_map(_run, list_args, processes=processes)
+            self.results = _parallel_map_serialized(
+                self._run_on_asset,
+                self.assets,
+                [str(asset) for asset in self.assets],
+                processes=processes,
+            )
         else:
             self.results = list(map(self._run_on_asset, self.assets))
 
@@ -336,146 +322,95 @@ class Executor(TypeVersionEnabled):
             asset.dis_path
         ), "Distorted path {} does not exist.".format(asset.dis_path)
 
-    def _run_on_asset(self, asset):
-        # Wraper around the essential function _generate_result, to
-        # do housekeeping work including 1) asserts of asset, 2) skip run if
-        # log already exist, 3) creating fifo, 4) delete work file and dir
+    def _load_result(self, asset):
+        if not self.result_store:
+            return None
 
-        if self.result_store:
-            result = self.result_store.load(asset, self.executor_id)
-            qw, qh = asset.quality_width_height
-            if (
-                result is not None
-                and self.save_workfiles is True
-                and not self.result_store.has_workfile(
-                    asset,
-                    self.executor_id,
-                    f"_dis.{qw}x{qh}.{self._get_workfile_yuv_type(asset)}.yuv",
-                )
-            ):
-                result = None  # if save_workfiles is True and has_workfile is False, invalidate result and rerun
-        else:
-            result = None
+        result = self.result_store.load(asset, self.executor_id)
+        if result is None or self.save_workfiles is not True:
+            return result
 
-        # if result can be retrieved from result_store, skip log file
-        # generation and reading result from log file, but directly
-        # return the retrieved result
-        if result is not None:
-            if self.logger:
-                self.logger.info("{id} result exists. Skip {id} run.".format(id=self.executor_id))
-        else:
-
-            if self.logger:
-                self.logger.info(
-                    "{id} result does't exist. Perform {id} "
-                    "calculation.".format(id=self.executor_id)
-                )
-
-            # at this stage, it is certain that asset.ref_path and
-            # asset.dis_path will be used. must early determine that
-            # they exists
-            self._assert_paths(asset)
-
-            # if no FFmpeg is involved, directly work on ref_path/dis_path,
-            # instead of opening workfiles
-            self._set_asset_use_path_as_workpath(asset)
-
-            # if no ref/dis_proc_callback is involved, directly work on ref/dis_workfile_path,
-            # instead of opening procfiles
-            self._set_asset_use_workpath_as_procpath(asset)
-
-            # remove workfiles if exist (do early here to avoid race condition
-            # when ref path and dis path have some overlap)
-            if asset.use_path_as_workpath:
-                # do nothing
-                pass
-            else:
-                self._close_workfiles(asset)
-
-            # remove procfiles if exist (do early here to avoid race condition
-            # when ref path and dis path have some overlap)
-            if asset.use_workpath_as_procpath:
-                # do nothing
-                pass
-            else:
-                self._close_procfiles(asset)
-
-            log_file_path = self._get_log_file_path(asset)
-            make_parent_dirs_if_nonexist(log_file_path)
-
-            if asset.use_path_as_workpath:
-                # do nothing
-                pass
-            else:
-                if self.fifo_mode:
-                    self._open_workfiles_in_fifo_mode(asset)
-                else:
-                    self._open_workfiles(asset)
-
-            if asset.use_workpath_as_procpath:
-                # do nothing
-                pass
-            else:
-                if self.fifo_mode:
-                    self._open_procfiles_in_fifo_mode(asset)
-                else:
-                    self._open_procfiles(asset)
-
-            self._prepare_log_file(asset)
-
-            self._generate_result(asset)
-
-            if self.logger:
-                self.logger.info("Read {id} log file, get scores...".format(id=self.executor_id))
-
-            # collect result from each asset's log file
-            result = self._read_result(asset)
-
-            # save result
-            if self.result_store:
-                result = self._save_result(result)
-
-            # clean up workfiles
-            if self.delete_workdir:
-                if asset.use_path_as_workpath:
-                    # do nothing
-                    pass
-                else:
-                    self._close_workfiles(asset)
-
-                if asset.use_workpath_as_procpath:
-                    # do nothing
-                    pass
-                else:
-                    self._close_procfiles(asset)
-
-            # clean up workdir and log files in it
-            if self.delete_workdir:
-
-                # remove log file
-                self._remove_log(asset)
-
-                # remove dir
-                log_file_path = self._get_log_file_path(asset)
-                log_dir = get_dir_without_last_slash(log_file_path)
-                shutil.rmtree(log_dir)
-
-        result = self._post_process_result(result)
-
+        quality_width, quality_height = asset.quality_width_height
+        workfile_suffix = (
+            f"_dis.{quality_width}x{quality_height}.{self._get_workfile_yuv_type(asset)}.yuv"
+        )
+        if not self.result_store.has_workfile(asset, self.executor_id, workfile_suffix):
+            return None
         return result
+
+    def _prepare_asset(self, asset):
+        self._assert_paths(asset)
+        self._set_asset_use_path_as_workpath(asset)
+        self._set_asset_use_workpath_as_procpath(asset)
+
+        if not asset.use_path_as_workpath:
+            self._close_workfiles(asset)
+        if not asset.use_workpath_as_procpath:
+            self._close_procfiles(asset)
+
+        make_parent_dirs_if_nonexist(self._get_log_file_path(asset))
+        if not asset.use_path_as_workpath:
+            if self.fifo_mode:
+                self._open_workfiles_in_fifo_mode(asset)
+            else:
+                self._open_workfiles(asset)
+        if not asset.use_workpath_as_procpath:
+            if self.fifo_mode:
+                self._open_procfiles_in_fifo_mode(asset)
+            else:
+                self._open_procfiles(asset)
+        self._prepare_log_file(asset)
+
+    def _clean_up_asset(self, asset):
+        if not self.delete_workdir:
+            return
+
+        if not asset.use_path_as_workpath:
+            self._close_workfiles(asset)
+        if not asset.use_workpath_as_procpath:
+            self._close_procfiles(asset)
+
+        self._remove_log(asset)
+        log_dir = get_dir_without_last_slash(self._get_log_file_path(asset))
+        shutil.rmtree(log_dir)
+
+    def _calculate_result(self, asset):
+        if self.logger:
+            self.logger.info(
+                "{id} result does't exist. Perform {id} calculation.".format(id=self.executor_id)
+            )
+
+        self._prepare_asset(asset)
+        self._generate_result(asset)
+        if self.logger:
+            self.logger.info("Read {id} log file, get scores...".format(id=self.executor_id))
+        result = self._read_result(asset)
+        if self.result_store:
+            result = self._save_result(result)
+        self._clean_up_asset(asset)
+        return result
+
+    def _run_on_asset(self, asset):
+        """Generate or load one result, then apply executor-specific post-processing."""
+        result = self._load_result(asset)
+        if result is None:
+            result = self._calculate_result(asset)
+        elif self.logger:
+            self.logger.info("{id} result exists. Skip {id} run.".format(id=self.executor_id))
+        return self._post_process_result(result)
 
     def _open_workfiles(self, asset):
         self._open_ref_workfile(asset, fifo_mode=False)
         self._open_dis_workfile(asset, fifo_mode=False)
 
     def _open_workfiles_in_fifo_mode(self, asset):
-        sem = multiprocessing.Semaphore(0)
-        ref_p = multiprocessing.Process(
+        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
+        ref_p = _MULTIPROCESSING_CONTEXT.Process(
             target=self._open_ref_workfile,
             args=(asset, True),
             kwargs={"open_sem": sem},
         )
-        dis_p = multiprocessing.Process(
+        dis_p = _MULTIPROCESSING_CONTEXT.Process(
             target=self._open_dis_workfile,
             args=(asset, True),
             kwargs={"open_sem": sem},
@@ -496,13 +431,13 @@ class Executor(TypeVersionEnabled):
         self._open_dis_procfile(asset, fifo_mode=False)
 
     def _open_procfiles_in_fifo_mode(self, asset):
-        sem = multiprocessing.Semaphore(0)
-        ref_p = multiprocessing.Process(
+        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
+        ref_p = _MULTIPROCESSING_CONTEXT.Process(
             target=self._open_ref_procfile,
             args=(asset, True),
             kwargs={"open_sem": sem},
         )
-        dis_p = multiprocessing.Process(
+        dis_p = _MULTIPROCESSING_CONTEXT.Process(
             target=self._open_dis_procfile,
             args=(asset, True),
             kwargs={"open_sem": sem},
@@ -822,13 +757,10 @@ class Executor(TypeVersionEnabled):
                 height=quality_height,
                 yuv_type=yuv_type,
             ) as ref_yuv_writer:
-                while True:
-                    try:
-                        y, u, v = ref_yuv_reader.next(format="float")
-                        y, u, v = ref_proc_callback(y), u, v
-                        ref_yuv_writer.next(y, u, v, format="float2uint")
-                    except StopIteration:
-                        break
+                for _ in range(ref_yuv_reader.num_frms):
+                    y, u, v = ref_yuv_reader.next(format="float")
+                    y, u, v = ref_proc_callback(y), u, v
+                    ref_yuv_writer.next(y, u, v, format="float2uint")
 
     def _open_dis_procfile(self, asset, fifo_mode, open_sem=None):
 
@@ -865,13 +797,10 @@ class Executor(TypeVersionEnabled):
                 height=quality_height,
                 yuv_type=yuv_type,
             ) as dis_yuv_writer:
-                while True:
-                    try:
-                        y, u, v = dis_yuv_reader.next(format="float")
-                        y, u, v = dis_proc_callback(y), u, v
-                        dis_yuv_writer.next(y, u, v, format="float2uint")
-                    except StopIteration:
-                        break
+                for _ in range(dis_yuv_reader.num_frms):
+                    y, u, v = dis_yuv_reader.next(format="float")
+                    y, u, v = dis_proc_callback(y), u, v
+                    dis_yuv_writer.next(y, u, v, format="float2uint")
 
     def _get_ref_resampling_type(self, asset):
         return asset.ref_resampling_type
@@ -1028,18 +957,9 @@ def run_executors_in_parallel(
         optional_dict2=optional_dict2,
     )
 
-    # create locks for unique assets (uniqueness is identified by str(asset))
-    map_asset_lock = {}
-    locks = []
-    for asset in assets:
-        asset_str = str(asset)
-        if asset_str not in map_asset_lock:
-            map_asset_lock[asset_str] = multiprocessing.Lock()
-        locks.append(map_asset_lock[asset_str])
-
     # pack key arguments to be used as inputs to map function
     list_args = []
-    for asset, lock in zip(assets, locks):
+    for asset in assets:
         list_args.append(
             [
                 executor_class,
@@ -1049,7 +969,6 @@ def run_executors_in_parallel(
                 result_store,
                 optional_dict,
                 optional_dict2,
-                lock,
             ]
         )
 
@@ -1062,19 +981,21 @@ def run_executors_in_parallel(
             result_store,
             optional_dict,
             optional_dict2,
-            lock,
         ) = args
-        lock.acquire()
         executor = executor_class(
             [asset], None, fifo_mode, delete_workdir, result_store, optional_dict, optional_dict2
         )
         executor.run()
-        lock.release()
         return executor
 
     # run
     if parallelize:
-        executors = parallel_map(run_executor, list_args, processes=None)
+        executors = _parallel_map_serialized(
+            run_executor,
+            list_args,
+            [str(asset) for asset in assets],
+            processes=None,
+        )
     else:
         executors = list(map(run_executor, list_args))
 
@@ -1163,8 +1084,8 @@ class NorefExecutorMixin(object):
 
     @override(Executor)
     def _open_workfiles_in_fifo_mode(self, asset):
-        sem = multiprocessing.Semaphore(0)
-        dis_p = multiprocessing.Process(
+        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
+        dis_p = _MULTIPROCESSING_CONTEXT.Process(
             target=self._open_dis_workfile,
             args=(asset, True),
             kwargs={"open_sem": sem},
@@ -1186,8 +1107,8 @@ class NorefExecutorMixin(object):
 
     @override(Executor)
     def _open_procfiles_in_fifo_mode(self, asset):
-        sem = multiprocessing.Semaphore(0)
-        dis_p = multiprocessing.Process(
+        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
+        dis_p = _MULTIPROCESSING_CONTEXT.Process(
             target=self._open_dis_procfile,
             args=(asset, True),
             kwargs={"open_sem": sem},

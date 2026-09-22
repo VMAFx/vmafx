@@ -6,7 +6,7 @@
  *  HIP host glue for the float_motion feature extractor — seventh
  *  kernel-template consumer (T7-10b batch-2 / ADR-0373).
  *
- *  Mirrors libvmaf/src/feature/cuda/float_motion_cuda.h. The HSACO
+ *  Mirrors core/src/feature/cuda/float_motion_cuda.h. The HSACO
  *  symbol declared here is produced by the meson `hip_hsaco_c_float_motion_score`
  *  custom_target pipeline: `xxd -i -n float_motion_score_hsaco
  *  float_motion_score.hsaco > float_motion_score_hsaco.c`

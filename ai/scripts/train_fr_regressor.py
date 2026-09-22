@@ -4,7 +4,7 @@
 """Train ``fr_regressor_v1`` (Wave-1 C1 baseline).
 
 T6-1a unblocked: the Netflix Public Dataset is locally available at
-``.workingdir2/netflix/`` (lawrence's drop, 9 ref + 70 dis YUVs).
+``.corpus/netflix/`` (lawrence's drop, 9 ref + 70 dis YUVs).
 Per-frame full-feature parquet is already produced by
 ``ai/scripts/extract_full_features.py`` and lives at
 ``runs/full_features_netflix.parquet`` (11 040 rows × 25 cols).
@@ -168,15 +168,24 @@ def _metrics(pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _standardize(x_train: np.ndarray, x_val: np.ndarray) -> tuple[np.ndarray, dict]:
+def _standardize(
+    x_train: np.ndarray,
+    x_val: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, dict[str, list[float]]]:
+    """Standardize train and validation arrays without mutating caller-owned views."""
     mean = x_train.mean(axis=0)
     std = x_train.std(axis=0, ddof=0)
     std = np.where(std < 1e-8, 1.0, std)
-    x_train -= mean
-    x_train /= std
-    x_val -= mean
-    x_val /= std
-    return x_val, {"mean": mean.tolist(), "std": std.tolist()}
+    train_scaled = (x_train - mean) / std
+    validation_scaled = (x_val - mean) / std
+    return (
+        train_scaled,
+        validation_scaled,
+        {
+            "mean": mean.tolist(),
+            "std": std.tolist(),
+        },
+    )
 
 
 def _loso_sweep(
@@ -202,7 +211,7 @@ def _loso_sweep(
             print(f"  [warn] fold={held_out}: empty split; skipping", file=sys.stderr)
             continue
         # Per-fold standardisation: fit on train only.
-        _, _ = _standardize(x_train, x_val)
+        x_train, x_val, _ = _standardize(x_train, x_val)
         _model, preds = _fit_predict(
             x_train,
             y_train,
@@ -349,7 +358,8 @@ def _export_and_register(
     registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
-def main() -> int:
+def _build_fr_regressor_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser for train_fr_regressor."""
     ap = argparse.ArgumentParser(prog="train_fr_regressor.py")
     ap.add_argument(
         "--parquet",
@@ -399,42 +409,15 @@ def main() -> int:
         action="store_true",
         help="Skip ONNX export + registry update (smoke / dev mode).",
     )
-    args = ap.parse_args()
+    return ap
 
-    if not args.parquet.is_file():
-        print(f"error: parquet not found at {args.parquet}", file=sys.stderr)
-        return 2
 
-    run_provenance = build_run_provenance(
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=sys.argv[1:],
-        args=args,
-        inputs={"parquet": args.parquet},
-        outputs={
-            "onnx_target": str(args.out_onnx),
-            "sidecar_target": str(args.out_sidecar),
-            "registry_target": str(args.registry),
-            "metrics_target": str(args.metrics_out),
-        },
-    )
-
-    import pandas as pd
-
-    df = pd.read_parquet(args.parquet)
-    feature_cols = SUBSETS[args.features]
-    missing = [c for c in feature_cols if c not in df.columns]
-    if missing:
-        print(f"error: missing feature columns in parquet: {missing}", file=sys.stderr)
-        return 2
-
-    print(
-        f"[fr-v1] parquet={args.parquet.name} "
-        f"rows={len(df)} sources={df['source'].nunique()} "
-        f"features={args.features} ({len(feature_cols)} cols)",
-        flush=True,
-    )
-
+def _run_fr_loso(
+    df: Any,
+    feature_cols: tuple[str, ...],
+    args: argparse.Namespace,
+) -> dict:
+    """Run LOSO sweep and print per-fold + summary lines."""
     t0 = time.time()
     print("[fr-v1] running 9-fold LOSO sweep ...", flush=True)
     loso = _loso_sweep(
@@ -454,38 +437,17 @@ def main() -> int:
         f"({s['n_folds']} folds, {time.time() - t0:.0f}s)",
         flush=True,
     )
+    return loso
 
-    if s["mean_plcc"] < args.ship_threshold:
-        print(
-            f"[fr-v1] REFUSE TO SHIP: mean LOSO PLCC {s['mean_plcc']:.4f} "
-            f"< threshold {args.ship_threshold:.4f}. "
-            "See docs/ai/models/fr_regressor_v1.md for the diagnosis path.",
-            file=sys.stderr,
-        )
-        # Still emit the metrics JSON for inspection.
-        args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-        write_manifest_json(
-            args.metrics_out,
-            {"loso": loso, "shipped": False, "run_provenance": run_provenance},
-        )
-        return 3
 
-    print("[fr-v1] training final all-source checkpoint ...", flush=True)
-    model, standardisation, in_sample = _train_final(
-        df,
-        feature_cols,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        seed=args.seed,
-    )
-    print(
-        f"[fr-v1] final-on-all in-sample PLCC={in_sample['plcc']:.4f} "
-        f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
-        flush=True,
-    )
-
+def _emit_fr_metrics(
+    args: argparse.Namespace,
+    feature_cols: tuple[str, ...],
+    loso: dict,
+    in_sample: dict,
+    run_provenance: dict,
+) -> None:
+    """Write the metrics JSON to disk."""
     metrics_out = {
         "feature_subset": args.features,
         "feature_cols": list(feature_cols),
@@ -504,19 +466,93 @@ def main() -> int:
     write_manifest_json(args.metrics_out, metrics_out)
     print(f"[fr-v1] wrote metrics to {args.metrics_out}")
 
-    if args.no_export:
-        print("[fr-v1] --no-export set; skipping ONNX export.")
-        return 0
+
+def _load_fr_training_data(
+    args: argparse.Namespace,
+) -> tuple[Any, tuple[str, ...]] | int:
+    """Load and validate the configured feature parquet."""
+    if not args.parquet.is_file():
+        print(f"error: parquet not found at {args.parquet}", file=sys.stderr)
+        return 2
+    import pandas as pd
+
+    df = pd.read_parquet(args.parquet)
+    feature_cols = SUBSETS[args.features]
+    missing = [c for c in feature_cols if c not in df.columns]
+    if missing:
+        print(f"error: missing feature columns in parquet: {missing}", file=sys.stderr)
+        return 2
 
     print(
-        f"[fr-v1] exporting ONNX → {args.out_onnx} and updating registry {args.registry.name} ...",
+        f"[fr-v1] parquet={args.parquet.name} "
+        f"rows={len(df)} sources={df['source'].nunique()} "
+        f"features={args.features} ({len(feature_cols)} cols)",
+        flush=True,
+    )
+    return df, feature_cols
+
+
+def _build_fr_run_provenance(args: argparse.Namespace) -> dict[str, Any]:
+    """Capture replay provenance for a regressor training run."""
+    return build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={"parquet": args.parquet},
+        outputs={
+            "onnx_target": str(args.out_onnx),
+            "sidecar_target": str(args.out_sidecar),
+            "registry_target": str(args.registry),
+            "metrics_target": str(args.metrics_out),
+        },
+    )
+
+
+def _train_fr_final(
+    df: Any,
+    feature_cols: tuple[str, ...],
+    args: argparse.Namespace,
+) -> tuple[Any, dict, dict]:
+    """Train the all-source checkpoint and report its in-sample metrics."""
+    print("[fr-v1] training final all-source checkpoint ...", flush=True)
+    model, standardisation, in_sample = _train_final(
+        df,
+        feature_cols,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+    )
+    print(
+        f"[fr-v1] final-on-all in-sample PLCC={in_sample['plcc']:.4f} "
+        f"SROCC={in_sample['srocc']:.4f} RMSE={in_sample['rmse']:.3f}",
+        flush=True,
+    )
+    return model, standardisation, in_sample
+
+
+def _export_fr_checkpoint(
+    args: argparse.Namespace,
+    model: Any,
+    feature_cols: tuple[str, ...],
+    standardisation: dict,
+    loso_summary: dict,
+    in_sample: dict,
+    run_provenance: dict[str, Any],
+) -> None:
+    """Export the trained checkpoint and update its registry metadata."""
+    print(
+        f"[fr-v1] exporting ONNX → {args.out_onnx} and updating registry "
+        f"{args.registry.name} ...",
         flush=True,
     )
     _export_and_register(
         model,
         feature_cols=feature_cols,
         standardisation=standardisation,
-        loso_summary=s,
+        loso_summary=loso_summary,
         in_sample=in_sample,
         onnx_path=args.out_onnx,
         sidecar_path=args.out_sidecar,
@@ -524,6 +560,39 @@ def main() -> int:
         run_provenance=run_provenance,
     )
     print(f"[fr-v1] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
+
+
+def main() -> int:
+    args = _build_fr_regressor_parser().parse_args()
+    loaded = _load_fr_training_data(args)
+    if isinstance(loaded, int):
+        return loaded
+    df, feature_cols = loaded
+    run_provenance = _build_fr_run_provenance(args)
+
+    loso = _run_fr_loso(df, feature_cols, args)
+    s = loso["summary"]
+
+    if s["mean_plcc"] < args.ship_threshold:
+        print(
+            f"[fr-v1] REFUSE TO SHIP: mean LOSO PLCC {s['mean_plcc']:.4f} "
+            f"< threshold {args.ship_threshold:.4f}. "
+            "See docs/ai/models/fr_regressor_v1.md for the diagnosis path.",
+            file=sys.stderr,
+        )
+        args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
+        write_manifest_json(
+            args.metrics_out,
+            {"loso": loso, "shipped": False, "run_provenance": run_provenance},
+        )
+        return 3
+
+    model, standardisation, in_sample = _train_fr_final(df, feature_cols, args)
+    _emit_fr_metrics(args, feature_cols, loso, in_sample, run_provenance)
+    if args.no_export:
+        print("[fr-v1] --no-export set; skipping ONNX export.")
+        return 0
+    _export_fr_checkpoint(args, model, feature_cols, standardisation, s, in_sample, run_provenance)
     return 0
 
 

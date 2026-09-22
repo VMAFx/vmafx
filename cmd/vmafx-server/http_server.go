@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -153,31 +154,12 @@ func (h *httpServer) routes(mux *http.ServeMux) {
 
 // handleHealthz is the liveness probe — always returns 200 OK.
 func (h *httpServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	h.metrics.HealthRequests.Inc()
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	scoringservice.HandleHealthz(h.metrics, h.log, w, r)
 }
 
 // handleReadyz is the readiness probe — returns 503 until the scorer is usable.
 func (h *httpServer) handleReadyz(w http.ResponseWriter, r *http.Request) {
-	h.metrics.ReadyRequests.Inc()
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if h.scorer == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"status":"not ready","reason":"scorer not initialised"}`))
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ready"}`))
+	scoringservice.HandleReadyz(h.metrics, h.log, h.scorer != nil, w, r)
 }
 
 // handleScore handles POST /v1/score.
@@ -189,7 +171,19 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 
 	h.metrics.ScoreRequests.Inc()
 	start := time.Now()
+	req, ok := h.decodeScoreRequest(w, r)
+	if !ok {
+		return
+	}
+	release, ok := h.acquireScoreSlot(w, r)
+	if !ok {
+		return
+	}
+	defer release()
+	h.scoreAndRespond(w, r, req, start)
+}
 
+func (h *httpServer) decodeScoreRequest(w http.ResponseWriter, r *http.Request) (scoreRequest, bool) {
 	// Cap the request body at maxScoreRequestBodyBytes. http.MaxBytesReader
 	// closes the underlying body when the limit trips and surfaces the cause
 	// to the decoder as `*http.MaxBytesError`, which we map to 413 below.
@@ -200,42 +194,44 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		h.metrics.ScoreErrors.Inc()
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{
+			scoringservice.WriteJSON(h.log, w, http.StatusRequestEntityTooLarge, errorResponse{
 				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
 			})
-			return
+			return scoreRequest{}, false
 		}
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
-		return
+		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
+			errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
+		return scoreRequest{}, false
 	}
 
 	if req.Reference == "" || req.Distorted == "" {
 		h.metrics.ScoreErrors.Inc()
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "reference and distorted are required"})
-		return
+		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
+			errorResponse{Error: "reference and distorted are required"})
+		return scoreRequest{}, false
 	}
+	return req, true
+}
 
-	// Enforce the concurrency cap before forking a vmaf subprocess.
-	// We use a non-blocking TryAcquire pattern here: if the semaphore is full
-	// we return 429 immediately so the client can back off. We do NOT use
-	// Acquire(ctx) in the HTTP path because the HTTP write deadline would
-	// expire before the client sees the response body.  The gRPC path uses
-	// Acquire(ctx) because gRPC backpressure handles the wait correctly.
-	if h.limiter != nil {
-		// Use context-aware Acquire so a cancelled request does not park in
-		// the queue and waste a slot after the client has gone away.
-		if err := h.limiter.Acquire(r.Context()); err != nil {
-			h.metrics.ScoreErrors.Inc()
-			h.log.Warn("http Score rejected: concurrency cap reached",
-				"max", h.limiter.Max(), "error", err)
-			writeJSON(w, http.StatusTooManyRequests, errorResponse{
-				Error: fmt.Sprintf("too many concurrent scoring requests (max %d); try again later", h.limiter.Max()),
-			})
-			return
-		}
-		defer h.limiter.Release()
+func (h *httpServer) acquireScoreSlot(w http.ResponseWriter, r *http.Request) (func(), bool) {
+	if h.limiter == nil {
+		return func() {}, true
 	}
+	if err := h.limiter.Acquire(r.Context()); err != nil {
+		h.metrics.ScoreErrors.Inc()
+		h.log.Warn("http Score rejected: concurrency cap reached",
+			"max", h.limiter.Max(), "error", err)
+		scoringservice.WriteJSON(h.log, w, http.StatusTooManyRequests, errorResponse{
+			Error: fmt.Sprintf("too many concurrent scoring requests (max %d); try again later", h.limiter.Max()),
+		})
+		return nil, false
+	}
+	return h.limiter.Release, true
+}
 
+func (h *httpServer) scoreAndRespond(
+	w http.ResponseWriter, r *http.Request, req scoreRequest, start time.Time,
+) {
 	// Pass the request-scoped context so a client disconnect (or the
 	// server's read/write timeout) propagates SIGKILL to the vmaf
 	// subprocess via exec.CommandContext.  Fixes
@@ -247,7 +243,8 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()
 		h.log.Error("http Score failed", "error", err, "duration_s", elapsed)
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		scoringservice.WriteJSON(h.log, w, http.StatusInternalServerError,
+			errorResponse{Error: err.Error()})
 		return
 	}
 
@@ -255,14 +252,6 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		"score", fmt.Sprintf("%.4f", score),
 		"duration_s", elapsed,
 	)
-	writeJSON(w, http.StatusOK, scoreResponse{Score: score, Features: features})
-}
-
-// writeJSON serialises v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
+	scoringservice.WriteJSON(h.log, w, http.StatusOK,
+		scoreResponse{Score: score, Features: features})
 }

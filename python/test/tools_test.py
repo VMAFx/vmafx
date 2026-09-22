@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import unittest
 from test.testutil import set_default_576_324_videos_for_testing
 
@@ -30,6 +33,51 @@ class QualityRunnerTestMixinTest(MyTestCase, QualityRunnerTestMixin):
 
 
 class MiscTest(unittest.TestCase):
+
+    @staticmethod
+    def _run_python_with_warnings_as_errors(source):
+        env = os.environ.copy()
+        python_path = VmafConfig.root_path("python")
+        if env.get("PYTHONPATH"):
+            python_path = os.pathsep.join((python_path, env["PYTHONPATH"]))
+        env["PYTHONPATH"] = python_path
+
+        return subprocess.run(
+            [sys.executable, "-W", "error", "-c", source],
+            cwd=VmafConfig.root_path(),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_sigproc_import_is_warning_free(self):
+        completed = self._run_python_with_warnings_as_errors("import vmaf.tools.sigproc")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_parallel_map_is_warning_free_with_live_thread_and_preserves_order(self):
+        completed = self._run_python_with_warnings_as_errors(
+            "import threading\n"
+            "import warnings\n"
+            "from vmaf.tools.misc import parallel_map\n"
+            "stop = threading.Event()\n"
+            "thread = threading.Thread(target=stop.wait)\n"
+            "thread.start()\n"
+            "try:\n"
+            "    with warnings.catch_warnings(record=True) as caught:\n"
+            "        warnings.simplefilter('always')\n"
+            "        result = parallel_map(lambda value: value * 2, [3, 1, 2], processes=2)\n"
+            "    if caught:\n"
+            "        raise AssertionError([str(item.message) for item in caught])\n"
+            "    print(result)\n"
+            "finally:\n"
+            "    stop.set()\n"
+            "    thread.join()\n"
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.strip(), "[6, 2, 4]")
 
     def test_import_python_file(self):
         ds = import_python_file(VmafConfig.test_resource_path("example_raw_dataset2.py"))

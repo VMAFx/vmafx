@@ -313,61 +313,27 @@ func PickTargetVMAFWithUncertainty(rows []Row, req UncertaintyRequest) (Uncertai
 	}
 
 	target := req.TargetVMAF
-	visited := 0
-	var bestSoFar Row
-	bestScore := math.Inf(-1)
-	everyRowExcludes := true
-	sawWide := false
-
-	for _, row := range rows {
-		visited++
-		_, low, high := rowInterval(row, req)
-		score, _ := numField(row, "vmaf_score")
-		if score > bestScore {
-			bestScore, bestSoFar = score, row
-		}
-		if !uncertainty.ExcludesTarget(low, high, target, 0.0) {
-			everyRowExcludes = false
-		}
-
-		// Preserve NaN through to Classify so an uncalibrated row defers to
-		// the MIDDLE band rather than being mis-read as a zero-width TIGHT.
-		width := math.NaN()
-		if !math.IsNaN(low) && !math.IsNaN(high) {
-			width = math.Max(0.0, high-low)
-		}
-		decision, err := uncertainty.Classify(width, req.Thresholds)
-		if err != nil {
-			return UncertaintyResult{}, err
-		}
-		if decision == uncertainty.Wide {
-			sawWide = true
-		}
-		if decision == uncertainty.Tight && low >= target {
-			return UncertaintyResult{
-				Row: row,
-				Predicate: fmt.Sprintf("target_vmaf>=%s (TIGHT, low=%.3f)",
-					formatTarget(target), low),
-				Margin:   score - target,
-				Decision: uncertainty.Tight,
-				Visited:  visited,
-			}, nil
-		}
+	scan, promoted, err := scanIntervals(rows, req)
+	if err != nil {
+		return UncertaintyResult{}, err
+	}
+	if promoted != nil {
+		return *promoted, nil
 	}
 
 	band := uncertainty.Middle
-	if sawWide {
+	if scan.sawWide {
 		band = uncertainty.Wide
 	}
 
-	if everyRowExcludes {
+	if scan.everyRowExcludes {
 		return UncertaintyResult{
-			Row: bestSoFar,
+			Row: scan.bestSoFar,
 			Predicate: fmt.Sprintf("target_vmaf>=%s (UNMET, interval-excluded)",
 				formatTarget(target)),
-			Margin:   bestScore - target,
+			Margin:   scan.bestScore - target,
 			Decision: band,
-			Visited:  visited,
+			Visited:  scan.visited,
 		}, nil
 	}
 
@@ -384,8 +350,65 @@ func PickTargetVMAFWithUncertainty(rows []Row, req UncertaintyRequest) (Uncertai
 		Predicate: pointPick.Predicate + suffix,
 		Margin:    pointPick.Margin,
 		Decision:  band,
-		Visited:   visited,
+		Visited:   scan.visited,
 	}, nil
+}
+
+// intervalScan is what one pass over the eligible rows learns when no row
+// promotes on its own.
+type intervalScan struct {
+	visited          int
+	bestSoFar        Row
+	bestScore        float64
+	everyRowExcludes bool
+	sawWide          bool
+}
+
+// scanIntervals walks the rows in order, stopping at the first TIGHT row whose
+// conformal lower bound already clears the target — that row is returned as a
+// promotion. Otherwise it reports what the whole pass observed: the widest
+// band seen, whether every interval excluded the target, and the best-effort
+// (highest-VMAF) row to fall back on.
+func scanIntervals(rows []Row, req UncertaintyRequest) (intervalScan, *UncertaintyResult, error) {
+	target := req.TargetVMAF
+	scan := intervalScan{bestScore: math.Inf(-1), everyRowExcludes: true}
+
+	for _, row := range rows {
+		scan.visited++
+		_, low, high := rowInterval(row, req)
+		score, _ := numField(row, "vmaf_score")
+		if score > scan.bestScore {
+			scan.bestScore, scan.bestSoFar = score, row
+		}
+		if !uncertainty.ExcludesTarget(low, high, target, 0.0) {
+			scan.everyRowExcludes = false
+		}
+
+		// Preserve NaN through to Classify so an uncalibrated row defers to
+		// the MIDDLE band rather than being mis-read as a zero-width TIGHT.
+		width := math.NaN()
+		if !math.IsNaN(low) && !math.IsNaN(high) {
+			width = math.Max(0.0, high-low)
+		}
+		decision, err := uncertainty.Classify(width, req.Thresholds)
+		if err != nil {
+			return scan, nil, err
+		}
+		if decision == uncertainty.Wide {
+			scan.sawWide = true
+		}
+		if decision == uncertainty.Tight && low >= target {
+			return scan, &UncertaintyResult{
+				Row: row,
+				Predicate: fmt.Sprintf("target_vmaf>=%s (TIGHT, low=%.3f)",
+					formatTarget(target), low),
+				Margin:   score - target,
+				Decision: uncertainty.Tight,
+				Visited:  scan.visited,
+			}, nil
+		}
+	}
+	return scan, nil, nil
 }
 
 // formatTarget renders a target the way Python's f-string renders a float, so

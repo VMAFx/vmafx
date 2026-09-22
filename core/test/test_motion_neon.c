@@ -121,29 +121,10 @@ static const char *pattern_name(enum pattern p)
     }
 }
 
-/*
- * One (width, height, pattern) case. Returns the number of mismatching
- * elements; reports the first few, plus the column histogram needed to make
- * an arithmetic argument about *which* region diverged.
- */
-static int check_case(unsigned w, unsigned h, enum pattern pat, int *sentinel_broken)
+/* Fill `src` with the requested pattern; the random seed is derived from the
+ * geometry so each case is reproducible on its own. */
+static void fill_pattern(uint16_t *src, size_t src_n, unsigned w, unsigned h, enum pattern pat)
 {
-    const ptrdiff_t src_stride = (ptrdiff_t)w + 7;
-    const ptrdiff_t dst_stride = (ptrdiff_t)w + 5;
-    const size_t src_n = (size_t)(src_stride)*h + PAD;
-    const size_t dst_n = (size_t)(dst_stride) * (h + PAD) + PAD;
-
-    uint16_t *src = malloc(src_n * sizeof(uint16_t));
-    uint16_t *dst_ref = malloc(dst_n * sizeof(uint16_t));
-    uint16_t *dst_neon = malloc(dst_n * sizeof(uint16_t));
-    if (!src || !dst_ref || !dst_neon) {
-        free(src);
-        free(dst_ref);
-        free(dst_neon);
-        (void)fprintf(stderr, "  allocation failure at %ux%u\n", w, h);
-        return -1;
-    }
-
     uint32_t seed = 0x1234567u ^ (w * 2654435761u) ^ (h * 40503u) ^ ((uint32_t)pat * 97u);
     for (size_t i = 0; i < src_n; ++i) {
         switch (pat) {
@@ -162,15 +143,17 @@ static int check_case(unsigned w, unsigned h, enum pattern pat, int *sentinel_br
             break;
         }
     }
+}
 
-    for (size_t i = 0; i < dst_n; ++i) {
-        dst_ref[i] = SENTINEL;
-        dst_neon[i] = SENTINEL;
-    }
-
-    ref_x_convolution_16(src, dst_ref, w, h, src_stride, dst_stride);
-    x_convolution_16_neon(src, dst_neon, w, h, src_stride, dst_stride);
-
+/*
+ * Compare the w x h destination rectangle element by element. Reports the
+ * first few divergences, plus the column histogram needed to make an
+ * arithmetic argument about *which* region diverged, and returns the number of
+ * mismatching elements.
+ */
+static int count_mismatches(const uint16_t *dst_ref, const uint16_t *dst_neon, unsigned w,
+                            unsigned h, ptrdiff_t dst_stride, enum pattern pat)
+{
     int mismatches = 0;
     int interior_mismatches = 0;
     int edge_mismatches = 0;
@@ -211,8 +194,13 @@ static int check_case(unsigned w, unsigned h, enum pattern pat, int *sentinel_br
                       (right_edge > left_edge) ? (right_edge - left_edge) : 0u,
                       (right_edge > left_edge) ? ((right_edge - left_edge) % 8u) : 0u);
     }
+    return mismatches;
+}
 
-    /* Nothing outside the w x h destination rectangle may be touched. */
+/* Nothing outside the w x h destination rectangle may be touched. */
+static void check_sentinels(const uint16_t *dst_neon, unsigned w, unsigned h, ptrdiff_t dst_stride,
+                            size_t dst_n, enum pattern pat, int *sentinel_broken)
+{
     for (unsigned i = 0; i < h + PAD; ++i) {
         for (ptrdiff_t j = 0; j < dst_stride; ++j) {
             if (i < h && j < (ptrdiff_t)w)
@@ -229,6 +217,43 @@ static int check_case(unsigned w, unsigned h, enum pattern pat, int *sentinel_br
             }
         }
     }
+}
+
+/*
+ * One (width, height, pattern) case. Returns the number of mismatching
+ * elements; the helpers above report the first few, plus the column histogram
+ * needed to make an arithmetic argument about *which* region diverged.
+ */
+static int check_case(unsigned w, unsigned h, enum pattern pat, int *sentinel_broken)
+{
+    const ptrdiff_t src_stride = (ptrdiff_t)w + 7;
+    const ptrdiff_t dst_stride = (ptrdiff_t)w + 5;
+    const size_t src_n = (size_t)(src_stride)*h + PAD;
+    const size_t dst_n = (size_t)(dst_stride) * (h + PAD) + PAD;
+
+    uint16_t *src = malloc(src_n * sizeof(uint16_t));
+    uint16_t *dst_ref = malloc(dst_n * sizeof(uint16_t));
+    uint16_t *dst_neon = malloc(dst_n * sizeof(uint16_t));
+    if (!src || !dst_ref || !dst_neon) {
+        free(src);
+        free(dst_ref);
+        free(dst_neon);
+        (void)fprintf(stderr, "  allocation failure at %ux%u\n", w, h);
+        return -1;
+    }
+
+    fill_pattern(src, src_n, w, h, pat);
+
+    for (size_t i = 0; i < dst_n; ++i) {
+        dst_ref[i] = SENTINEL;
+        dst_neon[i] = SENTINEL;
+    }
+
+    ref_x_convolution_16(src, dst_ref, w, h, src_stride, dst_stride);
+    x_convolution_16_neon(src, dst_neon, w, h, src_stride, dst_stride);
+
+    const int mismatches = count_mismatches(dst_ref, dst_neon, w, h, dst_stride, pat);
+    check_sentinels(dst_neon, w, h, dst_stride, dst_n, pat, sentinel_broken);
 
     free(src);
     free(dst_ref);

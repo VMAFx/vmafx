@@ -10,11 +10,14 @@ sequential phases:
    `ai.src.vmaf_train.train.train` against the model's existing
    YAML config so the warm-start matches what `vmaf-train fit`
    would produce.
-2. **Fake-quant insertion** — wrap the trained module with
-   `torch.ao.quantization.quantize_fx.prepare_qat_fx` using the
-   default symmetric per-tensor activation + per-channel weight
-   qconfig (matching the PTQ static recipe in Research-0006 §2).
-3. **QAT fine-tune phase** — train the FX-prepared module for a
+2. **Fake-quant insertion** — capture the trained module with
+   `torch.export` and wrap it with
+   `torchao.quantization.pt2e.prepare_qat_pt2e` under the x86
+   inductor recipe: per-tensor uint8 activation + per-channel
+   symmetric int8 weight (matching the PTQ static recipe in
+   Research-0006 §2). ADR-1293 records the move off the
+   deprecated `torch.ao.quantization` FX API.
+3. **QAT fine-tune phase** — train the pt2e-prepared module for a
    smaller number of epochs at a 10× reduced learning rate. The
    fake-quant observers nudge the weights toward
    quantization-friendly values.
@@ -98,35 +101,81 @@ def _example_input_for(model: Any, default_shape: tuple[int, ...] = (1, 1, 32, 3
     return (torch.zeros(default_shape, dtype=torch.float32),)
 
 
-def _build_qconfig_mapping():
-    """Default QAT qconfig: symmetric per-tensor act + per-channel weight.
+def _build_quantizer() -> Any:
+    """Default QAT recipe: per-tensor uint8 activations, per-channel int8 weights.
 
-    Uses `get_default_qat_qconfig_mapping("x86")` per
-    ADR-0207's Decision §2. The "x86" backend selects per-channel
-    symmetric weight observers and per-tensor symmetric activation
-    observers, matching the ORT static-PTQ recipe exactly.
+    `get_default_x86_inductor_quantization_config(is_qat=True)` is the pt2e
+    successor to `get_default_qat_qconfig_mapping("x86")` and keeps ADR-0207
+    Decision §2 intact: weights stay `torch.int8`, `per_channel_symmetric`,
+    `ch_axis=0`, [-128, 127] — byte-identical to the mapping it replaces.
+
+    Activations move from the old mapping's reduce_range [0, 127] to the full
+    [0, 255]. That is a deliberate correction, not drift: the activation ranges
+    that reach the shipped model are baked by ORT `quantize_static`, which
+    quantizes `QUInt8` over the whole range. The 7-bit ceiling was an FBGEMM
+    workaround for pre-VNNI AVX2 accumulator overflow and had no counterpart on
+    the ORT side, so the old recipe was the one that failed to match. See
+    ADR-1293.
     """
-    from torch.ao.quantization import get_default_qat_qconfig_mapping
+    from torchao.quantization.pt2e.quantizer.x86_inductor_quantizer import (
+        X86InductorQuantizer,
+        get_default_x86_inductor_quantization_config,
+    )
 
-    return get_default_qat_qconfig_mapping("x86")
+    quantizer = X86InductorQuantizer()
+    quantizer.set_global(get_default_x86_inductor_quantization_config(is_qat=True))
+    return quantizer
+
+
+def _set_mode(module: Any, *, train: bool) -> None:
+    """Switch a module between train and eval, exported graphs included.
+
+    A `torch.export`-captured graph module rejects `.train()` / `.eval()`
+    outright and requires torchao's explicit movers, while a plain
+    `nn.Module` only understands the former. `_qat_fine_tune` is called with
+    both -- the fp32 warm-start runs on the raw Lightning module, the QAT
+    phase on the pt2e-prepared graph -- so the two cases are dispatched here
+    rather than at each call site.
+    """
+    import torch
+
+    if isinstance(module, torch.fx.GraphModule):
+        from torchao.quantization.pt2e import (
+            move_exported_model_to_eval,
+            move_exported_model_to_train,
+        )
+
+        if train:
+            move_exported_model_to_train(module)
+        else:
+            move_exported_model_to_eval(module)
+        return
+    module.train() if train else module.eval()
 
 
 def _prepare_qat(module: Any, example_inputs: tuple[Any, ...]) -> Any:
-    """Insert fake-quant observers via FX graph mode."""
-    from torch.ao.quantization.quantize_fx import prepare_qat_fx
+    """Insert fake-quant observers via torchao's pt2e graph capture.
 
-    qmap = _build_qconfig_mapping()
+    `torch.export.export(...).module()` replaces the FX symbolic trace; the
+    captured graph keeps the original parameter names (`entry.weight`,
+    `body.0.block.0.weight`, ...), which is what
+    :func:`_copy_qat_weights_into_fp32` matches on.
+    """
+    import torch
+    from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
+
     module.train()
-    return prepare_qat_fx(module, qmap, example_inputs)
+    captured = torch.export.export(module, example_inputs, strict=True).module()
+    return prepare_qat_pt2e(captured, _build_quantizer())
 
 
 def _copy_qat_weights_into_fp32(qat_module: Any, fp32_module: Any) -> int:
     """Copy QAT-conditioned parameter tensors into a fresh fp32 module.
 
-    The FX-prepared module preserves submodule names (entry, body.*,
+    The pt2e-prepared graph preserves submodule names (entry, body.*,
     exit, ...), so a state-dict diff that matches by key + shape
     transfers the QAT-trained weights without round-tripping through
-    `convert_fx`. Returns the number of tensors copied.
+    `convert_pt2e`. Returns the number of tensors copied.
     """
     qat_state = qat_module.state_dict()
     fp_state = fp32_module.state_dict()
@@ -153,27 +202,34 @@ def _export_fp32_onnx(
     dynamic_axes: dict[str, dict[int, str]] | None,
     opset: int = 17,
 ) -> Path:
-    """Export an fp32 module to ONNX using the legacy TorchScript exporter.
+    """Export an fp32 module to ONNX with the torch.export-based exporter.
 
-    `dynamo=False` pins the legacy path because PyTorch 2.11's
-    TorchDynamo exporter still chokes on certain quantization-related
-    intermediate buffers even after weight transfer; the legacy path
-    handles plain conv/relu graphs cleanly.
+    The export target is a *fresh* fp32 module carrying transferred weights,
+    not the pt2e-prepared graph, so none of the quantization-related
+    intermediate buffers that once forced `dynamo=False` are present. The
+    legacy TorchScript path is deprecated as of torch 2.9 and warns.
+
+    `dynamic_shapes` replaces `dynamic_axes`, which the dynamo exporter warns
+    about: it is positional, one entry per forward argument, so the caller's
+    per-name axis dict is reordered to follow ``input_names``. Output axes are
+    inferred rather than named.
     """
     import torch
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     module.eval()
+    dynamic_shapes = (
+        tuple(dict(dynamic_axes.get(name, {})) for name in input_names) if dynamic_axes else None
+    )
     torch.onnx.export(
         module,
         example_inputs,
         str(out_path),
         input_names=input_names,
         output_names=output_names,
-        dynamic_axes=dynamic_axes,
+        dynamic_shapes=dynamic_shapes,
         opset_version=opset,
         do_constant_folding=True,
-        dynamo=False,
     )
     return out_path
 
@@ -224,13 +280,13 @@ def _qat_fine_tune(
     """Minimal QAT fine-tune loop.
 
     Honours the same MSE / L1 loss the fp32 phase used. Works on
-    the FX-prepared module — observers update via the standard
+    the pt2e-prepared module — observers update via the standard
     forward pass, no special hooks required.
     """
     import torch
 
     opt = torch.optim.Adam(qat_module.parameters(), lr=lr)
-    qat_module.train()
+    _set_mode(qat_module, train=True)
     qat_module.to(device)
 
     for _epoch in range(epochs):
@@ -352,8 +408,8 @@ def run_qat(
             device=device,
         )
 
-    # Phase 2 — fake-quant insertion. FX prep needs the model on CPU
-    # (the FX symbolic tracer does not handle CUDA buffers cleanly).
+    # Phase 2 — fake-quant insertion. Graph capture needs the model on CPU
+    # (torch.export does not handle CUDA buffers cleanly here).
     fp32_model.cpu()
     cpu_examples = tuple(t.cpu() if hasattr(t, "cpu") else t for t in example_inputs)
     qat_model = _prepare_qat(fp32_model, cpu_examples)
@@ -374,14 +430,15 @@ def run_qat(
 
     # Phase 4 — export. Build a fresh fp32 module, copy QAT-conditioned
     # weights in, export ONNX, then ORT-static-quantize.
-    qat_model.cpu().eval()
+    qat_model.cpu()
+    _set_mode(qat_model, train=False)
     fp32_export_target = model_factory()
     n_copied = _copy_qat_weights_into_fp32(qat_model, fp32_export_target)
     if n_copied == 0:
         raise RuntimeError(
             "QAT->fp32 weight transfer copied 0 tensors. "
-            "FX prep probably renamed every submodule — check the model architecture "
-            "for top-level Sequentials or untraceable control flow."
+            "pt2e capture probably renamed every submodule — check the model "
+            "architecture for top-level Sequentials or untraceable control flow."
         )
 
     fp32_onnx = qat_cfg.output_fp32_onnx or qat_cfg.output_int8_onnx.with_name(

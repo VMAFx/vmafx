@@ -40,38 +40,70 @@
 
 #include "mcp_internal.h"
 
+#define VMAF_MCP_UDS_IO_RETRY_LIMIT 64u
+
 /* Read up to `max_len - 1` bytes from `fd` into `buf` until LF or
  * EOF. Returns: > 0 = bytes consumed, 0 = EOF, -1 = error,
  * -2 = line too long. NUL-terminates. */
 static ssize_t uds_read_line(int fd, char *buf, size_t max_len)
 {
-    if (max_len < 2u)
+    if (max_len < 2u) {
         return -1;
+    }
     size_t n = 0u;
-    for (;;) {
-        if (n >= max_len - 1u)
-            return -2;
+    size_t consumed = 0u;
+    size_t interruptions = 0u;
+    while (consumed < max_len - 1u) {
         char c = 0;
-        ssize_t r = read(fd, &c, 1);
+        const ssize_t r = read(fd, &c, 1);
         if (r == 0) {
-            if (n == 0u)
+            if (n == 0u) {
                 return 0;
+            }
             buf[n] = '\0';
             return (ssize_t)n;
         }
         if (r < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR && interruptions < VMAF_MCP_UDS_IO_RETRY_LIMIT) {
+                interruptions++;
                 continue;
+            }
             return -1;
         }
+        interruptions = 0u;
+        consumed++;
         if (c == '\n') {
             buf[n] = '\0';
             return (ssize_t)n;
         }
-        if (c == '\r')
+        if (c == '\r') {
             continue;
+        }
         buf[n++] = c;
     }
+    return -2;
+}
+
+static int uds_write_all(int fd, const char *buf, size_t len)
+{
+    size_t off = 0u;
+    size_t interruptions = 0u;
+    while (off < len) {
+        const ssize_t w = write(fd, buf + off, len - off);
+        if (w < 0) {
+            if (errno == EINTR && interruptions < VMAF_MCP_UDS_IO_RETRY_LIMIT) {
+                interruptions++;
+                continue;
+            }
+            return -errno;
+        }
+        if (w == 0) {
+            return -EIO;
+        }
+        interruptions = 0u;
+        off += (size_t)w;
+    }
+    return 0;
 }
 
 /* Write `len` bytes + a trailing LF, looped against partial
@@ -80,36 +112,71 @@ static ssize_t uds_read_line(int fd, char *buf, size_t max_len)
  * can interleave responses without corruption). */
 static int uds_write_all_with_newline(int fd, pthread_mutex_t *mtx, const char *buf, size_t len)
 {
-    int lock_rc = pthread_mutex_lock(mtx);
-    if (lock_rc != 0)
+    const int lock_rc = pthread_mutex_lock(mtx);
+    if (lock_rc != 0) {
         return -lock_rc;
-    int rc = 0;
-    size_t off = 0u;
-    while (off < len) {
-        ssize_t w = write(fd, buf + off, len - off);
-        if (w < 0) {
-            if (errno == EINTR)
-                continue;
-            rc = -errno;
-            goto unlock;
-        }
-        off += (size_t)w;
     }
+    int rc = uds_write_all(fd, buf, len);
     const char nl = '\n';
-    while (1) {
-        ssize_t w = write(fd, &nl, 1);
-        if (w == 1)
-            break;
-        if (w < 0 && errno == EINTR)
-            continue;
-        rc = w < 0 ? -errno : -EIO;
-        goto unlock;
+    if (rc == 0) {
+        rc = uds_write_all(fd, &nl, 1u);
     }
-unlock:;
-    int unlock_rc = pthread_mutex_unlock(mtx);
-    if (unlock_rc != 0 && rc == 0)
+    const int unlock_rc = pthread_mutex_unlock(mtx);
+    if (unlock_rc != 0 && rc == 0) {
         rc = -unlock_rc;
+    }
     return rc;
+}
+
+static int uds_drain_overlong_line(int fd)
+{
+    size_t consumed = 0u;
+    size_t interruptions = 0u;
+    while (consumed < VMAF_MCP_MAX_LINE_BYTES) {
+        char c = 0;
+        const ssize_t r = read(fd, &c, 1);
+        if (r == 0 || (r == 1 && c == '\n')) {
+            return 0;
+        }
+        if (r < 0) {
+            if (errno == EINTR && interruptions < VMAF_MCP_UDS_IO_RETRY_LIMIT) {
+                interruptions++;
+                continue;
+            }
+            return -errno;
+        }
+        interruptions = 0u;
+        consumed++;
+    }
+    return -E2BIG;
+}
+
+static int uds_report_and_drain_overlong_line(struct VmafMcpServer *server, int client_fd)
+{
+    static const char overflow[] = "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,"
+                                   "\"message\":\"request exceeds 64 KiB line limit\"}}";
+    const int write_rc =
+        uds_write_all_with_newline(client_fd, &server->write_mtx, overflow, sizeof(overflow) - 1u);
+    if (write_rc != 0) {
+        return write_rc;
+    }
+    return uds_drain_overlong_line(client_fd);
+}
+
+static int uds_dispatch_line(struct VmafMcpServer *server, int client_fd, const char *line)
+{
+    char *response = nullptr;
+    const int dispatch_rc = vmaf_mcp_dispatch(server, line, &response);
+    if (dispatch_rc != 0 && response == nullptr) {
+        return 0;
+    }
+    int write_rc = 0;
+    if (response != nullptr) {
+        write_rc =
+            uds_write_all_with_newline(client_fd, &server->write_mtx, response, strlen(response));
+        free(response);
+    }
+    return write_rc;
 }
 
 /* Service one accepted client end-to-end. Returns when EOF or
@@ -117,44 +184,26 @@ unlock:;
 static void serve_client(struct VmafMcpServer *server, int client_fd)
 {
     char *line = (char *)malloc(VMAF_MCP_MAX_LINE_BYTES);
-    if (line == NULL)
+    if (line == nullptr) {
         return;
+    }
 
     while (atomic_load(&server->uds_running) == 1) {
-        ssize_t n = uds_read_line(client_fd, line, VMAF_MCP_MAX_LINE_BYTES);
-        if (n == 0)
+        const ssize_t n = uds_read_line(client_fd, line, VMAF_MCP_MAX_LINE_BYTES);
+        if (n == 0) {
             break; /* EOF. */
-        if (n == -1)
+        }
+        if (n == -1) {
             break; /* read() error. */
+        }
         if (n == -2) {
-            const char overflow[] = "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,"
-                                    "\"message\":\"request exceeds 64 KiB line limit\"}}";
-            (void)uds_write_all_with_newline(client_fd, &server->write_mtx, overflow,
-                                             sizeof(overflow) - 1u);
-            for (;;) {
-                char c = 0;
-                ssize_t r = read(client_fd, &c, 1);
-                if (r < 0) {
-                    if (errno == EINTR)
-                        continue;
-                    break;
-                }
-                if (r == 0 || c == '\n')
-                    break;
+            if (uds_report_and_drain_overlong_line(server, client_fd) != 0) {
+                break;
             }
             continue;
         }
-        if (n == 0)
-            continue;
-
-        char *response = NULL;
-        int rc = vmaf_mcp_dispatch(server, line, &response);
-        if (rc != 0 && response == NULL)
-            continue;
-        if (response != NULL) {
-            (void)uds_write_all_with_newline(client_fd, &server->write_mtx, response,
-                                             strlen(response));
-            free(response);
+        if (uds_dispatch_line(server, client_fd, line) != 0) {
+            break;
         }
     }
 
@@ -163,21 +212,25 @@ static void serve_client(struct VmafMcpServer *server, int client_fd)
 
 void *vmaf_mcp_uds_thread_main(void *arg)
 {
-    assert(arg != NULL);
+    assert(arg != nullptr);
     struct VmafMcpServer *server = (struct VmafMcpServer *)arg;
-    if (server == NULL)
-        return NULL;
-    if (atomic_load(&server->uds_running) != 1)
-        return NULL;
-    int listen_fd = server->uds_listen_fd;
-    if (listen_fd < 0)
-        return NULL;
+    if (server == nullptr) {
+        return nullptr;
+    }
+    if (atomic_load(&server->uds_running) != 1) {
+        return nullptr;
+    }
+    const int listen_fd = server->uds_listen_fd;
+    if (listen_fd < 0) {
+        return nullptr;
+    }
 
     while (atomic_load(&server->uds_running) == 1) {
-        int client_fd = accept(listen_fd, NULL, NULL);
+        const int client_fd = accept(listen_fd, nullptr, nullptr);
         if (client_fd < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
                 continue;
+            }
             /* Listener was closed during stop(); exit cleanly. */
             break;
         }
@@ -187,5 +240,5 @@ void *vmaf_mcp_uds_thread_main(void *arg)
     }
 
     atomic_store(&server->uds_running, 0);
-    return NULL;
+    return nullptr;
 }

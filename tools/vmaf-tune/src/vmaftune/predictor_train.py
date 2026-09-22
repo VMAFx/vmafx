@@ -162,6 +162,22 @@ def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[
 # ---------------------------------------------------------------------
 
 
+def _synthetic_shape_and_rate(
+    rng: random.Random, row_index: int
+) -> tuple[int, int, int, float, float, float]:
+    crf = rng.randint(18, 45)
+    resolutions = ((1920, 1080), (1280, 720), (3840, 2160), (854, 480))
+    framerates = (24.0, 30.0, 60.0)
+    width, height = resolutions[row_index % len(resolutions)]
+    framerate = framerates[row_index % len(framerates)]
+    duration_s = 4.0 + rng.random() * 6.0
+    complexity = 0.6 + rng.random() * 1.2
+    base_kbps = (width * height) / 1000.0
+    crf_decay = math.exp(-(crf - 23.0) * 0.05)
+    bitrate_kbps = base_kbps * crf_decay * complexity
+    return crf, width, height, framerate, duration_s, bitrate_kbps
+
+
 def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -> list[dict]:
     """Deterministic per-codec synthetic corpus.
 
@@ -183,24 +199,8 @@ def generate_synthetic_corpus(codec: str, n_rows: int = SYNTHETIC_CORPUS_ROWS) -
     predictor = Predictor()  # analytical fallback supplies the target
 
     rows: list[dict] = []
-    # Sweep CRF across the codec's quality range and a handful of
-    # synthetic resolutions so the trainer sees variation on every
-    # input dimension.
-    crf_lo, crf_hi = 18, 45
-    resolutions = ((1920, 1080), (1280, 720), (3840, 2160), (854, 480))
-    framerates = (24.0, 30.0, 60.0)
-
     for i in range(n_rows):
-        crf = rng.randint(crf_lo, crf_hi)
-        width, height = resolutions[i % len(resolutions)]
-        framerate = framerates[i % len(framerates)]
-        duration_s = 4.0 + rng.random() * 6.0  # 4..10s shots
-        # Bitrate scales with resolution and inversely with CRF, plus
-        # a per-row complexity multiplier.
-        complexity = 0.6 + rng.random() * 1.2
-        base_kbps = (width * height) / 1000.0
-        crf_decay = math.exp(-(crf - 23.0) * 0.05)
-        bitrate_kbps = base_kbps * crf_decay * complexity
+        crf, width, height, framerate, duration_s, bitrate_kbps = _synthetic_shape_and_rate(rng, i)
 
         # Compute the analytical-fallback VMAF for this synthetic row
         # — that is the regression target. Add a small Gaussian
@@ -313,7 +313,7 @@ def iter_corpus_files(path: Path) -> tuple[Path, ...]:
 
     ``path`` may be either a single file or a directory containing
     sharded corpus files. Directory traversal is recursive so the
-    trainer can consume the ``.workingdir2/corpus_run`` style layout
+    trainer can consume the ``.corpus/corpus_run`` style layout
     directly without first concatenating rows by hand.
     """
     if path.is_file():
@@ -919,6 +919,52 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _emit_stub_model_card(args: argparse.Namespace, codecs: Sequence[str]) -> None:
+    codec = codecs[0]
+    destination: Any = (
+        sys.stdout if args.emit_stub_card_only == "-" else Path(args.emit_stub_card_only)
+    )
+    _write_model_card(
+        destination,
+        codec=codec,
+        opset=args.opset,
+        node_count=0,
+        n_train=SYNTHETIC_CORPUS_ROWS,
+        n_val=0,
+        plcc=0.0,
+        srocc=0.0,
+        rmse=0.0,
+        onnx_sha256="0" * 64,
+        onnx_bytes=0,
+        op_allowlist_ok=True,
+        forbidden_ops=(),
+        corpus_kind=f"synthetic-stub-N={SYNTHETIC_CORPUS_ROWS}",
+    )
+
+
+def _train_requested_codecs(
+    args: argparse.Namespace, cfg: TrainConfig, codecs: Sequence[str]
+) -> list[TrainResult]:
+    results: list[TrainResult] = []
+    for codec in codecs:
+        rows = load_corpus(args.corpus, codec) if args.corpus is not None else []
+        if rows:
+            kind = f"real-N={len(rows)}"
+        else:
+            rows = generate_synthetic_corpus(codec, SYNTHETIC_CORPUS_ROWS)
+            kind = f"synthetic-stub-N={len(rows)}"
+        print(f"  {codec}: {kind} ...", flush=True)
+        result = train_one_codec(codec, rows, cfg=cfg, output_dir=args.output_dir, corpus_kind=kind)
+        results.append(result)
+        print(
+            f"    PLCC={result.plcc:.3f} SROCC={result.srocc:.3f} "
+            f"RMSE={result.rmse:.3f} bytes={result.onnx_bytes} "
+            f"allowlist={'OK' if result.op_allowlist_ok else 'FAIL'}",
+            flush=True,
+        )
+    return results
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -939,50 +985,13 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     # ADR-0546 (ai-01): smoke-test hook — emit a synthetic-stub card and exit.
     if args.emit_stub_card_only is not None:
-        codec_for_stub = codecs[0]
-        kind_for_stub = f"synthetic-stub-N={SYNTHETIC_CORPUS_ROWS}"
-        dest_raw = args.emit_stub_card_only
-        dest: Any = sys.stdout if dest_raw == "-" else Path(dest_raw)
-        _write_model_card(
-            dest,
-            codec=codec_for_stub,
-            opset=args.opset,
-            node_count=0,
-            n_train=SYNTHETIC_CORPUS_ROWS,
-            n_val=0,
-            plcc=0.0,
-            srocc=0.0,
-            rmse=0.0,
-            onnx_sha256="0" * 64,
-            onnx_bytes=0,
-            op_allowlist_ok=True,
-            forbidden_ops=(),
-            corpus_kind=kind_for_stub,
-        )
+        _emit_stub_model_card(args, codecs)
         return 0
 
     print(f"training predictor models -> {args.output_dir}", flush=True)
     print(f"corpus: {args.corpus or '(synthetic stub for every codec)'}", flush=True)
 
-    results: list[TrainResult] = []
-    for codec in codecs:
-        rows: list[dict] = []
-        if args.corpus is not None:
-            rows = load_corpus(args.corpus, codec)
-        if rows:
-            kind = f"real-N={len(rows)}"
-        else:
-            rows = generate_synthetic_corpus(codec, SYNTHETIC_CORPUS_ROWS)
-            kind = f"synthetic-stub-N={len(rows)}"
-        print(f"  {codec}: {kind} ...", flush=True)
-        result = train_one_codec(codec, rows, cfg=cfg, output_dir=args.output_dir, corpus_kind=kind)
-        results.append(result)
-        print(
-            f"    PLCC={result.plcc:.3f} SROCC={result.srocc:.3f} "
-            f"RMSE={result.rmse:.3f} bytes={result.onnx_bytes} "
-            f"allowlist={'OK' if result.op_allowlist_ok else 'FAIL'}",
-            flush=True,
-        )
+    _train_requested_codecs(args, cfg, codecs)
     return 0
 
 

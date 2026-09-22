@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "mu_table.h"
 #include "test.h"
 // NOLINTNEXTLINE(bugprone-suspicious-include): white-box test deliberately includes model.c to inspect static built_in_models per ADR-0278 / ADR-0141.
 #include "model.c"
@@ -1450,103 +1451,105 @@ static char *test_json_model_malformed_after_model_dict_rejects(void)
     return NULL;
 }
 
-typedef struct {
-    const char *name;
-    char *(*fn)(void);
-} TestCase;
-
-static const TestCase test_cases[] = {
-    {"test_json_model", test_json_model},
+/*
+ * The cases are held in several short tables rather than one: a brace scope of
+ * its own stays inside the 60-line budget the repository applies to the whole
+ * tree (ADR-1142). run_tests() walks the tables in order, so the reported
+ * order and the first-failure behaviour are exactly what a single table gave.
+ * The tables use the shared MuTest runner from mu_table.h instead of a
+ * file-local copy of it.
+ */
+/* Model lifecycle, flag handling and the feature surface. */
+static const MuTest model_api_tests[] = {
+    MU_TEST(test_json_model),
 #if VMAF_BUILT_IN_MODELS
-    {"test_built_in_model", test_built_in_model},
+    MU_TEST(test_built_in_model),
 #endif
-    {"test_model_load_and_destroy", test_model_load_and_destroy},
-    {"test_model_load_rejects_null_version", test_model_load_rejects_null_version},
-    {"test_model_check_default_behavior_unset_flags",
-     test_model_check_default_behavior_unset_flags},
-    {"test_model_check_default_behavior_set_flags", test_model_check_default_behavior_set_flags},
-    {"test_model_set_flags", test_model_set_flags},
-    {"test_model_feature", test_model_feature},
-    {"test_json_model_from_buffer", test_json_model_from_buffer},
-    {"test_json_model_missing_path", test_json_model_missing_path},
-    {"test_json_model_malformed_buffer", test_json_model_malformed_buffer},
-    {"test_json_model_empty_buffer", test_json_model_empty_buffer},
-    {"test_json_model_collection_from_path", test_json_model_collection_from_path},
-    {"test_json_model_collection_from_buffer", test_json_model_collection_from_buffer},
-    {"test_json_model_collection_missing_path", test_json_model_collection_missing_path},
-    {"test_json_model_collection_malformed_buffer", test_json_model_collection_malformed_buffer},
-    {"test_model_collection_bootstrap_type", test_model_collection_bootstrap_type},
-    {"test_json_model_score_transform", test_json_model_score_transform},
-    {"test_json_model_synthetic_branches", test_json_model_synthetic_branches},
-    {"test_json_model_allows_more_than_64_features", test_json_model_allows_more_than_64_features},
-    {"test_json_model_allows_more_than_10_knots", test_json_model_allows_more_than_10_knots},
-    {"test_json_model_collection_skips_unknown_keys",
-     test_json_model_collection_skips_unknown_keys},
-    {"test_json_model_unknown_model_type", test_json_model_unknown_model_type},
-    {"test_json_model_unknown_norm_type", test_json_model_unknown_norm_type},
-    {"test_json_model_model_type_not_string", test_json_model_model_type_not_string},
-    {"test_json_model_norm_type_not_string", test_json_model_norm_type_not_string},
-    {"test_json_model_score_transform_not_object", test_json_model_score_transform_not_object},
-    {"test_json_model_score_transform_p0_bad_type", test_json_model_score_transform_p0_bad_type},
-    {"test_json_model_score_transform_p1_bad_type", test_json_model_score_transform_p1_bad_type},
-    {"test_json_model_score_transform_p2_bad_type", test_json_model_score_transform_p2_bad_type},
-    {"test_json_model_score_transform_knots_bad_type",
-     test_json_model_score_transform_knots_bad_type},
-    {"test_json_model_score_transform_out_lte_in_not_string",
-     test_json_model_score_transform_out_lte_in_not_string},
-    {"test_json_model_score_transform_out_gte_in_not_string",
-     test_json_model_score_transform_out_gte_in_not_string},
-    {"test_json_model_score_transform_enabled_bad_type",
-     test_json_model_score_transform_enabled_bad_type},
-    {"test_json_model_feature_names_non_string", test_json_model_feature_names_non_string},
-    {"test_json_model_feature_names_duplicate_key_no_leak",
-     test_json_model_feature_names_duplicate_key_no_leak},
-    {"test_json_model_slopes_non_number", test_json_model_slopes_non_number},
-    {"test_json_model_intercepts_first_not_number", test_json_model_intercepts_first_not_number},
-    {"test_json_model_knots_outer_not_array", test_json_model_knots_outer_not_array},
-    {"test_json_model_knots_too_many_values", test_json_model_knots_too_many_values},
-    {"test_json_model_feature_opts_dict_bad_value_type",
-     test_json_model_feature_opts_dict_bad_value_type},
-    {"test_json_model_score_clip_not_array", test_json_model_score_clip_not_array},
-    {"test_json_model_model_dict_not_object", test_json_model_model_dict_not_object},
-    {"test_json_model_slopes_not_array", test_json_model_slopes_not_array},
-    {"test_json_model_intercepts_not_array", test_json_model_intercepts_not_array},
-    {"test_json_model_feature_names_not_array", test_json_model_feature_names_not_array},
-    {"test_json_model_feature_opts_dicts_not_array", test_json_model_feature_opts_dicts_not_array},
-    {"test_json_model_model_payload_not_string", test_json_model_model_payload_not_string},
-    {"test_json_model_chroma_correction_not_number", test_json_model_chroma_correction_not_number},
-    {"test_json_model_score_clip_min_not_number", test_json_model_score_clip_min_not_number},
-    {"test_json_model_score_clip_max_not_number", test_json_model_score_clip_max_not_number},
-    {"test_json_model_score_transform_poly_null_disables",
-     test_json_model_score_transform_poly_null_disables},
-    {"test_json_model_score_transform_knots_null_disables",
-     test_json_model_score_transform_knots_null_disables},
-    {"test_json_model_score_transform_bool_str_not_string",
-     test_json_model_score_transform_bool_str_not_string},
-    {"test_json_model_unrecognised_model_dict_key", test_json_model_unrecognised_model_dict_key},
-    {"test_json_model_intercepts_mid_not_number", test_json_model_intercepts_mid_not_number},
-    {"test_json_model_score_transform_poly_number_sets_value",
-     test_json_model_score_transform_poly_number_sets_value},
-    {"test_json_model_score_transform_poly_string_rejects",
-     test_json_model_score_transform_poly_string_rejects},
-    {"test_json_model_score_transform_knots_array_walks",
-     test_json_model_score_transform_knots_array_walks},
-    {"test_json_model_slopes_longer_than_feature_names_rejects",
-     test_json_model_slopes_longer_than_feature_names_rejects},
-    {"test_json_model_malformed_after_model_dict_rejects",
-     test_json_model_malformed_after_model_dict_rejects},
-    {"test_version_next", test_version_next},
+    MU_TEST(test_model_load_and_destroy),
+    MU_TEST(test_model_load_rejects_null_version),
+    MU_TEST(test_model_check_default_behavior_unset_flags),
+    MU_TEST(test_model_check_default_behavior_set_flags),
+    MU_TEST(test_model_set_flags),
+    MU_TEST(test_model_feature),
 };
 
-char *run_tests(void)
+/* JSON model and model-collection loading, from a path and from a buffer. */
+static const MuTest json_model_tests[] = {
+    MU_TEST(test_json_model_from_buffer),
+    MU_TEST(test_json_model_missing_path),
+    MU_TEST(test_json_model_malformed_buffer),
+    MU_TEST(test_json_model_empty_buffer),
+    MU_TEST(test_json_model_collection_from_path),
+    MU_TEST(test_json_model_collection_from_buffer),
+    MU_TEST(test_json_model_collection_missing_path),
+    MU_TEST(test_json_model_collection_malformed_buffer),
+    MU_TEST(test_model_collection_bootstrap_type),
+};
+
+/* Score-transform parsing, including every per-field type rejection. */
+static const MuTest score_transform_tests[] = {
+    MU_TEST(test_json_model_score_transform),
+    MU_TEST(test_json_model_synthetic_branches),
+    MU_TEST(test_json_model_allows_more_than_64_features),
+    MU_TEST(test_json_model_allows_more_than_10_knots),
+    MU_TEST(test_json_model_collection_skips_unknown_keys),
+    MU_TEST(test_json_model_unknown_model_type),
+    MU_TEST(test_json_model_unknown_norm_type),
+    MU_TEST(test_json_model_model_type_not_string),
+    MU_TEST(test_json_model_norm_type_not_string),
+    MU_TEST(test_json_model_score_transform_not_object),
+    MU_TEST(test_json_model_score_transform_p0_bad_type),
+    MU_TEST(test_json_model_score_transform_p1_bad_type),
+    MU_TEST(test_json_model_score_transform_p2_bad_type),
+    MU_TEST(test_json_model_score_transform_knots_bad_type),
+    MU_TEST(test_json_model_score_transform_out_lte_in_not_string),
+    MU_TEST(test_json_model_score_transform_out_gte_in_not_string),
+    MU_TEST(test_json_model_score_transform_enabled_bad_type),
+};
+
+/* Per-key type and shape rejections in the model dictionary, plus the
+ * version helper. */
+static const MuTest json_reject_tests[] = {
+    MU_TEST(test_json_model_feature_names_non_string),
+    MU_TEST(test_json_model_feature_names_duplicate_key_no_leak),
+    MU_TEST(test_json_model_slopes_non_number),
+    MU_TEST(test_json_model_intercepts_first_not_number),
+    MU_TEST(test_json_model_knots_outer_not_array),
+    MU_TEST(test_json_model_knots_too_many_values),
+    MU_TEST(test_json_model_feature_opts_dict_bad_value_type),
+    MU_TEST(test_json_model_score_clip_not_array),
+    MU_TEST(test_json_model_model_dict_not_object),
+    MU_TEST(test_json_model_slopes_not_array),
+    MU_TEST(test_json_model_intercepts_not_array),
+    MU_TEST(test_json_model_feature_names_not_array),
+    MU_TEST(test_json_model_feature_opts_dicts_not_array),
+    MU_TEST(test_json_model_model_payload_not_string),
+    MU_TEST(test_json_model_chroma_correction_not_number),
+    MU_TEST(test_json_model_score_clip_min_not_number),
+    MU_TEST(test_json_model_score_clip_max_not_number),
+    MU_TEST(test_json_model_score_transform_poly_null_disables),
+    MU_TEST(test_json_model_score_transform_knots_null_disables),
+    MU_TEST(test_json_model_score_transform_bool_str_not_string),
+    MU_TEST(test_json_model_unrecognised_model_dict_key),
+    MU_TEST(test_json_model_intercepts_mid_not_number),
+    MU_TEST(test_json_model_score_transform_poly_number_sets_value),
+    MU_TEST(test_json_model_score_transform_poly_string_rejects),
+    MU_TEST(test_json_model_score_transform_knots_array_walks),
+    MU_TEST(test_json_model_slopes_longer_than_feature_names_rejects),
+    MU_TEST(test_json_model_malformed_after_model_dict_rejects),
+    MU_TEST(test_version_next),
+};
+
+mu_message_t run_tests(void)
 {
-    const size_t cnt = sizeof(test_cases) / sizeof(test_cases[0]);
-    for (size_t i = 0; i < cnt; i++) {
-        char *msg = mu_report(test_cases[i].name, test_cases[i].fn);
-        if (msg)
-            return msg;
-    }
-    return NULL;
+    mu_message_t msg = mu_run_table(model_api_tests, MU_TABLE_LEN(model_api_tests));
+    if (!msg)
+        msg = mu_run_table(json_model_tests, MU_TABLE_LEN(json_model_tests));
+    if (!msg)
+        msg = mu_run_table(score_transform_tests, MU_TABLE_LEN(score_transform_tests));
+    if (!msg)
+        msg = mu_run_table(json_reject_tests, MU_TABLE_LEN(json_reject_tests));
+    return msg;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

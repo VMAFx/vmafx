@@ -7,7 +7,7 @@
 
 ## Context
 
-[BACKLOG T6-4](../../.workingdir2/BACKLOG.md) / [Wave 1 roadmap
+BACKLOG T6-4 / [Wave 1 roadmap
 § 3.1](../ai/roadmap.md) called for:
 
 > **Current.** Luma-8bit only, chroma passes through untouched.
@@ -164,7 +164,7 @@ chroma through.
 
 ## References
 
-- [BACKLOG T6-4](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T6-4 — backlog row.
 - [Wave 1 roadmap § 3.1](../ai/roadmap.md) — "`vmaf_pre` extension".
 - [ADR-0168](0168-tinyai-konvid-baselines.md) — C3 baseline that
   this ADR makes reachable in 10/12-bit pipelines.

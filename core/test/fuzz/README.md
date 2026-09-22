@@ -27,16 +27,16 @@ CC=clang CXX=clang++ \
     -Db_sanitize=address \
     -Dfuzz=true \
     -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled
-ninja -C build-fuzz libvmaf/test/fuzz/fuzz_y4m_input
+ninja -C build-fuzz core/test/fuzz/fuzz_y4m_input
 ```
 
 ## Run a smoke fuzz locally
 
 ```bash
-./build-fuzz/libvmaf/test/fuzz/fuzz_y4m_input \
+./build-fuzz/core/test/fuzz/fuzz_y4m_input \
     -max_total_time=60 \
     -rss_limit_mb=2048 \
-    libvmaf/test/fuzz/y4m_input_corpus/
+    core/test/fuzz/y4m_input_corpus/
 ```
 
 A clean run prints `Done <N> runs in <60> second(s)` with no
@@ -45,7 +45,7 @@ AddressSanitizer ...` and writes a `crash-<sha>` file in the working
 directory, treat that as a real bug — triage with the reproducer:
 
 ```bash
-./build-fuzz/libvmaf/test/fuzz/fuzz_y4m_input crash-<sha>
+./build-fuzz/core/test/fuzz/fuzz_y4m_input crash-<sha>
 ```
 
 ## Corpus management
@@ -70,11 +70,11 @@ out-of-bounds destination write). Run them manually after a fix
 lands:
 
 ```bash
-for f in libvmaf/test/fuzz/y4m_input_known_crashes/*.y4m; do
+for f in core/test/fuzz/y4m_input_known_crashes/*.y4m; do
     ./build-fuzz/test/fuzz/fuzz_y4m_input "$f"
 done
 
-for f in libvmaf/test/fuzz/cli_parse_known_crashes/*.argv; do
+for f in core/test/fuzz/cli_parse_known_crashes/*.argv; do
     ./build-fuzz/test/fuzz/fuzz_cli_parse "$f"
 done
 ```

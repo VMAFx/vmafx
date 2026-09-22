@@ -121,7 +121,7 @@ point, low, high = predictor.predict_vmaf_with_uncertainty(
   `{"method": "split-conformal", "alpha": <float>, "n": <int>, "residuals": [<float>, ...]}`.
   Versioned by the `method` discriminator; future `cv-plus`
   sidecars use a different value.
-- **License**: BSD-3-Clause-Plus-Patent, matching the rest of
+- **License**: EUPL-1.2, matching the rest of
   `vmaf-tune/`. The conformal-prediction theory is in the public
   domain (algorithmic results, no patent claims known to us).
 

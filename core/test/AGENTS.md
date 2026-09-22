@@ -38,6 +38,16 @@ and teardown.
 - `mu_assert` / `mu_run_test` = 2 branches each (`if` + `do { } while (0)`) -> more than 7 in one function fails.
 - more than 7 tests -> `MU_TEST(fn)` rows + `mu_run_table()` from [mu_table.h](mu_table.h). 0 branches at any length.
 - assertion-heavy test -> `check_*` helpers, called as `char *msg = check_x(...); if (msg) return msg;` = 1 branch.
+- `mu_assert_msg(check_x(...))` from [test.h](test.h) is same propagation in one line. Use it; do not re-declare local copy.
+
+**Block length** (HISS-04, `praetorctl audit`, 60-line hard cap):
+
+- cap counts every brace block at file scope, function or not: anonymous `namespace`, table initializer, `switch` body.
+- C++ TU -> several short `namespace { ... } // namespace` blocks, one per cohesive group. Same internal linkage, no suppression. Same shape as SYCL extractors and `core/tools/vmaf.cpp`.
+- long `MuTest` table -> several short tables + one `mu_run_table()` call each, in order. Order and first-failure behaviour unchanged.
+- split test body -> phase helper returning `mu_message_t`, never per-block partial sums. Assertion strings and expected values stay byte-identical.
+- HIP parity test -> `hip_parity_skip()` from [hip_parity_skip.h](hip_parity_skip.h) for the `-ENOSYS` scaffold teardown. One definition; twelve tests share it.
+- **do not split** a body whose `NOLINT` cites an external contract the fork does not own (ADR-1286). Two here: `ref_calc_psnrhvs()` in [test_psnr_hvs_simd.c](test_psnr_hvs_simd.c) (ADR-0138 bit-exactness) and `test_barten_csf()` in [test_barten_csf.c](test_barten_csf.c) (upstream's `mu_assert` sequence verbatim; upstream still appends cases, so reshaping it turns every later sync into a hand-merge). Both keep their cited suppression and stay over the cap.
 
 **Clean up before asserting:**
 
@@ -72,6 +82,39 @@ and teardown.
   Unchecked dereference is latent SIGSEGV under ASan
   `MALLOC_PERTURB_=198` (ADR-0971). **Rebase-sensitive**: this rule
   applies to every new test file.
+- **Framesync initializer failures recompile `framesync.c` into the test
+  executable.** `test_framesync_init_failure` lists `../src/framesync.c` among
+  its own sources and maps the four init/destroy entry points to test-owned
+  wrapper symbols through `c_args`. Those `-D` renames reach every translation
+  unit in the target, so `test_framesync_init_failure.c` undefines them above
+  its first `#include`. Keep the test source an ordinary translation unit: do
+  not include executable `.c` files, add a production hook, or replace the
+  deterministic wrappers with a platform-specific linker interposer. The test
+  must cover each initialization stage, a null init-output pointer, the
+  documented null destroy no-op, unpublished context, and exact partial
+  unwind.
+- **`test_framesync_init_failure` builds with LTO off on Darwin, and that is
+  load-bearing.** **Rebase-sensitive**: keep
+  `override_options : framesync_interposer_lto_override` on the target. Under
+  `b_lto=true` (the project default) this executable's whole input is LLVM
+  bitcode, and Apple's linker rejects the result on all five macOS legs with
+  `ld: symbol(s) defined in LTO objects are referenced but missing in compiled
+  objects`, naming `_mu_tests_run`, the four `_vmafx_test_pthread_*` wrappers,
+  `_vmaf_framesync_init` and `_vmaf_framesync_destroy`. Two narrower fixes were
+  tried against that diagnostic and both failed byte-identically: removing the
+  `link_whole`/`-force_load` (34b3ffa09) and removing `vmaf_cflags_common` so
+  the definitions keep default visibility (18e9edebd). Replaying the target's
+  own compile and link commands through clang/LLD shows the LTO resolution
+  hands libLTO exactly one externally visible symbol -- the entry point -- and
+  the generated object comes back with `main` as its only global; but the
+  pure-bitcode sibling targets that link a few steps earlier in the same macOS
+  run (`test_pdjson`, `test_thread_pool`,
+  `test_pdjson_stack_increment_zero`) collapse the same way and link fine, so
+  *why* Apple's linker singles this one out is not established. Do not spend a
+  fourth attempt steering the preserve list without a macOS machine to test on;
+  `b_lto=false` removes the precondition instead, the same way `test_output`
+  below already handles its own Apple-LTO problem. Also do not reintroduce
+  `framesync.c` as a `static_library` consumed with `link_whole`.
 - **SIMD parity tests check what kernel leaves outside its output, not only
   what it writes inside.** Kernel storing past its region passes region-only
   comparison. Netflix/vmaf `03b5562c5` + `ea012e387` both that shape, unnoticed
@@ -88,6 +131,12 @@ and teardown.
   `test_feature.cpp` are sole authoritative test files for `dict`
   and `feature_name`; uncompiled legacy C twins `test_dict.c` and
   `test_feature.c` were deleted as obsolete.
+- **CAMBI bounded-search regression seam**: `test_cambi.c` deliberately
+  includes the production `cambi.c` translation unit. Keep the tests for TVI
+  threshold/difference extremes, an unreachable VLT threshold, and duplicate
+  plus descending quick-select inputs. They pin termination bounds and
+  partition ordering directly; an end-to-end score alone cannot distinguish
+  a hang from a numerically wrong search result.
 - **GPU tests must skip gracefully when no device present.** Any
   test calling `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or
   equivalent GPU-init helpers must check return value before
@@ -353,9 +402,9 @@ After every upstream sync or port-upstream-commit, run:
 grep "^test(" core/test/meson.build | grep -v "suite :"
 ```
 
-Any line returned is violation — add appropriate `suite:` before
-merging. See audit that identified this bug:
-`.workingdir/audit-build-matrix-symbols-2026-05-16.md` finding 5c.
+Any line returned is a violation — add the appropriate `suite:` before
+merging. Keep this check with every upstream sync because upstream does not
+carry the fork's suite classification contract.
 
 ## Pixel-format edge coverage invariant (ADR-0912)
 

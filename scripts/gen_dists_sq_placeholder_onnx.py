@@ -96,7 +96,7 @@ def update_registry(path: Path, sha256_hex: str) -> None:
     entry = {
         "id": MODEL_ID,
         "kind": "fr",
-        "license": "BSD-3-Clause-Plus-Patent",
+        "license": "BSD-2-Clause-Patent",
         "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
         "notes": (
             "DISTS-Sq smoke placeholder. Synthetic mean-squared tensor distance "

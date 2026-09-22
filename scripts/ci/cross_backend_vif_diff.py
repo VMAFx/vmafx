@@ -372,16 +372,8 @@ def diff(
     return 1 if fail else 0
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--vmaf-binary", type=Path, required=True, help="path to core/build/tools/vmaf")
-    ap.add_argument("--reference", type=Path, required=True)
-    ap.add_argument("--distorted", type=Path, required=True)
-    ap.add_argument("--width", type=int, required=True)
-    ap.add_argument("--height", type=int, required=True)
-    ap.add_argument("--pixel-format", default="420")
-    ap.add_argument("--bitdepth", type=int, default=8)
-    ap.add_argument("--places", type=int, default=4)
+def add_calibration_args(ap: argparse.ArgumentParser) -> None:
+    """Register the ADR-0234 per-architecture tolerance-lookup options."""
     ap.add_argument(
         "--gpu-id",
         type=str,
@@ -400,6 +392,20 @@ def main() -> int:
         default=DEFAULT_CALIBRATION_PATH,
         help=(f"path to the ADR-0234 calibration YAML (default: {DEFAULT_CALIBRATION_PATH})"),
     )
+
+
+def build_argparser() -> argparse.ArgumentParser:
+    """Command-line interface for the cross-backend feature diff."""
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--vmaf-binary", type=Path, required=True, help="path to core/build/tools/vmaf")
+    ap.add_argument("--reference", type=Path, required=True)
+    ap.add_argument("--distorted", type=Path, required=True)
+    ap.add_argument("--width", type=int, required=True)
+    ap.add_argument("--height", type=int, required=True)
+    ap.add_argument("--pixel-format", default="420")
+    ap.add_argument("--bitdepth", type=int, default=8)
+    ap.add_argument("--places", type=int, default=4)
+    add_calibration_args(ap)
     ap.add_argument(
         "--feature",
         choices=tuple(FEATURE_METRICS),
@@ -431,8 +437,11 @@ def main() -> int:
         type=Path,
         default=Path(tempfile.gettempdir()) / "vmaf_cross_backend",
     )
-    args = ap.parse_args()
+    return ap
 
+
+def resolve_backend_device(args: argparse.Namespace) -> None:
+    """Fold the legacy --vulkan-device alias in and apply the per-backend default."""
     if args.vulkan_device is not None:
         args.backend = "vulkan"
         args.device = args.vulkan_device
@@ -440,6 +449,45 @@ def main() -> int:
         # Per-backend defaults: gpumask=1 picks the first GPU on CUDA;
         # device 0 is the first compute-capable on SYCL/Vulkan.
         args.device = 1 if args.backend == "cuda" else 0
+
+
+def resolve_tolerance(args: argparse.Namespace) -> tuple[float | None, str]:
+    """Per-feature tolerance override and the human-readable reason for it.
+
+    ADR-0234: when ``--gpu-id`` is supplied, look up the per-arch
+    tolerance for this feature. Falls back to ``--places`` when:
+     - no --gpu-id was given (legacy callers, default behaviour);
+     - pyyaml is unavailable (loader returns None);
+     - the gpu_id matches no row;
+     - the matched row has no override for ``args.feature``
+       (placeholder rows: registered arch, no calibration data).
+    """
+    tolerance_override: float | None = None
+    tolerance_source = f"places={args.places}"
+    if args.gpu_id is None:
+        return tolerance_override, tolerance_source
+
+    table = load_calibration_table(args.calibration_table)
+    if table is None:
+        return tolerance_override, tolerance_source
+
+    entry = table.lookup(args.gpu_id)
+    if entry is not None and args.feature in entry.features:
+        tolerance_override = float(entry.features[args.feature])
+        tolerance_source = f"calibration {entry.gpu_id_pattern} ({entry.status})"
+    elif entry is not None:
+        tolerance_source = (
+            f"calibration {entry.gpu_id_pattern} "
+            f"(no per-feature override; places={args.places} fallback)"
+        )
+    else:
+        tolerance_source = f"no calibration entry for {args.gpu_id}; places={args.places} fallback"
+    return tolerance_override, tolerance_source
+
+
+def main() -> int:
+    args = build_argparser().parse_args()
+    resolve_backend_device(args)
 
     if not args.vmaf_binary.exists():
         print(f"vmaf binary not found: {args.vmaf_binary}")
@@ -483,31 +531,7 @@ def main() -> int:
         device=args.device,
     )
 
-    # ADR-0234: when ``--gpu-id`` is supplied, look up the per-arch
-    # tolerance for this feature. Falls back to ``--places`` when:
-    #  - no --gpu-id was given (legacy callers, default behaviour);
-    #  - pyyaml is unavailable (loader returns None);
-    #  - the gpu_id matches no row;
-    #  - the matched row has no override for ``args.feature``
-    #    (placeholder rows: registered arch, no calibration data).
-    tolerance_override: float | None = None
-    tolerance_source = f"places={args.places}"
-    if args.gpu_id is not None:
-        table = load_calibration_table(args.calibration_table)
-        if table is not None:
-            entry = table.lookup(args.gpu_id)
-            if entry is not None and args.feature in entry.features:
-                tolerance_override = float(entry.features[args.feature])
-                tolerance_source = f"calibration {entry.gpu_id_pattern} ({entry.status})"
-            elif entry is not None:
-                tolerance_source = (
-                    f"calibration {entry.gpu_id_pattern} "
-                    f"(no per-feature override; places={args.places} fallback)"
-                )
-            else:
-                tolerance_source = (
-                    f"no calibration entry for {args.gpu_id}; places={args.places} fallback"
-                )
+    tolerance_override, tolerance_source = resolve_tolerance(args)
 
     return diff(
         load_frames(cpu_json),

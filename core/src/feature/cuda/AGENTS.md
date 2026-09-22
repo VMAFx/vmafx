@@ -392,6 +392,15 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   Netflix one. Upstream-mirror — keep both headers
   verbatim on rebase.
 
+- **Integer ADM scales 1-3 keep ADR-0155's negative rounding term as
+  `INT32_MIN`.** The one site in `integer_adm/adm_csf.cu` and both fused sites
+  in `integer_adm/adm_cm.cu` deliberately subtract 2^31 before their 32-bit
+  right shift to stay Netflix-golden compatible. Do not restore
+  `1u << 31` assigned into `int32_t`: it generates NVCC diagnostic `#68-D`.
+  Do not widen the constant either; that changes ADM output. Focused CUDA 13.4
+  builds produced byte-identical fatbins after changing only the spelling.
+  See [Research-2076](../../../../docs/research/2076-cuda-adm-signbit-warning.md).
+
 - **Every CUDA reduce kernel SHOULD use warp-reduce + `atomicAdd_int64`
   into single accumulator; separate per-thread scratch buffer plus
   separate reduce kernel launch = pre-fix legacy pattern.**
@@ -837,6 +846,30 @@ kernel variants at runtime. Current policy table is in ADR-0753.
   `__restrict__` extraction pattern; do not add writes through these pointers (they are
   read-only inputs). ADR-0773 completes ADR-0756 `adm_decouple` dispatch item.
   See [ADR-0773](../../../../docs/adr/0773-cuda-adm-decouple-inline-ldg.md).
+
+- **The `*_unwind` / `*_init_unwind` helpers are the single teardown path for
+  their extractor, and the arithmetic helpers must stay `static` in the same
+  translation unit (HISS-21 / 2026-09-21).** Every extractor's old `free_ref` /
+  `free_buffers` / `fail_cuda` label now lives in one `static` helper that holds
+  the label's statements verbatim; callers pass their live `err` / `ret` so the
+  returned code is unchanged. `ssim_cuda.c`'s `issim_init_unwind` takes an
+  `ISSIM_UNWIND_*` stage because it replaced a three-level fall-through cascade —
+  adding a resource means adding a stage, not a second exit path. The helpers
+  carrying score arithmetic (`integer_ssim_setup_geometry`'s `c1` / `c2`,
+  `motion_v2_stamp_value`, `motion_v2_emit_frame`, `float_psnr_peak_for_bpc`)
+  must stay `static` and keep each expression in one statement: moving an operand
+  across a call boundary, or letting one of these become external, re-opens the
+  FMA-contraction divergence ADR-1253 closed. On rebase: reapply the helper
+  boundary, never restore the label.
+  `integer_adm_cuda.c` is out of scope for the helper NAMES above: #1507
+  rewrote its init and teardown while this branch was open, so it releases
+  through paired helpers (`adm_cuda_init_device` / `adm_cuda_release_device`,
+  `adm_cuda_init_buffers` / `adm_cuda_free_buffers`,
+  `adm_cuda_load_modules` / `adm_cuda_unload_modules`) and keeps one
+  `CHECK_CUDA_GOTO` ladder inside `adm_cuda_init_device_locked()`, the same
+  macro the rest of the CUDA tree uses. The rules are unchanged for it: the
+  release set and release order on every exit path, a real error code out of
+  every failure, and no arithmetic expression split across a boundary.
 
 ## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
 

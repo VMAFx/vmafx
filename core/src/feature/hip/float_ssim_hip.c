@@ -6,9 +6,9 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause
  *
  *  float_ssim feature extractor on the HIP backend — eighth consumer
- *  of `libvmaf/src/hip/kernel_template.h` (T7-10b batch-3 / ADR-0374).
+ *  of `core/src/hip/kernel_template.h` (T7-10b batch-3 / ADR-0374).
  *
- *  Mirrors `libvmaf/src/feature/cuda/integer_ssim_cuda.c` call-graph-for-
+ *  Mirrors `core/src/feature/cuda/integer_ssim_cuda.c` call-graph-for-
  *  call-graph. Two-pass design mirrors the GLSL Vulkan shader and the
  *  CUDA twin:
  *    Pass 1 — horizontal 11-tap separable Gaussian over ref / cmp /
@@ -557,12 +557,12 @@ static const char *provided_features[] = {"float_ssim", NULL};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_float_ssim_hip;` in
- * `libvmaf/src/feature/feature_extractor.c`'s
+ * `core/src/feature/feature_extractor.cpp`'s
  * `feature_extractor_list[]`. Making this static would unlink the
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_ssim_cuda` in
- * `libvmaf/src/feature/cuda/integer_ssim_cuda.c`). */
+ * `core/src/feature/cuda/integer_ssim_cuda.c`). */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ssim_hip = {
     .name = "float_ssim_hip",

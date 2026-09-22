@@ -247,41 +247,102 @@ func RecommendPrefilter(ctx context.Context, opts Options) (Result, error) {
 			"time budget must be > 0 when set; got %v", opts.TimeBudget)
 	}
 
-	nTrials := opts.NTrials
-	if nTrials <= 0 {
-		nTrials = DefaultNTrials
-		if opts.Smoke {
-			nTrials = SmokeNTrials
-		}
+	probe, probeErr := resolveProbe(adapter, opts)
+	if probeErr != nil {
+		return Result{}, probeErr
 	}
 
-	probe := opts.Probe
+	search, searchErr := runSearch(ctx, probe, dims, opts, effectiveNTrials(opts))
+	if searchErr != nil {
+		return Result{}, searchErr
+	}
+	if len(search.records) == 0 {
+		return Result{}, errors.New("prefilter: no trials completed")
+	}
+
+	bestVF, vfErr := adapter.VFFragment(search.bestDeband, false)
+	if vfErr != nil {
+		return Result{}, vfErr
+	}
+
+	return Result{
+		FilterName:        adapter.FilterName,
+		Encoder:           opts.Encoder,
+		TargetVMAF:        opts.TargetVMAF,
+		RecommendedCRF:    search.bestCRF,
+		RecommendedDeband: search.bestDeband,
+		RecommendedVF:     bestVF,
+		AchievedVMAF:      search.bestProbe.VMAF,
+		AchievedKbps:      search.bestProbe.Kbps,
+		NTrials:           len(search.records),
+		Smoke:             opts.Smoke,
+		Probes:            search.records,
+		Notes:             searchNotes(opts.Smoke, sweptKnobs(dims), len(search.records)),
+	}, nil
+}
+
+// effectiveNTrials resolves the probe budget: the caller's, else the mode's
+// default.
+func effectiveNTrials(opts Options) int {
+	if opts.NTrials > 0 {
+		return opts.NTrials
+	}
 	if opts.Smoke {
-		if probe == nil {
-			probe = SmokeProbe(adapter)
-		}
-	} else {
-		if probe == nil {
-			return Result{}, errors.New(
-				"prefilter production mode requires an injected probe callable " +
-					"(deband, crf) -> ProbeResult. The live deband->encode->score " +
-					"loop is built by the CLI handler from ffmpeg + libvmaf and " +
-					"gated on FilterAvailable()")
-		}
-		if opts.Src == "" {
-			return Result{}, errors.New(
-				"prefilter production mode requires a source path " +
-					"(an empty src is only valid in smoke mode)")
-		}
+		return SmokeNTrials
 	}
+	return DefaultNTrials
+}
 
+// resolveProbe picks the probe callable and enforces the preconditions the
+// chosen mode carries. Smoke falls back to the synthetic surface; production
+// has no fallback, because this package never runs ffmpeg itself.
+func resolveProbe(adapter Adapter, opts Options) (ProbeFn, error) {
+	if opts.Smoke {
+		if opts.Probe == nil {
+			return SmokeProbe(adapter), nil
+		}
+		return opts.Probe, nil
+	}
+	if opts.Probe == nil {
+		return nil, errors.New(
+			"prefilter production mode requires an injected probe callable " +
+				"(deband, crf) -> ProbeResult. The live deband->encode->score " +
+				"loop is built by the CLI handler from ffmpeg + libvmaf and " +
+				"gated on FilterAvailable()")
+	}
+	if opts.Src == "" {
+		return nil, errors.New(
+			"prefilter production mode requires a source path " +
+				"(an empty src is only valid in smoke mode)")
+	}
+	return opts.Probe, nil
+}
+
+// searchOutcome is what one TPE sweep produced: every probe it recorded and
+// the best point among them.
+type searchOutcome struct {
+	records    []ProbeRecord
+	bestCRF    int
+	bestDeband map[string]float64
+	bestProbe  ProbeResult
+}
+
+// runSearch drives the joint TPE sweep over the deband knobs and CRF.
+//
+// The loop stops early on a cancelled context or an elapsed time budget, both
+// of which are normal stops: whatever probes completed still decide the
+// answer.
+func runSearch(
+	ctx context.Context, probe ProbeFn, dims []Dimension, opts Options, nTrials int,
+) (searchOutcome, error) {
 	sampler := NewTPESampler(dims, DefaultTPEConfig(), opts.Seed)
-	records := make([]ProbeRecord, 0, nTrials)
-
+	out := searchOutcome{
+		records:    make([]ProbeRecord, 0, nTrials),
+		bestCRF:    opts.CRFRange[0],
+		bestDeband: map[string]float64{},
+		bestProbe:  ProbeResult{VMAF: math.NaN(), Kbps: math.NaN()},
+	}
 	bestObjective := math.Inf(1)
-	bestCRF := opts.CRFRange[0]
-	bestDeband := map[string]float64{}
-	bestProbe := ProbeResult{VMAF: math.NaN(), Kbps: math.NaN()}
 
 	deadline := time.Time{}
 	if opts.TimeBudget > 0 {
@@ -297,24 +358,16 @@ func RecommendPrefilter(ctx context.Context, opts Options) (Result, error) {
 		}
 
 		proposal := sampler.Suggest()
-		deband := make(map[string]float64, len(proposal))
-		crf := 0
-		for name, value := range proposal {
-			if name == "crf" {
-				crf = int(value)
-				continue
-			}
-			deband[name] = value
-		}
+		deband, crf := splitProposal(proposal)
 
 		result, probeErr := probe(ctx, deband, crf)
 		if probeErr != nil {
-			return Result{}, fmt.Errorf("prefilter trial %d: %w", trial, probeErr)
+			return searchOutcome{}, fmt.Errorf("prefilter trial %d: %w", trial, probeErr)
 		}
 		objective := Objective(result, opts.TargetVMAF)
 		sampler.Observe(proposal, objective)
 
-		records = append(records, ProbeRecord{
+		out.records = append(out.records, ProbeRecord{
 			Trial:        trial,
 			CRF:          crf,
 			DebandParams: deband,
@@ -324,19 +377,30 @@ func RecommendPrefilter(ctx context.Context, opts Options) (Result, error) {
 			Objective:    objective,
 		})
 		if objective < bestObjective {
-			bestObjective, bestCRF, bestDeband, bestProbe = objective, crf, deband, result
+			bestObjective = objective
+			out.bestCRF, out.bestDeband, out.bestProbe = crf, deband, result
 		}
 	}
+	return out, nil
+}
 
-	if len(records) == 0 {
-		return Result{}, errors.New("prefilter: no trials completed")
+// splitProposal separates the sampler's flat proposal into the deband knobs
+// and the CRF the same trial carries.
+func splitProposal(proposal map[string]float64) (map[string]float64, int) {
+	deband := make(map[string]float64, len(proposal))
+	crf := 0
+	for name, value := range proposal {
+		if name == "crf" {
+			crf = int(value)
+			continue
+		}
+		deband[name] = value
 	}
+	return deband, crf
+}
 
-	bestVF, vfErr := adapter.VFFragment(bestDeband, false)
-	if vfErr != nil {
-		return Result{}, vfErr
-	}
-
+// sweptKnobs lists the deband dimension names, sorted, excluding CRF.
+func sweptKnobs(dims []Dimension) []string {
 	swept := make([]string, 0, len(dims))
 	for _, d := range dims {
 		if d.Name != "crf" {
@@ -344,31 +408,20 @@ func RecommendPrefilter(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 	sort.Strings(swept)
+	return swept
+}
 
-	notes := fmt.Sprintf(
-		"production: joint TPE over %d deband knobs + CRF, %d probes against "+
-			"the %s filter (ADR-0110 contract). VMAF is the oracle; "+
-			"lowest-bitrate hit wins.",
-		len(swept), len(records), FilterName)
-	if opts.Smoke {
-		notes = fmt.Sprintf(
+// searchNotes renders the operator-facing summary line for the run.
+func searchNotes(smoke bool, swept []string, nProbes int) string {
+	if smoke {
+		return fmt.Sprintf(
 			"smoke mode — synthetic deband+CRF surface; no ffmpeg / Vulkan / GPU. "+
 				"Joint TPE over deband knobs + CRF (ADR-1116 / ADR-0106). "+
 				"Swept knobs: %s.", strings.Join(swept, ", "))
 	}
-
-	return Result{
-		FilterName:        adapter.FilterName,
-		Encoder:           opts.Encoder,
-		TargetVMAF:        opts.TargetVMAF,
-		RecommendedCRF:    bestCRF,
-		RecommendedDeband: bestDeband,
-		RecommendedVF:     bestVF,
-		AchievedVMAF:      bestProbe.VMAF,
-		AchievedKbps:      bestProbe.Kbps,
-		NTrials:           len(records),
-		Smoke:             opts.Smoke,
-		Probes:            records,
-		Notes:             notes,
-	}, nil
+	return fmt.Sprintf(
+		"production: joint TPE over %d deband knobs + CRF, %d probes against "+
+			"the %s filter (ADR-0110 contract). VMAF is the oracle; "+
+			"lowest-bitrate hit wins.",
+		len(swept), nProbes, FilterName)
 }

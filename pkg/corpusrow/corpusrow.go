@@ -127,7 +127,39 @@ func NewRow(job Job, opts Options, preset string, crf int,
 		exitStatus = score.ExitStatus
 	}
 
-	row := Row{
+	row := baseRow(job, opts, preset, crf, enc, score, scoreModel,
+		encodePath, extraParams, exitStatus, encodedDuration)
+	addFeatureColumns(row, score)
+	for _, key := range encInternalKeys {
+		row[key] = 0.0
+	}
+	return row
+}
+
+// addFeatureColumns writes the canonical-6 pooled mean / std pair for every
+// feature, filling NaN where libvmaf did not expose one — the sentinel the
+// corpus schema uses for "not measured".
+func addFeatureColumns(row Row, score scorecli.Result) {
+	for _, feature := range Canonical6 {
+		mean, ok := score.FeatureMeans[feature]
+		if !ok {
+			mean = math.NaN()
+		}
+		std, hasStd := score.FeatureStds[feature]
+		if !hasStd {
+			std = math.NaN()
+		}
+		row[feature+"_mean"] = mean
+		row[feature+"_std"] = std
+	}
+}
+
+// baseRow assembles every schema-v3 column that is not a per-feature one.
+func baseRow(job Job, opts Options, preset string, crf int,
+	enc ffencode.Result, score scorecli.Result, scoreModel, encodePath string,
+	extraParams []string, exitStatus int, encodedDuration float64,
+) Row {
+	return Row{
 		"schema_version":      SchemaVersion,
 		"run_id":              newRunID(),
 		"timestamp":           time.Now().UTC().Format(time.RFC3339),
@@ -162,22 +194,6 @@ func NewRow(job Job, opts Options, preset string, crf int,
 		"shot_avg_duration_sec": 0.0,
 		"shot_duration_std_sec": 0.0,
 	}
-	for _, feature := range Canonical6 {
-		mean, ok := score.FeatureMeans[feature]
-		if !ok {
-			mean = math.NaN()
-		}
-		std, hasStd := score.FeatureStds[feature]
-		if !hasStd {
-			std = math.NaN()
-		}
-		row[feature+"_mean"] = mean
-		row[feature+"_std"] = std
-	}
-	for _, key := range encInternalKeys {
-		row[key] = 0.0
-	}
-	return row
 }
 
 // Keys returns the schema-v3 key set, sorted, for schema-shape assertions.

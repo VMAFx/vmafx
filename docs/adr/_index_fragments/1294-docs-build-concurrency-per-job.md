@@ -1,0 +1,1 @@
+| [ADR-1294](1294-docs-build-concurrency-per-job.md) | Scope the docs build's concurrency group to its own ref and leave the global `pages` group to the deploy job, so an unrelated branch can no longer cancel a pull request's `mkdocs build --strict`. | Proposed | ci, docs |

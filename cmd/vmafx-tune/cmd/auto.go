@@ -80,6 +80,15 @@ Example — plan and realise the winner:
     --max-budget-bitrate 6000 \
     --execute --runs-dir runs/`
 
+	registerAutoFlags(cmd, flags)
+
+	markCommandFlagsRequired(cmd, "src")
+
+	return cmd
+}
+
+// registerAutoFlags registers the flags of the auto subcommand.
+func registerAutoFlags(cmd *cobra.Command, flags *autoFlags) {
 	cmd.Flags().StringVar(&flags.src, "src", "",
 		"reference video (raw YUV or any FFmpeg-readable container)")
 	cmd.Flags().Float64Var(&flags.targetVMAF, "target-vmaf", 93.0,
@@ -112,10 +121,6 @@ Example — plan and realise the winner:
 			"(useful for post-hoc A/B comparison)")
 	cmd.Flags().StringVar(&flags.model, "model", "",
 		"optional predictor_<codec>.onnx path; default uses the analytical fallback")
-
-	_ = cmd.MarkFlagRequired("src")
-
-	return cmd
 }
 
 // parseAllowCodecs splits and trims the --allow-codecs list, dropping empty

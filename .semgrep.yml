@@ -63,26 +63,35 @@ rules:
     severity: ERROR
 
   - id: vmaf-no-strcpy-strcat-sprintf
+    # This rule carries no `paths:` key, and must not grow one. ADR-1142 puts
+    # every file under every standard — upstream-mirror, vendored, GPU, SIMD,
+    # tests, tools — so a file is never exempt from a bounds rule because of
+    # where it came from.
+    #
+    # Three origin-based excludes lived here until 2026-09-21. Each was
+    # verified to protect nothing before removal:
+    #   /core/tools/cli_parse.c — deleted under ADR-1155; the parser is
+    #       cli_parse.cpp, which the glob never matched and which contains the
+    #       token `sprintf` only inside a comment.
+    #   /core/tools/y4m_input.c — the strcpy became a bounded memcpy of a
+    #       string literal in bc00da0be.
+    #   /matlab/**              — anchored at the repository root, where no
+    #       `matlab/` directory exists. The MEX sources live under
+    #       compat/python-vmaf/matlab/; their last banned call, a `sprintf`
+    #       whose result was handed to mexErrMsgTxt in MEX/innerProd.c, also
+    #       went in bc00da0be.
+    #
+    # Vendored code is NOT excluded (ADR-0683, ADR-1142). An earlier
+    # `/core/src/mcp/3rdparty/**` entry here, together with a whole-file
+    # `.semgrepignore` line, is why the cJSON 1.7.19 re-vendor could put
+    # eleven banned calls back without any gate noticing. A re-vendor that
+    # trips this rule re-applies the fork delta described in
+    # core/src/mcp/3rdparty/cJSON/AGENTS.md; it does not get an exclusion.
+    # scripts/ci/tests/test_semgrep_vendored_scope.py pins all of this.
     pattern-either:
       - pattern: strcpy(...)
       - pattern: strcat(...)
       - pattern: sprintf(...)
-    paths:
-      exclude:
-        # Upstream Netflix tree — tracked as cleanup debt, not gated here:
-        # core/tools/cli_parse.c (sprintf with fixed-size local buffer),
-        # core/tools/y4m_input.c (strcpy into fixed struct field),
-        # matlab/**               (MATLAB MEX sources, not shipped in libvmaf).
-        - /matlab/**
-        - /core/tools/cli_parse.c
-        - /core/tools/y4m_input.c
-        # Vendored code is NOT excluded (ADR-0683, ADR-1142). An earlier
-        # `/core/src/mcp/3rdparty/**` entry here, together with a whole-file
-        # `.semgrepignore` line, is why the cJSON 1.7.19 re-vendor could put
-        # eleven banned calls back without any gate noticing. A re-vendor that
-        # trips this rule re-applies the fork delta described in
-        # core/src/mcp/3rdparty/cJSON/AGENTS.md; it does not get an exclusion.
-        # scripts/ci/tests/test_semgrep_vendored_scope.py pins this.
     message: Use strncpy/strncat/snprintf with explicit bound. (CERT STR31-C / Power-of-10 Rule 9.)
     languages: [c, cpp]
     severity: ERROR

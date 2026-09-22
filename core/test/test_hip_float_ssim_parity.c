@@ -38,6 +38,8 @@
 
 #include "test.h"
 
+#include "hip_parity_skip.h"
+
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
@@ -106,6 +108,57 @@ static char *run_cpu_float_ssim(double *score)
     return NULL;
 }
 
+/*
+ * Feed the fixture frame into the HIP run and triage the result.
+ *
+ * Sets `*done` when the run is finished -- `vmaf` closed and the HIP state
+ * released -- so the caller returns without reading a score. Split out of
+ * run_hip_float_ssim() so that body stays inside the 60-line function budget.
+ */
+static char *hip_feed_and_triage(VmafContext *vmaf, VmafHipState **hip_state, int *skipped,
+                                 int *done)
+{
+    const int err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        *done = 1;
+        return hip_parity_skip(vmaf, hip_state, skipped, " on feed");
+    }
+    /* `float_ssim_hip` is a v1 scale=1-only extractor: its init rejects any
+     * resolution whose auto-detected decimation factor
+     * `max(1, round(min(w, h) / 256))` is not 1 — i.e. min(w, h) >= 384 — with
+     * -EINVAL (core/src/feature/hip/float_ssim_hip.c). The CPU `float_ssim` has
+     * no such limit and silently decimates instead, so at those resolutions the
+     * two extractors do not compute the same quantity and there is no parity to
+     * assert. Treat the documented refusal as a skip; anything else is a real
+     * failure. Keeping the large-fixture variant registered means that if the
+     * twin ever stops refusing and starts returning a scale=1 score at a
+     * decimating resolution, this test fails instead of silently comparing two
+     * different metrics. See ADR-1206. */
+    if (err && ((FIXTURE_W < FIXTURE_H ? FIXTURE_W : FIXTURE_H) >= 384u)) {
+        (void)fprintf(stderr, "[skip: float_ssim_hip is scale=1-only; %ux%u auto-decimates] ",
+                      FIXTURE_W, FIXTURE_H);
+        *skipped = 1;
+        *done = 1;
+        (void)vmaf_close(vmaf);
+        vmaf_hip_state_free(hip_state);
+        return NULL;
+    }
+    if (err == -ENOSYS) {
+        /* Documented scaffold contract: an unimplemented HIP extractor returns
+         * -ENOSYS from init (see the HIP extractors under
+         * core/src/feature/hip/). That is a not-built-yet signal, not a
+         * regression, so skip exactly as the no-device branch above does.
+         * Any other error still fails. */
+        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
+        *done = 1;
+        (void)vmaf_close(vmaf);
+        vmaf_hip_state_free(hip_state);
+        return NULL;
+    }
+    mu_assert("HIP: feed_frame failed", !err);
+    return NULL;
+}
+
 static char *run_hip_float_ssim(double *score, int *skipped)
 {
     *score = NAN;
@@ -125,61 +178,16 @@ static char *run_hip_float_ssim(double *score, int *skipped)
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
     err = vmaf_use_feature(vmaf, "float_ssim_hip", NULL);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, "");
     mu_assert("HIP: vmaf_use_feature(float_ssim_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on feed] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
-    /* `float_ssim_hip` is a v1 scale=1-only extractor: its init rejects any
-     * resolution whose auto-detected decimation factor
-     * `max(1, round(min(w, h) / 256))` is not 1 — i.e. min(w, h) >= 384 — with
-     * -EINVAL (core/src/feature/hip/float_ssim_hip.c). The CPU `float_ssim` has
-     * no such limit and silently decimates instead, so at those resolutions the
-     * two extractors do not compute the same quantity and there is no parity to
-     * assert. Treat the documented refusal as a skip; anything else is a real
-     * failure. Keeping the large-fixture variant registered means that if the
-     * twin ever stops refusing and starts returning a scale=1 score at a
-     * decimating resolution, this test fails instead of silently comparing two
-     * different metrics. See ADR-1206. */
-    if (err && ((FIXTURE_W < FIXTURE_H ? FIXTURE_W : FIXTURE_H) >= 384u)) {
-        (void)fprintf(stderr, "[skip: float_ssim_hip is scale=1-only; %ux%u auto-decimates] ",
-                      FIXTURE_W, FIXTURE_H);
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
-    mu_assert("HIP: feed_frame failed", !err);
+    int done = 0;
+    char *msg = hip_feed_and_triage(vmaf, &hip_state, skipped, &done);
+    if (msg || done)
+        return msg;
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on EOS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ssim", score, 0u);
     mu_assert("HIP: float_ssim missing", !err);

@@ -151,7 +151,13 @@ func (r *VmafxNodeReconciler) probeHealthz(ctx context.Context, namespace string
 	// Drain fully before Close so the HTTP/1.1 keep-alive connection can be
 	// returned to the pool. An undrained body causes a new TCP dial on the
 	// next probe, leaking one FD per polled node every 30 s (ADR-0786 audit).
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		// The health verdict is already settled by the status code, so a failed
+		// drain cannot change it -- but it does mean this connection will not go
+		// back to the pool, which is the FD leak the drain exists to prevent.
+		log.FromContext(ctx).V(1).Info("draining the controller health response failed",
+			"error", err.Error())
+	}
 
 	return resp.StatusCode == http.StatusOK
 }

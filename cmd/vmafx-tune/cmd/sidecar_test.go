@@ -480,13 +480,14 @@ func captureStdout(t *testing.T, fn func()) string {
 	go func() {
 		var sb strings.Builder
 		buf := make([]byte, 4096)
-		for {
-			n, readErr := reader.Read(buf)
+		// The drain ends on the first read error, which is the io.EOF the deferred
+		// writer.Close delivers; that is the loop's exit condition.
+		var readErr error
+		for readErr == nil {
+			var n int
+			n, readErr = reader.Read(buf)
 			if n > 0 {
 				sb.Write(buf[:n])
-			}
-			if readErr != nil {
-				break
 			}
 		}
 		done <- sb.String()

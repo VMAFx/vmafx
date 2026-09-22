@@ -262,8 +262,9 @@ The above licence text is the canonical Apache-2.0 from
 <https://www.apache.org/licenses/LICENSE-2.0.txt> and applies to
 the redistributed `u2netp` checkpoint and any ONNX rewrap thereof
 attached to VMAFx/vmafx GitHub Releases. The fork's own code
-under <https://github.com/VMAFx/vmafx> is BSD-3-Clause-Plus-Patent
-(see the top-level `LICENSE` file); the two licences co-exist
+under <https://github.com/VMAFx/vmafx> is EUPL-1.2, and the code it
+inherited from Netflix remains BSD-2-Clause-Patent (see the top-level
+`LICENSE` file and ADR-1250); the licences co-exist
 because the fork redistributes the upstream Apache-2.0 weights as
 a separately-attached release artefact, not as bundled fork
 source code.

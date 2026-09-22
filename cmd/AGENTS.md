@@ -58,6 +58,13 @@
    `OTEL_SERVICE_NAME` variables work in addition. Operator guide:
    [docs/development/observability.md](../docs/development/observability.md).
 
+7. **Server/controller scoring-service plumbing has one owner.** Prometheus
+   registry construction, libvmaf scorer lifecycle, legacy health/readiness
+   probes, and JSON response writing live in
+   `internal/app/scoringservice`. Binary-local methods are adapters only; do
+   not restore parallel implementations. The shared tests pin exact probe
+   bytes and fail-loud response-write logging.
+
 ## Test requirements
 
 ```bash

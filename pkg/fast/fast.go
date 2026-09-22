@@ -271,46 +271,10 @@ func Recommend(ctx context.Context, params Params) (RecommendResult, error) {
 	nTrials := params.effectiveNTrials()
 
 	if params.Smoke {
-		predict := params.Predict
-		if predict == nil {
-			predict = SmokePredictor
-		}
-		best, err := RunTPE(ctx, TPEParams{
-			TargetVMAF:        params.TargetVMAF,
-			Predict:           predict,
-			CRFLo:             crfLo,
-			CRFHi:             crfHi,
-			NTrials:           nTrials,
-			TimeBudgetSeconds: params.effectiveTimeBudget(),
-		})
-		if err != nil {
-			return RecommendResult{}, err
-		}
-		return RecommendResult{
-			Encoder:        params.Encoder,
-			NTrials:        best.CompletedTrials,
-			Notes:          smokeNotes,
-			PredictedKbps:  best.Sample.PredictedKbps,
-			PredictedVMAF:  best.Sample.PredictedVMAF,
-			ProxyVerifyGap: nil,
-			RecommendedCRF: best.Sample.CRF,
-			Smoke:          true,
-			TargetVMAF:     params.TargetVMAF,
-			VerifyVMAF:     nil,
-		}, nil
+		return recommendSmoke(ctx, params, crfLo, crfHi, nTrials)
 	}
-
-	// Production path.
-	if params.Src == "" {
-		return RecommendResult{}, ErrSrcRequired
-	}
-	if params.Predict == nil {
-		return RecommendResult{}, errors.New(
-			"fast: production mode requires a CRF predictor (proxy pipeline)")
-	}
-	if params.Verify == nil {
-		return RecommendResult{}, errors.New(
-			"fast: production mode requires a verify pass (ADR-0304: the proxy alone never wins)")
+	if err := params.validateProduction(); err != nil {
+		return RecommendResult{}, err
 	}
 
 	best, err := RunTPE(ctx, TPEParams{
@@ -332,22 +296,13 @@ func Recommend(ctx context.Context, params Params) (RecommendResult, error) {
 			best.Sample.CRF, verifyErr)
 	}
 
-	tolerance := params.effectiveTolerance()
 	gap := math.Abs(best.Sample.PredictedVMAF - verifyVMAF)
-	notes := fmt.Sprintf(
-		"production: TPE over %d trials with v2 proxy; GPU verify gap = %.3f VMAF (tolerance %.2f).",
-		nTrials, gap, tolerance)
-	if gap > tolerance {
-		notes += " FLAG: proxy/verify gap exceeds tolerance — consider falling " +
-			"back to the slow Phase A grid (ADR-0276)."
-	}
-
 	verifyCopy := verifyVMAF
 	gapCopy := gap
 	return RecommendResult{
 		Encoder:        params.Encoder,
 		NTrials:        best.CompletedTrials,
-		Notes:          notes,
+		Notes:          productionNotes(nTrials, gap, params.effectiveTolerance()),
 		PredictedKbps:  best.Sample.PredictedKbps,
 		PredictedVMAF:  best.Sample.PredictedVMAF,
 		ProxyVerifyGap: &gapCopy,
@@ -356,4 +311,68 @@ func Recommend(ctx context.Context, params Params) (RecommendResult, error) {
 		TargetVMAF:     params.TargetVMAF,
 		VerifyVMAF:     &verifyCopy,
 	}, nil
+}
+
+// recommendSmoke runs the synthetic CRF->VMAF curve: no proxy, no encode, no
+// verify. A caller that supplied no predictor gets the built-in smoke one.
+func recommendSmoke(
+	ctx context.Context, params Params, crfLo, crfHi, nTrials int,
+) (RecommendResult, error) {
+	predict := params.Predict
+	if predict == nil {
+		predict = SmokePredictor
+	}
+	best, err := RunTPE(ctx, TPEParams{
+		TargetVMAF:        params.TargetVMAF,
+		Predict:           predict,
+		CRFLo:             crfLo,
+		CRFHi:             crfHi,
+		NTrials:           nTrials,
+		TimeBudgetSeconds: params.effectiveTimeBudget(),
+	})
+	if err != nil {
+		return RecommendResult{}, err
+	}
+	return RecommendResult{
+		Encoder:        params.Encoder,
+		NTrials:        best.CompletedTrials,
+		Notes:          smokeNotes,
+		PredictedKbps:  best.Sample.PredictedKbps,
+		PredictedVMAF:  best.Sample.PredictedVMAF,
+		ProxyVerifyGap: nil,
+		RecommendedCRF: best.Sample.CRF,
+		Smoke:          true,
+		TargetVMAF:     params.TargetVMAF,
+		VerifyVMAF:     nil,
+	}, nil
+}
+
+// validateProduction rejects a production run that is missing one of the two
+// halves ADR-0304 requires: the proxy that proposes a CRF and the verify pass
+// that confirms it.
+func (p Params) validateProduction() error {
+	if p.Src == "" {
+		return ErrSrcRequired
+	}
+	if p.Predict == nil {
+		return errors.New("fast: production mode requires a CRF predictor (proxy pipeline)")
+	}
+	if p.Verify == nil {
+		return errors.New(
+			"fast: production mode requires a verify pass (ADR-0304: the proxy alone never wins)")
+	}
+	return nil
+}
+
+// productionNotes renders the operator-facing summary line, flagging a
+// proxy/verify gap that ran past the tolerance.
+func productionNotes(nTrials int, gap, tolerance float64) string {
+	notes := fmt.Sprintf(
+		"production: TPE over %d trials with v2 proxy; GPU verify gap = %.3f VMAF (tolerance %.2f).",
+		nTrials, gap, tolerance)
+	if gap > tolerance {
+		notes += " FLAG: proxy/verify gap exceeds tolerance — consider falling " +
+			"back to the slow Phase A grid (ADR-0276)."
+	}
+	return notes
 }

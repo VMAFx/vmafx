@@ -212,7 +212,12 @@ func resolveProxyDir(modelDir, modelID string) (string, error) {
 	// Walk up from the working directory looking for model/tiny/<id>.onnx —
 	// the in-tree layout ADR-0291 pins.
 	if wd, err := os.Getwd(); err == nil {
-		for dir := wd; ; {
+		// filepath.Dir strips exactly one component per step, so the number
+		// of separators in the working directory bounds the walk; +2 covers
+		// the root itself and a possible trailing separator (HISS-02).
+		maxSteps := strings.Count(wd, string(os.PathSeparator)) + 2
+		dir := wd
+		for step := 0; step < maxSteps; step++ {
 			candidates = append(candidates, filepath.Join(dir, "model", "tiny"))
 			parent := filepath.Dir(dir)
 			if parent == dir {

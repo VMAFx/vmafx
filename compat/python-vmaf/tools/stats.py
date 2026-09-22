@@ -111,7 +111,89 @@ class ListStats(object):
 
     @staticmethod
     def nonemean(my_list):
-        return np.mean(list(filter(lambda x: x is not None, my_list)))
+        # np.mean([]) is NaN, but it reaches that answer by warning
+        # "Mean of empty slice" first. The harness runs under
+        # `filterwarnings = error`, so an all-None input has to produce the
+        # same NaN without the warning.
+        values = [x for x in my_list if x is not None]
+        if not values:
+            return np.float64("nan")
+        return np.mean(values)
+
+
+def vectorized_gaussian(xs, locs, scales):
+    """Gaussian density that stays defined where ``scales`` is exactly zero.
+
+    ``sureal.tools.stats.vectorized_gaussian`` evaluates
+    ``1 / sqrt(2*pi) / scale * exp(-(x - loc)**2 / (2 * scale**2))`` directly.
+    A stimulus that every observer rated identically has a sample standard
+    deviation of exactly zero, so ``scale`` is zero: the leading division
+    yields ``inf``, the exponent's ``0 / 0`` yields ``nan``, and ``inf * nan``
+    is ``nan``.  NumPy reports both steps as ``RuntimeWarning``, and the
+    resulting ``nan`` is then dropped by the ``numpy.nansum`` in sureal's
+    log-likelihood, which still divides the truncated sum by the full
+    observation count.  The reported log-likelihood, AIC and BIC are therefore
+    silently computed over a subset of the observations.
+
+    The zero-width limit of a Gaussian is the Dirac delta: the density is
+    unbounded at ``x == loc`` and zero everywhere else.  This implementation
+    returns that limit, so a dataset containing a unanimously rated stimulus
+    reports an infinite log-likelihood -- the honest statement that its
+    maximum likelihood is unbounded -- rather than a quietly under-counted
+    finite number.  ``nan`` observations keep propagating as ``nan``, exactly
+    as they do on the finite-scale branch, so sureal's ``nansum`` still skips
+    missing ratings.
+
+    Every finite non-zero scale is evaluated by the original expression, so
+    non-degenerate inputs are bit-identical to sureal's.
+
+    >>> float(vectorized_gaussian(np.array([0.0]), np.array([0.0]), np.array([1.0]))[0])
+    0.3989422804014327
+    >>> vectorized_gaussian(np.array([1.0, 2.0]), np.array([1.0, 1.0]), np.array([0.0, 0.0]))
+    array([inf,  0.])
+    """
+    xs, locs, scales = np.broadcast_arrays(
+        np.asarray(xs, dtype=float),
+        np.asarray(locs, dtype=float),
+        np.asarray(scales, dtype=float),
+    )
+    degenerate = scales == 0.0
+    if not degenerate.any():
+        return 1.0 / np.sqrt(2 * np.pi) / scales * np.exp(-((xs - locs) ** 2) / (2 * scales**2))
+
+    densities = np.empty(np.shape(xs), dtype=float)
+    spread = ~degenerate
+    spread_scales = scales[spread]
+    densities[spread] = (
+        1.0
+        / np.sqrt(2 * np.pi)
+        / spread_scales
+        * np.exp(-((xs[spread] - locs[spread]) ** 2) / (2 * spread_scales**2))
+    )
+    offsets = xs[degenerate] - locs[degenerate]
+    densities[degenerate] = np.where(
+        np.isnan(offsets), np.nan, np.where(offsets == 0.0, np.inf, 0.0)
+    )
+    return densities
+
+
+def patch_sureal_vectorized_gaussian():
+    """Bind :func:`vectorized_gaussian` into ``sureal`` in place of its own.
+
+    sureal 0.9.0 is the newest release and still divides by a zero standard
+    deviation, which the harness's fatal-warning policy turns into a test
+    failure whenever a dataset contains a unanimously rated stimulus.  There is
+    no upstream release to upgrade to and no extension point to register a
+    replacement through, so the corrected density is bound over the name in the
+    module that defines it and in ``sureal.subjective_model``, which imported
+    it by value at its own import time.  The call is idempotent and must run
+    before any subjective model is fitted.
+    """
+    import sureal.subjective_model
+    import sureal.tools.stats
+
+    sureal.tools.stats.vectorized_gaussian = vectorized_gaussian
+    sureal.subjective_model.vectorized_gaussian = vectorized_gaussian
 
 
 if __name__ == "__main__":

@@ -259,7 +259,7 @@ Wave-1 C1 baseline trainer =
 [`ai/scripts/train_fr_regressor.py`](scripts/train_fr_regressor.py). It
 consumes `runs/full_features_netflix.parquet` (produced by
 `ai/scripts/extract_full_features.py` over local Netflix Public
-drop at `.workingdir2/netflix/`), runs 9-fold leave-one-source-out
+drop at `.corpus/netflix/`), runs 9-fold leave-one-source-out
 (LOSO), exports `model/tiny/fr_regressor_v1.onnx` only when mean
 LOSO PLCC ≥ 0.95 against `vmaf_v0.6.1` per-frame teacher.
 
@@ -486,13 +486,14 @@ config example =
 **Pipeline (per ADR-0207 + ADR-0208 implementation bridge):**
 
 1. fp32 warm-start training.
-2. FX fake-quant insertion via
-   `torch.ao.quantization.quantize_fx.prepare_qat_fx` with
-   default symmetric per-tensor activation + per-channel weight
-   qconfig.
+2. Graph capture with `torch.export` + fake-quant insertion via
+   `torchao.quantization.pt2e.prepare_qat_pt2e` under
+   `X86InductorQuantizer`'s default recipe: per-tensor `uint8`
+   activation, per-channel symmetric `int8` weight (ADR-1293).
 3. QAT fine-tune at 10× reduced LR.
 4. Copy QAT-conditioned weights into fresh fp32 module, export
-   to ONNX (`dynamo=False`), then ORT static-quantize with
+   to ONNX (torch.export-based exporter; the target is plain fp32,
+   so the legacy path is not needed), then ORT static-quantize with
    calibration set drawn from QAT distribution. Output = a
    QDQ `.int8.onnx`.
 
@@ -506,18 +507,33 @@ config example =
   `Conv2dPackedParamsBase.__obj_flatten__`). Re-check on each
   PyTorch upgrade.
 - State-dict transfer in `_copy_qat_weights_into_fp32` matches
-  by submodule name + tensor shape. Models using top-level
-  `nn.Sequential` will break this (FX renames Sequential
-  children to numeric indices); the `RuntimeError("0 tensors
-  copied")` guard catches it.
-- FX preparation runs on CPU (PyTorch 2.11's symbolic tracer is
-  flaky on CUDA buffers); trainer migrates to CPU before
-  `prepare_qat_fx` and back to accelerator afterwards.
-- `torch.ao.quantization` is deprecated and will be removed in
-  PyTorch 2.10. Migration target = `torchao.quantization.pt2e`
-  (`prepare_pt2e` / `convert_pt2e`); only FX-prep call
-  changes — rest of pipeline (ORT static-quantize) is
-  unaffected.
+  by submodule name + tensor shape. `torch.export` capture keeps
+  the original parameter names (measured: 20/20 tensors transfer
+  on `LearnedFilter`), but models using top-level `nn.Sequential`
+  still break this; the `RuntimeError("0 tensors copied")` guard
+  catches it.
+- An exported graph module rejects `.train()` / `.eval()` and
+  needs torchao's `move_exported_model_to_train` / `_to_eval`.
+  `_set_mode()` dispatches on `isinstance(module,
+  torch.fx.GraphModule)` because `_qat_fine_tune` runs against
+  both the raw Lightning module and the prepared graph. Do not
+  reintroduce a bare `.eval()` on the QAT model.
+- Graph capture runs on CPU (`torch.export` is flaky on CUDA
+  buffers here); trainer migrates to CPU before
+  `prepare_qat_pt2e` and back to accelerator afterwards.
+- `torch.ao.quantization` is deprecated wholesale and raises a
+  `DeprecationWarning` the `filterwarnings = ["error"]` setting
+  turns into a test failure. The QAT hook moved to
+  `torchao.quantization.pt2e` in ADR-1293; do not restore
+  `prepare_qat_fx` or `get_default_qat_qconfig_mapping` on a
+  rebase. `torch.export.export_for_training` does not exist in
+  torch 2.14 — use `torch.export.export(...).module()`.
+- The pt2e recipe keeps the weight side byte-identical
+  (`int8`, `per_channel_symmetric`, `ch_axis=0`, [-128, 127])
+  and widens the activation range from the old mapping's
+  reduce-range [0, 127] to [0, 255]. That matches ORT
+  `quantize_static`, which bakes the activation ranges that
+  actually ship; the narrower range was the mismatch.
 
 ## Local workflow
 
@@ -572,8 +588,8 @@ by `(src_sha256, encoder, preset, crf)`).
 **Rebase-sensitive invariants:**
 
 - BVI-DVC is research-only. Archive
-  (`.workingdir2/BVI-DVC Part 1.zip`), extracted MP4s
-  (`.workingdir2/bvi-dvc-extracted/`),
+  (`.corpus/bvi-dvc-raw/BVI-DVC Part 1.zip`), extracted MP4s
+  (`.corpus/bvi-dvc-extracted/`),
   feature parquet (`runs/full_features_bvi_dvc_*.parquet`), JSONL
   corpus shard (`runs/bvi_dvc_corpus.jsonl`), and cached vmaf JSON
   (`~/.cache/vmaf-tiny-ai-bvi-dvc-full/`) **never committed**. Fork
@@ -659,7 +675,7 @@ scripts:
 - Fetcher hits public GCS bucket (`gs://ugc-dataset/`,
   CC-BY); raw videos and resulting
   `runs/full_features_ugc.parquet` must NEVER be committed
-  (`runs/` and `.workingdir2/` trees are gitignored).
+  (`runs/` and `.corpus/` trees are gitignored).
 - `extract_ugc_features.py` emits same current `FULL_FEATURES`
   schema as other full-feature refresh scripts. Older versions
   intentionally populated only canonical-6, forced rest to NaN;
@@ -676,7 +692,7 @@ scripts:
 
 ### Rebase-sensitive invariants
 
-- Adapter accepts two local layouts under `.workingdir2/konvid-150k/`:
+- Adapter accepts two local layouts under `.corpus/konvid-150k/`:
   URL `manifest.csv` plus `clips/`, or split score-drop layout
   `k150ka_scores.csv` / `k150kb_scores.csv` plus
   `k150ka_extracted/` / `k150kb_extracted/`. Do not remove split
@@ -694,7 +710,7 @@ scripts:
 
 ### Rebase-sensitive invariants
 
-- CHUG data is local-only under `.workingdir2/chug/`. Do not commit the
+- CHUG data is local-only under `.corpus/chug/`. Do not commit the
   public `chug.csv`, downloaded MP4s, emitted JSONL, trained local
   CHUG heads, or derived features. README/license mismatch is
   handled by treating dataset as non-commercial/share-alike until
@@ -1085,7 +1101,7 @@ upload is a separate PR.
   silently accepting non-Apache license text breaks ADR-0671.
 - **Recommended saliency weights remain
   `saliency_student_v1`** (ADR-0286, fork-trained DUTS student
-  under BSD-3-Clause-Plus-Patent). `u2netp_mirror` is the named
+  under BSD-2-Clause-Patent). `u2netp_mirror` is the named
   *fallback* for upstream-lineage citation, comparative
   evaluation, or downstream pipelines pinned to upstream
   behaviour. Do NOT flip `model/tiny/registry.json`'s default

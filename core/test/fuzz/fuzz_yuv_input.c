@@ -55,6 +55,21 @@
 #define FUZZ_H 32u
 #define FUZZ_MAX_FRAMES 8u
 
+/* Fetch up to FUZZ_MAX_FRAMES frames from an opened reader. `rc == 0` is
+ * end-of-file and `rc < 0` a parser error; either way the next fetch repeats
+ * the same branch and wastes fuzzer time, so the loop stops at the first one. */
+static void drain_frames(video_input *vid)
+{
+    for (unsigned i = 0u; i < FUZZ_MAX_FRAMES; i++) {
+        video_input_ycbcr ycbcr;
+        memset(&ycbcr, 0, sizeof(ycbcr));
+        char tag[5] = {0};
+        const int rc = video_input_fetch_frame(vid, ycbcr, tag);
+        if (rc <= 0)
+            break;
+    }
+}
+
 /* libFuzzer's contract requires `LLVMFuzzerTestOneInput` to have
  * external linkage; the runtime resolves it by name at link time
  * (`-fsanitize=fuzzer`). Cannot be static — the
@@ -98,17 +113,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         memset(&info, 0, sizeof(info));
         video_input_get_info(&vid, &info);
 
-        for (unsigned i = 0u; i < FUZZ_MAX_FRAMES; i++) {
-            video_input_ycbcr ycbcr;
-            memset(&ycbcr, 0, sizeof(ycbcr));
-            char tag[5] = {0};
-            int rc = video_input_fetch_frame(&vid, ycbcr, tag);
-            /* rc == 0 is end-of-file, rc < 0 is a parser error;
-             * either way the next fetch will repeat the same
-             * branch and waste fuzzer time. Bail early. */
-            if (rc <= 0)
-                break;
-        }
+        drain_frames(&vid);
 
         video_input_close(&vid);
         /* video_input_close calls fclose on the FILE*, so do not

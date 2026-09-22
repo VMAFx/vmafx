@@ -31,6 +31,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -49,9 +50,29 @@ type schemaObj = map[string]any
 // This function MUST stay byte-identical to the Python server's
 // `_scoring_extra_properties()` (mcp-server/vmaf-mcp/src/vmaf_mcp/server.py)
 // — same keys, enums, defaults, and descriptions — per cmd/vmafx-mcp/AGENTS.md.
+//
+// The set is assembled from the same groups the Python server lays out in
+// `_scoring_extra_properties()`. Splitting it across those groups changes no key,
+// enum, default or description -- only where each group is written -- so the
+// byte-identical contract above is unaffected.
 func scoringExtraProperties() schemaObj {
+	out := schemaObj{}
+	for _, group := range []schemaObj{
+		scoringFeatureProperties(),
+		scoringTinyModelProperties(),
+		scoringTinyTuningProperties(),
+		scoringFrameRangeProperties(),
+		scoringDeviceProperties(),
+		scoringOutputProperties(),
+	} {
+		maps.Copy(out, group)
+	}
+	return out
+}
+
+// scoringFeatureProperties returns the feature-selection and CTC-preset pass-through properties.
+func scoringFeatureProperties() schemaObj {
 	return schemaObj{
-		// --- Feature selection + CTC presets ---
 		"feature": schemaObj{
 			"type":  "array",
 			"items": schemaObj{"type": "string"},
@@ -71,7 +92,12 @@ func scoringExtraProperties() schemaObj {
 			"description": "Netflix Common Test Conditions preset (--nflx_ctc). Mutually " +
 				"exclusive with manual feature/model config.",
 		},
-		// --- Tiny-AI / DNN scoring surface (ADR-1117) ---
+	}
+}
+
+// scoringTinyModelProperties returns the tiny-AI model and execution-provider properties.
+func scoringTinyModelProperties() schemaObj {
+	return schemaObj{
 		"tiny_model": schemaObj{
 			"type":        "string",
 			"description": "Path to a tiny ONNX model loaded alongside classic models (--tiny-model).",
@@ -94,6 +120,12 @@ func scoringExtraProperties() schemaObj {
 			"description": "Alias for tiny_device: ONNX Runtime execution provider for the " +
 				"tiny model (--dnn-ep / --tiny-device). Default: auto.",
 		},
+	}
+}
+
+// scoringTinyTuningProperties returns the tiny-AI tuning properties, including the no-reference switch.
+func scoringTinyTuningProperties() schemaObj {
+	return schemaObj{
 		"tiny_threads": schemaObj{
 			"type":        "integer",
 			"minimum":     0,
@@ -133,7 +165,12 @@ func scoringExtraProperties() schemaObj {
 				"ONNX model); the reference path becomes a formality — pass any valid YUV " +
 				"of matching geometry since only the distorted picture is scored.",
 		},
-		// --- Score-param completeness ---
+	}
+}
+
+// scoringFrameRangeProperties returns the thread-count and frame-range properties.
+func scoringFrameRangeProperties() schemaObj {
+	return schemaObj{
 		"threads": schemaObj{
 			"type":        "integer",
 			"minimum":     1,
@@ -158,7 +195,12 @@ func scoringExtraProperties() schemaObj {
 			"type":        "boolean",
 			"description": "Extract features only, skip VMAF prediction (--no_prediction).",
 		},
-		// --- Device selectors ---
+	}
+}
+
+// scoringDeviceProperties returns the CPU and GPU device-selector properties.
+func scoringDeviceProperties() schemaObj {
+	return schemaObj{
 		"cpumask": schemaObj{
 			"type":        "integer",
 			"minimum":     0,
@@ -184,7 +226,12 @@ func scoringExtraProperties() schemaObj {
 			"minimum":     0,
 			"description": "Select Metal GPU device by index (--metal_device).",
 		},
-		// --- Output format ---
+	}
+}
+
+// scoringOutputProperties returns the output-format and model-flag properties.
+func scoringOutputProperties() schemaObj {
+	return schemaObj{
 		"output_fmt": schemaObj{
 			"type":        "string",
 			"enum":        []string{"json", "xml", "csv", "sub"},
@@ -213,59 +260,90 @@ func scoringExtraProperties() schemaObj {
 
 // registerTools wires every MCP tool into srv. Schema definitions mirror the
 // Python server's _list_tools() output exactly.
-func registerTools(srv *mcp.Server) {
-	addRawTool(srv, &mcp.Tool{
+//
+// The registrations are grouped into the helpers below, called in the order the
+// registrations were originally written, so the tool set and its registration order are
+// both unchanged by the grouping. A new tool belongs in one of these helpers: a register
+// function that nothing calls registers nothing, and the parity test only checks that
+// every Python tool is present, so the omission would not be caught there.
+//
+// A schema that fails to marshal aborts the whole registration: the returned error is
+// fatal to buildServer, so the process never serves a tool surface in which one tool's
+// declared schema is missing or weaker than the one written here.
+func registerTools(srv *mcp.Server) error {
+	reg := &toolRegistrar{srv: srv}
+	registerScoringTools(reg)
+	registerModelEvalTools(reg)
+	registerFrameInspectionTools(reg)
+	registerEncodedScoringTools(reg)
+	registerCatalogTools(reg)
+	registerCompareTool(reg)
+	registerLadderTool(reg)
+	registerTunePerShotTool(reg)
+	registerPerShotTool(reg)
+	registerRoiTool(reg)
+	registerBenchTool(reg)
+	registerVplTool(reg)
+	registerJobSubmissionTools(reg)
+	registerJobControlTools(reg)
+	registerRemoteScoringTool(reg)
+	return reg.err
+}
+
+// registerScoringTools wires the core scoring tool and the model/backend listings.
+func registerScoringTools(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "vmaf_score",
 		Description: "Compute a VMAF score for a (reference, distorted) YUV pair. " +
 			"Optional tiny-AI/DNN, feature-selection, CTC-preset, and frame-range " +
 			"parameters map onto the corresponding vmaf CLI flags (ADR-1117).",
-		InputSchema: mustSchema(schemaObj{
-			"type": "object",
-			"required": []string{
-				"ref", "dis", "width", "height", "pixfmt", "bitdepth",
+	}, schemaObj{
+		"type": "object",
+		"required": []string{
+			"ref", "dis", "width", "height", "pixfmt", "bitdepth",
+		},
+		"properties": mergeSchema(schemaObj{
+			"ref":      schemaObj{"type": "string", "description": "Reference YUV path."},
+			"dis":      schemaObj{"type": "string", "description": "Distorted YUV path."},
+			"width":    schemaObj{"type": "integer", "minimum": 1},
+			"height":   schemaObj{"type": "integer", "minimum": 1},
+			"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
+			"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
+			"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
+			"backend": schemaObj{
+				"type":    "string",
+				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
+				"default": "auto",
 			},
-			"properties": mergeSchema(schemaObj{
-				"ref":      schemaObj{"type": "string", "description": "Reference YUV path."},
-				"dis":      schemaObj{"type": "string", "description": "Distorted YUV path."},
-				"width":    schemaObj{"type": "integer", "minimum": 1},
-				"height":   schemaObj{"type": "integer", "minimum": 1},
-				"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
-				"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
-				"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
-				"backend": schemaObj{
-					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-					"default": "auto",
-				},
-				"subsample": schemaObj{
-					"type":        "integer",
-					"minimum":     1,
-					"default":     1,
-					"description": "Score every Nth frame (1 = every frame).",
-				},
-				"precision": schemaObj{
-					"type":        "string",
-					"default":     "legacy",
-					"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
-				},
-			}, scoringExtraProperties()),
-		}),
+			"subsample": schemaObj{
+				"type":        "integer",
+				"minimum":     1,
+				"default":     1,
+				"description": "Score every Nth frame (1 = every frame).",
+			},
+			"precision": schemaObj{
+				"type":        "string",
+				"default":     "legacy",
+				"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
+			},
+		}, scoringExtraProperties()),
 	}, handleVmafScore)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name:        "list_models",
 		Description: "Enumerate VMAF models (JSON / pickle / ONNX) shipped with the repo.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
-	}, handleListModels)
+	}, schemaObj{"type": "object", "properties": schemaObj{}}, handleListModels)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "list_backends",
 		Description: "Report which runtime backends (cpu / cuda / sycl / hip / metal) " +
 			"the local vmaf binary was built with.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
-	}, handleListBackends)
+	}, schemaObj{"type": "object", "properties": schemaObj{}}, handleListBackends)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerModelEvalTools wires the benchmark harness and the ONNX model evaluation tools.
+func registerModelEvalTools(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "run_benchmark",
 		Description: "Run the full multi-fixture benchmark harness (bench_all.sh) " +
 			"across all available backends (CPU, CUDA, SYCL) on " +
@@ -274,82 +352,81 @@ func registerTools(srv *mcp.Server) {
 			"Returns stdout (per-backend scores + backend comparison table) " +
 			"and stderr. Takes no arguments — fixtures are built-in. " +
 			"ADR-0513.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
-	}, handleRunBenchmark)
+	}, schemaObj{"type": "object", "properties": schemaObj{}}, handleRunBenchmark)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "eval_model_on_split",
 		Description: "Run an ONNX tiny-AI regressor on a parquet feature cache, " +
 			"filter to a deterministic train/val/test split (keyed by the " +
 			"'key' column), and report PLCC / SROCC / RMSE.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"model", "features"},
-			"properties": schemaObj{
-				"model":      schemaObj{"type": "string", "description": "ONNX model path."},
-				"features":   schemaObj{"type": "string", "description": "Parquet feature cache path."},
-				"split":      schemaObj{"type": "string", "enum": []string{"train", "val", "test", "all"}, "default": "test"},
-				"input_name": schemaObj{"type": "string", "default": "features"},
-			},
-		}),
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"model", "features"},
+		"properties": schemaObj{
+			"model":      schemaObj{"type": "string", "description": "ONNX model path."},
+			"features":   schemaObj{"type": "string", "description": "Parquet feature cache path."},
+			"split":      schemaObj{"type": "string", "enum": []string{"train", "val", "test", "all"}, "default": "test"},
+			"input_name": schemaObj{"type": "string", "default": "features"},
+		},
 	}, handleEvalModelOnSplit)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "compare_models",
 		Description: "Rank several ONNX models on the same parquet feature split by " +
 			"descending PLCC. Models that fail to load or score are listed " +
 			"under 'errors' instead of aborting the whole call.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"models", "features"},
-			"properties": schemaObj{
-				"models": schemaObj{
-					"type":     "array",
-					"items":    schemaObj{"type": "string"},
-					"minItems": 1,
-				},
-				"features":   schemaObj{"type": "string"},
-				"split":      schemaObj{"type": "string", "enum": []string{"train", "val", "test", "all"}, "default": "test"},
-				"input_name": schemaObj{"type": "string", "default": "features"},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"models", "features"},
+		"properties": schemaObj{
+			"models": schemaObj{
+				"type":     "array",
+				"items":    schemaObj{"type": "string"},
+				"minItems": 1,
 			},
-		}),
+			"features":   schemaObj{"type": "string"},
+			"split":      schemaObj{"type": "string", "enum": []string{"train", "val", "test", "all"}, "default": "test"},
+			"input_name": schemaObj{"type": "string", "default": "features"},
+		},
 	}, handleCompareModels)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerFrameInspectionTools wires the worst-frame description and backend probe tools.
+func registerFrameInspectionTools(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "describe_worst_frames",
 		Description: "Score a (ref, dis) pair, pick the N worst-VMAF frames, extract " +
 			"each as PNG via ffmpeg, and run a vision-language model " +
 			"(SmolVLM -> Moondream2 fallback) to describe the visible " +
 			"artefacts. Falls back to metadata-only output when the [vlm] " +
 			"extras are not installed. ADR-0172 / T6-6.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"ref", "dis", "width", "height", "pixfmt", "bitdepth"},
-			"properties": schemaObj{
-				"ref":      schemaObj{"type": "string"},
-				"dis":      schemaObj{"type": "string"},
-				"width":    schemaObj{"type": "integer", "minimum": 1},
-				"height":   schemaObj{"type": "integer", "minimum": 1},
-				"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
-				"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
-				"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
-				"backend": schemaObj{
-					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-					"default": "auto",
-				},
-				"n": schemaObj{
-					"type":        "integer",
-					"minimum":     1,
-					"maximum":     32,
-					"default":     5,
-					"description": "How many worst-VMAF frames to describe.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"ref", "dis", "width", "height", "pixfmt", "bitdepth"},
+		"properties": schemaObj{
+			"ref":      schemaObj{"type": "string"},
+			"dis":      schemaObj{"type": "string"},
+			"width":    schemaObj{"type": "integer", "minimum": 1},
+			"height":   schemaObj{"type": "integer", "minimum": 1},
+			"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
+			"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
+			"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
+			"backend": schemaObj{
+				"type":    "string",
+				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
+				"default": "auto",
 			},
-		}),
+			"n": schemaObj{
+				"type":        "integer",
+				"minimum":     1,
+				"maximum":     32,
+				"default":     5,
+				"description": "How many worst-VMAF frames to describe.",
+			},
+		},
 	}, handleDescribeWorstFrames)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "probe_backend",
 		Description: "Run a 1-frame VMAF health check to distinguish 'compiled in' from " +
 			"'driver present + functional'. Returns compiled_in (bool), " +
@@ -359,30 +436,31 @@ func registerTools(srv *mcp.Server) {
 			"list_backends returns true but actual GPU dispatch may fail " +
 			"(driver not loaded, ICD missing, KFD ioctl failure, etc.). " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"backend"},
-			"properties": schemaObj{
-				"backend": schemaObj{
-					"type":        "string",
-					"enum":        []string{"cpu", "cuda", "sycl", "hip", "metal"},
-					"description": "Backend to health-check.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"backend"},
+		"properties": schemaObj{
+			"backend": schemaObj{
+				"type":        "string",
+				"enum":        []string{"cpu", "cuda", "sycl", "hip", "metal"},
+				"description": "Backend to health-check.",
 			},
-		}),
+		},
 	}, handleProbeBackend)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerEncodedScoringTools wires the version report and the encode-then-score tool.
+func registerEncodedScoringTools(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "vmaf_version",
 		Description: "Return the local vmaf binary's identity and build flags. " +
 			"Reports binary_path, version string (from --version), and " +
 			"build_flags dict (cpu/cuda/sycl/hip/metal). Use this " +
 			"to confirm which fork build is running before scoring. " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
-	}, handleVmafVersion)
+	}, schemaObj{"type": "object", "properties": schemaObj{}}, handleVmafVersion)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "vmaf_score_encoded",
 		Description: "Score a (reference, distorted) pair of encoded video files " +
 			"(MP4, MKV, Y4M, WebM, etc.) by decoding them to raw YUV via " +
@@ -392,51 +470,52 @@ func registerTools(srv *mcp.Server) {
 			"same response shape as vmaf_score plus reference_encoded and " +
 			"distorted_encoded fields. Requires ffmpeg + ffprobe on PATH. " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"reference_encoded", "distorted_encoded"},
-			"properties": mergeSchema(schemaObj{
-				"reference_encoded": schemaObj{
-					"type": "string",
-					"description": "Path to the reference encoded video (MP4/MKV/Y4M/...). " +
-						"Must be under an allowlisted root (VMAF_MCP_ALLOW).",
-				},
-				"distorted_encoded": schemaObj{
-					"type":        "string",
-					"description": "Path to the distorted encoded video.",
-				},
-				"model": schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
-				"backend": schemaObj{
-					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-					"default": "auto",
-				},
-				"subsample": schemaObj{
-					"type":        "integer",
-					"minimum":     1,
-					"default":     1,
-					"description": "Score every Nth frame (1 = every frame).",
-				},
-				"precision": schemaObj{
-					"type":        "string",
-					"default":     "legacy",
-					"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
-				},
-			}, scoringExtraProperties()),
-		}),
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"reference_encoded", "distorted_encoded"},
+		"properties": mergeSchema(schemaObj{
+			"reference_encoded": schemaObj{
+				"type": "string",
+				"description": "Path to the reference encoded video (MP4/MKV/Y4M/...). " +
+					"Must be under an allowlisted root (VMAF_MCP_ALLOW).",
+			},
+			"distorted_encoded": schemaObj{
+				"type":        "string",
+				"description": "Path to the distorted encoded video.",
+			},
+			"model": schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
+			"backend": schemaObj{
+				"type":    "string",
+				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
+				"default": "auto",
+			},
+			"subsample": schemaObj{
+				"type":        "integer",
+				"minimum":     1,
+				"default":     1,
+				"description": "Score every Nth frame (1 = every frame).",
+			},
+			"precision": schemaObj{
+				"type":        "string",
+				"default":     "legacy",
+				"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
+			},
+		}, scoringExtraProperties()),
 	}, handleVmafScoreEncoded)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerCatalogTools wires the feature-extractor listing and the model description tool.
+func registerCatalogTools(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "list_extractors",
 		Description: "Enumerate all VmafFeatureExtractor implementations found in the " +
 			"local libvmaf C source tree. Returns each extractor's advertised " +
 			"name, inferred backend (cpu / cuda / sycl / hip / metal), " +
 			"and the source file it was defined in. Requires no binary — " +
 			"parses the C source directly. ADR-0608.",
-		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
-	}, handleListExtractors)
+	}, schemaObj{"type": "object", "properties": schemaObj{}}, handleListExtractors)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "describe_model",
 		Description: "Return metadata for a VMAF model by name or path. Accepts the " +
 			"model's filename stem (e.g. 'vmaf_v0.6.1'), its full filename " +
@@ -445,20 +524,22 @@ func registerTools(srv *mcp.Server) {
 			"against 'vmaf_v0.6.1.json' — not mis-trimmed to 'vmaf_v0.6'. " +
 			"Returns: name, path, format, size_bytes, model_type (JSON only), " +
 			"feature_names (JSON only). ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"name"},
-			"properties": schemaObj{
-				"name": schemaObj{
-					"type": "string",
-					"description": "Model name stem (e.g. 'vmaf_v0.6.1'), full filename " +
-						"(e.g. 'vmaf_v0.6.1.json'), or repo-relative path.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"name"},
+		"properties": schemaObj{
+			"name": schemaObj{
+				"type": "string",
+				"description": "Model name stem (e.g. 'vmaf_v0.6.1'), full filename " +
+					"(e.g. 'vmaf_v0.6.1.json'), or repo-relative path.",
 			},
-		}),
+		},
 	}, handleDescribeModel)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerCompareTool wires the encoder-parameter sweep tool.
+func registerCompareTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "run_compare",
 		Description: "Wrap 'vmaf-tune compare': compare codec adapters at one or more " +
 			"target VMAF scores and return a ranked report. Requires vmaf-tune " +
@@ -466,159 +547,167 @@ func registerTools(srv *mcp.Server) {
 			"progress notifications when params._meta.progressToken is set. " +
 			"Default encoders: libx264,libx265,libsvtav1,libvpx-vp9. " +
 			"ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"src"},
-			"properties": schemaObj{
-				"src": schemaObj{
-					"type":        "string",
-					"description": "Source video path (any FFmpeg-readable format or raw YUV).",
-				},
-				"target_vmaf": schemaObj{
-					"type":        "number",
-					"description": "Single VMAF target (legacy, single-target schema).",
-				},
-				"target_vmafs": schemaObj{
-					"type":        "string",
-					"description": "Comma-separated VMAF targets, e.g. '94,96,97,98'.",
-				},
-				"encoders": schemaObj{
-					"type":        "string",
-					"description": "Comma-separated encoder list, e.g. 'libx264,libx265'.",
-				},
-				"width":     schemaObj{"type": "integer", "description": "Source width (raw YUV only)."},
-				"height":    schemaObj{"type": "integer", "description": "Source height (raw YUV only)."},
-				"pix_fmt":   schemaObj{"type": "string", "default": "yuv420p"},
-				"framerate": schemaObj{"type": "number", "description": "Source framerate."},
-				"no_parallel": schemaObj{
-					"type":        "boolean",
-					"default":     false,
-					"description": "Dispatch encoders sequentially (default: parallel).",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"src"},
+		"properties": schemaObj{
+			"src": schemaObj{
+				"type":        "string",
+				"description": "Source video path (any FFmpeg-readable format or raw YUV).",
 			},
-		}),
+			"target_vmaf": schemaObj{
+				"type":        "number",
+				"description": "Single VMAF target (legacy, single-target schema).",
+			},
+			"target_vmafs": schemaObj{
+				"type":        "string",
+				"description": "Comma-separated VMAF targets, e.g. '94,96,97,98'.",
+			},
+			"encoders": schemaObj{
+				"type":        "string",
+				"description": "Comma-separated encoder list, e.g. 'libx264,libx265'.",
+			},
+			"width":     schemaObj{"type": "integer", "description": "Source width (raw YUV only)."},
+			"height":    schemaObj{"type": "integer", "description": "Source height (raw YUV only)."},
+			"pix_fmt":   schemaObj{"type": "string", "default": "yuv420p"},
+			"framerate": schemaObj{"type": "number", "description": "Source framerate."},
+			"no_parallel": schemaObj{
+				"type":        "boolean",
+				"default":     false,
+				"description": "Dispatch encoders sequentially (default: parallel).",
+			},
+		},
 	}, handleRunCompare)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerLadderTool wires the bitrate-ladder tool.
+func registerLadderTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "run_ladder",
 		Description: "Wrap 'vmaf-tune ladder': build a per-title bitrate ladder via " +
 			"convex-hull sweep over resolution x target-VMAF, pick K knees, " +
 			"and emit an HLS / DASH / JSON manifest. Requires vmaf-tune. " +
 			"Emits MCP progress notifications. ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"src", "resolutions", "target_vmafs"},
-			"properties": schemaObj{
-				"src":          schemaObj{"type": "string", "description": "Source video path."},
-				"resolutions":  schemaObj{"type": "string", "description": "Comma-separated WxH list, e.g. '1920x1080,1280x720,854x480'."},
-				"target_vmafs": schemaObj{"type": "string", "description": "Comma-separated VMAF targets, e.g. '95,90,85'."},
-				"encoder": schemaObj{
-					"type":        "string",
-					"default":     "libx264",
-					"description": "Codec adapter (default libx264).",
-				},
-				"quality_tiers": schemaObj{
-					"type":        "integer",
-					"default":     5,
-					"description": "Number of ladder rungs to select.",
-				},
-				"format": schemaObj{
-					"type":        "string",
-					"enum":        []string{"hls", "dash", "json"},
-					"default":     "json",
-					"description": "Manifest format.",
-				},
-				"spacing": schemaObj{
-					"type":    "string",
-					"enum":    []string{"log_bitrate", "vmaf", "uniform"},
-					"default": "log_bitrate",
-				},
-				"framerate": schemaObj{"type": "number", "description": "Source framerate."},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"src", "resolutions", "target_vmafs"},
+		"properties": schemaObj{
+			"src":          schemaObj{"type": "string", "description": "Source video path."},
+			"resolutions":  schemaObj{"type": "string", "description": "Comma-separated WxH list, e.g. '1920x1080,1280x720,854x480'."},
+			"target_vmafs": schemaObj{"type": "string", "description": "Comma-separated VMAF targets, e.g. '95,90,85'."},
+			"encoder": schemaObj{
+				"type":        "string",
+				"default":     "libx264",
+				"description": "Codec adapter (default libx264).",
 			},
-		}),
+			"quality_tiers": schemaObj{
+				"type":        "integer",
+				"default":     5,
+				"description": "Number of ladder rungs to select.",
+			},
+			"format": schemaObj{
+				"type":        "string",
+				"enum":        []string{"hls", "dash", "json"},
+				"default":     "json",
+				"description": "Manifest format.",
+			},
+			"spacing": schemaObj{
+				"type":    "string",
+				"enum":    []string{"log_bitrate", "vmaf", "uniform"},
+				"default": "log_bitrate",
+			},
+			"framerate": schemaObj{"type": "number", "description": "Source framerate."},
+		},
 	}, handleRunLadder)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerTunePerShotTool wires the vmafx-tune per-shot driver tool.
+func registerTunePerShotTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "run_tune_per_shot",
 		Description: "Wrap 'vmaf-tune tune-per-shot': detect scene cuts, run a " +
 			"per-shot CRF bisect targeting a VMAF score, and return the " +
 			"encoding plan. Requires vmaf-tune. Emits MCP progress " +
 			"notifications. ADR-0608.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"src"},
-			"properties": schemaObj{
-				"src":             schemaObj{"type": "string", "description": "Source video path."},
-				"target_vmaf":     schemaObj{"type": "number", "default": 92.0, "description": "Target VMAF score."},
-				"encoder":         schemaObj{"type": "string", "default": "libx264"},
-				"pix_fmt":         schemaObj{"type": "string", "default": "yuv420p"},
-				"framerate":       schemaObj{"type": "number"},
-				"scene_threshold": schemaObj{"type": "number", "description": "Scene-cut detection threshold (0..1)."},
-				"output":          schemaObj{"type": "string", "description": "Output video path (optional; plan-only if omitted)."},
-				"format": schemaObj{
-					"type":    "string",
-					"enum":    []string{"json", "shell", "csv"},
-					"default": "json",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"src"},
+		"properties": schemaObj{
+			"src":             schemaObj{"type": "string", "description": "Source video path."},
+			"target_vmaf":     schemaObj{"type": "number", "default": 92.0, "description": "Target VMAF score."},
+			"encoder":         schemaObj{"type": "string", "default": "libx264"},
+			"pix_fmt":         schemaObj{"type": "string", "default": "yuv420p"},
+			"framerate":       schemaObj{"type": "number"},
+			"scene_threshold": schemaObj{"type": "number", "description": "Scene-cut detection threshold (0..1)."},
+			"output":          schemaObj{"type": "string", "description": "Output video path (optional; plan-only if omitted)."},
+			"format": schemaObj{
+				"type":    "string",
+				"enum":    []string{"json", "shell", "csv"},
+				"default": "json",
 			},
-		}),
+		},
 	}, handleRunTunePerShot)
+}
 
+// registerPerShotTool wires the per-shot scoring tool.
+func registerPerShotTool(reg *toolRegistrar) {
 	// ── Sidecar-binary bridge (#1240 item b) ────────────────────────────
 	// One tool per sidecar CLI built next to `vmaf` in core/tools/. Schemas
 	// mirror each binary's own --help exactly; bounds match the C parsers.
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "vmaf_per_shot",
 		Description: "Wrap the 'vmaf-perShot' sidecar binary: scan a raw YUV reference, " +
 			"detect shot boundaries from luma complexity + motion energy, and " +
 			"return a per-shot CRF plan targeting a VMAF score. Returns the " +
 			"parsed JSON plan by default (format='csv' returns the raw CSV " +
 			"text instead). ADR-0222.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"reference", "width", "height"},
-			"properties": schemaObj{
-				"reference": schemaObj{
-					"type":        "string",
-					"description": "Reference raw planar YUV path (must be under an allowlisted root).",
-				},
-				"width":  schemaObj{"type": "integer", "minimum": 16, "maximum": 65535},
-				"height": schemaObj{"type": "integer", "minimum": 16, "maximum": 65535},
-				"pixel_format": schemaObj{
-					"type": "string", "enum": []string{"420", "422", "444"}, "default": "420",
-					"description": "Planar YUV subsampling (--pixel_format).",
-				},
-				"bitdepth": schemaObj{
-					"type": "integer", "enum": []int{8, 10, 12, 16}, "default": 8,
-					"description": "Planar YUV bit depth (--bitdepth).",
-				},
-				"target_vmaf": schemaObj{
-					"type": "number", "minimum": 0, "maximum": 100, "default": 90,
-					"description": "Target VMAF score the CRF predictor aims at (--target-vmaf).",
-				},
-				"crf_min": schemaObj{
-					"type": "integer", "minimum": 0, "maximum": 63, "default": 18,
-					"description": "Lower CRF clamp (--crf-min). Must not exceed crf_max.",
-				},
-				"crf_max": schemaObj{
-					"type": "integer", "minimum": 0, "maximum": 63, "default": 35,
-					"description": "Upper CRF clamp (--crf-max).",
-				},
-				"diff_threshold": schemaObj{
-					"type": "number", "minimum": 0, "maximum": 255,
-					"description": "Shot-detector frame-diff cutoff (--diff-threshold; C default 12).",
-				},
-				"format": schemaObj{
-					"type": "string", "enum": []string{"json", "csv"}, "default": "json",
-					"description": "Plan encoding (--format). The MCP tool defaults to json " +
-						"(the C CLI defaults to csv) so the plan comes back structured.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"reference", "width", "height"},
+		"properties": schemaObj{
+			"reference": schemaObj{
+				"type":        "string",
+				"description": "Reference raw planar YUV path (must be under an allowlisted root).",
 			},
-		}),
+			"width":  schemaObj{"type": "integer", "minimum": 16, "maximum": 65535},
+			"height": schemaObj{"type": "integer", "minimum": 16, "maximum": 65535},
+			"pixel_format": schemaObj{
+				"type": "string", "enum": []string{"420", "422", "444"}, "default": "420",
+				"description": "Planar YUV subsampling (--pixel_format).",
+			},
+			"bitdepth": schemaObj{
+				"type": "integer", "enum": []int{8, 10, 12, 16}, "default": 8,
+				"description": "Planar YUV bit depth (--bitdepth).",
+			},
+			"target_vmaf": schemaObj{
+				"type": "number", "minimum": 0, "maximum": 100, "default": 90,
+				"description": "Target VMAF score the CRF predictor aims at (--target-vmaf).",
+			},
+			"crf_min": schemaObj{
+				"type": "integer", "minimum": 0, "maximum": 63, "default": 18,
+				"description": "Lower CRF clamp (--crf-min). Must not exceed crf_max.",
+			},
+			"crf_max": schemaObj{
+				"type": "integer", "minimum": 0, "maximum": 63, "default": 35,
+				"description": "Upper CRF clamp (--crf-max).",
+			},
+			"diff_threshold": schemaObj{
+				"type": "number", "minimum": 0, "maximum": 255,
+				"description": "Shot-detector frame-diff cutoff (--diff-threshold; C default 12).",
+			},
+			"format": schemaObj{
+				"type": "string", "enum": []string{"json", "csv"}, "default": "json",
+				"description": "Plan encoding (--format). The MCP tool defaults to json " +
+					"(the C CLI defaults to csv) so the plan comes back structured.",
+			},
+		},
 	}, handleVmafPerShot)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerRoiTool wires the region-of-interest scoring tool.
+func registerRoiTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "vmaf_roi",
 		Description: "Wrap the 'vmaf_roi' sidecar binary: compute a per-CTU saliency grid " +
 			"for one frame of a raw YUV file and emit an encoder ROI sidecar. " +
@@ -626,48 +715,50 @@ func registerTools(srv *mcp.Server) {
 			"returns the raw int8 ROI map base64-encoded in 'roi_map_base64'. " +
 			"Without saliency_model a centre-weighted radial placeholder is used " +
 			"(smoke-test quality only).",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"reference", "width", "height", "frame"},
-			"properties": schemaObj{
-				"reference": schemaObj{
-					"type":        "string",
-					"description": "Reference raw planar YUV path (must be under an allowlisted root).",
-				},
-				"width":  schemaObj{"type": "integer", "minimum": 1, "maximum": 16384},
-				"height": schemaObj{"type": "integer", "minimum": 1, "maximum": 16384},
-				"frame": schemaObj{
-					"type": "integer", "minimum": 0, "maximum": 1000000,
-					"description": "0-based frame index to score (--frame).",
-				},
-				"pixel_format": schemaObj{
-					"type": "string", "enum": []string{"420", "422", "444"}, "default": "420",
-				},
-				"bitdepth": schemaObj{
-					"type": "integer", "enum": []int{8, 10, 12, 16}, "default": 8,
-				},
-				"ctu_size": schemaObj{
-					"type": "integer", "minimum": 8, "maximum": 128, "default": 64,
-					"description": "CTU grid cell size (--ctu-size; x265 max-ctu).",
-				},
-				"encoder": schemaObj{
-					"type": "string", "enum": []string{"x265", "svt-av1"}, "default": "x265",
-					"description": "Sidecar dialect (--encoder).",
-				},
-				"strength": schemaObj{
-					"type": "number", "minimum": 0, "maximum": 64, "default": 6.0,
-					"description": "QP-offset gain applied to the saliency grid (--strength).",
-				},
-				"saliency_model": schemaObj{
-					"type": "string",
-					"description": "Optional ONNX [1,1,H,W] luma->[0,1] saliency model " +
-						"(--saliency-model). Must be under an allowlisted root.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"reference", "width", "height", "frame"},
+		"properties": schemaObj{
+			"reference": schemaObj{
+				"type":        "string",
+				"description": "Reference raw planar YUV path (must be under an allowlisted root).",
 			},
-		}),
+			"width":  schemaObj{"type": "integer", "minimum": 1, "maximum": 16384},
+			"height": schemaObj{"type": "integer", "minimum": 1, "maximum": 16384},
+			"frame": schemaObj{
+				"type": "integer", "minimum": 0, "maximum": 1000000,
+				"description": "0-based frame index to score (--frame).",
+			},
+			"pixel_format": schemaObj{
+				"type": "string", "enum": []string{"420", "422", "444"}, "default": "420",
+			},
+			"bitdepth": schemaObj{
+				"type": "integer", "enum": []int{8, 10, 12, 16}, "default": 8,
+			},
+			"ctu_size": schemaObj{
+				"type": "integer", "minimum": 8, "maximum": 128, "default": 64,
+				"description": "CTU grid cell size (--ctu-size; x265 max-ctu).",
+			},
+			"encoder": schemaObj{
+				"type": "string", "enum": []string{"x265", "svt-av1"}, "default": "x265",
+				"description": "Sidecar dialect (--encoder).",
+			},
+			"strength": schemaObj{
+				"type": "number", "minimum": 0, "maximum": 64, "default": 6.0,
+				"description": "QP-offset gain applied to the saliency grid (--strength).",
+			},
+			"saliency_model": schemaObj{
+				"type": "string",
+				"description": "Optional ONNX [1,1,H,W] luma->[0,1] saliency model " +
+					"(--saliency-model). Must be under an allowlisted root.",
+			},
+		},
 	}, handleVmafRoi)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerBenchTool wires the micro-benchmark tool.
+func registerBenchTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "vmaf_bench",
 		Description: "Wrap the 'vmaf_bench' sidecar binary: per-feature micro-benchmark " +
 			"over the built-in synthetic fixtures, or (validate=true) a GPU-vs-CPU " +
@@ -675,44 +766,46 @@ func registerTools(srv *mcp.Server) {
 			"end-to-end bench_all.sh harness over real YUV fixtures. In validate " +
 			"mode a non-zero exit is reported as validation_failed=true rather " +
 			"than as a tool error.",
-		InputSchema: mustSchema(schemaObj{
-			"type": "object",
-			"properties": schemaObj{
-				"frames": schemaObj{
-					"type": "integer", "minimum": 2, "maximum": 48,
-					"description": "Frames per benchmark (--frames; C default 10, max 48).",
-				},
-				"resolution": schemaObj{
-					"type":        "string",
-					"enum":        []string{"576x324", "640x480", "1280x720", "1920x1080", "3840x2160"},
-					"description": "Single resolution to test (--resolution). Omit to test all.",
-				},
-				"bpc": schemaObj{
-					"type": "integer", "enum": []int{8, 10, 12, 16},
-					"description": "Bits per component (--bpc; C default 8).",
-				},
-				"data_dir": schemaObj{
-					"type": "string",
-					"description": "Test-data directory (--data-dir). Must be a directory under " +
-						"an allowlisted root.",
-				},
-				"validate": schemaObj{
-					"type": "boolean", "default": false,
-					"description": "GPU-vs-CPU correctness comparison (--validate).",
-				},
-				"gpu_only": schemaObj{
-					"type": "boolean", "default": false,
-					"description": "Skip the CPU targets (--gpu-only).",
-				},
-				"device_list": schemaObj{
-					"type": "boolean", "default": false,
-					"description": "List the available GPU devices and exit (--list-devices).",
-				},
+	}, schemaObj{
+		"type": "object",
+		"properties": schemaObj{
+			"frames": schemaObj{
+				"type": "integer", "minimum": 2, "maximum": 48,
+				"description": "Frames per benchmark (--frames; C default 10, max 48).",
 			},
-		}),
+			"resolution": schemaObj{
+				"type":        "string",
+				"enum":        []string{"576x324", "640x480", "1280x720", "1920x1080", "3840x2160"},
+				"description": "Single resolution to test (--resolution). Omit to test all.",
+			},
+			"bpc": schemaObj{
+				"type": "integer", "enum": []int{8, 10, 12, 16},
+				"description": "Bits per component (--bpc; C default 8).",
+			},
+			"data_dir": schemaObj{
+				"type": "string",
+				"description": "Test-data directory (--data-dir). Must be a directory under " +
+					"an allowlisted root.",
+			},
+			"validate": schemaObj{
+				"type": "boolean", "default": false,
+				"description": "GPU-vs-CPU correctness comparison (--validate).",
+			},
+			"gpu_only": schemaObj{
+				"type": "boolean", "default": false,
+				"description": "Skip the CPU targets (--gpu-only).",
+			},
+			"device_list": schemaObj{
+				"type": "boolean", "default": false,
+				"description": "List the available GPU devices and exit (--list-devices).",
+			},
+		},
 	}, handleVmafBench)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerVplTool wires the oneVPL hardware decode-and-score tool.
+func registerVplTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "vmaf_vpl",
 		Description: "Wrap the 'vmaf_vpl' sidecar binary: decode an encoded (reference, " +
 			"distorted) pair with Intel oneVPL, import the VA surfaces zero-copy " +
@@ -720,132 +813,136 @@ func registerTools(srv *mcp.Server) {
 			"libva + SYCL toolchain is present; otherwise the tool reports the " +
 			"missing binary. Returns the parsed vmaf_score and frames_processed " +
 			"alongside the raw stdout.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"ref", "dis"},
-			"properties": schemaObj{
-				"ref": schemaObj{"type": "string", "description": "Reference encoded video path."},
-				"dis": schemaObj{"type": "string", "description": "Distorted encoded video path."},
-				"model": schemaObj{
-					// The sidecar, not this server, chooses this value.
-					"type": "string", "default": "vmaf_v0.6.1", // vmaf-model-pin: vmaf_vpl.c's own --model default
-					"description": "Bare VMAF model name (--model). Paths are rejected.",
-				},
-				"frames": schemaObj{
-					"type": "integer", "minimum": 0, "default": 0,
-					"description": "Max frames to process (--frames; 0 = all).",
-				},
-				"device": schemaObj{
-					"type": "integer", "minimum": 0, "default": 0,
-					"description": "SYCL device index (--device).",
-				},
-				"render_node": schemaObj{
-					"type": "string", "default": "/dev/dri/renderD128",
-					"description": "VA-API render node (--render-node). Restricted to " +
-						"/dev/dri/renderD<N> or /dev/dri/card<N>.",
-				},
-				"fallback": schemaObj{
-					"type": "boolean", "default": false,
-					"description": "Fall back to a host upload when the zero-copy import fails (--fallback).",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"ref", "dis"},
+		"properties": schemaObj{
+			"ref": schemaObj{"type": "string", "description": "Reference encoded video path."},
+			"dis": schemaObj{"type": "string", "description": "Distorted encoded video path."},
+			"model": schemaObj{
+				// The sidecar, not this server, chooses this value.
+				"type": "string", "default": "vmaf_v0.6.1", // vmaf-model-pin: vmaf_vpl.c's own --model default
+				"description": "Bare VMAF model name (--model). Paths are rejected.",
 			},
-		}),
+			"frames": schemaObj{
+				"type": "integer", "minimum": 0, "default": 0,
+				"description": "Max frames to process (--frames; 0 = all).",
+			},
+			"device": schemaObj{
+				"type": "integer", "minimum": 0, "default": 0,
+				"description": "SYCL device index (--device).",
+			},
+			"render_node": schemaObj{
+				"type": "string", "default": "/dev/dri/renderD128",
+				"description": "VA-API render node (--render-node). Restricted to " +
+					"/dev/dri/renderD<N> or /dev/dri/card<N>.",
+			},
+			"fallback": schemaObj{
+				"type": "boolean", "default": false,
+				"description": "Fall back to a host upload when the zero-copy import fails (--fallback).",
+			},
+		},
 	}, handleVmafVpl)
+}
 
+// registerJobSubmissionTools wires the controller job submission and lookup tools.
+func registerJobSubmissionTools(reg *toolRegistrar) {
 	// ── Phase-4b gRPC control-plane bridge (#1240 item c, ADR-1173) ─────
 	// Go-only tools: the Python server has no gRPC stack by design. Targets
 	// come from the environment (VMAFX_CONTROLLER_ADDR / VMAFX_SERVER_ADDR),
 	// never from tool arguments.
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "submit_job",
 		Description: "Enqueue a scoring job on the vmafx-controller (Phase-4b control " +
 			"plane) and return its job ID. Paths are resolved by the worker node " +
 			"against its shared mount, not by this server, so they must be " +
 			"absolute worker-side paths. Target host comes from " +
 			"VMAFX_CONTROLLER_ADDR (default localhost:9090). ADR-0711 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"reference", "distorted"},
-			"properties": schemaObj{
-				"reference": schemaObj{
-					"type":        "string",
-					"description": "Absolute worker-side path to the reference video.",
-				},
-				"distorted": schemaObj{
-					"type":        "string",
-					"description": "Absolute worker-side path to the distorted video.",
-				},
-				"model": schemaObj{
-					"type":        "string",
-					"description": "VMAF model name. Omit to let the controller apply its own default.",
-				},
-				"backend": schemaObj{
-					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
-					"default": "auto",
-					"description": "Backend capability the scheduler must match on a node. " +
-						"'auto' lets the scheduler pick any node.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"reference", "distorted"},
+		"properties": schemaObj{
+			"reference": schemaObj{
+				"type":        "string",
+				"description": "Absolute worker-side path to the reference video.",
 			},
-		}),
+			"distorted": schemaObj{
+				"type":        "string",
+				"description": "Absolute worker-side path to the distorted video.",
+			},
+			"model": schemaObj{
+				"type":        "string",
+				"description": "VMAF model name. Omit to let the controller apply its own default.",
+			},
+			"backend": schemaObj{
+				"type":    "string",
+				"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
+				"default": "auto",
+				"description": "Backend capability the scheduler must match on a node. " +
+					"'auto' lets the scheduler pick any node.",
+			},
+		},
 	}, handleSubmitJob)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "get_job",
 		Description: "Fetch the current state of a controller job by ID: status " +
 			"(PENDING/RUNNING/COMPLETED/FAILED/CANCELLED), assigned node, error, " +
 			"timestamps, final_score, and any partial per-frame results. " +
 			"ADR-0711 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"job_id"},
-			"properties": schemaObj{
-				"job_id": schemaObj{"type": "string", "description": "Job UUID returned by submit_job."},
-			},
-		}),
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"job_id"},
+		"properties": schemaObj{
+			"job_id": schemaObj{"type": "string", "description": "Job UUID returned by submit_job."},
+		},
 	}, handleGetJob)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerJobControlTools wires the controller job cancellation and listing tools.
+func registerJobControlTools(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "cancel_job",
 		Description: "Request cancellation of a PENDING or RUNNING controller job. " +
 			"Returns ok=false with a message when the controller declines. " +
 			"ADR-0711 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"job_id"},
-			"properties": schemaObj{
-				"job_id": schemaObj{"type": "string", "description": "Job UUID to cancel."},
-			},
-		}),
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"job_id"},
+		"properties": schemaObj{
+			"job_id": schemaObj{"type": "string", "description": "Job UUID to cancel."},
+		},
 	}, handleCancelJob)
 
-	addRawTool(srv, &mcp.Tool{
+	reg.add(&mcp.Tool{
 		Name: "list_jobs",
 		Description: "List the controller's current job snapshot, optionally filtered by " +
 			"status. Drains the StreamJobs server-streaming RPC, which sends the " +
 			"current snapshot and closes (ADR-0962). Returns at most 'limit' jobs " +
 			"and sets truncated=true when more were available. ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
-			"type": "object",
-			"properties": schemaObj{
-				"status_filter": schemaObj{
-					"type": "array",
-					"items": schemaObj{
-						"type": "string",
-						"enum": []string{"PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"},
-					},
-					"description": "Restrict the snapshot to these states. Omit for all jobs.",
+	}, schemaObj{
+		"type": "object",
+		"properties": schemaObj{
+			"status_filter": schemaObj{
+				"type": "array",
+				"items": schemaObj{
+					"type": "string",
+					"enum": []string{"PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"},
 				},
-				"limit": schemaObj{
-					"type": "integer", "minimum": 1, "maximum": 500, "default": 100,
-					"description": "Maximum jobs to return.",
-				},
+				"description": "Restrict the snapshot to these states. Omit for all jobs.",
 			},
-		}),
+			"limit": schemaObj{
+				"type": "integer", "minimum": 1, "maximum": 500, "default": 100,
+				"description": "Maximum jobs to return.",
+			},
+		},
 	}, handleListJobs)
+}
 
-	addRawTool(srv, &mcp.Tool{
+// registerRemoteScoringTool wires the server-side scoring tool.
+func registerRemoteScoringTool(reg *toolRegistrar) {
+	reg.add(&mcp.Tool{
 		Name: "vmaf_score_remote",
 		Description: "Score a (reference, distorted) pair on a remote vmafx-server over " +
 			"the unary VmafxScoring.Score gRPC RPC. Nothing is read locally — the " +
@@ -853,24 +950,23 @@ func registerTools(srv *mcp.Server) {
 			"the server's mount. Target host comes from VMAFX_SERVER_ADDR " +
 			"(default localhost:9090). Use vmaf_score for local files. " +
 			"ADR-0703 / ADR-1173.",
-		InputSchema: mustSchema(schemaObj{
-			"type":     "object",
-			"required": []string{"reference", "distorted"},
-			"properties": schemaObj{
-				"reference": schemaObj{
-					"type":        "string",
-					"description": "Absolute server-side path to the reference video.",
-				},
-				"distorted": schemaObj{
-					"type":        "string",
-					"description": "Absolute server-side path to the distorted video.",
-				},
-				"model": schemaObj{
-					"type":        "string",
-					"description": "VMAF model name. Omit to let vmafx-server apply its own default.",
-				},
+	}, schemaObj{
+		"type":     "object",
+		"required": []string{"reference", "distorted"},
+		"properties": schemaObj{
+			"reference": schemaObj{
+				"type":        "string",
+				"description": "Absolute server-side path to the reference video.",
 			},
-		}),
+			"distorted": schemaObj{
+				"type":        "string",
+				"description": "Absolute server-side path to the distorted video.",
+			},
+			"model": schemaObj{
+				"type":        "string",
+				"description": "VMAF model name. Omit to let vmafx-server apply its own default.",
+			},
+		},
 	}, handleVmafScoreRemote)
 }
 
@@ -954,12 +1050,53 @@ func mergeSchema(base, extra schemaObj) schemaObj {
 	return out
 }
 
-// mustSchema converts a Go map to a json.RawMessage for use as an InputSchema.
-// Panics on marshal failure (schema is always a compile-time constant).
-func mustSchema(v any) json.RawMessage {
+// toolSchema converts a Go map to a json.RawMessage for use as an InputSchema.
+//
+// Every schema passed here is a literal built from strings, numbers, booleans, slices and
+// nested maps, so json.Marshal has no input it can fail on. Should that stop being true,
+// the failure is returned, never defaulted: a tool whose declared schema did not marshal
+// has no validation at all, so substituting a permissive schema would leave the tool
+// reachable with every argument check silently switched off. The caller (toolRegistrar)
+// refuses to register the tool and buildServer refuses to start, which is loud and
+// recoverable; a tool that accepts anything is neither.
+func toolSchema(v any) (json.RawMessage, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("mustSchema: %v", err))
+		return nil, fmt.Errorf("marshalling tool input schema: %w", err)
 	}
-	return b
+	return b, nil
+}
+
+// toolRegistrar owns the marshalling of every tool input schema and retains the first
+// failure. Registration goes through add, which sets InputSchema from the marshalled
+// schema itself, so "a tool registered with a schema that never marshalled" is not a
+// state a caller can construct: there is no path from a marshal failure to a registered
+// tool. Once err is set, later registrations are skipped -- registerTools returns err,
+// buildServer discards the half-built server and fails, so the skipped tools are never
+// observable -- and the first failure is the one reported, since a schema literal that
+// stops marshalling is a source defect to be fixed at its first occurrence.
+type toolRegistrar struct {
+	srv *mcp.Server
+	err error
+}
+
+// add marshals schema into tool.InputSchema and registers tool with handler.
+//
+// A marshal failure registers nothing, records the error against the tool name, and
+// leaves every later add a no-op.
+func (r *toolRegistrar) add(
+	tool *mcp.Tool,
+	schema schemaObj,
+	handler func(context.Context, map[string]any) (any, error),
+) {
+	if r.err != nil {
+		return
+	}
+	raw, err := toolSchema(schema)
+	if err != nil {
+		r.err = fmt.Errorf("tool %q: %w", tool.Name, err)
+		return
+	}
+	tool.InputSchema = raw
+	addRawTool(r.srv, tool, handler)
 }

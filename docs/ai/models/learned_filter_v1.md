@@ -35,7 +35,7 @@ downstream feature extractor.
 | Training corpus | KoNViD-1k middle-frames (1 200 clips; not redistributed in-tree) |
 | Val loss (L1) | ~0.019 on normalised luma (KoNViD-1k validation split) |
 | Quantisation | Dynamic-PTQ INT8 via `ai/scripts/ptq_dynamic.py`; `quant_accuracy_budget_plcc = 0.01` |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Trainer / exporter | `ai/scripts/export_tiny_models.py` |
 
 Fresh exports from `ai/scripts/export_tiny_models.py` add ADR-0661

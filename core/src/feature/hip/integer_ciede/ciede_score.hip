@@ -6,7 +6,7 @@
  *
  *  HIP compute kernel for the ciede2000 feature extractor (T7-10b
  *  batch-4 / ADR-0377). Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/integer_ciede/ciede_score.cu`.
+ *  `core/src/feature/cuda/integer_ciede/ciede_score.cu`.
  *
  *  Per-pixel: convert YUV → L*a*b* (BT.709 primaries), compute CIEDE2000
  *  ΔE between ref and dis, reduce per warp, lane 0 writes warp sum into a

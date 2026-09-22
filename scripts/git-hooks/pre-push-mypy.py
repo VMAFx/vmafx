@@ -98,6 +98,21 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
     worktree.rmdir()
     try:
         git("-C", str(root), "worktree", "add", "--detach", "--quiet", str(worktree), base)
+        # The comparison is only meaningful if both sides are checked under the
+        # SAME rules. The baseline checkout carries the merge base's
+        # pyproject.toml, so a branch that changes [tool.mypy] -- raising
+        # python_version, say -- makes mypy behave differently on the two sides
+        # and every newly-visible finding is misattributed to the branch. At
+        # python_version 3.10 mypy aborts outright on numpy's PEP 695 `type`
+        # statement and checks zero files, so the baseline comes back empty and
+        # the branch appears to introduce everything.
+        # Copy the branch's type-check configuration over the baseline's before
+        # measuring. The FILES stay at the merge base, which is what the gate is
+        # comparing; only the rules are held constant.
+        for config in ("pyproject.toml", "mypy.ini", ".mypy.ini", "setup.cfg"):
+            source = root / config
+            if source.is_file():
+                shutil.copyfile(source, worktree / config)
         present = [path for path in paths if (worktree / path).is_file()]
         if not present:
             return set()

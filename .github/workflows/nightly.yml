@@ -58,7 +58,9 @@ jobs:
           cd core
           meson setup ../build -Denable_cuda=false -Denable_sycl=false
       - name: Build (generated headers for clang-tidy)
-        run: meson compile -C build
+        run: |
+          meson compile -C build
+          python3 scripts/ci/write-compile-commands.py --build-dir build
       - name: Whole-tree clang-tidy ratchet (ADR-1142, cpu lane, fails on drift)
         run: |
           python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
@@ -83,7 +85,7 @@ jobs:
           meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release
           ninja -C ../build
       - name: Run benchmark
-        run: bash testdata/bench_all.sh || true
+        run: bash testdata/bench_all.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:

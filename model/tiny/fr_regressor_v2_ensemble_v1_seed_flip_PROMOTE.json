@@ -1,7 +1,7 @@
 {
   "adr": "ADR-0309",
   "corpus": {
-    "corpus_root": ".workingdir2/netflix",
+    "corpus_root": ".corpus/netflix",
     "dis_count": 0,
     "present": false,
     "ref_count": 0,

@@ -30,7 +30,7 @@ Today the package has no release channel:
   but skip the MCP server.
 - No signature, no provenance, no SBOM for the MCP layer.
 
-[BACKLOG T7-2](../../.workingdir2/BACKLOG.md) flagged the gap as
+BACKLOG T7-2 flagged the gap as
 "PyPI vs GitHub release attachment vs both" — pending an ADR plus
 release.yml wiring.
 
@@ -140,7 +140,7 @@ further user interaction.
 
 ## References
 
-- [BACKLOG T7-2](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T7-2 — backlog row.
 - [`supply-chain.yml`](../../.github/workflows/supply-chain.yml) —
   existing release workflow being extended.
 - [`mcp-server/vmaf-mcp/pyproject.toml`](../../mcp-server/vmaf-mcp/pyproject.toml) —

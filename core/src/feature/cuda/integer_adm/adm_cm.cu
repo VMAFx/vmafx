@@ -25,6 +25,7 @@
 #include "adm_decouple_inline.cuh"
 
 #include <algorithm>
+#include <cstdint>
 
 //#define COMPARE_FUSED_SPLIT
 #if defined(COMPARE_FUSED_SPLIT)
@@ -261,8 +262,11 @@ __device__ __forceinline__ int32_t i4_cm_weight(uint32_t coeff, int32_t v)
     const uint32_t shift_flt = 32;
     /* 1u << 31 wraps to INT32_MIN, so the rounding term is subtracted rather
      * than added. The CPU reference rounds the same way and the Netflix golden
-     * scores encode it (ADR-0155); do not widen it. */
-    const int32_t add_bef_shift_flt = (int32_t)(1u << (shift_flt - 1));
+     * scores encode it (ADR-0155); do not widen it. INT32_MIN names that value
+     * directly: the unsigned-to-signed conversion NVCC 13.4 reports as
+     * diagnostic #68-D is gone and the emitted bits are unchanged
+     * (docs/research/2076-cuda-adm-signbit-warning.md). */
+    const int32_t add_bef_shift_flt = INT32_MIN;
     return (int32_t)((((int64_t)coeff * abs(v)) + add_bef_shift_flt) >> shift_flt);
 }
 
@@ -570,24 +574,31 @@ adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int en
  * The unnamed parameters are unused by the kernel but stay in the signature:
  * the host launches it with a fixed `void *args[]` layout. */
 
-#define ADM_CM_LINE(rows_per_thread)                                                               \
-    __global__ void adm_cm_line_kernel_##rows_per_thread(                                          \
-        AdmBufferCuda buf, int h, int w, int /* top */, int /* bottom */, int /* left */,          \
-        int /* right */, int start_row, int end_row, int start_col, int end_col, int src_stride,   \
-        int /* csf_a_stride */, int /* buffer_h */, int /* buffer_stride */,                       \
-        int32_t * /* accum_per_block */, AdmFixedParametersCuda params, int /* scale */,           \
-        int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,                     \
-        const uint32_t add_shift_inner_accum)                                                      \
-    {                                                                                              \
-        adm_cm_line_kernel<rows_per_thread>(buf, h, w, start_row, end_row, start_col, end_col,     \
-                                            src_stride, params, accum_global, ws,                  \
-                                            shift_inner_accum, add_shift_inner_accum);             \
-    }
+/* The ADM_CM_LINE(rows_per_thread) generator macro that used to stand here had
+ * exactly one expansion, ADM_CM_LINE(8). It is written out instead, for two
+ * reasons. The HIP twin (../../hip/integer_adm/adm_cm.hip) spells
+ * `adm_cm_line_kernel_8` out, and a three-way diff of the ports is what makes
+ * them reviewable. And the HISS-04 scanner reads `ADM_CM_LINE(8);` at file
+ * scope as a function signature whose body is the next `{` in the file -- the
+ * anonymous namespace below -- and reports that namespace as one 127-line
+ * function. The expansion is token-for-token what the macro produced. */
 
 extern "C" {
 // 128 = warps_per_thread * val_per_thread = 32 * 4 -- assuming 32 threads per warp, this might change in the future
 /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused (scales 1-3). */
-ADM_CM_LINE(8); // adm_cm_line_kernel_8
+__global__ void adm_cm_line_kernel_8(AdmBufferCuda buf, int h, int w, int /* top */,
+                                     int /* bottom */, int /* left */, int /* right */,
+                                     int start_row, int end_row, int start_col, int end_col,
+                                     int src_stride, int /* csf_a_stride */, int /* buffer_h */,
+                                     int /* buffer_stride */, int32_t * /* accum_per_block */,
+                                     AdmFixedParametersCuda params, int /* scale */,
+                                     int64_t *accum_global, WarpShift ws,
+                                     const uint32_t shift_inner_accum,
+                                     const uint32_t add_shift_inner_accum)
+{
+    adm_cm_line_kernel<8>(buf, h, w, start_row, end_row, start_col, end_col, src_stride, params,
+                          accum_global, ws, shift_inner_accum, add_shift_inner_accum);
+}
 }
 
 /* ============================================================================

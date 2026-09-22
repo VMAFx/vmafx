@@ -16,7 +16,7 @@
 
 /* Backend default: SYCL graph replay wins above 720p frame area on
  * Intel Arc A380 / oneAPI 2025.3 (empirical sweep documented in
- * libvmaf/src/sycl/common.cpp § "Resolution-aware default").
+ * core/src/sycl/common.cpp § "Resolution-aware default").
  * Smaller frames pay more in graph setup than they save in
  * dispatch overhead. */
 #define VMAF_SYCL_DEFAULT_AREA_THRESHOLD (1280U * 720U)
@@ -43,7 +43,7 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
         return static_cast<VmafSyclDispatchStrategy>(idx);
 
     /* Legacy global env knobs. USE wins over NO when both are set
-     * (matches the existing libvmaf/src/sycl/common.cpp semantics). */
+     * (matches the existing core/src/sycl/common.cpp semantics). */
     const char *env_use_graph = vmaf_gpu_dispatch_env_get("VMAF_SYCL_USE_GRAPH");
     const char *env_no_graph = vmaf_gpu_dispatch_env_get("VMAF_SYCL_NO_GRAPH");
     if (env_use_graph && env_use_graph[0] == '1')

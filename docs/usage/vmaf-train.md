@@ -33,8 +33,8 @@ write them to a parquet cache.
 
 ```bash
 vmaf-train extract-features \
-  --dataset .workingdir2/netflix/netflix.jsonl \
-  --output .workingdir2/netflix/full_features.parquet
+  --dataset .corpus/netflix/netflix.jsonl \
+  --output .corpus/netflix/full_features.parquet
 ```
 
 ### `fit`
@@ -255,13 +255,13 @@ files and thresholds behind the table.
 ```bash
 # 1. Pre-compute features
 vmaf-train extract-features \
-  --dataset .workingdir2/netflix/netflix.jsonl \
-  --output .workingdir2/netflix/features.parquet
+  --dataset .corpus/netflix/netflix.jsonl \
+  --output .corpus/netflix/features.parquet
 
 # 2. Tune hyper-parameters
 vmaf-train tune \
   --config ai/configs/fr_regressor.toml \
-  --cache .workingdir2/netflix/features.parquet \
+  --cache .corpus/netflix/features.parquet \
   --output runs/fr_regressor_v1.ckpt \
   --trials 50
 
@@ -277,13 +277,13 @@ vmaf-train check-ops --model model/tiny/fr_regressor_v1.onnx
 # 5. Validate normalisation
 vmaf-train validate-norm \
   --model model/tiny/fr_regressor_v1.onnx \
-  --features .workingdir2/netflix/features.parquet \
+  --features .corpus/netflix/features.parquet \
   --fail-on-warning
 
 # 6. Eval on test split
 vmaf-train eval \
   --model model/tiny/fr_regressor_v1.onnx \
-  --features .workingdir2/netflix/features.parquet \
+  --features .corpus/netflix/features.parquet \
   --split test
 
 # 7. Register
@@ -291,7 +291,7 @@ vmaf-train register \
   --model model/tiny/fr_regressor_v1.onnx \
   --kind fr \
   --dataset netflix-public-drop \
-  --license BSD-3-Clause-Plus-Patent \
+  --license BSD-2-Clause-Patent \
   --train-commit "$(git rev-parse HEAD)" \
   --train-config ai/configs/fr_regressor.toml
 ```
@@ -302,7 +302,7 @@ vmaf-train register \
 vmaf-train quantize-int8 \
   --fp32 model/tiny/vmaf_tiny_v3.onnx \
   --output model/tiny/vmaf_tiny_v3.int8.onnx \
-  --calibration .workingdir2/netflix/features.parquet \
+  --calibration .corpus/netflix/features.parquet \
   --rmse-gate 0.5 \
   --json
 ```

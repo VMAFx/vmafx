@@ -1066,7 +1066,7 @@ in stub cards are artificially high. Real-corpus retrains follow
 same trainer entry point with `--corpus path/to/file.jsonl`
 or `--corpus path/to/corpus-dir/` and produce honest metrics.
 Directory corpus inputs are recursive and sorted so
-`.workingdir2/corpus_run/` trains deterministically without
+`.corpus/corpus_run/` trains deterministically without
 manual concatenation step. Keep that directory handling reachable
 from both `train_all_codecs()` and CLI; file-only `is_file()`
 guards above `load_corpus()` silently turn real corpus
@@ -1371,3 +1371,30 @@ uses `dest="duration_s"`, so both `"duration"` (corpus) and
 `"duration_s"` (ladder) must be in tuple. When adding new
 `_TrackedDefaultAction` flag with non-standard `dest=` argument,
 add dest to tuple at same time or sentinel will never be set.
+
+## HISS-04 helper-ordering invariants (tools-tune burn-down)
+
+Splitting oversized functions into helpers moved three ordering
+contracts out of single function bodies, where they were implicit,
+into call sites. Each is silent when broken — no test name points at
+it directly.
+
+- **`_append_compare_rows` runs before `_append_sweep_rows`**
+  (`report.py`, `build_encoder_profile`). Sweep pass reads
+  `len(recommendations)` for its provisional `index`. Swapping calls
+  renumbers rows before final sort overwrites them; result differs
+  only if sort is ever made stable on `index`.
+- **Sweep chart draw order** (`report.py`, `_sweep_plot_fn._plot`):
+  codec curves, then `_draw_sweep_pareto`, then
+  `_draw_sweep_failures`, then `_style_sweep_axes`. Matplotlib
+  z-order plus `_style_sweep_axes` reading finished artist list via
+  `get_legend_handles_labels` both depend on this. Reordering
+  silently drops legend entries.
+- **`_build_input_args` emits `-f rawvideo` block before seek args**
+  (`encode.py`). `-ss` / `-t` must stay input-side, ahead of `-i`, or
+  ffmpeg decodes whole source. ADR-0506 / Bug #V6-1.
+
+`_parity_probe_args` (`tests/test_fast_parity.py`) holds probe
+parameters shared with Go twin `cmd/vmafx-tune`. Changing width,
+height, framerate, preset or `sample_chunk_seconds` there without
+matching twin breaks parity test, not either implementation.

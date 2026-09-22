@@ -45,3 +45,11 @@ Pure Python; no libvmaf C-side changes. See
    corresponding 4:2:2 / 4:4:4 variants). Big-endian high-bit-depth YUV
    unsupported. New pix_fmt family changes user-visible behaviour ->
    update `docs/usage/vmaf-roi-score.md`, add materialisation tests.
+
+## CLI option-order invariant (HISS-04 split)
+
+`_build_parser` (`cli.py`) delegates to `_add_source_args`,
+`_add_saliency_args`, `_add_runner_args`. Argparse renders options in
+registration order, so call order fixes `--help` layout. Reordering
+calls, or moving one `add_argument` between helpers, is user-visible
+output change. Add new flags to helper matching their group.

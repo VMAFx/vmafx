@@ -4,11 +4,11 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_motion feature extractor on the HIP backend — seventh
- *  consumer of `libvmaf/src/hip/kernel_template.h` (T7-10b
+ *  consumer of `core/src/hip/kernel_template.h` (T7-10b
  *  follow-up / ADR-0273).  Real kernel promotion: T7-10b batch-2 /
  *  ADR-0373.
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/float_motion_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/float_motion_cuda.c`
  *  call-graph-for-call-graph: same private-state struct shape, same
  *  init/submit/collect/close lifecycle, same template helper
  *  invocations, same `flush()` host-only post-processing tail, and
@@ -571,12 +571,12 @@ static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_fea
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_float_motion_hip;` in
- * `libvmaf/src/feature/feature_extractor.c`'s
+ * `core/src/feature/feature_extractor.cpp`'s
  * `feature_extractor_list[]`. Making this static would unlink the
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_motion_cuda` in
- * `libvmaf/src/feature/cuda/float_motion_cuda.c`). */
+ * `core/src/feature/cuda/float_motion_cuda.c`). */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_motion_hip = {
     .name = "float_motion_hip",

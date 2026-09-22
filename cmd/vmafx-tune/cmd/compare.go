@@ -97,7 +97,7 @@ Example:
 	cmd.Flags().IntVar(&flags.maxIter, "max-iter", bisect.DefaultMaxIter,
 		"Maximum bisect iterations per (codec, target) pair")
 
-	_ = cmd.MarkFlagRequired("reference")
+	markCommandFlagsRequired(cmd, "reference")
 
 	return cmd
 }
@@ -105,39 +105,14 @@ Example:
 // runCompare is the implementation of the compare subcommand. The injected
 // golusoris dependencies carry the structured logger used for run diagnostics.
 func runCompare(ctx context.Context, d deps, flags *compareFlags) error {
-	if flags.reference == "" {
-		return errors.New("--reference is required")
+	format, err := validateCompareFlags(flags)
+	if err != nil {
+		return err
 	}
-	if _, err := os.Stat(flags.reference); err != nil {
-		return fmt.Errorf("reference file %q: %w", flags.reference, err)
+	encoders, err := buildCompareEncoders(flags.codecs)
+	if err != nil {
+		return err
 	}
-	if len(flags.codecs) == 0 {
-		return errors.New("--codecs must specify at least one encoder")
-	}
-	if len(flags.targets) == 0 {
-		return errors.New("--targets must specify at least one VMAF target")
-	}
-	for _, t := range flags.targets {
-		if t <= 0 || t > 100 {
-			return fmt.Errorf("target VMAF %g is out of range (0, 100]", t)
-		}
-	}
-	format := strings.ToLower(flags.format)
-	if format != "json" && format != "markdown" {
-		return fmt.Errorf("unknown --format %q; supported: json, markdown", flags.format)
-	}
-
-	// Build encoders, failing fast on unknown codecs.
-	encoders := make([]encoder.Encoder, 0, len(flags.codecs))
-	for _, name := range flags.codecs {
-		enc, err := encoder.New(strings.TrimSpace(name))
-		if err != nil {
-			return fmt.Errorf("encoder %q: %w", name, err)
-		}
-		encoders = append(encoders, enc)
-	}
-
-	scoreFunc := bisect.VMAFScoreFunc(flags.vmafBin)
 
 	// Collect all (encoder, target) pairs in parallel for wall time.
 	// Stage-1 does not cap concurrency; Stage-2 adds --workers / semaphores.
@@ -154,6 +129,68 @@ func runCompare(ctx context.Context, d deps, flags *compareFlags) error {
 		"targets", flags.targets,
 		"pairs", len(pairs))
 
+	results, wallTimeMS := runComparePairs(pairs, flags)
+	d.Log.InfoContext(ctx, "rate-quality sweep complete", "wall_time_ms", wallTimeMS)
+
+	output, emitErr := renderCompareOutput(results, flags, format, wallTimeMS)
+	if emitErr != nil {
+		return fmt.Errorf("render report: %w", emitErr)
+	}
+
+	return writeOutput(flags.output, output)
+}
+
+// validateCompareFlags rejects a request the sweep cannot serve and returns the
+// normalised output format.
+func validateCompareFlags(flags *compareFlags) (string, error) {
+	if flags.reference == "" {
+		return "", errors.New("--reference is required")
+	}
+	if _, err := os.Stat(flags.reference); err != nil {
+		return "", fmt.Errorf("reference file %q: %w", flags.reference, err)
+	}
+	if len(flags.codecs) == 0 {
+		return "", errors.New("--codecs must specify at least one encoder")
+	}
+	if len(flags.targets) == 0 {
+		return "", errors.New("--targets must specify at least one VMAF target")
+	}
+	for _, t := range flags.targets {
+		if t <= 0 || t > 100 {
+			return "", fmt.Errorf("target VMAF %g is out of range (0, 100]", t)
+		}
+	}
+	format := strings.ToLower(flags.format)
+	if format != "json" && format != "markdown" {
+		return "", fmt.Errorf("unknown --format %q; supported: json, markdown", flags.format)
+	}
+	return format, nil
+}
+
+// buildCompareEncoders resolves every requested codec name up front, so an unknown one is
+// refused before any encode starts rather than after a partial sweep.
+func buildCompareEncoders(codecs []string) ([]encoder.Encoder, error) {
+	encoders := make([]encoder.Encoder, 0, len(codecs))
+	for _, name := range codecs {
+		enc, err := encoder.New(strings.TrimSpace(name))
+		if err != nil {
+			return nil, fmt.Errorf("encoder %q: %w", name, err)
+		}
+		encoders = append(encoders, enc)
+	}
+	return encoders, nil
+}
+
+// runComparePairs bisects every (encoder, target) pair concurrently and returns the
+// results in request order together with the wall time the whole sweep took.
+//
+// Each goroutine writes to its own index, so the slice needs no lock. A pair that fails
+// produces a failure row rather than aborting the sweep: one unavailable encoder must not
+// cost the caller the rest of the matrix.
+//
+// Stage-1 does not cap concurrency; Stage-2 adds --workers / semaphores.
+func runComparePairs(pairs []pairKey, flags *compareFlags) ([]pairResult, float64) {
+	scoreFunc := bisect.VMAFScoreFunc(flags.vmafBin)
 	results := make([]pairResult, len(pairs))
 	var wg sync.WaitGroup
 	wg.Add(len(pairs))
@@ -201,47 +238,41 @@ func runCompare(ctx context.Context, d deps, flags *compareFlags) error {
 	}
 
 	wg.Wait()
-	wallTimeMS := float64(time.Since(t0).Milliseconds())
-	d.Log.InfoContext(ctx, "rate-quality sweep complete", "wall_time_ms", wallTimeMS)
+	return results, float64(time.Since(t0).Milliseconds())
+}
 
-	// If there is only one target, emit a single-target (schema-v1) report
-	// with rows sorted by ascending bitrate (ok rows first, fails trailing).
-	// Multiple targets emit a schema-v2 sweep JSON.
-	var output string
-	var emitErr error
-
-	if len(flags.targets) == 1 {
-		rows := make([]report.Row, len(results))
-		for _, r := range results {
-			rows[r.order] = r.row
-		}
-		sortRows(rows)
-		rep := report.Report{
-			Src:         flags.reference,
-			TargetVMAF:  flags.targets[0],
-			ToolVersion: report.ToolVersion,
-			WallTimeMS:  wallTimeMS,
-			Rows:        rows,
-		}
+// renderCompareOutput turns the sweep results into the report body to write.
+//
+// A single target emits the single-target (schema-v1) report with rows sorted by ascending
+// bitrate (ok rows first, fails trailing); several targets emit the schema-v2 sweep.
+func renderCompareOutput(
+	results []pairResult,
+	flags *compareFlags,
+	format string,
+	wallTimeMS float64,
+) (string, error) {
+	if len(flags.targets) != 1 {
 		if format == "json" {
-			output, emitErr = report.EmitJSON(rep)
-		} else {
-			output = report.EmitMarkdown(rep)
+			return emitSweepJSON(results, flags, wallTimeMS)
 		}
-	} else {
-		// Multi-target sweep: emit schema-v2 JSON (or Markdown sweep table).
-		if format == "json" {
-			output, emitErr = emitSweepJSON(results, flags, wallTimeMS)
-		} else {
-			output = emitSweepMarkdown(results, flags, wallTimeMS)
-		}
+		return emitSweepMarkdown(results, flags, wallTimeMS), nil
 	}
-
-	if emitErr != nil {
-		return fmt.Errorf("render report: %w", emitErr)
+	rows := make([]report.Row, len(results))
+	for _, r := range results {
+		rows[r.order] = r.row
 	}
-
-	return writeOutput(flags.output, output)
+	sortRows(rows)
+	rep := report.Report{
+		Src:         flags.reference,
+		TargetVMAF:  flags.targets[0],
+		ToolVersion: report.ToolVersion,
+		WallTimeMS:  wallTimeMS,
+		Rows:        rows,
+	}
+	if format == "json" {
+		return report.EmitJSON(rep)
+	}
+	return report.EmitMarkdown(rep), nil
 }
 
 // failRow builds a failed Row for an encoder that could not be run.
@@ -316,66 +347,80 @@ func emitSweepJSON(
 	flags *compareFlags,
 	wallTimeMS float64,
 ) (string, error) {
-	// Build a flat payload matching Python SweepReport schema-v2.
-	type wireRow struct {
-		Codec          string  `json:"codec"`
-		Adapter        string  `json:"adapter"`
-		RuntimeVariant string  `json:"runtime_variant"`
-		FFmpegBin      string  `json:"ffmpeg_bin"`
-		EncoderVersion string  `json:"encoder_version"`
-		BestCRF        int     `json:"best_crf"`
-		BitratekBps    any     `json:"bitrate_kbps"`
-		EncodeTimeMS   any     `json:"encode_time_ms"`
-		VMAFScore      any     `json:"vmaf_score"`
-		TargetVMAF     float64 `json:"target_vmaf"`
-		OK             bool    `json:"ok"`
-		Error          string  `json:"error"`
-		BisectSamples  []any   `json:"bisect_samples,omitempty"`
-	}
-	nan2null := func(v float64) any {
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return nil
-		}
-		return v
-	}
-	wireRows := make([]wireRow, len(results))
-	for i, r := range results {
-		wireRows[i] = wireRow{
-			Codec:          r.row.Codec,
-			Adapter:        r.row.Adapter,
-			RuntimeVariant: r.row.RuntimeVariant,
-			FFmpegBin:      r.row.FFmpegBin,
-			EncoderVersion: r.row.EncoderVersion,
-			BestCRF:        r.row.BestCRF,
-			BitratekBps:    nan2null(r.row.BitratekBps),
-			EncodeTimeMS:   nan2null(r.row.EncodeTimeMS),
-			VMAFScore:      nan2null(r.row.VMAFScore),
-			TargetVMAF:     r.row.TargetVMAF,
-			OK:             r.row.OK,
-			Error:          r.row.Error,
-			BisectSamples:  report.SanitizeBisectSamples(r.row.BisectSamples),
-		}
-	}
 	payload := struct {
-		SchemaVersion int       `json:"schema_version"`
-		Src           string    `json:"src"`
-		TargetVMAFs   []float64 `json:"target_vmafs"`
-		ToolVersion   string    `json:"tool_version"`
-		WallTimeMS    float64   `json:"wall_time_ms"`
-		Rows          []wireRow `json:"rows"`
+		SchemaVersion int            `json:"schema_version"`
+		Src           string         `json:"src"`
+		TargetVMAFs   []float64      `json:"target_vmafs"`
+		ToolVersion   string         `json:"tool_version"`
+		WallTimeMS    float64        `json:"wall_time_ms"`
+		Rows          []sweepWireRow `json:"rows"`
 	}{
 		SchemaVersion: 2,
 		Src:           flags.reference,
 		TargetVMAFs:   flags.targets,
 		ToolVersion:   report.ToolVersion,
 		WallTimeMS:    wallTimeMS,
-		Rows:          wireRows,
+		Rows:          toSweepWireRows(results),
 	}
 	b, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal sweep: %w", err)
 	}
 	return string(b) + "\n", nil
+}
+
+// sweepWireRow is one row of the flat payload matching the Python SweepReport schema-v2.
+// Field order is the emitted key order, so it is part of the parity contract.
+type sweepWireRow struct {
+	Codec          string  `json:"codec"`
+	Adapter        string  `json:"adapter"`
+	RuntimeVariant string  `json:"runtime_variant"`
+	FFmpegBin      string  `json:"ffmpeg_bin"`
+	EncoderVersion string  `json:"encoder_version"`
+	BestCRF        int     `json:"best_crf"`
+	BitratekBps    any     `json:"bitrate_kbps"`
+	EncodeTimeMS   any     `json:"encode_time_ms"`
+	VMAFScore      any     `json:"vmaf_score"`
+	TargetVMAF     float64 `json:"target_vmaf"`
+	OK             bool    `json:"ok"`
+	Error          string  `json:"error"`
+	BisectSamples  []any   `json:"bisect_samples,omitempty"`
+}
+
+// toSweepWireRows projects the sweep results onto the schema-v2 wire rows, in the order
+// the pairs were requested.
+func toSweepWireRows(results []pairResult) []sweepWireRow {
+	wireRows := make([]sweepWireRow, len(results))
+	for i, r := range results {
+		wireRows[i] = sweepWireRow{
+			Codec:          r.row.Codec,
+			Adapter:        r.row.Adapter,
+			RuntimeVariant: r.row.RuntimeVariant,
+			FFmpegBin:      r.row.FFmpegBin,
+			EncoderVersion: r.row.EncoderVersion,
+			BestCRF:        r.row.BestCRF,
+			BitratekBps:    finiteOrNull(r.row.BitratekBps),
+			EncodeTimeMS:   finiteOrNull(r.row.EncodeTimeMS),
+			VMAFScore:      finiteOrNull(r.row.VMAFScore),
+			TargetVMAF:     r.row.TargetVMAF,
+			OK:             r.row.OK,
+			Error:          r.row.Error,
+			BisectSamples:  report.SanitizeBisectSamples(r.row.BisectSamples),
+		}
+	}
+	return wireRows
+}
+
+// finiteOrNull returns v when finite and nil otherwise, so a non-finite float marshals to
+// JSON null.
+//
+// This is the sweep (schema-v2) convention and is deliberately not sanitizeFinite, which
+// coerces to 0 for the ladder's schema-v1 contract that every numeric field is a number.
+func finiteOrNull(v float64) any {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil
+	}
+	return v
 }
 
 // emitSweepMarkdown emits a Markdown table for a multi-target sweep.

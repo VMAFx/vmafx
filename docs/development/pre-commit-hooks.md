@@ -40,6 +40,28 @@ and runs strict validation.
 Missing `pre-commit` itself blocks framework hook dispatch with a clear
 message; activate the environment used for installation.
 
+## Post-commit private-state synchronization
+
+The post-commit state hook resolves both the active worktree and Git's common
+directory. In a linked worktree it mirrors the six canonical ledgers into a
+regular ignored `.workingdir`, runs Praetor against the committing worktree,
+and atomically publishes the resulting `STATE.md` to the canonical checkout.
+The mirror preserves worktree-local caches and evidence; those directories are
+not public documentation and are never copied back.
+
+Synchronization is serialized by a lock in the common Git directory. Lock
+contention, missing or non-regular canonical ledgers, a symlinked local state
+root, and a missing synchronizer all fail the hook. A failed hook therefore
+cannot silently record the main checkout's branch on behalf of an agent
+worktree. See [ADR-1280](../adr/1280-worktree-state-sync.md) and its
+[research digest](../research/1280-worktree-state-sync.md).
+
+Run the helper directly from the checkout whose identity should be recorded:
+
+```bash
+scripts/githooks/state-sync.sh
+```
+
 ## Python push scope
 
 The `mypy-local` hook implements the touched-file rule in

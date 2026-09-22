@@ -239,9 +239,9 @@ to accept both spellings; producer-side rename = path forward.
 
 Modernization audit = operator aid, not CI gate. Scans
 curated source/doc roots, model-registry smoke rows, AI script-family
-clusters, `.workingdir2` state files, emits JSON/Markdown.
-Must stay read-only: no automatic edits to `.workingdir2/OPEN.md`,
-`.workingdir2/BACKLOG.md`, `docs/state.md`, GitHub PRs, or changelog
+clusters, `.workingdir` state files, emits JSON/Markdown.
+Must stay read-only: no automatic edits to `.workingdir/OPEN.md`,
+`.workingdir/BACKLOG.md`, `docs/state.md`, GitHub PRs, or changelog
 fragments. If future branch wants machine-written backlog updates,
 that = separate ADR and module.
 
@@ -250,7 +250,7 @@ non-debt Python exception plumbing. Live `raise NotImplementedError(...)`
 = actionable; docstring saying old `NotImplementedError` scaffold was
 replaced, `except NotImplementedError` handler, or custom
 `NotImplementedError` subclass is not. Keep that distinction on rebase so
-tool does not repopulate `.workingdir2` with already-closed gaps.
+tool does not repopulate `.workingdir` with already-closed gaps.
 Same rule applies to documented `-ENOSYS` disabled-build contracts:
 workflow comments, API docs, DNN fallback stubs explicitly describing
 optional-build behavior are not implementation gaps; bare `return -ENOSYS;`
@@ -285,6 +285,18 @@ non-doc invocations select scope before requiring docs toolchain.
 Paired updates to config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
 
+### Post-commit state sync preserves worktree identity
+
+[ADR-1280](../docs/adr/1280-worktree-state-sync.md) requires
+`githooks/state-sync.sh` to synchronize from the checkout that created the
+commit. Linked worktrees use regular-file ledger mirrors; never replace them
+with a `.workingdir` symlink or run the synchronizer against the main checkout,
+because those paths respectively violate Praetor confinement and record false
+Git identity. Keep the common-Git lock fail-closed, preserve worktree-local
+cache content, and copy only derived `STATE.md` back to canonical private
+state. The real-worktree regression in `githooks/tests/test_install.py` must
+cover branch identity, regular files, cache preservation, and symlink refusal.
+
 ### Python pre-push scope follows the PR merge base
 
 `git-hooks/pre-push-mypy.py` implements parent §12.10 for existing
@@ -314,9 +326,15 @@ Two invariants:
   numpy / pandas / torch stubs.
 
 Non-zero exit with no attributable finding = mypy broke -> fail closed, exit 2.
-Do not restore raw exit-status propagation. Do not raise `python_version` from
-`3.10` here: stale, but `3.14` unmasks 175 findings on master
-(T-CI-MYPY-PYTHON-VERSION-STALE-2026-09-19).
+Do not restore raw exit-status propagation.
+
+`python_version` is `3.14` and tracks `requires-python` (ADR-1282); do not lower
+it. Below 3.12 mypy cannot parse numpy's PEP 695 `type` statement and the
+`ai/src/` pass aborts before checking anything. The baseline worktree carries the
+*merge base's* `pyproject.toml`, so a branch that edits `[tool.mypy]` is compared
+against different settings and every newly visible finding reads as introduced
+(T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21). Fix that by applying the
+branch's settings in the baseline worktree, never by lowering the pin.
 
 ### `run_unittests.sh` is upstream-mirror
 

@@ -13,7 +13,7 @@ Shared infrastructure: :mod:`ai.src.corpus.base` (ADR-0371).
 
 Pipeline shape::
 
-    .workingdir2/lsvq/
+    .corpus/lsvq/
       +-- .download-progress.json
       +-- manifest.csv
       +-- clips/
@@ -239,20 +239,13 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    ap = make_argument_parser(
-        prog="lsvq_to_corpus_jsonl.py",
-        description=(
-            "ADR-0367: walk a local LSVQ extraction (or build one via "
-            "resumable downloads), probe each clip via ffprobe, join with "
-            "the manifest CSV's MOS scores, and emit one JSONL row per clip."
-        ),
-    )
+def _add_lsvq_io_arguments(ap: argparse.ArgumentParser) -> None:
+    """Add I/O path arguments to the LSVQ parser."""
     ap.add_argument(
         "--lsvq-dir",
         type=Path,
         default=_DEFAULT_LSVQ_DIR,
-        help="Local LSVQ working directory (default: .workingdir2/lsvq/).",
+        help="Local LSVQ working directory (default: .corpus/lsvq/).",
     )
     ap.add_argument(
         "--manifest-csv",
@@ -277,7 +270,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=_DEFAULT_OUTPUT,
-        help="Output JSONL path (default: .workingdir2/lsvq/lsvq.jsonl).",
+        help="Output JSONL path (default: .corpus/lsvq/lsvq.jsonl).",
     )
     ap.add_argument(
         "--manifest-out",
@@ -285,6 +278,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
     )
+
+
+def _add_lsvq_behavior_arguments(ap: argparse.ArgumentParser) -> None:
+    """Add tool-selection and behaviour arguments to the LSVQ parser."""
     ap.add_argument(
         "--ffprobe-bin", default=os.environ.get("FFPROBE_BIN", "ffprobe"), help="ffprobe binary."
     )
@@ -306,23 +303,26 @@ def _build_parser() -> argparse.ArgumentParser:
         "--full", action="store_true", help="Ingest the entire manifest. Overrides --max-rows."
     )
     ap.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = make_argument_parser(
+        prog="lsvq_to_corpus_jsonl.py",
+        description=(
+            "ADR-0367: walk a local LSVQ extraction (or build one via "
+            "resumable downloads), probe each clip via ffprobe, join with "
+            "the manifest CSV's MOS scores, and emit one JSONL row per clip."
+        ),
+    )
+    _add_lsvq_io_arguments(ap)
+    _add_lsvq_behavior_arguments(ap)
     return ap
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    args = _build_parser().parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.output.with_suffix(".manifest.json")
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    if shutil.which(args.curl_bin) is None:
-        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
-    max_rows: int | None = None if args.full else args.max_rows
+def _run_lsvq_ingest(args: argparse.Namespace, max_rows: int | None) -> RunStats | int:
+    """Run the LSVQ ingest and return RunStats on success or int error code."""
     try:
-        stats = run(
+        return run(
             lsvq_dir=args.lsvq_dir,
             output=args.output,
             manifest_csv=args.manifest_csv,
@@ -339,13 +339,22 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         print(
-            "hint: obtain LSVQ-videos from " "https://github.com/teowu/LSVQ-videos or HuggingFace",
+            "hint: obtain LSVQ-videos from https://github.com/teowu/LSVQ-videos or HuggingFace",
             file=sys.stderr,
         )
         return 2
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+
+def _write_lsvq_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    stats: RunStats,
+    max_rows: int | None,
+) -> None:
+    """Write the replay manifest sidecar for a completed LSVQ ingest."""
     write_ingest_manifest(
         args.manifest_out,
         schema="lsvq-corpus-jsonl-manifest-v1",
@@ -371,6 +380,24 @@ def main(argv: list[str] | None = None) -> int:
             "attrition_warn_threshold": args.attrition_warn_threshold,
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    if shutil.which(args.curl_bin) is None:
+        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
+    max_rows: int | None = None if args.full else args.max_rows
+    result = _run_lsvq_ingest(args, max_rows)
+    if isinstance(result, int):
+        return result
+    _write_lsvq_manifest(args, raw_argv, result, max_rows)
     return 0
 
 

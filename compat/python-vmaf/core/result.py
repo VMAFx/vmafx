@@ -164,16 +164,76 @@ class BasicResult(object):
         return str_aggregate
 
     @staticmethod
-    def scores_key_wildcard_match(result_dict, scores_key, excluded_scores_keys=None):
-        """
-        Find all matching score keys from a result dictionary. When a list of keys is provided via excluded_scores_keys,
-        these particular keys will be ommited from the query result.
-        >>> BasicResult.scores_key_wildcard_match({'VMAF_integer_feature_vif_scale0_egl_1_scores': [0.983708]}, 'VMAF_integer_feature_vif_scale0_scores')
+    def _filtered_result_keys(result_dict, excluded_scores_keys):
+        """Sorted result keys, minus anything listed in *excluded_scores_keys*.
+
+        Passing None (the default) excludes nothing; passing an empty list is
+        equivalent, which is what the second example below pins down.
+
+        >>> f = {'VMAF_integer_feature_vif_scale0_egl_1_scores': [111.207703], \
+                 'VMAF_integer_feature_vif_scale0_eg_1_scores': [109.423508]}
+        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores')
+        'VMAF_integer_feature_vif_scale0_eg_1_scores'
+        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=[])
+        'VMAF_integer_feature_vif_scale0_eg_1_scores'
+        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=['VMAF_integer_feature_vif_scale0_eg_1_scores'])
         'VMAF_integer_feature_vif_scale0_egl_1_scores'
-        >>> BasicResult.scores_key_wildcard_match({'VMAF_integer_feature_vif_scale0_egl_1_scores': [0.983708]}, 'VMAF_integer_feature_vif_scale1_scores')
+        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=['VMAF_integer_feature_vif_scale0_eg_1_scores', 'VMAF_integer_feature_vif_scale0_egl_1_scores'])
         Traceback (most recent call last):
         ...
-        KeyError: 'no key matches VMAF_integer_feature_vif_scale1_scores'
+        KeyError: 'no key matches VMAF_integer_feature_vif_scale0_scores'
+        """
+        return [
+            key
+            for key in sorted(result_dict.keys())
+            if (excluded_scores_keys is not None and key not in excluded_scores_keys)
+            or excluded_scores_keys is None
+        ]
+
+    @staticmethod
+    def _wildcard_candidates(result_keys_sorted, scores_key):
+        """Keys sharing the *scores_key* stem, i.e. everything the wildcard admits.
+
+        The stem is *scores_key* without its trailing ``_scores``, so a query for
+        an unsuffixed feature also matches its enhancement-gain-limited variants.
+
+        >>> e = {'VMAF_feature_adm_den_egl_1_scores': [290.148182], \
+                 'VMAF_feature_adm_den_scale0_egl_1_scores': [36.143059], \
+                 'VMAF_feature_adm_den_scale1_egl_1_scores': [56.709286], \
+                 'VMAF_feature_adm_den_scale2_egl_1_scores': [83.719971], \
+                 'VMAF_feature_adm_den_scale3_egl_1_scores': [113.575867], \
+                 'VMAF_feature_adm_num_egl_1_scores': [277.796806], \
+                 'VMAF_feature_adm_num_scale0_egl_1_scores': [35.399879], \
+                 'VMAF_feature_adm_num_scale1_egl_1_scores': [54.699654], \
+                 'VMAF_feature_adm_num_scale2_egl_1_scores': [80.061874], \
+                 'VMAF_feature_adm_num_scale3_egl_1_scores': [107.635399], \
+                 'VMAF_feature_adm_scale0_egl_1_scores': [0.979438], \
+                 'VMAF_feature_motion2_scores': [0.0], \
+                 'VMAF_feature_motion_scores': [0.0], \
+                 'VMAF_feature_vif_den_egl_1_scores': [584014.634277], \
+                 'VMAF_feature_vif_den_scale0_egl_1_scores': [452763.03125], \
+                 'VMAF_feature_vif_den_scale1_egl_1_scores': [100037.859375], \
+                 'VMAF_feature_vif_den_scale2_egl_1_scores': [24712.830078], \
+                 'VMAF_feature_vif_den_scale3_egl_1_scores': [6500.913574], \
+                 'VMAF_feature_vif_num_egl_1_scores': [576352.736328], \
+                 'VMAF_feature_vif_num_scale0_egl_1_scores': [445400.1875], \
+                 'VMAF_feature_vif_num_scale1_egl_1_scores': [99781.773438], \
+                 'VMAF_feature_vif_num_scale2_egl_1_scores': [24675.099609], \
+                 'VMAF_feature_vif_num_scale3_egl_1_scores': [6495.675781], \
+                 'VMAF_feature_vif_scale0_egl_1_scores': [0.983738]}
+        >>> BasicResult.scores_key_wildcard_match(e, 'VMAF_feature_adm_num_scores')
+        'VMAF_feature_adm_num_egl_1_scores'
+        """
+        matched_result_keys = []
+        for result_key in result_keys_sorted:
+            if result_key.startswith(scores_key[: -len("_scores")]):
+                matched_result_keys.append(result_key)
+        return matched_result_keys
+
+    @staticmethod
+    def _shortest_wildcard_match(matched_result_keys, scores_key):
+        """The single shortest candidate, or a KeyError when the shortest is a tie.
+
         >>> d = {'VMAF_feature_adm_den_scale0_scores': [111.207703], \
                  'VMAF_feature_adm_den_scale1_scores': [109.423508], \
                  'VMAF_feature_adm_den_scale2_scores': [196.427551], \
@@ -204,74 +264,42 @@ class BasicResult(object):
         Traceback (most recent call last):
         ...
         KeyError: "more than one keys matches VMAF_feature_adm_num_scale_scores: ['VMAF_feature_adm_num_scale0_scores', 'VMAF_feature_adm_num_scale1_scores', 'VMAF_feature_adm_num_scale2_scores', 'VMAF_feature_adm_num_scale3_scores']"
-        >>> e = {'VMAF_feature_adm_den_egl_1_scores': [290.148182], \
-                 'VMAF_feature_adm_den_scale0_egl_1_scores': [36.143059], \
-                 'VMAF_feature_adm_den_scale1_egl_1_scores': [56.709286], \
-                 'VMAF_feature_adm_den_scale2_egl_1_scores': [83.719971], \
-                 'VMAF_feature_adm_den_scale3_egl_1_scores': [113.575867], \
-                 'VMAF_feature_adm_num_egl_1_scores': [277.796806], \
-                 'VMAF_feature_adm_num_scale0_egl_1_scores': [35.399879], \
-                 'VMAF_feature_adm_num_scale1_egl_1_scores': [54.699654], \
-                 'VMAF_feature_adm_num_scale2_egl_1_scores': [80.061874], \
-                 'VMAF_feature_adm_num_scale3_egl_1_scores': [107.635399], \
-                 'VMAF_feature_adm_scale0_egl_1_scores': [0.979438], \
-                 'VMAF_feature_motion2_scores': [0.0], \
-                 'VMAF_feature_motion_scores': [0.0], \
-                 'VMAF_feature_vif_den_egl_1_scores': [584014.634277], \
-                 'VMAF_feature_vif_den_scale0_egl_1_scores': [452763.03125], \
-                 'VMAF_feature_vif_den_scale1_egl_1_scores': [100037.859375], \
-                 'VMAF_feature_vif_den_scale2_egl_1_scores': [24712.830078], \
-                 'VMAF_feature_vif_den_scale3_egl_1_scores': [6500.913574], \
-                 'VMAF_feature_vif_num_egl_1_scores': [576352.736328], \
-                 'VMAF_feature_vif_num_scale0_egl_1_scores': [445400.1875], \
-                 'VMAF_feature_vif_num_scale1_egl_1_scores': [99781.773438], \
-                 'VMAF_feature_vif_num_scale2_egl_1_scores': [24675.099609], \
-                 'VMAF_feature_vif_num_scale3_egl_1_scores': [6495.675781], \
-                 'VMAF_feature_vif_scale0_egl_1_scores': [0.983738]}
-        >>> BasicResult.scores_key_wildcard_match(e, 'VMAF_feature_adm_num_scores')
-        'VMAF_feature_adm_num_egl_1_scores'
-        >>> f = {'VMAF_integer_feature_vif_scale0_egl_1_scores': [111.207703], \
-                 'VMAF_integer_feature_vif_scale0_eg_1_scores': [109.423508]}
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores')
-        'VMAF_integer_feature_vif_scale0_eg_1_scores'
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=[])
-        'VMAF_integer_feature_vif_scale0_eg_1_scores'
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=['VMAF_integer_feature_vif_scale0_eg_1_scores'])
+        """
+        strlens = [len(s) for s in matched_result_keys]
+        argmin_strlen = np.concatenate(np.where(strlens == np.min(strlens))).tolist()
+        if len(argmin_strlen) == 1:
+            return matched_result_keys[argmin_strlen[0]]
+        else:
+            raise KeyError(f"more than one keys matches {scores_key}: {matched_result_keys}")
+
+    @staticmethod
+    def scores_key_wildcard_match(result_dict, scores_key, excluded_scores_keys=None):
+        """
+        Find all matching score keys from a result dictionary. When a list of keys is provided via excluded_scores_keys,
+        these particular keys will be ommited from the query result.
+        >>> BasicResult.scores_key_wildcard_match({'VMAF_integer_feature_vif_scale0_egl_1_scores': [0.983708]}, 'VMAF_integer_feature_vif_scale0_scores')
         'VMAF_integer_feature_vif_scale0_egl_1_scores'
-        >>> BasicResult.scores_key_wildcard_match(f, 'VMAF_integer_feature_vif_scale0_scores', excluded_scores_keys=['VMAF_integer_feature_vif_scale0_eg_1_scores', 'VMAF_integer_feature_vif_scale0_egl_1_scores'])
+        >>> BasicResult.scores_key_wildcard_match({'VMAF_integer_feature_vif_scale0_egl_1_scores': [0.983708]}, 'VMAF_integer_feature_vif_scale1_scores')
         Traceback (most recent call last):
         ...
-        KeyError: 'no key matches VMAF_integer_feature_vif_scale0_scores'
+        KeyError: 'no key matches VMAF_integer_feature_vif_scale1_scores'
         """
 
         # first look for exact match
-        result_keys_sorted = [
-            key
-            for key in sorted(result_dict.keys())
-            if (excluded_scores_keys is not None and key not in excluded_scores_keys)
-            or excluded_scores_keys is None
-        ]
+        result_keys_sorted = BasicResult._filtered_result_keys(result_dict, excluded_scores_keys)
         for result_key in result_keys_sorted:
             if result_key == scores_key:
                 return result_key
 
         # then look for wildcard match
-        matched_result_keys = []
-        for result_key in result_keys_sorted:
-            if result_key.startswith(scores_key[: -len("_scores")]):
-                matched_result_keys.append(result_key)
+        matched_result_keys = BasicResult._wildcard_candidates(result_keys_sorted, scores_key)
         if len(matched_result_keys) == 0:
             raise KeyError(f"no key matches {scores_key}")
         elif len(matched_result_keys) == 1:
             return matched_result_keys[0]
         else:
             # look for shortest match
-            strlens = [len(s) for s in matched_result_keys]
-            argmin_strlen = np.concatenate(np.where(strlens == np.min(strlens))).tolist()
-            if len(argmin_strlen) == 1:
-                return matched_result_keys[argmin_strlen[0]]
-            else:
-                raise KeyError(f"more than one keys matches {scores_key}: {matched_result_keys}")
+            return BasicResult._shortest_wildcard_match(matched_result_keys, scores_key)
 
 
 class Result(BasicResult):
@@ -351,23 +379,13 @@ class Result(BasicResult):
         s += self._get_aggregate_score_str()
         return s
 
-    def to_xml(self):
-        """Example:
-        <?xml version="1.0" ?>
-        <result executorId="SSIM_V1.0">
-          <asset identifier="test_0_0_checkerboard_1920_1080_10_3_0_0_1920x1080_vs_checkerboard_1920_1080_10_3_1_0_1920x1080_q_1920x1080"/>
-          <frames>
-            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512" SSIM_feature_ssim_s_score="0.935803" SSIM_score="0.901161" frameNum="0"/>
-            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512" SSIM_feature_ssim_s_score="0.935803" SSIM_score="0.90116" frameNum="1"/>
-            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965514" SSIM_feature_ssim_s_score="0.935804" SSIM_score="0.901163" frameNum="2"/>
-          </frames>
-          <aggregate SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512666667" SSIM_feature_ssim_s_score="0.935803333333" SSIM_score="0.901161333333"/>
-        </result>
+    def _ordered_score_lists(self):
+        """Score keys, per-frame score tuples and aggregate scores, in export order.
+
+        Single-model and multi-model scores are concatenated in that order, and
+        the per-frame view is the transpose of the per-key score lists, because
+        both exporters print one row per frame rather than one row per key.
         """
-
-        from xml.dom import minidom
-        from xml.etree import ElementTree
-
         list_scores_key = self.get_ordered_list_scores_key()
         list_score_key = self.get_ordered_list_score_key()
         list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
@@ -390,7 +408,26 @@ class Result(BasicResult):
         list_scores += list_multimodel_scores
         list_aggregate_score += list_aggregate_multimodel_score
 
-        list_scores_reordered = zip(*list_scores)
+        return list_score_key, zip(*list_scores), list_aggregate_score
+
+    def to_xml(self):
+        """Example:
+        <?xml version="1.0" ?>
+        <result executorId="SSIM_V1.0">
+          <asset identifier="test_0_0_checkerboard_1920_1080_10_3_0_0_1920x1080_vs_checkerboard_1920_1080_10_3_1_0_1920x1080_q_1920x1080"/>
+          <frames>
+            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512" SSIM_feature_ssim_s_score="0.935803" SSIM_score="0.901161" frameNum="0"/>
+            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512" SSIM_feature_ssim_s_score="0.935803" SSIM_score="0.90116" frameNum="1"/>
+            <frame SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965514" SSIM_feature_ssim_s_score="0.935804" SSIM_score="0.901163" frameNum="2"/>
+          </frames>
+          <aggregate SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.965512666667" SSIM_feature_ssim_s_score="0.935803333333" SSIM_score="0.901161333333"/>
+        </result>
+        """
+
+        from xml.dom import minidom
+        from xml.etree import ElementTree
+
+        list_score_key, list_scores_reordered, list_aggregate_score = self._ordered_score_lists()
 
         def prettify(elem):
             rough_string = ElementTree.tostring(elem, "utf-8")
@@ -544,29 +581,7 @@ class Result(BasicResult):
             }
         }
         """
-        list_scores_key = self.get_ordered_list_scores_key()
-        list_score_key = self.get_ordered_list_score_key()
-        list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
-        list_aggregate_score = list(map(lambda key: self[key], list_score_key))
-
-        list_multimodel_scores_key = self.get_ordered_list_multimodel_scores_key()
-        list_multimodel_score_key = self.get_ordered_list_multimodel_score_key()
-        # here we need to transpose, since printing is per frame and not per model
-        # we also need to turn the 2D array to a list of lists, for unpacking to work as expected
-        list_multimodel_scores = list(
-            map(lambda key: self.result_dict[key].T.tolist(), list_multimodel_scores_key)
-        )
-        list_aggregate_multimodel_score = list(
-            map(lambda key: self[key], list_multimodel_score_key)
-        )
-
-        # append multimodel scores and keys (if any)
-        list_scores_key += list_multimodel_scores_key
-        list_score_key += list_multimodel_score_key
-        list_scores += list_multimodel_scores
-        list_aggregate_score += list_aggregate_multimodel_score
-
-        list_scores_reordered = zip(*list_scores)
+        list_score_key, list_scores_reordered, list_aggregate_score = self._ordered_score_lists()
 
         top = OrderedDict()
         top["executorId"] = self.executor_id
@@ -592,6 +607,21 @@ class Result(BasicResult):
         :return str: JSON representation
         """
         return json.dumps(self.to_dict(), sort_keys=False, indent=4)
+
+    @staticmethod
+    def _dataframe_row(asset, executor_id, scores_key, scores):
+        """One export row, ordered to match DATAFRAME_COLUMNS."""
+        return [
+            asset.dataset,
+            asset.content_id,
+            asset.asset_id,
+            get_file_name_with_extension(asset.ref_path),
+            get_file_name_with_extension(asset.dis_path),
+            repr(asset),
+            executor_id,
+            scores_key,
+            scores,
+        ]
 
     def to_dataframe(self):
         """
@@ -635,20 +665,10 @@ class Result(BasicResult):
         list_scores_key = self.get_ordered_list_scores_key()
         list_scores = list(map(lambda key: self.result_dict[key], list_scores_key))
 
-        rows = []
-        for scores_key, scores in zip(list_scores_key, list_scores):
-            row = [
-                asset.dataset,
-                asset.content_id,
-                asset.asset_id,
-                get_file_name_with_extension(asset.ref_path),
-                get_file_name_with_extension(asset.dis_path),
-                repr(asset),
-                executor_id,
-                scores_key,
-                scores,
-            ]
-            rows.append(row)
+        rows = [
+            self._dataframe_row(asset, executor_id, scores_key, scores)
+            for scores_key, scores in zip(list_scores_key, list_scores)
+        ]
 
         # zip rows into a dict, and wrap with df
         df = pd.DataFrame(dict(zip(self.DATAFRAME_COLUMNS, zip(*rows))))

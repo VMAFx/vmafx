@@ -130,6 +130,16 @@ func main() {
 	}
 
 	fx.New(
+		nodeFoundationOptions(),
+		nodeDomainOptions(),
+		nodeLifecycleOptions(),
+	).Run()
+}
+
+// nodeFoundationOptions wires the golusoris foundation modules and the gRPC server
+// module the node serves on.
+func nodeFoundationOptions() fx.Option {
+	return fx.Options(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).
 		bootstrap.Base,
@@ -142,17 +152,27 @@ func main() {
 		// gRPC server with OTel + logging + recovery interceptors baked in.
 		grpcmod.Module,
 		fx.Decorate(withNodeGRPCDefault),
+	)
+}
 
-		// Domain providers.
-		fx.Provide(
-			provideEncoderInventory, // (fx.Lifecycle, *config.Config, *slog.Logger) -> *probe.Inventory (OnStart probe, NON-FATAL)
-			provideScorer,           // (fx.Lifecycle, *config.Config, *slog.Logger) -> *libvmaf.Scorer (nil-tolerant)
-			provideExecutor,         // (*libvmaf.Scorer, *config.Config, *slog.Logger) -> *Executor
-			provideFeedbackClient,   // (fx.Lifecycle, *config.Config, *slog.Logger) -> *FeedbackClient (drainer OnStart, Close+awaited OnStop)
-			provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry
-			newScoringHandler,       // (*libvmaf.Scorer, *probe.Inventory, *slog.Logger) -> *scoringHandler
-		),
+// nodeDomainOptions provides the node's domain objects.
+func nodeDomainOptions() fx.Option {
+	return fx.Provide(
+		provideEncoderInventory, // (fx.Lifecycle, *config.Config, *slog.Logger) -> *probe.Inventory (OnStart probe, NON-FATAL)
+		provideScorer,           // (fx.Lifecycle, *config.Config, *slog.Logger) -> *libvmaf.Scorer (nil-tolerant)
+		provideExecutor,         // (*libvmaf.Scorer, *config.Config, *slog.Logger) -> *Executor
+		provideFeedbackClient,   // (fx.Lifecycle, *config.Config, *slog.Logger) -> *FeedbackClient (drainer OnStart, Close+awaited OnStop)
+		provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry
+		newScoringHandler,       // (*libvmaf.Scorer, *probe.Inventory, *slog.Logger) -> *scoringHandler
+	)
+}
 
+// nodeLifecycleOptions holds the invokes whose registration order is the node's shutdown
+// contract (R-node). fx appends OnStop hooks in construction order and runs them in
+// reverse, so the order these invokes appear in is what produces the stop sequence the
+// comments below describe. Reordering them changes the shutdown, not just the wiring.
+func nodeLifecycleOptions() fx.Option {
+	return fx.Options(
 		// R-node (cgo lifetime): force the Scorer to be constructed BEFORE the
 		// golusoris *grpc.Server. fx appends OnStop hooks in construction order and
 		// runs them in reverse, so realising the Scorer first (its Close hook
@@ -197,7 +217,7 @@ func main() {
 		// node's k8s probe is the gRPC Health RPC; this seam carries the readiness
 		// state and is where HTTP livez/readyz mount once golusoris.HTTP is wired.
 		fx.Invoke(mountNodeHealth),
-	).Run()
+	)
 }
 
 // provideStatusRegistry builds the health-check registry that backs the node
