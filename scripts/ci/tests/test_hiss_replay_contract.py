@@ -77,7 +77,7 @@ class HissReplayContractTests(unittest.TestCase):
         required = javascript_array(aggregator, "required")
         strict = javascript_array(aggregator, "strictMustReport")
         self.assertEqual(strict, STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS)
-        self.assertTrue(STRICT_CONTEXTS <= strict)
+        self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)
         self.assertIn("if (strictMustReport.includes(name))", aggregator)
         self.assertIn("if (!run)", aggregator)
