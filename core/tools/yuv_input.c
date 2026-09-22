@@ -150,6 +150,50 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
     }
 }
 
+/* Derive the chroma decimation factors and the destination buffer size from
+ * the already-populated width / height / pix_fmt / bitdepth fields.
+ *
+ * Returns 0 on success, or -1 when @p yuv->pix_fmt names a layout this reader
+ * does not support — the caller then releases @p yuv and reports the failure.
+ *
+ * Cast width/height to size_t before any multiplication so the intermediate
+ * arithmetic proceeds in size_t precision (64-bit on every supported 64-bit
+ * host).  Without the cast each `width * height` runs in `unsigned` (32-bit)
+ * and wraps to a small value for adversarial CLI inputs near the unsigned
+ * ceiling.  The downstream malloc() would then succeed with a too-small
+ * buffer and the first fread() at yuv_input_fetch_frame would write past the
+ * heap allocation.
+ *
+ * `hbd` (0 or 1) is a plain int from `bitdepth > 8`; the size_t cast on the
+ * left operand makes the shift well-defined for sizes near SIZE_MAX (where
+ * shifting an `unsigned` would invoke undefined behaviour). */
+static int yuv_input_set_plane_geometry(yuv_input *yuv)
+{
+    const bool hbd = yuv->bitdepth > 8;
+    const size_t w = (size_t)yuv->width;
+    const size_t h = (size_t)yuv->height;
+    const size_t cw = (w + 1U) / 2U;
+    const size_t ch = (h + 1U) / 2U;
+
+    switch (yuv->pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 2;
+        yuv->dst_buf_sz = (w * h + 2U * cw * ch) << hbd;
+        return 0;
+    case VMAF_PIX_FMT_YUV422P:
+        yuv->src_c_dec_h = yuv->dst_c_dec_h = 2;
+        yuv->src_c_dec_v = yuv->dst_c_dec_v = 1;
+        yuv->dst_buf_sz = (w * h + 2U * cw * h) << hbd;
+        return 0;
+    case VMAF_PIX_FMT_YUV444P:
+        yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 1;
+        yuv->dst_buf_sz = (w * h * 3U) << hbd;
+        return 0;
+    default:
+        return -1;
+    }
+}
+
 static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
                                  enum VmafPixelFormat pix_fmt, unsigned bitdepth)
 {
@@ -164,39 +208,10 @@ static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
     yuv->height = height;
     yuv->pix_fmt = pix_fmt;
     yuv->bitdepth = bitdepth;
-    bool hbd = yuv->bitdepth > 8;
 
-    /* Cast width/height to size_t before any multiplication so the
-     * intermediate arithmetic proceeds in size_t precision (64-bit on every
-     * supported 64-bit host).  Without the cast each `width * height` runs
-     * in `unsigned` (32-bit) and wraps to a small value for adversarial CLI
-     * inputs near the unsigned ceiling.  The downstream malloc() would then
-     * succeed with a too-small buffer and the first fread() at
-     * yuv_input_fetch_frame would write past the heap allocation.
-     *
-     * `hbd` (0 or 1) is a plain int from `bitdepth > 8`; the size_t cast on
-     * the left operand makes the shift well-defined for sizes near SIZE_MAX
-     * (where shifting an `unsigned` would invoke undefined behaviour). */
-    const size_t w = (size_t)yuv->width;
-    const size_t h = (size_t)yuv->height;
-    const size_t cw = (w + 1U) / 2U;
-    const size_t ch = (h + 1U) / 2U;
-    switch (yuv->pix_fmt) {
-    case VMAF_PIX_FMT_YUV420P:
-        yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 2;
-        yuv->dst_buf_sz = (w * h + 2U * cw * ch) << hbd;
-        break;
-    case VMAF_PIX_FMT_YUV422P:
-        yuv->src_c_dec_h = yuv->dst_c_dec_h = 2;
-        yuv->src_c_dec_v = yuv->dst_c_dec_v = 1;
-        yuv->dst_buf_sz = (w * h + 2U * cw * h) << hbd;
-        break;
-    case VMAF_PIX_FMT_YUV444P:
-        yuv->src_c_dec_h = yuv->dst_c_dec_h = yuv->src_c_dec_v = yuv->dst_c_dec_v = 1;
-        yuv->dst_buf_sz = (w * h * 3U) << hbd;
-        break;
-    default:
-        goto fail;
+    if (yuv_input_set_plane_geometry(yuv) != 0) {
+        free(yuv);
+        return NULL;
     }
 
     yuv_check_file_size(_fin, yuv); /* exits with code 2 on mismatch */
@@ -204,14 +219,11 @@ static yuv_input *yuv_input_open(FILE *_fin, unsigned width, unsigned height,
     yuv->dst_buf = malloc(yuv->dst_buf_sz);
     if (!yuv->dst_buf) {
         (void)fprintf(stderr, "Could not allocate yuv reader buffer.\n");
-        goto fail;
+        free(yuv);
+        return NULL;
     }
 
     return yuv;
-
-fail:
-    free(yuv);
-    return NULL;
 }
 
 static int pix_fmt_map(enum VmafPixelFormat pix_fmt)

@@ -996,3 +996,4 @@
 1280-worktree-state-sync
 1277-workingdir-contract-cleanup
 1288-mcp-tool-schema-fail-closed
+1287-cli-tool-unbounded-loop-ceilings
