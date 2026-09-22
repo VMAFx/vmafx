@@ -48,7 +48,6 @@ import (
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 	"github.com/VMAFx/vmafx/internal/oteltest"
-	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
@@ -93,35 +92,23 @@ func writeNodeEnv(t *testing.T) string {
 }
 
 // productionGraph returns the exact provider/invoke set used by main(), minus
-// the .Run() blocking call. Kept in lockstep with main() so the tests exercise
-// the real composition — including the standalone *grpc.Server invoke
-// (lazy-provider guard) in the same relative position.
+// the .Run() blocking call.
+//
+// The provider set and the ordering invokes come from main()'s own option
+// constructors rather than a copy of them, so the tests exercise the real
+// composition — including the standalone *grpc.Server invoke (lazy-provider
+// guard) in the same relative position — and cannot drift out of lockstep with
+// it. Only the foundation differs: the watch flag is off and no fx logger is
+// installed, because a test app must not tail a ConfigMap or write startup
+// chatter into the test output.
 func productionGraph() fx.Option {
 	return fx.Options(
 		bootstrap.Base,
 		fx.Replace(nodeEnvOptions(false)),
 		grpcmod.Module,
 		fx.Decorate(withNodeGRPCDefault),
-		fx.Provide(
-			provideEncoderInventory,
-			provideScorer,
-			provideExecutor,
-			provideFeedbackClient,
-			provideStatusRegistry,
-			newScoringHandler,
-		),
-		// R-node ordering invoke: realise the Scorer before the gRPC server.
-		fx.Invoke(func(_ *libvmaf.Scorer) {}),
-		// Force the lifecycle-bearing domain objects between the scorer and the
-		// gRPC server so their OnStop hooks land in the right slots.
-		fx.Invoke(func(_ *FeedbackClient, _ *Executor) {}),
-		fx.Invoke(func(s *googlegrpc.Server, h *scoringHandler) {
-			vmafxv1.RegisterVmafxScoringServer(s, h)
-		}),
-		// Lazy-provider guard: force construction of the golusoris *grpc.Server so
-		// its OnStart listener binds. Placed last so its OnStop fires first.
-		fx.Invoke(func(_ *googlegrpc.Server) {}),
-		fx.Invoke(mountNodeHealth),
+		nodeDomainOptions(),
+		nodeLifecycleOptions(),
 	)
 }
 

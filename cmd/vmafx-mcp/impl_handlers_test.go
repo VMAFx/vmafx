@@ -645,7 +645,10 @@ func TestHandleListExtractors(t *testing.T) {
 
 func TestAddRawTool_HandlerErrorBecomesIsError(t *testing.T) {
 	t.Parallel()
-	srv := buildServer(nil)
+	srv, err := buildServer(nil)
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0.0.1"}, nil)
 	t1, t2 := mcp.NewInMemoryTransports()
 	ctx := context.Background()

@@ -51868,3 +51868,21 @@ preserve name, alias, default, range and array order. Reapply these ownership/he
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
 - Praetor engine pin moved from `846da590` to `f41e74d8f` and `.standards-baseline.json` re-recorded (1411 -> 959). The pin, the baseline and the managed README block's recorded count are one unit: a rebase that reintroduces the old pin must re-record the baseline with the old engine and restore the old count in README.md (ADR-1249).
+
+## vmafx-mcp tool schemas fail closed (2026-09-21)
+
+`cmd/vmafx-mcp/tools.go` registers every tool through `toolRegistrar.add`, which is
+the only place a tool's `InputSchema` is set. `add` marshals the `schemaObj` itself;
+a marshal failure records the tool name, registers nothing, and makes every later
+`add` a no-op, so `registerTools` returns an error, `buildServer` discards the
+half-built server, and the fx provider `buildMCPServer` fails the graph.
+
+Preserve that chain on conflict. A rebase that restores `InputSchema:` inside the
+`&mcp.Tool{...}` literal — or that collapses `buildServer` / `buildMCPServer` back to
+a single return value — has nowhere to put a marshal failure but a log line, and the
+only thing left to register is a schema that validates nothing. The permissive
+`{"type":"object"}` is indistinguishable over the wire from a healthy tool while
+accepting every argument map, and the Python-parity tests would not catch it because
+they only compare the tools that are registered.
+`cmd/vmafx-mcp/tool_schema_test.go` pins each link; `cmd/vmafx-mcp/AGENTS.md`
+invariants #19 and the `buildServer` seam carry the same rule.

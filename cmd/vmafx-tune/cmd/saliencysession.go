@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/VMAFx/vmafx/pkg/saliency"
 )
@@ -62,18 +63,22 @@ func resolveSaliencyModel(modelPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve saliency model: %w", err)
 	}
-	for {
+	// filepath.Dir drops one element per step and is a fixed point only at the
+	// root, so the starting path's separator count bounds how many directories
+	// the walk can visit before it has run out of ancestors to try.
+	for range strings.Count(dir, string(filepath.Separator)) + 1 {
 		candidate := filepath.Join(dir, saliency.DefaultModelRelPath)
 		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
 			return candidate, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("saliency model not found: no %s above %s",
-				saliency.DefaultModelRelPath, dir)
+			break
 		}
 		dir = parent
 	}
+	return "", fmt.Errorf("saliency model not found: no %s above %s",
+		saliency.DefaultModelRelPath, dir)
 }
 
 // saliencySessionFactory constructs a Session for modelPath. Replaced in tests.

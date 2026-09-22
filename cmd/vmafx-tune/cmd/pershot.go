@@ -104,6 +104,22 @@ Example:
     --encoder libx264 \
     --plan-out plan.json`
 
+	registerPerShotFlags(cmd, flags)
+
+	markCommandFlagsRequired(cmd, "src")
+
+	return cmd
+}
+
+// registerPerShotFlags registers the flags of the per-shot subcommand.
+func registerPerShotFlags(cmd *cobra.Command, flags *perShotFlags) {
+	registerPerShotSourceFlags(cmd, flags)
+	registerPerShotSearchFlags(cmd, flags)
+}
+
+// registerPerShotSourceFlags registers the flags describing the source and the shot
+// detection applied to it.
+func registerPerShotSourceFlags(cmd *cobra.Command, flags *perShotFlags) {
 	cmd.Flags().StringVar(&flags.src, "src", "",
 		"reference video (raw YUV or any FFmpeg-readable container) (required)")
 	cmd.Flags().IntVar(&flags.width, "width", 0,
@@ -134,6 +150,11 @@ Example:
 			"seconds is sliced into equal-length sub-shots so the tuner sees a "+
 			"non-degenerate timeline even when the detector under-cuts. "+
 			"Set to 0 to disable (ADR-0513)")
+}
+
+// registerPerShotSearchFlags registers the flags controlling the bisect search, the tools
+// it shells out to, and where its artefacts land.
+func registerPerShotSearchFlags(cmd *cobra.Command, flags *perShotFlags) {
 	cmd.Flags().StringVar(&flags.perShotBin, "per-shot-bin", pershot.DefaultPerShotBin,
 		"path to the vmaf-perShot binary")
 	cmd.Flags().StringVar(&flags.ffmpegBin, "ffmpeg-bin", "ffmpeg",
@@ -182,62 +203,19 @@ Example:
 		"maximum number of reference-YUV decode operations that may run "+
 			"simultaneously (ADR-0577). Default 1 (serial decodes) — safest for "+
 			"disk-space constrained volumes")
-
-	_ = cmd.MarkFlagRequired("src")
-
-	return cmd
 }
 
 // runPerShot is the implementation of the tune-per-shot subcommand.
 func runPerShot(ctx context.Context, d deps, flags *perShotFlags) error {
-	if err := rejectUnportedPerShotFlags(flags); err != nil {
+	adapter, crfRange, err := validatePerShotFlags(flags)
+	if err != nil {
 		return err
 	}
-	if flags.src == "" {
-		return errors.New("--src is required")
-	}
-	if _, err := os.Stat(flags.src); err != nil {
-		return fmt.Errorf("source file %q: %w", flags.src, err)
-	}
-	if flags.targetVMAF <= 0 || flags.targetVMAF > 100 {
-		return fmt.Errorf("--target-vmaf %g is out of range (0, 100]", flags.targetVMAF)
-	}
-	if flags.maxIterations <= 0 {
-		return fmt.Errorf("--max-iterations must be positive, got %d", flags.maxIterations)
-	}
-	if flags.maxConcurrentDecs < 1 {
-		return fmt.Errorf("--max-concurrent-decodes must be >= 1, got %d",
-			flags.maxConcurrentDecs)
-	}
-	switch flags.bitdepth {
-	case 8, 10, 12:
-	default:
-		return fmt.Errorf("--bitdepth must be 8, 10 or 12, got %d", flags.bitdepth)
-	}
-	adapter, adapterErr := encoder.GetAdapter(flags.enc)
-	if adapterErr != nil {
-		return fmt.Errorf("--encoder: %w", adapterErr)
-	}
-	if flags.preset != "" && !adapter.HasPreset(flags.preset) {
-		return fmt.Errorf("--preset %q is not a %s preset; expected one of %v",
-			flags.preset, adapter.Name, adapter.Presets)
-	}
-	crfRange, crfErr := parseOptionalCRFRange(flags.crfMin, flags.crfMax)
-	if crfErr != nil {
-		return crfErr
-	}
 
-	// ADR-0667: resolve --score-backend before touching any source file or
-	// launching a bisect. An unavailable backend must fail fast here with an
-	// actionable message rather than surfacing as a cryptic vmaf error buried
-	// inside the first shot's bisect loop.
-	backend, backendErr := scorebackend.Select(ctx, flags.scoreBackend,
-		scorebackend.Options{VMAFBin: flags.vmafBin})
+	backend, backendErr := resolvePerShotBackend(ctx, d, flags)
 	if backendErr != nil {
 		return backendErr
 	}
-	d.Log.InfoContext(ctx, "per-shot scoring backend resolved",
-		"requested", flags.scoreBackend, "backend", backend)
 
 	geom, geomErr := resolvePerShotGeometry(flags)
 	if geomErr != nil {
@@ -248,24 +226,7 @@ func runPerShot(ctx context.Context, d deps, flags *perShotFlags) error {
 		"width", geom.width, "height", geom.height,
 		"framerate", geom.framerate, "total_frames", geom.totalFrames)
 
-	// ADR-0513: thread the scene threshold and the uniform-window splitter
-	// through so short clips and under-cutting content still produce a
-	// multi-shot timeline.
-	detectOpts := pershot.DetectOptions{
-		Width:              geom.width,
-		Height:             geom.height,
-		PixFmt:             flags.pixFmt,
-		Bitdepth:           flags.bitdepth,
-		TotalFrames:        geom.totalFrames,
-		Bin:                flags.perShotBin,
-		Framerate:          geom.framerate,
-		MaxShotDurationSec: flags.maxShotDuration,
-	}
-	if !math.IsNaN(flags.sceneThreshold) {
-		threshold := flags.sceneThreshold
-		detectOpts.DiffThreshold = &threshold
-	}
-	shots := pershot.DetectShots(ctx, flags.src, detectOpts)
+	shots := detectPerShotShots(ctx, flags, geom)
 	d.Log.InfoContext(ctx, "shot detection complete", "shots", len(shots))
 
 	scratch, scratchErr := os.MkdirTemp(perShotWorkdirParent(flags.workDir),
@@ -292,18 +253,121 @@ func runPerShot(ctx context.Context, d deps, flags *perShotFlags) error {
 		return predErr
 	}
 
+	plan, planErr := buildPerShotPlan(flags, geom, shots, predicate, sidecar)
+	if planErr != nil {
+		return planErr
+	}
+
+	return emitPerShotPlan(ctx, d, flags, plan)
+}
+
+// resolvePerShotBackend picks the libvmaf scoring backend for the run.
+//
+// ADR-0667: this happens before any source file is touched or any bisect is launched. An
+// unavailable backend must fail fast here with an actionable message rather than surfacing
+// as a cryptic vmaf error buried inside the first shot's bisect loop.
+func resolvePerShotBackend(ctx context.Context, d deps, flags *perShotFlags) (string, error) {
+	backend, err := scorebackend.Select(ctx, flags.scoreBackend,
+		scorebackend.Options{VMAFBin: flags.vmafBin})
+	if err != nil {
+		return "", err
+	}
+	d.Log.InfoContext(ctx, "per-shot scoring backend resolved",
+		"requested", flags.scoreBackend, "backend", backend)
+	return backend, nil
+}
+
+// validatePerShotFlags rejects a request the tuner cannot serve and resolves the two
+// derived values the run needs: the codec adapter and the optional CRF search window.
+//
+// Everything here is checked before any source file is touched, so a bad request costs
+// nothing but the parse.
+func validatePerShotFlags(flags *perShotFlags) (encoder.Adapter, *[2]int, error) {
+	var noAdapter encoder.Adapter
+	if err := rejectUnportedPerShotFlags(flags); err != nil {
+		return noAdapter, nil, err
+	}
+	if flags.src == "" {
+		return noAdapter, nil, errors.New("--src is required")
+	}
+	if _, err := os.Stat(flags.src); err != nil {
+		return noAdapter, nil, fmt.Errorf("source file %q: %w", flags.src, err)
+	}
+	if flags.targetVMAF <= 0 || flags.targetVMAF > 100 {
+		return noAdapter, nil, fmt.Errorf("--target-vmaf %g is out of range (0, 100]", flags.targetVMAF)
+	}
+	if flags.maxIterations <= 0 {
+		return noAdapter, nil, fmt.Errorf("--max-iterations must be positive, got %d", flags.maxIterations)
+	}
+	if flags.maxConcurrentDecs < 1 {
+		return noAdapter, nil, fmt.Errorf("--max-concurrent-decodes must be >= 1, got %d",
+			flags.maxConcurrentDecs)
+	}
+	switch flags.bitdepth {
+	case 8, 10, 12:
+	default:
+		return noAdapter, nil, fmt.Errorf("--bitdepth must be 8, 10 or 12, got %d", flags.bitdepth)
+	}
+	adapter, adapterErr := encoder.GetAdapter(flags.enc)
+	if adapterErr != nil {
+		return noAdapter, nil, fmt.Errorf("--encoder: %w", adapterErr)
+	}
+	if flags.preset != "" && !adapter.HasPreset(flags.preset) {
+		return noAdapter, nil, fmt.Errorf("--preset %q is not a %s preset; expected one of %v",
+			flags.preset, adapter.Name, adapter.Presets)
+	}
+	crfRange, crfErr := parseOptionalCRFRange(flags.crfMin, flags.crfMax)
+	if crfErr != nil {
+		return noAdapter, nil, crfErr
+	}
+	return adapter, crfRange, nil
+}
+
+// detectPerShotShots runs shot detection over the source.
+//
+// ADR-0513: the scene threshold and the uniform-window splitter are threaded through so
+// short clips and under-cutting content still produce a multi-shot timeline. An unset
+// --scene-threshold leaves DiffThreshold nil, which keeps the C-side compiled default.
+func detectPerShotShots(ctx context.Context, flags *perShotFlags, geom perShotGeometry) []pershot.Shot {
+	detectOpts := pershot.DetectOptions{
+		Width:              geom.width,
+		Height:             geom.height,
+		PixFmt:             flags.pixFmt,
+		Bitdepth:           flags.bitdepth,
+		TotalFrames:        geom.totalFrames,
+		Bin:                flags.perShotBin,
+		Framerate:          geom.framerate,
+		MaxShotDurationSec: flags.maxShotDuration,
+	}
+	if !math.IsNaN(flags.sceneThreshold) {
+		threshold := flags.sceneThreshold
+		detectOpts.DiffThreshold = &threshold
+	}
+	return pershot.DetectShots(ctx, flags.src, detectOpts)
+}
+
+// buildPerShotPlan tunes every shot and merges the per-shot recommendations into one
+// encode plan.
+func buildPerShotPlan(
+	flags *perShotFlags,
+	geom perShotGeometry,
+	shots []pershot.Shot,
+	predicate pershot.PredicateFn,
+	sidecar map[pershot.Shot]float64,
+) (pershot.EncodingPlan, error) {
+	var noPlan pershot.EncodingPlan
 	recs, tuneErr := pershot.Tune(shots, pershot.TuneParams{
 		TargetVMAF: flags.targetVMAF,
 		Encoder:    flags.enc,
 		Predicate:  predicate,
 	})
 	if tuneErr != nil {
-		return tuneErr
+		return noPlan, tuneErr
 	}
 	// ADR-0536: attach the bitrates the bisect measured, keyed by frame range.
 	recs = pershot.WithBitrates(recs, sidecar)
 
-	plan, mergeErr := pershot.Merge(recs, pershot.MergeParams{
+	return pershot.Merge(recs, pershot.MergeParams{
 		Source:     flags.src,
 		Output:     flags.output,
 		Framerate:  geom.framerate,
@@ -311,10 +375,10 @@ func runPerShot(ctx context.Context, d deps, flags *perShotFlags) error {
 		SegmentDir: flags.segmentDir,
 		FFmpegBin:  flags.ffmpegBin,
 	})
-	if mergeErr != nil {
-		return mergeErr
-	}
+}
 
+// emitPerShotPlan writes the plan JSON, the optional shell script, and the concat listing.
+func emitPerShotPlan(ctx context.Context, d deps, flags *perShotFlags, plan pershot.EncodingPlan) error {
 	rendered, renderErr := pershot.RenderPlanJSON(plan, "bisect", flags.targetVMAF)
 	if renderErr != nil {
 		return renderErr
@@ -333,20 +397,7 @@ func runPerShot(ctx context.Context, d deps, flags *perShotFlags) error {
 		d.Log.InfoContext(ctx, "wrote per-shot shell script", "path", flags.scriptOut)
 	}
 
-	// Concat-listing destination. Prefer --segment-dir, then the directory
-	// holding --plan-out (writable by construction — the plan JSON just
-	// landed there), and only then <output dir>/segments, which resolves
-	// against the CWD and may be read-only inside a bind-mounted container
-	// workspace (ADR-0532).
-	//
-	// Note this can differ from plan.SegmentDir, which the segment commands
-	// were built against: the Python has the same split, and matching it
-	// keeps operational parity for existing runbooks. When the two diverge
-	// the divergence is logged rather than silently papered over.
-	listingDir := plan.SegmentDir
-	if flags.segmentDir == "" && flags.planOut != "" {
-		listingDir = filepath.Join(filepath.Dir(flags.planOut), "segments")
-	}
+	listingDir := perShotListingDir(flags, plan)
 	if listingDir != plan.SegmentDir {
 		d.Log.WarnContext(ctx,
 			"concat listing lands beside --plan-out, not in the plan's segment dir; "+
@@ -360,6 +411,21 @@ func runPerShot(ctx context.Context, d deps, flags *perShotFlags) error {
 			"error", err, "dir", listingDir)
 	}
 	return nil
+}
+
+// perShotListingDir picks where the concat listing lands: --segment-dir, then the
+// directory holding --plan-out (writable by construction — the plan JSON just landed
+// there), and only then <output dir>/segments, which resolves against the CWD and may be
+// read-only inside a bind-mounted container workspace (ADR-0532).
+//
+// This can differ from plan.SegmentDir, which the segment commands were built against: the
+// Python has the same split, and matching it keeps operational parity for existing
+// runbooks. The caller logs the divergence rather than papering over it.
+func perShotListingDir(flags *perShotFlags, plan pershot.EncodingPlan) string {
+	if flags.segmentDir == "" && flags.planOut != "" {
+		return filepath.Join(filepath.Dir(flags.planOut), "segments")
+	}
+	return plan.SegmentDir
 }
 
 // rejectUnportedPerShotFlags fails fast on the two flags with no Go
@@ -474,9 +540,14 @@ func resolvePerShotGeometry(flags *perShotFlags) (perShotGeometry, error) {
 // then "" (the OS temp default). Mirrors bisect._workdir_parent (ADR-0598).
 func perShotWorkdirParent(workDir string) string {
 	if workDir != "" {
-		// A MkdirAll failure is not fatal here: os.MkdirTemp reports the same
-		// condition with a better message a moment later.
-		_ = os.MkdirAll(workDir, 0o750)
+		// Pre-create the directory so the os.MkdirTemp that follows has somewhere
+		// to land; MkdirTemp does not create its parent. A failure is not fatal
+		// here because MkdirTemp stops the run a moment later anyway, but it is
+		// reported: MkdirTemp can only say the path does not exist, while this is
+		// the call that knows why it could not be made.
+		if err := os.MkdirAll(workDir, 0o750); err != nil {
+			fmt.Fprintf(os.Stderr, "vmafx-tune: pre-creating --workdir %s failed: %v\n", workDir, err)
+		}
 		return workDir
 	}
 	env := os.Getenv("VMAFTUNE_WORKDIR")
@@ -499,10 +570,19 @@ func perShotWorkdirParent(workDir string) string {
 		return ""
 	}
 	name := probe.Name()
-	_ = probe.Close()
+	// The probe answered the writability question the moment CreateTemp
+	// succeeded, so neither of the two cleanup steps below can change the verdict
+	// this function returns. They are still reported, because a probe that will
+	// not close or will not delete leaves a stray dotfile in the operator's
+	// scratch directory on every run that consults it.
+	if err := probe.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "vmafx-tune: closing the VMAFTUNE_WORKDIR probe %s failed: %v\n", name, err)
+	}
 	// #nosec G703 -- name is the path os.CreateTemp just returned for a file
 	// it created inside env; this removes the writability probe.
-	_ = os.Remove(name)
+	if err := os.Remove(name); err != nil {
+		fmt.Fprintf(os.Stderr, "vmafx-tune: removing the VMAFTUNE_WORKDIR probe %s failed: %v\n", name, err)
+	}
 	return env
 }
 
@@ -555,70 +635,107 @@ func newBisectPredicate(cfg bisectPredicateConfig) (
 	// The pool is wired anyway so the flag stays honest and a future
 	// parallel-shot scheduler inherits the bound rather than having to
 	// rediscover it.
-	decodeSem := make(chan struct{}, flags.maxConcurrentDecs)
-	// Written only from the predicate below, which pershot.Tune calls
-	// serially — no lock needed. Keyed by shot rather than widening the
-	// PredicateFn return type (ADR-0536).
-	sidecar := map[pershot.Shot]float64{}
-
-	predicate := func(shot pershot.Shot, targetVMAF float64, _ string) (int, float64, error) {
-		refYUV := filepath.Join(refsDir,
-			fmt.Sprintf("shot_%d_%d.yuv", shot.StartFrame, shot.EndFrame))
-		if err := extractShotToRawYUV(flags, cfg.geom, shot, refYUV); err != nil {
-			return 0, 0, err
-		}
-		// Drop each shot's raw reference as soon as its bisect finishes.
-		// The Python keeps every extracted shot alive until the whole run's
-		// scratch dir is torn down; on a long source that is the entire
-		// clip materialised as raw YUV at once, which is the disk-pressure
-		// failure ADR-0577 and ADR-0598 exist to contain.
-		defer func() { _ = os.Remove(refYUV) }()
-
-		shotWorkDir := filepath.Join(workDir,
-			fmt.Sprintf("shot_%d_%d", shot.StartFrame, shot.EndFrame))
-		if err := os.MkdirAll(shotWorkDir, 0o750); err != nil {
-			return 0, 0, fmt.Errorf("create shot workdir: %w", err)
-		}
-
-		durationS := float64(shot.Length()) / cfg.geom.framerate
-		scoreFunc := bisect.YUVScoreFunc(bisect.YUVScoreParams{
-			Width:     cfg.geom.width,
-			Height:    cfg.geom.height,
-			PixFmt:    flags.pixFmt,
-			Model:     resolveVMAFModel(flags.vmafModel, flags.neg),
-			Backend:   cfg.backend,
-			VMAFBin:   flags.vmafBin,
-			FFmpegBin: flags.ffmpegBin,
-			WorkDir:   shotWorkDir,
-			DurationS: durationS,
-			DecodeSem: decodeSem,
-		})
-
-		params := bisect.Params{
-			TargetVMAF: targetVMAF,
-			MaxIter:    flags.maxIterations,
-			FFmpegBin:  flags.ffmpegBin,
-			WorkDir:    shotWorkDir,
-		}
-		if cfg.crfRange != nil {
-			params.CRFLo = cfg.crfRange[0]
-			params.CRFHi = cfg.crfRange[1]
-		}
-
-		result, runErr := bisect.Run(refYUV, enc, scoreFunc, params)
-		if runErr != nil {
-			return 0, 0, fmt.Errorf("bisect failed for shot [%d, %d): %w",
-				shot.StartFrame, shot.EndFrame, runErr)
-		}
-		if result.BestCRF < 0 {
-			return 0, 0, fmt.Errorf(
-				"bisect failed for shot [%d, %d): no CRF in the search window "+
-					"achieves VMAF %.1f", shot.StartFrame, shot.EndFrame, targetVMAF)
-		}
-		sidecar[shot] = result.BestBitratekBps
-		return result.BestCRF, result.BestVMAFScore, nil
+	runner := &bisectShotRunner{
+		cfg:       cfg,
+		enc:       enc,
+		refsDir:   refsDir,
+		workDir:   workDir,
+		decodeSem: make(chan struct{}, flags.maxConcurrentDecs),
+		// Written only from tuneShot, which pershot.Tune calls serially — no lock
+		// needed. Keyed by shot rather than widening the PredicateFn return type
+		// (ADR-0536).
+		sidecar: map[pershot.Shot]float64{},
 	}
-	return predicate, sidecar, nil
+	return runner.tuneShot, runner.sidecar, nil
+}
+
+// bisectShotRunner holds the per-run state the shot predicate reads: the resolved config,
+// the encoder bound to the raw-YUV demuxer geometry, the two scratch trees, the shared
+// decode-slot pool, and the bitrate sidecar it fills in.
+type bisectShotRunner struct {
+	cfg       bisectPredicateConfig
+	enc       encoder.AdapterEncoder
+	refsDir   string
+	workDir   string
+	decodeSem chan struct{}
+	sidecar   map[pershot.Shot]float64
+}
+
+// tuneShot is the per-shot predicate: extract the shot to raw YUV, bisect CRF against the
+// target on that isolated range, and record the bitrate the winning CRF produced.
+func (r *bisectShotRunner) tuneShot(shot pershot.Shot, targetVMAF float64, _ string) (int, float64, error) {
+	refYUV := filepath.Join(r.refsDir,
+		fmt.Sprintf("shot_%d_%d.yuv", shot.StartFrame, shot.EndFrame))
+	if err := extractShotToRawYUV(r.cfg.flags, r.cfg.geom, shot, refYUV); err != nil {
+		return 0, 0, err
+	}
+	// Drop each shot's raw reference as soon as its bisect finishes.
+	// The Python keeps every extracted shot alive until the whole run's
+	// scratch dir is torn down; on a long source that is the entire
+	// clip materialised as raw YUV at once, which is the disk-pressure
+	// failure ADR-0577 and ADR-0598 exist to contain.
+	//
+	// One reference that will not delete is not worth failing the run over,
+	// but it is a step back toward exactly that failure, so it is reported
+	// rather than dropped.
+	defer func() {
+		if err := os.Remove(refYUV); err != nil {
+			fmt.Fprintf(os.Stderr, "vmafx-tune: removing shot reference %s failed: %v\n", refYUV, err)
+		}
+	}()
+
+	shotWorkDir := filepath.Join(r.workDir,
+		fmt.Sprintf("shot_%d_%d", shot.StartFrame, shot.EndFrame))
+	if err := os.MkdirAll(shotWorkDir, 0o750); err != nil {
+		return 0, 0, fmt.Errorf("create shot workdir: %w", err)
+	}
+
+	result, runErr := bisect.Run(refYUV, r.enc,
+		r.scoreFunc(shot, shotWorkDir), r.bisectParams(targetVMAF, shotWorkDir))
+	if runErr != nil {
+		return 0, 0, fmt.Errorf("bisect failed for shot [%d, %d): %w",
+			shot.StartFrame, shot.EndFrame, runErr)
+	}
+	if result.BestCRF < 0 {
+		return 0, 0, fmt.Errorf(
+			"bisect failed for shot [%d, %d): no CRF in the search window "+
+				"achieves VMAF %.1f", shot.StartFrame, shot.EndFrame, targetVMAF)
+	}
+	r.sidecar[shot] = result.BestBitratekBps
+	return result.BestCRF, result.BestVMAFScore, nil
+}
+
+// scoreFunc builds the raw-YUV scorer for one shot, sharing the run's decode-slot pool.
+func (r *bisectShotRunner) scoreFunc(shot pershot.Shot, shotWorkDir string) bisect.ScoreFunc {
+	flags := r.cfg.flags
+	return bisect.YUVScoreFunc(bisect.YUVScoreParams{
+		Width:     r.cfg.geom.width,
+		Height:    r.cfg.geom.height,
+		PixFmt:    flags.pixFmt,
+		Model:     resolveVMAFModel(flags.vmafModel, flags.neg),
+		Backend:   r.cfg.backend,
+		VMAFBin:   flags.vmafBin,
+		FFmpegBin: flags.ffmpegBin,
+		WorkDir:   shotWorkDir,
+		DurationS: float64(shot.Length()) / r.cfg.geom.framerate,
+		DecodeSem: r.decodeSem,
+	})
+}
+
+// bisectParams builds the CRF search parameters for one shot, narrowed to the explicit
+// --crf-min/--crf-max window when the caller supplied one.
+func (r *bisectShotRunner) bisectParams(targetVMAF float64, shotWorkDir string) bisect.Params {
+	params := bisect.Params{
+		TargetVMAF: targetVMAF,
+		MaxIter:    r.cfg.flags.maxIterations,
+		FFmpegBin:  r.cfg.flags.ffmpegBin,
+		WorkDir:    shotWorkDir,
+	}
+	if r.cfg.crfRange != nil {
+		params.CRFLo = r.cfg.crfRange[0]
+		params.CRFHi = r.cfg.crfRange[1]
+	}
+	return params
 }
 
 // extractShotToRawYUV extracts one half-open shot range to raw YUV so the

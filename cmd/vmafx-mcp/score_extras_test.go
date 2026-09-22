@@ -24,7 +24,10 @@ import (
 // tool's input schema, via the live in-memory MCP server.
 func scoreToolProperties(t *testing.T, toolName string) map[string]any {
 	t.Helper()
-	srv := buildServer(nil)
+	srv, err := buildServer(nil)
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
 	t1, t2 := mcp.NewInMemoryTransports()
 	ctx := context.Background()

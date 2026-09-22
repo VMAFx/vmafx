@@ -366,12 +366,10 @@ func (s *stubScorerCounter) scoreFunc(_ context.Context, _, _, _ string) (float6
 	cur := s.inflight.Add(1)
 	defer s.inflight.Add(-1)
 
-	// Update peak.
-	for {
-		prev := s.maxSeen.Load()
-		if cur <= prev {
-			break
-		}
+	// Update peak. The loop exits as soon as the observed peak is at least cur, either
+	// because another goroutine already published a higher one or because this CAS
+	// published cur; a lost race reloads the peak and re-tests the same condition.
+	for prev := s.maxSeen.Load(); cur > prev; prev = s.maxSeen.Load() {
 		if s.maxSeen.CompareAndSwap(prev, cur) {
 			break
 		}

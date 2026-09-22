@@ -24171,6 +24171,28 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- HISS-21 burn-down across `cmd/**` (vmafx-tune, vmafx-node, vmafx-mcp,
+  vmafx-controller, vmafx-server, vmafx-operator): 93 invariant violations
+  discharged with structural fixes, no suppressions and no baseline edits.
+  Unbounded `for {}` loops now state a real exit condition or a justified
+  finite bound — the daemon loops run while their context is live, the gRPC
+  stream reads are bounded by the limit they already enforced and report a
+  peer that streams past it, the repo-root walks are bounded by the starting
+  path's depth, and the CAS retry by the peak it is publishing. Functions over
+  the 60-line bound are split along seams the code already had, leaving error
+  strings, check order, argv order, SQL text, JSON key order and resource
+  unwind order unchanged. Discarded errors are handled rather than blanked:
+  the bpf2go stub's `Close` now returns an error like the real generated
+  bindings, `MarkFlagRequired` goes through the package's existing exit-2
+  helper, and the remaining close, shutdown, env-bridge and short-write
+  failures are reported instead of dropped. `unsafe.Sizeof` and
+  `unsafe.Pointer` in the eBPF ring-buffer decode carry `// SAFETY:` proofs
+  naming the bound that makes each sound, and the MCP schema marshaller no
+  longer panics — a schema that cannot marshal is returned as an error that
+  aborts tool registration and fails `buildServer`, so the failure is fatal at
+  startup rather than a tool served with no argument validation at all.
+
+
 - HISS-21 burn-down across the Go tree (`pkg/**`, `gen/go`): 84 of the
   85 open invariant violations in those packages are closed, with no
   change to any numeric result, row order, argv, predicate string or

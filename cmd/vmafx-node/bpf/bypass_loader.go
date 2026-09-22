@@ -112,42 +112,22 @@ func (l *Loader) Start(ctx context.Context) error {
 
 	// Write mount prefix into the BPF map.
 	if err := l.writeMountPrefix(); err != nil {
-		l.objs.Close()
+		l.closeObjects()
 		return fmt.Errorf("ebpf: write mount prefix: %w", err)
 	}
 
 	// Attach tracepoints.
-	tpOpenatEnter, err := link.Tracepoint("syscalls", "sys_enter_openat",
-		l.objs.TpOpenatEnter, nil)
-	if err != nil {
-		l.objs.Close()
-		return fmt.Errorf("ebpf: attach sys_enter_openat: %w", err)
-	}
-	l.links = append(l.links, tpOpenatEnter)
-
-	tpOpenatExit, err := link.Tracepoint("syscalls", "sys_exit_openat",
-		l.objs.TpOpenatExit, nil)
-	if err != nil {
+	if err := l.attachTracepoints(); err != nil {
 		l.closeLinks()
-		l.objs.Close()
-		return fmt.Errorf("ebpf: attach sys_exit_openat: %w", err)
+		l.closeObjects()
+		return err
 	}
-	l.links = append(l.links, tpOpenatExit)
-
-	tpClose, err := link.Tracepoint("syscalls", "sys_enter_close",
-		l.objs.TpCloseEnter, nil)
-	if err != nil {
-		l.closeLinks()
-		l.objs.Close()
-		return fmt.Errorf("ebpf: attach sys_enter_close: %w", err)
-	}
-	l.links = append(l.links, tpClose)
 
 	// Open ring-buffer reader.
 	rd, err := ringbuf.NewReader(l.objs.Events)
 	if err != nil {
 		l.closeLinks()
-		l.objs.Close()
+		l.closeObjects()
 		return fmt.Errorf("ebpf: ring buffer: %w", err)
 	}
 	l.ringReader = rd
@@ -161,13 +141,54 @@ func (l *Loader) Start(ctx context.Context) error {
 	return nil
 }
 
+// tracepointSpec names one kernel tracepoint and the loaded BPF program to attach to it.
+type tracepointSpec struct {
+	group   string
+	name    string
+	program *ebpf.Program
+}
+
+// attachTracepoints attaches every tracepoint the bypass program needs, in the order the
+// kernel-side program expects them, appending each successful link to l.links.
+//
+// On failure the links attached so far stay in l.links, so the caller's closeLinks
+// releases exactly the set the inline sequence used to release, in the same order.
+func (l *Loader) attachTracepoints() error {
+	specs := [...]tracepointSpec{
+		{"syscalls", "sys_enter_openat", l.objs.TpOpenatEnter},
+		{"syscalls", "sys_exit_openat", l.objs.TpOpenatExit},
+		{"syscalls", "sys_enter_close", l.objs.TpCloseEnter},
+	}
+	for _, spec := range specs {
+		lk, err := link.Tracepoint(spec.group, spec.name, spec.program, nil)
+		if err != nil {
+			return fmt.Errorf("ebpf: attach %s: %w", spec.name, err)
+		}
+		l.links = append(l.links, lk)
+	}
+	return nil
+}
+
+// closeObjects releases the loaded BPF collection.
+//
+// Every caller either already carries a more specific error back to its own caller or is
+// shutting the loader down, so a failure to release the collection is recorded on the
+// loader's log rather than returned.
+func (l *Loader) closeObjects() {
+	if err := l.objs.Close(); err != nil {
+		l.log.Warn("ebpf: close objects failed", "err", err)
+	}
+}
+
 // Stop detaches all eBPF probes and frees resources.
 func (l *Loader) Stop() {
 	if l.ringReader != nil {
-		_ = l.ringReader.Close()
+		if err := l.ringReader.Close(); err != nil {
+			l.log.Warn("ebpf: close ring buffer reader failed", "err", err)
+		}
 	}
 	l.closeLinks()
-	l.objs.Close()
+	l.closeObjects()
 	l.log.Info("ebpf bypass stopped")
 }
 
@@ -193,6 +214,10 @@ func (l *Loader) writeMountPrefix() error {
 	key := uint32(0)
 	// Serialize to bytes for map update (cilium/ebpf needs []byte for structs
 	// without generated marshalers).
+	// SAFETY: unsafe.Sizeof is a compile-time constant that reads no memory; it only
+	// reports the in-memory width of mountPrefixT, which is the exact byte count the BPF
+	// array map's value slot expects (mountPrefixT mirrors struct mount_prefix_t, whose
+	// explicit trailing padding keeps both sides the same size).
 	buf := make([]byte, unsafe.Sizeof(mp))
 	copy(buf, prefix)
 	binary.NativeEndian.PutUint32(buf[maxPathLen:], mp.PrefixLen)
@@ -201,14 +226,13 @@ func (l *Loader) writeMountPrefix() error {
 }
 
 // drainLoop reads ring-buffer events and updates the in-process FD cache.
+// The loop runs until the context is cancelled or the ring buffer is closed; ctx.Err()
+// is the same edge the pre-loop select used to test, hoisted into the loop condition so
+// the exit condition is stated where the loop is entered. A context without a Done
+// channel reports a nil Err forever, which is the never-cancelled case the select's
+// default branch covered.
 func (l *Loader) drainLoop(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
+	for ctx.Err() == nil {
 		rec, err := l.ringReader.Read()
 		if err != nil {
 			if errors.Is(err, ringbuf.ErrClosed) {
@@ -219,9 +243,18 @@ func (l *Loader) drainLoop(ctx context.Context) {
 		}
 
 		var ev eventT
+		// SAFETY: unsafe.Sizeof is a compile-time constant that reads no memory; it only
+		// reports the width of eventT, which mirrors the BPF-side struct event_t written
+		// into the ring buffer. A sample shorter than that width is a truncated record and
+		// is dropped rather than decoded.
 		if len(rec.RawSample) < int(unsafe.Sizeof(ev)) {
 			continue
 		}
+		// SAFETY: ev is a local eventT with no pointer fields, so viewing it as a byte
+		// array of exactly unsafe.Sizeof(ev) bytes aliases only ev's own storage and can
+		// neither outlive it nor reach any other object. The copy is bounded by that array
+		// length, and the check above guarantees rec.RawSample is at least that long, so
+		// every byte written comes from the sample and no byte past ev is touched.
 		copy((*[unsafe.Sizeof(ev)]byte)(unsafe.Pointer(&ev))[:], rec.RawSample) // #nosec G103 -- unsafe.Pointer required for BPF ring-buffer struct deserialisation; bounds checked above
 
 		// Null-terminate path string.
@@ -240,9 +273,16 @@ func (l *Loader) drainLoop(ctx context.Context) {
 	}
 }
 
+// closeLinks detaches every attached probe and clears the link set.
+//
+// Detach failures are recorded rather than returned: the loop must keep going so a single
+// stuck probe cannot strand the ones after it, and both callers (Start's unwind and Stop)
+// have no error channel left to use.
 func (l *Loader) closeLinks() {
 	for _, lk := range l.links {
-		_ = lk.Close()
+		if err := lk.Close(); err != nil {
+			l.log.Warn("ebpf: detach probe failed", "err", err)
+		}
 	}
 	l.links = nil
 }
