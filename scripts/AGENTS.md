@@ -313,9 +313,15 @@ Two invariants:
   numpy / pandas / torch stubs.
 
 Non-zero exit with no attributable finding = mypy broke -> fail closed, exit 2.
-Do not restore raw exit-status propagation. Do not raise `python_version` from
-`3.10` here: stale, but `3.14` unmasks 175 findings on master
-(T-CI-MYPY-PYTHON-VERSION-STALE-2026-09-19).
+Do not restore raw exit-status propagation.
+
+`python_version` is `3.14` and tracks `requires-python` (ADR-1282); do not lower
+it. Below 3.12 mypy cannot parse numpy's PEP 695 `type` statement and the
+`ai/src/` pass aborts before checking anything. The baseline worktree carries the
+*merge base's* `pyproject.toml`, so a branch that edits `[tool.mypy]` is compared
+against different settings and every newly visible finding reads as introduced
+(T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21). Fix that by applying the
+branch's settings in the baseline worktree, never by lowering the pin.
 
 ### `run_unittests.sh` is upstream-mirror
 

@@ -999,3 +999,4 @@
 1287-cli-tool-unbounded-loop-ceilings
 1286-retiring-cited-lint-suppressions
 1289-hip-ssimulacra2-host-helper-split
+1282-mypy-python-version-follows-requires-python

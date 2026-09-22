@@ -163,7 +163,15 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+# Follows `requires-python` at the top of this file: model the oldest language
+# version the project supports, which is also the only one it supports and the
+# one CI installs (`PYTHON_CI_VERSION` / `python-version: "3.14.7"`). A lower
+# value does not just mis-model the tree, it stops the check: mypy refuses to
+# parse a PEP 695 `type` statement when told to target < 3.12, and numpy's
+# bundled `__init__.pyi` uses one, so a `[syntax]` error there aborted the whole
+# `ai/src/` pass with "errors prevented further checking" in any checkout with
+# numpy installed. Raise this in lockstep with `requires-python`; see ADR-1282.
+python_version = "3.14"
 strict = true
 # ai/src/ is the vmaf_train package source root. Declaring it via mypy_path lets
 # mypy resolve `vmaf_train.*` imports in ai/scripts/ and ai/tests/ without the

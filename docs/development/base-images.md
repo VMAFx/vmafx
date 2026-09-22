@@ -114,6 +114,24 @@ violation. The gate compares the two files and rejects a literal `ruff==` or
 `black==` in a recipe, so a recipe can only name the variable. Renovate raises
 the Makefile pins in the same pull request as the hook revisions.
 
+### The type checker's Python version
+
+`pyproject.toml` declares the project's Python floor once, as
+`[project] requires-python`, and `build-config.env` carries the interpreter CI
+installs as `PYTHON_CI_VERSION`. `[tool.mypy] python_version` has to agree with
+both: mypy checks the language version it is told to model, not the one it runs
+on. The gate compares all three and fails on a mismatch, on a `python_version`
+given as a bare number instead of a quoted string, and on the key being deleted
+— deleting it makes mypy follow whatever interpreter the caller happens to have,
+which is the same drift by another route.
+
+It is gated rather than commented because the comment did not hold: the pin sat
+at `3.10` against a `>=3.14` floor until ADR-1282. Below 3.12 mypy refuses to
+parse the PEP 695 `type` statement in numpy's bundled `__init__.pyi`, and that
+one blocking `[syntax]` error aborts the whole `ai/src/` pass before any source
+file is checked, so the mis-modelled version silently disabled the check in every
+checkout that had numpy installed. Raise all three values in one commit.
+
 ### Python and ONNX Runtime ownership
 
 Scientific Python dependency floors remain in each package's `pyproject.toml`.
