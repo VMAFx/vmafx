@@ -47,6 +47,96 @@
       "paths": [
         "core/src/feature/hip/integer_adm_hip.c"
       ]
+    },
+    {
+      "adr": "ADR-0141",
+      "kind": "dropped",
+      "evidence": "^\\s*(goto fail;|if \\(!s->(ref|dist|feature_name_dict)\\)|return -ENOMEM;)$",
+      "reason": "HISS-01: init()'s `goto fail` unwind moved into adm_state_release(), which close() now calls too, so each early return frees exactly what it allocated. The five lines are the old cascade -- three `goto fail;`, the three `if (!s->...)` guards that fed them and the shared `return -ENOMEM;` -- and every one of them is live in the rewrite, at a different indent or inside the helper. Nothing of master's is lost: master and the branch's own parent carry byte-identical blobs for this file (git rev-parse 6c8e7b8ea:core/src/feature/float_adm.c == 5b4aec35a:...), and the edit was authored inside the merge commit d9805a64f itself, which is why no non-merge branch commit's diff contains the removal and `dropped` fires. ADR-0141 is the rule that obliges the cleanup: every file the merge touched goes to zero HISS findings. Scores were re-measured on all three Netflix golden pairs at --precision max, byte-identical apart from the fps field.",
+      "paths": [
+        "core/src/feature/float_adm.c"
+      ]
+    },
+    {
+      "adr": "ADR-0141",
+      "kind": "dropped",
+      "evidence": "(\\bmc\\b|mc->|\\bmodel\\b|model->|model_collection|fail_mc|fail_model|goto fail;|return -ENOMEM;|\\.json\\\" suffix we strip|size_t underflow when name is shorter)",
+      "reason": "HISS-01: the first-append branch of vmaf_model_collection_append() and its three cascading unwind labels (fail, fail_mc, fail_model) moved into model_collection_new(), which frees locally on each early return in the same order -- mc->model before mc. All 29 lines are that block; every allocation, memset, strncpy and comment of it stands in the helper, re-indented by one level, and the caller still leaves *model_collection NULL on failure. Master and the branch's own parent hold byte-identical blobs for this file, so the merge lost nothing of the target's: the edit was authored inside merge commit d9805a64f, which is why branch intent does not contain it. ADR-0141 obliges it.",
+      "paths": [
+        "core/src/model.c"
+      ]
+    },
+    {
+      "adr": "ADR-0141",
+      "kind": "dropped",
+      "evidence": "(motion|sad|min_idx|append_err|feature_collector|prev|cur_data|write_score|has_hi|hi_idx|lo_idx|processed|s->y_row|s->pipeline|s->w;|s->h;|EINVAL|flush\\(\\) path compiles cleanly|^ {12}\\} else \\{$|^ {12}double hi;$|^ {16}double lo;$)",
+      "reason": "One HISS-01 and two HISS-04 clearances in one file. extract()'s forward `goto write_score` became an `if (!s->motion_force_zero)` wrapper around the SAD block; init()'s ISA dispatch chain moved into motion_select_pipeline() with the guards and their order intact; flush()'s per-index loop body moved into motion_flush_one() with the loop-carried prev_processed threaded through a pointer. All 50 lines are those three bodies, re-indented -- no statement was rewritten and no arithmetic changed, so every emitted score is bit-identical. Master and the branch's own parent hold byte-identical blobs for this file; the edit was authored inside merge commit d9805a64f, so no non-merge branch commit's diff carries the removal. ADR-0141 obliges it.",
+      "paths": [
+        "core/src/feature/integer_motion.c"
+      ]
+    },
+    {
+      "adr": "ADR-0141",
+      "kind": "resurrected",
+      "evidence": "^\\s*(s->motion_max_val\\);|\\} else \\{)$",
+      "reason": "The mirror image of the `dropped` finding on the same file and the same edit. Pulling flush()'s loop body into motion_flush_one() shifts it one indent level left, so `} else {` and the motion_blend continuation `s->motion_max_val);` reappear at column widths this file carried before an earlier commit indented them. The text is not target work coming back; it is the same two lines the refactor re-indented, which is why they are also absent from every non-merge branch commit's diff. ADR-0141 obliges the split.",
+      "paths": [
+        "core/src/feature/integer_motion.c"
+      ]
+    },
+    {
+      "adr": "ADR-0141",
+      "kind": "dropped",
+      "evidence": "(ADM_CM_LINE|adm_cm_line_kernel|shift_inner_accum|accum_global, ws,|add_bef_shift_flt|ADR-0155\\); do not widen it)",
+      "reason": "The ADM_CM_LINE(rows_per_thread) generator macro had exactly one expansion, ADM_CM_LINE(8), and the HISS-04 scanner read `ADM_CM_LINE(8);` at file scope as a signature whose body ran to the next `{` -- reporting the anonymous namespace below as one 127-line function. The macro is written out token-for-token as adm_cm_line_kernel_8, which also matches how the HIP twin spells it. The sixth line, `const int32_t add_bef_shift_flt = (int32_t)(1u << (shift_flt - 1));` and its ADR-0155 comment, is the same value written as INT32_MIN so NVCC 13.4's diagnostic #68-D goes away; the emitted bits are unchanged (docs/research/2076-cuda-adm-signbit-warning.md). Master has not touched this file since the merge base 7e20ab78d (git rev-parse 7e20ab78d:<path> == 6c8e7b8ea:<path>), so the merge removed nothing of the target's.",
+      "paths": [
+        "core/src/feature/cuda/integer_adm/adm_cm.cu"
+      ]
+    },
+    {
+      "adr": "ADR-0141",
+      "kind": "dropped",
+      "evidence": "(^\\s*&(top|bottom|left|right|start_row|end_row|start_col|end_col|buffer_h|buffer_stride),$|^\\s*int (start|end)_(row|col) = |buffer_stride, BLOCKX\\)|\\(uint32_t\\)buffer_h|func_adm_cm_reduce_line_kernel_4|func_i4_adm_cm_line_kernel)",
+      "reason": "HISS-04: i4_adm_cm_device_hip()'s region arithmetic moved whole into i4_adm_cm_region_hip(), returning an I4AdmCmRegionHip. Every statement moved unchanged and in the same order, so the launch geometry is identical; the 16 lines are the four clamp expressions and the twelve `&name` argument slots that are now spelled `&r.name`. Master has not touched this file since the merge base 7e20ab78d, so nothing of the target's is lost. The file also carries a second, separate declaration in this allowlist (ADR-0759, kind `resurrected`); the two cover different lines and neither covers the other.",
+      "paths": [
+        "core/src/feature/hip/integer_adm_hip.c"
+      ]
+    },
+    {
+      "adr": "ADR-1290",
+      "kind": "dropped",
+      "evidence": "(TIDY_RATCHET_PREP_|nvcc, hipcc and icpx compile through meson custom targets|translation units out of compile_commands\\.json; add them before measuring)",
+      "reason": "ADR-1290 renamed the per-lane compilation-database hook from TIDY_RATCHET_PREP_<lane> to TIDY_RATCHET_COMPDB_<lane> and gave every lane an entry, cpu and arm64 included, so a lane that needs no generator says so explicitly instead of expanding to nothing by accident. The six lines are the old hook: its two comment lines and the three cuda/hip/sycl assignments, plus the `$(TIDY_RATCHET_PREP_$(LANE))` expansion in both recipes. Both generators survive verbatim -- gen-gpu-compile-commands.py for cuda and hip, gen-sycl-compile-commands.py for sycl -- under the new names at Makefile lines 226-233, and scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py pins that the hook runs. The rename landed in the branch's own cf2ad500b, but against a base whose recipes were laid out differently from master's, so branch intent does not line up with the merge effect.",
+      "paths": [
+        "Makefile"
+      ]
+    },
+    {
+      "adr": "ADR-1290",
+      "kind": "dropped",
+      "evidence": "(They become PR-required contexts as soon as a hosted|meson compiles `\\.cu`|custom targets, which leave them out of|gen-gpu-compile-commands\\.py` \\(CUDA and HIP|gen-sycl-compile-commands\\.py` \\(SYCL\\) against the|Without that step the lane measures the host files only)",
+      "reason": "The same ADR-1290 rename in its operator documentation. The old single paragraph on the cuda/sycl/hip lanes was replaced by an expanded one that states every fact it stated and adds the two preconditions ADR-1290 records (-Db_lto=false and an out-of-repo build directory). The six lines read as gone only because the replacement re-wraps them: `Without that step the lane measures the host files only.` is now `Without it those lanes measure the host files only.`, `They become PR-required contexts as soon as a hosted` is now `These lanes become PR-required contexts as soon as a hosted`, and both generator scripts are still named, at docs/development/ci.md under `TIDY_RATCHET_COMPDB_<lane>`. Master has not touched this file since the merge base 7e20ab78d, so the merge removed nothing the target had added.",
+      "paths": [
+        "docs/development/ci.md"
+      ]
+    },
+    {
+      "adr": "ADR-1142",
+      "kind": "dropped",
+      "evidence": "^\\s*-e '\\^cmd/vmafx-node/bpf/' \\|$",
+      "reason": "A single line of the changed-files tidy lane's exclusion list, and a pure merge-resolution artefact. The branch's 7c4cd4258 added the .config/hiss/testdata/ and compat/python-vmaf/matlab/ families, which ADR-1142 puts under the lane's scope rule: a family with no compile command is excluded here and bounded by its ratchet lane. On that commit's base the eBPF line was the last one and carried no trailing pipe; master had meanwhile appended `| python3 scripts/ci/pelorus_mirror.py filter` to it. The resolution keeps both: the eBPF exclusion is still there, now ending in a continuation backslash, the two new families follow it, and the pelorus_mirror filter still consumes the list. Nothing the target had is gone -- only the line's continuation character moved.",
+      "paths": [
+        ".github/workflows/lint-and-format.yml"
+      ]
+    },
+    {
+      "adr": "ADR-0759",
+      "kind": "dropped",
+      "evidence": "(HIP integer ADM kernels read their buffer description|pointer again \\(ADR-0759\\)\\.\\*\\* The change listed|passed by pointer\\\" had been undone by a later merge|still copying the 328-byte struct|is back: each launch now passes one device pointer|byte-identical and 1080p throughput is unchanged)",
+      "reason": "Two changelog fragments were written independently for one change -- ADR-0759's buf_dev tier being re-landed after 92ea978a4 undid it -- and they collided on the same filename. Master's six lines came in with #1507 at the merge base; the branch's 6811ef63d created the file from a base that did not have it (git cat-file -e 6811ef63d^:<path> fails). The merge keeps the branch's, which names the four kernels, both commits, and the measured ROCm 7.2 numbers on gfx1036/gfx1100/gfx90a, and so says everything master's said and more. The released changelog therefore still carries the entry; only the duplicate prose is gone.",
+      "paths": [
+        "changelog.d/fixed/hip-adm-buffer-by-pointer-reapplied.md"
+      ]
     }
   ]
 }
