@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -43,6 +44,32 @@ typedef struct ThreadData {
 static int merge_result(int result, int next_result)
 {
     return result != 0 ? result : next_result;
+}
+
+/*
+ * The first main-thread step that failed, together with the message that
+ * names it. Teardown below runs unconditionally, so a later step's error must
+ * not rename the failure: merge_step() keeps the earliest one, exactly as
+ * merge_result() keeps the earliest error code.
+ *
+ * Splitting a body may not cost the caller the name of the stage that failed
+ * (ADR-1286), so each step keeps the message this test has always used for
+ * it and the single assertion below reports it verbatim. Worker threads
+ * cannot assert, so they stay on the plain `int` path and report through
+ * their own stderr diagnostics.
+ */
+typedef struct {
+    int err;
+    mu_message_t msg;
+} FramesyncOutcome;
+
+static FramesyncOutcome merge_step(FramesyncOutcome outcome, int next_err, mu_message_t msg)
+{
+    if (outcome.err == 0 && next_err != 0) {
+        outcome.err = next_err;
+        outcome.msg = msg;
+    }
+    return outcome;
 }
 
 static int verify_dependent_buffer(const ThreadData *thread_data, const uint8_t *dependent_buf)
@@ -82,6 +109,31 @@ static int finish_worker(ThreadData *thread_data, int result)
     return result;
 }
 
+/*
+ * Hold the frame for a second after submitting it.
+ *
+ * This is the load the test exists to create, not decoration: frame N's
+ * worker keeps running while frame N+1's worker is already inside
+ * vmaf_framesync_retrieve_filled_data() waiting on frame N, which is the
+ * wait/signal path under test. Without the delay both workers can run to
+ * completion before either has to wait, and the test passes in
+ * milliseconds without ever having exercised the synchronisation.
+ */
+static void simulate_work_load(void)
+{
+    const int sleep_seconds = 1;
+#ifdef _WIN32
+    Sleep(1000 * sleep_seconds);
+#else
+    /* nanosleep(), not sleep(): this runs on a thread-pool worker, and
+     * sleep() is one of the functions POSIX does not require to be
+     * thread-safe (it may be implemented on the shared SIGALRM timer).
+     * nanosleep() is specified per-thread and carries no such interaction. */
+    const struct timespec work_load = {.tv_sec = sleep_seconds, .tv_nsec = 0};
+    (void)nanosleep(&work_load, (struct timespec *)0);
+#endif
+}
+
 static int my_worker(void *data, void **tpool_thread_data)
 {
     (void)tpool_thread_data;
@@ -98,6 +150,7 @@ static int my_worker(void *data, void **tpool_thread_data)
     }
 
     result = vmaf_framesync_submit_filled_data(thread_data->fs_ctx, shared_buf, thread_data->index);
+    simulate_work_load();
     if (result != 0 || thread_data->index == 0) {
         return finish_worker(thread_data, result);
     }
@@ -117,17 +170,17 @@ static int my_worker(void *data, void **tpool_thread_data)
     return finish_worker(thread_data, result);
 }
 
-static int enqueue_frames(VmafThreadPool *pool, VmafFrameSyncContext *fs_ctx)
+static FramesyncOutcome enqueue_frames(VmafThreadPool *pool, VmafFrameSyncContext *fs_ctx)
 {
-    int result = 0;
+    FramesyncOutcome outcome = {.err = 0, .msg = (mu_message_t)0};
     (void)fprintf(stderr, "\n");
-    for (int frame_index = 0; frame_index < NUM_TEST_FRAMES && result == 0; frame_index++) {
+    for (int frame_index = 0; frame_index < NUM_TEST_FRAMES && outcome.err == 0; frame_index++) {
         uint8_t *pic_a = malloc(FRAME_BUF_LEN);
         uint8_t *pic_b = malloc(FRAME_BUF_LEN);
         if (pic_a == (uint8_t *)0 || pic_b == (uint8_t *)0) {
             free(pic_a);
             free(pic_b);
-            result = -1;
+            outcome = merge_step(outcome, -1, "malloc failed for pic_a/pic_b");
             break;
         }
 
@@ -140,47 +193,60 @@ static int enqueue_frames(VmafThreadPool *pool, VmafFrameSyncContext *fs_ctx)
             .index = (unsigned)frame_index,
             .fs_ctx = fs_ctx,
         };
-        result = vmaf_thread_pool_enqueue(pool, my_worker, &data, sizeof(data));
-        if (result != 0) {
+        const int enqueue_err = vmaf_thread_pool_enqueue(pool, my_worker, &data, sizeof(data));
+        outcome =
+            merge_step(outcome, enqueue_err, "problem during vmaf_thread_pool_enqueue with data");
+        if (outcome.err != 0) {
             free(pic_a);
             free(pic_b);
             break;
         }
         if (frame_index >= 1 && (frame_index & 1) != 0) {
-            result = vmaf_thread_pool_wait(pool);
+            outcome = merge_step(outcome, vmaf_thread_pool_wait(pool),
+                                 "problem during vmaf_thread_pool_wait");
         }
     }
     (void)fprintf(stderr, "\n");
-    if (result != 0) {
-        result = merge_result(result, vmaf_framesync_abort(fs_ctx));
+    if (outcome.err != 0) {
+        outcome = merge_step(outcome, vmaf_framesync_abort(fs_ctx),
+                             "problem during vmaf_framesync_abort");
     }
-    return result;
+    return outcome;
 }
 
-static int run_framesync_workload(void)
+static FramesyncOutcome run_framesync_workload(void)
 {
     VmafThreadPool *pool = (VmafThreadPool *)0;
     VmafFrameSyncContext *fs_ctx = (VmafFrameSyncContext *)0;
     const VmafThreadPoolConfig tpool_cfg = {.n_threads = 2u};
-    int result = vmaf_thread_pool_create(&pool, tpool_cfg);
-    if (result != 0) {
-        return result;
+    FramesyncOutcome outcome = {.err = 0, .msg = (mu_message_t)0};
+
+    outcome = merge_step(outcome, vmaf_thread_pool_create(&pool, tpool_cfg),
+                         "problem during vmaf_thread_pool_init");
+    if (outcome.err != 0) {
+        return outcome;
     }
-    result = vmaf_framesync_init(&fs_ctx);
-    if (result == 0) {
-        result = enqueue_frames(pool, fs_ctx);
-        result = merge_result(result, vmaf_thread_pool_wait(pool));
+    outcome =
+        merge_step(outcome, vmaf_framesync_init(&fs_ctx), "problem during vmaf_framesync_init");
+    if (outcome.err == 0) {
+        const FramesyncOutcome enqueued = enqueue_frames(pool, fs_ctx);
+        outcome = merge_step(outcome, enqueued.err, enqueued.msg);
+        outcome = merge_step(outcome, vmaf_thread_pool_wait(pool),
+                             "problem during vmaf_thread_pool_wait\n");
     }
-    result = merge_result(result, vmaf_thread_pool_destroy(pool));
+    outcome = merge_step(outcome, vmaf_thread_pool_destroy(pool),
+                         "problem during vmaf_thread_pool_destroy\n");
     if (fs_ctx != (VmafFrameSyncContext *)0) {
-        result = merge_result(result, vmaf_framesync_destroy(fs_ctx));
+        outcome = merge_step(outcome, vmaf_framesync_destroy(fs_ctx),
+                             "problem during vmaf_framesync_destroy\n");
     }
-    return result;
+    return outcome;
 }
 
 static char *test_framesync_create_process_and_destroy(void)
 {
-    mu_assert("framesync workload must complete without errors", run_framesync_workload() == 0);
+    const FramesyncOutcome outcome = run_framesync_workload();
+    mu_assert(outcome.msg, outcome.err == 0);
     return (char *)0;
 }
 

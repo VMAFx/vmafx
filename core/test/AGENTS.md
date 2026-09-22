@@ -47,6 +47,7 @@ and teardown.
 - long `MuTest` table -> several short tables + one `mu_run_table()` call each, in order. Order and first-failure behaviour unchanged.
 - split test body -> phase helper returning `mu_message_t`, never per-block partial sums. Assertion strings and expected values stay byte-identical.
 - HIP parity test -> `hip_parity_skip()` from [hip_parity_skip.h](hip_parity_skip.h) for the `-ENOSYS` scaffold teardown. One definition; twelve tests share it.
+- **do not split** a body whose `NOLINT` cites an external contract the fork does not own (ADR-1286). Two here: `ref_calc_psnrhvs()` in [test_psnr_hvs_simd.c](test_psnr_hvs_simd.c) (ADR-0138 bit-exactness) and `test_barten_csf()` in [test_barten_csf.c](test_barten_csf.c) (upstream's `mu_assert` sequence verbatim; upstream still appends cases, so reshaping it turns every later sync into a hand-merge). Both keep their cited suppression and stay over the cap.
 
 **Clean up before asserting:**
 
