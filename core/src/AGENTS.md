@@ -393,6 +393,24 @@ there were cut at statement boundaries only. Never split one arithmetic
 expression across a helper, and never reorder an accumulation: FMA contraction
 and re-association both move scores (ADR-1253).
 
+Two `interop/pelorus_interop.c` invariants that the split introduced, both
+pinned by the ADR-1142 clang-tidy ratchet (the file's allowance is 7):
+
+- `blob_validate_framing` publishes the `const PelorusSideData *` it already
+  derived. `pel_blob_find_section` consumes that pointer instead of casting the
+  image bytes to a header a second time, so the blob is cast to its header in
+  exactly one place per constness. Re-deriving it locally costs one extra
+  `bugprone-casting-through-void` and breaks the ratchet.
+- `qp_cell_average` holds the per-cell block fold. It exists so that
+  `qp_fold_blocks_to_cells` stays inside the `readability-function-size`
+  `NestingThreshold` of 4 — inlining it back puts the innermost statement at
+  level 5. Its `int64_t sum` accumulates row-major over the clamped block
+  window and the division truncates, so any reordering moves cell values
+  (ADR-1253).
+- `validate_pack_args` takes `out_len` as `const size_t *`: it inspects the
+  caller's out-parameters for NULL and never writes through them
+  (`readability-non-const-parameter`). `pel_blob_pack` still owns both stores.
+
 ### PREV_REF batch dispatch: unref before memset, zero f->prev_ref (ADR-1072)
 
 `threaded_extract_batch_func` in `libvmaf.c` feeds PREV_REF extractors by

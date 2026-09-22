@@ -15,3 +15,17 @@
   and in the QP block-to-cell fold was moved statement-for-statement or left in
   place, so no floating-point expression was re-associated and no accumulation
   order changed.
+
+- **`core/src/interop/pelorus_interop.c` clang-tidy debt actually removed**:
+  the function split above traded three `readability-function-size` findings
+  for one extra `bugprone-casting-through-void` and one new
+  `readability-non-const-parameter`, leaving the file's measured debt at ten —
+  no net improvement. `blob_validate_framing` now publishes the header pointer
+  it already derived (one cast per constness instead of two),
+  `qp_fold_blocks_to_cells` hands its innermost block fold to
+  `qp_cell_average` so the remaining size finding clears the nesting threshold,
+  and `validate_pack_args` marks the out-parameter it only NULL-checks as
+  const. The file measures seven diagnostics, tightened in
+  `scripts/ci/tidy-baseline-cpu.json`. Cell values are unchanged: the fold moved
+  statement-for-statement with the same `int64_t` accumulator, the same
+  row-major traversal and the same truncating division.

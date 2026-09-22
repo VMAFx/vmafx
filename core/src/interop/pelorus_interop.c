@@ -112,10 +112,12 @@ static void write_pack_header(PelorusSideData *hdr, const PelorusSideData *meta,
 
 /* Argument and section-table validation for pel_blob_pack, split out so the
  * packer body stays inside the Rule-4 line budget.  Exactly the same checks in
- * exactly the same order, ending in the same validate_pack_sections() call. */
+ * exactly the same order, ending in the same validate_pack_sections() call.
+ * `out_blob` / `out_len` are inspected for NULL only and never written through,
+ * hence the const pointee on the one the checker can express it for. */
 static pel_result validate_pack_args(const PelorusSideData *meta,
                                      const PelorusPackSection *sections, int nb, uint8_t **out_blob,
-                                     size_t *out_len, uint32_t *section_mask)
+                                     const size_t *out_len, uint32_t *section_mask)
 {
     if (meta == NULL || out_blob == NULL || out_len == NULL) {
         return PEL_ERR_INVALID;
@@ -252,7 +254,8 @@ int pel_blob_is_present(const uint8_t *blob, size_t len)
  * publish the image view (the bytes after the UUID prefix).  Same checks, same
  * order, same result codes as the inline sequence this replaces. */
 static pel_result blob_validate_framing(const uint8_t *blob, size_t len, enum pel_section sec,
-                                        const uint8_t **out_image, size_t *out_image_len)
+                                        const PelorusSideData **out_hdr, const uint8_t **out_image,
+                                        size_t *out_image_len)
 {
     const PelorusSideData *hdr;
     const uint8_t *image;
@@ -287,6 +290,7 @@ static pel_result blob_validate_framing(const uint8_t *blob, size_t len, enum pe
         return PEL_ERR_ABSENT;
     }
 
+    *out_hdr = hdr;
     *out_image = image;
     *out_image_len = image_len;
     return PEL_OK;
@@ -311,12 +315,11 @@ pel_result pel_blob_find_section(const uint8_t *blob, size_t len, enum pel_secti
         return PEL_ERR_INVALID;
     }
     {
-        pel_result rc = blob_validate_framing(blob, len, sec, &image, &image_len);
+        pel_result rc = blob_validate_framing(blob, len, sec, &hdr, &image, &image_len);
         if (rc != PEL_OK) {
             return rc;
         }
     }
-    hdr = (const PelorusSideData *)(const void *)image;
 
     dir = (const PelorusSectionDir *)(const void *)(image + hdr->header_size);
     for (i = 0; i < hdr->section_count; i++) {
@@ -366,6 +369,32 @@ static void qp_report_copy_frame_stats(const PelorusQpReportInput *in,
     out_section->qp_valid = 0;
 }
 
+/* Average the block QPs covered by one cell's block window, [bx0,bx1) x
+ * [by0,by1), clamped to the block raster.  Lifted out of the fold below
+ * statement-for-statement: same int64 accumulator, same row-major traversal
+ * order into `sum`, same truncating division and the same empty-window zero,
+ * so every cell value is bit-identical to the nested version.
+ *
+ * The extraction is what keeps the fold inside the readability-function-size
+ * NestingThreshold of 4: the four-deep cy/cx/by/bx nest put the innermost
+ * statement at level 5. */
+static int8_t qp_cell_average(const PelorusQpReportInput *in, uint32_t bx0, uint32_t bx1,
+                              uint32_t by0, uint32_t by1)
+{
+    int64_t sum = 0; /* int64 so the accumulate + divide stay exact and */
+    uint32_t n = 0;  /* sign-correct for any type-legal block count       */
+    uint32_t by;
+
+    for (by = by0; by < by1 && by < in->blk_rows; by++) {
+        uint32_t bx;
+        for (bx = bx0; bx < bx1 && bx < in->blk_cols; bx++) {
+            sum += in->block_qp[by * (uint32_t)in->blk_cols + bx];
+            n++;
+        }
+    }
+    return (n > 0U) ? (int8_t)(sum / (int64_t)n) : 0;
+}
+
 /* Fold the block grid onto the cell grid: each cell averages the blocks
  * whose centre lands in it (nearest-cell box). The block and cell grids are
  * independent rasters over the same frame, so map by proportional index.
@@ -385,9 +414,6 @@ static void qp_fold_blocks_to_cells(const PelorusQpReportInput *in, uint16_t gri
             uint32_t bx1 = (uint32_t)(cx + 1) * in->blk_cols / grid_cols;
             uint32_t by0 = (uint32_t)cy * in->blk_rows / grid_rows;
             uint32_t by1 = (uint32_t)(cy + 1) * in->blk_rows / grid_rows;
-            int64_t sum = 0; /* int64 so the accumulate + divide stay exact and */
-            uint32_t n = 0;  /* sign-correct for any type-legal block count       */
-            uint32_t by;
 
             if (bx1 <= bx0) {
                 bx1 = bx0 + 1; /* guarantee >=1 sampled block when cells > blocks */
@@ -395,14 +421,7 @@ static void qp_fold_blocks_to_cells(const PelorusQpReportInput *in, uint16_t gri
             if (by1 <= by0) {
                 by1 = by0 + 1;
             }
-            for (by = by0; by < by1 && by < in->blk_rows; by++) {
-                uint32_t bx;
-                for (bx = bx0; bx < bx1 && bx < in->blk_cols; bx++) {
-                    sum += in->block_qp[by * (uint32_t)in->blk_cols + bx];
-                    n++;
-                }
-            }
-            qp_cell_out[(uint32_t)cy * grid_cols + cx] = (n > 0U) ? (int8_t)(sum / (int64_t)n) : 0;
+            qp_cell_out[(uint32_t)cy * grid_cols + cx] = qp_cell_average(in, bx0, bx1, by0, by1);
         }
     }
 }
