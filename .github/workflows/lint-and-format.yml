@@ -227,8 +227,17 @@ jobs:
           #     rest, meson builds it only under `-Denable_sycl=true`, and
           #     without a compile command clang-tidy parses it with default
           #     flags and dies on `'config.h' file not found`
-          #     (clang-diagnostic-error). Bounded by the ADR-1290 `sycl`
-          #     ratchet lane, same posture as the rest of the family.
+          #     (clang-diagnostic-error). It is measured by the `Tidy SYCL`
+          #     job instead, which had to name it explicitly: that job
+          #     selects `core/test/test_sycl*.c`, and this file is the one
+          #     member of the family without that prefix, so before it was
+          #     added there it fell between the two jobs and was measured by
+          #     neither. Do NOT cite the `sycl` ratchet lane here as the
+          #     bound: no workflow runs it. `grep -rn 'tidy-ratchet.py --lane'
+          #     .github/workflows/` returns two hits, both `--lane cpu`, and
+          #     the Tidy Ratchet job configures `-Denable_sycl=false`;
+          #     scripts/ci/tidy-baseline-sycl.json is a workstation
+          #     measurement, not a CI gate.
           #   - core/tools/vmaf_vpl.c — VAAPI integration; needs
           #     `va/va.h` from libva-dev plus the CUDA/SYCL link path; no
           #     compile_commands entry in the CPU-only build.
@@ -504,6 +513,7 @@ jobs:
                  'core/src/feature/sycl/*.cpp' \
                  'core/src/feature/sycl/*.hpp' \
                  'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                 'core/test/test_integer_cambi_sycl.c' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$GH_EVENT_BEFORE"
@@ -515,6 +525,7 @@ jobs:
                      'core/src/feature/sycl/*.cpp' \
                      'core/src/feature/sycl/*.hpp' \
                      'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                     'core/test/test_integer_cambi_sycl.c' \
                   | tr '\n' ' ')
               else
                 files=""
@@ -525,6 +536,7 @@ jobs:
                    'core/src/feature/sycl/*.cpp' \
                    'core/src/feature/sycl/*.hpp' \
                    'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                   'core/test/test_integer_cambi_sycl.c' \
                 | tr '\n' ' ')
             fi
           else
@@ -533,6 +545,7 @@ jobs:
               'core/src/feature/sycl/*.cpp' \
               'core/src/feature/sycl/*.hpp' \
               'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+              'core/test/test_integer_cambi_sycl.c' \
               | tr '\n' ' ')
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"

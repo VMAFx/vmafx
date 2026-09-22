@@ -22859,6 +22859,9 @@ Fixed the MkDocs strict-mode anchor warnings that blocked the GitHub Pages
 deployment after recent documentation merges.
 
 
+- Fixed a pull request's docs build being cancelled inside `upload-pages-artifact`. The artifact is named `github-pages`, which is repository-unique, and only the `deploy` job — which runs on `push` to master — consumes it, so uploading it on every pull request was pure contention with no consumer. ADR-1294 ref-scoped the build job's concurrency group, which stops one workflow evicting another but cannot stop an artifact-name collision; the upload is now scoped to the runs that deploy. Pull requests keep `make docs-fragments-check` and `mkdocs build --strict`, which is the validation that matters.
+
+
 Add `mkdocs build --strict` job to `lint-and-format.yml` so doc-breaking
 changes are caught on every PR instead of only after merging to master.
 The new `Docs Build — mkdocs strict (PR gate)` check is wired into the
