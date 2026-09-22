@@ -15,6 +15,7 @@ from vmaf.core.result_store import FileSystemResultStore
 from vmaf.core.train_test_model import ClassifierMixin, RegressorMixin, TrainTestModel
 from vmaf.tools.exceptions import CalibrationError
 from vmaf.tools.misc import (
+    _import_dataset_and_filter,
     close_logger,
     get_file_name_without_extension,
     get_stdout_logger,
@@ -1161,14 +1162,26 @@ def explain_model_on_dataset(
 
 def generate_dataset_from_raw(raw_dataset_filepath, output_dataset_filepath, **kwargs):
     if raw_dataset_filepath:
+        from sureal.dataset_reader import RawDatasetReader
         from sureal.subjective_model import DmosModel
 
         subj_model_class = kwargs["subj_model_class"] if "subj_model_class" in kwargs else DmosModel
         content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
         asset_ids = kwargs["asset_ids"] if "asset_ids" in kwargs else None
-        subjective_model = subj_model_class.from_dataset_file(
+        dataset_reader_class = (
+            kwargs["dataset_reader_class"] if "dataset_reader_class" in kwargs else RawDatasetReader
+        )
+        # Inlined `subj_model_class.from_dataset_file(...)`: sureal imports the
+        # dataset with the `SourceFileLoader.load_module()` API that Python 3.15
+        # removes, which is a fatal DeprecationWarning under ADR-1278. Import it
+        # with the harness's own importlib-based loader and construct the reader
+        # here — the same two steps `from_dataset_file()` performs. The reader
+        # class follows the same `dataset_reader_class` kwarg the other
+        # subjective-modeling call sites in this module already honour.
+        dataset = _import_dataset_and_filter(
             raw_dataset_filepath, content_ids=content_ids, asset_ids=asset_ids
         )
+        subjective_model = subj_model_class(dataset_reader_class(dataset))
         subjective_model.run_modeling(**kwargs)
         subjective_model.to_aggregated_dataset_file(output_dataset_filepath, **kwargs)
 

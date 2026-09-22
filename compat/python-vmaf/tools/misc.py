@@ -233,6 +233,37 @@ def import_python_file(filepath: str, override: dict = None):
             os.remove(tmpfile_name)
 
 
+def _import_dataset_and_filter(dataset_filepath, content_ids=None, asset_ids=None):
+    """
+    Import a subjective-test dataset file and apply sureal's content/asset filters.
+
+    This mirrors ``sureal.subjective_model.SubjectiveModel._import_dataset_and_filter``
+    exactly, except that the import goes through :func:`import_python_file`.
+    sureal's own helper still loads the dataset with
+    ``importlib.machinery.SourceFileLoader.load_module()``, which has been
+    deprecated since Python 3.4, raises ``DeprecationWarning`` on 3.12+ and is
+    scheduled for removal in 3.15 — fatal under the harness's
+    warnings-are-errors policy (ADR-1278). Callers therefore import the dataset
+    here and hand the already-parsed module to the sureal dataset reader instead
+    of calling ``SubjectiveModel.from_dataset_file()``.
+
+    :param dataset_filepath: path of the dataset ``.py`` file to import.
+    :param content_ids: if not None, keep only ``dis_videos`` with these content ids.
+    :param asset_ids: if not None, keep only ``dis_videos`` with these asset ids.
+    :return: the imported dataset module, filtered in place.
+    """
+    dataset = import_python_file(dataset_filepath)
+    if content_ids is not None:
+        dataset.dis_videos = [
+            dis_video for dis_video in dataset.dis_videos if dis_video["content_id"] in content_ids
+        ]
+    if asset_ids is not None:
+        dataset.dis_videos = [
+            dis_video for dis_video in dataset.dis_videos if dis_video["asset_id"] in asset_ids
+        ]
+    return dataset
+
+
 def make_absolute_path(path: str, current_dir: str) -> str:
     """
     >>> make_absolute_path('abc/cde.fg', '/xyz/')

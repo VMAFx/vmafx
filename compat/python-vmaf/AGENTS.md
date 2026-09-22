@@ -127,6 +127,20 @@ python/vmaf/
   override temporary file before reopening it and remove the path in `finally`;
   relying on garbage collection emits `ResourceWarning` on Python 3.14.
 
+- **Object lifetime in the harness is explicit, never GC-driven
+  (T-PY-HARNESS-OBJECT-LIFETIME-WARNINGS-2026-09-22).** Never write
+  `tempfile.NamedTemporaryFile(...).name`: the expression drops the wrapper,
+  and its finaliser emits `ResourceWarning` from whatever test the cyclic
+  collector happens to interrupt. Use `tempfile.mkstemp()` and close the
+  descriptor, or keep the object in a `with` block. And never call sureal's
+  `SubjectiveModel.from_dataset_file()` (or `PairedCompSubjectiveModel`'s
+  override): it imports the dataset through
+  `SourceFileLoader.load_module()`, which Python 3.15 removes and 3.12+ warns
+  on. `routine.py` imports the dataset with
+  `tools.misc._import_dataset_and_filter()` and constructs
+  `subj_model_class(dataset_reader_class(dataset))` itself; an upstream merge
+  that restores the `from_dataset_file()` call re-breaks the harness.
+
 - **HISS-04 helpers are extraction, not redesign (T-HISS-PY-COMPAT-2026-09-21).**
   The oversized routines were split so each piece stays under the 60-LOC
   scanner bound, and the split points were chosen to keep observable output
