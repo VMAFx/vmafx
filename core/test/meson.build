@@ -1273,20 +1273,11 @@ test_framesync = executable('test_framesync',
 # and test_framesync_init_failure.c undefines them above its first #include so
 # it still sees the real entry points to wrap.
 #
-# Do not add `vmaf_cflags_common` to this target. That is the *library* flag
-# set, and its `-fvisibility=hidden` (ADR-0379, which exists so the shipped
-# libvmaf.so exports only the VMAF_EXPORT'ed vmaf_* entry points) does not
-# survive an LTO link that has no library on it. A bitcode symbol survives LTO
-# only if the linker puts it on libLTO's must-preserve list, and ld builds that
-# list from the names referenced by *non*-LTO atoms, plus the entry point, plus
-# atoms that still have global scope -- "If a symbol is not listed in exportList
-# then LTO is free to optimize it away" (ld64, src/ld/parsers/lto_file.cpp,
-# Parser::optimize). This target links nothing but its own `b_lto=true` bitcode
-# objects, so there are no non-LTO references to contribute, and hidden
-# visibility demotes every definition to linkage-unit scope, so the list
-# collapses to _main and every cross-translation-unit symbol in the target
-# becomes eligible to be discarded -- mu_tests_run from test.c included, which
-# has nothing to do with framesync. Apple's linker then refuses the output:
+# `framesync_interposer_lto_override` turns LTO off for this one target on
+# macOS. Two earlier attempts tried to steer *which* symbols survive LTO --
+# first by dropping the link_whole/-force_load, then by dropping
+# `vmaf_cflags_common` so the definitions keep default visibility. Both landed,
+# and Apple's linker rejected the target again, byte-identically:
 #
 #   Use `-u <symbol_name>` to build missing LTO symbols for architecture arm64:
 #     '_vmafx_test_pthread_cond_destroy' ... '_vmaf_framesync_init' ...
@@ -1294,12 +1285,37 @@ test_framesync = executable('test_framesync',
 #   ld: symbol(s) defined in LTO objects are referenced but missing in
 #       compiled objects for architecture arm64
 #
-# Of the 78 executables the macOS build links, 16 take no input but their own
-# bitcode objects; this was the only one of those 16 also built
-# -fvisibility=hidden, and the only one of the 78 that failed. The 15 siblings
-# (test_pdjson, test_thread_pool, test_dict, ...) keep default visibility.
-# Nothing here wants the library flags anyway: framesync.c includes only libc
-# and framesync.h, and a test executable is not installed and exports nothing.
+# What is measured, by replaying the target's own compile and link commands
+# through clang/LLD: with b_lto=true this executable's entire input is LLVM
+# bitcode, the LTO resolution hands libLTO exactly one externally-visible
+# symbol (the entry point), and the generated object comes back with `main` as
+# its only global -- every cross-translation-unit symbol the diagnostic names
+# is either internalised or deleted. What is NOT established is why Apple's
+# linker tolerates that outcome for the pure-bitcode siblings that link a few
+# steps earlier in the same run (test_pdjson, test_thread_pool,
+# test_pdjson_stack_increment_zero, all of which collapse to `main` in exactly
+# the same way) and refuses it here. Do not add a third theory about that
+# without a macOS machine to test it on.
+#
+# So this does not try to win the argument about the preserve list -- it
+# removes the precondition. With b_lto=false the three inputs are ordinary
+# Mach-O objects, the link contains no bitcode at all, and no code path that
+# can emit "symbol(s) defined in LTO objects ..." is reachable. The override is
+# the same mechanism `test_output` above already uses for its own Apple-LTO
+# problem; LTO stays on for this target everywhere else. Nothing is lost: LTO
+# buys a three-assertion unit test nothing, and the target exists precisely to
+# keep a cross-translation-unit call boundary observable, which is the thing
+# whole-program optimisation is built to dissolve.
+#
+# `vmaf_cflags_common` is still not on this target. Its absence is *not* what
+# fixes the link (the attempt that removed it is one of the two that failed);
+# it is merely unneeded here -- framesync.c includes only libc, framesync.h and
+# the public header, and a test executable is neither installed nor exports
+# anything. All three translation units were checked to compile warning-clean
+# with that flag set, so restoring it for consistency with the other test
+# targets is safe whenever someone wants to.
+framesync_interposer_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
+
 test_framesync_init_failure = executable('test_framesync_init_failure',
     ['test.c', 'test_framesync_init_failure.c', '../src/framesync.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -1310,6 +1326,7 @@ test_framesync_init_failure = executable('test_framesync_init_failure',
         '-Dpthread_cond_destroy=vmafx_test_pthread_cond_destroy',
     ],
     dependencies : [pthread_dependency, thread_lib],
+    override_options : framesync_interposer_lto_override,
 )
 
 # Ported from upstream Netflix/vmaf c70debb1 ("libvmaf/test: port new

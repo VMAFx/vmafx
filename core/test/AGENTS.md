@@ -93,22 +93,28 @@ and teardown.
   must cover each initialization stage, a null init-output pointer, the
   documented null destroy no-op, unpublished context, and exact partial
   unwind.
-- **A test target that links nothing but its own bitcode objects must keep
-  default symbol visibility.** **Rebase-sensitive**: do not give
-  `test_framesync_init_failure` (or any other target whose link line carries no
-  library) `vmaf_cflags_common`, and do not reintroduce `framesync.c` as a
-  `static_library` consumed with `link_whole`. `vmaf_cflags_common` carries the
-  library's `-fvisibility=hidden` (ADR-0379). Under `b_lto=true` a bitcode
-  symbol survives only if the linker adds it to libLTO's must-preserve list,
-  and ld builds that list from the names referenced by *non*-LTO atoms, the
-  entry point, and atoms that still have global scope (ld64,
-  `src/ld/parsers/lto_file.cpp`, `Parser::optimize`). An all-bitcode link
-  contributes no non-LTO references and hidden visibility removes global scope,
-  so the list collapses to `_main`, every cross-translation-unit symbol in the
-  target becomes discardable, and Apple's linker rejects the result with `ld:
-  symbol(s) defined in LTO objects are referenced but missing in compiled
-  objects`. That took out all five macOS legs; the 15 sibling all-bitcode test
-  targets link because they keep default visibility.
+- **`test_framesync_init_failure` builds with LTO off on Darwin, and that is
+  load-bearing.** **Rebase-sensitive**: keep
+  `override_options : framesync_interposer_lto_override` on the target. Under
+  `b_lto=true` (the project default) this executable's whole input is LLVM
+  bitcode, and Apple's linker rejects the result on all five macOS legs with
+  `ld: symbol(s) defined in LTO objects are referenced but missing in compiled
+  objects`, naming `_mu_tests_run`, the four `_vmafx_test_pthread_*` wrappers,
+  `_vmaf_framesync_init` and `_vmaf_framesync_destroy`. Two narrower fixes were
+  tried against that diagnostic and both failed byte-identically: removing the
+  `link_whole`/`-force_load` (34b3ffa09) and removing `vmaf_cflags_common` so
+  the definitions keep default visibility (18e9edebd). Replaying the target's
+  own compile and link commands through clang/LLD shows the LTO resolution
+  hands libLTO exactly one externally visible symbol -- the entry point -- and
+  the generated object comes back with `main` as its only global; but the
+  pure-bitcode sibling targets that link a few steps earlier in the same macOS
+  run (`test_pdjson`, `test_thread_pool`,
+  `test_pdjson_stack_increment_zero`) collapse the same way and link fine, so
+  *why* Apple's linker singles this one out is not established. Do not spend a
+  fourth attempt steering the preserve list without a macOS machine to test on;
+  `b_lto=false` removes the precondition instead, the same way `test_output`
+  below already handles its own Apple-LTO problem. Also do not reintroduce
+  `framesync.c` as a `static_library` consumed with `link_whole`.
 - **SIMD parity tests check what kernel leaves outside its output, not only
   what it writes inside.** Kernel storing past its region passes region-only
   comparison. Netflix/vmaf `03b5562c5` + `ea012e387` both that shape, unnoticed
