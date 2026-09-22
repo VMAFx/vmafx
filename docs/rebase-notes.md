@@ -51867,3 +51867,4 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+- Praetor engine pin moved from `846da590` to `f41e74d8f` and `.standards-baseline.json` re-recorded (1411 -> 959). The pin, the baseline and the managed README block's recorded count are one unit: a rebase that reintroduces the old pin must re-record the baseline with the old engine and restore the old count in README.md (ADR-1249).

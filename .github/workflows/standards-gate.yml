@@ -22,7 +22,7 @@ permissions:
 
 env:
   # Exact engine used to record the baseline and replay HISS evidence.
-  PRAETOR_REF: 846da5908d15b3cf5581ca6b0205cc644b249599
+  PRAETOR_REF: f41e74d8f9a3db6ab1f08e787db5b2e94a721561
 
 jobs:
   standards:
