@@ -18,31 +18,6 @@
 # that file's `strictMustReport` list, because the `paths-ignore` below lets a
 # doc-only pull request legitimately produce no run at all (ADR-0313).
 #
-# The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
-# without the gating that gave it a point: all three rows reported and none of
-# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
-# that file's `strictMustReport` list, because the `paths-ignore` below lets a
-# doc-only pull request legitimately produce no run at all (ADR-0313).
-#
-# The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
-# without the gating that gave it a point: all three rows reported and none of
-# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
-# that file's `strictMustReport` list, because the `paths-ignore` above lets a
-# doc-only pull request legitimately produce no run at all (ADR-0313).
-#
-# Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
-# production artefact is the `vmafx-dev-mcp` image, not a per-backend binary;
-# these rows prove the whole stack builds on each OS.
-#
-# Netflix golden assertions are pinned to the dedicated CPU/GCC jobs in
-# tests-and-quality-gates.yml and libvmaf-build-matrix.yml. The all-backend
-# lane below runs the native Meson suite, but deliberately does not compare
-# Intel LLVM output against GCC-authored Python numeric snapshots.
-#
-# CI runners are on ubuntu-26.04, the same generation as the Docker base images.
-# The note that used to sit here said 26.04 was a preview without Python 3.14 or
-# a full toolchain; both stopped being true, and every lane now runs there. The
-# Python version comes from actions/setup-python, not from the image.
 
 name: Build
 
@@ -83,8 +58,6 @@ jobs:
           # identity; CUDA and HIP custom targets invoke their own tools.
           # ──────────────────────────────────────────────────────────────
           # required-aggregator
-          # required-aggregator
-          # required-aggregator
           - os: ubuntu-26.04
             name: Linux Intel LLVM
             CC: icx
@@ -108,8 +81,6 @@ jobs:
           # macos-latest (Metal.framework guaranteed in system frameworks).
           # ──────────────────────────────────────────────────────────────
           # required-aggregator
-          # required-aggregator
-          # required-aggregator
           - os: macos-latest
             name: macOS Clang+Metal
             CC: ccache clang
@@ -125,8 +96,6 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
-          # required-aggregator
-          # required-aggregator
           # required-aggregator
           - os: windows-2025
             name: Windows MSVC+CUDA (full)

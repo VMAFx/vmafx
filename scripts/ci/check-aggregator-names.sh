@@ -28,7 +28,14 @@ req_match = re.search(r"const required = \[(.*?)\];", agg_text, re.DOTALL)
 if not req_match:
     sys.exit("error: could not find 'const required = [...]' in required-aggregator.yml")
 
-agg_names = set(re.findall(r"'([^']+)'", req_match.group(1)))
+# Strip `//` line comments before extracting the literals. An ordinary English
+# apostrophe in a comment ("one pull request's rollup") otherwise opens a
+# spurious quoted run, and the mismatch it produces names a multi-line blob
+# rather than the real problem, which costs the reader more time than the
+# comment saved. Only whole-line comments are stripped: a trailing `//` after a
+# literal cannot contain one without the literal having closed first.
+req_body = re.sub(r"(?m)^\s*//.*$", "", req_match.group(1))
+agg_names = set(re.findall(r"'([^']+)'", req_body))
 
 wf_names = set()
 for p in sorted((repo_root / ".github" / "workflows").glob("*.yml")):

@@ -31,17 +31,6 @@ permissions:
 # changes must travel together — a rebase that keeps the gate and drops the
 # ref-scoped group below turns every contended docs build into a blocked merge.
 #
-# ADR-1297 makes this check required, which is what gives ADR-1294 teeth:
-# `cancelled` is not in the aggregator's accepted set, so a cross-PR
-# cancellation is now a hard merge block instead of a green button. The two
-# changes must travel together — a rebase that keeps the gate and drops the
-# ref-scoped group below turns every contended docs build into a blocked merge.
-#
-# ADR-1297 makes this check required, which is what gives ADR-1294 teeth:
-# `cancelled` is not in the aggregator's accepted set, so a cross-PR
-# cancellation is now a hard merge block instead of a green button. The two
-# changes must travel together — a rebase that keeps the gate and drops the
-# ref-scoped group above turns every contended docs build into a blocked merge.
 
 jobs:
   build:

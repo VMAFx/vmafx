@@ -209,6 +209,19 @@ jobs:
               'Dev Container Build',
               'vmafx-sys CI',
               'cargo-deny',
+              // `helm lint + template` was missed by the first pass of
+              // ADR-1297: that pass derived the ungated set from a single pull
+              // request statusCheckRollup, and #1518 touches no
+              // `deploy/helm/**` path, so the lane never appeared in it. The
+              // chart is a user-discoverable surface — people run
+              // `helm install` on it — and the header of helm-chart.yml
+              // records that `helm lint` was failing on master for an unknown
+              // length of time before that workflow existed. `E2E — kind +
+              // kuttl` does not cover it: that lane is label-gated, so it does
+              // not run on the pull request that breaks the chart. This does.
+              // NOTE: no apostrophes in this block — check-aggregator-names.sh
+              // extracts required[] by matching single-quoted literals.
+              'helm lint + template',
               // Documentation surfaces. `Docs Site Build` was reported under
               // the bare job id `build` until this change renamed it; a
               // required context called `build` would be shared by any future

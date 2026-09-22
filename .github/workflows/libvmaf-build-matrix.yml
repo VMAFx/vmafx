@@ -142,8 +142,6 @@ jobs:
           # target; the scaffold lane builds on whichever macos-latest
           # arch GitHub provides today (Apple Silicon as of 2026).
           # required-aggregator
-          # required-aggregator
-          # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
@@ -176,8 +174,6 @@ jobs:
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
           #     SYCL revival in core/src/meson.build) ---
-          # required-aggregator
-          # required-aggregator
           # required-aggregator
           - os: ubuntu-latest
             CC: icx
