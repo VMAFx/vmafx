@@ -339,8 +339,10 @@ class BrisqueNorefFeatureExtractor(NorefExecutorMixin, FeatureExtractor):
 
     @classmethod
     def extract_aggd_features(cls, imdata):
-        imdata_cp = imdata.copy()
-        imdata_cp.shape = (len(imdata_cp.flat),)
+        # NumPy 2.5 deprecated assigning to `ndarray.shape`; `np.reshape` on the
+        # C-contiguous copy is the documented replacement and reads the same
+        # elements in the same order, so the AGGD fit is bit-identical.
+        imdata_cp = np.reshape(imdata.copy(), -1)
         imdata2 = imdata_cp * imdata_cp
         left_data = imdata2[imdata_cp < 0]
         right_data = imdata2[imdata_cp >= 0]
