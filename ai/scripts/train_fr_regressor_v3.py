@@ -123,78 +123,21 @@ def _enc_idx_v3(name: str) -> int:
         return FALLBACK_ENCODER_INDEX
 
 
-def _load_corpus(corpus_path: Path) -> dict[str, Any]:
-    """Load the Phase A canonical-6 JSONL corpus into a structured dict.
+def _normalise_corpus_columns(df, corpus_path: Path):  # type: ignore[no-untyped-def]
+    """Project either accepted corpus shape onto the bare canonical-6 names.
 
-    Reads the schema-v3 corpus directly (ADR-0366): the canonical-6
-    features come from the ``<feature>_mean`` columns the corpus
-    emitter writes after parsing libvmaf's ``pooled_metrics`` block.
-    Required columns:
-
-    * ``adm2_mean``, ``vif_scale[0..3]_mean``, ``motion2_mean`` —
-      per-encode means of the canonical-6 libvmaf features;
-    * ``vmaf_score`` — pooled VMAF target (renamed ``vmaf`` for the
-      training arrays so the rest of this module can stay positional);
-    * ``src``, ``encoder``, ``crf`` — partition + codec block inputs.
-
-    Rows whose canonical-6 means are NaN (libvmaf did not expose the
-    feature for that run, or the encode failed) are dropped before the
-    StandardScaler is fitted — invented zeros would skew the scaler.
-    Legacy v2 corpora that carry only ``vmaf_score`` and no per-feature
-    aggregates raise ``ValueError`` with a pointer to ADR-0366; the
-    older ``--synthetic`` fallback was removed because it produced
-    misleading models that did not predict on real data.
+    Schema-v3 (``vmaf-tune corpus``, ADR-0366) carries ``<feature>_mean`` plus
+    ``vmaf_score`` and ``crf``; the legacy ``hw_encoder_corpus.py`` per-frame
+    shape carries the bare feature names plus ``vmaf`` and ``cq``. Both end up
+    with bare names so the rest of the module can stay positional. Split out of
+    :func:`_load_corpus` to keep each function inside the HISS-04 / NASA Rule 4
+    60-LOC limit.
     """
-    import numpy as np
-    import pandas as pd
-
-    if not corpus_path.is_file():
-        raise FileNotFoundError(
-            f"Corpus JSONL not found at {corpus_path}. Generate it via "
-            "`vmaf-tune corpus ...` (schema v3 per ADR-0366)."
-        )
-
-    df = pd.read_json(corpus_path, lines=True)
-    if len(df) == 0:
-        raise ValueError(f"Corpus {corpus_path} has zero rows.")
 
     feature_mean_cols = [f"{f}_mean" for f in CANONICAL_6]
-    has_v3_means = all(c in df.columns for c in feature_mean_cols)
-    has_legacy_bare = all(c in df.columns for c in CANONICAL_6)
-
-    if has_v3_means:
-        # Schema-v3 ``vmaf-tune corpus`` shape (ADR-0366). The means
-        # come from libvmaf's ``pooled_metrics.<feature>`` block; drop
-        # rows where libvmaf did not expose the feature (NaN cells).
-        required = [*feature_mean_cols, "vmaf_score", "src", "encoder", "crf"]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(
-                f"Corpus {corpus_path} is missing required v3 columns: {missing}. "
-                f"Expected canonical-6 means ({feature_mean_cols}) + vmaf_score + "
-                f"src + encoder + crf. Re-emit via `vmaf-tune corpus` after "
-                "ADR-0366 (schema v3); legacy schema-v2 corpora carry only "
-                "aggregate vmaf_score and cannot train this regressor."
-            )
-        finite_mask = np.isfinite(df[feature_mean_cols].to_numpy(dtype=np.float64)).all(axis=1)
-        finite_mask &= np.isfinite(df["vmaf_score"].to_numpy(dtype=np.float64))
-        if not finite_mask.all():
-            df = df.loc[finite_mask].reset_index(drop=True)
-        if len(df) == 0:
-            raise ValueError(
-                f"Corpus {corpus_path} has zero rows after dropping NaN-feature rows. "
-                "Verify the libvmaf model exposes the canonical-6 features."
-            )
-        # Project the ``_mean`` columns into bare-named ones and rename
-        # ``vmaf_score`` -> ``vmaf`` so the rest of the module stays
-        # positional.
-        for feat, col in zip(CANONICAL_6, feature_mean_cols, strict=True):
-            df[feat] = df[col]
-        if "vmaf" not in df.columns:
-            df = df.assign(vmaf=df["vmaf_score"])
-        if "cq" not in df.columns:
-            df = df.assign(cq=df["crf"])
-    elif has_legacy_bare:
+    if all(c in df.columns for c in feature_mean_cols):
+        return _normalise_v3_columns(df, corpus_path, feature_mean_cols)
+    if all(c in df.columns for c in CANONICAL_6):
         # Legacy ``hw_encoder_corpus.py`` per-frame shape — bare canonical-6
         # column names, ``vmaf`` target, ``cq`` quality knob. Kept for
         # backward compatibility with existing on-disk corpora; new
@@ -207,22 +150,64 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
                 f"Expected canonical-6 ({list(CANONICAL_6)}) + vmaf + src + "
                 f"encoder + cq."
             )
-    else:
-        # Neither shape — surface the v3 error first since it's the
-        # forward path; mention the legacy shape for older corpora.
-        raise ValueError(
-            f"Corpus {corpus_path} is missing required v3 columns: {feature_mean_cols}. "
-            "Expected either schema-v3 (vmaf-tune corpus, ADR-0366) "
-            f"with `<feature>_mean` columns + vmaf_score + crf, or the legacy "
-            f"hw_encoder_corpus.py per-frame shape with bare {list(CANONICAL_6)} "
-            "+ vmaf + cq columns. Re-emit via `vmaf-tune corpus` for the "
-            "preferred path."
-        )
+        return df
+    # Neither shape — surface the v3 error first since it's the
+    # forward path; mention the legacy shape for older corpora.
+    raise ValueError(
+        f"Corpus {corpus_path} is missing required v3 columns: {feature_mean_cols}. "
+        "Expected either schema-v3 (vmaf-tune corpus, ADR-0366) "
+        f"with `<feature>_mean` columns + vmaf_score + crf, or the legacy "
+        f"hw_encoder_corpus.py per-frame shape with bare {list(CANONICAL_6)} "
+        "+ vmaf + cq columns. Re-emit via `vmaf-tune corpus` for the "
+        "preferred path."
+    )
 
-    feat = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    feat_mean = feat.mean(axis=0)
-    feat_std = feat.std(axis=0, ddof=0)
-    feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)
+
+def _normalise_v3_columns(df, corpus_path: Path, feature_mean_cols):  # type: ignore[no-untyped-def]
+    """Schema-v3 branch of :func:`_normalise_corpus_columns` (ADR-0366).
+
+    The means come from libvmaf's ``pooled_metrics.<feature>`` block; rows
+    where libvmaf did not expose the feature (NaN cells) are dropped before the
+    StandardScaler sees them, because invented zeros would skew it.
+    """
+    import numpy as np
+
+    required = [*feature_mean_cols, "vmaf_score", "src", "encoder", "crf"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Corpus {corpus_path} is missing required v3 columns: {missing}. "
+            f"Expected canonical-6 means ({feature_mean_cols}) + vmaf_score + "
+            f"src + encoder + crf. Re-emit via `vmaf-tune corpus` after "
+            "ADR-0366 (schema v3); legacy schema-v2 corpora carry only "
+            "aggregate vmaf_score and cannot train this regressor."
+        )
+    finite_mask = np.isfinite(df[feature_mean_cols].to_numpy(dtype=np.float64)).all(axis=1)
+    finite_mask &= np.isfinite(df["vmaf_score"].to_numpy(dtype=np.float64))
+    if not finite_mask.all():
+        df = df.loc[finite_mask].reset_index(drop=True)
+    if len(df) == 0:
+        raise ValueError(
+            f"Corpus {corpus_path} has zero rows after dropping NaN-feature rows. "
+            "Verify the libvmaf model exposes the canonical-6 features."
+        )
+    # Project the ``_mean`` columns into bare-named ones and rename
+    # ``vmaf_score`` -> ``vmaf`` so the rest of the module stays positional.
+    for feat, col in zip(CANONICAL_6, feature_mean_cols, strict=True):
+        df[feat] = df[col]
+    if "vmaf" not in df.columns:
+        df = df.assign(vmaf=df["vmaf_score"])
+    if "cq" not in df.columns:
+        df = df.assign(cq=df["crf"])
+    return df
+
+
+def _build_codec_block(df):  # type: ignore[no-untyped-def]
+    """Encoder one-hot + preset/CRF normalisation block, and the CRF range.
+
+    Split out of :func:`_load_corpus` for the HISS-04 60-LOC limit.
+    """
+    import numpy as np
 
     codec_idx = np.array([_enc_idx_v3(str(e)) for e in df["encoder"].tolist()], dtype=np.int64)
     codec_onehot = np.eye(N_ENCODERS_V3, dtype=np.float32)[codec_idx]
@@ -249,11 +234,64 @@ def _load_corpus(corpus_path: Path) -> dict[str, Any]:
         [codec_onehot, preset_norm[:, None], crf_norm[:, None]],
         axis=1,
     ).astype(np.float32)
-
     codec_block_cols = [f"encoder_onehot[{e}]" for e in ENCODER_VOCAB_V3] + [
         "preset_norm",
         "crf_norm",
     ]
+    return codec_block, codec_block_cols, cq_min, cq_max
+
+
+def _read_corpus_frame(corpus_path: Path):  # type: ignore[no-untyped-def]
+    """Read the corpus JSONL into a frame, rejecting a missing or empty file.
+
+    Extracted from :func:`_load_corpus` for the HISS-04 / NASA Rule 4 60-LOC
+    limit.
+    """
+    import pandas as pd
+
+    if not corpus_path.is_file():
+        raise FileNotFoundError(
+            f"Corpus JSONL not found at {corpus_path}. Generate it via "
+            "`vmaf-tune corpus ...` (schema v3 per ADR-0366)."
+        )
+    df = pd.read_json(corpus_path, lines=True)
+    if len(df) == 0:
+        raise ValueError(f"Corpus {corpus_path} has zero rows.")
+    return df
+
+
+def _load_corpus(corpus_path: Path) -> dict[str, Any]:
+    """Load the Phase A canonical-6 JSONL corpus into a structured dict.
+
+    Reads the schema-v3 corpus directly (ADR-0366): the canonical-6
+    features come from the ``<feature>_mean`` columns the corpus
+    emitter writes after parsing libvmaf's ``pooled_metrics`` block.
+    Required columns:
+
+    * ``adm2_mean``, ``vif_scale[0..3]_mean``, ``motion2_mean`` —
+      per-encode means of the canonical-6 libvmaf features;
+    * ``vmaf_score`` — pooled VMAF target (renamed ``vmaf`` for the
+      training arrays so the rest of this module can stay positional);
+    * ``src``, ``encoder``, ``crf`` — partition + codec block inputs.
+
+    Rows whose canonical-6 means are NaN (libvmaf did not expose the
+    feature for that run, or the encode failed) are dropped before the
+    StandardScaler is fitted — invented zeros would skew the scaler.
+    Legacy v2 corpora that carry only ``vmaf_score`` and no per-feature
+    aggregates raise ``ValueError`` with a pointer to ADR-0366; the
+    older ``--synthetic`` fallback was removed because it produced
+    misleading models that did not predict on real data.
+    """
+    import numpy as np
+
+    df = _normalise_corpus_columns(_read_corpus_frame(corpus_path), corpus_path)
+
+    feat = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    feat_mean = feat.mean(axis=0)
+    feat_std = feat.std(axis=0, ddof=0)
+    feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)
+
+    codec_block, codec_block_cols, cq_min, cq_max = _build_codec_block(df)
 
     return {
         "df": df,
@@ -376,15 +414,68 @@ def _predict(model, x_feat, x_codec):  # type: ignore[no-untyped-def]
     return out.cpu().numpy().reshape(-1)
 
 
+def _run_one_fold(
+    corpus: dict[str, Any], held_out: str, args: argparse.Namespace
+) -> dict[str, Any]:
+    """Train on every source but ``held_out`` and score the held-out fold.
+
+    The loop body of :func:`run_loso`, extracted so both stay inside the
+    HISS-04 / NASA Rule 4 60-LOC limit. The per-fold scaler is fitted on the
+    training split only, so the held-out source never leaks into it.
+    """
+    import numpy as np
+
+    df = corpus["df"]
+    feat_cols = corpus["feature_cols"]
+    codec_block = corpus["codec_block"]
+    source_col = corpus["source_col"]
+    target_col = corpus["target_col"]
+
+    train_mask = (df[source_col] != held_out).to_numpy()
+    val_mask = (df[source_col] == held_out).to_numpy()
+
+    x_feat_tr = df.loc[train_mask, feat_cols].to_numpy(dtype=np.float64)
+    y_tr = df.loc[train_mask, target_col].to_numpy(dtype=np.float64)
+    x_codec_tr = codec_block[train_mask]
+
+    x_feat_va = df.loc[val_mask, feat_cols].to_numpy(dtype=np.float64)
+    y_va = df.loc[val_mask, target_col].to_numpy(dtype=np.float64)
+    x_codec_va = codec_block[val_mask]
+
+    mean = x_feat_tr.mean(axis=0)
+    std = x_feat_tr.std(axis=0, ddof=0)
+    std = np.where(std < 1e-8, 1.0, std)
+    x_feat_tr_norm = (x_feat_tr - mean) / std
+    x_feat_va_norm = (x_feat_va - mean) / std
+
+    model = _train_fold(
+        x_feat_tr_norm,
+        x_codec_tr,
+        y_tr,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+        num_codecs=CODEC_BLOCK_DIM,
+    )
+    pred_va = _predict(model, x_feat_va_norm, x_codec_va)
+    return {
+        "held_out": held_out,
+        "n_train": int(train_mask.sum()),
+        "n_val": int(val_mask.sum()),
+        "plcc": _plcc(pred_va, y_va),
+        "srocc": _srocc(pred_va, y_va),
+        "rmse": (float(np.sqrt(np.mean((pred_va - y_va) ** 2))) if len(y_va) else float("nan")),
+    }
+
+
 def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     """Run 9-fold LOSO over the corpus's unique sources; return summary dict."""
     import numpy as np
 
     df = corpus["df"]
-    feat_cols = corpus["feature_cols"]
-    target_col = corpus["target_col"]
     source_col = corpus["source_col"]
-    codec_block = corpus["codec_block"]
 
     sources = sorted(df[source_col].unique().tolist())
     folds: list[dict[str, Any]] = []
@@ -394,51 +485,11 @@ def run_loso(corpus: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]
 
     t_start = time.monotonic()
     for held_out in sources:
-        train_mask = (df[source_col] != held_out).to_numpy()
-        val_mask = (df[source_col] == held_out).to_numpy()
-
-        x_feat_tr = df.loc[train_mask, feat_cols].to_numpy(dtype=np.float64)
-        y_tr = df.loc[train_mask, target_col].to_numpy(dtype=np.float64)
-        x_codec_tr = codec_block[train_mask]
-
-        x_feat_va = df.loc[val_mask, feat_cols].to_numpy(dtype=np.float64)
-        y_va = df.loc[val_mask, target_col].to_numpy(dtype=np.float64)
-        x_codec_va = codec_block[val_mask]
-
-        mean = x_feat_tr.mean(axis=0)
-        std = x_feat_tr.std(axis=0, ddof=0)
-        std = np.where(std < 1e-8, 1.0, std)
-        x_feat_tr_norm = (x_feat_tr - mean) / std
-        x_feat_va_norm = (x_feat_va - mean) / std
-
-        model = _train_fold(
-            x_feat_tr_norm,
-            x_codec_tr,
-            y_tr,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            seed=args.seed,
-            num_codecs=CODEC_BLOCK_DIM,
-        )
-        pred_va = _predict(model, x_feat_va_norm, x_codec_va)
-        plcc = _plcc(pred_va, y_va)
-        srocc = _srocc(pred_va, y_va)
-        rmse = float(np.sqrt(np.mean((pred_va - y_va) ** 2))) if len(y_va) else float("nan")
-        folds.append(
-            {
-                "held_out": held_out,
-                "n_train": int(train_mask.sum()),
-                "n_val": int(val_mask.sum()),
-                "plcc": plcc,
-                "srocc": srocc,
-                "rmse": rmse,
-            }
-        )
-        plccs.append(plcc)
-        sroccs.append(srocc)
-        rmses.append(rmse)
+        fold = _run_one_fold(corpus, held_out, args)
+        folds.append(fold)
+        plccs.append(fold["plcc"])
+        sroccs.append(fold["srocc"])
+        rmses.append(fold["rmse"])
 
     plccs_arr = np.asarray([p for p in plccs if not np.isnan(p)], dtype=np.float64)
     mean_plcc = float(plccs_arr.mean()) if plccs_arr.size > 0 else float("nan")
@@ -488,6 +539,28 @@ def fit_full_corpus(corpus: dict[str, Any], args: argparse.Namespace):  # type: 
     return model, scaler
 
 
+# dynamic_shapes, not dynamic_axes, for the export in export_onnx below.
+# torch.onnx.export has defaulted to the dynamo exporter since torch 2.9, and
+# that path warns on dynamic_axes ("# 'dynamic_axes' is not recommended when
+# dynamo=True") before routing through a deprecated conversion shim.
+# dynamic_shapes is positional -- one entry per forward argument, outputs are
+# not named -- and a plain string axis name still becomes a torch.export.Dim.
+#
+# Both inputs share one batch dimension, so torch.export gives them a single
+# symbol. Naming it twice draws a second warning, that the later name "shares
+# the same shape constraints with another axis"; naming it once and marking the
+# second input's axis Dim.DYNAMIC leaves both ONNX inputs with
+# dim_param="batch". Verified on torch 2.14.0: the graph is byte-identical to
+# the one the dynamic_axes spelling produced, and neither warning fires.
+#
+# Built by a helper because torch is an optional import, resolved inside
+# export_onnx rather than at module scope.
+def _v3_dynamic_shapes():  # type: ignore[no-untyped-def]
+    import torch
+
+    return ({0: "batch"}, {0: torch.export.Dim.DYNAMIC})
+
+
 def export_onnx(model, onnx_path: Path) -> None:  # type: ignore[no-untyped-def]
     """Export the v3 FRRegressor to ONNX (opset 17, two named inputs)."""
     import numpy as np
@@ -502,20 +575,7 @@ def export_onnx(model, onnx_path: Path) -> None:  # type: ignore[no-untyped-def]
     dummy_feat = torch.zeros(1, 6, dtype=torch.float32)
     dummy_codec = torch.zeros(1, CODEC_BLOCK_DIM, dtype=torch.float32)
 
-    # dynamic_shapes, not dynamic_axes: torch.onnx.export has defaulted to the
-    # dynamo exporter since 2.9, and the dynamo path warns on dynamic_axes
-    # ("# 'dynamic_axes' is not recommended when dynamo=True") before running
-    # the deprecated from_dynamic_axes_to_dynamic_shapes shim. dynamic_shapes
-    # is positional -- one entry per forward argument, outputs are not named --
-    # and a plain string axis name still becomes a torch.export.Dim. Verified
-    # on torch 2.14.0: the graph this produces is byte-identical to the one the
-    # dynamic_axes spelling produced, with no warning.
-    # Both inputs share one batch dimension, so torch.export gives them a
-    # single symbol. Naming it twice makes the exporter warn that the second
-    # name "shares the same shape constraints with another axis"; naming it
-    # once and marking the second input's axis Dim.DYNAMIC leaves both ONNX
-    # inputs with dim_param="batch", byte-identically.
-    dynamic_shapes = ({0: "batch"}, {0: torch.export.Dim.DYNAMIC})
+    dynamic_shapes = _v3_dynamic_shapes()
     torch.onnx.export(
         model,
         (dummy_feat, dummy_codec),
@@ -742,17 +802,104 @@ def build_argparser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_argparser()
-    args = parser.parse_args(argv)
+def _print_loso_summary(summary: dict[str, Any]) -> None:
+    """Echo the LOSO aggregate and every fold. Extracted from :func:`main`
+    for the HISS-04 / NASA Rule 4 60-LOC limit."""
+    print(
+        f"[fr-v3] LOSO mean_plcc={summary['mean_plcc']:.4f} "
+        f"std={summary['std_plcc']:.4f} "
+        f"min={summary['min_plcc']:.4f} max={summary['max_plcc']:.4f} "
+        f"({summary['wall_time_s']:.1f}s)",
+        flush=True,
+    )
+    for f in summary["folds"]:
+        print(
+            f"  fold[{f['held_out']:24s}] n_train={f['n_train']:>5d} "
+            f"n_val={f['n_val']:>5d} plcc={f['plcc']:.4f} srocc={f['srocc']:.4f} "
+            f"rmse={f['rmse']:.3f}",
+            flush=True,
+        )
 
+
+def _ship_gate_fail_scaffold(
+    corpus: dict[str, Any],
+    args: argparse.Namespace,
+    summary: dict[str, Any],
+    run_provenance: dict[str, Any],
+) -> int:
+    """Gate-fail path: ship a 1-epoch scaffold ONNX plus sidecar and registry
+    row so the follow-up has the sha256 contract to build on. Extracted from
+    :func:`main` for the HISS-04 / NASA Rule 4 60-LOC limit."""
+    # Still write the sidecar + registry-with-smoke-true row so the
+    # PR ships scaffold + sidecar + registry stub for the follow-up.
+    if args.no_export:
+        return 1
+    # Need an ONNX file on disk for the registry sha256 contract.
+    # Train a 1-epoch full-corpus model so the file exists; the
+    # registry row is `smoke: true` with the gate-fail note.
+    print("[fr-v3] gate-fail: shipping scaffold ONNX (smoke=true)", flush=True)
+    scaffold_args = argparse.Namespace(**vars(args))
+    scaffold_args.epochs = 1
+    scaffold_model, scaffold_scaler = fit_full_corpus(corpus, scaffold_args)
+    export_onnx(scaffold_model, args.out_onnx)
+    write_sidecar_and_registry(
+        onnx_path=args.out_onnx,
+        sidecar_path=args.out_sidecar,
+        registry_path=args.registry,
+        scaler=scaffold_scaler,
+        loso_summary=summary,
+        corpus_path=args.corpus,
+        n_rows=corpus["n_rows"],
+        smoke=False,
+        gate_passed=False,
+        run_provenance=run_provenance,
+    )
+    return 1
+
+
+def _ship_gated_model(
+    corpus: dict[str, Any],
+    args: argparse.Namespace,
+    summary: dict[str, Any],
+    run_provenance: dict[str, Any],
+    gate_passed: bool,
+) -> int:
+    """Gate-pass path: fit the full corpus, export, and write the sidecar and
+    registry row. Extracted from :func:`main` for the HISS-04 / NASA Rule 4
+    60-LOC limit."""
+    print("[fr-v3] gate PASS — fitting full-corpus checkpoint", flush=True)
+    model, scaler = fit_full_corpus(corpus, args)
+    export_onnx(model, args.out_onnx)
+    write_sidecar_and_registry(
+        onnx_path=args.out_onnx,
+        sidecar_path=args.out_sidecar,
+        registry_path=args.registry,
+        scaler=scaler,
+        loso_summary=summary,
+        corpus_path=args.corpus,
+        n_rows=corpus["n_rows"],
+        smoke=args.smoke,
+        gate_passed=gate_passed,
+        run_provenance=run_provenance,
+    )
+    print(
+        f"[fr-v3] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})",
+        flush=True,
+    )
+    return 0
+
+
+def _resolve_corpus_selection(args: argparse.Namespace) -> int | None:
+    """Check the mutually-exclusive corpus selectors and, under ``--smoke``,
+    synthesise a corpus so the run goes through the same load path as a real
+    one. Returns an exit code when the selectors are wrong, otherwise ``None``.
+    Extracted from :func:`main` for the HISS-04 / NASA Rule 4 60-LOC limit."""
     if args.smoke and args.corpus is not None:
         print("error: --smoke and --corpus are mutually exclusive", file=sys.stderr)
         return 2
     if not args.smoke and args.corpus is None:
         print("error: provide --corpus PATH or use --smoke", file=sys.stderr)
         return 2
-
     if args.smoke:
         # Synthesise into a temp file then load via the real path.
         import tempfile
@@ -761,6 +908,16 @@ def main(argv: list[str] | None = None) -> int:
         _write_smoke_corpus(tmp)
         args.corpus = tmp
         args.epochs = 1
+    return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_argparser()
+    args = parser.parse_args(argv)
+
+    rc = _resolve_corpus_selection(args)
+    if rc is not None:
+        return rc
 
     print(f"[fr-v3] loading corpus {args.corpus}", flush=True)
     corpus = _load_corpus(args.corpus)
@@ -789,20 +946,7 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
     summary = run_loso(corpus, args)
-    print(
-        f"[fr-v3] LOSO mean_plcc={summary['mean_plcc']:.4f} "
-        f"std={summary['std_plcc']:.4f} "
-        f"min={summary['min_plcc']:.4f} max={summary['max_plcc']:.4f} "
-        f"({summary['wall_time_s']:.1f}s)",
-        flush=True,
-    )
-    for f in summary["folds"]:
-        print(
-            f"  fold[{f['held_out']:24s}] n_train={f['n_train']:>5d} "
-            f"n_val={f['n_val']:>5d} plcc={f['plcc']:.4f} srocc={f['srocc']:.4f} "
-            f"rmse={f['rmse']:.3f}",
-            flush=True,
-        )
+    _print_loso_summary(summary)
 
     gate_passed = not args.smoke and summary["mean_plcc"] >= SHIP_GATE_MEAN_PLCC
     if args.smoke:
@@ -814,56 +958,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
             flush=True,
         )
-        # Still write the sidecar + registry-with-smoke-true row so the
-        # PR ships scaffold + sidecar + registry stub for the follow-up.
-        if args.no_export:
-            return 1
-        # Need an ONNX file on disk for the registry sha256 contract.
-        # Train a 1-epoch full-corpus model so the file exists; the
-        # registry row is `smoke: true` with the gate-fail note.
-        print("[fr-v3] gate-fail: shipping scaffold ONNX (smoke=true)", flush=True)
-        scaffold_args = argparse.Namespace(**vars(args))
-        scaffold_args.epochs = 1
-        scaffold_model, scaffold_scaler = fit_full_corpus(corpus, scaffold_args)
-        export_onnx(scaffold_model, args.out_onnx)
-        write_sidecar_and_registry(
-            onnx_path=args.out_onnx,
-            sidecar_path=args.out_sidecar,
-            registry_path=args.registry,
-            scaler=scaffold_scaler,
-            loso_summary=summary,
-            corpus_path=args.corpus,
-            n_rows=corpus["n_rows"],
-            smoke=False,
-            gate_passed=False,
-            run_provenance=run_provenance,
-        )
-        return 1
+        return _ship_gate_fail_scaffold(corpus, args, summary, run_provenance)
 
     if args.no_export:
         print("[fr-v3] --no-export set; skipping ONNX export.")
         return 0
 
-    print("[fr-v3] gate PASS — fitting full-corpus checkpoint", flush=True)
-    model, scaler = fit_full_corpus(corpus, args)
-    export_onnx(model, args.out_onnx)
-    write_sidecar_and_registry(
-        onnx_path=args.out_onnx,
-        sidecar_path=args.out_sidecar,
-        registry_path=args.registry,
-        scaler=scaler,
-        loso_summary=summary,
-        corpus_path=args.corpus,
-        n_rows=corpus["n_rows"],
-        smoke=args.smoke,
-        gate_passed=gate_passed,
-        run_provenance=run_provenance,
-    )
-    print(
-        f"[fr-v3] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})",
-        flush=True,
-    )
-    return 0
+    return _ship_gated_model(corpus, args, summary, run_provenance, gate_passed)
 
 
 if __name__ == "__main__":

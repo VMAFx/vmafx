@@ -10,3 +10,8 @@
   can be exercised without the Trainer-scoped `self.log()` calls that Lightning
   warns about when no `Trainer` is attached. Logging behaviour inside a real
   fit loop is unchanged — same metric names, same flags.
+- `ai/scripts/train_fr_regressor_v3.py` discharged its ADR-0141 touched-file
+  debt in the same change: `_load_corpus` (149 LOC), `main` (122) and
+  `run_loso` (79) split into named helpers so every function is inside the
+  HISS-04 / NASA Rule 4 60-LOC limit. Pure extraction — no behavioural change —
+  and the repository's HISS infraction total drops from 286 to 283.
