@@ -52,9 +52,16 @@ jobs:
   # check is suppressed because ~50 K&R-prototype test harness files
   # trip it unconditionally (rewrite tracked separately).
   asan-ubsan:
+    # ADR-1297 — required. `-fsanitize=address,undefined` in one build is a
+    # distinct configuration from the separate `Sanitizers (address)` and
+    # `Sanitizers (undefined)` rows that were already required: interaction
+    # bugs between the two instrumentations only appear when both are live.
+    # NOT in `strictMustReport` — the `if:` below excludes `push`, and the
+    # aggregator also runs on pushes to master, where this job never reports.
     if: |
       github.event_name == 'pull_request' && github.event.pull_request.draft == false
       || github.event_name == 'workflow_dispatch'
+    # required-aggregator
     name: Sanitizers ASan+UBSan
     runs-on: ubuntu-26.04
     timeout-minutes: 30

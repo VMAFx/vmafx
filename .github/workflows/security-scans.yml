@@ -96,6 +96,30 @@ jobs:
           sarif_file: semgrep-registry.sarif
           category: semgrep-registry
 
+  # ADR-1297 — `Semgrep OSS` is a code-scanning check created by the
+  # github-advanced-security app from the two SARIF uploads above, not by a
+  # job, which is why it needs a bare marker here (the `CodeQL` marker below
+  # is the same shape, and `CodeQL` is the precedent for gating this class).
+  # Consequence to be aware of: the check reports on alerts, not on the job,
+  # and both uploads carry the tool name "Semgrep OSS", so registry-pack
+  # findings now reach a blocking context even though the registry step above
+  # keeps `continue-on-error: true`. That flag's remaining job is to keep a
+  # rate-limited registry *fetch* from failing the run; it no longer means the
+  # findings are advisory. The residual risk — an upstream rule-pack update
+  # can introduce alerts with no diff in this repository — is recorded in
+  # docs/state.md.
+  # required-aggregator: Semgrep OSS
+
+  # ADR-1297 — `gitleaks` (lowercase) is the code-scanning check the
+  # github-advanced-security app creates from the `category: gitleaks` SARIF
+  # upload in the `secret-scan` job below; `Gitleaks` (capital G) is that job
+  # itself and was already required. Check names are case-sensitive, so the
+  # two cannot mask each other and check-aggregator-names.sh's one-job-per-name
+  # rule is not violated. Gated for the same reason `CodeQL` is: a
+  # secret-scanning verdict on the pull request that nothing blocks on is not
+  # a verdict.
+  # required-aggregator: gitleaks
+
   # required-aggregator: CodeQL
   # security-and-quality is a superset of security-extended, so specifying
   # both duplicates queries and trips the CodeQL setup UI's "ambiguous

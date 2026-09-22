@@ -500,6 +500,11 @@ jobs:
   #   ~/.cache/mcp-venv/bin/pytest tests/ -v
   mcp-smoke:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1297 — required, and in `strictMustReport`: it builds all four
+    # enable_mcp* transports and runs the MCP server suite, a shipped
+    # user-discoverable surface, and it has no path filter or conditional
+    # skip, so absence is never a legitimate outcome.
+    # required-aggregator
     name: MCP Smoke
     runs-on: ubuntu-26.04
     timeout-minutes: 12
@@ -586,6 +591,15 @@ jobs:
   # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1297 — required, and in `strictMustReport`. This job enforces the
+    # principles.md §3 line-coverage floors and the per-PR delta tolerance
+    # (ADR-0922). It self-skips in-job via plan-ci-impact.py (ADR-1140)
+    # rather than by path filter, so it always reports and `skipped` is never
+    # its outcome. Leaving it ungated re-opened, from the other side, the
+    # same hole as the `|| true` this branch removed: `Coverage GPU`, the
+    # self-hosted sibling that legitimately skips, was gated while this one
+    # was not.
+    # required-aggregator
     name: Coverage Gate
     runs-on: ubuntu-latest
     # 75, not 30: the Python suite step below is budgeted 55 min and the rest

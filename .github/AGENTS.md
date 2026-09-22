@@ -628,7 +628,7 @@ Unknown attribute kind (102)
 
 Pass `-Db_lto=false` on every icpx/SYCL `meson setup` in CI. Both SYCL legs of
 `libvmaf-build-matrix.yml` already do, as do `build.yml`'s `Linux Intel LLVM`
-row and the `Tidy SYCL (advisory)` job. Pinning an older oneAPI does not
+row and the `Tidy SYCL` job. Pinning an older oneAPI does not
 help — the mismatch is against the *system* linker plugin, not a specific
 compiler release.
 

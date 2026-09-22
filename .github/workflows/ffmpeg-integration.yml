@@ -49,10 +49,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # ADR-1297 — both rows are required checks. They build FFmpeg n8.1
+          # --enable-libvmaf against the freshly installed library, which is
+          # the consumer contract agent hard rule 11 exists to protect. The
+          # `paths:` filter above means absence on an unrelated PR is an
+          # ADR-0313 path skip, so they are not in `strictMustReport`.
+          # required-aggregator
           - os: ubuntu-latest
             CC: gcc
             CXX: g++
             name: FFmpeg Ubuntu gcc
+          # required-aggregator
           - os: macos-latest
             CC: clang
             CXX: clang++
@@ -101,6 +108,9 @@ jobs:
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
+    # other leg links that patch-stack surface.
+    # required-aggregator
     name: FFmpeg SYCL
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -49,9 +49,14 @@ jobs:
         with:
           retries: 3
           script: |
-            // Ordered by historical reliability; no Build matrix entries here
-            // because they path-filter-skip on doc/Python-only diffs and that
-            // is the explicit semantics ADR-0313 codifies as acceptable.
+            // Ordered by historical reliability. The note that used to sit
+            // here said no Build matrix entries belonged in this list because
+            // they path-filter-skip on doc/Python-only diffs. That was never a
+            // reason to leave them out: ADR-0313 already makes "not reported"
+            // an accepted outcome for every name below, so a path-filtered leg
+            // costs nothing when it does not run and gates when it does.
+            // ADR-1297 added them, along with every other check that was
+            // reporting on the pull request and blocking nothing.
             const required = [
               'Ubuntu gcc+DNN',
               'Ubuntu clang+DNN',
@@ -118,6 +123,109 @@ jobs:
               'FFmpeg Patch Stack',
               'ADR Collision Guard',
               'Release Script Contract',
+
+              // ADR-1297 — everything below was reporting a check on the pull
+              // request and blocking nothing. Branch protection requires a
+              // single context (Required Checks Aggregator, ruleset
+              // 22587111), so this array IS the merge gate in full: a name
+              // missing from it is a leg that can be red while the merge
+              // button stays green. On PR #1518, 44 of the 89 reported checks
+              // were ungated and nine of those were red, including every
+              // macOS leg, the plain (non-DNN) Ubuntu gcc and clang builds,
+              // and Coverage Gate. scripts/ci/check-aggregator-names.sh read
+              // OK throughout, because it checks this array against the
+              // `# required-aggregator` markers and they agreed: the gap was
+              // not drift, it was the declared state.
+              //
+              // NOTE for anyone editing the comments in this array: the
+              // checker extracts names with a single-quote regex over the
+              // whole block, so prose here must contain no apostrophes and no
+              // single-quoted phrases. Write "the ADR-0313 rule", not
+              // "ADR-0313" followed by an apostrophe.
+              //
+              // Platform build legs (libvmaf-build-matrix.yml). The shipped
+              // library must compile on every platform and toolchain the
+              // fork claims to support. Only the `+DNN` siblings were gated
+              // before, so `Ubuntu gcc` itself could fail. `macOS clang` and
+              // `macOS clang+DNN` also lost `experimental: true` in this
+              // change: continue-on-error never neutralised the check-run
+              // conclusion, so the flag only made the workflow claim the legs
+              // were advisory while nothing acted on that claim.
+              'Ubuntu gcc',
+              'Ubuntu clang',
+              'Ubuntu ARM clang',
+              'Ubuntu gcc static',
+              'macOS clang',
+              'macOS clang+DNN',
+              'macOS Metal',
+              // Backend build legs — a backend that ships must not be able to
+              // stop compiling without blocking a merge. All four are hosted
+              // compile/link lanes; none needs a GPU.
+              'Ubuntu CUDA',
+              'Ubuntu CUDA static',
+              'Ubuntu SYCL',
+              'Ubuntu SYCL+CUDA',
+              // build.yml rows. `Linux Intel LLVM` is the only leg that
+              // builds every Linux backend at once under one icx/icpx
+              // identity; `Windows MSVC+CUDA (full)` was deliberately renamed
+              // apart from the required `Windows MSVC+CUDA`
+              // (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) so the two
+              // could not mask each other, and then never gated.
+              'Linux Intel LLVM',
+              'macOS Clang+Metal',
+              'Windows MSVC+CUDA (full)',
+              // ADR-1260 left this lane advisory until the maintainer
+              // promoted it. This is that promotion. It is the only lane
+              // that compiles the NEON tree with cl.exe and runs the fast
+              // suite on ARM64 silicon.
+              'Windows ARM64 MSVC',
+              // Test and quality gates that always report.
+              // `Coverage Gate` is the check whose `|| true` this branch
+              // removed; leaving it ungated re-opens the same hole from the
+              // other side, with `Coverage GPU` — the self-hosted sibling
+              // that legitimately skips — gated and this one not.
+              'Coverage Gate',
+              'MCP Smoke',
+              'Sanitizers ASan+UBSan',
+              // Lint gates. ADR-0217 made `Tidy SYCL` advisory until one
+              // green master run confirmed the wrapper; the last six Lint
+              // runs on master all report it `success`, so the condition is
+              // met, `continue-on-error` is gone, and the "(advisory)" suffix
+              // is gone from the job name because it no longer describes the
+              // job. ADR-1142 leaves no tier in which SYCL TUs are exempt
+              // from clang-tidy.
+              'Markdown Lint',
+              'No Conflict Markers',
+              'Tiny-Model Registry Validate',
+              'Tidy SYCL',
+              // Consumer and artifact contracts. These are path-filtered, so
+              // the ADR-0313 absent-means-skip rule applies and the gate is
+              // only as strong as the `paths:` lists in those workflows.
+              // Auditing those lists is tracked separately in docs/state.md.
+              'FFmpeg Ubuntu gcc',
+              'FFmpeg macOS clang',
+              'FFmpeg SYCL',
+              'Docker Image Build',
+              'Dev Container Build',
+              'vmafx-sys CI',
+              'cargo-deny',
+              // Documentation surfaces. `Docs Site Build` was reported under
+              // the bare job id `build` until this change renamed it; a
+              // required context called `build` would be shared by any future
+              // unnamed `build` job, which is the masking class above. Gating
+              // it is what gives the ADR-1294 ref-scoped concurrency group
+              // teeth, because `cancelled` is not in `accepted` below.
+              // `Doxygen Public API` was likewise the bare job id `doxygen`.
+              'Docs Site Build',
+              'Doxygen Public API',
+              // Code-scanning checks from the github-advanced-security app,
+              // gated for the same reason `CodeQL` above already is: a
+              // security verdict on the pull request that nothing blocks on
+              // is not a verdict. Both are marked with bare
+              // `# required-aggregator: <name>` comments in
+              // security-scans.yml, because neither is produced by a job.
+              'Semgrep OSS',
+              'gitleaks',
             ];
 
             // ADR-1274 — these governance jobs have no path or event filter,
@@ -130,6 +238,26 @@ jobs:
               'HISS Replay Evidence (Linux)',
               'HISS Replay Evidence (macOS)',
               'HISS Replay Evidence (Windows)',
+              // ADR-1297 — same contract, applied to the gates added in that
+              // ADR that have no trigger path filter and no conditional skip,
+              // and that report on `pull_request` AND on `push` to master
+              // (this workflow runs on both). For these, "the check never
+              // appeared" is a broken workflow or a vanished runner, not a
+              // path skip. `Windows ARM64 MSVC` is the sharpest case: it pins
+              // the `windows-11-vs2026-arm` label across the 2026-09-21..30
+              // image migration, and if that label stops resolving the job
+              // never registers — without this list, a vanished platform
+              // would read as a pass.
+              // Deliberately NOT here: `Sanitizers ASan+UBSan`, whose `if:`
+              // excludes `push` so it never reports on a master push, and
+              // every path-filtered addition, whose absence IS a legitimate
+              // ADR-0313 outcome.
+              'Coverage Gate',
+              'MCP Smoke',
+              'Markdown Lint',
+              'No Conflict Markers',
+              'Tiny-Model Registry Validate',
+              'Windows ARM64 MSVC',
             ];
 
             // ADR-1151 — absent-means-pass (below) is correct ADR-0313

@@ -24,9 +24,35 @@ permissions:
 # `mkdocs build --strict` nor `make docs-fragments-check` ran to completion for
 # that PR, and the check reported `cancelled` rather than a failure — a gate
 # that did not run, which HISS-18 forbids reporting as satisfied. See ADR-1294.
+#
+# ADR-1297 makes this check required, which is what gives ADR-1294 teeth:
+# `cancelled` is not in the aggregator's accepted set, so a cross-PR
+# cancellation is now a hard merge block instead of a green button. The two
+# changes must travel together — a rebase that keeps the gate and drops the
+# ref-scoped group below turns every contended docs build into a blocked merge.
+#
+# ADR-1297 makes this check required, which is what gives ADR-1294 teeth:
+# `cancelled` is not in the aggregator's accepted set, so a cross-PR
+# cancellation is now a hard merge block instead of a green button. The two
+# changes must travel together — a rebase that keeps the gate and drops the
+# ref-scoped group below turns every contended docs build into a blocked merge.
+#
+# ADR-1297 makes this check required, which is what gives ADR-1294 teeth:
+# `cancelled` is not in the aggregator's accepted set, so a cross-PR
+# cancellation is now a hard merge block instead of a green button. The two
+# changes must travel together — a rebase that keeps the gate and drops the
+# ref-scoped group above turns every contended docs build into a blocked merge.
 
 jobs:
   build:
+    # ADR-1297 — required check. The job id `build` was the reported check
+    # name, because the job had no `name:`; that name is ambiguous (build.yml's
+    # job id is also `build`, saved only by its `name: ${{ matrix.name }}`) and
+    # would let any future unnamed `build` job share the context and mask this
+    # one. The explicit name below is the required context; the id stays
+    # `build` so `needs: build` in `deploy` keeps resolving.
+    # required-aggregator
+    name: Docs Site Build
     outputs:
       docs: ${{ steps.impact.outputs.docs }}
     runs-on: ubuntu-latest

@@ -294,7 +294,8 @@ Stock LLVM `clang-tidy` cannot resolve `<sycl/sycl.hpp>`. Use
 which injects oneAPI SYCL include path +
 `-D__SYCL_DEVICE_ONLY__=0`, locates `icpx` via `$ICPX_ROOT` (or
 `/opt/intel/oneapi/compiler/latest`). CI lane
-`Tidy SYCL (advisory)` runs wrapper.
+`Tidy SYCL` runs wrapper. Required check since ADR-1297;
+no longer advisory, no `continue-on-error`.
 Adding new SYCL TU needs no AGENTS.md update — wrapper
 finds it via changed-file diff. See
 [ADR-0217](../../../../docs/adr/0217-sycl-toolchain-cleanup.md).

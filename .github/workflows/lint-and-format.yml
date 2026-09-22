@@ -436,14 +436,20 @@ jobs:
     #     + -extra-arg-before=-std=c++20 + -Wno-unknown-warning-option
     #     + -Wno-unknown-pragmas.
     #
-    # Advisory (continue-on-error: true) until one green master run confirms
-    # the wrapper holds across all current SYCL TUs; gate tightens after that.
-    # See ADR-0217 for the design rationale and alternatives matrix.
+    # ADR-0217 made this lane advisory "until one green master run confirms
+    # the wrapper holds across all current SYCL TUs; gate tightens after that".
+    # The condition was met and then some: the last six Lint runs on master
+    # (2026-09-19T21:20Z through 2026-09-20T15:26Z) all report this job
+    # `success`. ADR-1297 tightens the gate — the job is in
+    # required-aggregator.yml, `continue-on-error` is gone, and the check name
+    # lost its "(advisory)" suffix because it no longer describes the job.
+    # ADR-1142 leaves no tier in which SYCL translation units are exempt from
+    # clang-tidy. See ADR-0217 for the wrapper design and alternatives matrix.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Tidy SYCL (advisory)
+    # required-aggregator
+    name: Tidy SYCL
     runs-on: ubuntu-26.04
     timeout-minutes: 40
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -701,7 +707,10 @@ jobs:
     # T6-9 / ADR-0209 — schema + cross-file consistency check on
     # model/tiny/registry.json. Runs jsonschema (Draft 2020-12) when
     # available, plus cross-file invariants (sha256 matches, sidecars
-    # exist). Fails closed.
+    # exist). Fails closed. Required since ADR-1297: it validates shipped
+    # model artifacts, and a fail-closed validator nothing blocks on is not
+    # fail-closed.
+    # required-aggregator
     name: Tiny-Model Registry Validate
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -761,6 +770,10 @@ jobs:
     # Excludes: binary extensions, LICENSES/ vendored texts, and the
     # .pre-commit-config.yaml itself (which references hook IDs that contain
     # the string "conflict").
+    # Required since ADR-1297: catching a marker that bypassed the local hook
+    # is the job's entire purpose, and a check that cannot block a merge
+    # cannot do it.
+    # required-aggregator
     name: No Conflict Markers
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -836,7 +849,12 @@ jobs:
     # PRs. Reads .markdownlint.json from the repo root (PR #332's tuned
     # config). NO --fix: 7 default rules are unsafe under autofix per
     # ADR-0864.
+    # Required since ADR-1297. Every PR in this repository ships documentation
+    # (agent hard rules 7 and 9), so the documentation linter is a product
+    # gate, not a courtesy. It lints the touched delta only, so the ~6.2k
+    # pre-existing warnings still do not gate innocent PRs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # required-aggregator
     name: Markdown Lint
     runs-on: ubuntu-latest
     timeout-minutes: 5

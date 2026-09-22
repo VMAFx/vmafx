@@ -17,6 +17,21 @@ STRICT_CONTEXTS = {
     "HISS Replay Evidence (Windows)",
 }
 
+# ADR-1297 extended the same fail-closed contract to the gates it promoted that
+# have no trigger path filter, no conditional skip, and report on both
+# `pull_request` and `push` to master. For these, "the check never appeared" is
+# a broken workflow or a vanished runner, not an ADR-0313 path skip. Kept as a
+# separate set so the ADR-1274 pin above stays an exact statement about the
+# replay contexts.
+ADR_1297_STRICT_CONTEXTS = {
+    "Coverage Gate",
+    "MCP Smoke",
+    "Markdown Lint",
+    "No Conflict Markers",
+    "Tiny-Model Registry Validate",
+    "Windows ARM64 MSVC",
+}
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
@@ -61,7 +76,8 @@ class HissReplayContractTests(unittest.TestCase):
         aggregator = read(".github/workflows/required-aggregator.yml")
         required = javascript_array(aggregator, "required")
         strict = javascript_array(aggregator, "strictMustReport")
-        self.assertEqual(strict, STRICT_CONTEXTS)
+        self.assertEqual(strict, STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS)
+        self.assertTrue(STRICT_CONTEXTS <= strict)
         self.assertTrue(strict <= required)
         self.assertIn("if (strictMustReport.includes(name))", aggregator)
         self.assertIn("if (!run)", aggregator)

@@ -52285,3 +52285,50 @@ tier a failure enters at* and *what value it returns*, not the chain's shape.
 fail on any of the three regressions. They compile the extractor TU against a
 complete stub set, so they also break — loudly, at link time — if either TU
 gains a HIP runtime call; regenerate the stub list with `nm -u` on the object.
+
+## `.github/workflows/required-aggregator.yml` — the `required` array is the whole gate (ADR-1297)
+
+Branch protection on this repository requires exactly one status context,
+`Required Checks Aggregator` (ruleset 22587111). Everything else is decided by
+`const required = [...]` inside that workflow. A rebase or conflict resolution
+that shortens the array silently shortens the merge gate, and a shorter gate is
+invisible in a diff review: nothing goes red, no job disappears, no test fails.
+The 44 checks that reported and blocked nothing before ADR-1297 had been in that
+state for months precisely because the absence of a name looks like nothing.
+
+Rules for any resolution that touches this file:
+
+- **Never drop a name to resolve a conflict.** Take the union of both sides and
+  reconcile afterwards. Removing a required context is a decision that needs its
+  own ADR superseding ADR-1297, not a merge artefact.
+- **`scripts/ci/check-aggregator-names.sh` must print OK** and is the only
+  mechanical check on this. It enforces set equality in *both* directions between
+  the array and the `# required-aggregator` markers in the other workflow files,
+  plus one job per required name. It does **not** and cannot tell you whether a
+  name that belongs in the gate is missing from both sides at once — that is
+  exactly the failure it read OK through. Re-derive the set from the live check
+  list (`gh pr checks <n>`) when the workflow set changes, not from this file.
+- **Comments inside the array must not contain apostrophes or single-quoted
+  phrases.** The checker extracts names with `'([^']+)'` over the whole array
+  block, so a `'` in prose mis-pairs the quotes and silently corrupts the parsed
+  name set. Write "the ADR-0313 rule", not "ADR-0313's rule".
+- **Three check names are load-bearing renames.** `Docs Site Build` (docs.yml)
+  and `Doxygen Public API` (doxygen-public-api.yml) exist so those jobs stop
+  reporting under their bare job ids `build` and `doxygen`; a required context
+  called `build` would be shared by any future unnamed `build` job, and the
+  aggregator keeps only the newest run per name
+  (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18). `Tidy SYCL` lost its
+  "(advisory)" suffix together with its `continue-on-error`. Restoring any of the
+  three old names reopens a masking hole or re-asserts an advisory status that no
+  longer exists.
+- **`experimental: true` must not come back** on the `macOS clang` or
+  `macOS clang+DNN` rows of `libvmaf-build-matrix.yml`, and
+  `continue-on-error: ${{ matrix.experimental == true }}` must not come back on
+  that job. Measured: `continue-on-error` does not neutralise the check-run
+  conclusion — both legs reported `failure` on PR #1518 with the flag set — so
+  the flag never made them advisory, it only made the workflow claim they were.
+- **`strictMustReport` membership has a precondition.** A name belongs there only
+  if its job has no trigger path filter, no conditional skip, and reports on both
+  `pull_request` and `push` to master, because this workflow runs on both. That
+  is why `Sanitizers ASan+UBSan` is required but not strict: its `if:` excludes
+  `push`.

@@ -3,7 +3,7 @@
 # Runs alongside libvmaf-build-matrix.yml, which keeps the per-backend, ARM,
 # static, DNN and required lanes; ADR-0710 meant this file to replace it, but
 # that never happened and ADR-1259 records both as they run.
-# Three matrix rows, none of them a required check:
+# Three matrix rows, every one of them a required check since ADR-1297:
 #   - Linux Intel LLVM:    Intel LLVM + ALL Linux backends (CUDA + SYCL + HIP + CPU + DNN)
 #   - macOS Clang+Metal:   Apple Clang + CPU + Metal scaffold
 #   - Windows MSVC+CUDA (full): MSVC + CPU + CUDA, static, with the CPU
@@ -11,6 +11,24 @@
 #     libvmaf-build-matrix.yml: the aggregator keeps one run per name, so a
 #     shared name let either job mask the other's failure
 #     (scripts/ci/check-aggregator-names.sh now rejects a shared required name).
+#
+# The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
+# without the gating that gave it a point: all three rows reported and none of
+# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
+# that file's `strictMustReport` list, because the `paths-ignore` below lets a
+# doc-only pull request legitimately produce no run at all (ADR-0313).
+#
+# The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
+# without the gating that gave it a point: all three rows reported and none of
+# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
+# that file's `strictMustReport` list, because the `paths-ignore` below lets a
+# doc-only pull request legitimately produce no run at all (ADR-0313).
+#
+# The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
+# without the gating that gave it a point: all three rows reported and none of
+# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
+# that file's `strictMustReport` list, because the `paths-ignore` above lets a
+# doc-only pull request legitimately produce no run at all (ADR-0313).
 #
 # Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
 # production artefact is the `vmafx-dev-mcp` image, not a per-backend binary;
@@ -64,6 +82,9 @@ jobs:
           # SYCL project-level linking requires one Intel LLVM compiler
           # identity; CUDA and HIP custom targets invoke their own tools.
           # ──────────────────────────────────────────────────────────────
+          # required-aggregator
+          # required-aggregator
+          # required-aggregator
           - os: ubuntu-26.04
             name: Linux Intel LLVM
             CC: icx
@@ -86,6 +107,9 @@ jobs:
           # Proves Apple Silicon builds. Metal scaffold always present on
           # macos-latest (Metal.framework guaranteed in system frameworks).
           # ──────────────────────────────────────────────────────────────
+          # required-aggregator
+          # required-aggregator
+          # required-aggregator
           - os: macos-latest
             name: macOS Clang+Metal
             CC: ccache clang
@@ -101,6 +125,9 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
+          # required-aggregator
+          # required-aggregator
+          # required-aggregator
           - os: windows-2025
             name: Windows MSVC+CUDA (full)
             cuda: true

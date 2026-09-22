@@ -1,13 +1,19 @@
 # Doxygen build of the libvmaf public C API (core/include/libvmaf/).
 #
-# On-demand only (workflow_dispatch + pull_request paths) — not a blocking
-# gate yet. Publishes the generated HTML and the warnings log as build
-# artifacts so a reviewer can either browse the rendered API or audit the
-# warning count without re-running locally.
+# Required check since ADR-1297 (path-filtered to the public header surface,
+# so the ADR-0313 absent-means-skip rule applies on every other PR). Publishes
+# the generated HTML and the warnings log as build artifacts so a reviewer can
+# browse the rendered API or audit the warning count without re-running
+# locally, and fails when the warning count exceeds the committed ceiling.
 #
-# Promotion path to a required gate is tracked in the accompanying ADR;
-# the WARN_AS_ERROR flag in core/doc/Doxyfile.public-api flips ON when we
-# add this workflow to required-aggregator.yml.
+# WARN_AS_ERROR in core/doc/Doxyfile.public-api is still OFF. ADR-0953 planned
+# to flip it the moment this workflow joined required-aggregator.yml, on the
+# basis that the public headers were warning-clean (95 -> 0). They are not any
+# more: run 35739609579 measured 228 warning-log lines. Flipping the flag in
+# the same change would have made this gate red on arrival and blocked every
+# PR that touches core/include/libvmaf/**. The ceiling step below is the
+# intermediate ratchet — the count cannot grow — and the flip happens in the
+# PR that drives it back to zero. See ADR-1297 "Consequences".
 
 name: doxygen-public-api
 
@@ -28,6 +34,11 @@ concurrency:
 
 jobs:
   doxygen:
+    # The job id was the reported check name (the job had no `name:`), which is
+    # too generic for a required context. The explicit name below is what
+    # required-aggregator.yml gates on.
+    # required-aggregator
+    name: Doxygen Public API
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,11 +56,23 @@ jobs:
           mkdir -p build/doxygen-public-api
           doxygen core/doc/Doxyfile.public-api
 
-      - name: Report warning count
+      - name: Report warning count and enforce the ceiling
+        # Ratchet, not a threshold: DOXYGEN_WARNING_CEILING is the measured
+        # count on the run that introduced this step (35739609579), and it only
+        # ever moves down. Lower it in the same PR that removes warnings.
+        env:
+          DOXYGEN_WARNING_CEILING: "228"
         run: |
           warnings=$(wc -l < build/doxygen-public-api/warnings.log || echo 0)
-          echo "doxygen warning count: ${warnings}"
+          echo "doxygen warning count: ${warnings} (ceiling ${DOXYGEN_WARNING_CEILING})"
           echo "warnings=${warnings}" >> "$GITHUB_OUTPUT"
+          if [ "${warnings}" -gt "${DOXYGEN_WARNING_CEILING}" ]; then
+            echo "::error::doxygen public-API warnings rose to ${warnings}, above the ceiling of ${DOXYGEN_WARNING_CEILING}. Document the new public symbols, or justify and lower the ceiling in the same PR (ADR-1297)."
+            exit 1
+          fi
+          if [ "${warnings}" -lt "${DOXYGEN_WARNING_CEILING}" ]; then
+            echo "::notice::doxygen warnings fell to ${warnings}; lower DOXYGEN_WARNING_CEILING in .github/workflows/doxygen-public-api.yml to hold the gain."
+          fi
         id: report
 
       - name: Upload warnings log

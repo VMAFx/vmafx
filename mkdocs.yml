@@ -1411,6 +1411,7 @@ nav:
         - "ADR-1294: docs-build-concurrency-per-job": adr/1294-docs-build-concurrency-per-job.md
         - "ADR-1295: sureal-degenerate-opinion-score-statistics": adr/1295-sureal-degenerate-opinion-score-statistics.md
         - "ADR-1296: gpu-failure-path-stub-interposition": adr/1296-gpu-failure-path-stub-interposition.md
+        - "ADR-1297: ci-gate-every-reporting-check": adr/1297-ci-gate-every-reporting-check.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
