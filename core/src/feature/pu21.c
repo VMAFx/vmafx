@@ -136,6 +136,20 @@ static int pu21_select_transfer(const char *name, enum Pu21Transfer *out)
     return -EINVAL;
 }
 
+/* Release the buffers init() acquired so far, in the exact reverse-acquisition
+ * order the former unwind ladder used: dist_enc first (when it was acquired),
+ * then ref_enc. `release_dist_enc` selects the deeper of the two unwind
+ * points, mirroring the `free_dist_enc:` / `free_ref_enc:` labels one-for-one. */
+static void pu21_init_unwind(Pu21State *s, int release_dist_enc)
+{
+    if (release_dist_enc) {
+        aligned_free(s->dist_enc);
+        s->dist_enc = NULL;
+    }
+    aligned_free(s->ref_enc);
+    s->ref_enc = NULL;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -165,20 +179,16 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (!s->ref_enc)
         return -ENOMEM;
     s->dist_enc = aligned_malloc(n * sizeof(double), 32);
-    if (!s->dist_enc)
-        goto free_ref_enc;
-    if (pu21_ssim_workspace_alloc(&s->ssim_ws, n) != 0)
-        goto free_dist_enc;
+    if (!s->dist_enc) {
+        pu21_init_unwind(s, 0);
+        return -ENOMEM;
+    }
+    if (pu21_ssim_workspace_alloc(&s->ssim_ws, n) != 0) {
+        pu21_init_unwind(s, 1);
+        return -ENOMEM;
+    }
 
     return 0;
-
-free_dist_enc:
-    aligned_free(s->dist_enc);
-    s->dist_enc = NULL;
-free_ref_enc:
-    aligned_free(s->ref_enc);
-    s->ref_enc = NULL;
-    return -ENOMEM;
 }
 
 /* Read a luma sample (bpc-aware) and return the raw integer code value. */

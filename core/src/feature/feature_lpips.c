@@ -133,19 +133,19 @@ static int lpips_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, u
     for (int i = 0; i < 3; ++i) {
         s->rgb8_ref[i] = (uint8_t *)aligned_malloc(plane, 32);
         s->rgb8_dist[i] = (uint8_t *)aligned_malloc(plane, 32);
-        if (!s->rgb8_ref[i] || !s->rgb8_dist[i])
-            goto oom;
+        if (!s->rgb8_ref[i] || !s->rgb8_dist[i]) {
+            lpips_release(s);
+            return -ENOMEM;
+        }
     }
     s->tensor_ref = (float *)aligned_malloc(3u * plane * sizeof(float), 32);
     s->tensor_dist = (float *)aligned_malloc(3u * plane * sizeof(float), 32);
-    if (!s->tensor_ref || !s->tensor_dist)
-        goto oom;
+    if (!s->tensor_ref || !s->tensor_dist) {
+        lpips_release(s);
+        return -ENOMEM;
+    }
 
     return 0;
-
-oom:
-    lpips_release(s);
-    return -ENOMEM;
 }
 
 static int lpips_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

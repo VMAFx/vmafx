@@ -1714,3 +1714,44 @@ every non-default option, so `cs` on the twin and `scf` on the CPU means two
 different keys for one feature. And copy the *semantics* from the branch the
 twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
 Watson-only twins it must be a no-op exactly as it is on the CPU.
+
+## Error exits use unwind helpers, not label ladders (HISS-01, 2026-09-21)
+
+Cleanup `goto` is gone from `ciede`, `feature_collector`, `feature_dists`,
+`feature_lpips`, `float_moment`, `float_ms_ssim`, `float_psnr`, `float_ssim`,
+`motion` and `pu21`. Pattern that replaced it: one `static` unwind helper per
+constructor, in same translation unit, releasing resources in same order old
+`free_*:` chain used. Shallow exits reach same helper; members not yet acquired
+are still NULL, and `free(NULL)` is no-op. Where release set cannot be inferred
+from NULL — feature-collector mutex and aggregate vector, pu21 buffer pair —
+helper takes explicit stage enum and releases every stage at or below it,
+highest first.
+
+Two rules for anyone adding error path here:
+
+- Do not reintroduce `goto`. Add case to unwind helper instead.
+- Free order is behaviour. Enumerate exit paths before and after any edit
+  and check them against each other. `pthread_mutex_destroy` before
+  `free(fc)`, `aligned_free` in acquisition-reverse order, `vmaf_picture_unref`
+  before scratch release.
+
+Two upstream-parity quirks are preserved on purpose: `float_psnr` leaves its
+buffers to extractor teardown when bit depth is unsupported, and `ciede`
+reports `-EINVAL` rather than `-ENOMEM` for same case. Both matched old label
+ladders. Fixing either is behavioural change and needs own commit plus test.
+
+## Split helpers must not split an expression (HISS-04, ADR-1253)
+
+When function here is split to fit 60-LOC bound, helper is `static` in same
+TU, never reached through function pointer, never in another TU. Arithmetic
+moves whole: each statement lives on one side of helper boundary. Reason is
+FMA contraction — `a * b + c` inside helper contracts same way it did inline,
+but `t = a * b;` in caller plus `t + c` in helper does not, and that is 1 ULP
+that ssimulacra2 pooling amplifies into visible score delta (ADR-1205).
+Reductions keep their order: move whole accumulation loop, never partial sums.
+
+Functions carrying ADR-0141 §2 bit-exactness carve-outs stay unsplit —
+`compute_adm`, `adm_dwt2_s`, `calc_ssim`, `brisque_fit_aggd`,
+`niqe_extract_aggd`, `create_recursive_gaussian`, `picture_to_linear_rgb`.
+Their paired SIMD ports match them line for line; splitting one forces
+matching splits in four SIMD files and breaks scalar-diff audit story.

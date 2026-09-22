@@ -443,6 +443,23 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   `paths:` filter or custom early-skip probe to job.
 - `clang-diagnostic-error` in any TU = measurement failure (exit 4), never
   zero. Build (generated headers) before measuring.
+- **Measure on the lane's own toolchain, not the workstation's.** A full
+  `--write` records what the measuring host sees, so a host whose libc/compiler
+  differs from the lane bakes that host's diagnostics into the baseline. Seen
+  on 2026-09-22: on gcc-16/glibc the `assert()` expansion makes
+  `misc-static-assert` fire in `core/src/dict.cpp` (+1) and
+  `core/src/feature/feature_collector.cpp` (+3) — neither file had changed —
+  while the same tree on the lane's gcc-15 `Ubuntu 15.2.0-16ubuntu1` with
+  clang-tidy 22.1.8 showed zero increases. `cc_version` in the baseline names
+  the compiler to reproduce; the ratchet warns when the measuring compiler
+  differs, and that warning means "stop", not "commit anyway". Reproduce the
+  lane locally with the Ubuntu 26.04 dev image plus `clang-tidy-22` from
+  apt.llvm.org, configured exactly as the workflow does
+  (`CC=gcc-15 CXX=g++-15 meson setup build core -Denable_cuda=false
+  -Denable_sycl=false -Db_lto=false`). The build directory must be `build`
+  inside the repo: the 18 generated `build/src/*.json.c` model TUs are
+  baseline entries, and a build directory outside the tree silently drops
+  them from the measurement.
 - **Scoped writer (ADR-1243):** `--only` plus `--write` requires exact nonempty
   measured-TU coverage, original tool version/lane, no observed debt
   increase. Preserve every unselected TU/header entry and all full-report
