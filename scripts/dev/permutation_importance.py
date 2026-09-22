@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -27,11 +28,8 @@ SAMPLE_N = 5000
 N_SEEDS = 5
 
 
-def main() -> int:
-    sidecar = json.loads(SIDECAR.read_text())
-    feats: list[str] = sidecar["features"]
-    print(f"Model: {MODEL.name}  features: {feats}", flush=True)
-
+def load_sample(feats: list[str]) -> tuple[np.ndarray, np.ndarray, int]:
+    """Draw a fixed-seed sample of the corpus; returns (X, y, row count)."""
     rng = np.random.default_rng(20260503)
     cols = [*feats, "vmaf"]
     table = pq.read_table(PARQUET, columns=cols)
@@ -44,40 +42,42 @@ def main() -> int:
 
     X = sample[feats].to_numpy(dtype=np.float32)
     y = sample["vmaf"].to_numpy(dtype=np.float32)
+    return X, y, n
 
-    sess = ort.InferenceSession(str(MODEL), providers=["CPUExecutionProvider"])
-    in_name = sess.get_inputs()[0].name
-    out_name = sess.get_outputs()[0].name
 
-    def predict(arr: np.ndarray) -> np.ndarray:
-        return sess.run([out_name], {in_name: arr})[0].reshape(-1)
+def permuted_plcc_row(
+    predict: Callable[[np.ndarray], np.ndarray],
+    X: np.ndarray,
+    y: np.ndarray,
+    n: int,
+    j: int,
+    fname: str,
+    base_plcc: float,
+) -> tuple[str, float, float, float, float]:
+    """Permute feature @p j over N_SEEDS draws and summarise the PLCC it costs."""
+    plccs: list[float] = []
+    for seed in range(N_SEEDS):
+        rng_s = np.random.default_rng(1000 + seed)
+        Xp = X.copy()
+        perm = rng_s.permutation(n)
+        Xp[:, j] = Xp[perm, j]
+        pred = predict(Xp)
+        plcc, _ = pearsonr(pred, y)
+        plccs.append(float(plcc))
+    arr = np.array(plccs)
+    mean_plcc = float(arr.mean())
+    std_plcc = float(arr.std())
+    drop_mean = float(base_plcc - mean_plcc)
+    drop_std = std_plcc
+    print(
+        f"  {fname:12s}  PLCC={mean_plcc:.6f} ± {std_plcc:.6f}  " f"drop={drop_mean:+.6f}",
+        flush=True,
+    )
+    return (fname, mean_plcc, std_plcc, drop_mean, drop_std)
 
-    base_pred = predict(X)
-    base_plcc, _ = pearsonr(base_pred, y)
-    print(f"Baseline PLCC: {base_plcc:.6f}", flush=True)
 
-    rows = []
-    for j, fname in enumerate(feats):
-        plccs: list[float] = []
-        for seed in range(N_SEEDS):
-            rng_s = np.random.default_rng(1000 + seed)
-            Xp = X.copy()
-            perm = rng_s.permutation(n)
-            Xp[:, j] = Xp[perm, j]
-            pred = predict(Xp)
-            plcc, _ = pearsonr(pred, y)
-            plccs.append(float(plcc))
-        arr = np.array(plccs)
-        mean_plcc = float(arr.mean())
-        std_plcc = float(arr.std())
-        drop_mean = float(base_plcc - mean_plcc)
-        drop_std = std_plcc
-        rows.append((fname, mean_plcc, std_plcc, drop_mean, drop_std))
-        print(
-            f"  {fname:12s}  PLCC={mean_plcc:.6f} ± {std_plcc:.6f}  " f"drop={drop_mean:+.6f}",
-            flush=True,
-        )
-
+def print_ranking(rows: list[tuple[str, float, float, float, float]], base_plcc: float) -> None:
+    """Print the markdown importance table, most damaging permutation first."""
     rows.sort(key=lambda r: r[3], reverse=True)
     print("\nRanked by importance (drop):", flush=True)
     print(
@@ -91,6 +91,31 @@ def main() -> int:
             f"{mean_plcc:.4f} | {drop:+.4f} ± {std_plcc:.4f} |",
             flush=True,
         )
+
+
+def main() -> int:
+    sidecar = json.loads(SIDECAR.read_text())
+    feats: list[str] = sidecar["features"]
+    print(f"Model: {MODEL.name}  features: {feats}", flush=True)
+
+    X, y, n = load_sample(feats)
+
+    sess = ort.InferenceSession(str(MODEL), providers=["CPUExecutionProvider"])
+    in_name = sess.get_inputs()[0].name
+    out_name = sess.get_outputs()[0].name
+
+    def predict(arr: np.ndarray) -> np.ndarray:
+        return sess.run([out_name], {in_name: arr})[0].reshape(-1)
+
+    base_pred = predict(X)
+    base_plcc, _ = pearsonr(base_pred, y)
+    print(f"Baseline PLCC: {base_plcc:.6f}", flush=True)
+
+    rows = [
+        permuted_plcc_row(predict, X, y, n, j, fname, base_plcc) for j, fname in enumerate(feats)
+    ]
+
+    print_ranking(rows, base_plcc)
 
     return 0
 

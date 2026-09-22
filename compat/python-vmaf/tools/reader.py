@@ -163,6 +163,28 @@ class YuvReader(object):
     def convert_format(self, value, bit_depth):
         return value.astype(np.double) / (2.0**bit_depth - 1.0)
 
+    def _pix_type_and_word(self):
+        """The numpy sample dtype and the bytes per sample for this YUV type."""
+        if self._is_8bit():
+            return np.uint8, 1
+        elif self._is_10bitle() or self._is_12bitle() or self._is_16bitle():
+            return np.uint16, 2
+        else:
+            assert False
+
+    def _bit_depth(self):
+        """The bit depth implied by this reader's YUV type."""
+        if self._is_8bit():
+            return 8
+        elif self._is_10bitle():
+            return 10
+        elif self._is_12bitle():
+            return 12
+        elif self._is_16bitle():
+            return 16
+        else:
+            assert False
+
     def next(self, format="uint"):
 
         assert format == "uint" or format == "float"
@@ -173,14 +195,7 @@ class YuvReader(object):
         uv_width = int(y_width * uv_w_multiplier)
         uv_height = int(y_height * uv_h_multiplier)
 
-        if self._is_8bit():
-            pix_type = np.uint8
-            word = 1
-        elif self._is_10bitle() or self._is_12bitle() or self._is_16bitle():
-            pix_type = np.uint16
-            word = 2
-        else:
-            assert False
+        pix_type, word = self._pix_type_and_word()
 
         y = np.frombuffer(self.file.read(y_width * y_height * word), pix_type)
 
@@ -208,16 +223,7 @@ class YuvReader(object):
             return y, u, v
 
         elif format == "float":
-            if self._is_8bit():
-                bit_depth = 8
-            elif self._is_10bitle():
-                bit_depth = 10
-            elif self._is_12bitle():
-                bit_depth = 12
-            elif self._is_16bitle():
-                bit_depth = 16
-            else:
-                assert False
+            bit_depth = self._bit_depth()
 
             y = self.convert_format(y, bit_depth)
             u = self.convert_format(u, bit_depth) if u is not None else None

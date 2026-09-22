@@ -2,6 +2,62 @@
 #include "math.h"
 #include "mex.h" /*--This one is required*/
 
+/*Mean over the 16x16 block anchored at (i, j).*/
+static double block_mean(const double *xVal, int colLen, int i, int j)
+{
+    double mean = 0;
+    int iB, jB;
+
+    for (iB = i; iB < i + 16; iB++) {
+        for (jB = j; jB < j + 16; jB++) {
+            mean += xVal[(iB * colLen) + jB];
+        }
+    }
+    return mean / 256.0;
+}
+
+/*Standard deviation, skewness and kurtosis of the 16x16 block at (i, j).
+  The accumulation order is the same one the inlined loop used, so the
+  results stay bit-identical to the reference implementation.*/
+static void block_moments(const double *xVal, int colLen, int i, int j, double *outStdev,
+                          double *outSkw, double *outKrt)
+{
+    double mean = block_mean(xVal, colLen, i, j);
+    double stdev, skw, krt, stmp, tmp, tmp1;
+    int iB, jB;
+
+    stdev = 0;
+    skw = 0;
+    krt = 0;
+    for (iB = i; iB < i + 16; iB++) {
+        for (jB = j; jB < j + 16; jB++) {
+            tmp = xVal[(iB * colLen) + jB] - mean;
+            tmp1 = tmp * tmp;
+            stdev += tmp1;
+            tmp1 = tmp1 * tmp;
+            skw += tmp1;
+            tmp1 = tmp1 * tmp;
+            krt += tmp1;
+        }
+    }
+    stmp = sqrt(stdev / 256.0);
+    stdev = sqrt(stdev / 255.0); /*MATLAB's std is a bit different*/
+
+    if (stmp != 0) {
+        tmp = stmp * stmp * stmp;
+        tmp1 = tmp * stmp;
+        skw = (skw / 256.0) / tmp;
+        krt = (krt / 256.0) / tmp1;
+    } else {
+        skw = 0;
+        krt = 0;
+    }
+
+    *outStdev = stdev;
+    *outSkw = skw;
+    *outKrt = krt;
+}
+
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     /* We have input of one double type matrix*/
@@ -12,8 +68,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     /*Declarations*/
     mxArray *xData;
-    double *xVal, *outStd, *outSkw, *outKrt, *outMean;
-    double mean, stdev, skw, krt, stmp, tmp, tmp1;
+    double *xVal, *outStd, *outSkw, *outKrt;
+    double stdev, skw, krt;
     int i, j, iB, jB;
     int rowLen, colLen;
 
@@ -41,42 +97,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     /*Copy matrix while multiplying each point by 2*/
     for (i = 0; i < rowLen - 15; i += 4) {
         for (j = 0; j < colLen - 15; j += 4) {
-            /*Traverse through and get mean*/
-            mean = 0;
-            for (iB = i; iB < i + 16; iB++) {
-                for (jB = j; jB < j + 16; jB++) {
-                    mean += xVal[(iB * colLen) + jB];
-                }
-            }
-            mean = mean / 256.0;
-
-            /*Traverse through and get stdev, skew and kurtosis*/
-            stdev = 0;
-            skw = 0;
-            krt = 0;
-            for (iB = i; iB < i + 16; iB++) {
-                for (jB = j; jB < j + 16; jB++) {
-                    tmp = xVal[(iB * colLen) + jB] - mean;
-                    tmp1 = tmp * tmp;
-                    stdev += tmp1;
-                    tmp1 = tmp1 * tmp;
-                    skw += tmp1;
-                    tmp1 = tmp1 * tmp;
-                    krt += tmp1;
-                }
-            }
-            stmp = sqrt(stdev / 256.0);
-            stdev = sqrt(stdev / 255.0); /*MATLAB's std is a bit different*/
-
-            if (stmp != 0) {
-                tmp = stmp * stmp * stmp;
-                tmp1 = tmp * stmp;
-                skw = (skw / 256.0) / tmp;
-                krt = (krt / 256.0) / tmp1;
-            } else {
-                skw = 0;
-                krt = 0;
-            }
+            block_moments(xVal, colLen, i, j, &stdev, &skw, &krt);
 
             for (iB = i; iB < i + 4; iB++) {
                 for (jB = j; jB < j + 4; jB++) {
