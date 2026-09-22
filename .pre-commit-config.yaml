@@ -551,6 +551,22 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: test-pr-body-input-selection
+        name: PR-body gates classify stdin before reading it
+        # `[ ! -t 0 ]` answers "is fd 0 a terminal", not "was a body
+        # piped". A closed fd 0 used to deadlock all four gates that
+        # read a PR body; /dev/null used to be read as an empty body.
+        # Bounded by `timeout`, so a re-regression reports a hang
+        # instead of hanging this hook. Every gate that sources
+        # pr-body-input.sh belongs in `files:` below — the defect
+        # survived its first fix by living in two scripts nobody had
+        # listed.
+        entry: bash scripts/ci/tests/test-pr-body-input-selection.sh
+        language: system
+        files: '^(scripts/ci/(?:deliverables-check|validate-pr-body|pr-body-input|ffmpeg-patches-surface-check|state-md-touch-check)\.sh|scripts/ci/tests/test-pr-body-input-selection\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: mkdocs-strict
         name: Build changed documentation with MkDocs strict validation
         entry: scripts/git-hooks/pre-push-mkdocs-strict.sh

@@ -1,0 +1,16 @@
+# ShellCheck configuration for scripts/ci/ — applies to every script in this
+# directory (ShellCheck reads the .shellcheckrc nearest the file being checked).
+#
+# Four gates source scripts/ci/pr-body-input.sh unconditionally:
+# deliverables-check.sh, validate-pr-body.sh, ffmpeg-patches-surface-check.sh
+# and state-md-touch-check.sh. The pre-commit hook passes only the staged
+# files, so when one of those four is staged without the helper, ShellCheck
+# cannot see the sibling and emits SC1091 "not specified as input" — a red
+# hook for a file that is fine.
+#
+# external-sources makes ShellCheck follow the `# shellcheck source=` directives
+# those four already carry. It is not a suppression: it turns the sibling into
+# analysed code instead of an unread file, so the checker sees MORE, not less.
+# Measured over all 57 scripts/ci/*.sh checked one at a time (the shape the
+# pre-commit hook uses): 4 findings before, 0 after, nothing new introduced.
+external-sources=true

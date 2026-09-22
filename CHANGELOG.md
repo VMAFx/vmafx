@@ -26326,6 +26326,70 @@ matching `kh_shift_epi32` zero-clear.
   `.claude/skills/add-model/SKILL.md`.
 
 
+- **Two more PR-body gates hung when stdin was closed.** The first pass at
+  `T-PR-BODY-EMPTY-STDIN-2026-09-16` routed
+  `scripts/ci/deliverables-check.sh` and `scripts/ci/validate-pr-body.sh`
+  through the new `scripts/ci/pr-body-input.sh`, but left the same
+  `elif [ ! -t 0 ]; then / PR_BODY="$(cat)"` pair in the two sibling gates
+  that had copied the idiom:
+  `scripts/ci/ffmpeg-patches-surface-check.sh` (ADR-0186, the
+  ffmpeg-patch surface gate) and `scripts/ci/state-md-touch-check.sh`
+  (ADR-0165, the `docs/state.md` hygiene gate). Both still deadlocked on a
+  closed `fd 0` — measured at `timeout 12 … 0<&-` → **124** (killed) for
+  each — and both still labelled a `/dev/null` stdin as a body read "from
+  stdin". Both now classify `fd 0` through the same shared helper. Their
+  verdicts are unchanged for every shape that ever produced one: an absent
+  body is still legal for these two, it merely makes their opt-out sentinel
+  unclaimable, so they fall through to the diff check and fail closed
+  instead of hanging. Also fixed in the helper: `pr_body_classify_stdin`
+  handed the caller a duplicate of `fd 0` that nothing ever released, so
+  every process a gate spawned afterwards — `git`, `python3`, `mktemp` —
+  inherited it; the new `pr_body_close_stdin` releases it, and it cannot
+  live inside `pr_body_read_stdin` because that runs in a `$( )` subshell
+  whose close would not reach the caller. The regression suite
+  `scripts/ci/tests/test-pr-body-input-selection.sh` grew from 24
+  assertions to 39, covering all four gates and the descriptor release, and
+  its pre-commit hook now triggers on all four gate files — the defect
+  survived its first fix precisely because two of them were not listed.
+  A second shortfall from that first pass is closed in the same change: making
+  `deliverables-check.sh` source a sibling had left the pre-commit `shellcheck`
+  hook red whenever that script was staged on its own, because the hook passes
+  only the staged files and ShellCheck will not follow a `source=` directive to
+  a file outside its input set. `scripts/ci/.shellcheckrc` now sets
+  `external-sources=true` for that directory, which makes ShellCheck analyse
+  the sibling rather than skip it. Measured over all 57 `scripts/ci/*.sh`
+  checked one at a time: 4 findings before, 0 after, nothing new introduced,
+  and no effect on the 120 shell scripts elsewhere in the tree.
+
+
+- **The ADR-0108 PR-body gates hung when stdin was closed, and read
+  `/dev/null` as an empty PR description.** `scripts/ci/deliverables-check.sh`
+  and `scripts/ci/validate-pr-body.sh` still selected their input with
+  `[ ! -t 0 ]`, which answers "is fd 0 a terminal" rather than "did anybody
+  pipe a PR body". Two shapes fell in that gap. Run with fd 0 closed
+  (`bash scripts/ci/deliverables-check.sh 0<&-`) the gates did not fail —
+  they **deadlocked**: `PR_BODY="$(cat)"` opens a command-substitution pipe,
+  the kernel hands out the lowest free descriptor, with fd 0 free that pipe's
+  read end lands on fd 0, and `cat` then reads the pipe it is writing to.
+  Measured at 124 (killed) under `timeout 10`, unbounded without one. Run
+  with stdin on `/dev/null` — the shape a CI step, a git hook and `nohup` all
+  produce — the gates read an empty body and reported "the PR description is
+  empty", blaming the author for a producer's fault. Both scripts now
+  classify fd 0 before touching it, through the shared
+  `scripts/ci/pr-body-input.sh`: a pipe, regular file or socket is read; a
+  terminal, a closed descriptor and `/dev/null` are each named in a usage
+  error (exit 2). The classifier duplicates fd 0 up front, which is what
+  makes reading it safe. A `PR_BODY` that is *set* now counts as the
+  caller's answer even when blank, so an empty `github.event.pull_request.body`
+  is reported against the env var instead of falling through to stdin and
+  arriving mislabelled. Every supported invocation is unchanged: piped body,
+  `--body PATH`, `$PR_BODY`, and the `gh`-fetched bodies behind
+  `make pr-check` and the pre-push hook. Covered by 24 new assertions in
+  `scripts/ci/tests/test-pr-body-input-selection.sh`, wired as a
+  pre-commit/pre-push hook and bounded by `timeout` so a re-regression
+  reports a hang rather than becoming one.
+
+
 - **An empty PR body was reported as six missing deliverables.** Both
   `scripts/ci/deliverables-check.sh` and
   `scripts/ci/validate-pr-body.sh` selected their input with
