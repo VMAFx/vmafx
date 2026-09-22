@@ -24185,6 +24185,20 @@ The required standards gate now replays declared HISS enforcement fixtures on Li
   so the compiler sees the same contraction opportunities it saw inline
   (ADR-1253). Verified with the full `meson test` suite and the Netflix
   CPU golden-data gate, assertions untouched.
+- The ADR-1142 whole-tree clang-tidy ratchet baseline for the CPU lane
+  (`scripts/ci/tidy-baseline-cpu.json`) is re-measured so it equals the tree
+  again: 775 -> 751 warnings over 316 translation units. The measurement was
+  taken on the lane's own toolchain (gcc-15 `Ubuntu 15.2.0-16ubuntu1`,
+  clang-tidy 22.1.8) rather than on a workstation compiler, because a
+  different libc's `assert` expansion makes `misc-static-assert` fire on
+  `core/src/dict.cpp` and `core/src/feature/feature_collector.cpp` — files
+  this branch never touched — and recording that would have raised their
+  allowance. Every entry the re-measurement changes went down: the
+  `float_ms_ssim` extractor split (3 -> 2), plus the reductions earlier
+  commits on this branch already made in `framesync` (7 -> 0), its header and
+  `log.h` (reserved include guards renamed), `test_framesync` (8 -> 0) and
+  `test_pic_preallocation` (16 -> 10). No allowance was raised and no
+  suppression was added.
 
 
 
@@ -26072,6 +26086,22 @@ Fix four errno defects identified in PR #125 code review:
   post-ADR-0700 rename. `git grep '<<<<<<'` now returns empty across the
   tracked tree. `docs/state.md` row for T-CI-CONFLICT-MARKERS-PR50 moved
   to "Recently closed".
+
+
+- `praetorctl audit` passes again on this branch. Two gates had gone stale
+  against the tree rather than against any defect in it. The HISS baseline
+  `.standards-baseline.json` is keyed `file:line`, so the refactors on this
+  branch re-fingerprinted findings that had never moved and the audit read
+  them as new; it is re-recorded from a clean clone of the branch and drops
+  from 1411 to 929 infractions, which the recorder will not allow to rise.
+  Separately, `README.md` carried a hand-written "Standards & Governance"
+  table instead of the marker-delimited block the engine renders and
+  verifies, so the README gate reported the managed block as missing — a
+  condition that predates this branch and also holds on `master`, and that
+  only became visible once the HISS gate stopped failing first. The block is
+  restored with the engine's own content, the prose around it now says it is
+  generated, and the stale `standardsctl` command names it advertised are
+  corrected to `praetorctl`.
 
 
 Fix 23 pre-existing test failures across three packages.
