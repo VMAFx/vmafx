@@ -237,6 +237,31 @@ jobs:
           #     test_hip_adm_*, so the CPU build has no compile command for
           #     them. CI has no GPU tidy lane; lint them against a CUDA or HIP
           #     build with `make tidy-ratchet LANE=cuda` / `LANE=hip`.
+          #   - .config/hiss/testdata/ — the HISS rule engine's own fixtures.
+          #     Each rule ships a positive/negative/gap triple whose planted
+          #     defect *is* the fixture: HISS-08's positive case calls `gets`
+          #     and HISS-04's calls a 76-line function, so clang-tidy reports
+          #     `use of undeclared identifier 'gets'` and
+          #     `readability-function-size` by construction. meson builds none
+          #     of them, so they have no compile command either and are parsed
+          #     with a command inferred from an unrelated TU. Nothing in the
+          #     shipped library is covered by linting them, and cleaning them
+          #     would destroy the fixtures the gates in `standards-gate.yml`
+          #     replay. `(^|/)testdata/` is already the tree-wide fixture
+          #     exclusion in `.pre-commit-config.yaml`; this is the same rule
+          #     applied to the changed-files tidy lane.
+          #   - compat/python-vmaf/matlab/ — upstream Netflix training-harness
+          #     MATLAB MEX sources. They include `mex.h` / `matrix.h` from the
+          #     proprietary MATLAB SDK, which does not exist on the runner, so
+          #     every one of them dies in the preprocessor
+          #     (`'mex.h' file not found`) and the diagnostics that follow are
+          #     artefacts of reading a `.c` file as C++ after the include
+          #     failed, not findings about the code. Same posture as the
+          #     CUDA/SYCL/HIP/eBPF families above, and the same exclusion these
+          #     files already carry in every hygiene hook in
+          #     `.pre-commit-config.yaml` (see the `check-copyright` entry).
+          #     The whole-tree ratchet does not measure them either — they have
+          #     no entry in `build/compile_commands.json`.
           #
           # One filter shared by every trigger path below, so adding a family
           # is a single edit.
@@ -264,7 +289,9 @@ jobs:
               -e '^core/src/interop/pelorus_' \
               -e '^core/include/libvmaf/pelorus/' \
               -e '^core/test/test_pelorus_interop\.c$' \
-              -e '^cmd/vmafx-node/bpf/'
+              -e '^cmd/vmafx-node/bpf/' \
+              -e '^\.config/hiss/testdata/' \
+              -e '^compat/python-vmaf/matlab/'
           }
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \

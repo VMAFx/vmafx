@@ -51622,7 +51622,18 @@ Three results outlive it:
   ratchet, or be converted — either is a clean rebase.
 - **Tidy Changed** in `.github/workflows/lint-and-format.yml` defines its
   exclusion list once, as `exclude_untidyable()`. Add a family there, not in the
-  four trigger branches that used to carry copies of it.
+  four trigger branches that used to carry copies of it. Two of its entries are
+  not backend lanes and are easy to mistake for dead weight on a conflict:
+  `^\.config/hiss/testdata/` is the HISS rule engine's own fixture tree, where
+  the planted defect is the fixture (`HISS-08/c/positive/gets.c` calls `gets`),
+  and `^compat/python-vmaf/matlab/` is the upstream MATLAB MEX harness, which
+  dies in the preprocessor on `mex.h` because the MATLAB SDK is not on any
+  runner. Neither family has an entry in `build/compile_commands.json`, so the
+  whole-tree ratchet does not measure them either; deleting either line puts
+  hard `clang-diagnostic-error` output back into the gate. The same reasoning
+  puts `-exclude-dir=.config/hiss/testdata` on the `gosec` step in
+  `go-ci.yml` — `go build` / `go vet` / `go test` skip that tree twice over
+  (dot-directory and `testdata`), and gosec's own walker honours neither rule.
 ## libvmaf C++ flags and the exported-symbol gate (ADR-0379 follow-up)
 
 - **`core/src/svm.cpp`** (upstream libsvm mirror) changes one line:
