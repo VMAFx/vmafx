@@ -59,7 +59,10 @@ RENOVATE_OWNED_KINDS = {"config", "action", "installer", "image"}
 
 
 def read_config() -> dict[str, Any]:
-    return json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    data = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise TypeError("renovate.json must contain a JSON object")
+    return data
 
 
 JS_GROUP = re.compile(r"\(\?<([A-Za-z_][A-Za-z0-9_]*)>")

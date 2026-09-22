@@ -67,6 +67,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 # Resolved once: an absolute path keeps the invocation independent of whatever
 # PATH the caller (a CI step, a Makefile recipe, a hook) happens to export.
@@ -101,7 +102,7 @@ DECLARED_PATTERNS = (
     re.compile(r"\bintentional revert:\s*(?!REASON\b)\S+", re.IGNORECASE),
 )
 
-Lines = collections.Counter
+Lines = collections.Counter[str]
 FileLines = dict[str, Lines]
 
 
@@ -266,7 +267,8 @@ def commit_diffs(repo: Repo, ref: str, path: str, window: int) -> list[tuple[str
     )
     out: list[tuple[str, Lines, Lines]] = []
     sha = ""
-    added, removed = Lines(), Lines()
+    added: Lines = Lines()
+    removed: Lines = Lines()
     for line in text.split("\n"):
         if line.startswith("__commit__ "):
             if sha:
@@ -285,7 +287,7 @@ def subject(repo: Repo, sha: str) -> str:
     return repo.out("log", "-1", "--format=%s", sha).strip()
 
 
-class Finding(dict):
+class Finding(dict[str, Any]):
     """One reported problem, JSON-serialisable for the ``--json`` report."""
 
     def __init__(self, kind: str, path: str, detail: str, lines: list[str]) -> None:

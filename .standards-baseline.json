@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-22T09:05:33Z",
+  "generated_at": "2026-09-22T09:45:12Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 286,
@@ -1367,18 +1367,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm/adm_cm.hip",
-      "line_number": 191,
+      "line_number": 196,
       "symbol": "i4_adm_cm_line_kernel",
       "message": "Function 'i4_adm_cm_line_kernel' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm/adm_cm.hip:191:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm/adm_cm.hip:196:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm/adm_cm.hip",
-      "line_number": 291,
+      "line_number": 296,
       "symbol": "adm_cm_line_kernel_body",
       "message": "Function 'adm_cm_line_kernel_body' (99 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm/adm_cm.hip:291:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm/adm_cm.hip:296:HISS-04"
     },
     {
       "rule_id": "HISS-04",
