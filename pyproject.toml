@@ -218,5 +218,11 @@ module = [
   "scipy.*",
   "transformers",
   "transformers.*",
+  # torchao 0.18.0 ships no py.typed marker; `pip show -f torchao | grep py.typed`
+  # is empty and `torchao/py.typed` does not exist. ADR-1293 moved the QAT hook
+  # onto its pt2e API, which PyTorch's own deprecation text names as the
+  # successor to `torch.ao.quantization`.
+  "torchao",
+  "torchao.*",
 ]
 ignore_missing_imports = true
