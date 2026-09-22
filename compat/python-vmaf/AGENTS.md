@@ -132,7 +132,11 @@ python/vmaf/
   `tempfile.NamedTemporaryFile(...).name`: the expression drops the wrapper,
   and its finaliser emits `ResourceWarning` from whatever test the cyclic
   collector happens to interrupt. Use `tempfile.mkstemp()` and close the
-  descriptor, or keep the object in a `with` block. And never call sureal's
+  descriptor, or keep the object in a `with` block. The same finaliser hides
+  in `urllib.error.HTTPError`: `urllib.response.addbase`, which it inherits
+  through `addinfourl`, *is* `tempfile._TemporaryFileWrapper`, and CPython
+  3.14 gives it an `io.BytesIO` when `fp is None` -- so a constructed
+  `HTTPError` must be closed too. And never call sureal's
   `SubjectiveModel.from_dataset_file()` (or `PairedCompSubjectiveModel`'s
   override): it imports the dataset through
   `SourceFileLoader.load_module()`, which Python 3.15 removes and 3.12+ warns
