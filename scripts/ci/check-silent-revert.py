@@ -85,6 +85,14 @@ GENERATED_PREFIXES = (
     "scripts/ci/tidy-baseline-",
 )
 
+# An intended reversal is declared in the tree, not argued in a PR comment.
+# Each entry names the superseding ADR, the target commit whose hunks the merge
+# undoes, the exact paths, and a regex every matched line must satisfy — so an
+# entry covers one migration and nothing else that happens to touch the same
+# file. A per-PR `revert:` declaration still exists for one-off reverts; this
+# file is for a reversal the tree itself documents.
+ALLOWLIST_PATH = Path("scripts/ci/silent-revert-allowlist.json")
+
 # A line only counts as evidence of a revert when it carries enough text to be
 # unique.  `}`, `*/`, `#endif` and friends match everywhere and would make the
 # set arithmetic fire on unrelated edits.
@@ -283,15 +291,54 @@ def commit_diffs(repo: Repo, ref: str, path: str, window: int) -> list[tuple[str
     return out
 
 
+def ever_deleted(repo: Repo, ref: str, path: str, window: int) -> set[str]:
+    """Lines *path* has lost at some point over the last *window* target commits.
+
+    A resurrection is text the **target deleted** coming back.  Text that never
+    stood on the target is new authorship, and a merge commit that writes its
+    own conflict resolution produces exactly that: lines in the merge result,
+    absent from the target, and absent from every non-merge branch commit
+    because no single commit's diff contains them.  Without this set the
+    ``resurrected`` arm could not tell the two apart and reported every such
+    line — 55 of them in one HIP reconciliation — as recovered deleted text.
+    """
+    lost: set[str] = set()
+    for _sha, _added, removed in commit_diffs(repo, ref, path, window):
+        lost.update(line for line in removed if is_evidence(line))
+    return lost
+
+
 def subject(repo: Repo, sha: str) -> str:
     return repo.out("log", "-1", "--format=%s", sha).strip()
 
 
 class Finding(dict[str, Any]):
-    """One reported problem, JSON-serialisable for the ``--json`` report."""
+    """One reported problem, JSON-serialisable for the ``--json`` report.
 
-    def __init__(self, kind: str, path: str, detail: str, lines: list[str]) -> None:
-        super().__init__(kind=kind, path=path, detail=detail, lines=lines[:6])
+    ``lines`` is the excerpt a reader sees; ``evidence`` is every line the
+    detector matched on.  The allowlist decides on the whole set, because a
+    six-line excerpt would let an undeclared reversal ride into the merge
+    behind a declared one that happens to sort first.
+    """
+
+    def __init__(
+        self,
+        kind: str,
+        path: str,
+        detail: str,
+        lines: list[str],
+        *,
+        evidence: list[str] | None = None,
+        undoes: str = "",
+    ) -> None:
+        super().__init__(
+            kind=kind,
+            path=path,
+            detail=detail,
+            lines=lines[:6],
+            evidence=sorted(set(evidence if evidence is not None else lines)),
+            undoes=undoes,
+        )
 
 
 def detect_rewind(
@@ -345,12 +392,27 @@ def _undone(
 
 
 def detect_reverse_hunk(
-    repo: Repo, base: str, effect: tuple[FileLines, FileLines], paths: list[str], window: int
+    repo: Repo,
+    base: str,
+    merged: str,
+    effect: tuple[FileLines, FileLines],
+    paths: list[str],
+    window: int,
 ) -> list[Finding]:
     """Target commits whose hunks the merge undoes without saying so."""
     eff_added, eff_removed = effect
     findings = []
     for path in paths:
+        # A path the merge deletes outright is not a *partial* rewind, and a
+        # whole-file deletion is the loudest hunk a review diff has.  What
+        # would make such a deletion silent is the branch not having asked for
+        # it, and that is exactly what ``dropped`` measures: for a deletion the
+        # branch declared, every line is in the branch's own removals, and for
+        # one it did not, none of them are.  Reporting it here as well turned
+        # every deliberate file removal into a reverse-hunk against whichever
+        # commit last wrote the file.
+        if repo.blob(merged, path) is None:
+            continue
         removed = {line for line in eff_removed.get(path, ()) if is_evidence(line)}
         if not removed:
             continue
@@ -369,13 +431,22 @@ def detect_reverse_hunk(
                     f"{len(live)} line(s) that commit added are removed"
                     + (f" and {len(deleted)} it deleted come back" if deleted else ""),
                     sorted(live),
+                    evidence=sorted(live | deleted),
+                    undoes=sha,
                 )
             )
     return findings
 
 
 def detect_unintended(
-    repo: Repo, survivor: str, effect: FileLines, intent: FileLines, kind: str, detail: str
+    repo: Repo,
+    survivor: str,
+    effect: FileLines,
+    intent: FileLines,
+    kind: str,
+    detail: str,
+    *,
+    once_on: tuple[str, int] | None = None,
 ) -> list[Finding]:
     """Lines the merge moves that no non-merge branch commit moved.
 
@@ -388,6 +459,14 @@ def detect_unintended(
     a 48-commit stack, that artefact was the only thing these two detectors
     reported (``python/test/executor_test.py``, one class statement present in
     both trees).
+
+    *once_on* — ``(ref, window)`` — adds the second half of the ``resurrected``
+    definition: the line must also be text that *ref* once held and lost.  The
+    docstring for that detector always said "text the target had deleted,
+    coming back", but the code only ever asked whether the line was absent from
+    the target now, which every line a merge commit authors also satisfies.
+    ``dropped`` passes no *once_on*: a target line vanishing from the merge is
+    a loss whatever its history.
     """
     findings = []
     for path, lines in sorted(effect.items()):
@@ -397,10 +476,87 @@ def detect_unintended(
             continue
         surviving = repo.blob_lines(survivor, path)
         evidence = [line for line in candidates if line not in surviving]
+        if evidence and once_on is not None:
+            ref, window = once_on
+            lost = ever_deleted(repo, ref, path, window)
+            evidence = [line for line in evidence if line in lost]
         if not evidence:
             continue
         findings.append(Finding(kind, path, f"{len(evidence)} line(s) {detail}", evidence))
     return findings
+
+
+class AllowlistError(RuntimeError):
+    """The in-tree allowlist is unusable, so no honest verdict can be reached."""
+
+
+REQUIRED_ENTRY_KEYS = ("adr", "kind", "paths", "reason")
+
+
+def load_allowlist(root: Path) -> list[dict[str, Any]]:
+    """Read the declared-reversal entries the tree carries; absent means none.
+
+    Fails closed on a malformed file. A gate that cannot read its own allowlist
+    must not assume every finding is undeclared (it would block declared work)
+    and must not assume every finding is declared (it would be the blanket
+    disable this file exists to avoid).
+    """
+    path = root / ALLOWLIST_PATH
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        raise AllowlistError(f"{ALLOWLIST_PATH} cannot be read: {err}") from err
+    if not isinstance(data, dict) or not isinstance(data.get("reversals", []), list):
+        raise AllowlistError(f"{ALLOWLIST_PATH} must hold a `reversals` list")
+
+    entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(data.get("reversals", [])):
+        where = f"{ALLOWLIST_PATH} entry {index}"
+        if not isinstance(entry, dict):
+            raise AllowlistError(f"{where} is not an object")
+        missing = [key for key in REQUIRED_ENTRY_KEYS if not entry.get(key)]
+        if missing:
+            raise AllowlistError(f"{where} is missing {', '.join(missing)}")
+        if entry["kind"] not in ("rewind", "reverse-hunk", "dropped", "resurrected"):
+            raise AllowlistError(f"{where} names no detector: {entry['kind']!r}")
+        # Without a target commit a reverse-hunk entry would cover every past
+        # commit that ever wrote those paths, which is a path exclusion wearing
+        # an ADR number.
+        if entry["kind"] == "reverse-hunk" and not entry.get("undoes"):
+            raise AllowlistError(f"{where} is a reverse-hunk entry with no `undoes` commit")
+        if not isinstance(entry["paths"], list) or not all(
+            isinstance(item, str) for item in entry["paths"]
+        ):
+            raise AllowlistError(f"{where} must list `paths` as strings")
+        try:
+            entry["_evidence"] = re.compile(entry["evidence"]) if entry.get("evidence") else None
+        except re.error as err:
+            raise AllowlistError(f"{where} has an invalid `evidence` regex: {err}") from err
+        entries.append(entry)
+    return entries
+
+
+def allowed_by(finding: Finding, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The entry that declares *finding*, or None when nothing in tree does.
+
+    Every axis has to agree: the detector, the exact path, the commit being
+    undone, and — when the entry constrains it — every single evidence line.
+    An entry therefore covers one migration on one set of files; a later,
+    different reversal of the same file still fails the gate.
+    """
+    for entry in entries:
+        if finding["kind"] != entry["kind"] or finding["path"] not in entry["paths"]:
+            continue
+        undoes = entry.get("undoes", "")
+        if undoes and not (finding["undoes"] or "").startswith(undoes):
+            continue
+        pattern = entry.get("_evidence")
+        if pattern is not None and not all(pattern.search(line) for line in finding["evidence"]):
+            continue
+        return entry
+    return None
 
 
 def declared(title: str, body: str) -> str:
@@ -429,7 +585,7 @@ def analyse(repo: Repo, base: str, head: str, window: int) -> list[Finding]:
     paths = sorted(set(eff_added) | set(eff_removed))
     return [
         *detect_rewind(repo, base, merged, eff_removed, paths, window),
-        *detect_reverse_hunk(repo, base, (eff_added, eff_removed), paths, window),
+        *detect_reverse_hunk(repo, base, merged, (eff_added, eff_removed), paths, window),
         *detect_unintended(
             repo,
             merged,
@@ -444,7 +600,8 @@ def analyse(repo: Repo, base: str, head: str, window: int) -> list[Finding]:
             eff_added,
             int_added,
             "resurrected",
-            "new to the target that the branch never added",
+            "the target once held and lost that the branch never added back",
+            once_on=(base, window),
         ),
     ]
 
@@ -475,6 +632,11 @@ Fix the branch, do not annotate it:
 If the revert is intended, say so where a reviewer sees it: a `revert:`
 Conventional-Commit title, or `reverts: #N` / `intentional revert: <reason>`
 in the PR description.
+
+If an accepted ADR is what supersedes the reverted work, declare it in the
+tree instead: add an entry to scripts/ci/silent-revert-allowlist.json naming
+the ADR, the detector, the commit being undone, the exact paths, and a regex
+every line of the finding must match. See ADR-1291.
 """.strip()
 
 
@@ -505,6 +667,21 @@ def resolve_endpoints(repo: Repo, args: argparse.Namespace) -> tuple[str, str]:
     return repo.resolve(base), repo.resolve(head)
 
 
+def report_declared(findings: list[Finding], allowlist: list[dict[str, Any]]) -> list[Finding]:
+    """Print the findings the tree declares as notices; return the ones it does not."""
+    blocking = []
+    for finding in findings:
+        entry = allowed_by(finding, allowlist)
+        if entry is None:
+            blocking.append(finding)
+            continue
+        print(
+            f"::notice title=Declared reversal ({finding['kind']})::{finding['path']}: "
+            f"{finding['detail']} — declared by {entry['adr']} in {ALLOWLIST_PATH}"
+        )
+    return blocking
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo = Repo(Path(args.repo).resolve())
@@ -515,9 +692,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        allowlist = load_allowlist(repo.root)
         base, head = resolve_endpoints(repo, args)
         findings = analyse(repo, base, head, max(1, args.history_window))
-    except GitError as err:
+    except (GitError, AllowlistError) as err:
         print(f"::error title=Silent-revert gate could not run::{err}")
         return 2
 
@@ -531,11 +709,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     exemption = declared(args.title, body)
-    report(findings, "::notice " if exemption else "::error ")
     if exemption:
+        report(findings, "::notice ")
         print(f"check-silent-revert: {len(findings)} finding(s), declared by {exemption} — PASS.")
         return 0
-    print(f"\ncheck-silent-revert: {len(findings)} finding(s) merging {head[:9]} into {base[:9]}.")
+
+    blocking = report_declared(findings, allowlist)
+    if not blocking:
+        print(
+            f"check-silent-revert: {len(findings)} finding(s) merging {head[:9]} into "
+            f"{base[:9]}, every one declared in {ALLOWLIST_PATH} — PASS."
+        )
+        return 0
+
+    report(blocking, "::error ")
+    print(
+        f"\ncheck-silent-revert: {len(blocking)} undeclared finding(s) merging "
+        f"{head[:9]} into {base[:9]}"
+        + (
+            f" ({len(findings) - len(blocking)} declared)."
+            if len(blocking) != len(findings)
+            else "."
+        )
+    )
     print(EXPLAIN)
     return 1
 

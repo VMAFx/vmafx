@@ -18,6 +18,7 @@ a silent pass is not.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -229,6 +230,107 @@ class SilentRevertGateTest(unittest.TestCase):
         result = run_gate(self.repo, base, head)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_branch_deletion_is_not_a_reverse_hunk(self) -> None:
+        """A file the branch deletes on purpose is not a partial rewind of it.
+
+        The shape that used to fire is a target commit that only *added* the
+        file: every line it wrote is live, the merge removes all of them, and
+        it puts nothing in their place — which is precisely what ``_undone``
+        asks of a pure-addition commit.  Every deliberate file removal in a
+        branch therefore read as a reverse-hunk against whoever wrote it.
+        """
+        self.write("README.md", "# fixture\n")
+        self.commit("chore: seed the fixture")
+
+        self.write("testdata/retired_helper.py", FIXED)
+        base = self.commit("test: add the retired helper (ADR-9997)")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", base)
+        git(self.repo, "rm", "-q", "testdata/retired_helper.py")
+        head = self.commit("chore(testdata): remove what ADR-9998 retired")
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("reverse-hunk", result.stdout)
+
+    def test_deletion_the_branch_never_asked_for_is_still_caught(self) -> None:
+        """Skipping deleted paths in reverse-hunk must not blind `dropped`."""
+        self.seed()
+        git(self.repo, "checkout", "-q", "-b", "feature")
+        self.write("core/src/extra.c", "int extra(void) { return 7; }\n")
+        self.commit("feat(core): add an extra helper")
+
+        git(self.repo, "checkout", "-q", "master")
+        self.write("core/src/scale.c", FIXED)
+        base = self.commit("fix(core): accumulate the scaler in int64 (ADR-9999)")
+
+        # The merge resolves by deleting a file only master wrote; no commit of
+        # the branch's own work removed it.
+        git(self.repo, "checkout", "-q", "feature")
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        (self.repo / "core" / "src" / "scale.c").unlink()
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("dropped", result.stdout)
+        self.assertIn("int64_t accumulator", result.stdout)
+
+    def test_text_first_written_in_a_merge_is_not_a_resurrection(self) -> None:
+        """New text a conflict resolution authors never stood on the target."""
+        base = self.seed()
+        git(self.repo, "checkout", "-q", "-b", "feature", base)
+        self.write("core/src/extra.c", "int extra(void) { return 7; }\n")
+        self.commit("feat(core): add an extra helper")
+
+        git(self.repo, "checkout", "-q", "master")
+        self.write("core/src/extra.c", "int extra(void) { return 8; }\n")
+        base = self.commit("feat(core): add a different extra helper")
+
+        git(self.repo, "checkout", "-q", "feature")
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        # The resolution is neither side: it is text this merge invents, which
+        # is why no non-merge commit of the branch carries it.
+        self.write(
+            "core/src/extra.c",
+            "int extra(void) { return 7; }\nint reconciled_helper(void) { return 15; }\n",
+        )
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertNotIn("resurrected", result.stdout)
+
+    def test_text_the_target_deleted_coming_back_is_caught(self) -> None:
+        """The other half of the definition still has to fire."""
+        self.write("core/src/scale.c", FIXED)
+        self.write("README.md", "# fixture\n")
+        start = self.commit("feat(core): add the scaler")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", start)
+        self.write("README.md", "# fixture\n\nbranch note about the fixture\n")
+        self.commit("docs: note the fixture")
+
+        git(self.repo, "checkout", "-q", "master")
+        self.write("core/src/scale.c", STALE)
+        base = self.commit("revert(core): drop the int64 accumulator for now")
+
+        git(self.repo, "checkout", "-q", "feature")
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        # The resolution brings back exactly what the target deleted.
+        self.write("core/src/scale.c", FIXED)
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("resurrected", result.stdout)
+        self.assertIn("int64_t accumulator", result.stdout)
+
     # ---------- boundary: declaration and fail-closed ----------
 
     def test_declaration_turns_findings_into_notices(self) -> None:
@@ -258,6 +360,86 @@ class SilentRevertGateTest(unittest.TestCase):
 
         result = run_gate(self.repo, base, head, PR_BODY="intentional revert: REASON")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+    # ---------- boundary: the in-tree declared-reversal allowlist ----------
+
+    def partial_rewind(self) -> tuple[str, str]:
+        """A branch that undoes one commit's hunks but ships no historical blob."""
+        self.seed()
+        self.write("core/src/scale.c", FIXED)
+        base = self.commit("fix(core): accumulate the scaler in int64 (ADR-9999)")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", base)
+        self.write("core/src/scale.c", STALE + "void added_by_the_branch(void) { }\n")
+        head = self.commit("refactor(core): take the scaler back to int arithmetic")
+        return base, head
+
+    def allowlist(self, text: str) -> None:
+        target = self.repo / "scripts" / "ci" / "silent-revert-allowlist.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+
+    def entry(self, **overrides: object) -> str:
+        entry = {
+            "adr": "ADR-9998",
+            "kind": "reverse-hunk",
+            "undoes": overrides.pop("undoes", ""),
+            "evidence": "(?:accumulator|ADR-9999)",
+            "reason": "ADR-9998 supersedes the int64 accumulator.",
+            "paths": ["core/src/scale.c"],
+        }
+        entry.update(overrides)
+        return json.dumps({"reversals": [entry]})
+
+    def test_allowlist_entry_declares_its_own_finding(self) -> None:
+        base, head = self.partial_rewind()
+        self.assertEqual(run_gate(self.repo, base, head).returncode, 1)
+
+        self.allowlist(self.entry(undoes=base))
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ADR-9998", result.stdout)
+        self.assertIn("::notice", result.stdout)
+        self.assertNotIn("::error", result.stdout)
+
+    def test_allowlist_entry_for_another_commit_does_not_declare(self) -> None:
+        """`undoes` is what keeps an entry from becoming a path exclusion."""
+        base, head = self.partial_rewind()
+        self.allowlist(self.entry(undoes="0" * 40))
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("::error", result.stdout)
+        self.assertNotIn("ADR-9998", result.stdout)
+
+    def test_allowlist_entry_covering_only_some_evidence_does_not_declare(self) -> None:
+        """One undeclared line in a finding leaves the whole finding blocking."""
+        base, head = self.partial_rewind()
+        self.allowlist(self.entry(undoes=base, evidence="ADR-9999"))
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("::error", result.stdout)
+        self.assertNotIn("ADR-9998", result.stdout)
+
+    def test_allowlist_entry_for_another_path_does_not_declare(self) -> None:
+        base, head = self.partial_rewind()
+        self.allowlist(self.entry(undoes=base, paths=["core/src/other.c"]))
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn("ADR-9998", result.stdout)
+
+    def test_reverse_hunk_entry_without_a_commit_is_rejected(self) -> None:
+        base, head = self.partial_rewind()
+        self.allowlist(self.entry())
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no `undoes` commit", result.stdout)
+
+    def test_unreadable_allowlist_fails_closed(self) -> None:
+        base, head = self.partial_rewind()
+        self.allowlist("{ this is not json")
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotIn("clean", result.stdout)
 
     def test_unresolvable_ref_fails_closed(self) -> None:
         self.seed()

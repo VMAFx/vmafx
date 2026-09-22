@@ -1,6 +1,31 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
+
+1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between
+   this branch and `master`, not a permanent policy.** Both entries exist only
+   because master still carries the state being superseded: the retired numbered
+   workspace root that `c2a3c7e0f` wrote in place of `.corpus/` (ADR-1277), and the
+   by-value HIP ADM kernels that `92ea978a4` left after silently reverting ADR-0759.
+   Once master carries the superseded state, `check-silent-revert.py` stops producing
+   those findings and the entries are dead weight — delete them rather than carrying
+   them forward. A rebase that keeps an entry whose finding no longer exists has left
+   a suppression behind, which is the failure ADR-1291's `undoes` + `evidence` fields
+   exist to make visible.
+2. **Do not widen an entry to resolve a rebase conflict.** Each entry matches on the
+   detector, the exact path, the commit undone and *every* evidence line. If a rebase
+   moves the reversal onto new paths or new lines, the honest resolution is to re-run
+   `make silent-revert-check`, read the new findings, and re-derive the entry from
+   them; dropping `undoes` or loosening `evidence` to make the gate quiet converts a
+   declaration into the path exclusion ADR-1291 refused.
+3. **The two detector repairs are behavioural, not cosmetic.** `reverse-hunk` now
+   skips paths the merge deletes and `resurrected` now requires the line to be text
+   the target once held and lost. A rebase that restores either detector's older body
+   — for instance by taking master's side of `check-silent-revert.py` wholesale — puts
+   back twelve false findings on this branch alone. `scripts/ci/tests/test_check_silent_revert.py`
+   is the tell: five of its cases fail against the unrepaired gate.
+
 ## chore/hiss21-core-tools — governance surfaces a rebase must not undo (2026-09-21)
 
 1. **`.standards-baseline.json` was re-recorded downward, 1411 → 965 → 938**, with

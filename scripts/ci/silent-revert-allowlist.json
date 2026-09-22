@@ -1,0 +1,52 @@
+{
+  "_readme": [
+    "Reversals this tree declares, for scripts/ci/check-silent-revert.py (ADR-1284).",
+    "A reversal is only silent when nothing in the repository says it was meant.",
+    "An entry is not a path exclusion: the gate matches a finding against it only",
+    "when the detector, the exact path, the commit being undone and every single",
+    "evidence line all agree, so the entry covers one migration and stays silent",
+    "about anything else that later touches the same file.",
+    "Fields: adr (the decision that supersedes the reverted work), kind (which",
+    "detector), undoes (full target sha, mandatory for reverse-hunk), paths",
+    "(exact repository paths), evidence (a regex every matched line must satisfy),",
+    "reason (what a reviewer needs in order to agree).",
+    "A one-off revert with no ADR behind it is declared in the PR instead:",
+    "a `revert:` title, or `reverts: #N` / `intentional revert: <reason>`."
+  ],
+  "reversals": [
+    {
+      "adr": "ADR-1277",
+      "kind": "reverse-hunk",
+      "undoes": "c2a3c7e0febd98a6831b9bfebe5e298e229b1244",
+      "evidence": "(?:\\.workingdir\\d?|\\.corpus)/",
+      "reason": "c2a3c7e0f (#1067) rewrote every dataset path from `.corpus/` to the retired numbered workspace directory. ADR-1277 (Accepted, 2026-09-20) names that rename `the incorrect first migration attempt` and splits local data into `.workingdir/` for machine-local state and `.corpus/` for datasets; scripts/ci/check-local-data-contract.sh is the required gate that keeps the retired root out. Restoring `.corpus/` in these files is that decision landing, not work being lost. The evidence regex is written `\\.workingdir\\d?` rather than naming the retired root, because scripts/ci/check-local-data-contract.sh forbids an active file from spelling it; it still holds the entry to the path text: across all sixteen files every line this finding rests on carries the retired root or `.corpus/`, and nothing else of c2a3c7e0f is touched.",
+      "paths": [
+        "ai/scripts/aggregate_corpora.py",
+        "ai/scripts/calibrate_phase_f_recipes.py",
+        "ai/scripts/konvid_150k_to_corpus_jsonl.py",
+        "ai/scripts/run_aggregated_training.sh",
+        "ai/scripts/run_predictor_v2_training.sh",
+        "ai/scripts/run_training.sh",
+        "ai/scripts/train_predictor_v2_realcorpus.py",
+        "ai/train/train.py",
+        "docs/ai/datasets/k150k.md",
+        "docs/ai/konvid-150k-ingestion.md",
+        "docs/ai/models/fr_regressor_v1.md",
+        "docs/ai/mos-corpora.md",
+        "docs/ai/predictor-v2-realcorpus-training.md",
+        "docs/ai/training-data.md",
+        "docs/usage/vmaf-train.md",
+        "tools/external-bench/README.md"
+      ]
+    },
+    {
+      "adr": "ADR-0759",
+      "kind": "resurrected",
+      "evidence": "s->buf_dev\\b",
+      "reason": "The `buf_dev` tier is ADR-0759, landed by 31a51afb2 (#101) and silently reverted by 92ea978a4 (#102) — the pair ADR-1284 was written from. Master still carries the reverted state, so restoring it is text master once held and lost coming back, which is what `resurrected` is for. docs/state.md records it as T-HIP-ADM-BUFFER-BY-POINTER-REVERTED-2026-09-21 and docs/rebase-notes.md tells the next rebase how to resolve it. The branch's own 6811ef63d writes these lines; the finding survives only because the later unwind-helper reconciliation re-indents a second copy of each, so the merge holds one more occurrence than any single commit added.",
+      "paths": [
+        "core/src/feature/hip/integer_adm_hip.c"
+      ]
+    }
+  ]
+}
