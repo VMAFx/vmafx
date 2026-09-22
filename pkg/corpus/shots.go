@@ -117,25 +117,15 @@ func DetectShotsWithStatus(
 		return singleShotFallback(opts.TotalFrames), false
 	}
 	tmpPath := tmp.Name()
-	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	cmd := []string{
-		perShotBin,
-		"--reference", videoPath,
-		"--width", strconv.Itoa(opts.Width),
-		"--height", strconv.Itoa(opts.Height),
-		"--pixel_format", bitdepthAwarePix(opts.PixFmt),
-		"--bitdepth", strconv.Itoa(bitdepth),
-		"--output", tmpPath,
-		"--format", "json",
+	if closeErr := tmp.Close(); closeErr != nil {
+		// vmaf-perShot re-opens the path by name, so a failed close of the
+		// empty placeholder does not invalidate the handoff; report it and
+		// carry on rather than dropping it.
+		warnClose("vmaf-perShot temp file", closeErr)
 	}
-	// ADR-0512: thread a user-tunable cut threshold to the C binary so
-	// operators can dial sensitivity per content without rebuilding.
-	if opts.DiffThreshold != nil {
-		cmd = append(cmd, "--diff-threshold", strconv.FormatFloat(*opts.DiffThreshold, 'f', 6, 64))
-	}
+	defer func() { removeScratchFile(tmpPath) }()
 
+	cmd := perShotArgv(perShotBin, videoPath, tmpPath, bitdepth, opts)
 	if res := run(ctx, cmd); res.ReturnCode != 0 {
 		return singleShotFallback(opts.TotalFrames), false
 	}
@@ -148,6 +138,31 @@ func DetectShotsWithStatus(
 		return singleShotFallback(opts.TotalFrames), false
 	}
 	return shots, true
+}
+
+// perShotArgv builds the vmaf-perShot command line for one detection run,
+// writing JSON to tmpPath.
+//
+// ADR-0512: the cut threshold is threaded to the C binary so operators can
+// dial sensitivity per content without rebuilding; it is omitted when unset so
+// the binary keeps its own default.
+func perShotArgv(
+	perShotBin, videoPath, tmpPath string, bitdepth int, opts DetectShotsOptions,
+) []string {
+	cmd := []string{
+		perShotBin,
+		"--reference", videoPath,
+		"--width", strconv.Itoa(opts.Width),
+		"--height", strconv.Itoa(opts.Height),
+		"--pixel_format", bitdepthAwarePix(opts.PixFmt),
+		"--bitdepth", strconv.Itoa(bitdepth),
+		"--output", tmpPath,
+		"--format", "json",
+	}
+	if opts.DiffThreshold != nil {
+		cmd = append(cmd, "--diff-threshold", strconv.FormatFloat(*opts.DiffThreshold, 'f', 6, 64))
+	}
+	return cmd
 }
 
 // perShotPayload is vmaf-perShot's JSON schema (docs/usage/vmaf-perShot.md).

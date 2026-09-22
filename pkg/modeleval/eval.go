@@ -100,9 +100,27 @@ func LoadDataset(featuresPath, split string) (*Dataset, error) {
 		return nil, fmt.Errorf("%s has no 'mos' column — can't score correlations", featuresPath)
 	}
 
-	// Row selection. Python filters only when a key column exists and
-	// the caller asked for something narrower than "all"; without a key
-	// column every row survives regardless of the requested split.
+	keep := selectRows(tbl, split)
+	cols := presentFeatureColumns(tbl)
+	if len(cols) == 0 {
+		return nil, fmt.Errorf(
+			"%s has none of the expected feature columns "+
+				"('adm2', 'vif_scale0', 'vif_scale1', 'vif_scale2', 'vif_scale3', 'motion2'); got %v",
+			featuresPath, tbl.Names)
+	}
+	if len(keep) < 2 {
+		return nil, fmt.Errorf("split %q has %d samples — need >=2 to compute correlations",
+			split, len(keep))
+	}
+	return buildDesignMatrix(tbl, keep, cols), nil
+}
+
+// selectRows returns the row indices belonging to split.
+//
+// Python filters only when a key column exists and the caller asked for
+// something narrower than "all"; without a key column every row survives
+// regardless of the requested split.
+func selectRows(tbl *Table, split string) []int {
 	keep := make([]int, 0, tbl.Rows)
 	if split != SplitAll && tbl.HasKey {
 		for i, k := range tbl.Keys {
@@ -110,30 +128,29 @@ func LoadDataset(featuresPath, split string) (*Dataset, error) {
 				keep = append(keep, i)
 			}
 		}
-	} else {
-		for i := range tbl.Rows {
-			keep = append(keep, i)
-		}
+		return keep
 	}
+	for i := range tbl.Rows {
+		keep = append(keep, i)
+	}
+	return keep
+}
 
+// presentFeatureColumns filters FeatureColumns down to the ones the table
+// actually carries, preserving the canonical input-tensor order.
+func presentFeatureColumns(tbl *Table) []string {
 	cols := make([]string, 0, len(FeatureColumns))
 	for _, c := range FeatureColumns {
 		if tbl.Has(c) {
 			cols = append(cols, c)
 		}
 	}
-	if len(cols) == 0 {
-		return nil, fmt.Errorf(
-			"%s has none of the expected feature columns "+
-				"('adm2', 'vif_scale0', 'vif_scale1', 'vif_scale2', 'vif_scale3', 'motion2'); got %v",
-			featuresPath, tbl.Names)
-	}
+	return cols
+}
 
-	if len(keep) < 2 {
-		return nil, fmt.Errorf("split %q has %d samples — need >=2 to compute correlations",
-			split, len(keep))
-	}
-
+// buildDesignMatrix flattens the selected rows and columns into the row-major
+// X / Y pair the predictor consumes.
+func buildDesignMatrix(tbl *Table, keep []int, cols []string) *Dataset {
 	target := tbl.Numeric[TargetColumn]
 	ds := &Dataset{
 		Rows:    len(keep),
@@ -148,7 +165,7 @@ func LoadDataset(featuresPath, split string) (*Dataset, error) {
 		}
 		ds.Y = append(ds.Y, float32(target[r]))
 	}
-	return ds, nil
+	return ds
 }
 
 // Evaluate scores one model against one split and reports PLCC, SROCC

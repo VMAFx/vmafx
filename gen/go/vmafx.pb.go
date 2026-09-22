@@ -845,6 +845,10 @@ var (
 
 func file_vmafx_proto_rawDescGZIP() []byte {
 	file_vmafx_proto_rawDescOnce.Do(func() {
+		// SAFETY: rawDesc is an immutable package-level string literal that nothing in this package
+		// or in protoimpl mutates or frees for the life of the process; StringData returns its
+		// backing array and Slice re-describes exactly len(rawDesc) of those bytes, so the alias
+		// spans the allocation and no more.
 		file_vmafx_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_vmafx_proto_rawDesc), len(file_vmafx_proto_rawDesc)))
 	})
 	return file_vmafx_proto_rawDescData
@@ -907,6 +911,10 @@ func file_vmafx_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
+			// SAFETY: rawDesc is an immutable package-level string literal that nothing in this package
+			// or in protoimpl mutates or frees for the life of the process; StringData returns its
+			// backing array and Slice re-describes exactly len(rawDesc) of those bytes, so the alias
+			// spans the allocation and no more.
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vmafx_proto_rawDesc), len(file_vmafx_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   13,

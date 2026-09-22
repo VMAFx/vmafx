@@ -113,9 +113,9 @@ func TestRenderHTMLMulti_CompareNilBitrate(t *testing.T) {
 	t.Parallel()
 	rows := []report.WireRow{
 		{
-			Codec:  "libvpx-vp9",
+			Codec:   "libvpx-vp9",
 			BestCRF: -1, // negative CRF → em-dash in table
-			OK:     true,
+			OK:      true,
 			// BitratekBps, EncodeTimeMS, VMAFScore are all nil.
 		},
 	}

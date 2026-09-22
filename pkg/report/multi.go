@@ -312,8 +312,31 @@ func renderCompareHTML(sb *strings.Builder, mr MultiReport) {
 		html.EscapeString(mr.InputPath), html.EscapeString(mr.ToolVersion),
 		mr.TargetVMAF, mr.WallTimeMS)
 
-	sorted := make([]WireRow, len(mr.CompareRows))
-	copy(sorted, mr.CompareRows)
+	sorted := rankedCompareRows(mr.CompareRows)
+
+	sb.WriteString("<table>\n<thead><tr>")
+	for _, h := range []string{"Rank", "Codec", "Encoder", "Best CRF",
+		"Bitrate (kbps)", "Encode time (ms)", "VMAF", "Status"} {
+		fmt.Fprintf(sb, "<th>%s</th>", h)
+	}
+	sb.WriteString("</tr></thead>\n<tbody>\n")
+
+	rank := 0
+	for _, row := range sorted {
+		if row.OK {
+			rank++
+		}
+		writeCompareRow(sb, row, rank)
+	}
+	sb.WriteString("</tbody></table>\n")
+}
+
+// rankedCompareRows copies the rows into the table's display order: everything
+// that cleared the target first, cheapest bitrate first within that group, and
+// the failures after them in their original order.
+func rankedCompareRows(rows []WireRow) []WireRow {
+	sorted := make([]WireRow, len(rows))
+	copy(sorted, rows)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		oki, okj := sorted[i].OK, sorted[j].OK
 		if oki != okj {
@@ -326,44 +349,29 @@ func renderCompareHTML(sb *strings.Builder, mr MultiReport) {
 		}
 		return false
 	})
+	return sorted
+}
 
-	sb.WriteString("<table>\n<thead><tr>")
-	for _, h := range []string{"Rank", "Codec", "Encoder", "Best CRF",
-		"Bitrate (kbps)", "Encode time (ms)", "VMAF", "Status"} {
-		fmt.Fprintf(sb, "<th>%s</th>", h)
+// writeCompareRow emits one table row. rank is the 1-based position among the
+// rows that cleared the target; a failed row shows an em dash instead.
+func writeCompareRow(sb *strings.Builder, row WireRow, rank int) {
+	rankCell, statusClass, statusText := "&mdash;", "fail", "fail: "+html.EscapeString(row.Error)
+	if row.OK {
+		rankCell, statusClass, statusText = fmt.Sprintf("%d", rank), "ok", "ok"
 	}
-	sb.WriteString("</tr></thead>\n<tbody>\n")
-
-	rank := 0
-	for _, row := range sorted {
-		var rankCell, statusClass, statusText string
-		if row.OK {
-			rank++
-			rankCell = fmt.Sprintf("%d", rank)
-			statusClass = "ok"
-			statusText = "ok"
-		} else {
-			rankCell = "&mdash;"
-			statusClass = "fail"
-			statusText = "fail: " + html.EscapeString(row.Error)
-		}
-		crfStr := "&mdash;"
-		if row.BestCRF >= 0 {
-			crfStr = fmt.Sprintf("%d", row.BestCRF)
-		}
-		bitrateStr := fmtFloat(row.BitratekBps, "%.1f")
-		encTimeStr := fmtFloat(row.EncodeTimeMS, "%.1f")
-		vmafStr := fmtFloat(row.VMAFScore, "%.2f")
-		encoder := html.EscapeString(row.EncoderVersion)
-		if encoder == "" {
-			encoder = "&mdash;"
-		}
-		fmt.Fprintf(sb, "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"+
-			"<td>%s</td><td>%s</td><td>%s</td><td class=%q>%s</td></tr>\n",
-			rankCell, html.EscapeString(row.Codec), encoder, crfStr,
-			bitrateStr, encTimeStr, vmafStr, statusClass, statusText)
+	crfStr := "&mdash;"
+	if row.BestCRF >= 0 {
+		crfStr = fmt.Sprintf("%d", row.BestCRF)
 	}
-	sb.WriteString("</tbody></table>\n")
+	encoder := html.EscapeString(row.EncoderVersion)
+	if encoder == "" {
+		encoder = "&mdash;"
+	}
+	fmt.Fprintf(sb, "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"+
+		"<td>%s</td><td>%s</td><td>%s</td><td class=%q>%s</td></tr>\n",
+		rankCell, html.EscapeString(row.Codec), encoder, crfStr,
+		fmtFloat(row.BitratekBps, "%.1f"), fmtFloat(row.EncodeTimeMS, "%.1f"),
+		fmtFloat(row.VMAFScore, "%.2f"), statusClass, statusText)
 }
 
 func renderLadderHTML(sb *strings.Builder, mr MultiReport) {

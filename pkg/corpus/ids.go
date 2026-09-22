@@ -59,7 +59,7 @@ func FileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("hash source: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { warnClose("hashed source", f.Close()) }()
 
 	h := sha256.New()
 	if _, err := io.CopyBuffer(h, f, make([]byte, 1<<20)); err != nil {

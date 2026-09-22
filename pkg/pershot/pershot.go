@@ -42,6 +42,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -226,32 +227,9 @@ func DetectShotsStatus(ctx context.Context, videoPath string, opts DetectOptions
 	if closeErr := tmp.Close(); closeErr != nil {
 		return singleShotFallback(opts.TotalFrames), false
 	}
-	defer func() {
-		// Best-effort cleanup; an unlink failure is non-fatal.
-		_ = os.Remove(tmpPath)
-	}()
+	defer removeDetectorTemp(tmpPath)
 
-	bitdepth := opts.Bitdepth
-	if bitdepth == 0 {
-		bitdepth = 8
-	}
-	args := []string{
-		"--reference", videoPath,
-		"--width", strconv.Itoa(opts.Width),
-		"--height", strconv.Itoa(opts.Height),
-		"--pixel_format", pixFmtToDetector(opts.PixFmt),
-		"--bitdepth", strconv.Itoa(bitdepth),
-		"--output", tmpPath,
-		"--format", "json",
-	}
-	// ADR-0513: thread the user-tunable cut threshold through so operators
-	// can dial sensitivity per content class without rebuilding the binary.
-	if opts.DiffThreshold != nil {
-		args = append(args, "--diff-threshold",
-			strconv.FormatFloat(*opts.DiffThreshold, 'f', 6, 64))
-	}
-
-	if !runDetector(ctx, opts, bin, args) {
+	if !runDetector(ctx, opts, bin, detectorArgv(videoPath, tmpPath, opts)) {
 		return singleShotFallback(opts.TotalFrames), false
 	}
 
@@ -265,6 +243,41 @@ func DetectShotsStatus(ctx context.Context, videoPath string, opts DetectOptions
 		return singleShotFallback(opts.TotalFrames), false
 	}
 	return shots, true
+}
+
+// removeDetectorTemp unlinks the detector's JSON scratch file. The caller has
+// no error channel — DetectShotsStatus reports shots, not failures — and the
+// file is already read, so a failure is reported rather than dropped.
+func removeDetectorTemp(path string) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("pershot: remove detector temp file", "path", path, "error", err)
+	}
+}
+
+// detectorArgv builds the vmaf-perShot flags for one detection run.
+//
+// ADR-0513: the user-tunable cut threshold is threaded through so operators
+// can dial sensitivity per content class without rebuilding the binary; it is
+// omitted when unset so the binary keeps its own default.
+func detectorArgv(videoPath, tmpPath string, opts DetectOptions) []string {
+	bitdepth := opts.Bitdepth
+	if bitdepth == 0 {
+		bitdepth = 8
+	}
+	args := []string{
+		"--reference", videoPath,
+		"--width", strconv.Itoa(opts.Width),
+		"--height", strconv.Itoa(opts.Height),
+		"--pixel_format", pixFmtToDetector(opts.PixFmt),
+		"--bitdepth", strconv.Itoa(bitdepth),
+		"--output", tmpPath,
+		"--format", "json",
+	}
+	if opts.DiffThreshold != nil {
+		args = append(args, "--diff-threshold",
+			strconv.FormatFloat(*opts.DiffThreshold, 'f', 6, 64))
+	}
+	return args
 }
 
 // runDetector executes the detector, honouring the injected Runner seam.
@@ -342,10 +355,16 @@ func ParseCSV(payload string) ([]Shot, error) {
 	}
 
 	var out []Shot
-	for {
+	// Every record encoding/csv returns consumes at least one byte of the
+	// payload, so the payload length is an exact upper bound on how many rows
+	// can come back; +1 admits the final unterminated record. Exhausting it
+	// means the reader stopped making progress, which is reported rather than
+	// spun on (HISS-02).
+	maxRows := len(payload) + 1
+	for row := 0; row < maxRows; row++ {
 		rec, readErr := reader.Read()
 		if errors.Is(readErr, io.EOF) {
-			break
+			return out, nil
 		}
 		if readErr != nil {
 			return nil, fmt.Errorf("read vmaf-perShot CSV row: %w", readErr)
@@ -364,7 +383,7 @@ func ParseCSV(payload string) ([]Shot, error) {
 		}
 		out = append(out, shot)
 	}
-	return out, nil
+	return nil, fmt.Errorf("vmaf-perShot CSV yielded more than %d rows without EOF", maxRows)
 }
 
 // SplitLongShots slices any shot longer than maxDurationSec into uniform
@@ -569,13 +588,45 @@ func Merge(recs []Recommendation, params MergeParams) (EncodingPlan, error) {
 	// reproducible from the plan JSON alone.
 	preset := adapter.SegmentPreset()
 
+	segmentCmds, listing, segErr := buildSegmentCommands(
+		recs, adapter, preset, segDir, ffmpegBin, params)
+	if segErr != nil {
+		return EncodingPlan{}, segErr
+	}
+	concatCmd := buildConcatCommand(ffmpegBin, segDir, params.Output)
+
+	out := make([]Recommendation, len(recs))
+	copy(out, recs)
+	return EncodingPlan{
+		Recommendations: out,
+		Encoder:         adapter.Name,
+		Framerate:       params.Framerate,
+		SegmentCommands: segmentCmds,
+		ConcatCommand:   concatCmd,
+		ConcatListing:   strings.Join(listing, "\n") + "\n",
+		SegmentDir:      segDir,
+	}, nil
+}
+
+// buildSegmentCommands emits one ffmpeg invocation per shot plus the matching
+// concat-demuxer listing lines.
+//
+// Each segment uses input-seek "-ss" plus "-frames:v" derived from the
+// half-open range; the codec argv is delegated to the adapter (HP-1 /
+// ADR-0297) so non-x264 codecs get their codec-correct flags.
+func buildSegmentCommands(
+	recs []Recommendation,
+	adapter encoder.Adapter,
+	preset, segDir, ffmpegBin string,
+	params MergeParams,
+) ([][]string, []string, error) {
 	segmentCmds := make([][]string, 0, len(recs))
 	listing := make([]string, 0, len(recs))
 	for idx, rec := range recs {
 		segPath := filepath.Join(segDir, fmt.Sprintf("shot_%04d.mp4", idx))
 		codecArgs, argErr := adapter.CodecArgs(preset, rec.CRF)
 		if argErr != nil {
-			return EncodingPlan{}, argErr
+			return nil, nil, argErr
 		}
 		startSeconds := float64(rec.Shot.StartFrame) / params.Framerate
 		cmd := []string{
@@ -592,8 +643,12 @@ func Merge(recs []Recommendation, params MergeParams) (EncodingPlan, error) {
 		// The concat demuxer wants POSIX-style paths in its listing.
 		listing = append(listing, "file '"+filepath.ToSlash(segPath)+"'")
 	}
+	return segmentCmds, listing, nil
+}
 
-	concatCmd := []string{
+// buildConcatCommand emits the final stream-copy concat invocation.
+func buildConcatCommand(ffmpegBin, segDir, output string) []string {
+	return []string{
 		ffmpegBin,
 		"-y",
 		"-hide_banner",
@@ -601,20 +656,8 @@ func Merge(recs []Recommendation, params MergeParams) (EncodingPlan, error) {
 		"-safe", "0",
 		"-i", filepath.ToSlash(filepath.Join(segDir, "concat.txt")),
 		"-c", "copy",
-		params.Output,
+		output,
 	}
-
-	out := make([]Recommendation, len(recs))
-	copy(out, recs)
-	return EncodingPlan{
-		Recommendations: out,
-		Encoder:         adapter.Name,
-		Framerate:       params.Framerate,
-		SegmentCommands: segmentCmds,
-		ConcatCommand:   concatCmd,
-		ConcatListing:   strings.Join(listing, "\n") + "\n",
-		SegmentDir:      segDir,
-	}, nil
 }
 
 // SegmentDirFor resolves the segment directory: the explicit override when

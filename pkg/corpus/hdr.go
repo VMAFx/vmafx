@@ -133,7 +133,12 @@ func defaultModelDir() string {
 	if err != nil {
 		return ""
 	}
-	for {
+	// filepath.Dir strips exactly one component per step, so the number of
+	// separators in the starting path bounds the walk; +2 covers the root
+	// itself and a possible trailing separator. Exhausting the bound means
+	// the same thing as walking off the root: no model/ directory above us.
+	maxSteps := strings.Count(dir, string(os.PathSeparator)) + 2
+	for step := 0; step < maxSteps; step++ {
 		candidate := filepath.Join(dir, "model")
 		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
 			if _, mErr := os.Stat(filepath.Join(candidate, "vmaf_v0.6.1.json")); mErr == nil {
@@ -146,4 +151,5 @@ func defaultModelDir() string {
 		}
 		dir = parent
 	}
+	return ""
 }
