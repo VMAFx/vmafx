@@ -21754,9 +21754,10 @@ Fix 6 reproducible test failures introduced by the recent PR train:
   killed run for the 448 tests that executed, plus the remaining 263 timed
   locally and scaled by the 12.8x factor the two runs share on
   `feature_extractor_test.py`, giving ~42 minutes for the whole suite.
-  `pytest-timeout=180` per test is still the anti-hang gate; the outer
-  `timeout` only keeps a wedged subprocess from eating the job budget before
-  gcovr runs.
+  The per-test `pytest-timeout` remains the anti-hang gate; it carried 180 s
+  when this change landed and was raised to 600 s the same day, once the
+  runner-to-runner spread was measured. The outer `timeout` only keeps a wedged
+  subprocess from eating the job budget before gcovr runs.
 
 
 Deselect `test_run_vmaf_runner_float_vifks360o97` from the coverage-job pytest run to stop the test from timing out (vif_kernelscale=3.71 exceeds the 60 s per-test limit on GitHub-hosted runners) and truncating the suite at 61%, which dropped overall coverage from 70% to 56.4%. The test is retained in the Netflix golden gate where no per-test timeout applies.
@@ -22776,6 +22777,9 @@ Fix two broken intra-doc links pointing to nonexistent docs/adr/0720-sunset-floa
 (correct target is ADR-0865); add 9 orphaned metric pages and 2 orphaned MCP pages to
 the mkdocs.yml nav (ansnr, motion, ms-ssim, psnr-hvs, speed_qa, ssim, tad, vif, vmaf-neg,
 mcp/backends, mcp/http-transport).
+
+
+- Fixed a pull request's docs build being cancelled by an unrelated branch: `docs.yml` put every job in GitHub's global `pages` concurrency group, which is not scoped by ref, so `mkdocs build --strict` and `make docs-fragments-check` could be evicted before completing and the check reported `cancelled` rather than a result. The build job is now scoped to its own ref; only the Pages deployment keeps the global group (ADR-1294).
 
 
 - Repair broken developer and usage guide links using canonical ADR IDs, backend

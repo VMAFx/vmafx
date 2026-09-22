@@ -8,6 +8,7 @@
   killed run for the 448 tests that executed, plus the remaining 263 timed
   locally and scaled by the 12.8x factor the two runs share on
   `feature_extractor_test.py`, giving ~42 minutes for the whole suite.
-  `pytest-timeout=180` per test is still the anti-hang gate; the outer
-  `timeout` only keeps a wedged subprocess from eating the job budget before
-  gcovr runs.
+  The per-test `pytest-timeout` remains the anti-hang gate; it carried 180 s
+  when this change landed and was raised to 600 s the same day, once the
+  runner-to-runner spread was measured. The outer `timeout` only keeps a wedged
+  subprocess from eating the job budget before gcovr runs.

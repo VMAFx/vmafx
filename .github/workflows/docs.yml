@@ -13,9 +13,17 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+# Concurrency is per job, not workflow-wide. GitHub's Pages starter workflow
+# puts the whole file in one global `pages` group, which is correct for the
+# deployment (Pages permits one at a time) and wrong for the build: the group is
+# not scoped by ref, so every open PR and every master push contend for one
+# slot. A group holds at most one pending run, so a third arrival evicts the
+# waiting one. Measured 2026-09-22: run 35739609377 (PR #1518 at 160ddfc3d,
+# started 14:20) was cancelled at 14:30:20 inside upload-pages-artifact by run
+# 35740184612 (a Renovate digest bump at 31a5f502b, started 14:25). Neither
+# `mkdocs build --strict` nor `make docs-fragments-check` ran to completion for
+# that PR, and the check reported `cancelled` rather than a failure — a gate
+# that did not run, which HISS-18 forbids reporting as satisfied. See ADR-1294.
 
 jobs:
   build:
@@ -23,6 +31,11 @@ jobs:
       docs: ${{ steps.impact.outputs.docs }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Ref-scoped: one docs build per branch, superseded only by a newer push to
+    # that same branch. No cross-PR contention.
+    concurrency:
+      group: docs-build-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -65,6 +78,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The global `pages` group belongs here and only here: GitHub Pages accepts
+    # one concurrent deployment per repository. `cancel-in-progress: false` so a
+    # deployment already writing to Pages is never torn down mid-write. This job
+    # runs on `push` to master only, so it is not a source of PR contention.
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
