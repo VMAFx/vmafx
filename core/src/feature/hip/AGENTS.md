@@ -293,7 +293,7 @@ Pattern is load-bearing. Do not "fix" it by adding additional
 `extern "C"` which is legal in C++ but redundant and confusing to
 reviewers.
 
-## AdmBufferHip MUST be passed by pointer — invariant (ADR-0759)
+## AdmBufferHip is passed by pointer — invariant (ADR-0759, T-HIP-ADM-ADR0759-REVERTED-2026-09-18)
 
 **Resolved**: P1 known issue documented above (struct-by-value in
 ADM kernel signatures) fixed by ADR-0759 (PR
@@ -327,6 +327,38 @@ Same rule applies to `AdmFixedParametersHip` (~244 bytes) once that
 follow-up scoped; see ADR-0759 alternatives table. Do not add new
 by-value large struct parameters to ADM kernels without explicit ADR
 justification.
+
+- `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4` (`integer_adm/adm_csf.hip`),
+  `i4_adm_cm_line_kernel` and `adm_cm_line_kernel_8` (`integer_adm/adm_cm.hip`)
+  take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
+  struct was copied into every launch's kernel arguments.
+- Host: `AdmStateHip::buf_dev` is a device copy of `s->buf`.
+  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs at the end of
+  `adm_hip_init_device()`, after `adm_hip_slice_bands()` and
+  `adm_hip_slice_results()`. `adm_hip_free_buf_dev()` frees it in
+  `close_fex_hip()` and on both init failure paths.
+- Launch argument = `(void *)&s->buf_dev`, the address of the variable that
+  holds the device pointer (ADR-0537 rule above).
+- Precondition: nothing writes `s->buf` between init and close, and no launch
+  passes a modified copy. Code that changes `s->buf` after init (per-scale
+  band pointers, a resize) must upload it again before the next launch, or
+  the kernels read stale pointers.
+- New ADM kernels that need `AdmBufferHip` take a pointer.
+  `AdmFixedParametersHip` (248 bytes) and `WarpShift` are still passed by
+  value; changing them needs its own measurement.
+- History: #101 (`31a51afb2`) implemented this; #102 (`92ea978a4`, a CUDA
+  ciede change cut from an older base) reverted it in a merge without
+  mentioning it. On a conflict in these files keep the pointer form;
+  `grep -n 'AdmBufferHip buf' core/src/feature/hip/integer_adm/*.hip` must
+  print nothing.
+- Measured on gfx1036: each kernel's argument segment is 320 bytes smaller;
+  per-thread scratch and VGPRs do not change because of the pointer. The
+  936-byte scratch of `adm_cm_line_kernel_8` is VGPR spilling (239 spills at
+  the 128-register cap), not the struct. End-to-end fps is unchanged within
+  noise.
+- Not a CUDA mirror: the CUDA twin passes `AdmBufferCuda` by value and always
+  has (the ADR-0756 audit lists those kernels). Research-0759's statement that
+  CUDA uses a pointer, and ADR-0759's "matches the CUDA pattern", are wrong.
 
 ## ms_ssim_vert_lcs kernel and host partials must both be `double` (ADR-1071)
 
@@ -666,3 +698,28 @@ Copying the old `#define` from a neighbour re-adds a reserved identifier
 `core/src/feature/hip/*.c` inside `/* ... */` opens nested comment ->
 `-Wcomment` on every HIP build -> zero-warning gate fails. 14 parity tests had
 it. Name the set in prose: "the .c files under core/src/feature/hip/".
+
+## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
+
+- `init_fex_hip()` calls `adm_frame_size_check()` first, before any device
+  resource. Bound = CPU bound (17x17).
+- Host shift rounding constant = `adm_half_shift(x)`. In-kernel scale-0 shift
+  in `adm_cm_reduce_line_kernel_body` -> guarded ternary, 0 when shift = 0.
+  Never bare `1u << (x - 1)`.
+- Scale-0 CM kernel (`adm_cm_line_kernel_body`): `x + 1` -> `min(.., w - 1)`,
+  `y + 1` -> `min(.., h - 1)`; `x - 1`, `y - 1` -> `abs()` (ADR-1210 rule).
+- HIP twin emits no `adm3_score` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05).
+  Shared CUDA/HIP tests skip `adm3` under `HAVE_HIP`.
+- HIP ADM tests run without `should_fail` since ADR-1211 staging; all pass on
+  gfx1036. Do not re-add `should_fail` to hide a failure.
+
+## Integer ADM 16-bit vertical DWT sums in int64 (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
+
+- `core/src/feature/hip/integer_adm/adm_dwt2.hip`, scale-0 fused kernel: vertical accumulator = `DwtVertAccum<T>::type`
+  -> int64 for `uint16_t`, int32 for `uint8_t`.
+- Low-pass taps 1-3 sum 50582 -> int32 sum overflows (UB) once 3 16-bit
+  samples >= 42456. CPU twin: `adm_dwt2_vpass16_tap4()` (int64).
+- Normalised value fits int32 -> int64 form = old wrapped result. Scores
+  identical; never narrow back to int32 for speed.
+- Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
+  (parity only; device wrap hides the UB itself).

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -195,6 +196,59 @@ class CompileCommands(unittest.TestCase):
             (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
             units = ratchet.load_compile_commands(build, root)
             self.assertEqual([u[0].relative_to(root).as_posix() for u in units], ["core/src/a.c"])
+
+
+def _fake_clang_tidy(directory: Path) -> Path:
+    """A clang-tidy stand-in that prints its argv and succeeds."""
+    script = directory / "fake-clang-tidy.sh"
+    script.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    script.chmod(0o755)
+    return script
+
+
+class RunClangTidy(unittest.TestCase):
+    def test_extra_args_reach_the_compiler(self) -> None:
+        # The GPU lanes pass --cuda-host-only / -x hip; clang-tidy only accepts
+        # them wrapped in its own --extra-arg.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = _fake_clang_tidy(root)
+            _source, output, returncode = ratchet.run_one(
+                str(binary),
+                Path("build"),
+                ["--cuda-host-only", "-nocudalib"],
+                (root / "a.cu", root),
+            )
+            self.assertEqual(returncode, 0)
+            argv = output.split()
+            self.assertIn("--extra-arg=--cuda-host-only", argv)
+            self.assertIn("--extra-arg=-nocudalib", argv)
+            self.assertNotIn("--cuda-host-only", argv)
+            self.assertTrue(Path(argv[argv.index("-p") + 1]).is_absolute())
+            # A value that already carries the wrapper passes through once, not
+            # twice: the lanes mix both spellings in TIDY_RATCHET_EXTRA_*.
+            self.assertNotIn("--extra-arg=--extra-arg=-nocudalib", argv)
+
+    def test_relative_wrapper_path_survives_the_tu_directory(self) -> None:
+        # clang-tidy runs in each TU's directory; the SYCL lane names its wrapper
+        # relative to the repository root.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "core").mkdir()
+            (root / "core" / "a.c").write_text("int a;\n", encoding="utf-8")
+            build = root / "build"
+            build.mkdir()
+            entries = [{"directory": str(build), "file": str(root / "core/a.c"), "command": "cc"}]
+            (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+            _fake_clang_tidy(root)
+            previous = Path.cwd()
+            os.chdir(root)
+            try:
+                measured = ratchet.measure("sycl", build, root, "./fake-clang-tidy.sh", [], 1)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(measured.compile_failures, [])
+            self.assertEqual(measured.tus, 1)
 
 
 if __name__ == "__main__":

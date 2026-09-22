@@ -837,3 +837,28 @@ kernel variants at runtime. Current policy table is in ADR-0753.
   `__restrict__` extraction pattern; do not add writes through these pointers (they are
   read-only inputs). ADR-0773 completes ADR-0756 `adm_decouple` dispatch item.
   See [ADR-0773](../../../../docs/adr/0773-cuda-adm-decouple-inline-ldg.md).
+
+## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
+
+- `init_fex_cuda()` calls `adm_frame_size_check()` first, before any device
+  resource. Bound = CPU bound (17x17).
+- Shift rounding constant = `adm_half_shift(x)`. Never `1 << (x - 1)`:
+  scale-0 h/v cube shift = 0 at frame width 17..32 -> 2^31 on x86.
+- Scale-0 CM kernels (`adm_cm_line_kernel`, `adm_cm_aim_line_kernel`):
+  `x - 1`, `y - 1` -> `abs()`; `x + 1` -> `min(.., w - 1)`;
+  `y + 1` -> `min(.., h - 1)`. Same rule as CPU `adm_cm_thresh()` (ADR-1210).
+  Edges enter CM region only for bands <= 14 samples.
+- Upstream Netflix form differs; keep fork form on sync (`docs/rebase-notes.md`).
+- Guard: `test_cuda_adm_tiny_frames` (scalar CPU ref, 1e-4; rejection test
+  needs no device).
+
+## Integer ADM 16-bit vertical DWT sums in int64 (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
+
+- `core/src/feature/cuda/integer_adm/adm_dwt2.cu`, scale-0 fused kernel: vertical accumulator = `DwtVertAccum<T>::type`
+  -> int64 for `uint16_t`, int32 for `uint8_t`.
+- Low-pass taps 1-3 sum 50582 -> int32 sum overflows (UB) once 3 16-bit
+  samples >= 42456. CPU twin: `adm_dwt2_vpass16_tap4()` (int64).
+- Normalised value fits int32 -> int64 form = old wrapped result. Scores
+  identical; never narrow back to int32 for speed.
+- Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
+  (parity only; device wrap hides the UB itself).

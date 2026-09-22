@@ -77,8 +77,6 @@ typedef struct AdmBufferCuda {
     struct VmafCudaBuffer *tmp_ref;
     struct VmafCudaBuffer *tmp_dis;
     struct VmafCudaBuffer *tmp_res;
-    struct VmafCudaBuffer *tmp_accum;
-    struct VmafCudaBuffer *tmp_accum_h;
 
     cuda_adm_dwt_band_t ref_dwt2;
     cuda_adm_dwt_band_t dis_dwt2;
