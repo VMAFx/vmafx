@@ -52214,3 +52214,35 @@ The paired invariant lives in `compat/python-vmaf/core/executor.py`: ADR-1278's
 fresh interpreter import `vmaf` at all. Reverting it to the interpreter default
 would also mask the shim bug, by going back to `forkserver`; do not treat that as
 a fix for anything.
+
+## `ai/train/qat.py` — QAT prepares through torchao pt2e (ADR-1293)
+
+Do not restore `torch.ao.quantization.quantize_fx.prepare_qat_fx` or
+`get_default_qat_qconfig_mapping("x86")`. PyTorch deprecated that API
+wholesale; with `ai/pyproject.toml`'s `filterwarnings = ["error"]` the call is
+a test failure, not a log line, and the API has a published removal. The hook
+captures with `torch.export.export(module, example_inputs, strict=True).module()`
+and prepares with `torchao.quantization.pt2e.quantize_pt2e.prepare_qat_pt2e`
+under `X86InductorQuantizer`.
+
+Three invariants a rebase can quietly undo:
+
+- `_set_mode()` must stay. An exported graph module raises
+  `NotImplementedError` on `.train()` / `.eval()`; `_qat_fine_tune` is called
+  with both a raw Lightning module and the prepared graph, so the dispatch on
+  `isinstance(module, torch.fx.GraphModule)` is load-bearing. A resolution that
+  puts `qat_model.cpu().eval()` back fails the smoke test immediately.
+- Phase 4's ONNX export must not go back to `dynamo=False`. Its export target
+  is a fresh fp32 module carrying transferred weights, with no observers, so
+  the quantisation buffers that originally justified the legacy TorchScript
+  exporter are not there — and that exporter now warns on its own. The caller's
+  `dynamic_axes` is translated into positional `dynamic_shapes` ordered by
+  `input_names`; restoring `dynamic_axes` under the dynamo exporter draws a
+  different warning and fails the same test.
+- `torch.export.export_for_training` does not exist in torch 2.14. Guides
+  written against 2.5–2.9 still name it; it folded back into
+  `torch.export.export`.
+
+The two-step pipeline ADR-0207 made load-bearing is unchanged: QAT conditions
+weights, ORT `quantize_static` emits the QDQ graph, `convert_pt2e` is never
+called — for the same reason `convert_fx` never was.

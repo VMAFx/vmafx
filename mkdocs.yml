@@ -1407,6 +1407,7 @@ nav:
         - "ADR-1290: sycl-tidy-lane-compile-database": adr/1290-sycl-tidy-lane-compile-database.md
         - "ADR-1291: silent-revert-declared-reversals": adr/1291-silent-revert-declared-reversals.md
         - "ADR-1292: compat-shim-spawn-safe": adr/1292-compat-shim-spawn-safe.md
+        - "ADR-1293: tinyai-qat-torchao-pt2e": adr/1293-tinyai-qat-torchao-pt2e.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

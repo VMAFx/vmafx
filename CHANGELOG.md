@@ -29007,6 +29007,9 @@ models are currently quantised.
 - `model/tiny/registry.json`: refresh `vmaf_tiny_v1_medium` sha256 to match the inlined-external-data file shipped by [#1226](https://github.com/VMAFx/vmafx/pull/1226). The repack changed the file's bytes (and therefore its sha) but the registry entry was not updated in the same PR, so `meson test --suite=dnn` failed locally and would fail in CI on `test_registry`.
 
 
+- Moved tiny-AI quantisation-aware training off the deprecated `torch.ao.quantization` FX API onto torchao's pt2e API (`torch.export` capture + `prepare_qat_pt2e` under `X86InductorQuantizer`), which was the last `Tiny AI` failure under warnings-as-errors. Weight quantisation is unchanged; the fake-quant activation range widens from reduce-range [0, 127] to the full [0, 255] that ORT `quantize_static` has always used downstream. Phase 4 also leaves the deprecated TorchScript ONNX exporter, since its export target is a plain fp32 module (ADR-1293).
+
+
 - Tiny-AI ONNX exports migrated off `dynamic_axes` to `dynamic_shapes`
   (`vmaf_train.models.exports`, `ai/train/train.py`,
   `ai/scripts/train_fr_regressor_v3.py`) and `export_u2netp_mirror.py` off the

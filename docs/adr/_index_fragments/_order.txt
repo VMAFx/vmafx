@@ -1006,3 +1006,4 @@
 1290-sycl-tidy-lane-compile-database
 1291-silent-revert-declared-reversals
 1292-compat-shim-spawn-safe
+1293-tinyai-qat-torchao-pt2e
