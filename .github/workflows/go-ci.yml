@@ -159,7 +159,24 @@ jobs:
           # Generated protobuf code (gen/) carries G103 (unsafe.Slice) and
           # G115 (int -> uint32 cgo casts) by design; -exclude-generated
           # filters those. Source files must remain at 0 findings.
-          gosec -exclude-generated -quiet ./...
+          #
+          # -exclude-dir=.config/hiss/testdata: the HISS rule engine's own
+          # fixtures. Each rule ships a positive/negative/gap triple whose
+          # planted defect is the fixture -- HISS-07's positive case discards
+          # an `os.Remove` error and HISS-09's reinterprets `&b[0]` through
+          # `unsafe.Pointer` -- so gosec reports G104 and G103 on them by
+          # construction, and "fixing" them would delete the evidence the
+          # standards gate replays. They are not part of the module: `go
+          # build`, `go vet` and `go test` all skip them twice over, because
+          # the Go tool ignores directories whose name starts with `.` and
+          # directories named `testdata`. gosec walks the filesystem itself
+          # and honours neither rule, so this restores the toolchain's own
+          # scoping rather than hiding a finding in shipped code. Verified:
+          # `go list ./...` names 64 packages and none of them is under
+          # .config/; with the exclusion gosec reads 162 files instead of 175
+          # and reports 0 issues.
+          gosec -exclude-generated -exclude-dir=.config/hiss/testdata \
+            -quiet ./...
 
       # Install the kubebuilder envtest control-plane binaries (etcd +
       # kube-apiserver + kubectl) so the vmafx-operator suite at

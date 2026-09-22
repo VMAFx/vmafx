@@ -314,6 +314,16 @@ jobs:
 
       # ---- Pre-load VMAFx images into kind ----
       - name: Load e2e images into kind cluster
+        env:
+          # `kind load docker-image` does not stream: it calls
+          # fs.TempDir("", "images-tar") and writes a single images.tar
+          # holding all three images, then imports that into the node's
+          # containerd. Go's os.MkdirTemp honours $TMPDIR and falls back to
+          # /tmp, which on ubuntu-26.04 is a RAM-backed tmpfs under a
+          # per-user quota — so leaving TMPDIR unset re-creates, on the
+          # tmpfs, the very tar the `docker save` step above deliberately
+          # writes to RUNNER_TEMP.
+          TMPDIR: ${{ runner.temp }}
         run: |
           bash test/e2e/assert-kind-context.sh
           kind load docker-image \

@@ -10,7 +10,7 @@
  * Bit-exactness contract (ADR-0138 / ADR-0140 spirit): the AVX2
  * `od_bin_fdct8x8_avx2` — the heart of the calc_psnrhvs SIMD port —
  * produces byte-for-byte identical int32 DCT coefficients to the
- * scalar reference in libvmaf/src/feature/third_party/xiph/psnr_hvs.c
+ * scalar reference in core/src/feature/third_party/xiph/psnr_hvs.c
  * under FLT_EVAL_METHOD == 0 for every 12-bit input.
  *
  * Scope:

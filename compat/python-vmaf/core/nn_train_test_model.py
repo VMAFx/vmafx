@@ -194,6 +194,57 @@ class NeuralNetTrainTestModel(
 
         return patches_cache, labels_cache
 
+    @staticmethod
+    def _resolve_labels(xys, num_videos, mode):
+        """Per-video labels for training, or a matching run of None for testing."""
+        if mode == "train":
+            assert "label" in xys
+            return xys["label"]
+        elif mode == "test":
+            return [None for _ in range(num_videos)]
+        else:
+            assert False
+
+    def _populate_frame_patches(self, patches_cache, labels_cache, patch_idx, yuv, label, mode):
+        """Write one frame's randomly-placed patches into the caches.
+
+        The RNG is drawn once per frame, in the same order as the loop body this
+        was lifted out of, so the patch selection for a given seed is unchanged.
+        Returns the patch index to continue from.
+        """
+        y, u, v = yuv
+
+        yuvimg = dstack_y_u_v(y, u, v)
+
+        img = create_hp_yuv_4channel(yuvimg)
+
+        h, w, c = img.shape
+
+        adj_h = h - self.patch_height
+        adj_w = w - self.patch_width
+
+        iv, jv = np.meshgrid(np.arange(adj_h), np.arange(adj_w), sparse=False, indexing="ij")
+        iv = iv.reshape(-1)
+        jv = jv.reshape(-1)
+
+        idx = np.random.permutation(adj_h * adj_w)
+
+        iv = iv[idx]
+        jv = jv[idx]
+
+        patches_found = 0
+        for yy, xx in zip(iv, jv):
+            patches_cache[patch_idx] = img[yy : yy + self.patch_height, xx : xx + self.patch_width]
+            if mode == "train":
+                labels_cache[patch_idx] = label
+
+            patches_found += 1
+            patch_idx += 1
+            if patches_found >= self.patches_per_frame:
+                break
+
+        return patch_idx
+
     def _populate_patches_and_labels(self, xkeys, xys, mode="train"):
 
         np.random.seed(self.seed)
@@ -210,13 +261,7 @@ class NeuralNetTrainTestModel(
         yss = xys["dis_y"]  # yss: Y * frames * videos
         uss = xys["dis_u"]
         vss = xys["dis_v"]
-        if mode == "train":
-            assert "label" in xys
-            labels = xys["label"]
-        elif mode == "test":
-            labels = [None for _ in range(len(yss))]
-        else:
-            assert False
+        labels = self._resolve_labels(xys, len(yss), mode)
 
         assert len(yss) == len(uss) == len(vss) == len(labels)
 
@@ -224,39 +269,9 @@ class NeuralNetTrainTestModel(
         for ys, us, vs, label in zip(yss, uss, vss, labels):  # iterate videos
             assert len(ys) == len(us) == len(vs)
             for y, u, v in zip(ys, us, vs):  # iterate frames
-
-                yuvimg = dstack_y_u_v(y, u, v)
-
-                img = create_hp_yuv_4channel(yuvimg)
-
-                h, w, c = img.shape
-
-                adj_h = h - self.patch_height
-                adj_w = w - self.patch_width
-
-                iv, jv = np.meshgrid(
-                    np.arange(adj_h), np.arange(adj_w), sparse=False, indexing="ij"
+                patch_idx = self._populate_frame_patches(
+                    patches_cache, labels_cache, patch_idx, (y, u, v), label, mode
                 )
-                iv = iv.reshape(-1)
-                jv = jv.reshape(-1)
-
-                idx = np.random.permutation(adj_h * adj_w)
-
-                iv = iv[idx]
-                jv = jv[idx]
-
-                patches_found = 0
-                for yy, xx in zip(iv, jv):
-                    patches_cache[patch_idx] = img[
-                        yy : yy + self.patch_height, xx : xx + self.patch_width
-                    ]
-                    if mode == "train":
-                        labels_cache[patch_idx] = label
-
-                    patches_found += 1
-                    patch_idx += 1
-                    if patches_found >= self.patches_per_frame:
-                        break
 
         return patches_cache, labels_cache
 
@@ -360,11 +375,9 @@ class ToddNoiseClassifierTrainTestModel(NeuralNetTrainTestModel, ClassifierMixin
     fsize0 = 5
     fsize1 = 3
 
-    def _train(self, patches, labels):
-
-        assert len(patches) == len(labels)
-
-        # randomly split data into training and validation set
+    @staticmethod
+    def _split_train_validate(patches, labels):
+        """Even random split of the patch indices, plus the per-class train indices."""
         num_data = len(patches)
         indices = np.random.permutation(num_data)
         num_train_data = int(num_data / 2)  # do even split
@@ -372,7 +385,122 @@ class ToddNoiseClassifierTrainTestModel(NeuralNetTrainTestModel, ClassifierMixin
         validate_indices = indices[num_train_data:]
         train_posindices = list(filter(lambda idx: labels[idx] == 1, train_indices))
         train_negindices = list(filter(lambda idx: labels[idx] == 0, train_indices))
+        return train_indices, validate_indices, train_posindices, train_negindices
 
+    def _save_epoch_checkpoint(self, saver, sess, epoch):
+        """Checkpoint this epoch when a checkpoints dir is configured.
+
+        The saver is created lazily on the first checkpointed epoch and handed
+        back so later epochs reuse it.
+        """
+        if not self.checkpoints_dir:
+            return saver
+        if saver is None:
+            saver = tf.train.Saver(max_to_keep=0)
+        outputfile = "%s/model_epoch_%d.ckpt" % (
+            self.checkpoints_dir,
+            epoch,
+        )
+        print("Checkpointing -> %s" % (outputfile,))
+        saver.save(sess, outputfile)
+        return saver
+
+    def _run_balanced_batches(
+        self,
+        sess,
+        train_step,
+        input_image_batch,
+        y_,
+        patches,
+        labels,
+        train_posindices,
+        train_negindices,
+    ):
+        """Run one epoch of class-balanced SGD batches."""
+        halfbatch = self.batch_size // 2
+
+        # here, we enforce balanced training, so that if we would like to
+        # use hinge loss, we will always have representatives from both
+        # target classes
+
+        n_iterations = np.min(
+            (len(train_posindices) // halfbatch, len(train_negindices) // halfbatch)
+        )
+
+        for i in range(n_iterations):
+            # must sort, since h5py needs ordered indices
+            poslst = np.sort(train_posindices[i * halfbatch : (i + 1) * halfbatch]).tolist()
+            neglst = np.sort(train_negindices[i * halfbatch : (i + 1) * halfbatch]).tolist()
+
+            X_batch = np.vstack(
+                (
+                    patches[poslst],
+                    patches[neglst],
+                )
+            )
+            y_batch = np.vstack((as_one_hot(labels[poslst]), as_one_hot(labels[neglst])))
+
+            sys.stdout.write("Training: %d / %d\r" % (i, n_iterations))
+            sys.stdout.flush()
+
+            sess.run(train_step, feed_dict={input_image_batch: X_batch, y_: y_batch})
+
+    def _score_epoch(
+        self,
+        epoch,
+        patches,
+        labels,
+        input_image_batch,
+        loss,
+        sess,
+        train_indices,
+        validate_indices,
+        y_,
+        y_p,
+    ):
+        """Evaluate one epoch on both index sets and report the four numbers.
+
+        Returns ``([train_f1, validate_f1], [train_loss, validate_loss])`` — the
+        two rows the caller accumulates per epoch.
+        """
+        print("")
+
+        print("******************** EPOCH %d / %d ********************" % (epoch, self.n_epochs))
+
+        # train
+        train_loss, train_score = self._evaluate_on_patches(
+            patches, labels, input_image_batch, loss, sess, train_indices, y_, y_p, "train"
+        )
+
+        print("")
+
+        # validate
+        validate_loss, validate_score = self._evaluate_on_patches(
+            patches,
+            labels,
+            input_image_batch,
+            loss,
+            sess,
+            validate_indices,
+            y_,
+            y_p,
+            "validate",
+        )
+
+        print("")
+
+        print(
+            "f1 train %g, f1 validate %g, loss train %g, loss validate %g"
+            % (train_score, validate_score, train_loss, validate_loss)
+        )
+        return [train_score, validate_score], [train_loss, validate_loss]
+
+    def _build_tf_session(self):
+        """Create the graph variables and return them with an initialised session.
+
+        create_tf_variables() also yields logits and the two conv weight tensors;
+        the training loop never reads them, so only the six it uses come back.
+        """
         input_image_batch, logits, y_, y_p, W_conv0, W_conv1, loss, train_step = (
             self.create_tf_variables(self.param_dict)
         )
@@ -380,6 +508,18 @@ class ToddNoiseClassifierTrainTestModel(NeuralNetTrainTestModel, ClassifierMixin
         init = tf.initialize_all_variables()
         sess = tf.Session()
         sess.run(init)
+        return input_image_batch, y_, y_p, loss, train_step, sess
+
+    def _train(self, patches, labels):
+
+        assert len(patches) == len(labels)
+
+        # randomly split data into training and validation set
+        train_indices, validate_indices, train_posindices, train_negindices = (
+            self._split_train_validate(patches, labels)
+        )
+
+        input_image_batch, y_, y_p, loss, train_step, sess = self._build_tf_session()
 
         saver = None
 
@@ -387,76 +527,33 @@ class ToddNoiseClassifierTrainTestModel(NeuralNetTrainTestModel, ClassifierMixin
         f1score_per_epoch = []
         loss_per_epoch = []
         for j in range(self.n_epochs):
-            print("")
-
-            print("******************** EPOCH %d / %d ********************" % (j, self.n_epochs))
-
-            # train
-            train_loss, train_score = self._evaluate_on_patches(
-                patches, labels, input_image_batch, loss, sess, train_indices, y_, y_p, "train"
-            )
-
-            print("")
-
-            # validate
-            validate_loss, validate_score = self._evaluate_on_patches(
+            f1scores, losses = self._score_epoch(
+                j,
                 patches,
                 labels,
                 input_image_batch,
                 loss,
                 sess,
+                train_indices,
                 validate_indices,
                 y_,
                 y_p,
-                "validate",
             )
+            f1score_per_epoch.append(f1scores)
+            loss_per_epoch.append(losses)
 
-            print("")
+            saver = self._save_epoch_checkpoint(saver, sess, j)
 
-            print(
-                "f1 train %g, f1 validate %g, loss train %g, loss validate %g"
-                % (train_score, validate_score, train_loss, validate_loss)
+            self._run_balanced_batches(
+                sess,
+                train_step,
+                input_image_batch,
+                y_,
+                patches,
+                labels,
+                train_posindices,
+                train_negindices,
             )
-            f1score_per_epoch.append([train_score, validate_score])
-            loss_per_epoch.append([train_loss, validate_loss])
-
-            if self.checkpoints_dir:
-                if saver is None:
-                    saver = tf.train.Saver(max_to_keep=0)
-                outputfile = "%s/model_epoch_%d.ckpt" % (
-                    self.checkpoints_dir,
-                    j,
-                )
-                print("Checkpointing -> %s" % (outputfile,))
-                saver.save(sess, outputfile)
-
-            halfbatch = self.batch_size // 2
-
-            # here, we enforce balanced training, so that if we would like to
-            # use hinge loss, we will always have representatives from both
-            # target classes
-
-            n_iterations = np.min(
-                (len(train_posindices) // halfbatch, len(train_negindices) // halfbatch)
-            )
-
-            for i in range(n_iterations):
-                # must sort, since h5py needs ordered indices
-                poslst = np.sort(train_posindices[i * halfbatch : (i + 1) * halfbatch]).tolist()
-                neglst = np.sort(train_negindices[i * halfbatch : (i + 1) * halfbatch]).tolist()
-
-                X_batch = np.vstack(
-                    (
-                        patches[poslst],
-                        patches[neglst],
-                    )
-                )
-                y_batch = np.vstack((as_one_hot(labels[poslst]), as_one_hot(labels[neglst])))
-
-                sys.stdout.write("Training: %d / %d\r" % (i, n_iterations))
-                sys.stdout.flush()
-
-                sess.run(train_step, feed_dict={input_image_batch: X_batch, y_: y_batch})
 
             np.random.shuffle(train_posindices)
             np.random.shuffle(train_negindices)

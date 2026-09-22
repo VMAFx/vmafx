@@ -192,7 +192,7 @@ int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned 
 
     uint8_t *data = picture_acquire_buffer(pic_size);
     if (!data)
-        goto fail;
+        return -ENOMEM;
     pic->data[0] = data;
     pic->data[1] = data + y_sz;
     pic->data[2] = data + y_sz + uv_sz;
@@ -200,29 +200,29 @@ int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned 
         pic->data[1] = pic->data[2] = NULL;
 
     int err = vmaf_picture_priv_init(pic);
-    if (err)
-        goto free_data;
+    if (err) {
+        /* former `goto free_data`: buffer only, priv was never created */
+        aligned_free(data);
+        return -ENOMEM;
+    }
 
     /* The callback userdata slot stores pic_size inline as a tagged value,
      * never dereferenced — standard uintptr_t idiom. pic->priv is guaranteed
      * non-NULL here because vmaf_picture_priv_init succeeded above. */
     // NOLINTNEXTLINE(performance-no-int-to-ptr) — ADR-0141 / ADR-0278: uintptr_t payload in pool release callback
     err = vmaf_picture_set_release_callback(pic, (void *)(uintptr_t)pic_size, pool_release_picture);
-    if (err)
-        goto free_priv;
-
-    err = vmaf_ref_init(&pic->ref);
-    if (err)
-        goto free_priv;
+    /* Chained so a callback failure skips vmaf_ref_init exactly as the former
+     * `goto free_priv` did, and both failures share one unwind. */
+    if (!err)
+        err = vmaf_ref_init(&pic->ref);
+    if (err) {
+        /* former `goto free_priv`: priv first, then the buffer */
+        free(pic->priv);
+        aligned_free(data);
+        return -ENOMEM;
+    }
 
     return 0;
-
-free_priv:
-    free(pic->priv);
-free_data:
-    aligned_free(data);
-fail:
-    return -ENOMEM;
 }
 
 int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src)

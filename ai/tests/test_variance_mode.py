@@ -53,8 +53,9 @@ def test_fr_variance_training_step_finite() -> None:
     x = torch.randn(8, 6)
     y = torch.randn(8) * 20 + 50  # realistic MOS range
     opt = torch.optim.SGD(m.parameters(), lr=1e-3)
-    # Lightning's training_step returns the loss; call it directly.
-    loss = m._step((x, y), "train")
+    # _loss is the arithmetic half of Lightning's training_step; _step adds
+    # the Trainer-scoped self.log() calls, which have nowhere to write here.
+    loss, _ = m._loss((x, y))
     assert torch.isfinite(loss)
     loss.backward()
     opt.step()

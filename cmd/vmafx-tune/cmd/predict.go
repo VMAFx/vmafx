@@ -88,6 +88,15 @@ Example:
   vmafx-tune-go predict --source movie.mkv --codec libx264 \
     --target-vmaf 93 --validate-k 8 --report-out predict.json`
 
+	registerPredictFlags(cmd, flags)
+
+	markCommandFlagsRequired(cmd, "source")
+
+	return cmd
+}
+
+// registerPredictFlags registers the flags of the predict subcommand.
+func registerPredictFlags(cmd *cobra.Command, flags *predictFlags) {
 	cmd.Flags().StringVar(&flags.source, "source", "",
 		"Reference video, any FFmpeg-readable container (required)")
 	cmd.Flags().StringVar(&flags.codec, "codec", "libx264",
@@ -121,10 +130,6 @@ Example:
 		"Split-conformal calibration JSON; without one the intervals are degenerate")
 	cmd.Flags().Float64Var(&flags.alpha, "alpha", math.NaN(),
 		"Override the sidecar's miscoverage level (0.05 = 95% coverage)")
-
-	_ = cmd.MarkFlagRequired("source")
-
-	return cmd
 }
 
 // predictInterval is the per-residual interval block emitted under
@@ -174,6 +179,141 @@ var errFallBackVerdict = errors.New("predictor validation verdict: fall_back")
 
 // runPredict is the implementation of the predict subcommand.
 func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
+	if err := validatePredictFlags(flags); err != nil {
+		return err
+	}
+
+	extractorCfg := predictor.ExtractorConfig{
+		FFmpegBin:            flags.ffmpegBin,
+		FFprobeBin:           flags.ffprobeBin,
+		UseSignalstats:       true,
+		UseSaliency:          flags.useSaliency,
+		SaliencyModel:        flags.saliencyModel,
+		SaliencyFrameSamples: 8,
+		ProbeMaxFrames:       240,
+	}
+
+	geometry, geomErr := probePredictGeometry(ctx, d, flags, extractorCfg)
+	if geomErr != nil {
+		return geomErr
+	}
+
+	shots, shotErr := detectPredictShots(ctx, d, flags, geometry)
+	if shotErr != nil {
+		return shotErr
+	}
+
+	pred := newPredictPredictor(ctx, d, flags)
+
+	// The validation work area lives for the whole run so the score step's
+	// lazy decode still finds the encoded file on disk.
+	workdir, err := os.MkdirTemp("", "vmafx-tune-predict-")
+	if err != nil {
+		return fmt.Errorf("create predict workdir: %w", err)
+	}
+	defer func() {
+		if rmErr := os.RemoveAll(workdir); rmErr != nil {
+			d.Log.WarnContext(ctx, "remove predict workdir",
+				"path", workdir, "error", rmErr)
+		}
+	}()
+
+	extract, encodeAndScore := newPredictCallbacks(ctx, d, flags, geometry, extractorCfg, workdir)
+
+	report, validateErr := predictor.Validate(pred, shots, extract, encodeAndScore,
+		predictPlanOptions(flags))
+	if validateErr != nil {
+		return validateErr
+	}
+
+	if err := emitPredictReport(report, flags); err != nil {
+		return err
+	}
+
+	if report.Verdict == predictor.FallBack {
+		return errFallBackVerdict
+	}
+	return nil
+}
+
+// newPredictCallbacks builds the two seams predictor.Validate calls back into: feature
+// extraction for a shot, and the real encode-then-score that grounds a prediction.
+//
+// Both close over the run's geometry, config and work area, which is what keeps Validate
+// free of any knowledge of ffmpeg, the CLI flags, or where the scratch files live.
+func newPredictCallbacks(
+	ctx context.Context,
+	d deps,
+	flags *predictFlags,
+	geometry predictor.Geometry,
+	extractorCfg predictor.ExtractorConfig,
+	workdir string,
+) (predictor.FeatureExtractor, predictor.RealEncodeAndScore) {
+	var salFunc predictor.SaliencyFunc
+	if flags.useSaliency {
+		salFunc = newPredictSaliencyFunc(ctx, d)
+	}
+	extract := func(shot pershot.Shot) (predictor.ShotFeatures, error) {
+		return predictor.ExtractFeatures(ctx, shot, flags.source, flags.codec,
+			geometry, extractorCfg, runCommand, salFunc)
+	}
+	encodeAndScore := func(shot pershot.Shot, crf int, codec string) (string, float64, error) {
+		return realEncodeAndScore(ctx, d, flags, geometry, workdir, shot, crf, codec)
+	}
+	return extract, encodeAndScore
+}
+
+// predictPlanOptions maps the CLI flags onto the validation options.
+func predictPlanOptions(flags *predictFlags) predictor.ValidateOptions {
+	return predictor.ValidateOptions{
+		TargetVMAF:            flags.targetVMAF,
+		Codec:                 flags.codec,
+		K:                     flags.validateK,
+		ResidualThresholdVMAF: flags.residualThreshold,
+		SelectionStrategy:     predictor.Stratified,
+	}
+}
+
+// probePredictGeometry reads the source geometry once.
+//
+// Shot detection needs it and so does the encode/score loop; probing per shot would cost
+// an ffprobe per shot on a feature-length source. A geometry ffprobe could not read is
+// fatal: continuing would silently mis-parse every encode.
+func probePredictGeometry(
+	ctx context.Context,
+	d deps,
+	flags *predictFlags,
+	extractorCfg predictor.ExtractorConfig,
+) (predictor.Geometry, error) {
+	geometry := predictor.ProbeGeometry(ctx, flags.source, extractorCfg, runCommand)
+	if geometry.Width <= 0 || geometry.Height <= 0 {
+		return geometry, errors.New(
+			"ffprobe could not read the source geometry (width/height); " +
+				"continuing would silently mis-parse every encode")
+	}
+	d.Log.InfoContext(ctx, "probed source geometry",
+		"width", geometry.Width, "height", geometry.Height, "fps", geometry.FPS)
+	return geometry, nil
+}
+
+// emitPredictReport renders the validation report and writes it to --report-out.
+func emitPredictReport(report predictor.ValidationReport, flags *predictFlags) error {
+	payload, buildErr := buildPredictReport(report, flags)
+	if buildErr != nil {
+		return buildErr
+	}
+	// json.dumps(payload, indent=2) — no sort_keys, so the Python handler's
+	// dict insertion order stands, which is the struct field order here.
+	rendered, marshalErr := pyjson.MarshalIndent(payload, false)
+	if marshalErr != nil {
+		return fmt.Errorf("render predict report: %w", marshalErr)
+	}
+	return writeOutput(flags.reportOut, string(rendered)+"\n")
+}
+
+// validatePredictFlags rejects a request the predictor cannot serve, before any probe or
+// encode has cost anything.
+func validatePredictFlags(flags *predictFlags) error {
 	if flags.saliencyModel != "" {
 		if _, err := os.Stat(flags.saliencyModel); err != nil {
 			return &exitCodeError{code: usageExitCode, err: fmt.Errorf("saliency model %q: %w", flags.saliencyModel, err)}
@@ -194,39 +334,28 @@ func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
 	default:
 		return fmt.Errorf("--bitdepth must be 8, 10 or 12; got %d", flags.bitdepth)
 	}
+	return nil
+}
 
-	extractorCfg := predictor.ExtractorConfig{
-		FFmpegBin:            flags.ffmpegBin,
-		FFprobeBin:           flags.ffprobeBin,
-		UseSignalstats:       true,
-		UseSaliency:          flags.useSaliency,
-		SaliencyModel:        flags.saliencyModel,
-		SaliencyFrameSamples: 8,
-		ProbeMaxFrames:       240,
-	}
-
-	// Probe geometry once: shot detection needs it, and so does the
-	// encode/score loop. Probing per shot would cost an ffprobe per shot on
-	// a feature-length source.
-	geometry := predictor.ProbeGeometry(ctx, flags.source, extractorCfg, runCommand)
-	if geometry.Width <= 0 || geometry.Height <= 0 {
-		return errors.New(
-			"ffprobe could not read the source geometry (width/height); " +
-				"continuing would silently mis-parse every encode")
-	}
-	d.Log.InfoContext(ctx, "probed source geometry",
-		"width", geometry.Width, "height", geometry.Height, "fps", geometry.FPS)
-
-	// pkg/pershot is the group-1 implementation: DetectShotsStatus is the
-	// status-returning variant of DetectShots, and the subprocess runner is a
-	// DetectOptions field rather than a trailing argument.
+// detectPredictShots splits the source into the shots the validation runs over.
+//
+// pkg/pershot is the group-1 implementation: DetectShotsStatus is the status-returning
+// variant of DetectShots, and the subprocess runner is a DetectOptions field rather than a
+// trailing argument. A failed detector still yields one whole-source shot, which is a
+// usable run and is logged as the degraded path it is; zero shots is not.
+func detectPredictShots(
+	ctx context.Context,
+	d deps,
+	flags *predictFlags,
+	geometry predictor.Geometry,
+) ([]pershot.Shot, error) {
 	shots, detected := pershot.DetectShotsStatus(ctx, flags.source, pershot.DetectOptions{
 		Width: geometry.Width, Height: geometry.Height,
 		PixFmt: "yuv420p", Bitdepth: flags.bitdepth,
 		TotalFrames: flags.totalFrames, Bin: flags.perShotBin,
 	})
 	if len(shots) == 0 {
-		return errors.New("no shots detected; nothing to do")
+		return nil, errors.New("no shots detected; nothing to do")
 	}
 	if !detected {
 		d.Log.WarnContext(ctx,
@@ -235,99 +364,34 @@ func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
 	} else {
 		d.Log.InfoContext(ctx, "detected shots", "count", len(shots))
 	}
+	return shots, nil
+}
 
+// newPredictPredictor builds the predictor, preferring the learned ONNX session when one
+// resolves and falling back to the analytical model otherwise.
+func newPredictPredictor(ctx context.Context, d deps, flags *predictFlags) *predictor.Predictor {
 	pred := predictor.New()
-	if session := predictor.NewORTSession(ctx, flags.model); session != nil {
-		pred = predictor.WithSession(session)
-		pred.Log = d.Log
-		// Deliberately phrased as a request, not an accomplishment: the runner
-		// is a subprocess resolved at first inference, so at this point we do
-		// not yet know whether the learned path will work. Claiming "using the
-		// learned ONNX predictor" here is what made a silent fallback look
-		// like a model-backed run.
-		d.Log.InfoContext(ctx, "ONNX predictor requested", "model", flags.model)
+	session := predictor.NewORTSession(ctx, flags.model)
+	if session == nil {
+		return pred
 	}
-
-	// The validation work area lives for the whole run so the score step's
-	// lazy decode still finds the encoded file on disk.
-	workdir, err := os.MkdirTemp("", "vmafx-tune-predict-")
-	if err != nil {
-		return fmt.Errorf("create predict workdir: %w", err)
-	}
-	defer func() {
-		if rmErr := os.RemoveAll(workdir); rmErr != nil {
-			d.Log.WarnContext(ctx, "remove predict workdir",
-				"path", workdir, "error", rmErr)
-		}
-	}()
-
-	var salFunc predictor.SaliencyFunc
-	if flags.useSaliency {
-		salFunc = newPredictSaliencyFunc(ctx, d)
-	}
-
-	extract := func(shot pershot.Shot) (predictor.ShotFeatures, error) {
-		return predictor.ExtractFeatures(ctx, shot, flags.source, flags.codec,
-			geometry, extractorCfg, runCommand, salFunc)
-	}
-	encodeAndScore := func(shot pershot.Shot, crf int, codec string) (string, float64, error) {
-		return realEncodeAndScore(ctx, d, flags, geometry, workdir, shot, crf, codec)
-	}
-
-	report, validateErr := predictor.Validate(pred, shots, extract, encodeAndScore,
-		predictor.ValidateOptions{
-			TargetVMAF:            flags.targetVMAF,
-			Codec:                 flags.codec,
-			K:                     flags.validateK,
-			ResidualThresholdVMAF: flags.residualThreshold,
-			SelectionStrategy:     predictor.Stratified,
-		})
-	if validateErr != nil {
-		return validateErr
-	}
-
-	payload, buildErr := buildPredictReport(report, flags)
-	if buildErr != nil {
-		return buildErr
-	}
-	// json.dumps(payload, indent=2) — no sort_keys, so the Python handler's
-	// dict insertion order stands, which is the struct field order here.
-	rendered, marshalErr := pyjson.MarshalIndent(payload, false)
-	if marshalErr != nil {
-		return fmt.Errorf("render predict report: %w", marshalErr)
-	}
-	if err := writeOutput(flags.reportOut, string(rendered)+"\n"); err != nil {
-		return err
-	}
-
-	if report.Verdict == predictor.FallBack {
-		return errFallBackVerdict
-	}
-	return nil
+	pred = predictor.WithSession(session)
+	pred.Log = d.Log
+	// Deliberately phrased as a request, not an accomplishment: the runner
+	// is a subprocess resolved at first inference, so at this point we do
+	// not yet know whether the learned path will work. Claiming "using the
+	// learned ONNX predictor" here is what made a silent fallback look
+	// like a model-backed run.
+	d.Log.InfoContext(ctx, "ONNX predictor requested", "model", flags.model)
+	return pred
 }
 
 // buildPredictReport assembles the JSON payload, resolving the conformal
 // calibration once and reusing it for every per-shot interval.
 func buildPredictReport(report predictor.ValidationReport, flags *predictFlags) (predictReport, error) {
-	var calibration *conformal.SplitCalibration
-	uncalibrated := false
-	if flags.withUncertainty {
-		if flags.calibrationSidecar != "" {
-			cal, err := conformal.LoadSplitCalibration(flags.calibrationSidecar)
-			if err != nil {
-				return predictReport{}, err
-			}
-			if !math.IsNaN(flags.alpha) {
-				// LoadSplitCalibration already returns a pointer, and WithAlpha
-				// re-quantiles into a new one rather than mutating in place.
-				if cal, err = cal.WithAlpha(flags.alpha); err != nil {
-					return predictReport{}, err
-				}
-			}
-			calibration = cal
-		} else {
-			uncalibrated = true
-		}
+	calibration, uncalibrated, err := resolvePredictCalibration(flags)
+	if err != nil {
+		return predictReport{}, err
 	}
 
 	var reportedAlpha *float64
@@ -336,6 +400,58 @@ func buildPredictReport(report predictor.ValidationReport, flags *predictFlags) 
 		reportedAlpha = &alpha
 	}
 
+	residuals := buildPredictResiduals(report, flags, calibration)
+
+	return predictReport{
+		Verdict:           string(report.Verdict),
+		TargetVMAF:        report.TargetVMAF,
+		ResidualThreshold: report.ThresholdVMAF,
+		MaxAbsResidual:    report.MaxAbsResidual(),
+		MeanResidual:      report.MeanResidual(),
+		BiasCorrection:    report.BiasCorrection,
+		KValidated:        len(report.Residuals),
+		Uncertainty: predictUncertainty{
+			Enabled:    flags.withUncertainty,
+			Calibrated: flags.withUncertainty && !uncalibrated,
+			Alpha:      reportedAlpha,
+		},
+		Residuals: residuals,
+	}, nil
+}
+
+// resolvePredictCalibration loads the conformal calibration the intervals are drawn from,
+// reporting whether the run is uncalibrated.
+//
+// --with-uncertainty without a sidecar is the documented degraded path: intervals are
+// still emitted, but flagged uncalibrated so nobody reads a coverage guarantee into them.
+func resolvePredictCalibration(flags *predictFlags) (*conformal.SplitCalibration, bool, error) {
+	if !flags.withUncertainty {
+		return nil, false, nil
+	}
+	if flags.calibrationSidecar == "" {
+		return nil, true, nil
+	}
+	cal, err := conformal.LoadSplitCalibration(flags.calibrationSidecar)
+	if err != nil {
+		return nil, false, err
+	}
+	if !math.IsNaN(flags.alpha) {
+		// LoadSplitCalibration already returns a pointer, and WithAlpha
+		// re-quantiles into a new one rather than mutating in place.
+		if cal, err = cal.WithAlpha(flags.alpha); err != nil {
+			return nil, false, err
+		}
+	}
+	return cal, false, nil
+}
+
+// buildPredictResiduals projects the validation residuals onto the report rows, attaching
+// a prediction interval to each when uncertainty was requested.
+func buildPredictResiduals(
+	report predictor.ValidationReport,
+	flags *predictFlags,
+	calibration *conformal.SplitCalibration,
+) []predictResidual {
 	residuals := make([]predictResidual, 0, len(report.Residuals))
 	for _, r := range report.Residuals {
 		row := predictResidual{
@@ -362,22 +478,7 @@ func buildPredictReport(report predictor.ValidationReport, flags *predictFlags) 
 		}
 		residuals = append(residuals, row)
 	}
-
-	return predictReport{
-		Verdict:           string(report.Verdict),
-		TargetVMAF:        report.TargetVMAF,
-		ResidualThreshold: report.ThresholdVMAF,
-		MaxAbsResidual:    report.MaxAbsResidual(),
-		MeanResidual:      report.MeanResidual(),
-		BiasCorrection:    report.BiasCorrection,
-		KValidated:        len(report.Residuals),
-		Uncertainty: predictUncertainty{
-			Enabled:    flags.withUncertainty,
-			Calibrated: flags.withUncertainty && !uncalibrated,
-			Alpha:      reportedAlpha,
-		},
-		Residuals: residuals,
-	}, nil
+	return residuals
 }
 
 // realEncodeAndScore extracts one shot to raw YUV, encodes it at crf, decodes
@@ -403,18 +504,7 @@ func realEncodeAndScore(
 	distPath := filepath.Join(workdir,
 		fmt.Sprintf("dist_%d_%d.mp4", shot.StartFrame, shot.EndFrame))
 
-	extractArgv := []string{
-		flags.ffmpegBin, "-y", "-hide_banner", "-loglevel", "error",
-		"-ss", predictor.ShotStartArg(shot, geometry.FPS),
-		"-i", flags.source,
-		"-frames:v", fmt.Sprintf("%d", shot.Length()),
-		"-pix_fmt", pixFmt,
-		"-f", "rawvideo",
-		refYUV,
-	}
-	if _, _, exitStatus, err := runCommand(ctx, extractArgv); err != nil || exitStatus != 0 {
-		d.Log.WarnContext(ctx, "reference extraction failed; scoring the shot NaN",
-			"shot_start", shot.StartFrame, "exit_status", exitStatus, "error", err)
+	if !extractShotReference(ctx, d, flags, geometry, shot, pixFmt, refYUV) {
 		return distPath, math.NaN(), nil
 	}
 
@@ -437,17 +527,7 @@ func realEncodeAndScore(
 		return distPath, math.NaN(), nil
 	}
 
-	// The vmaf CLI only accepts raw YUV once geometry is pinned, so the
-	// encoded container has to be decoded back first.
-	distYUV := filepath.Join(workdir,
-		fmt.Sprintf("dist_%d_%d.decoded.yuv", shot.StartFrame, shot.EndFrame))
-	decodeArgv := scorecli.DecodeCommand(distPath, distYUV, pixFmt, flags.ffmpegBin, 0)
-	distForScore := distYUV
-	if _, _, exitStatus, err := runCommand(ctx, decodeArgv); err != nil || exitStatus != 0 {
-		d.Log.WarnContext(ctx, "distorted decode failed; scoring against the container",
-			"shot_start", shot.StartFrame, "exit_status", exitStatus)
-		distForScore = distPath
-	}
+	distForScore := decodeDistortedForScore(ctx, d, flags, workdir, shot, pixFmt, distPath)
 
 	scoreRes, scoreErr := scorecli.Run(ctx, scorecli.Request{
 		Reference: refYUV, Distorted: distForScore,
@@ -457,6 +537,60 @@ func realEncodeAndScore(
 		return distPath, math.NaN(), scoreErr
 	}
 	return distPath, scoreRes.VMAFScore, nil
+}
+
+// extractShotReference cuts one shot out of the source as raw YUV, reporting whether the
+// extraction produced a file the scorer can use.
+//
+// A failure is logged and reported as false rather than returned as an error: the caller
+// turns that into a NaN score, because one unscorable shot must not abort the run.
+func extractShotReference(
+	ctx context.Context,
+	d deps,
+	flags *predictFlags,
+	geometry predictor.Geometry,
+	shot pershot.Shot,
+	pixFmt, refYUV string,
+) bool {
+	extractArgv := []string{
+		flags.ffmpegBin, "-y", "-hide_banner", "-loglevel", "error",
+		"-ss", predictor.ShotStartArg(shot, geometry.FPS),
+		"-i", flags.source,
+		"-frames:v", fmt.Sprintf("%d", shot.Length()),
+		"-pix_fmt", pixFmt,
+		"-f", "rawvideo",
+		refYUV,
+	}
+	if _, _, exitStatus, err := runCommand(ctx, extractArgv); err != nil || exitStatus != 0 {
+		d.Log.WarnContext(ctx, "reference extraction failed; scoring the shot NaN",
+			"shot_start", shot.StartFrame, "exit_status", exitStatus, "error", err)
+		return false
+	}
+	return true
+}
+
+// decodeDistortedForScore decodes the encoded container back to raw YUV for the scorer.
+//
+// The vmaf CLI only accepts raw YUV once geometry is pinned, so the container has to be
+// decoded first. A failed decode falls back to scoring the container directly: that is
+// worse input for the scorer but still an answer, which beats losing the shot.
+func decodeDistortedForScore(
+	ctx context.Context,
+	d deps,
+	flags *predictFlags,
+	workdir string,
+	shot pershot.Shot,
+	pixFmt, distPath string,
+) string {
+	distYUV := filepath.Join(workdir,
+		fmt.Sprintf("dist_%d_%d.decoded.yuv", shot.StartFrame, shot.EndFrame))
+	decodeArgv := scorecli.DecodeCommand(distPath, distYUV, pixFmt, flags.ffmpegBin, 0)
+	if _, _, exitStatus, err := runCommand(ctx, decodeArgv); err != nil || exitStatus != 0 {
+		d.Log.WarnContext(ctx, "distorted decode failed; scoring against the container",
+			"shot_start", shot.StartFrame, "exit_status", exitStatus)
+		return distPath
+	}
+	return distYUV
 }
 
 // computeSaliencyMoments computes the population mean and variance of mask.

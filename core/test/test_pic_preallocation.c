@@ -25,9 +25,9 @@
 #include <stdlib.h>
 #ifdef _WIN32
 #include <windows.h>
-#define usleep(us) Sleep(((us) + 999) / 1000)
 #define sleep(s) Sleep((s) * 1000)
 #else
+#include <time.h>
 #include <unistd.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -204,6 +204,29 @@ static char *test_picture_pool_fetch_unref_cycle()
     return NULL;
 }
 
+/* Fetch @p frames preallocated YUV444 picture pairs and submit them.
+ * Returns the mu_assert message of the first failure, or NULL when every
+ * frame round-trips. Lifted out of test_picture_pool_yuv444 so that test
+ * stays inside the HISS-04 / NASA rule 4 60-line function cap. */
+static char *pump_preallocated_yuv444_frames(VmafContext *vmaf, unsigned frames)
+{
+    for (unsigned i = 0; i < frames; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = vmaf_fetch_preallocated_picture(vmaf, &ref);
+        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
+        mu_assert("picture should be YUV444", ref.pix_fmt == VMAF_PIX_FMT_YUV444P);
+
+        err = vmaf_fetch_preallocated_picture(vmaf, &dist);
+        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
+        mu_assert("picture should be YUV444", dist.pix_fmt == VMAF_PIX_FMT_YUV444P);
+
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("problem during vmaf_read_pictures", !err);
+    }
+    return NULL;
+}
+
 static char *test_picture_pool_yuv444()
 {
     int err = 0;
@@ -240,20 +263,9 @@ static char *test_picture_pool_yuv444()
     err = vmaf_use_features_from_model(vmaf, model);
     mu_assert("problem during vmaf_use_features_from_model", !err);
 
-    for (unsigned i = 0; i < 5; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = vmaf_fetch_preallocated_picture(vmaf, &ref);
-        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
-        mu_assert("picture should be YUV444", ref.pix_fmt == VMAF_PIX_FMT_YUV444P);
-
-        err = vmaf_fetch_preallocated_picture(vmaf, &dist);
-        mu_assert("problem during vmaf_fetch_preallocated_picture", !err);
-        mu_assert("picture should be YUV444", dist.pix_fmt == VMAF_PIX_FMT_YUV444P);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("problem during vmaf_read_pictures", !err);
-    }
+    char *frame_err = pump_preallocated_yuv444_frames(vmaf, 5);
+    if (frame_err)
+        return frame_err;
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("problem during vmaf_read_pictures", !err);
@@ -262,75 +274,6 @@ static char *test_picture_pool_yuv444()
     mu_assert("problem during vmaf_close", !err);
 
     vmaf_model_destroy(model);
-
-    return NULL;
-}
-
-// Test pool exhaustion and blocking behavior
-static char *test_picture_pool_exhaustion()
-{
-    int err = 0;
-
-    VmafConfiguration vmaf_cfg = {
-        .log_level = VMAF_LOG_LEVEL_INFO,
-        .n_threads = 4,
-    };
-
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("problem during vmaf_init", !err);
-
-    // Very small pool (2 pictures) to test exhaustion
-    VmafPictureConfiguration pic_cfg = {
-        .pic_params =
-            {
-                .w = 640,
-                .h = 480,
-                .bpc = 8,
-                .pix_fmt = VMAF_PIX_FMT_YUV420P,
-            },
-        .pic_cnt = 2,
-    };
-
-    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
-    mu_assert("problem during vmaf_preallocate_pictures", !err);
-
-    VmafPicture pics[3];
-
-    // Fetch first picture - should succeed
-    err = vmaf_fetch_preallocated_picture(vmaf, &pics[0]);
-    mu_assert("first fetch should succeed", !err);
-
-    // Save the data pointer from first picture
-    void *first_data_ptr = pics[0].data[0];
-
-    // Fetch second picture - should succeed
-    err = vmaf_fetch_preallocated_picture(vmaf, &pics[1]);
-    mu_assert("second fetch should succeed", !err);
-
-    // Pool is now exhausted (2/2 pictures in use)
-    // If we tried to fetch a third, it would block
-
-    // Return first picture
-    err = vmaf_picture_unref(&pics[0]);
-    mu_assert("problem during vmaf_picture_unref", !err);
-
-    // Now fetch third picture - should succeed (reuses first picture)
-    err = vmaf_fetch_preallocated_picture(vmaf, &pics[2]);
-    mu_assert("third fetch should succeed after unref", !err);
-
-    // Verify the picture we got back has same data pointer as first
-    // (This verifies the free list is working correctly and pictures are reused)
-    mu_assert("pictures should be reused", pics[2].data[0] == first_data_ptr);
-
-    // Cleanup
-    err = vmaf_picture_unref(&pics[1]);
-    mu_assert("problem during vmaf_picture_unref", !err);
-    err = vmaf_picture_unref(&pics[2]);
-    mu_assert("problem during vmaf_picture_unref", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("problem during vmaf_close", !err);
 
     return NULL;
 }
@@ -359,8 +302,13 @@ static void *thread_fetch_worker(void *arg)
         // Store the data pointer to check for duplicates later
         data->data_ptrs[i] = pic.data[0];
 
-        // Simulate some work
-        usleep(100); // 0.1ms
+        // Hold the pooled picture briefly so sibling workers contend for slots.
+#ifdef _WIN32
+        Sleep(1);
+#else
+        const struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000L};
+        (void)nanosleep(&pause, NULL);
+#endif
 
         err = vmaf_picture_unref(&pic);
         if (err) {
@@ -372,53 +320,91 @@ static void *thread_fetch_worker(void *arg)
     return NULL;
 }
 
-// Test concurrent access from multiple threads
-static char *test_picture_pool_multithreaded()
+static char *init_test_pool(VmafContext **vmaf, enum VmafLogLevel log_level, unsigned n_threads,
+                            unsigned width, unsigned height, unsigned picture_count)
 {
-    int err = 0;
-
-    VmafConfiguration vmaf_cfg = {
-        .log_level = VMAF_LOG_LEVEL_INFO,
-        .n_threads = 8,
+    const VmafConfiguration vmaf_cfg = {
+        .log_level = log_level,
+        .n_threads = n_threads,
     };
-
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, vmaf_cfg);
+    int err = vmaf_init(vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
-    VmafPictureConfiguration pic_cfg = {
+    const VmafPictureConfiguration pic_cfg = {
         .pic_params =
             {
-                .w = 1920,
-                .h = 1080,
+                .w = width,
+                .h = height,
                 .bpc = 8,
                 .pix_fmt = VMAF_PIX_FMT_YUV420P,
             },
-        .pic_cnt = 8, // Small pool to stress test
+        .pic_cnt = picture_count,
     };
-
-    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
+    err = vmaf_preallocate_pictures(*vmaf, pic_cfg);
     mu_assert("problem during vmaf_preallocate_pictures", !err);
+    return NULL;
+}
 
-    enum { num_threads = 4, fetches_per_thread = 20 };
-    pthread_t threads[num_threads];
-    thread_test_data thread_data[num_threads];
+// Test pool exhaustion and blocking behavior
+static char *test_picture_pool_exhaustion()
+{
+    VmafContext *vmaf = NULL;
+    char *message = init_test_pool(&vmaf, VMAF_LOG_LEVEL_INFO, 4, 640, 480, 2);
+    if (message)
+        return message;
 
-    // Start threads
+    VmafPicture pics[3];
+    int err = vmaf_fetch_preallocated_picture(vmaf, &pics[0]);
+    mu_assert("first fetch should succeed", !err);
+    void *first_data_ptr = pics[0].data[0];
+
+    err = vmaf_fetch_preallocated_picture(vmaf, &pics[1]);
+    mu_assert("second fetch should succeed", !err);
+    err = vmaf_picture_unref(&pics[0]);
+    mu_assert("problem during vmaf_picture_unref", !err);
+    err = vmaf_fetch_preallocated_picture(vmaf, &pics[2]);
+    mu_assert("third fetch should succeed after unref", !err);
+    mu_assert("pictures should be reused", pics[2].data[0] == first_data_ptr);
+
+    err = vmaf_picture_unref(&pics[1]);
+    mu_assert("problem during vmaf_picture_unref", !err);
+    err = vmaf_picture_unref(&pics[2]);
+    mu_assert("problem during vmaf_picture_unref", !err);
+    err = vmaf_close(vmaf);
+    mu_assert("problem during vmaf_close", !err);
+    return NULL;
+}
+
+/* Upper bound on the worker count any caller asks for. The arrays below are
+ * sized from it rather than from `num_threads` because MSVC implements no
+ * variable-length arrays at all (C11 made them optional and /std:clatest
+ * rejects them with C2057/C2466/C2133), so a VLA here breaks every Windows
+ * leg of the build matrix. */
+enum { MAX_FETCH_THREADS = 16 };
+
+static char *run_thread_fetches(VmafContext *vmaf, int num_threads, int fetches_per_thread)
+{
+    mu_assert("run_thread_fetches called with more workers than MAX_FETCH_THREADS",
+              num_threads >= 0 && num_threads <= MAX_FETCH_THREADS);
+
+    pthread_t threads[MAX_FETCH_THREADS];
+    thread_test_data thread_data[MAX_FETCH_THREADS];
     int threads_created = 0;
+
     for (int i = 0; i < num_threads; i++) {
-        thread_data[i].vmaf = vmaf;
-        thread_data[i].thread_id = i;
-        thread_data[i].fetch_count = fetches_per_thread;
-        thread_data[i].error = 0;
-        thread_data[i].data_ptrs = malloc(sizeof(void *) * fetches_per_thread);
+        thread_data[i] = (thread_test_data){
+            .vmaf = vmaf,
+            .thread_id = i,
+            .fetch_count = fetches_per_thread,
+            .error = 0,
+            .data_ptrs = malloc(sizeof(void *) * fetches_per_thread),
+        };
         if (!thread_data[i].data_ptrs) {
             for (int j = 0; j < i; j++)
                 free(thread_data[j].data_ptrs);
             mu_assert("malloc failed for data_ptrs", 0);
         }
-
-        err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
+        const int err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
         if (err) {
             for (int j = 0; j <= i; j++)
                 free(thread_data[j].data_ptrs);
@@ -427,7 +413,6 @@ static char *test_picture_pool_multithreaded()
         threads_created++;
     }
 
-    // Wait for all threads
     int thread_err = 0;
     for (int i = 0; i < threads_created; i++) {
         pthread_join(threads[i], NULL);
@@ -436,8 +421,21 @@ static char *test_picture_pool_multithreaded()
         free(thread_data[i].data_ptrs);
     }
     mu_assert("thread encountered error", thread_err == 0);
+    return NULL;
+}
 
-    err = vmaf_close(vmaf);
+// Test concurrent access from multiple threads
+static char *test_picture_pool_multithreaded()
+{
+    VmafContext *vmaf = NULL;
+    char *message = init_test_pool(&vmaf, VMAF_LOG_LEVEL_INFO, 8, 1920, 1080, 8);
+    if (message)
+        return message;
+    message = run_thread_fetches(vmaf, 4, 20);
+    if (message)
+        return message;
+
+    const int err = vmaf_close(vmaf);
     mu_assert("problem during vmaf_close", !err);
 
     return NULL;
@@ -507,70 +505,15 @@ static char *test_picture_pool_close_waits()
 // Stress test with high contention
 static char *test_picture_pool_stress()
 {
-    int err = 0;
-
-    VmafConfiguration vmaf_cfg = {
-        .log_level = VMAF_LOG_LEVEL_WARNING,
-        .n_threads = 16,
-    };
-
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("problem during vmaf_init", !err);
+    char *message = init_test_pool(&vmaf, VMAF_LOG_LEVEL_WARNING, 16, 640, 480, 4);
+    if (message)
+        return message;
+    message = run_thread_fetches(vmaf, 16, 50);
+    if (message)
+        return message;
 
-    // Very small pool relative to thread count
-    VmafPictureConfiguration pic_cfg = {
-        .pic_params =
-            {
-                .w = 640,
-                .h = 480,
-                .bpc = 8,
-                .pix_fmt = VMAF_PIX_FMT_YUV420P,
-            },
-        .pic_cnt = 4, // Only 4 pictures for 16 threads!
-    };
-
-    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
-    mu_assert("problem during vmaf_preallocate_pictures", !err);
-
-    enum { num_threads = 16, fetches_per_thread = 50 };
-    pthread_t threads[num_threads];
-    thread_test_data thread_data[num_threads];
-
-    // Start threads - high contention for limited pool
-    int threads_created_s = 0;
-    for (int i = 0; i < num_threads; i++) {
-        thread_data[i].vmaf = vmaf;
-        thread_data[i].thread_id = i;
-        thread_data[i].fetch_count = fetches_per_thread;
-        thread_data[i].error = 0;
-        thread_data[i].data_ptrs = malloc(sizeof(void *) * fetches_per_thread);
-        if (!thread_data[i].data_ptrs) {
-            for (int j = 0; j < i; j++)
-                free(thread_data[j].data_ptrs);
-            mu_assert("malloc failed for data_ptrs", 0);
-        }
-
-        err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
-        if (err) {
-            for (int j = 0; j <= i; j++)
-                free(thread_data[j].data_ptrs);
-            mu_assert("problem creating thread", 0);
-        }
-        threads_created_s++;
-    }
-
-    // Wait for all threads
-    int thread_err_s = 0;
-    for (int i = 0; i < threads_created_s; i++) {
-        pthread_join(threads[i], NULL);
-        if (thread_data[i].error != 0)
-            thread_err_s = thread_data[i].error;
-        free(thread_data[i].data_ptrs);
-    }
-    mu_assert("thread encountered error", thread_err_s == 0);
-
-    err = vmaf_close(vmaf);
+    const int err = vmaf_close(vmaf);
     mu_assert("problem during vmaf_close", !err);
 
     return NULL;

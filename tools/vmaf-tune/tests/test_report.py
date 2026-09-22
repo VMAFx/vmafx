@@ -388,8 +388,9 @@ def _sample_compare_v1() -> ReportData:
     )
 
 
-def _sample_compare_v2() -> ReportData:
-    src = SourceInfo(
+def _compare_v2_source() -> SourceInfo:
+    """1080p24, 10 s source backing the schema-v2 sweep fixture."""
+    return SourceInfo(
         path="/tmp/example.mp4",
         width=1920,
         height=1080,
@@ -399,66 +400,80 @@ def _sample_compare_v2() -> ReportData:
         codec="h264",
         size_bytes=1_000_000,
     )
-    return ReportData(
-        source=src,
-        target_vmaf=94.0,
-        sweep_targets=(94.0, 96.0),
-        sweep_points=(
-            CodecSweepPoint(
-                "libsvtav1",
-                "SVT-AV1",
-                94.0,
-                30,
-                1600.0,
-                120.0,
-                94.2,
-                True,
-                bisect_samples=(
-                    BisectSamplePoint(32, 1200.0, 91.5, 30.0),
-                    BisectSamplePoint(30, 1600.0, 94.2, 35.0),
-                    BisectSamplePoint(28, 2100.0, 95.8, 40.0),
-                ),
-            ),
-            CodecSweepPoint(
-                "libsvtav1",
-                "SVT-AV1",
-                96.0,
-                26,
-                2400.0,
-                140.0,
-                96.1,
-                True,
-                bisect_samples=(
-                    BisectSamplePoint(26, 2400.0, 96.1, 45.0),
-                    BisectSamplePoint(24, 3000.0, 97.2, 50.0),
-                ),
-            ),
-            CodecSweepPoint(
-                "libx265",
-                "x265",
-                94.0,
-                24,
-                2100.0,
-                100.0,
-                94.3,
-                True,
-                bisect_samples=(
-                    BisectSamplePoint(26, 1700.0, 92.0, 25.0),
-                    BisectSamplePoint(24, 2100.0, 94.3, 30.0),
-                ),
-            ),
-            CodecSweepPoint(
-                "libx265",
-                "x265",
-                96.0,
-                -1,
-                float("nan"),
-                0.0,
-                float("nan"),
-                False,
-                error="timeout",
+
+
+def _compare_v2_svtav1_points() -> tuple[CodecSweepPoint, ...]:
+    """SVT-AV1 sweep points: both targets met, each with its bisect samples."""
+    return (
+        CodecSweepPoint(
+            "libsvtav1",
+            "SVT-AV1",
+            94.0,
+            30,
+            1600.0,
+            120.0,
+            94.2,
+            True,
+            bisect_samples=(
+                BisectSamplePoint(32, 1200.0, 91.5, 30.0),
+                BisectSamplePoint(30, 1600.0, 94.2, 35.0),
+                BisectSamplePoint(28, 2100.0, 95.8, 40.0),
             ),
         ),
+        CodecSweepPoint(
+            "libsvtav1",
+            "SVT-AV1",
+            96.0,
+            26,
+            2400.0,
+            140.0,
+            96.1,
+            True,
+            bisect_samples=(
+                BisectSamplePoint(26, 2400.0, 96.1, 45.0),
+                BisectSamplePoint(24, 3000.0, 97.2, 50.0),
+            ),
+        ),
+    )
+
+
+def _compare_v2_x265_points() -> tuple[CodecSweepPoint, ...]:
+    """x265 sweep points: target 94 met, target 96 timed out (NaN numerics)."""
+    return (
+        CodecSweepPoint(
+            "libx265",
+            "x265",
+            94.0,
+            24,
+            2100.0,
+            100.0,
+            94.3,
+            True,
+            bisect_samples=(
+                BisectSamplePoint(26, 1700.0, 92.0, 25.0),
+                BisectSamplePoint(24, 2100.0, 94.3, 30.0),
+            ),
+        ),
+        CodecSweepPoint(
+            "libx265",
+            "x265",
+            96.0,
+            -1,
+            float("nan"),
+            0.0,
+            float("nan"),
+            False,
+            error="timeout",
+        ),
+    )
+
+
+def _sample_compare_v2() -> ReportData:
+    return ReportData(
+        source=_compare_v2_source(),
+        target_vmaf=94.0,
+        sweep_targets=(94.0, 96.0),
+        sweep_points=_compare_v2_svtav1_points() + _compare_v2_x265_points(),
         generated_at_iso="2026-05-17T00:00:00+00:00",
     )
 

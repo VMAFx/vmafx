@@ -89,17 +89,37 @@ static const VmafOption options[2] = {
 #define FPSNR_BX 16
 #define FPSNR_BY 16
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* float_psnr_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_buffers` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int float_psnr_init_unwind(VmafFeatureExtractor *fex, FloatPsnrStateCuda *s, int ret)
 {
-    (void)pix_fmt;
-    FloatPsnrStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
+    if (s->ref_in) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
+        free(s->ref_in);
+    }
+    if (s->dis_in) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_in);
+        free(s->dis_in);
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    return ret;
+}
 
-    s->frame_w = w;
-    s->frame_h = h;
-    s->bpc = bpc;
-
+/* float_psnr_peak_for_bpc - the (peak, psnr_max) pair for a bit depth.
+ *
+ * HISS-04: the bit-depth table from init_fex_cuda, moved whole. The literals
+ * and the branch order are unchanged, so the doubles the score path reads are
+ * bit-identical to the inline table's.
+ */
+static int float_psnr_peak_for_bpc(FloatPsnrStateCuda *s, unsigned bpc)
+{
     if (bpc == 8u) {
         s->peak = 255.0;
         s->psnr_max = 60.0;
@@ -115,6 +135,23 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     } else {
         return -EINVAL;
     }
+    return 0;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    FloatPsnrStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    s->frame_w = w;
+    s->frame_h = h;
+    s->bpc = bpc;
+
+    const int bpc_err = float_psnr_peak_for_bpc(s, bpc);
+    if (bpc_err)
+        return bpc_err;
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
@@ -143,32 +180,18 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
     ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
     if (ret)
-        goto free_buffers;
+        return float_psnr_init_unwind(fex, s, ret);
     ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
     if (ret)
-        goto free_buffers;
+        return float_psnr_init_unwind(fex, s, ret);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
         ret = -ENOMEM;
-        goto free_buffers;
+        return float_psnr_init_unwind(fex, s, ret);
     }
     return 0;
-
-free_buffers:
-    if (s->ref_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->dis_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_in);
-        free(s->dis_in);
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
 
 fail:
     if (ctx_pushed)
@@ -176,6 +199,30 @@ fail:
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
+}
+
+/* float_psnr_upload_plane - stage one luma plane into a packed device buffer.
+ *
+ * HISS-04: the two identical CUDA_MEMCPY2D blocks from submit_fex_cuda,
+ * factored into one. The descriptor fields are assigned in the same order and
+ * the copy is enqueued on the same stream, so the bytes that reach the kernel
+ * are unchanged.
+ */
+static int float_psnr_upload_plane(CudaFunctions *cu_f, CUstream stream, const VmafPicture *pic,
+                                   const VmafCudaBuffer *dst, ptrdiff_t plane_pitch,
+                                   unsigned height)
+{
+    CUDA_MEMCPY2D cpy = {0};
+    cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+    cpy.srcDevice = (CUdeviceptr)pic->data[0];
+    cpy.srcPitch = pic->stride[0];
+    cpy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    cpy.dstDevice = (CUdeviceptr)dst->data;
+    cpy.dstPitch = plane_pitch;
+    cpy.WidthInBytes = plane_pitch;
+    cpy.Height = height;
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy, stream));
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -196,27 +243,14 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
                                         CU_EVENT_WAIT_DEFAULT));
 
-    CUDA_MEMCPY2D cpy_ref = {0};
-    cpy_ref.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy_ref.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    cpy_ref.srcPitch = ref_pic->stride[0];
-    cpy_ref.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy_ref.dstDevice = (CUdeviceptr)s->ref_in->data;
-    cpy_ref.dstPitch = plane_pitch;
-    cpy_ref.WidthInBytes = plane_pitch;
-    cpy_ref.Height = s->frame_h;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_ref, pic_stream));
-
-    CUDA_MEMCPY2D cpy_dis = {0};
-    cpy_dis.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy_dis.srcDevice = (CUdeviceptr)dist_pic->data[0];
-    cpy_dis.srcPitch = dist_pic->stride[0];
-    cpy_dis.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy_dis.dstDevice = (CUdeviceptr)s->dis_in->data;
-    cpy_dis.dstPitch = plane_pitch;
-    cpy_dis.WidthInBytes = plane_pitch;
-    cpy_dis.Height = s->frame_h;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_dis, pic_stream));
+    int up_err =
+        float_psnr_upload_plane(cu_f, pic_stream, ref_pic, s->ref_in, plane_pitch, s->frame_h);
+    if (up_err)
+        return up_err;
+    up_err =
+        float_psnr_upload_plane(cu_f, pic_stream, dist_pic, s->dis_in, plane_pitch, s->frame_h);
+    if (up_err)
+        return up_err;
 
     CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->rb.device->data, 0,
                                             (size_t)s->wg_count * sizeof(float), pic_stream));

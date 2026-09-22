@@ -22,7 +22,7 @@
  *
  *  Metallib resolution: the build embeds the compiled metallib into
  *  the libvmaf binary's __TEXT,__metallib section via the meson
- *  custom_target in `libvmaf/src/feature/metal/meson.build`. At init
+ *  custom_target in `core/src/metal/meson.build`. At init
  *  time we wrap the byte range in `dispatch_data_create` and hand it
  *  to `[device newLibraryWithData:]` — no filesystem path dependency.
  *  Same embedded-blob pattern the CUDA backend uses for cubin
@@ -59,7 +59,7 @@ extern "C" {
 #define MOTION_V2_METAL_DEFAULT_MAX_VAL (10000.0)
 
 /* Linker-defined symbols bracketing the embedded metallib byte range.
- * See `libvmaf/src/feature/metal/meson.build` for the embed mechanism
+ * See `core/src/metal/meson.build` for the embed mechanism
  * (objcopy / ld --format=binary equivalent on macOS:
  * `-sectcreate __TEXT __metallib path/to/default.metallib`). */
 extern "C" {

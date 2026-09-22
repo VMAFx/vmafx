@@ -47,7 +47,7 @@
  *  (kernel launch params, host-side reduction, score-emit) stays in
  *  the calling TU — that's where the metric-specific math lives.
  *
- *  Reference implementation: libvmaf/src/feature/cuda/integer_psnr_cuda.c.
+ *  Reference implementation: core/src/feature/cuda/integer_psnr_cuda.c.
  *  Migration guide: docs/backends/kernel-scaffolding.md.
  *
  *  Why per-backend (not cross-backend): CUDA's async-stream + event

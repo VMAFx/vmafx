@@ -80,6 +80,17 @@ and VIF-fix false-positive in
 (or flipping its `continue-on-error` flag) is policy change, needs
 superseding ADR.
 
+### Fail-closed test and scan outcomes
+
+`scripts/ci/test_fail_closed_ci.py` runs in the blocking
+`deep-dive-checklist` job and through the `fail-closed-ci-contract` local hook.
+Keep both callers. Test, coverage, benchmark, scan, and test-discovery commands
+must expose their real exit status. A step may use `continue-on-error` only to
+collect diagnostics when a later `if: always()` step checks its raw
+`steps.<id>.outcome` and fails the job. An advisory job or step may remain
+non-blocking when an existing ADR says so, but its command must not append
+`|| true` and erase the failure outcome.
+
 ### Opt-out syntax parser
 
 `deep-dive-checklist` job parses PR bodies for ADR-0108's
@@ -136,6 +147,27 @@ PR before ready-for-review CI run registers. Aggregator also ignores
 check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on same commit can
 mask real queued or failed ready-for-review checks.
+
+### Cppcheck POSIX model correction
+
+The required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from the
+installed analyzer before analysis. Preserve the generator call and load the
+generated path, not bare `--library=posix`. Older models without a
+`pthread_cond_init` entry receive the correct contract; newer models lose only
+the invalid argument-2 non-null marker because POSIX permits default attributes
+as `NULL`. The real-tool contract test runs after installation and keeps a null
+condition-object negative control, so no warning category or call site is
+suppressed. See `scripts/ci/AGENTS.md` for model-shape and atomicity invariants.
+
+### Pelorus mirror verification stays in required Pre-Commit (ADR-1113, ADR-1276)
+
+The `Pre-Commit` job in `lint-and-format.yml` resolves the full commit declared
+by `scripts/sync-pelorus-interop.sh`, checks out `VMAFx/pelorus` at that exact
+object with credentials disabled, and runs the default mirror/fixture drift
+check. Keep this before `pre-commit --all-files`. Never change `ref` to a
+moving branch or tag, duplicate the pin in workflow YAML, or tolerate a missing
+object: ABI-stable parser safety releases must be able to trigger a reviewed
+re-pin, and CI must prove source provenance rather than local-tree similarity.
 
 ### Go validation (ADR-1238)
 
@@ -606,7 +638,7 @@ Unknown attribute kind (102)
 
 Pass `-Db_lto=false` on every icpx/SYCL `meson setup` in CI. Both SYCL legs of
 `libvmaf-build-matrix.yml` already do, as do `build.yml`'s `Linux Intel LLVM`
-row and the `Tidy SYCL (advisory)` job. Pinning an older oneAPI does not
+row and the `Tidy SYCL` job. Pinning an older oneAPI does not
 help — the mismatch is against the *system* linker plugin, not a specific
 compiler release.
 

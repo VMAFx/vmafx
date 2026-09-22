@@ -11,7 +11,7 @@
  *  resolve_name out-of-range branch) are unreachable via the public
  *  libvmaf/dnn.h surface on a CPU-only ORT CI build, leaving the
  *  coverage gate stuck below 85%. Exposing the helpers via this
- *  internal header — kept out of libvmaf/include/ — is the minimum
+ *  internal header — kept out of core/include/ — is the minimum
  *  surface change needed to drive direct unit tests. See ADR-0112.
  */
 

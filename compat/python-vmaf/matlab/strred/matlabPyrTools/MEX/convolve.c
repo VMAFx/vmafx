@@ -34,16 +34,133 @@
   of the filter is assumed to be (floor(x_fdim/2), floor(y_fdim/2)).
 ------------------------------------------------------------------------ */
 
-/* abstract out the inner product computation */
-#define INPROD(XCNR, YCNR)                                                                         \
-    {                                                                                              \
-        sum = 0.0;                                                                                 \
-        for (im_pos = YCNR * x_dim + XCNR, filt_pos = 0, x_filt_stop = x_fdim;                     \
-             x_filt_stop <= filt_size; im_pos += (x_dim - x_fdim), x_filt_stop += x_fdim)          \
-            for (; filt_pos < x_filt_stop; filt_pos++, im_pos++)                                   \
-                sum += image[im_pos] * temp[filt_pos];                                             \
-        result[res_pos] = sum;                                                                     \
+/* Shared state of one internal_reduce() call.  The row bands below used to be
+   inline sections of that function reading a dozen `register` locals; passing
+   them by struct keeps every band inside the 60-line complexity bound without
+   changing a single index computation. */
+typedef struct {
+    image_type *image;
+    image_type *temp;
+    image_type *filt;
+    image_type *result;
+    int x_dim;
+    int x_fdim;
+    int y_fdim;
+    int filt_size;
+    int x_step;
+    int y_step;
+    int x_start;
+    int x_stop;
+    int x_ctr_start;
+    int x_ctr_stop;
+    int x_res_dim;
+    fptr reflect;
+} reduce_state;
+
+/* abstract out the inner product computation (was the INPROD macro) */
+static void reduce_inprod(const reduce_state *s, int xcnr, int ycnr, int res_pos)
+{
+    double sum = 0.0;
+    int im_pos, filt_pos, x_filt_stop;
+
+    for (im_pos = ycnr * s->x_dim + xcnr, filt_pos = 0, x_filt_stop = s->x_fdim;
+         x_filt_stop <= s->filt_size; im_pos += (s->x_dim - s->x_fdim), x_filt_stop += s->x_fdim)
+        for (; filt_pos < x_filt_stop; filt_pos++, im_pos++)
+            sum += s->image[im_pos] * s->temp[filt_pos];
+    s->result[res_pos] = sum;
+}
+
+/* TOP ROWS.  Advances *res_pos and returns the y position the middle band
+   starts at (the old `y_ctr_start = y_pos` hand-off). */
+static int reduce_top_rows(const reduce_state *s, int y_start, int y_ctr_start, int *res_pos)
+{
+    int x_pos, y_pos;
+
+    for (y_pos = y_start; y_pos < y_ctr_start; y_pos += s->y_step) {
+        for (x_pos = s->x_start; /* TOP-LEFT CORNER */
+             x_pos < s->x_ctr_start; x_pos += s->x_step, (*res_pos)++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - 1, y_pos - 1, s->temp, REDUCE);
+            reduce_inprod(s, 0, 0, *res_pos);
+        }
+
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, y_pos - 1, s->temp, REDUCE);
+        for (; /* TOP EDGE */
+             x_pos < s->x_ctr_stop; x_pos += s->x_step, (*res_pos)++)
+            reduce_inprod(s, x_pos, 0, *res_pos);
+
+        for (; /* TOP-RIGHT CORNER */
+             x_pos < s->x_stop; x_pos += s->x_step, (*res_pos)++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - s->x_ctr_stop + 1, y_pos - 1,
+                          s->temp, REDUCE);
+            reduce_inprod(s, s->x_ctr_stop, 0, *res_pos);
+        }
     }
+    return y_pos;
+}
+
+/* LEFT EDGE, CENTER and RIGHT EDGE.  Hands back the result index and the y
+   position the bottom band continues from. */
+static void reduce_middle_rows(const reduce_state *s, int y_ctr_start, int y_ctr_stop, int *res_pos,
+                               int *y_pos_out)
+{
+    int x_pos, base_res_pos;
+    int y_pos = y_ctr_start;
+    int res = *res_pos;
+
+    for (base_res_pos = res, x_pos = s->x_start; /* LEFT EDGE */
+         x_pos < s->x_ctr_start; x_pos += s->x_step, base_res_pos++) {
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - 1, 0, s->temp, REDUCE);
+        for (y_pos = y_ctr_start, res = base_res_pos; y_pos < y_ctr_stop;
+             y_pos += s->y_step, res += s->x_res_dim)
+            reduce_inprod(s, 0, y_pos, res);
+    }
+
+    (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, 0, s->temp, REDUCE);
+    for (; /* CENTER */
+         x_pos < s->x_ctr_stop; x_pos += s->x_step, base_res_pos++)
+        for (y_pos = y_ctr_start, res = base_res_pos; y_pos < y_ctr_stop;
+             y_pos += s->y_step, res += s->x_res_dim)
+            reduce_inprod(s, x_pos, y_pos, res);
+
+    for (; /* RIGHT EDGE */
+         x_pos < s->x_stop; x_pos += s->x_step, base_res_pos++) {
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - s->x_ctr_stop + 1, 0, s->temp, REDUCE);
+        for (y_pos = y_ctr_start, res = base_res_pos; y_pos < y_ctr_stop;
+             y_pos += s->y_step, res += s->x_res_dim)
+            reduce_inprod(s, s->x_ctr_stop, y_pos, res);
+    }
+
+    *res_pos = res;
+    *y_pos_out = y_pos;
+}
+
+/* BOTTOM ROWS. */
+static void reduce_bottom_rows(const reduce_state *s, int y_pos, int y_stop, int y_ctr_stop,
+                               int res_pos)
+{
+    int x_pos;
+
+    for (res_pos -= (s->x_res_dim - 1); y_pos < y_stop; y_pos += s->y_step) {
+        for (x_pos = s->x_start; /* BOTTOM-LEFT CORNER */
+             x_pos < s->x_ctr_start; x_pos += s->x_step, res_pos++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - 1, y_pos - y_ctr_stop + 1, s->temp,
+                          REDUCE);
+            reduce_inprod(s, 0, y_ctr_stop, res_pos);
+        }
+
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, y_pos - y_ctr_stop + 1, s->temp, REDUCE);
+        for (; /* BOTTOM EDGE */
+             x_pos < s->x_ctr_stop; x_pos += s->x_step, res_pos++)
+            reduce_inprod(s, x_pos, y_ctr_stop, res_pos);
+
+        for (; /* BOTTOM-RIGHT CORNER */
+             x_pos < s->x_stop; x_pos += s->x_step, res_pos++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - s->x_ctr_stop + 1,
+                          y_pos - y_ctr_stop + 1, s->temp, REDUCE);
+            reduce_inprod(s, s->x_ctr_stop, y_ctr_stop, res_pos);
+        }
+    }
+}
 
 int internal_reduce(image, x_dim, y_dim, filt, temp, x_fdim, y_fdim, x_start, x_step, x_stop,
                     y_start, y_step, y_stop, result, edges)
@@ -57,21 +174,17 @@ image_type *filt;
 int y_dim, y_fdim;
 char *edges;
 {
-    register double sum;
-    register int filt_pos, im_pos, x_filt_stop;
-    register int x_pos, filt_size = x_fdim * y_fdim;
-    register int y_pos, res_pos;
-    register int y_ctr_stop = y_dim - ((y_fdim == 1) ? 0 : y_fdim);
-    register int x_ctr_stop = x_dim - ((x_fdim == 1) ? 0 : x_fdim);
-    register int x_res_dim = (x_stop - x_start + x_step - 1) / x_step;
-    int x_ctr_start = ((x_fdim == 1) ? 0 : 1);
+    int res_pos = 0;
+    int y_pos;
+    int y_ctr_stop = y_dim - ((y_fdim == 1) ? 0 : y_fdim);
+    int x_ctr_stop = x_dim - ((x_fdim == 1) ? 0 : x_fdim);
     int y_ctr_start = ((y_fdim == 1) ? 0 : 1);
     int x_fmid = x_fdim / 2;
     int y_fmid = y_fdim / 2;
-    int base_res_pos;
-    fptr reflect = edge_function(edges); /* look up edge-handling function */
+    reduce_state s;
 
-    if (!reflect)
+    s.reflect = edge_function(edges); /* look up edge-handling function */
+    if (!s.reflect)
         return (-1);
 
     /* shift start/stop coords to filter upper left hand corner */
@@ -85,70 +198,26 @@ char *edges;
     if (y_stop < y_ctr_stop)
         y_ctr_stop = y_stop;
 
-    for (res_pos = 0, y_pos = y_start; /* TOP ROWS */
-         y_pos < y_ctr_start; y_pos += y_step) {
-        for (x_pos = x_start; /* TOP-LEFT CORNER */
-             x_pos < x_ctr_start; x_pos += x_step, res_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - 1, y_pos - 1, temp, REDUCE);
-            INPROD(0, 0)
-        }
+    s.image = image;
+    s.temp = temp;
+    s.filt = filt;
+    s.result = result;
+    s.x_dim = x_dim;
+    s.x_fdim = x_fdim;
+    s.y_fdim = y_fdim;
+    s.filt_size = x_fdim * y_fdim;
+    s.x_step = x_step;
+    s.y_step = y_step;
+    s.x_start = x_start;
+    s.x_stop = x_stop;
+    s.x_ctr_start = ((x_fdim == 1) ? 0 : 1);
+    s.x_ctr_stop = x_ctr_stop;
+    s.x_res_dim = (x_stop - x_start + x_step - 1) / x_step;
 
-        (*reflect)(filt, x_fdim, y_fdim, 0, y_pos - 1, temp, REDUCE);
-        for (; /* TOP EDGE */
-             x_pos < x_ctr_stop; x_pos += x_step, res_pos++)
-            INPROD(x_pos, 0)
+    y_ctr_start = reduce_top_rows(&s, y_start, y_ctr_start, &res_pos);
+    reduce_middle_rows(&s, y_ctr_start, y_ctr_stop, &res_pos, &y_pos);
+    reduce_bottom_rows(&s, y_pos, y_stop, y_ctr_stop, res_pos);
 
-        for (; /* TOP-RIGHT CORNER */
-             x_pos < x_stop; x_pos += x_step, res_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - x_ctr_stop + 1, y_pos - 1, temp, REDUCE);
-            INPROD(x_ctr_stop, 0)
-        }
-    } /* end TOP ROWS */
-
-    y_ctr_start = y_pos;                          /* hold location of top */
-    for (base_res_pos = res_pos, x_pos = x_start; /* LEFT EDGE */
-         x_pos < x_ctr_start; x_pos += x_step, base_res_pos++) {
-        (*reflect)(filt, x_fdim, y_fdim, x_pos - 1, 0, temp, REDUCE);
-        for (y_pos = y_ctr_start, res_pos = base_res_pos; y_pos < y_ctr_stop;
-             y_pos += y_step, res_pos += x_res_dim)
-            INPROD(0, y_pos)
-    }
-
-    (*reflect)(filt, x_fdim, y_fdim, 0, 0, temp, REDUCE);
-    for (; /* CENTER */
-         x_pos < x_ctr_stop; x_pos += x_step, base_res_pos++)
-        for (y_pos = y_ctr_start, res_pos = base_res_pos; y_pos < y_ctr_stop;
-             y_pos += y_step, res_pos += x_res_dim)
-            INPROD(x_pos, y_pos)
-
-    for (; /* RIGHT EDGE */
-         x_pos < x_stop; x_pos += x_step, base_res_pos++) {
-        (*reflect)(filt, x_fdim, y_fdim, x_pos - x_ctr_stop + 1, 0, temp, REDUCE);
-        for (y_pos = y_ctr_start, res_pos = base_res_pos; y_pos < y_ctr_stop;
-             y_pos += y_step, res_pos += x_res_dim)
-            INPROD(x_ctr_stop, y_pos)
-    }
-
-    for (res_pos -= (x_res_dim - 1); y_pos < y_stop; /* BOTTOM ROWS */
-         y_pos += y_step) {
-        for (x_pos = x_start; /* BOTTOM-LEFT CORNER */
-             x_pos < x_ctr_start; x_pos += x_step, res_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - 1, y_pos - y_ctr_stop + 1, temp, REDUCE);
-            INPROD(0, y_ctr_stop)
-        }
-
-        (*reflect)(filt, x_fdim, y_fdim, 0, y_pos - y_ctr_stop + 1, temp, REDUCE);
-        for (; /* BOTTOM EDGE */
-             x_pos < x_ctr_stop; x_pos += x_step, res_pos++)
-            INPROD(x_pos, y_ctr_stop)
-
-        for (; /* BOTTOM-RIGHT CORNER */
-             x_pos < x_stop; x_pos += x_step, res_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - x_ctr_stop + 1, y_pos - y_ctr_stop + 1, temp,
-                       REDUCE);
-            INPROD(x_ctr_stop, y_ctr_stop)
-        }
-    } /* end BOTTOM */
     return (0);
 } /* end of internal_reduce */
 
@@ -162,15 +231,128 @@ char *edges;
   WARNING: this subroutine destructively modifies the RESULT array!
  ------------------------------------------------------------------------ */
 
-/* abstract out the inner product computation */
-#define INPROD2(XCNR, YCNR)                                                                        \
-    {                                                                                              \
-        val = image[im_pos];                                                                       \
-        for (res_pos = YCNR * x_dim + XCNR, filt_pos = 0, x_filt_stop = x_fdim;                    \
-             x_filt_stop <= filt_size; res_pos += (x_dim - x_fdim), x_filt_stop += x_fdim)         \
-            for (; filt_pos < x_filt_stop; filt_pos++, res_pos++)                                  \
-                result[res_pos] += val * temp[filt_pos];                                           \
+/* Shared state of one internal_expand() call; the analogue of reduce_state. */
+typedef struct {
+    image_type *image;
+    image_type *temp;
+    image_type *filt;
+    image_type *result;
+    int x_dim;
+    int x_fdim;
+    int y_fdim;
+    int filt_size;
+    int x_step;
+    int y_step;
+    int x_start;
+    int x_stop;
+    int x_ctr_start;
+    int x_ctr_stop;
+    int x_im_dim;
+    fptr reflect;
+} expand_state;
+
+/* abstract out the inner product computation (was the INPROD2 macro) */
+static void expand_inprod(const expand_state *s, int xcnr, int ycnr, int im_pos)
+{
+    double val = s->image[im_pos];
+    int res_pos, filt_pos, x_filt_stop;
+
+    for (res_pos = ycnr * s->x_dim + xcnr, filt_pos = 0, x_filt_stop = s->x_fdim;
+         x_filt_stop <= s->filt_size; res_pos += (s->x_dim - s->x_fdim), x_filt_stop += s->x_fdim)
+        for (; filt_pos < x_filt_stop; filt_pos++, res_pos++)
+            s->result[res_pos] += val * s->temp[filt_pos];
+}
+
+/* TOP ROWS.  Advances *im_pos and returns the y position the middle band
+   starts at (the old `y_ctr_start = y_pos` hand-off). */
+static int expand_top_rows(const expand_state *s, int y_start, int y_ctr_start, int *im_pos)
+{
+    int x_pos, y_pos;
+
+    for (y_pos = y_start; y_pos < y_ctr_start; y_pos += s->y_step) {
+        for (x_pos = s->x_start; /* TOP-LEFT CORNER */
+             x_pos < s->x_ctr_start; x_pos += s->x_step, (*im_pos)++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - 1, y_pos - 1, s->temp, EXPAND);
+            expand_inprod(s, 0, 0, *im_pos);
+        }
+
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, y_pos - 1, s->temp, EXPAND);
+        for (; /* TOP EDGE */
+             x_pos < s->x_ctr_stop; x_pos += s->x_step, (*im_pos)++)
+            expand_inprod(s, x_pos, 0, *im_pos);
+
+        for (; /* TOP-RIGHT CORNER */
+             x_pos < s->x_stop; x_pos += s->x_step, (*im_pos)++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - s->x_ctr_stop + 1, y_pos - 1,
+                          s->temp, EXPAND);
+            expand_inprod(s, s->x_ctr_stop, 0, *im_pos);
+        }
     }
+    return y_pos;
+}
+
+/* LEFT EDGE, CENTER and RIGHT EDGE. */
+static void expand_middle_rows(const expand_state *s, int y_ctr_start, int y_ctr_stop, int *im_pos,
+                               int *y_pos_out)
+{
+    int x_pos, base_im_pos;
+    int y_pos = y_ctr_start;
+    int im = *im_pos;
+
+    for (base_im_pos = im, x_pos = s->x_start; /* LEFT EDGE */
+         x_pos < s->x_ctr_start; x_pos += s->x_step, base_im_pos++) {
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - 1, 0, s->temp, EXPAND);
+        for (y_pos = y_ctr_start, im = base_im_pos; y_pos < y_ctr_stop;
+             y_pos += s->y_step, im += s->x_im_dim)
+            expand_inprod(s, 0, y_pos, im);
+    }
+
+    (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, 0, s->temp, EXPAND);
+    for (; /* CENTER */
+         x_pos < s->x_ctr_stop; x_pos += s->x_step, base_im_pos++)
+        for (y_pos = y_ctr_start, im = base_im_pos; y_pos < y_ctr_stop;
+             y_pos += s->y_step, im += s->x_im_dim)
+            expand_inprod(s, x_pos, y_pos, im);
+
+    for (; /* RIGHT EDGE */
+         x_pos < s->x_stop; x_pos += s->x_step, base_im_pos++) {
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - s->x_ctr_stop + 1, 0, s->temp, EXPAND);
+        for (y_pos = y_ctr_start, im = base_im_pos; y_pos < y_ctr_stop;
+             y_pos += s->y_step, im += s->x_im_dim)
+            expand_inprod(s, s->x_ctr_stop, y_pos, im);
+    }
+
+    *im_pos = im;
+    *y_pos_out = y_pos;
+}
+
+/* BOTTOM ROWS. */
+static void expand_bottom_rows(const expand_state *s, int y_pos, int y_stop, int y_ctr_stop,
+                               int im_pos)
+{
+    int x_pos;
+
+    for (im_pos -= (s->x_im_dim - 1); y_pos < y_stop; y_pos += s->y_step) {
+        for (x_pos = s->x_start; /* BOTTOM-LEFT CORNER */
+             x_pos < s->x_ctr_start; x_pos += s->x_step, im_pos++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - 1, y_pos - y_ctr_stop + 1, s->temp,
+                          EXPAND);
+            expand_inprod(s, 0, y_ctr_stop, im_pos);
+        }
+
+        (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, y_pos - y_ctr_stop + 1, s->temp, EXPAND);
+        for (; /* BOTTOM EDGE */
+             x_pos < s->x_ctr_stop; x_pos += s->x_step, im_pos++)
+            expand_inprod(s, x_pos, y_ctr_stop, im_pos);
+
+        for (; /* BOTTOM-RIGHT CORNER */
+             x_pos < s->x_stop; x_pos += s->x_step, im_pos++) {
+            (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, x_pos - s->x_ctr_stop + 1,
+                          y_pos - y_ctr_stop + 1, s->temp, EXPAND);
+            expand_inprod(s, s->x_ctr_stop, y_ctr_stop, im_pos);
+        }
+    }
+}
 
 int internal_expand(image, filt, temp, x_fdim, y_fdim, x_start, x_step, x_stop, y_start, y_step,
                     y_stop, result, x_dim, y_dim, edges)
@@ -183,20 +365,17 @@ image_type *filt;
 int y_fdim, y_dim;
 char *edges;
 {
-    register double val;
-    register int filt_pos, res_pos, x_filt_stop;
-    register int x_pos, filt_size = x_fdim * y_fdim;
-    register int y_pos, im_pos;
-    register int x_ctr_stop = x_dim - ((x_fdim == 1) ? 0 : x_fdim);
+    int im_pos = 0;
+    int y_pos;
+    int x_ctr_stop = x_dim - ((x_fdim == 1) ? 0 : x_fdim);
     int y_ctr_stop = (y_dim - ((y_fdim == 1) ? 0 : y_fdim));
-    int x_ctr_start = ((x_fdim == 1) ? 0 : 1);
     int y_ctr_start = ((y_fdim == 1) ? 0 : 1);
     int x_fmid = x_fdim / 2;
     int y_fmid = y_fdim / 2;
-    int base_im_pos, x_im_dim = (x_stop - x_start + x_step - 1) / x_step;
-    fptr reflect = edge_function(edges); /* look up edge-handling function */
+    expand_state s;
 
-    if (!reflect)
+    s.reflect = edge_function(edges); /* look up edge-handling function */
+    if (!s.reflect)
         return (-1);
 
     /* shift start/stop coords to filter upper left hand corner */
@@ -210,70 +389,26 @@ char *edges;
     if (y_stop < y_ctr_stop)
         y_ctr_stop = y_stop;
 
-    for (im_pos = 0, y_pos = y_start; /* TOP ROWS */
-         y_pos < y_ctr_start; y_pos += y_step) {
-        for (x_pos = x_start; /* TOP-LEFT CORNER */
-             x_pos < x_ctr_start; x_pos += x_step, im_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - 1, y_pos - 1, temp, EXPAND);
-            INPROD2(0, 0)
-        }
+    s.image = image;
+    s.temp = temp;
+    s.filt = filt;
+    s.result = result;
+    s.x_dim = x_dim;
+    s.x_fdim = x_fdim;
+    s.y_fdim = y_fdim;
+    s.filt_size = x_fdim * y_fdim;
+    s.x_step = x_step;
+    s.y_step = y_step;
+    s.x_start = x_start;
+    s.x_stop = x_stop;
+    s.x_ctr_start = ((x_fdim == 1) ? 0 : 1);
+    s.x_ctr_stop = x_ctr_stop;
+    s.x_im_dim = (x_stop - x_start + x_step - 1) / x_step;
 
-        (*reflect)(filt, x_fdim, y_fdim, 0, y_pos - 1, temp, EXPAND);
-        for (; /* TOP EDGE */
-             x_pos < x_ctr_stop; x_pos += x_step, im_pos++)
-            INPROD2(x_pos, 0)
+    y_ctr_start = expand_top_rows(&s, y_start, y_ctr_start, &im_pos);
+    expand_middle_rows(&s, y_ctr_start, y_ctr_stop, &im_pos, &y_pos);
+    expand_bottom_rows(&s, y_pos, y_stop, y_ctr_stop, im_pos);
 
-        for (; /* TOP-RIGHT CORNER */
-             x_pos < x_stop; x_pos += x_step, im_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - x_ctr_stop + 1, y_pos - 1, temp, EXPAND);
-            INPROD2(x_ctr_stop, 0)
-        }
-    } /* end TOP ROWS */
-
-    y_ctr_start = y_pos;                        /* hold location of top */
-    for (base_im_pos = im_pos, x_pos = x_start; /* LEFT EDGE */
-         x_pos < x_ctr_start; x_pos += x_step, base_im_pos++) {
-        (*reflect)(filt, x_fdim, y_fdim, x_pos - 1, 0, temp, EXPAND);
-        for (y_pos = y_ctr_start, im_pos = base_im_pos; y_pos < y_ctr_stop;
-             y_pos += y_step, im_pos += x_im_dim)
-            INPROD2(0, y_pos)
-    }
-
-    (*reflect)(filt, x_fdim, y_fdim, 0, 0, temp, EXPAND);
-    for (; /* CENTER */
-         x_pos < x_ctr_stop; x_pos += x_step, base_im_pos++)
-        for (y_pos = y_ctr_start, im_pos = base_im_pos; y_pos < y_ctr_stop;
-             y_pos += y_step, im_pos += x_im_dim)
-            INPROD2(x_pos, y_pos)
-
-    for (; /* RIGHT EDGE */
-         x_pos < x_stop; x_pos += x_step, base_im_pos++) {
-        (*reflect)(filt, x_fdim, y_fdim, x_pos - x_ctr_stop + 1, 0, temp, EXPAND);
-        for (y_pos = y_ctr_start, im_pos = base_im_pos; y_pos < y_ctr_stop;
-             y_pos += y_step, im_pos += x_im_dim)
-            INPROD2(x_ctr_stop, y_pos)
-    }
-
-    for (im_pos -= (x_im_dim - 1); y_pos < y_stop; /* BOTTOM ROWS */
-         y_pos += y_step) {
-        for (x_pos = x_start; /* BOTTOM-LEFT CORNER */
-             x_pos < x_ctr_start; x_pos += x_step, im_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - 1, y_pos - y_ctr_stop + 1, temp, EXPAND);
-            INPROD2(0, y_ctr_stop)
-        }
-
-        (*reflect)(filt, x_fdim, y_fdim, 0, y_pos - y_ctr_stop + 1, temp, EXPAND);
-        for (; /* BOTTOM EDGE */
-             x_pos < x_ctr_stop; x_pos += x_step, im_pos++)
-            INPROD2(x_pos, y_ctr_stop)
-
-        for (; /* BOTTOM-RIGHT CORNER */
-             x_pos < x_stop; x_pos += x_step, im_pos++) {
-            (*reflect)(filt, x_fdim, y_fdim, x_pos - x_ctr_stop + 1, y_pos - y_ctr_stop + 1, temp,
-                       EXPAND);
-            INPROD2(x_ctr_stop, y_ctr_stop)
-        }
-    } /* end BOTTOM */
     return (0);
 } /* end of internal_expand */
 

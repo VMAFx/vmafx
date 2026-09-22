@@ -36,34 +36,48 @@ class _FakeCompleted:
         self.stderr = stderr
 
 
-def test_x264_corpus_row_includes_encoder_stats(tmp_path: Path):
-    src = tmp_path / "ref.yuv"
-    src.write_bytes(b"\x80" * 4096)
+# Every encoder-stats column the corpus schema promises, in schema order.
+_ENCODER_STATS_COLUMNS = (
+    "enc_internal_qp_mean",
+    "enc_internal_qp_std",
+    "enc_internal_bits_mean",
+    "enc_internal_bits_std",
+    "enc_internal_mv_mean",
+    "enc_internal_mv_std",
+    "enc_internal_itex_mean",
+    "enc_internal_ptex_mean",
+    "enc_internal_intra_ratio",
+    "enc_internal_skip_ratio",
+)
 
-    def fake_encode_run(cmd, capture_output, text, check):
-        # Pass-1: drop the canned stats file at <prefix>-0.log.
-        if "-pass" in cmd and cmd[cmd.index("-pass") + 1] == "1":
-            prefix = Path(cmd[cmd.index("-passlogfile") + 1])
-            log = prefix.parent / f"{prefix.name}-0.log"
-            log.parent.mkdir(parents=True, exist_ok=True)
-            log.write_text(_X264_STATS_FIXTURE)
-            return _FakeCompleted(returncode=0)
-        # Main encode.
-        out_path = Path(cmd[-1])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"\x00" * 2048)
-        return _FakeCompleted(
-            returncode=0,
-            stderr="ffmpeg version 6.1.1\nx264 - core 164 r3107\n",
-        )
 
-    def fake_score_run(cmd, capture_output, text, check):
-        out_idx = cmd.index("--output") + 1
-        out_path = Path(cmd[out_idx])
+def _fixed_score_run(mean: float):
+    """``score_runner`` stub writing a pooled_metrics JSON reporting `mean`."""
+
+    def _run(cmd, capture_output, text, check):
+        out_path = Path(cmd[cmd.index("--output") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps({"pooled_metrics": {"vmaf": {"mean": 88.5}}}))
+        out_path.write_text(json.dumps({"pooled_metrics": {"vmaf": {"mean": mean}}}))
         return _FakeCompleted(returncode=0, stderr="VMAF version: 3.0.0-lusoris\n")
 
+    return _run
+
+
+def _write_encoded_output(cmd, stderr: str) -> _FakeCompleted:
+    """Materialise the 2 KiB encode output ffmpeg's argv names last."""
+    out_path = Path(cmd[-1])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(b"\x00" * 2048)
+    return _FakeCompleted(returncode=0, stderr=stderr)
+
+
+def _is_pass1(cmd) -> bool:
+    """True when this ffmpeg argv is the stats-collecting first pass."""
+    return "-pass" in cmd and cmd[cmd.index("-pass") + 1] == "1"
+
+
+def _one_cell_job_and_opts(src: Path, tmp_path: Path, **opt_overrides):
+    """Single-cell 64x64 corpus job over `src`, encodes under ``tmp_path``."""
     job = CorpusJob(
         source=src,
         width=64,
@@ -78,14 +92,33 @@ def test_x264_corpus_row_includes_encoder_stats(tmp_path: Path):
         encode_dir=tmp_path / "encodes",
         keep_encodes=False,
         src_sha256=False,
+        **opt_overrides,
     )
+    return job, opts
+
+
+def test_x264_corpus_row_includes_encoder_stats(tmp_path: Path):
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x80" * 4096)
+
+    def fake_encode_run(cmd, capture_output, text, check):
+        if _is_pass1(cmd):
+            # Drop the canned stats file at <prefix>-0.log.
+            prefix = Path(cmd[cmd.index("-passlogfile") + 1])
+            log = prefix.parent / f"{prefix.name}-0.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(_X264_STATS_FIXTURE)
+            return _FakeCompleted(returncode=0)
+        return _write_encoded_output(cmd, "ffmpeg version 6.1.1\nx264 - core 164 r3107\n")
+
+    job, opts = _one_cell_job_and_opts(src, tmp_path)
 
     rows = list(
         iter_rows(
             job,
             opts,
             encode_runner=fake_encode_run,
-            score_runner=fake_score_run,
+            score_runner=_fixed_score_run(88.5),
         )
     )
     assert len(rows) == 1
@@ -119,46 +152,18 @@ def test_hardware_encoder_corpus_row_emits_zero_encoder_stats(tmp_path: Path):
     pass1_seen = {"flag": False}
 
     def fake_encode_run(cmd, capture_output, text, check):
-        if "-pass" in cmd and cmd[cmd.index("-pass") + 1] == "1":
+        if _is_pass1(cmd):
             pass1_seen["flag"] = True
-        out_path = Path(cmd[-1])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"\x00" * 2048)
-        return _FakeCompleted(
-            returncode=0,
-            stderr="ffmpeg version 6.1.1\nNVENC version 12.0\n",
-        )
+        return _write_encoded_output(cmd, "ffmpeg version 6.1.1\nNVENC version 12.0\n")
 
-    def fake_score_run(cmd, capture_output, text, check):
-        out_idx = cmd.index("--output") + 1
-        out_path = Path(cmd[out_idx])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps({"pooled_metrics": {"vmaf": {"mean": 90.0}}}))
-        return _FakeCompleted(returncode=0, stderr="VMAF version: 3.0.0-lusoris\n")
-
-    job = CorpusJob(
-        source=src,
-        width=64,
-        height=64,
-        pix_fmt="yuv420p",
-        framerate=24.0,
-        duration_s=2.0,
-        cells=(("medium", 23),),
-    )
-    opts = CorpusOptions(
-        encoder="h264_nvenc",
-        output=tmp_path / "corpus.jsonl",
-        encode_dir=tmp_path / "encodes",
-        keep_encodes=False,
-        src_sha256=False,
-    )
+    job, opts = _one_cell_job_and_opts(src, tmp_path, encoder="h264_nvenc")
 
     rows = list(
         iter_rows(
             job,
             opts,
             encode_runner=fake_encode_run,
-            score_runner=fake_score_run,
+            score_runner=_fixed_score_run(90.0),
         )
     )
     assert len(rows) == 1
@@ -168,18 +173,7 @@ def test_hardware_encoder_corpus_row_emits_zero_encoder_stats(tmp_path: Path):
     assert pass1_seen["flag"] is False
 
     # All ten encoder-stats columns present and zero.
-    for col in (
-        "enc_internal_qp_mean",
-        "enc_internal_qp_std",
-        "enc_internal_bits_mean",
-        "enc_internal_bits_std",
-        "enc_internal_mv_mean",
-        "enc_internal_mv_std",
-        "enc_internal_itex_mean",
-        "enc_internal_ptex_mean",
-        "enc_internal_intra_ratio",
-        "enc_internal_skip_ratio",
-    ):
+    for col in _ENCODER_STATS_COLUMNS:
         assert row[col] == 0.0
 
 

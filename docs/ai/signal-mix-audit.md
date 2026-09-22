@@ -24,8 +24,8 @@ Inputs can be parquet, JSONL/NDJSON, or a JSON list of row objects. Repeat
   --input netflix=runs/full_features_netflix_refresh_20260520.parquet \
   --input ugc=runs/full_features_ugc_refresh_20260520.parquet \
   --input bvi=runs/full_features_bvi_dvc_D_refresh_20260520.parquet \
-  --out-json .workingdir2/signal-mix/audit.json \
-  --out-md .workingdir2/signal-mix/audit.md
+  --out-json .workingdir/evidence/signal-mix/audit.json \
+  --out-md .workingdir/evidence/signal-mix/audit.md
 ```
 
 Use `LABEL=path` to make the rendered report readable. If no target is passed,
@@ -37,10 +37,10 @@ For a custom MOS or lab score:
 
 ```bash
 .venv/bin/python ai/scripts/signal_mix_audit.py \
-  --input chug=.workingdir2/chug/chug_features.jsonl \
+  --input chug=.corpus/chug/chug_features.jsonl \
   --target mos_raw_0_100 \
-  --out-json .workingdir2/signal-mix/chug.json \
-  --out-md .workingdir2/signal-mix/chug.md
+  --out-json .workingdir/evidence/signal-mix/chug.json \
+  --out-md .workingdir/evidence/signal-mix/chug.md
 ```
 
 The JSON report includes ADR-0661 `run_provenance` with the audited table

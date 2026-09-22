@@ -74,7 +74,13 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         }
 
     def setUp(self):
-        self.output_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".json").name
+        # See `command_line_test.VmafexecCommandLineTest.setUp`: taking `.name`
+        # off a `NamedTemporaryFile` drops the only reference to a wrapper whose
+        # finaliser emits `ResourceWarning` once the cyclic GC collects it, which
+        # is fatal under the ADR-1278 warnings-are-errors policy. Allocate the
+        # path with `mkstemp()` instead and close the fd immediately.
+        handle, self.output_file_path = tempfile.mkstemp(suffix=".json")
+        os.close(handle)
 
     def tearDown(self):
         if os.path.exists(self.output_file_path):

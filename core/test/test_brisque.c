@@ -343,22 +343,18 @@ static char *test_brisque_end_to_end(void)
     memset(&pic, 0, sizeof(pic));
 
     char *result = brisque_e2e_setup(&ctx, &fc, &pic, W, H, FRAME);
-    if (result)
-        goto cleanup;
-
-    double score = NAN;
-    result = brisque_e2e_check_score(ctx, fc, &pic, &score);
-    if (result)
-        goto cleanup;
-
-    if (!close_abs(score, oracle, 1e-4)) {
-        static char msg[176];
-        (void)snprintf(msg, sizeof(msg),
-                       "brisque end-to-end score %.10f != oracle %.10f (places=4)", score, oracle);
-        result = msg;
+    if (result == NULL) {
+        double score = NAN;
+        result = brisque_e2e_check_score(ctx, fc, &pic, &score);
+        if (result == NULL && !close_abs(score, oracle, 1e-4)) {
+            static char msg[176];
+            (void)snprintf(msg, sizeof(msg),
+                           "brisque end-to-end score %.10f != oracle %.10f (places=4)", score,
+                           oracle);
+            result = msg;
+        }
     }
 
-cleanup:
     brisque_teardown(&pic, fc, ctx);
     return result;
 }
@@ -436,15 +432,12 @@ static char *test_brisque_odd_dim(void)
     memset(&pic, 0, sizeof(pic));
 
     char *result = brisque_odd_dim_setup(&ctx, &fc, &pic, W, H);
-    if (result)
-        goto cleanup;
+    if (result == NULL) {
+        brisque_fill_odd_dim_pattern(&pic, W, H);
 
-    brisque_fill_odd_dim_pattern(&pic, W, H);
-
-    double score = NAN;
-    result = brisque_odd_dim_check_score(ctx, fc, &pic, &score);
-
-cleanup:
+        double score = NAN;
+        result = brisque_odd_dim_check_score(ctx, fc, &pic, &score);
+    }
     brisque_teardown(&pic, fc, ctx);
     return result;
 }

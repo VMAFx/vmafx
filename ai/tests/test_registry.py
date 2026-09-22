@@ -32,7 +32,7 @@ def test_register_roundtrip(tmp_path: Path) -> None:
         onnx_path=onnx_path,
         kind="fr",
         dataset="synthetic",
-        license_="BSD-3-Clause-Plus-Patent",
+        license_="BSD-2-Clause-Patent",
         train_commit="deadbeef",
         train_config=cfg,
     )

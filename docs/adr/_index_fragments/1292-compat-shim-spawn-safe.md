@@ -1,0 +1,1 @@
+| [ADR-1292](1292-compat-shim-spawn-safe.md) | Load the `vmaf` compatibility shim by file location so a spawn child cannot recurse back into it and deadlock its parent. | Proposed | python, testing, concurrency |

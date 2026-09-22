@@ -1,9 +1,9 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
-# Included from libvmaf/src/meson.build via `subdir('hip')`. Paths
-# below are relative to libvmaf/src/hip/. The feature stubs live
-# under libvmaf/src/feature/hip/, so we use a `..` walk to reach
+# Included from core/src/meson.build via `subdir('hip')`. Paths
+# below are relative to core/src/hip/. The feature stubs live
+# under core/src/feature/hip/, so we use a `..` walk to reach
 # them — same shape ADR-0175 uses for the Vulkan scaffold.
 #
 # Scaffold-only (ADR-0209 / T7-10): every entry point returns -ENOSYS
@@ -107,7 +107,7 @@ hip_sources += files(
     # already declares `VmafFeatureExtractor vmaf_fex_*_hip` and mirrors
     # a CUDA twin call-graph-for-call-graph, but was never compiled into
     # the HIP runtime archive. The companion edit in
-    # `libvmaf/src/feature/feature_extractor.c` adds the extern + registry
+    # `core/src/feature/feature_extractor.cpp` adds the extern + registry
     # entry for each so `vmaf_get_feature_extractor_by_name` resolves.
     #
     # Scaffold posture: without `enable_hipcc=true` each init() returns

@@ -92,8 +92,14 @@ func FindCalibratedRecipesPath(start string) string {
 		if root == "" {
 			continue
 		}
+		// filepath.Dir strips exactly one component per step, so the number
+		// of separators in the starting path bounds the walk; +2 covers the
+		// root itself and a possible trailing separator. Exhausting the bound
+		// means the same thing as walking off the root: not found here
+		// (HISS-02).
+		maxSteps := strings.Count(root, string(os.PathSeparator)) + 2
 		dir := root
-		for {
+		for step := 0; step < maxSteps; step++ {
 			candidate := filepath.Join(dir, CalibratedRecipesFilename)
 			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 				return candidate

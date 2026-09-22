@@ -1,5 +1,6 @@
 import os
 import unittest
+import warnings
 
 import numpy as np
 
@@ -23,6 +24,72 @@ __license__ = "BSD+Patent"
 
 
 class TrainTestModelTest(MyTestCase):
+
+    def _assert_split_distributions(self, stats, n_splits_test_indices):
+        # check that the performance metric distributions have been passed out
+        assert (
+            "SRCC_across_test_splits_distribution" in stats
+        ), "SRCC across_test_splits distribution non-existing."
+        assert (
+            "PCC_across_test_splits_distribution" in stats
+        ), "PCC across_test_splits distribution non-existing."
+        assert (
+            "RMSE_across_test_splits_distribution" in stats
+        ), "RMSE across_test_splits distribution non-existing."
+
+        # check that the length of the perf metrc lists is equal to n_splits_test_indices
+        assert (
+            len(stats["SRCC_across_test_splits_distribution"]) == n_splits_test_indices
+        ), "SRCC list is not equal to the number of splits specified."
+        assert (
+            len(stats["PCC_across_test_splits_distribution"]) == n_splits_test_indices
+        ), "PCC list is not equal to the number of splits specified."
+        assert (
+            len(stats["RMSE_across_test_splits_distribution"]) == n_splits_test_indices
+        ), "RMSE list is not equal to the number of splits specified."
+
+        self.assertAlmostEqual(
+            stats["SRCC_across_test_splits_distribution"][0], 0.391304347826087, places=4
+        )
+        self.assertAlmostEqual(
+            stats["SRCC_across_test_splits_distribution"][1], 0.8983050847457626, places=4
+        )
+        self.assertAlmostEqual(
+            stats["SRCC_across_test_splits_distribution"][2], 0.9478260869565218, places=4
+        )
+
+        self.assertAlmostEqual(
+            stats["PCC_across_test_splits_distribution"][0], 0.554154433495891, places=4
+        )
+        self.assertAlmostEqual(
+            stats["PCC_across_test_splits_distribution"][1], 0.817203617522247, places=4
+        )
+        self.assertAlmostEqual(
+            stats["PCC_across_test_splits_distribution"][2], 0.5338890441054945, places=4
+        )
+
+        self.assertAlmostEqual(
+            stats["RMSE_across_test_splits_distribution"][0], 0.6943573719335835, places=4
+        )
+        self.assertAlmostEqual(
+            stats["RMSE_across_test_splits_distribution"][1], 0.5658403884750773, places=4
+        )
+        self.assertAlmostEqual(
+            stats["RMSE_across_test_splits_distribution"][2], 0.5997800884581888, places=4
+        )
+
+    @staticmethod
+    def _assert_no_split_distributions(stats_no_test_split):
+        # check that the performance metric distributions are not in these stats dict
+        assert (
+            "SRCC_across_test_splits_distribution" not in stats_no_test_split
+        ), "SRCC across_test_splits distribution should not exist."
+        assert (
+            "PCC_across_test_splits_distribution" not in stats_no_test_split
+        ), "PCC across_test_splits distribution should not exist."
+        assert (
+            "RMSE_across_test_splits_distribution" not in stats_no_test_split
+        ), "RMSE across_test_splits distribution should not exist."
 
     def setUp(self):
         super().setUp()
@@ -185,72 +252,12 @@ class TrainTestModelTest(MyTestCase):
             n_splits_test_indices=n_splits_test_indices,
         )
 
-        # check that the performance metric distributions have been passed out
-        assert (
-            "SRCC_across_test_splits_distribution" in stats
-        ), "SRCC across_test_splits distribution non-existing."
-        assert (
-            "PCC_across_test_splits_distribution" in stats
-        ), "PCC across_test_splits distribution non-existing."
-        assert (
-            "RMSE_across_test_splits_distribution" in stats
-        ), "RMSE across_test_splits distribution non-existing."
-
-        # check that the length of the perf metrc lists is equal to n_splits_test_indices
-        assert (
-            len(stats["SRCC_across_test_splits_distribution"]) == n_splits_test_indices
-        ), "SRCC list is not equal to the number of splits specified."
-        assert (
-            len(stats["PCC_across_test_splits_distribution"]) == n_splits_test_indices
-        ), "PCC list is not equal to the number of splits specified."
-        assert (
-            len(stats["RMSE_across_test_splits_distribution"]) == n_splits_test_indices
-        ), "RMSE list is not equal to the number of splits specified."
-
-        self.assertAlmostEqual(
-            stats["SRCC_across_test_splits_distribution"][0], 0.391304347826087, places=4
-        )
-        self.assertAlmostEqual(
-            stats["SRCC_across_test_splits_distribution"][1], 0.8983050847457626, places=4
-        )
-        self.assertAlmostEqual(
-            stats["SRCC_across_test_splits_distribution"][2], 0.9478260869565218, places=4
-        )
-
-        self.assertAlmostEqual(
-            stats["PCC_across_test_splits_distribution"][0], 0.554154433495891, places=4
-        )
-        self.assertAlmostEqual(
-            stats["PCC_across_test_splits_distribution"][1], 0.817203617522247, places=4
-        )
-        self.assertAlmostEqual(
-            stats["PCC_across_test_splits_distribution"][2], 0.5338890441054945, places=4
-        )
-
-        self.assertAlmostEqual(
-            stats["RMSE_across_test_splits_distribution"][0], 0.6943573719335835, places=4
-        )
-        self.assertAlmostEqual(
-            stats["RMSE_across_test_splits_distribution"][1], 0.5658403884750773, places=4
-        )
-        self.assertAlmostEqual(
-            stats["RMSE_across_test_splits_distribution"][2], 0.5997800884581888, places=4
-        )
+        self._assert_split_distributions(stats, n_splits_test_indices)
 
         stats_no_test_split = self.model.get_stats(
             ys_label, ys_label_pred, split_test_indices_for_perf_ci=False
         )
-
-        # check that the performance metric distributions are not in these stats dict
-        assert (
-            "SRCC_across_test_splits_distribution" not in stats_no_test_split
-        ), "SRCC across_test_splits distribution should not exist."
-        assert (
-            "PCC_across_test_splits_distribution" not in stats_no_test_split
-        ), "PCC across_test_splits distribution should not exist."
-        assert (
-            "RMSE_across_test_splits_distribution" not in stats_no_test_split
-        ), "RMSE across_test_splits distribution should not exist."
+        self._assert_no_split_distributions(stats_no_test_split)
 
     def test_train_predict_randomforest(self):
 
@@ -392,10 +399,43 @@ class TrainTestModelTest(MyTestCase):
         xys.update(ys)
 
         model = Logistic5PLRegressionTrainTestModel({"norm_type": "clip_0to1"}, None)
-        model.train(xys)
-        result = model.evaluate(xs, ys)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            model.train(xys)
+            result = model.evaluate(xs, ys)
 
         self.assertAlmostEqual(result["RMSE"], 0.3603374311919728, places=4)
+
+    def test_train_logistic_fit_5PL_uses_all_five_parameters(self):
+        feature = list(range(-5, 6))
+        label = [
+            -1.5667472877842368,
+            -1.3274725672507035,
+            -1.0454555957266805,
+            -0.6858090622290945,
+            -0.2136444421871352,
+            0.36002131968883655,
+            0.945214034135521,
+            1.4410769611853467,
+            1.8210398813328772,
+            2.1154204563159325,
+            2.3610898308636137,
+        ]
+        xys = {
+            "content_id": list(range(len(feature))),
+            "feature": feature,
+            "label": label,
+        }
+        model = Logistic5PLRegressionTrainTestModel({"norm_type": "none"}, None)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            model.train(xys)
+            prediction = model.predict({"feature": feature})["ys_label_pred"]
+            extreme_prediction = model.predict({"feature": [-10000.0, 10000.0]})["ys_label_pred"]
+
+        self.assertLess(np.max(np.abs(np.asarray(prediction) - np.asarray(label))), 1e-6)
+        self.assertTrue(np.all(np.isfinite(extreme_prediction)))
 
 
 class TrainTestModelWithDisYRawVideoExtractorTest(MyTestCase):

@@ -5,8 +5,8 @@
  *
  *  Metal compute kernel for the psnr_hvs feature extractor — Metal twin
  *  of the CUDA reference
- *  libvmaf/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu and the
- *  CPU reference libvmaf/src/feature/third_party/xiph/psnr_hvs.c
+ *  core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu and the
+ *  CPU reference core/src/feature/third_party/xiph/psnr_hvs.c
  *  (feature name "psnr_hvs", emits psnr_hvs_y / psnr_hvs_cb /
  *  psnr_hvs_cr / psnr_hvs).
  *

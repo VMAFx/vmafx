@@ -74,29 +74,55 @@ func SanitizeNonFinite(line string) string {
 
 // ResolveSentinels walks a decoded JSON value and swaps every non-finite
 // sentinel string back for the float64 it stands in for.
+// Containers are rewritten in place, so the walk only has to remember which
+// containers it still owes a visit. That is an explicit work stack rather than
+// the call stack (HISS-01); a decoded JSON document is a tree, so every node
+// is pushed at most once and the stack drains.
 func ResolveSentinels(v any) any {
-	switch t := v.(type) {
-	case string:
-		switch t {
-		case sentinelNaN:
-			return math.NaN()
-		case sentinelPosInf:
-			return math.Inf(1)
-		case sentinelNegInf:
-			return math.Inf(-1)
+	root := resolveSentinel(v)
+	stack := []any{root}
+	for len(stack) > 0 {
+		node := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch t := node.(type) {
+		case []any:
+			for i := range t {
+				t[i] = resolveSentinel(t[i])
+				stack = appendContainer(stack, t[i])
+			}
+		case map[string]any:
+			for k := range t {
+				t[k] = resolveSentinel(t[k])
+				stack = appendContainer(stack, t[k])
+			}
 		}
-		return t
-	case []any:
-		for i := range t {
-			t[i] = ResolveSentinels(t[i])
-		}
-		return t
-	case map[string]any:
-		for k := range t {
-			t[k] = ResolveSentinels(t[k])
-		}
-		return t
-	default:
+	}
+	return root
+}
+
+// resolveSentinel swaps one sentinel string for the float64 it stands in for.
+// Every other value, container or scalar, passes through untouched.
+func resolveSentinel(v any) any {
+	s, ok := v.(string)
+	if !ok {
 		return v
 	}
+	switch s {
+	case sentinelNaN:
+		return math.NaN()
+	case sentinelPosInf:
+		return math.Inf(1)
+	case sentinelNegInf:
+		return math.Inf(-1)
+	}
+	return s
+}
+
+// appendContainer queues v for a later visit when it is a JSON container.
+func appendContainer(stack []any, v any) []any {
+	switch v.(type) {
+	case []any, map[string]any:
+		return append(stack, v)
+	}
+	return stack
 }

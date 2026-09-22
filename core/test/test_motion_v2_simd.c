@@ -12,7 +12,7 @@
  * Audit motivation:
  *   The fork's NEON port of `motion_v2` (ADR-0145) used arithmetic
  *   right shift via `vshrq_n_s64` / `vshlq_s64`. The pre-existing
- *   AVX2 port at `libvmaf/src/feature/x86/motion_v2_avx2.c:205-206`
+ *   AVX2 port at `core/src/feature/x86/motion_avx2.c:205-206`
  *   uses `_mm256_srlv_epi64`, which is *logical* right shift. On
  *   negative-`accum` inputs the two diverge from scalar C `>>` on
  *   signed `int64_t`, which is implementation-defined but in
@@ -168,7 +168,7 @@ static void fill_adversarial_mixed(uint16_t *prev, uint16_t *cur, unsigned w, un
 /*
  * Scalar reference for the 16-bit motion_v2 Phase-1+2 pipeline.
  * Mirrors `motion_score_pipeline_16` in
- * `libvmaf/src/feature/integer_motion_v2.c` line-for-line. Duplicated
+ * `core/src/feature/integer_motion_v2.c` line-for-line. Duplicated
  * here because the upstream symbol has `static` linkage.
  */
 static inline int mirror_idx(int idx, int size)

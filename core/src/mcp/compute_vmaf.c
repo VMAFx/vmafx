@@ -191,9 +191,9 @@ static void append_env_roots(char roots[][PATH_MAX], unsigned *count, unsigned c
     if (elen + 1u > sizeof(buf))
         return;
     memcpy(buf, extra, elen + 1u);
-    char *save = NULL;
-    for (char *tok = strtok_r(buf, ":", &save); tok != NULL && *count < cap;
-         tok = strtok_r(NULL, ":", &save)) {
+    char *save = nullptr;
+    for (char *tok = strtok_r(buf, ":", &save); tok != nullptr && *count < cap;
+         tok = strtok_r(nullptr, ":", &save)) {
         if (tok[0] != '\0')
             append_canonical_root(tok, roots, count, cap);
     }
@@ -256,7 +256,7 @@ static int validate_path(const char *in_path, char *out, size_t out_sz, char **e
     /* realpath() resolves symlinks AND `..`/`.` traversal, and requires the
      * target to exist. A non-existent or unreadable path fails here, before
      * any open(). */
-    char *resolved = realpath(in_path, NULL);
+    char *resolved = realpath(in_path, nullptr);
     if (resolved == NULL) {
         return set_err(err_owned, "path does not resolve to an existing file") == 0 ? -ENOENT :
                                                                                       -ENOMEM;
@@ -512,8 +512,7 @@ static int init_vmaf_and_model(const ComputeArgs *args, VmafContext **vmaf_out,
     if (vrc != 0)
         return set_err(err_owned, "vmaf_init failed") == 0 ? vrc : -ENOMEM;
 
-    VmafModelConfig mcfg = {0};
-    mcfg.name = "vmaf";
+    VmafModelConfig mcfg = {.name = "vmaf"};
     int mrc = vmaf_model_load(model_out, &mcfg, args->model_version);
     if (mrc != 0) {
         return set_err(err_owned, "vmaf_model_load failed (unknown model_version?)") == 0 ? mrc :
@@ -532,7 +531,7 @@ static int flush_and_pool(VmafContext *vmaf, VmafModel *model, unsigned frames_s
                           double *score_out, char **err_owned)
 {
     /* Flush — signal end-of-stream. */
-    int flush_rc = vmaf_read_pictures(vmaf, NULL, NULL, 0u);
+    int flush_rc = vmaf_read_pictures(vmaf, nullptr, nullptr, 0u);
     if (flush_rc != 0)
         return set_err(err_owned, "vmaf_read_pictures(flush) failed") == 0 ? flush_rc : -ENOMEM;
     double pooled = 0.0;
@@ -544,69 +543,100 @@ static int flush_and_pool(VmafContext *vmaf, VmafModel *model, unsigned frames_s
     return 0;
 }
 
+typedef struct ScoreResources {
+    int reference_fd;
+    int distorted_fd;
+    VmafContext *vmaf;
+    VmafModel *model;
+} ScoreResources;
+
+/* Release every resource acquired by score_yuv_pair. A scoring error remains
+ * primary, but cleanup failures are still checked and become observable when
+ * the scoring path itself succeeded. */
+static int close_score_resources(ScoreResources *resources, int primary_rc, char **err_owned)
+{
+    int cleanup_rc = 0;
+    if (resources->model != nullptr) {
+        vmaf_model_destroy(resources->model);
+    }
+    if (resources->vmaf != nullptr) {
+        const int close_rc = vmaf_close(resources->vmaf);
+        if (cleanup_rc == 0 && close_rc != 0) {
+            cleanup_rc = close_rc;
+        }
+    }
+    if (resources->reference_fd >= 0 && close(resources->reference_fd) != 0 && cleanup_rc == 0) {
+        cleanup_rc = -errno;
+    }
+    if (resources->distorted_fd >= 0 && close(resources->distorted_fd) != 0 && cleanup_rc == 0) {
+        cleanup_rc = -errno;
+    }
+    if (primary_rc != 0 || cleanup_rc == 0) {
+        return primary_rc;
+    }
+    return set_err(err_owned, "compute_vmaf resource cleanup failed") == 0 ? cleanup_rc : -ENOMEM;
+}
+
 /* Score the YUV pair end to end. Returns 0 + sets *score_out on
  * success; sets *err_owned + returns negative errno on failure. */
 static int score_yuv_pair(const ComputeArgs *args, double *score_out, unsigned *frames_scored_out,
                           char **err_owned)
 {
-    int rc = 0;
-    int rfd = -1;
-    int dfd = -1;
-    VmafContext *vmaf = NULL;
-    VmafModel *model = NULL;
+    ScoreResources resources = {
+        .reference_fd = -1,
+        .distorted_fd = -1,
+        .vmaf = nullptr,
+        .model = nullptr,
+    };
 
     /* SECURITY (R2-4): canonicalise + allowlist-check both caller paths
      * BEFORE any stat()/open(). Mirrors the Python/Go MCP servers. Use the
      * resolved canonical paths for every subsequent filesystem operation. */
     char ref_real[PATH_MAX];
     char dis_real[PATH_MAX];
-    rc = validate_path(args->reference_path, ref_real, sizeof(ref_real), err_owned);
-    if (rc != 0)
-        goto cleanup;
+    int rc = validate_path(args->reference_path, ref_real, sizeof(ref_real), err_owned);
+    if (rc != 0) {
+        return close_score_resources(&resources, rc, err_owned);
+    }
     rc = validate_path(args->distorted_path, dis_real, sizeof(dis_real), err_owned);
-    if (rc != 0)
-        goto cleanup;
+    if (rc != 0) {
+        return close_score_resources(&resources, rc, err_owned);
+    }
 
     uint64_t frame_count = 0u;
     rc = derive_frame_count(args, ref_real, dis_real, &frame_count, err_owned);
-    if (rc != 0)
-        goto cleanup;
+    if (rc != 0) {
+        return close_score_resources(&resources, rc, err_owned);
+    }
 
-    rfd = open(ref_real, O_RDONLY);
-    if (rfd < 0) {
+    resources.reference_fd = open(ref_real, O_RDONLY);
+    if (resources.reference_fd < 0) {
         rc = set_err(err_owned, "open(reference_path) failed") == 0 ? -EIO : -ENOMEM;
-        goto cleanup;
+        return close_score_resources(&resources, rc, err_owned);
     }
-    dfd = open(dis_real, O_RDONLY);
-    if (dfd < 0) {
+    resources.distorted_fd = open(dis_real, O_RDONLY);
+    if (resources.distorted_fd < 0) {
         rc = set_err(err_owned, "open(distorted_path) failed") == 0 ? -EIO : -ENOMEM;
-        goto cleanup;
+        return close_score_resources(&resources, rc, err_owned);
     }
 
-    rc = init_vmaf_and_model(args, &vmaf, &model, err_owned);
-    if (rc != 0)
-        goto cleanup;
+    rc = init_vmaf_and_model(args, &resources.vmaf, &resources.model, err_owned);
+    if (rc != 0) {
+        return close_score_resources(&resources, rc, err_owned);
+    }
 
     unsigned frames_scored = 0u;
-    rc = feed_frames(vmaf, args, rfd, dfd, frame_count, &frames_scored, err_owned);
-    if (rc != 0)
-        goto cleanup;
+    rc = feed_frames(resources.vmaf, args, resources.reference_fd, resources.distorted_fd,
+                     frame_count, &frames_scored, err_owned);
+    if (rc != 0) {
+        return close_score_resources(&resources, rc, err_owned);
+    }
 
-    rc = flush_and_pool(vmaf, model, frames_scored, score_out, err_owned);
-    if (rc != 0)
-        goto cleanup;
-    *frames_scored_out = frames_scored;
-
-cleanup:
-    if (model != NULL)
-        vmaf_model_destroy(model);
-    if (vmaf != NULL)
-        (void)vmaf_close(vmaf);
-    if (rfd >= 0)
-        (void)close(rfd);
-    if (dfd >= 0)
-        (void)close(dfd);
-    return rc;
+    rc = flush_and_pool(resources.vmaf, resources.model, frames_scored, score_out, err_owned);
+    if (rc == 0) {
+        *frames_scored_out = frames_scored;
+    }
+    return close_score_resources(&resources, rc, err_owned);
 }
 
 int vmaf_mcp_compute_vmaf(const void *arguments_cjson, void **result_out_cjson, char **err_owned)
@@ -614,7 +644,7 @@ int vmaf_mcp_compute_vmaf(const void *arguments_cjson, void **result_out_cjson, 
     assert(arguments_cjson != NULL);
     assert(result_out_cjson != NULL);
     const cJSON *arguments = (const cJSON *)arguments_cjson;
-    ComputeArgs args = {0};
+    ComputeArgs args = {.reference_path = nullptr};
     int rc = parse_arguments(arguments, &args, err_owned);
     if (rc != 0)
         return rc;

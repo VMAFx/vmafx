@@ -91,32 +91,20 @@ class LazyExtensions(list):
         return len(self.extensions)
 
 
+# Everything expressible in PEP 621 lives in python/pyproject.toml, which
+# setuptools treats as authoritative: a key passed here that `[project]`
+# neither declares nor lists as `dynamic` raises `_MissingDynamic`, and on the
+# Coverage Gate runner that is fatal rather than advisory —
+# `python3 setup.py --version` exited 1 on `authors` and `scripts`. What stays
+# is only what `[project]` cannot express: the out-of-tree package directory
+# (the sources live in compat/python-vmaf/, ADR-0700), and the lazily-built
+# Cython extension. `version` stays because `[project].dynamic = ["version"]`
+# is exactly how a dynamic version is supplied.
 setup(
-    name="vmaf",
     version=get_version(),
-    author="Zhi Li",
-    author_email="zli@netflix.com",
-    description="Video Multimethod Assessment Fusion",
-    long_description=open(os.path.join(PYTHON_PROJECT, "README.rst")).read(),
-    long_description_content_type="text/x-rst",
-    url="https://github.com/Netflix/vmaf",
     package_dir={"vmaf": COMPAT_VMAF_REL},
     packages=["vmaf", "vmaf.tools", "vmaf.core", "vmaf.script"],
     package_data={"vmaf": ["py.typed"]},
     include_package_data=True,
-    # install_requires is intentionally omitted: setuptools natively consumes
-    # [project].dependencies from python/pyproject.toml as the single source of truth.
-    entry_points={
-        "console_scripts": [
-            "run_cleaning_cache=vmaf.script.run_cleaning_cache:main",
-            "run_psnr=vmaf.script.run_psnr:main",
-            "run_result_assembly=vmaf.script.run_result_assembly:main",
-            "run_testing=vmaf.script.run_testing:main",
-            "run_toddnoiseclassifier=vmaf.script.run_toddnoiseclassifier:main",
-            "run_vmaf=vmaf.script.run_vmaf:main",
-            "run_vmaf_cross_validation=vmaf.script.run_vmaf_cross_validation:main",
-            "run_vmaf_training=vmaf.script.run_vmaf_training:main",
-        ],
-    },
     ext_modules=LazyExtensions(),
 )

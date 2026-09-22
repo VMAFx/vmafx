@@ -272,7 +272,10 @@ micro-architectures:
 
 The fat binary also embeds a SPIR-V JIT fallback (`spir64`) for any device not
 in the list, so an unlisted or future device still works — it just pays the
-cold-start cost.
+cold-start cost. The build forwards `-device <list>` with
+`-Xsycl-target-backend=spir64_gen`; the target qualifier is required because an
+unqualified `-Xs` also reaches the portable `spir64` target and oneAPI reports
+the device selector as unused.
 
 ### Adjusting the target list
 

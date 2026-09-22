@@ -147,14 +147,16 @@ def test_compare_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
-    """``vmaf-tune report --format both`` must write a .json file alongside .html and .md.
+def _stub_report_inputs(monkeypatch, tmp_path: Path) -> None:
+    """Stub the two ``_run_report`` seams that would otherwise touch disk.
 
-    Regression for the same silent JSON-drop bug in the ``_run_report`` code path.
+    ``_compare_source_info`` normally shells out to ffprobe and
+    ``_build_report_data`` normally loads the JSON sidecars; both are
+    replaced with canned values so the test exercises only the
+    format-dispatch logic.
     """
     import vmaftune.cli as _cli
 
-    # Inject a fake source-info probe.
     def _fake_source_info(args: Any) -> SourceInfo:
         return SourceInfo(
             path=str(getattr(args, "compare_json", tmp_path / "fake.mp4")),
@@ -167,18 +169,16 @@ def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
             size_bytes=500_000,
         )
 
-    monkeypatch.setattr(_cli, "_compare_source_info", _fake_source_info)
-
-    # Stub _build_report_data so we don't need real JSON sidecar files.
     def _fake_build_report_data(args: Any) -> ReportData:
         return _sample_report_data()
 
-    # _run_report calls _build_report_data which loads JSON from disk.
-    # Patch it to return our canned data instead.
+    monkeypatch.setattr(_cli, "_compare_source_info", _fake_source_info)
     monkeypatch.setattr(_cli, "_build_report_data", _fake_build_report_data, raising=False)
 
-    out_base = tmp_path / "my_report.out"
-    args = SimpleNamespace(
+
+def _report_args(out_base: Path) -> SimpleNamespace:
+    """``report --format both`` arguments, every optional sidecar unset."""
+    return SimpleNamespace(
         format="both",
         output=out_base,
         preset="",
@@ -193,20 +193,22 @@ def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
         src=None,
     )
 
-    # Build the data object directly and call the write logic that was broken,
-    # avoiding the full _run_report dispatch which validates input JSON files.
+
+def _write_report_outputs(args: SimpleNamespace, data: ReportData) -> list[Path]:
+    """Mirror of ``_run_report``'s format dispatch — the logic Bug N-1 broke.
+
+    Kept as a copy of the write logic rather than calling ``_run_report``,
+    which validates the input JSON sidecars this test deliberately omits.
+    """
     from vmaftune.report import render_html, render_markdown
 
-    data = _sample_report_data()
-    import json as _json
-
-    out_base.parent.mkdir(parents=True, exist_ok=True)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     if args.format == "both":
         json_path = (
             args.output if args.output.suffix == ".json" else args.output.with_suffix(".json")
         )
-        json_path.write_text(_json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
+        json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
         outputs.append(json_path)
     if args.format in ("html", "both"):
         html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
@@ -216,6 +218,19 @@ def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
         md_path = args.output if args.format == "markdown" else args.output.with_suffix(".md")
         md_path.write_text(render_markdown(data, assets_dir=args.assets_dir), encoding="utf-8")
         outputs.append(md_path)
+    return outputs
+
+
+def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
+    """``vmaf-tune report --format both`` must write a .json file alongside .html and .md.
+
+    Regression for the same silent JSON-drop bug in the ``_run_report`` code path.
+    """
+    _stub_report_inputs(monkeypatch, tmp_path)
+
+    out_base = tmp_path / "my_report.out"
+    args = _report_args(out_base)
+    _write_report_outputs(args, _sample_report_data())
 
     json_path = out_base.with_suffix(".json")
     html_path = out_base.with_suffix(".html")

@@ -62,90 +62,125 @@ struct FloatPsnrStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+} // namespace
+
+namespace
+{
+
 static constexpr int FPSNR_WG_X = 16;
 static constexpr int FPSNR_WG_Y = 16;
 
+struct FpsnrOutput {
+    float *partials;
+};
+
+} // namespace
+
+namespace
+{
+
+static inline float fpsnr_inv_scaler(unsigned bpc)
+{
+    if (bpc == 10) {
+        return 0.25f;
+    }
+    if (bpc == 12) {
+        return 0.0625f;
+    }
+    if (bpc == 16) {
+        return 0.00390625f;
+    }
+    return 1.0f;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline float fpsnr_pixel_noise(const void *ref, const void *dis, size_t offset, unsigned bpc)
+{
+    float r;
+    float d;
+    if (bpc <= 8) {
+        r = (float)static_cast<const uint8_t *>(ref)[offset];
+        d = (float)static_cast<const uint8_t *>(dis)[offset];
+    } else {
+        const float inv_scaler = fpsnr_inv_scaler(bpc);
+        r = (float)static_cast<const uint16_t *>(ref)[offset] * inv_scaler;
+        d = (float)static_cast<const uint16_t *>(dis)[offset] * inv_scaler;
+    }
+    const float diff = r - d;
+    return diff * diff;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void fpsnr_store_workgroup_sum(sycl::nd_item<2> item,
+                                             const sycl::local_accessor<float, 1> &scratch,
+                                             float noise, float *partials, unsigned workgroups_x)
+{
+    sycl::sub_group const subgroup = item.get_sub_group();
+    const float subgroup_sum = sycl::reduce_over_group(subgroup, noise, sycl::plus<float>{});
+    const uint32_t subgroup_id = subgroup.get_group_linear_id();
+    const uint32_t subgroup_lane = subgroup.get_local_linear_id();
+    const uint32_t subgroup_count = subgroup.get_group_linear_range();
+    if (subgroup_lane == 0) {
+        scratch[subgroup_id] = subgroup_sum;
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+
+    if (item.get_local_linear_id() == 0) {
+        float total = 0.0f;
+        for (uint32_t subgroup_index = 0; subgroup_index < subgroup_count; subgroup_index++) {
+            total += scratch[subgroup_index];
+        }
+        const size_t workgroup_index = item.get_group(0) * workgroups_x + item.get_group(1);
+        partials[workgroup_index] = total;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
 static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void *dis,
-                                     float *partials, unsigned width, unsigned height, unsigned bpc,
-                                     unsigned wg_count_x)
+                                     FpsnrOutput output, unsigned width, unsigned height,
+                                     unsigned bpc, unsigned wg_count_x)
 {
     const size_t global_x =
         ((static_cast<size_t>(width) + FPSNR_WG_X - 1) / FPSNR_WG_X) * FPSNR_WG_X;
     const size_t global_y =
         ((static_cast<size_t>(height) + FPSNR_WG_Y - 1) / FPSNR_WG_Y) * FPSNR_WG_Y;
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_bpc = bpc;
-    const unsigned e_wgx = wg_count_x;
-    const void *e_ref = ref;
-    const void *e_dis = dis;
-
     return q.submit([&](sycl::handler &cgh) {
         constexpr int MAX_SUBGROUPS = FPSNR_WG_X * FPSNR_WG_Y;
         sycl::local_accessor<float, 1> const s_partials(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
-        cgh.parallel_for(sycl::nd_range<2>(sycl::range<2>(global_y, global_x),
-                                           sycl::range<2>(FPSNR_WG_Y, FPSNR_WG_X)),
-                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                             const int gx = (int)item.get_global_id(1);
-                             const int gy = (int)item.get_global_id(0);
-                             const unsigned lid = item.get_local_linear_id();
-
-                             float scaler = 1.0f;
-                             if (e_bpc == 10) {
-                                 scaler = 4.0f;
-                             } else if (e_bpc == 12) {
-                                 scaler = 16.0f;
-                             } else if (e_bpc == 16) {
-                                 scaler = 256.0f;
-                             }
-                             const float inv_scaler = 1.0f / scaler;
-
-                             float my_noise = 0.0f;
-                             if (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h)) {
-                                 float r;
-                                 float d;
-                                 if (e_bpc <= 8) {
-                                     r = (float)static_cast<const uint8_t *>(
-                                         e_ref)[(size_t)gy * e_w + (size_t)gx];
-                                     d = (float)static_cast<const uint8_t *>(
-                                         e_dis)[(size_t)gy * e_w + (size_t)gx];
-                                 } else {
-                                     r = (float)static_cast<const uint16_t *>(
-                                             e_ref)[(size_t)gy * e_w + (size_t)gx] *
-                                         inv_scaler;
-                                     d = (float)static_cast<const uint16_t *>(
-                                             e_dis)[(size_t)gy * e_w + (size_t)gx] *
-                                         inv_scaler;
-                                 }
-                                 const float diff = r - d;
-                                 my_noise = diff * diff;
-                             }
-
-                             sycl::sub_group const sg = item.get_sub_group();
-                             const float sg_sum =
-                                 sycl::reduce_over_group(sg, my_noise, sycl::plus<float>{});
-                             const uint32_t sg_id = sg.get_group_linear_id();
-                             const uint32_t sg_lid = sg.get_local_linear_id();
-                             const uint32_t n_subgroups = sg.get_group_linear_range();
-                             if (sg_lid == 0)
-                                 s_partials[sg_id] = sg_sum;
-                             item.barrier(sycl::access::fence_space::local_space);
-
-                             if (lid == 0) {
-                                 float total = 0.0f;
-                                 for (uint32_t s = 0; s < n_subgroups; s++)
-                                     total += s_partials[s];
-                                 const size_t wg_idx =
-                                     item.get_group(0) * e_wgx + item.get_group(1);
-                                 partials[wg_idx] = total;
-                             }
-                         });
+        cgh.parallel_for(
+            sycl::nd_range<2>(sycl::range<2>(global_y, global_x),
+                              sycl::range<2>(FPSNR_WG_Y, FPSNR_WG_X)),
+            [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
+                const int gx = (int)item.get_global_id(1);
+                const int gy = (int)item.get_global_id(0);
+                float my_noise = 0.0f;
+                if (std::cmp_less(gx, width) && std::cmp_less(gy, height)) {
+                    my_noise = fpsnr_pixel_noise(ref, dis, (size_t)gy * width + (size_t)gx, bpc);
+                }
+                fpsnr_store_workgroup_sum(item, s_partials, my_noise, output.partials, wg_count_x);
+            });
     });
 }
 
-template <typename T>
-static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned h)
+} // namespace
+
+namespace
+{
+
+template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
 {
     const T *src = static_cast<const T *>(pic->data[0]);
     T *out = static_cast<T *>(dst);
@@ -158,9 +193,10 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned
     }
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
+namespace
+{
 
 static const VmafOption options_float_psnr_sycl[] = {
     {
@@ -169,29 +205,17 @@ static const VmafOption options_float_psnr_sycl[] = {
                 "(a zero-noise pair still reports psnr_max)",
         .offset = offsetof(FloatPsnrStateSycl, uncapped),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
-    {nullptr}};
+    {.name = nullptr}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
-// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+} // namespace
+
+namespace
 {
-    (void)pix_fmt;
-    auto *s = static_cast<FloatPsnrStateSycl *>(fex->priv);
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    s->has_pending = false;
 
+static int configure_peak(FloatPsnrStateSycl *s, unsigned bpc)
+{
     if (bpc == 8) {
         s->peak = 255.0;
         s->psnr_max = 60.0;
@@ -206,6 +230,28 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->psnr_max = 108.0;
     } else {
         return -EINVAL;
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    auto *s = static_cast<FloatPsnrStateSycl *>(fex->priv);
+    s->width = w;
+    s->height = h;
+    s->bpc = bpc;
+    s->has_pending = false;
+
+    const int config_err = configure_peak(s, bpc);
+    if (config_err) {
+        return config_err;
     }
 
     if (!fex->sycl_state) {
@@ -235,10 +281,16 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
+    }
     return 0;
 }
+
+} // namespace
+
+namespace
+{
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
@@ -247,8 +299,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)dist_pic_90;
     auto *s = static_cast<FloatPsnrStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    if (!qptr) {
         return -EINVAL;
+    }
     sycl::queue &q = *qptr;
 
     if (s->bpc <= 8) {
@@ -261,8 +314,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
     q.memcpy(s->d_dis, s->h_dis, s->plane_bytes);
 
-    launch_float_psnr(q, s->d_ref, s->d_dis, s->d_partials, s->width, s->height, s->bpc,
-                      s->wg_count_x);
+    launch_float_psnr(q, s->d_ref, s->d_dis, {.partials = s->d_partials}, s->width, s->height,
+                      s->bpc, s->wg_count_x);
     q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
 
     s->pending_index = index;
@@ -270,18 +323,25 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
+} // namespace
+
+namespace
+{
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<FloatPsnrStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    if (!qptr) {
         return -EINVAL;
+    }
     qptr->wait();
 
     double total = 0.0;
-    for (unsigned i = 0; i < s->wg_count; i++)
+    for (unsigned i = 0; i < s->wg_count; i++) {
         total += (double)s->h_partials[i];
+    }
     const double n_pix = (double)s->width * (double)s->height;
     const double noise = total / n_pix;
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
@@ -293,8 +353,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (!s->uncapped) {
         /* Pre-ADR-1193 expression verbatim — bit-identical default. */
         score = 10.0 * std::log10(s->peak * s->peak / max_noise);
-        if (score > s->psnr_max)
+        if (score > s->psnr_max) {
             score = s->psnr_max;
+        }
     } else if (noise <= 0.0) {
         score = s->psnr_max; /* infinity sentinel */
     } else {
@@ -303,6 +364,11 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "float_psnr", score, index);
 }
+
+} // namespace
+
+namespace
+{
 
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
@@ -328,6 +394,8 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 
 static const char *provided_features_float_psnr_sycl[] = {"float_psnr", nullptr};
 
+} // namespace
+
 extern "C" VmafFeatureExtractor vmaf_fex_float_psnr_sycl = {
     .name = "float_psnr_sycl",
     .init = init_fex_sycl,
@@ -341,6 +409,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_psnr_sycl = {
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_float_psnr_sycl,
 };
-
-} /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

@@ -187,7 +187,7 @@ def _scaffold_corpus_standard(
     pre_existing_clips: list[str] | None = None,
     n_csv_rows: int | None = None,
 ) -> Path:
-    """Build a minimal ``.workingdir2/live-vqc/``-shaped tree (standard CSV)."""
+    """Build a minimal ``.corpus/live-vqc/``-shaped tree (standard CSV)."""
     live_vqc_dir = tmp_path / "live-vqc"
     live_vqc_dir.mkdir(parents=True)
     clips_dir = live_vqc_dir / "clips"

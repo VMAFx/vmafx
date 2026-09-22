@@ -3,8 +3,8 @@
  *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal per-feature kernel scaffolding template — first-consumer
- *  mirror of `libvmaf/src/hip/kernel_template.h` (ADR-0241) which in
- *  turn mirrors `libvmaf/src/cuda/kernel_template.h` (ADR-0246).
+ *  mirror of `core/src/hip/kernel_template.h` (ADR-0241) which in
+ *  turn mirrors `core/src/cuda/kernel_template.h` (ADR-0246).
  *
  *  T8-1 scaffold PR (ADR-0361). The CUDA / HIP templates capture the
  *  lifecycle every fork-added GPU feature kernel converged on (private
@@ -26,7 +26,7 @@
  *  `vmaf_metal_kernel_buffer_alloc/_free`,
  *  `vmaf_metal_kernel_submit_pre_launch`,
  *  `vmaf_metal_kernel_collect_wait` are declared here and stubbed in
- *  `libvmaf/src/metal/kernel_template.c`. Every helper currently
+ *  `core/src/metal/kernel_template.mm`. Every helper currently
  *  returns -ENOSYS until the runtime PR replaces the bodies with real
  *  Metal calls. The first consumer
  *  (`feature/metal/integer_motion_v2_metal.c`) calls them through the
@@ -47,10 +47,10 @@
  *  contract this PR pins.
  *
  *  Reference implementations:
- *    - HIP: `libvmaf/src/hip/kernel_template.h`
- *    - CUDA: `libvmaf/src/cuda/kernel_template.h`
+ *    - HIP: `core/src/hip/kernel_template.h`
+ *    - CUDA: `core/src/cuda/kernel_template.h`
  *  First Metal consumer:
- *    `libvmaf/src/feature/metal/integer_motion_v2_metal.c`.
+ *    `core/src/feature/metal/integer_motion_v2_metal.mm`.
  */
 
 #ifndef LIBVMAF_METAL_KERNEL_TEMPLATE_H_

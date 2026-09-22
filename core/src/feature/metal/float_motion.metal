@@ -4,9 +4,9 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for float_motion (T8-1h / ADR-0421).
- *  Mirrors `libvmaf/src/feature/vulkan/shaders/float_motion.comp`.
+ *  Mirrors `core/src/feature/vulkan/shaders/float_motion.comp`.
  *
- *  Algorithm (must match CPU libvmaf/src/feature/motion_tools.c,
+ *  Algorithm (must match CPU core/src/feature/float_motion.c,
  *  FILTER_5_s path):
  *    1. Convert: val = (raw / scaler) - 128.0
  *       scaler: 1 for bpc=8, 4/16/256 for 10/12/16bpc.

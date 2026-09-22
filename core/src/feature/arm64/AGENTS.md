@@ -172,6 +172,29 @@ Skill scaffolds TU + header + dispatch entry + bit-exact regression test using
 shared [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h) harness
 (ADR-0245).
 
+## Lint: this directory has exactly one lane (ADR-1283)
+
+Only the `arm64` clang-tidy ratchet lane measures these TUs. The `cpu`, `cuda`,
+`hip` and `sycl` lanes all build x86, so none of their compile databases holds a
+command for anything here, and `exclude_untidyable()` in
+`.github/workflows/lint-and-format.yml` drops `^core/src/feature/arm64/` from
+the fast `Tidy Changed` job for the same reason. Before the lane existed
+`vif_neon.c` carried 36 findings that nothing had ever reported.
+
+Re-measure after any change here, and commit the tightened baseline in the same
+PR (ADR-1142 — a cleaned file whose baseline was not tightened fails `exit 3`):
+
+```bash
+meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+    -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+ninja -C build-arm64            # generated model-JSON -> C sources must exist
+make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+```
+
+Needs an aarch64 cross gcc and a glibc sysroot; clang-tidy is handed the same
+`--target` / `--sysroot` so it parses `<arm_neon.h>` and `<arm_sve.h>` as
+AArch64 rather than against the host's x86 headers.
+
 ## Upstream-sync notes
 
 Same rules as [`../x86/AGENTS.md`](../x86/AGENTS.md): every TU carries Netflix

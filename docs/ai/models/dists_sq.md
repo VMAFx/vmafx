@@ -14,7 +14,7 @@ tracked separately as `T7-DISTS-followup`.
 | Sidecar | `model/tiny/dists_sq.json` |
 | SHA-256 | `ec8433e8c7c6a33ef3032a6e4538833e0bbb59de9f088054bbcb3be0e371ee55` |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Generator | `scripts/gen_dists_sq_placeholder_onnx.py` |
 
 ## Contract

@@ -109,15 +109,15 @@ and per-corpus loss-weighting key on `corpus_source`. `mos_native` +
 
 ```bash
 python ai/scripts/aggregate_corpora.py \
-    --inputs .workingdir2/konvid-150k/konvid_150k.jsonl \
-             .workingdir2/lsvq/lsvq.jsonl \
-             .workingdir2/waterloo-ivc-4k/waterloo_ivc_4k.jsonl \
-             .workingdir2/youtube-ugc/youtube_ugc.jsonl \
-    --output .workingdir2/aggregated/unified_corpus.jsonl
+    --inputs .corpus/konvid-150k/konvid_150k.jsonl \
+             .corpus/lsvq/lsvq.jsonl \
+             .corpus/waterloo-ivc-4k/waterloo_ivc_4k.jsonl \
+             .corpus/youtube-ugc/youtube_ugc.jsonl \
+    --output .corpus/aggregated/unified_corpus.jsonl
 ```
 
 The default sidecar path is
-`.workingdir2/aggregated/unified_corpus.manifest.json`. It records
+`.corpus/aggregated/unified_corpus.manifest.json`. It records
 `run_provenance`, input shard hashes, the active scale-conversion table,
 corpus-source overrides, and the same counters printed to stderr. Keep this
 manifest with the JSONL when using the artifact for later model-card evidence.
@@ -132,7 +132,7 @@ is never the operator's intent.
 bash ai/scripts/run_aggregated_training.sh
 ```
 
-The shell wrapper inspects `.workingdir2/` for the conventional
+The shell wrapper inspects `.corpus/` for the conventional
 per-corpus JSONL locations, runs the aggregator on whatever is
 present, then kicks off `train_predictor_v2_realcorpus.py` (PR #487)
 on the unified output. Set `VMAF_AGG_DRY_RUN=1` to skip the trainer

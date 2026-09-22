@@ -4,7 +4,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP compute kernels for the CAMBI banding-detection feature extractor.
- *  Direct port of `libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu`
+ *  Direct port of `core/src/feature/cuda/integer_cambi/cambi_score.cu`
  *  (T3-15 / ADR-0360) to the HIP backend.
  *
  *  HIP adaptation notes vs. CUDA twin:

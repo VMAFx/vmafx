@@ -46,7 +46,7 @@ decoder upsampler:
 | Held-out validation IoU | **0.7105** on the 5 % DUTS-TR validation fold (seed=42) — gate PASS vs v1's 0.6558 (+0.0547 / +8.3 %); full per-epoch trace in `build_artifacts/saliency_student_v2_train.json` |
 | PyTorch ↔ ONNX parity max-abs-diff | 3.278e-6 (threshold 1e-5; same threshold v1 used) |
 | Training wall-clock | 573.0 s (≈ 9.5 min) on RTX 4090, CUDA 13, PyTorch 2.11 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Trainer | `ai/scripts/train_saliency_student_v2.py` |
 
 The training run is deterministic given a fixed `--seed` (default

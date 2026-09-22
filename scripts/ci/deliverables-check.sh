@@ -17,6 +17,16 @@
 #       Diff is computed from $BASE_SHA..$HEAD_SHA env vars,
 #       or falls back to $(git merge-base origin/master HEAD)..HEAD.
 #
+# Input precedence, in order:
+#   1. $PR_BODY when the variable is SET — even to the empty string.
+#      Setting it is the caller's answer; a blank one is reported as a
+#      blank PR description, not silently replaced from stdin.
+#   2. stdin, when fd 0 is a pipe, a regular file or a socket.
+#   3. Otherwise a usage error (exit 2) naming what fd 0 actually is:
+#      a terminal, a closed descriptor, or /dev/null. Those are not
+#      bodies, and pretending otherwise is what this gate got wrong —
+#      see scripts/ci/pr-body-input.sh.
+#
 #   PR_BODY="$(gh pr view 260 --json body -q .body)" \
 #       scripts/ci/deliverables-check.sh
 #
@@ -34,32 +44,52 @@ set -euo pipefail
 
 # ---------- 1. Locate PR body ----------
 
-if [ -n "${PR_BODY:-}" ]; then
+# Resolve this script's own directory so the sourced helper is found
+# wherever the caller runs from: CI checks the repo out under a different
+# root than a developer's clone, and `make pr-check` runs from the top.
+_deliverables_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/pr-body-input.sh
+. "${_deliverables_dir}/pr-body-input.sh"
+
+if [ -n "${PR_BODY+x}" ]; then
+  # Set — even to the empty string — is an answer: the caller named this
+  # variable as the input. A blank one is reported below as a blank PR
+  # description instead of falling through to stdin, which is the path an
+  # empty `github.event.pull_request.body` used to take before arriving at
+  # the gate wearing a "nothing arrived on stdin" label.
   body_src="env"
-elif [ ! -t 0 ]; then
-  PR_BODY="$(cat)"
-  body_src="stdin"
 else
-  echo "deliverables-check: no PR body supplied." >&2
-  echo "  Set PR_BODY env var, OR pipe body on stdin, OR run via" >&2
-  echo "  'make pr-check PR=<num>' which fetches it via gh." >&2
-  exit 2
+  # Not `[ ! -t 0 ]`: that asks whether fd 0 is a terminal, which is a
+  # different question from whether anybody piped a body. See
+  # scripts/ci/pr-body-input.sh — reading a closed fd 0 deadlocks.
+  pr_body_classify_stdin
+  if [ "${PR_BODY_STDIN_KIND}" = "stream" ]; then
+    PR_BODY="$(pr_body_read_stdin)"
+    pr_body_close_stdin
+    body_src="stdin"
+  else
+    echo "deliverables-check: no PR body supplied — $(pr_body_stdin_reason)" >&2
+    echo "  Set PR_BODY env var, OR pipe body on stdin, OR run via" >&2
+    echo "  'make pr-check PR=<num>' which fetches it via gh." >&2
+    exit 2
+  fi
 fi
 
-# `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not — a CI step, a
-# git hook, a `bash script.sh </dev/null`. So the stdin branch is taken with
-# nothing to read, `cat` yields "", and the parser then reports all six
-# deliverables missing. That is a true statement about an empty string and a
-# useless one about the PR: it sends the author looking for a checklist bug
-# when the real fault is that no body ever arrived. Say which it is.
+# A body did arrive from a real source and is blank. Report that rather than
+# letting the parser announce all six deliverables missing: true of an empty
+# string, useless about the PR, and it sends the author looking for a
+# checklist bug when the fault is that the description is empty.
 if [ -z "$(printf '%s' "${PR_BODY}" | tr -d '[:space:]')" ]; then
   echo "::error title=ADR-0108 empty PR description::the PR body is empty" >&2
   echo "deliverables-check: the PR description is empty (source: ${body_src})." >&2
   echo "  The six ADR-0108 deliverables cannot be checked against an empty" >&2
   echo "  body. Fill in .github/PULL_REQUEST_TEMPLATE.md." >&2
   if [ "${body_src}" = "stdin" ]; then
-    echo "  Nothing arrived on stdin. If you meant to pipe the body, check the" >&2
-    echo "  producer: 'gh pr view <num> --json body -q .body | $0'." >&2
+    echo "  The pipe was open and carried no bytes. If you meant to send a body," >&2
+    echo "  check the producer: 'gh pr view <num> --json body -q .body | $0'." >&2
+  else
+    echo "  PR_BODY is set and blank. If you meant to pipe the body instead," >&2
+    echo "  unset PR_BODY — a set variable wins over stdin." >&2
   fi
   exit 1
 fi

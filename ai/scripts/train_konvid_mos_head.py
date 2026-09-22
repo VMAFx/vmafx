@@ -4,7 +4,7 @@
 """Train the KonViD MOS head v1 — Phase 3 of ADR-0325.
 
 Phases 1 + 2 of ADR-0325 land the KonViD-1k / KonViD-150k corpora as
-JSONL drops under ``.workingdir2/konvid-{1k,150k}/`` (PRs #440 / #447).
+JSONL drops under ``.corpus/konvid-{1k,150k}/`` (PRs #440 / #447).
 Phase 3 — this script — trains a small MLP that maps the canonical-6
 libvmaf features + saliency mean/var + 3 TransNet shot-metadata
 columns + a UGC-mixed encoder one-hot to a scalar MOS prediction in
@@ -42,8 +42,8 @@ Reproducer (smoke — no real corpus on disk; deterministic seed)::
 Production (real KonViD JSONL drops)::
 
 python ai/scripts/train_konvid_mos_head.py \
-    --konvid-1k .workingdir2/konvid-1k/konvid_1k.jsonl \
-    --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
+    --konvid-1k .corpus/konvid-1k/konvid_1k.jsonl \
+    --konvid-150k .corpus/konvid-150k/konvid_150k.jsonl
 
 Full-feature parquet runs must already carry ``mos`` or ``mos_raw_0_100``.
 Use ``ai/scripts/materialize_mos_labels.py`` to join MOS labels before
@@ -368,10 +368,8 @@ def _display_tone_mapping(mapping: dict[str, Any]) -> str:
     )
 
 
-def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
-    direct = _safe_float(mapping.get(name))
-    if math.isfinite(direct):
-        return direct
+def _display_luminance_feature(mapping: dict[str, Any], name: str) -> float:
+    """Handle luminance and contrast ratio display feature mappings."""
     if name == "display_peak_luminance_nits_norm":
         value = _mapping_first(
             mapping,
@@ -419,6 +417,11 @@ def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
     if name == "display_ambient_lux_norm":
         value = _mapping_first(mapping, "display_ambient_lux", "ambient_lux", "viewing_lux")
         return _normalise_positive(value, 1000.0)
+    return math.nan
+
+
+def _display_coverage_feature(mapping: dict[str, Any], name: str) -> float:
+    """Handle gamut coverage display feature mappings."""
     if name == "display_bt2020_coverage":
         return _normalise_fraction(
             _mapping_first(
@@ -432,6 +435,11 @@ def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
         return _normalise_fraction(
             _mapping_first(mapping, "display_p3_coverage", "p3_coverage", "dci_p3_coverage")
         )
+    return math.nan
+
+
+def _display_panel_feature(mapping: dict[str, Any], name: str) -> float:
+    """Handle panel type, local dimming, and tone-mapping display feature mappings."""
     panel_type = _display_panel_type(mapping)
     if name == "display_panel_oled":
         return 1.0 if "oled" in panel_type else 0.0 if panel_type else math.nan
@@ -471,6 +479,30 @@ def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
             token in tone_mapping for token in ("dynamic", "hdr10+", "hdr10plus", "dolby", "vision")
         )
         return 1.0 if dynamic else 0.0
+    return math.nan
+
+
+def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
+    direct = _safe_float(mapping.get(name))
+    if math.isfinite(direct):
+        return direct
+    if name in {
+        "display_peak_luminance_nits_norm",
+        "display_black_luminance_nits_norm",
+        "display_contrast_ratio_log_norm",
+        "display_ambient_lux_norm",
+    }:
+        return _display_luminance_feature(mapping, name)
+    if name in {"display_bt2020_coverage", "display_p3_coverage"}:
+        return _display_coverage_feature(mapping, name)
+    if name in {
+        "display_panel_oled",
+        "display_panel_qled",
+        "display_panel_lcd",
+        "display_local_dimming",
+        "display_tone_mapping_dynamic",
+    }:
+        return _display_panel_feature(mapping, name)
     return math.nan
 
 
@@ -1035,18 +1067,17 @@ def _export_onnx(
 
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
     model = model.cpu()
-    dummy_features = torch.zeros(1, n_features, dtype=torch.float32)
-    dummy_encoder = torch.ones(1, N_ENCODERS, dtype=torch.float32)
+    dummy_features = torch.zeros(2, n_features, dtype=torch.float32)
+    dummy_encoder = torch.ones(2, N_ENCODERS, dtype=torch.float32)
     torch.onnx.export(
         model,
         (dummy_features, dummy_encoder),
         str(onnx_path),
         input_names=["features", "encoder_onehot"],
         output_names=["mos"],
-        dynamic_axes={
-            "features": {0: "batch"},
-            "encoder_onehot": {0: "batch"},
-            "mos": {0: "batch"},
+        dynamic_shapes={
+            "features": {0: torch.export.Dim.AUTO},
+            "encoder_onehot": {0: torch.export.Dim.AUTO},
         },
         opset_version=17,
     )
@@ -1171,9 +1202,8 @@ def _build_manifest(
 # ---------------------------------------------------------------------
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _add_konvid_corpus_arguments(ap: argparse.ArgumentParser) -> None:
+    """Add corpus and feature-table arguments to ``ap``."""
     _konvid_1k_dir = Path(
         os.environ.get(
             "VMAF_KONVID_1K_DIR",
@@ -1215,45 +1245,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
-        "--feature-jsonl",
-        type=Path,
-        action="append",
-        default=[],
-        help=argparse.SUPPRESS,
+        "--feature-jsonl", type=Path, action="append", default=[], help=argparse.SUPPRESS
     )
-    ap.add_argument(
-        "--model-id",
-        default=DEFAULT_MODEL_ID,
-        help=argparse.SUPPRESS,
-    )
+    ap.add_argument("--model-id", default=DEFAULT_MODEL_ID, help=argparse.SUPPRESS)
     ap.add_argument(
         "--feature-schema",
         choices=tuple(FEATURE_SCHEMAS),
         default=FEATURE_SCHEMA_KONVID_V1,
         help=argparse.SUPPRESS,
     )
-    ap.add_argument(
-        "--display-profile-json",
-        type=Path,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    ap.add_argument(
-        "--log-prefix",
-        default="konvid-mos",
-        help=argparse.SUPPRESS,
-    )
+    ap.add_argument("--display-profile-json", type=Path, default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--log-prefix", default="konvid-mos", help=argparse.SUPPRESS)
+
+
+def _add_konvid_training_arguments(ap: argparse.ArgumentParser) -> None:
+    """Add training-recipe arguments to ``ap``."""
     ap.add_argument(
         "--smoke",
         action="store_true",
-        help="Synthesize a deterministic-seeded corpus instead of loading "
-        "from disk; used by CI smoke + the test harness.",
+        help="Synthesize a deterministic-seeded corpus instead of loading from disk; used by CI smoke + the test harness.",
     )
-    ap.add_argument(
-        "--allow-synthetic-fallback",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
+    ap.add_argument("--allow-synthetic-fallback", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--smoke-epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -1270,71 +1282,72 @@ def main(argv: Sequence[str] | None = None) -> int:
             "can pass --device cuda."
         ),
     )
+
+
+def _add_konvid_output_arguments(ap: argparse.ArgumentParser) -> None:
+    """Add export and run-provenance arguments to ``ap``."""
     ap.add_argument(
-        "--out-onnx",
-        type=Path,
-        default=REPO_ROOT / "model" / "konvid_mos_head_v1.onnx",
+        "--out-onnx", type=Path, default=REPO_ROOT / "model" / "konvid_mos_head_v1.onnx"
     )
     ap.add_argument(
         "--out-card",
         type=Path,
         default=REPO_ROOT / "model" / "konvid_mos_head_v1_card.md",
-        help="Model-card path (this script does not rewrite a hand-authored card; "
-        "set this to a tmp path to force the auto-generated stub).",
+        help="Model-card path (this script does not rewrite a hand-authored card; set this to a tmp path to force the auto-generated stub).",
     )
     ap.add_argument(
-        "--out-manifest",
-        type=Path,
-        default=REPO_ROOT / "model" / "konvid_mos_head_v1.json",
+        "--out-manifest", type=Path, default=REPO_ROOT / "model" / "konvid_mos_head_v1.json"
     )
     ap.add_argument(
-        "--no-export",
-        action="store_true",
-        help="Skip ONNX export + manifest write (dev mode).",
+        "--no-export", action="store_true", help="Skip ONNX export + manifest write (dev mode)."
     )
     ap.add_argument("--run-entrypoint", type=Path, default=SCRIPT_PATH, help=argparse.SUPPRESS)
     ap.add_argument("--run-argv-json", default=None, help=argparse.SUPPRESS)
-    args = ap.parse_args(argv)
-    run_argv = raw_argv
-    if args.run_argv_json is not None:
-        try:
-            parsed_argv = json.loads(args.run_argv_json)
-        except json.JSONDecodeError:
-            print(
-                f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
-                file=sys.stderr,
-            )
-            return 2
-        if not isinstance(parsed_argv, list) or not all(
-            isinstance(item, str) for item in parsed_argv
-        ):
-            print(
-                f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
-                file=sys.stderr,
-            )
-            return 2
-        run_argv = parsed_argv
-    feature_columns = _feature_columns_for_schema(args.feature_schema)
-    display_profile = _load_display_profile(args.display_profile_json)
-    uses_display_profile = any(name in feature_columns for name in CHUG_HDR_DISPLAY_FEATURES)
-    display_profile_values = (
-        display_profile.feature_values
-        if display_profile is not None and uses_display_profile
-        else None
-    )
-    if display_profile is not None and not uses_display_profile:
+
+
+def _build_konvid_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for train_konvid_mos_head."""
+    ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
+    _add_konvid_corpus_arguments(ap)
+    _add_konvid_training_arguments(ap)
+    _add_konvid_output_arguments(ap)
+    return ap
+
+
+def _validate_run_argv(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> tuple[list[str], int] | tuple[list[str], None]:
+    """Validate --run-argv-json and return (resolved_argv, error_code_or_None)."""
+    if args.run_argv_json is None:
+        return raw_argv, None
+    try:
+        parsed_argv = json.loads(args.run_argv_json)
+    except json.JSONDecodeError:
         print(
-            f"[{args.log_prefix}] display profile ignored by feature schema "
-            f"{args.feature_schema}",
+            f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
             file=sys.stderr,
         )
+        return raw_argv, 2
+    if not isinstance(parsed_argv, list) or not all(isinstance(item, str) for item in parsed_argv):
+        print(
+            f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
+            file=sys.stderr,
+        )
+        return raw_argv, 2
+    return parsed_argv, None
 
+
+def _load_or_synthesize_konvid_corpus(
+    args: argparse.Namespace,
+    feature_columns: tuple[str, ...],
+    display_profile_values: dict[str, float] | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, bool] | int:
+    """Load real corpus or synthesize; return (features, encoder, mos, splits, epochs, synthetic) or int error code."""
     if args.smoke:
         n_rows = 600
         features, encoder, mos = _synthesize_corpus(
-            n_rows=n_rows,
-            seed=args.seed,
-            feature_columns=feature_columns,
+            n_rows=n_rows, seed=args.seed, feature_columns=feature_columns
         )
         splits = np.empty((features.shape[0],), dtype="<U5")
         epochs = args.smoke_epochs
@@ -1344,73 +1357,61 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"epochs={epochs}, seed={args.seed}, device={args.device}",
             flush=True,
         )
-    else:
-        paths = [p for p in (args.konvid_1k, args.konvid_150k) if p is not None]
-        feature_jsonls = [p for p in args.feature_jsonl if p is not None]
-        feature_parquets = [p for p in args.feature_parquet if p is not None]
-        arrays = _load_corpus_arrays(
-            paths,
-            jsonl_paths=feature_jsonls,
-            parquet_paths=feature_parquets,
-            feature_columns=feature_columns,
-            display_profile=display_profile_values,
-        )
-        features, encoder, mos, splits = (
-            arrays.features,
-            arrays.encoder,
-            arrays.mos,
-            arrays.splits,
-        )
-        if features.shape[0] == 0:
-            attempted = [str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]
-            if not args.allow_synthetic_fallback:
-                print(
-                    f"[{args.log_prefix}] error: no real MOS-labelled rows found at "
-                    f"{attempted}. Add mos/mos_raw_0_100 with "
-                    "ai/scripts/materialize_mos_labels.py, or pass --smoke for an "
-                    "explicit synthetic pipeline run.",
-                    file=sys.stderr,
-                )
-                return 2
+        return features, encoder, mos, splits, epochs, synthetic
+    paths = [p for p in (args.konvid_1k, args.konvid_150k) if p is not None]
+    feature_jsonls = [p for p in args.feature_jsonl if p is not None]
+    feature_parquets = [p for p in args.feature_parquet if p is not None]
+    arrays = _load_corpus_arrays(
+        paths,
+        jsonl_paths=feature_jsonls,
+        parquet_paths=feature_parquets,
+        feature_columns=feature_columns,
+        display_profile=display_profile_values,
+    )
+    features, encoder, mos, splits = (arrays.features, arrays.encoder, arrays.mos, arrays.splits)
+    if features.shape[0] == 0:
+        attempted = [str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]
+        if not args.allow_synthetic_fallback:
             print(
-                f"[{args.log_prefix}] no real corpus rows found at {attempted}; "
-                "falling back to synthetic because --allow-synthetic-fallback was set. "
-                "Prefer --smoke for CI smoke runs.",
+                f"[{args.log_prefix}] error: no real MOS-labelled rows found at "
+                f"{attempted}. Add mos/mos_raw_0_100 with "
+                "ai/scripts/materialize_mos_labels.py, or pass --smoke for an "
+                "explicit synthetic pipeline run.",
                 file=sys.stderr,
             )
-            features, encoder, mos = _synthesize_corpus(
-                n_rows=600,
-                seed=args.seed,
-                feature_columns=feature_columns,
-            )
-            splits = np.empty((features.shape[0],), dtype="<U5")
-            synthetic = True
-        else:
-            synthetic = False
-        epochs = args.epochs
+            return 2
         print(
-            f"[{args.log_prefix}] {'real' if not synthetic else 'synthetic-fallback'} "
-            f"mode: {features.shape[0]} rows, epochs={epochs}, device={args.device}",
-            flush=True,
-        )
-
-    if features.shape[0] < args.k_folds * 2:
-        print(
-            f"[{args.log_prefix}] error: corpus has only {features.shape[0]} rows; "
-            f"need at least {args.k_folds * 2} for {args.k_folds}-fold CV.",
+            f"[{args.log_prefix}] no real corpus rows found at {attempted}; "
+            "falling back to synthetic because --allow-synthetic-fallback was set. "
+            "Prefer --smoke for CI smoke runs.",
             file=sys.stderr,
         )
-        return 2
+        features, encoder, mos = _synthesize_corpus(
+            n_rows=600, seed=args.seed, feature_columns=feature_columns
+        )
+        splits = np.empty((features.shape[0],), dtype="<U5")
+        synthetic = True
+    else:
+        synthetic = False
+    epochs = args.epochs
+    print(
+        f"[{args.log_prefix}] {'real' if not synthetic else 'synthetic-fallback'} "
+        f"mode: {features.shape[0]} rows, epochs={epochs}, device={args.device}",
+        flush=True,
+    )
+    return features, encoder, mos, splits, epochs, synthetic
 
-    # Per-corpus standardisation. The MLP carries a LayerNorm at its
-    # input so this is informational only (recorded in the sidecar so
-    # downstream consumers can replicate the recipe), but we still
-    # compute it for parity with the fr_regressor_v2_ensemble manifest.
-    feature_mean = features.mean(axis=0).astype(np.float32).tolist()
-    feature_std = features.std(axis=0).astype(np.float32).tolist()
 
-    t0 = time.time()
-    folds_report: list[dict[str, Any]] = []
+def _run_konvid_cv(
+    args: argparse.Namespace,
+    features: np.ndarray,
+    encoder: np.ndarray,
+    mos: np.ndarray,
+    splits: np.ndarray,
+    epochs: int,
+    synthetic: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any], tuple[np.ndarray, np.ndarray] | None]:
+    """Run cross-validation and return (folds_report, gate, split_indices)."""
     split_indices = None if synthetic else _heldout_split_indices(splits)
     if split_indices is None:
         fold_indices = _kfold_indices(features.shape[0], args.k_folds, args.seed)
@@ -1424,6 +1425,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"n_train={len(train_idx)} n_val={len(val_idx)}",
             flush=True,
         )
+    folds_report: list[dict[str, Any]] = []
     for fold_idx, (train_idx, val_idx) in enumerate(fold_indices):
         _val_pred, metrics = _train_one_fold(
             features_train=features[train_idx],
@@ -1458,18 +1460,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"spread={gate['plcc_spread']:.4f}",
         flush=True,
     )
+    return folds_report, gate, split_indices
 
-    # Train the ship checkpoint on the full corpus once the LOSO
-    # report is in. Per ADR-0303 / fr_regressor_v3 §Training recipe
-    # the LOSO fold *is* the gate — the ship checkpoint goes on the
-    # entire corpus.
-    if args.no_export:
-        print(f"[{args.log_prefix}] --no-export: skipping ONNX + manifest write", flush=True)
-        return 0
+
+def _run_konvid_export(
+    args: argparse.Namespace,
+    run_argv: list[str],
+    features: np.ndarray,
+    encoder: np.ndarray,
+    mos: np.ndarray,
+    epochs: int,
+    synthetic: bool,
+    folds_report: list[dict[str, Any]],
+    gate: dict[str, Any],
+    split_indices: tuple[np.ndarray, np.ndarray] | None,
+    feature_columns: tuple[str, ...],
+    display_profile: "DisplayProfile | None",
+    uses_display_profile: bool,
+    t0: float,
+) -> None:
+    """Train the ship checkpoint, export ONNX, and write the manifest."""
+    feature_mean = features.mean(axis=0).astype(np.float32).tolist()
+    feature_std = features.std(axis=0).astype(np.float32).tolist()
     if split_indices is None:
-        ship_features = features
-        ship_encoder = encoder
-        ship_mos = mos
+        ship_features, ship_encoder, ship_mos = features, encoder, mos
     else:
         ship_idx = split_indices[0]
         ship_features = features[ship_idx]
@@ -1501,11 +1515,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "feature_parquet": args.feature_parquet,
             "display_profile_json": args.display_profile_json,
         },
-        outputs={
-            "onnx": args.out_onnx,
-            "card": args.out_card,
-            "manifest": args.out_manifest,
-        },
+        outputs={"onnx": args.out_onnx, "card": args.out_card, "manifest": args.out_manifest},
         exclude_args={"run_entrypoint", "run_argv_json"},
     )
     if args.run_entrypoint.resolve() != SCRIPT_PATH:
@@ -1535,6 +1545,62 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"sha256={sha256[:16]}…); manifest={args.out_manifest.name}; "
         f"wall={wall_s:.1f}s",
         flush=True,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_konvid_parser().parse_args(argv)
+    run_argv, err = _validate_run_argv(args, raw_argv)
+    if err is not None:
+        return err
+    feature_columns = _feature_columns_for_schema(args.feature_schema)
+    display_profile = _load_display_profile(args.display_profile_json)
+    uses_display_profile = any(name in feature_columns for name in CHUG_HDR_DISPLAY_FEATURES)
+    display_profile_values = (
+        display_profile.feature_values
+        if display_profile is not None and uses_display_profile
+        else None
+    )
+    if display_profile is not None and not uses_display_profile:
+        print(
+            f"[{args.log_prefix}] display profile ignored by feature schema "
+            f"{args.feature_schema}",
+            file=sys.stderr,
+        )
+    corpus = _load_or_synthesize_konvid_corpus(args, feature_columns, display_profile_values)
+    if isinstance(corpus, int):
+        return corpus
+    features, encoder, mos, splits, epochs, synthetic = corpus
+    if features.shape[0] < args.k_folds * 2:
+        print(
+            f"[{args.log_prefix}] error: corpus has only {features.shape[0]} rows; "
+            f"need at least {args.k_folds * 2} for {args.k_folds}-fold CV.",
+            file=sys.stderr,
+        )
+        return 2
+    t0 = time.time()
+    folds_report, gate, split_indices = _run_konvid_cv(
+        args, features, encoder, mos, splits, epochs, synthetic
+    )
+    if args.no_export:
+        print(f"[{args.log_prefix}] --no-export: skipping ONNX + manifest write", flush=True)
+        return 0
+    _run_konvid_export(
+        args,
+        run_argv,
+        features,
+        encoder,
+        mos,
+        epochs,
+        synthetic,
+        folds_report,
+        gate,
+        split_indices,
+        feature_columns,
+        display_profile,
+        uses_display_profile,
+        t0,
     )
     return 0
 

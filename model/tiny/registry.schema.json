@@ -84,7 +84,7 @@
           "default": 0.01
         },
         "license": {
-          "description": "SPDX identifier of the model's license. Fork-trained models use 'BSD-3-Clause-Plus-Patent' (matches libvmaf). Upstream-derived models carry the upstream's license verbatim. Required on all entries from schema_version 1 onward; absence is tolerated for legacy entries from schema_version 0.",
+          "description": "SPDX identifier of the model's license. Fork-trained models use 'BSD-2-Clause-Patent' (matches libvmaf). Upstream-derived models carry the upstream's license verbatim. Required on all entries from schema_version 1 onward; absence is tolerated for legacy entries from schema_version 0.",
           "type": "string",
           "maxLength": 128
         },

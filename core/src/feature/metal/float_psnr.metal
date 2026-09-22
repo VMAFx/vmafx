@@ -4,10 +4,10 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for float_psnr (T8-1d / ADR-0421).
- *  Translation of `libvmaf/src/feature/vulkan/shaders/float_psnr.comp`
+ *  Translation of `core/src/feature/vulkan/shaders/float_psnr.comp`
  *  (same algorithm, MSL idioms).
  *
- *  Algorithm (must match CPU libvmaf/src/feature/float_psnr.c):
+ *  Algorithm (must match CPU core/src/feature/float_psnr.c):
  *    1. Convert pixel to float:
  *         8bpc:       val = (float)raw          (peak = 255.0)
  *         10bpc:      val = (float)raw / 4.0    (peak = 255.75)

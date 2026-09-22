@@ -15,7 +15,6 @@ if build_machine.system() != 'windows'
     test('test_windows_cuda_compiler_discovery',
         import('python').find_installation(),
         args : files('test_windows_cuda_compiler_discovery.py'),
-        env : ['VMAFX_TEST_MESON=' + find_program('meson', native : true).full_path()],
         suite : ['fast'],
         timeout : 90,
     )
@@ -189,7 +188,7 @@ test_flush_context_ordering = executable('test_flush_context_ordering',
 
 # Coverage follow-up to PR #313 (R3 from
 # docs/development/coverage-gap-analysis-2026-05-02.md): exercise
-# libvmaf/src/output.c writers (XML / JSON / CSV / SUB) end-to-end.
+# core/src/output.cpp writers (XML / JSON / CSV / SUB) end-to-end.
 #
 # macOS/ld64 invariant: test_output must link one libvmaf definition only.
 # Do not include libvmaf.c/output.c directly while also linking libvmaf.a;
@@ -219,7 +218,7 @@ test_log = executable('test_log',
 # vmaf_write_output.  Uses the full libvmaf link (no .c include-tricks) so that
 # the public VMAF_EXPORT entry points are exercised through the shared library
 # ABI rather than through static compilation of internals.
-# Addresses .workingdir/audit-test-coverage-2026-05-16.md §2.
+# Keeps the public ABI entry points covered by a linked-library test.
 test_public_api_score = executable('test_public_api_score',
     ['test.c', 'test_public_api_score.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -811,8 +810,8 @@ endif
 
 # speed_chroma + speed_temporal registration smoke tests — link against
 # libvmaf_feature_static_lib for the extractor list (mirrors test_lpips).
-# Both extractors live in libvmaf/src/feature/speed.c, which is only
-# compiled when -Denable_float=true (see libvmaf/src/meson.build); the
+# Both extractors live in core/src/feature/speed.c, which is only
+# compiled when -Denable_float=true (see core/src/meson.build); the
 # corresponding entries in feature_extractor.c's extractor list are
 # wrapped in `#if VMAF_FLOAT_FEATURES`. Gate the test on the same option
 # so a default `meson setup` (enable_float=false) doesn't fail on a
@@ -1265,6 +1264,90 @@ test_framesync = executable('test_framesync',
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
 )
 
+# framesync.c is recompiled into the executable, the way every other target in
+# this file recompiles the sources it exercises, with its four pthread entry
+# points renamed so the deterministic wrappers in
+# test_framesync_init_failure.c are what it calls.
+#
+# The renames arrive through a force-included header, NOT through four -D
+# flags. A command-line -D is in force before <pthread.h> is read, so it also
+# rewrites whatever <pthread.h> declares -- harmless where the entry points
+# are extern (glibc, macOS libSystem, MinGW winpthreads), fatal where they are
+# defined inline. core/src/compat/win32/pthread.h is exactly that: a
+# header-only SRWLOCK / CONDITION_VARIABLE shim whose four entry points are
+# `static inline`, wired in by core/meson.build on every MSVC / clang-cl
+# build. Under -D the rename landed on those definitions, framesync.c called
+# the real primitives under the wrapper's name, no injected failure ever
+# happened, and test_init_failure_unwinds_initialized_primitives failed --
+# silently on every MSVC lane, visibly only on Windows ARM64 MSVC, the one
+# MSVC lane that runs `meson test` instead of a named subset of executables.
+# test_framesync_interpose.h reads <pthread.h> first and defines the renames
+# after it, so they reach call sites only. See that header for the full
+# argument. The force-include reaches all three translation units: test.c
+# never mentions pthreads, so it is inert there, and
+# test_framesync_init_failure.c undefines the four names above its first
+# #include so it still sees the real entry points to wrap.
+#
+# `framesync_interposer_lto_override` turns LTO off for this one target on
+# macOS. Two earlier attempts tried to steer *which* symbols survive LTO --
+# first by dropping the link_whole/-force_load, then by dropping
+# `vmaf_cflags_common` so the definitions keep default visibility. Both landed,
+# and Apple's linker rejected the target again, byte-identically:
+#
+#   Use `-u <symbol_name>` to build missing LTO symbols for architecture arm64:
+#     '_vmafx_test_pthread_cond_destroy' ... '_vmaf_framesync_init' ...
+#     '_mu_tests_run' ...
+#   ld: symbol(s) defined in LTO objects are referenced but missing in
+#       compiled objects for architecture arm64
+#
+# What is measured, by replaying the target's own compile and link commands
+# through clang/LLD: with b_lto=true this executable's entire input is LLVM
+# bitcode, the LTO resolution hands libLTO exactly one externally-visible
+# symbol (the entry point), and the generated object comes back with `main` as
+# its only global -- every cross-translation-unit symbol the diagnostic names
+# is either internalised or deleted. What is NOT established is why Apple's
+# linker tolerates that outcome for the pure-bitcode siblings that link a few
+# steps earlier in the same run (test_pdjson, test_thread_pool,
+# test_pdjson_stack_increment_zero, all of which collapse to `main` in exactly
+# the same way) and refuses it here. Do not add a third theory about that
+# without a macOS machine to test it on.
+#
+# So this does not try to win the argument about the preserve list -- it
+# removes the precondition. With b_lto=false the three inputs are ordinary
+# Mach-O objects, the link contains no bitcode at all, and no code path that
+# can emit "symbol(s) defined in LTO objects ..." is reachable. The override is
+# the same mechanism `test_output` above already uses for its own Apple-LTO
+# problem; LTO stays on for this target everywhere else. Nothing is lost: LTO
+# buys a three-assertion unit test nothing, and the target exists precisely to
+# keep a cross-translation-unit call boundary observable, which is the thing
+# whole-program optimisation is built to dissolve.
+#
+# `vmaf_cflags_common` is still not on this target. Its absence is *not* what
+# fixes the link (the attempt that removed it is one of the two that failed);
+# it is merely unneeded here -- framesync.c includes only libc, framesync.h and
+# the public header, and a test executable is neither installed nor exports
+# anything. All three translation units were checked to compile warning-clean
+# with that flag set, so restoring it for consistency with the other test
+# targets is safe whenever someone wants to.
+framesync_interposer_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
+
+# Force-include spelling. cl / clang-cl take /FI, everything else takes
+# -include; both resolve the file as if its #include were the first line of
+# the primary source. The path is absolute so neither has to fall back on an
+# include-path search.
+framesync_interpose_header = meson.current_source_dir() / 'test_framesync_interpose.h'
+framesync_interpose_args = cc.get_argument_syntax() == 'msvc' \
+    ? ['/FI' + framesync_interpose_header] \
+    : ['-include', framesync_interpose_header]
+
+test_framesync_init_failure = executable('test_framesync_init_failure',
+    ['test.c', 'test_framesync_init_failure.c', '../src/framesync.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : framesync_interpose_args,
+    dependencies : [pthread_dependency, thread_lib],
+    override_options : framesync_interposer_lto_override,
+)
+
 # Ported from upstream Netflix/vmaf c70debb1 ("libvmaf/test: port new
 # adm/vif/speed tests"). The vif_tools and speed_chroma test files from that
 # commit depend on upstream symbols (NUM_KERNELSCALES, vif_validate_kernelscale,
@@ -1593,6 +1676,28 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
     dependencies : [pthread_dependency, math_lib],
 )
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
+    suite : ['fast'])
+
+# T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch
+# against scalar on full-range noise.
+test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',
+    ['test.c', 'test_integer_adm_simd_noise.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_simd_noise', test_integer_adm_simd_noise,
+    suite : ['fast'])
+
+# T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18: the 16-bit vertical DWT sum
+# must stay in int64 on every dispatch level.
+test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
+    ['test.c', 'test_integer_adm_dwt16_range.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
     suite : ['fast'])
 
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
@@ -2310,6 +2415,18 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
     suite : ['fast', 'gpu'])
 
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
+    suite : ['fast', 'gpu'])
+
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
 test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
     ['test.c', 'test_adm_wide_rounding.c'],
@@ -2458,7 +2575,7 @@ endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce
 # + saliency-to-QP-offset). Header-only test that compiles
-# libvmaf/tools/vmaf_roi_core.h and exercises clamp / sign / monotonicity
+# core/tools/vmaf_roi_core.h and exercises clamp / sign / monotonicity
 # without needing the full binary.
 test_vmaf_roi_libm = cc.find_library('m', required : false)
 test_vmaf_roi = executable('test_vmaf_roi',
@@ -2936,8 +3053,7 @@ test_version = executable('test_version',
 )
 test('test_version', test_version, suite : ['fast'])
 
-# integer_vif vif_skip_scale0 option (CPU path) — closes the gap noted in
-# .workingdir/audit-test-coverage-2026-05-16.md §1. Source already existed at
+# integer_vif vif_skip_scale0 option (CPU path). Source already existed at
 # core/test/test_vif_skip_scale0.c but was never registered. Public-API only,
 # so it links against libvmaf without pulling in feature internals.
 test_vif_skip_scale0 = executable('test_vif_skip_scale0',
@@ -3120,6 +3236,18 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_parity', test_sycl_adm_parity,
+    suite : ['fast', 'gpu', 'sycl'])
+
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
     suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
@@ -3451,6 +3579,55 @@ test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
+# T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22 -- the HIP integer-ADM init failure path.
+#
+# integer_adm_hip.c is compiled straight into this target rather than linked
+# from libvmaf, and test_hip_adm_init_unwind.c defines every symbol the TU
+# references: the ~17 hip* entry points, the four HSACO blobs, and four
+# libvmaf helpers. `vmaf_feature_name_dict_from_provided_features` is the
+# injection point and returns NULL, which drives the one init path that used
+# to release every resource and then report success (hipSuccess through the
+# unwind ladder's terminal hip_rc()), leaking the two luma stagers on the way
+# out. The stubs mean no AMD device is needed, so this runs in the `fast`
+# suite on any host -- it is NOT in the `gpu` suite and never skips.
+#
+# It is gated on enable_hipcc as well as enable_hip because the failure path
+# only exists under HAVE_HIPCC; the scaffold build returns -ENOSYS from init
+# long before the dictionary is built. `hip_deps` is here for the ROCm
+# include directory (hipError_t and friends); the stub definitions in the
+# target's own objects are what the calls resolve to.
+if get_option('enable_hipcc') == true
+test_hip_adm_init_unwind = executable('test_hip_adm_init_unwind',
+    ['test.c', 'test_hip_adm_init_unwind.c', '../src/feature/hip/integer_adm_hip.c'],
+    # Same include set the library build gives this TU. `../src/cuda` is in it
+    # because integer_adm_hip.c's `#include "common.h"` resolves there -- there
+    # is no common.h under src/ or src/feature/, and dropping the directory
+    # breaks the compile. Keep it until that include is disambiguated.
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'),
+                           include_directories('../src/feature/common/'),
+                           include_directories('../src/cuda/')],
+    dependencies: [pthread_dependency, math_lib, hip_deps],
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+)
+test('test_hip_adm_init_unwind', test_hip_adm_init_unwind, suite : ['fast'])
+
+# T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22, second site -- the two SSIMULACRA2 HIP allocator failure branches.
+# Same device-free interposition as the ADM gate above; here the injection is
+# an allocator that fails on a chosen call index, so both ss2h_alloc_device()
+# and ss2h_alloc_pinned() can be driven independently.
+test_hip_ssimulacra2_init_unwind = executable('test_hip_ssimulacra2_init_unwind',
+    ['test.c', 'test_hip_ssimulacra2_init_unwind.c', '../src/feature/hip/ssimulacra2_hip.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'),
+                           include_directories('../src/feature/common/'),
+                           include_directories('../src/cuda/')],
+    dependencies: [pthread_dependency, math_lib, hip_deps],
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+)
+test('test_hip_ssimulacra2_init_unwind', test_hip_ssimulacra2_init_unwind, suite : ['fast'])
+endif
+
 # ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
 test_hip_adm_small_border = executable('test_hip_adm_small_border',
     ['test.c', 'test_adm_small_border.c'],
@@ -3460,6 +3637,19 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
@@ -4036,11 +4226,6 @@ test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
-# ADR-0708 Wave 1: test_log registered as part of the log.c → log.cpp pilot
-# (mirrors DRAFT PR #315's orphan-test wiring). The executable was built but
-# never test()-registered, so the formatter / log-level filtering coverage
-# was silently dead. Wire it into the fast suite.
-test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
 if has_cond_timedwait
@@ -4114,6 +4299,7 @@ test('test_ms_ssim_decimate_coverage', test_ms_ssim_decimate_coverage, suite : [
 test('test_pixel_format_edge_coverage',
     test_pixel_format_edge_coverage, suite : ['fast'])
 test('test_framesync', test_framesync, suite : ['fast'])
+test('test_framesync_init_failure', test_framesync_init_failure, suite : ['fast'])
 test('test_propagate_metadata', test_propagate_metadata, suite : ['fast'])
 test('test_adm_csf', test_adm_csf, suite : ['fast'])
 test('test_barten_csf', test_barten_csf, suite : ['fast'])
@@ -4283,7 +4469,18 @@ test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
-test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages, suite : ['fast', 'simd'])
+# The sweep behind these two tests is 12 widths x 4 heights x 9 bit depths
+# x 4 scales x 2 patterns = 3456 scalar/SIMD kernel pairs, each followed by a
+# full-fixture memcmp. That is cheap in an optimised build (~2 s on a modern
+# desktop) but the Coverage Gate runs it under --buildtype=debug -Db_coverage=true
+# with -fprofile-update=atomic, where every basic block carries a locked counter
+# increment. On the slower GitHub hosted runner classes that pushes both tests
+# past Meson's 30 s default: master runs 35499436272 (both TIMEOUT) and
+# 35505304660 (29.94 s / TIMEOUT) failed the gate on exactly this. Give them a
+# budget that fits the instrumented build instead of trimming the sweep -- the
+# exhaustive comparison is the bit-exactness guarantee itself.
+test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages,
+    suite : ['fast', 'simd'], timeout : 180)
 endif
 
 # Research-2046: configured private integer-VIF objects also work in shared builds.
@@ -4309,5 +4506,16 @@ test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
-test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages, suite : ['fast', 'simd'])
+# The sweep behind these two tests is 12 widths x 4 heights x 9 bit depths
+# x 4 scales x 2 patterns = 3456 scalar/SIMD kernel pairs, each followed by a
+# full-fixture memcmp. That is cheap in an optimised build (~2 s on a modern
+# desktop) but the Coverage Gate runs it under --buildtype=debug -Db_coverage=true
+# with -fprofile-update=atomic, where every basic block carries a locked counter
+# increment. On the slower GitHub hosted runner classes that pushes both tests
+# past Meson's 30 s default: master runs 35499436272 (both TIMEOUT) and
+# 35505304660 (29.94 s / TIMEOUT) failed the gate on exactly this. Give them a
+# budget that fits the instrumented build instead of trimming the sweep -- the
+# exhaustive comparison is the bit-exactness guarantee itself.
+test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages,
+    suite : ['fast', 'simd'], timeout : 180)
 endif

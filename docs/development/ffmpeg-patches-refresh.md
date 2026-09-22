@@ -13,9 +13,9 @@ Run from the repository root:
 
 ```bash
 python3 scripts/ci/ffmpeg_patch_stack.py --refresh \
-  --output-dir .workingdir2/cache/ffmpeg-patch-stack/manual-refresh
+  --output-dir .workingdir/cache/ffmpeg-patch-stack/manual-refresh
 python3 scripts/ci/ffmpeg_patch_stack.py --check \
-  --output-dir .workingdir2/cache/ffmpeg-patch-stack/manual-check
+  --output-dir .workingdir/cache/ffmpeg-patch-stack/manual-check
 ```
 
 The tool fetches the configured release into a disposable checkout and replays

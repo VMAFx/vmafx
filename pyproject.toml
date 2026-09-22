@@ -149,6 +149,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 [tool.pytest.ini_options]
 testpaths = ["python/test", "ai/tests", "compat/vmaf/tests"]
 addopts = "-ra --strict-markers"
+filterwarnings = ["error"]
 # ai/src/ is the aiutils package root; add it so tests can ``import aiutils``
 # without a pip-editable install.  (ai/scripts/ is added by each test file
 # that imports a trainer script directly via sys.path.insert.)
@@ -161,7 +162,15 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+# Follows `requires-python` at the top of this file: model the oldest language
+# version the project supports, which is also the only one it supports and the
+# one CI installs (`PYTHON_CI_VERSION` / `python-version: "3.14.7"`). A lower
+# value does not just mis-model the tree, it stops the check: mypy refuses to
+# parse a PEP 695 `type` statement when told to target < 3.12, and numpy's
+# bundled `__init__.pyi` uses one, so a `[syntax]` error there aborted the whole
+# `ai/src/` pass with "errors prevented further checking" in any checkout with
+# numpy installed. Raise this in lockstep with `requires-python`; see ADR-1282.
+python_version = "3.14"
 strict = true
 # ai/src/ is the vmaf_train package source root. Declaring it via mypy_path lets
 # mypy resolve `vmaf_train.*` imports in ai/scripts/ and ai/tests/ without the
@@ -209,5 +218,11 @@ module = [
   "scipy.*",
   "transformers",
   "transformers.*",
+  # torchao 0.18.0 ships no py.typed marker; `pip show -f torchao | grep py.typed`
+  # is empty and `torchao/py.typed` does not exist. ADR-1293 moved the QAT hook
+  # onto its pt2e API, which PyTorch's own deprecation text names as the
+  # successor to `torch.ao.quantization`.
+  "torchao",
+  "torchao.*",
 ]
 ignore_missing_imports = true

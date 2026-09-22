@@ -1,6 +1,5 @@
 import numpy as np
 import scipy.io
-import scipy.misc
 import scipy.ndimage
 import scipy.stats
 from PIL import Image
@@ -199,8 +198,10 @@ def AUC_CI(n_D, n_I, Area):
 
 
 def significanceHM(A, B, AUCs):
-    # function [pHM,CI] = significanceHM(A,B,AUCs)
-    # % By Lukas Krasula
+    """Calculate Hanley-McNeil pairwise significance and confidence intervals.
+
+    Ported from Lukas Krasula's MATLAB implementation.
+    """
 
     assert A.shape[0] == B.shape[0] == AUCs.shape[0]
 
@@ -212,29 +213,6 @@ def significanceHM(A, B, AUCs):
     CorrA = _cov_kendall(A)
     CorrB = _cov_kendall(B)
 
-    # pHM = ones(n_met);
-    # CI = ones(n_met,1);
-    # for i=1:n_met-1
-    #
-    #     [CI(i),SE1] = AUC_CI(size(A,2),size(B,2),AUCs(i));
-    #
-    #     for j=i+1:n_met
-    #         [CI(j),SE2] = AUC_CI(size(A,2),size(B,2),AUCs(j));
-    #
-    #         load('Hanley_McNeil.mat');
-    #
-    #         rA = (CorrA(i,j) + CorrB(i,j))/2;
-    #         AA = (AUCs(i) + AUCs(j))/2;
-    #
-    #         [~,rr] = min(abs(rA-rA_vec));
-    #         [~,aa] = min(abs(AA-AA_vec));
-    #         r = Table_HM(rr,aa);
-    #
-    #         z = abs(AUCs(i) - AUCs(j)) / sqrt( SE1^2 + SE2^2 + 2*r*SE1*SE2 );
-    #         pHM(i,j) = 1-normcdf(z);
-    #         pHM(j,i) = pHM(i,j);
-    #     end
-    # end
     hm_filepath = VmafConfig.tools_resource_path("Hanley_McNeil.mat")
     hm_dict = scipy.io.loadmat(hm_filepath)
     pHM = np.ones([n_met, n_met])
@@ -265,26 +243,10 @@ def significanceHM(A, B, AUCs):
 
 
 def fastDeLong(samples):
-    # %FASTDELONGCOV
-    # %The fast version of DeLong's method for computing the covariance of
-    # %unadjusted AUC.
-    # %% Reference:
-    # % @article{sun2014fast,
-    # %   title={Fast Implementation of DeLong's Algorithm for Comparing the Areas Under Correlated Receiver Operating Characteristic Curves},
-    # %   author={Xu Sun and Weichao Xu},
-    # %   journal={IEEE Signal Processing Letters},
-    # %   volume={21},
-    # %   number={11},
-    # %   pages={1389--1393},
-    # %   year={2014},
-    # %   publisher={IEEE}
-    # % }
-    # %% [aucs, delongcov] = fastDeLong(samples)
-    # %%
-    # % Edited by Xu Sun.
-    # % Homepage: https://pamixsun.github.io
-    # % Version: 2014/12
-    # %%
+    """Compute unadjusted AUC covariance with the fast DeLong method.
+
+    Implements Sun and Xu, IEEE Signal Processing Letters 21(11), 2014.
+    """
 
     # if sum(samples.spsizes) ~= size(samples.ratings, 2) || numel(samples.spsizes) ~= 2
     #     error('Argument mismatch error');

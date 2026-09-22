@@ -75,7 +75,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
@@ -91,6 +90,7 @@ import (
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -138,89 +138,65 @@ func main() {
 // keeps the graph free of a double-decorate error.
 func productionOptions(envReplace fx.Option) []fx.Option {
 	return []fx.Option{
-		// golusoris foundation: config + log + clock + id + validate + crypto,
-		// the OTel module, and the build-version supply (ADR-1119).
 		bootstrap.Base,
-		// Override the env prefix so the whole graph reads VMAFX_* config keys,
-		// keeping the underscore-bearing auth-claim leaves intact.
 		envReplace,
-		// Route fx lifecycle events onto the golusoris slog logger.
 		bootstrap.FxLogger(),
+		golusoris.HTTP,
+		bootstrap.HTTPTracing,
+		grpcmod.Module,
+		controllerAuthOptions(),
+		controllerProviders(),
+		fx.Invoke(realiseControllerResources),
+		fx.Invoke(registerControllerServices),
+		fx.Invoke(wireControllerSources),
+		fx.Invoke(mountControllerHTTP),
+		fx.Invoke(realiseControllerGRPC),
+		fx.Invoke(realiseControllerHTTP),
+	}
+}
 
-		// Server modules.
-		golusoris.HTTP,        // chi *chi.Mux (as chi.Router) + graceful *http.Server.
-		bootstrap.HTTPTracing, // otelhttp server span on every HTTP route (ADR-0782 / ADR-1119).
-		grpcmod.Module,        // *grpc.Server with OTel + logging + recovery interceptors.
-
-		// #269: inject the JWT auth interceptors into the golusoris gRPC server
-		// via grpc.ProvideServerOptionFn — a constructor that receives the
-		// fx-constructed *auth.Middleware and returns a grpc.ServerOption, fed
-		// into the group:"grpc.serveropts" group. Framework interceptors (OTel,
-		// logging, recovery) always run; these app options are appended after
-		// them. The interceptors enforce tenant isolation on every RPC; when
-		// auth is disabled the middleware injects a synthetic "dev" tenant so the
-		// chain is uniform across deployments.
+// controllerAuthOptions injects tenant auth after the framework's tracing,
+// logging, and recovery interceptors. Disabled auth still supplies the dev
+// tenant, so both modes use one interceptor chain.
+func controllerAuthOptions() fx.Option {
+	return fx.Options(
 		grpcmod.ProvideServerOptionFn(func(mw *auth.Middleware) googlegrpc.ServerOption {
 			return googlegrpc.ChainUnaryInterceptor(mw.GRPCUnaryInterceptor())
 		}),
 		grpcmod.ProvideServerOptionFn(func(mw *auth.Middleware) googlegrpc.ServerOption {
 			return googlegrpc.ChainStreamInterceptor(mw.GRPCStreamInterceptor())
 		}),
-
-		// Domain providers.
-		fx.Provide(
-			provideScorer,       // (fx.Lifecycle, *config.Config, *slog.Logger) -> (*libvmaf.Scorer, error)
-			provideMetrics,      // () -> (*prometheus.Registry, *observability.Metrics)
-			provideJobQueue,     // (fx.Lifecycle, *config.Config, *slog.Logger) -> (queue.Queue, error) — SQLite, OnStop Close
-			provideNodeRegistry, // (fx.Lifecycle, *slog.Logger) -> *nodes.Registry — reaper Start@OnStart / Close@OnStop
-			provideScheduler,    // (queue.Queue, *nodes.Registry, *slog.Logger) -> *scheduler.Scheduler
-			provideAuthMW,       // (*config.Config, *slog.Logger) -> (*auth.Middleware, error)
-			newScoringServer,    // (*libvmaf.Scorer, *observability.Metrics, *slog.Logger) -> *scoringServer
-			newControllerServer, // (queue.Queue, *nodes.Registry, *scheduler.Scheduler, *observability.Metrics, *slog.Logger) -> *controllerServer
-		),
-
-		// R1 (cgo lifetime + drain ordering): force the Scorer, job queue and node
-		// registry to be constructed BEFORE the gRPC server. fx appends OnStop
-		// hooks in construction order and runs them in REVERSE, so realising these
-		// domain resources first (their Close / reaper-stop hooks appended in
-		// provideScorer / provideJobQueue / provideNodeRegistry) before the gRPC
-		// server (its GracefulStop hook appended by grpcmod) makes the order at
-		// stop: gRPC GracefulStop (drains in-flight RPCs) → node-registry reaper
-		// stop + queue Close → scorer Close. Without this guard the registration
-		// invoke below would construct the *grpc.Server first (it is the invoke's
-		// first arg), appending its GracefulStop hook ahead of the domain hooks and
-		// inverting the drain order. See TestStopOrder in app_test.go.
-		fx.Invoke(func(_ *libvmaf.Scorer, _ queue.Queue, _ *nodes.Registry) {}),
-
-		// Register both gRPC services on the golusoris server.
-		fx.Invoke(func(s *googlegrpc.Server, sc *scoringServer, ct *controllerServer) {
-			vmafxv1.RegisterVmafxScoringServer(s, sc)
-			controllerv1.RegisterVmafxControllerServer(s, ct)
-		}),
-
-		// Wire the controller metric sources (queue depth, node count) onto the
-		// Prometheus registry and publish the auth Middleware for the gRPC auth
-		// interceptors. The queue + registry are already constructed by the R1
-		// guard above; this invoke additionally pulls in the auth Middleware.
-		fx.Invoke(wireControllerSources),
-
-		// Mount the controller HTTP surface (health, /metrics, /v1/score +auth)
-		// on the golusoris chi router.
-		fx.Invoke(mountControllerHTTP),
-
-		// Lazy-provider guard: force construction of the golusoris *grpc.Server so
-		// its OnStart listener binds. Placed AFTER the registration invoke so its
-		// OnStop (GracefulStop) is appended last and fires first in the reverse
-		// stop order.
-		fx.Invoke(func(_ *googlegrpc.Server) {}),
-
-		// Lazy-provider guard (the server migration's #1 BLOCKER lesson): fx
-		// providers are lazy — nothing else consumes *http.Server, so without this
-		// invoke the httpx/server listener never binds and the controller serves
-		// gRPC only. app_test.go asserts the bound Addr is non-empty after start.
-		fx.Invoke(func(_ *http.Server) {}),
-	}
+	)
 }
+
+func controllerProviders() fx.Option {
+	return fx.Provide(
+		provideScorer,
+		scoringservice.ProvideMetrics,
+		provideJobQueue,
+		provideNodeRegistry,
+		provideScheduler,
+		provideAuthMW,
+		newScoringServer,
+		newControllerServer,
+	)
+}
+
+// realiseControllerResources preserves R1: domain stop hooks are appended
+// before the gRPC server hook, so reverse-order shutdown drains gRPC first.
+func realiseControllerResources(_ *libvmaf.Scorer, _ queue.Queue, _ *nodes.Registry) {}
+
+func registerControllerServices(
+	s *googlegrpc.Server, sc *scoringServer, ct *controllerServer,
+) {
+	vmafxv1.RegisterVmafxScoringServer(s, sc)
+	controllerv1.RegisterVmafxControllerServer(s, ct)
+}
+
+// These invocations realise lazy framework servers after route registration.
+// Their OnStop hooks therefore run first during reverse-order shutdown.
+func realiseControllerGRPC(_ *googlegrpc.Server) {}
+func realiseControllerHTTP(_ *http.Server)       {}
 
 // ---------------------------------------------------------------------------
 // Domain providers
@@ -230,41 +206,7 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 // Close as an OnStop hook (R1: runs after the gRPC GracefulStop drains in-flight
 // Score calls). See the R1 ordering invoke in productionOptions.
 func provideScorer(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (*libvmaf.Scorer, error) {
-	binary := cfg.Get("vmaf.binary")
-	// golusoris env transform: VMAFX_MODEL_DIR -> "model.dir" (every '_' becomes
-	// the "." delimiter; the env var name itself is unchanged).
-	modelDir := cfg.Get("model.dir")
-	scorer, err := libvmaf.New(binary, modelDir)
-	if err != nil {
-		return nil, fmt.Errorf("init scorer: %w", err)
-	}
-	log.Info("scorer initialised",
-		"version", version(),
-		"vmaf_binary", binary,
-		"model_dir", modelDir,
-	)
-	lc.Append(fx.Hook{
-		OnStop: func(_ context.Context) error {
-			log.Info("closing scorer (after gRPC drain)")
-			scorer.Close()
-			return nil
-		},
-	})
-	return scorer, nil
-}
-
-// provideMetrics builds the isolated Prometheus registry and the vmafx metric
-// instruments. golusoris OTel is OTLP, not a Prometheus registry, so the
-// Prometheus exposition path is preserved here unchanged (mounted at /metrics by
-// mountControllerHTTP).
-func provideMetrics() (*prometheus.Registry, *observability.Metrics) {
-	registry := prometheus.NewRegistry()
-	// collectors.* replaces the deprecated prometheus.NewGoCollector /
-	// NewProcessCollector — staticcheck SA1019.
-	registry.MustRegister(collectors.NewGoCollector())
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	metrics := observability.NewMetrics(registry)
-	return registry, metrics
+	return scoringservice.ProvideScorer(lc, cfg, log, version())
 }
 
 // provideJobQueue opens (or creates) the embedded modernc.org/sqlite job queue

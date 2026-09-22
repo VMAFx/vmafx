@@ -106,64 +106,14 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 	ctx := stream.Context()
 	start := time.Now()
 
-	first, err := stream.Recv()
+	scorer, err := h.openStreamScorer(stream)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "ScoreStream requires an opening StreamConfig message: %v", err)
-	}
-	cfg := first.GetConfig()
-	if cfg == nil {
-		return status.Errorf(codes.InvalidArgument, "ScoreStream: first message must set the `config` oneof, got payload=%T", first.GetPayload())
-	}
-	if cfg.GetWidth() == 0 || cfg.GetHeight() == 0 {
-		return status.Errorf(codes.InvalidArgument, "ScoreStream: StreamConfig requires non-zero width and height (got %dx%d)", cfg.GetWidth(), cfg.GetHeight())
-	}
-	if cfg.GetPixelFormat() == vmafxv1.PixelFormat_PIXEL_FORMAT_UNSPECIFIED {
-		return status.Errorf(codes.InvalidArgument, "ScoreStream: StreamConfig.pixel_format must be set")
-	}
-	pixFmt, bitDepth, err := protoPixelFormat(cfg.GetPixelFormat())
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "ScoreStream: %v", err)
-	}
-	modelPath, err := h.scorer.ResolveModel(cfg.GetModel())
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "ScoreStream: model %q: %v", cfg.GetModel(), err)
-	}
-
-	scorer, err := libvmaf.NewStreamScorer(libvmaf.StreamConfig{
-		Width:          int(cfg.GetWidth()),
-		Height:         int(cfg.GetHeight()),
-		PixFmt:         pixFmt,
-		BitDepth:       bitDepth,
-		ModelPath:      modelPath,
-		FrameCountHint: int(cfg.GetFrameCountHint()),
-	})
-	if err != nil {
-		return streamScorerStatus(err)
+		return err
 	}
 	defer scorer.Close()
 
-	for {
-		if cerr := ctx.Err(); cerr != nil {
-			return status.FromContextError(cerr).Err()
-		}
-		msg, recvErr := stream.Recv()
-		if recvErr == io.EOF {
-			break
-		}
-		if recvErr != nil {
-			if cerr := ctx.Err(); cerr != nil {
-				return status.FromContextError(cerr).Err()
-			}
-			return status.Errorf(codes.Internal, "ScoreStream: receive frame: %v", recvErr)
-		}
-		fp := msg.GetFramePair()
-		if fp == nil {
-			return status.Errorf(codes.InvalidArgument,
-				"ScoreStream: post-config message must set the `frame_pair` oneof, got payload=%T", msg.GetPayload())
-		}
-		if pushErr := scorer.PushFrame(int(fp.GetFrameIndex()), fp.GetRawReference(), fp.GetRawDistorted()); pushErr != nil {
-			return streamScorerStatus(pushErr)
-		}
+	if ingestErr := ingestStreamFrames(ctx, stream, scorer); ingestErr != nil {
+		return ingestErr
 	}
 
 	result, err := scorer.Finish(ctx)
@@ -171,21 +121,8 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 		return streamScorerStatus(err)
 	}
 
-	for _, fr := range result.Frames {
-		if cerr := ctx.Err(); cerr != nil {
-			return status.FromContextError(cerr).Err()
-		}
-		if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
-			Payload: &vmafxv1.ScoreStreamResponse_FrameScore{
-				FrameScore: &vmafxv1.FrameScore{
-					FrameIndex: libvmaf.SafeUint32(fr.Index),
-					Score:      fr.Score,
-					Features:   fr.Features,
-				},
-			},
-		}); sendErr != nil {
-			return sendErr
-		}
+	if sendErr := sendStreamFrameScores(ctx, stream, result.Frames); sendErr != nil {
+		return sendErr
 	}
 
 	elapsed := time.Since(start)
@@ -206,6 +143,114 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 		"frames", result.FramesProcessed,
 		"score", fmt.Sprintf("%.4f", result.Score),
 	)
+	return nil
+}
+
+// openStreamScorer reads the opening StreamConfig message and builds the per-call
+// StreamScorer from it. The returned scorer is owned by the caller, which is where the
+// matching Close belongs: the scorer holds an in-process libvmaf context for the whole
+// call and must be released on every exit path, not just this one.
+func (h *scoringHandler) openStreamScorer(
+	stream vmafxv1.VmafxScoring_ScoreStreamServer,
+) (*libvmaf.StreamScorer, error) {
+	first, err := stream.Recv()
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "ScoreStream requires an opening StreamConfig message: %v", err)
+	}
+	cfg := first.GetConfig()
+	if cfg == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "ScoreStream: first message must set the `config` oneof, got payload=%T", first.GetPayload())
+	}
+	if cfg.GetWidth() == 0 || cfg.GetHeight() == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "ScoreStream: StreamConfig requires non-zero width and height (got %dx%d)", cfg.GetWidth(), cfg.GetHeight())
+	}
+	if cfg.GetPixelFormat() == vmafxv1.PixelFormat_PIXEL_FORMAT_UNSPECIFIED {
+		return nil, status.Errorf(codes.InvalidArgument, "ScoreStream: StreamConfig.pixel_format must be set")
+	}
+	pixFmt, bitDepth, err := protoPixelFormat(cfg.GetPixelFormat())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "ScoreStream: %v", err)
+	}
+	modelPath, err := h.scorer.ResolveModel(cfg.GetModel())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "ScoreStream: model %q: %v", cfg.GetModel(), err)
+	}
+	scorer, err := libvmaf.NewStreamScorer(libvmaf.StreamConfig{
+		Width:          int(cfg.GetWidth()),
+		Height:         int(cfg.GetHeight()),
+		PixFmt:         pixFmt,
+		BitDepth:       bitDepth,
+		ModelPath:      modelPath,
+		FrameCountHint: int(cfg.GetFrameCountHint()),
+	})
+	if err != nil {
+		return nil, streamScorerStatus(err)
+	}
+	return scorer, nil
+}
+
+// ingestStreamFrames pushes every FramePair the client sends into scorer.
+//
+// The loop exits on the client's half-close (io.EOF), which is what halfClosed records,
+// or on a cancelled call. Cancellation is tested before each Recv so a dropped client is
+// never waited on, and a loop that ends without the half-close reports that context error
+// rather than flushing a scorer the caller can no longer answer.
+func ingestStreamFrames(
+	ctx context.Context,
+	stream vmafxv1.VmafxScoring_ScoreStreamServer,
+	scorer *libvmaf.StreamScorer,
+) error {
+	halfClosed := false
+	for !halfClosed && ctx.Err() == nil {
+		msg, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			halfClosed = true
+			continue
+		}
+		if recvErr != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return status.FromContextError(cerr).Err()
+			}
+			return status.Errorf(codes.Internal, "ScoreStream: receive frame: %v", recvErr)
+		}
+		fp := msg.GetFramePair()
+		if fp == nil {
+			return status.Errorf(codes.InvalidArgument,
+				"ScoreStream: post-config message must set the `frame_pair` oneof, got payload=%T", msg.GetPayload())
+		}
+		if pushErr := scorer.PushFrame(int(fp.GetFrameIndex()), fp.GetRawReference(), fp.GetRawDistorted()); pushErr != nil {
+			return streamScorerStatus(pushErr)
+		}
+	}
+	if !halfClosed {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	return nil
+}
+
+// sendStreamFrameScores streams one FrameScore per harvested frame, stopping early if the
+// call is cancelled so a disconnected client does not keep the send loop running.
+func sendStreamFrameScores(
+	ctx context.Context,
+	stream vmafxv1.VmafxScoring_ScoreStreamServer,
+	frames []libvmaf.FrameResult,
+) error {
+	for _, fr := range frames {
+		if cerr := ctx.Err(); cerr != nil {
+			return status.FromContextError(cerr).Err()
+		}
+		if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
+			Payload: &vmafxv1.ScoreStreamResponse_FrameScore{
+				FrameScore: &vmafxv1.FrameScore{
+					FrameIndex: libvmaf.SafeUint32(fr.Index),
+					Score:      fr.Score,
+					Features:   fr.Features,
+				},
+			},
+		}); sendErr != nil {
+			return sendErr
+		}
+	}
 	return nil
 }
 

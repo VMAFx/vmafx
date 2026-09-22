@@ -160,12 +160,17 @@ def _export_onnx(adapter: nn.Module, output: Path, *, height: int, width: int, o
         input_names=["input"],
         output_names=["saliency_map"],
         opset_version=opset,
-        dynamic_axes={
-            "input": {2: "H", 3: "W"},
-            "saliency_map": {2: "H", 3: "W"},
-        },
+        # torch.export-based exporter (the default since torch 2.9). The
+        # legacy TorchScript path this used to pin with dynamo=False now emits
+        # a DeprecationWarning. Checked against the real upstream U2NETP on
+        # torch 2.14: same public contract (input [1,3,H,W] ->
+        # saliency_map [1,1,H,W], H and W still dynamic), identical
+        # onnxruntime output on a 320x320 frame (max abs diff 0.0), and the
+        # graph still passes vmaf_train.op_allowlist / core/src/dnn's list --
+        # the op set trades Cast/Gather/Slice/Unsqueeze for Div/Reshape/Squeeze,
+        # all of which are already allowed.
+        dynamic_shapes=({2: "H", 3: "W"},),
         do_constant_folding=True,
-        dynamo=False,
     )
 
 

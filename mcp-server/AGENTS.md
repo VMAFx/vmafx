@@ -177,3 +177,13 @@ references, bypasses `|| true`.
   `TestGoAndPythonArgvParity` enforce cross-server invocation parity.
   Both servers include `python/test/resource/yuv` in allowed roots so
   worktree symlinks resolve.
+
+- **`_list_tools()` and `_scoring_extra_properties()` are assembled from
+  helpers (T-HISS-PY-COMPAT-2026-09-21).** Both were split purely to stay
+  under the 60-LOC HISS-04 bound. The group functions are concatenated in
+  declaration order, so the advertised catalogue — names, descriptions,
+  schema key order, enums and defaults — is byte-identical to what the single
+  literal produced, which the ADR-1117 Go parity contract depends on. When
+  adding a tool or a scoring property, append it to the group that already
+  owns its section rather than reflowing the groups, and keep the Go server
+  in lockstep.

@@ -16,7 +16,7 @@
  *
  * Primitive-argument signature decouples x86 SIMD sources from the
  * vendored iqa/convolve.h `struct iqa_kernel` (keeps the x86_avx2 static
- * library's include set narrow, matching the rest of libvmaf/src/feature/x86/).
+ * library's include set narrow, matching the rest of core/src/feature/x86/).
  *
  * Bit-identical to the scalar reference by construction: `__m256d`
  * (4-lane double) accumulator with separate `_mm256_mul_pd` /

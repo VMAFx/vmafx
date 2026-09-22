@@ -1,0 +1,1 @@
+| [ADR-1278](1278-python-safe-parallel-execution.md) | Replace unsafe Python `fork` execution with ordered loky/spawn processing and restore the reference 5PL equation with overflow-safe sigmoid evaluation. | Proposed | python, testing, concurrency, numerical-correctness, dependencies |

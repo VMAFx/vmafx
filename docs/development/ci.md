@@ -21,6 +21,7 @@ The main `pull_request`-triggered workflows include:
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
+| [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS/context verification and the fail-closed duplicate-implementation scan. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan+UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity tests on self-hosted Intel Arc A380 runner (ADR-1177; see [runbook](ci-self-hosted-sycl.md)). |
@@ -237,16 +238,91 @@ instead of a touched-files rule:
   the `cpu` lane is always measured with `--build-dir build` at the repository
   root, as CI does. The nightly workflow runs the same lane and fails on drift
   (it used to swallow the full scan with `|| true`).
-- **`cuda`, `sycl`, `hip` lanes** — baselines committed from the 2026-09-02
-  workstation measurement (clang-tidy 22.1.8 against a `-Denable_cuda=true
-  -Denable_sycl=true -Denable_hip=true` build; CUDA TUs analysed with
-  `--cuda-host-only -nocudalib`, HIP with `-x hip -D__HIP_PLATFORM_AMD__=1`,
-  SYCL through `scripts/ci/clang-tidy-sycl.sh`). Run locally with
-  `make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=build-gpu` (same for
-  `sycl`, `hip`). They become PR-required contexts as soon as a hosted
+- **`cuda`, `sycl`, `hip` lanes** — re-measured on 2026-09-22 (clang-tidy
+  22.1.8; CUDA TUs analysed with `--cuda-host-only -nocudalib`, HIP with
+  `-x hip -D__HIP_PLATFORM_AMD__=1`, SYCL through
+  `scripts/ci/clang-tidy-sycl.sh`). Each lane wants its **own** build
+  directory, and that directory has two preconditions the `cpu` lane does
+  not share:
+
+  ```bash
+  # one lane per build dir; -Db_lto=false and an out-of-repo path are required
+  meson setup ~/.cache/vmafx-gpu-tidy/cuda core \
+      -Denable_cuda=true -Denable_sycl=false -Denable_hip=false -Db_lto=false
+  make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
+  ```
+
+  1. **`-Db_lto=false`.** `core/meson.build` sets `b_lto_threads=4`
+     ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which meson
+     renders as GCC's `-flto=4`. clang-tidy parses these compile commands
+     with clang, which
+     rejects the argument outright, so *every* TU comes back as a compile
+     failure and the run exits 4. The `cpu` lane in `lint-and-format.yml`
+     already configures with `-Db_lto=false` for the same reason.
+  2. **A build directory outside the repository.** Anything inside it makes
+     meson's generated model sources (`<build>/src/*.json.c`) part of the
+     measurement, and their baseline keys then embed the build-dir name. The
+     committed GPU baselines contain `core/` entries only.
+
+  The `sycl` lane additionally needs `scripts/ci/gen-sycl-compile-commands.py`
+  to run between the native database export and the measurement: meson emits
+  the SYCL feature TUs as `CUSTOM_COMMAND` rules (`icpx -fsycl`), so
+  `write-compile-commands.py` never sees them. `make tidy-ratchet` /
+  `tidy-ratchet-write` now do this automatically per lane
+  (`TIDY_RATCHET_COMPDB_<lane>`, contract-tested by
+  `scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py`). Before that hook
+  existed the lane measured **zero** SYCL translation units and
+  `tidy-baseline-sycl.json` recorded an empty backend.
+
+  The `cuda` and `hip` lanes need the same treatment for a different
+  generator: meson compiles `.cu` and `.hip` through custom targets too, so
+  `scripts/ci/gen-gpu-compile-commands.py` runs in the same slot
+  (`TIDY_RATCHET_COMPDB_cuda` / `_hip`, contract-tested by
+  `scripts/ci/tests/test_gen_gpu_compile_commands.py`). Without it those lanes
+  measure the host files only.
+
+  These lanes become PR-required contexts as soon as a hosted
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
-  toolchain and is tracked by structural proxy only.
+  toolchain and is tracked by structural proxy only, so its `NOLINT` citations
+  are checked by the tree-wide scan rather than by a lane measurement.
+- **`arm64` lane** ([ADR-1283](../adr/1283-whole-tree-ratchet-arm64-lane.md)) —
+  the NEON and SVE2 tree. 32 translation units are compiled only on an
+  aarch64 host — the 20 sources under `core/src/feature/arm64/`,
+  `core/src/arm/cpu.c`, and the 11 `core/test/test_*_neon.c` parity tests — so
+  before this lane existed no compile database in the project held them and the
+  `cpu` lane's "whole tree" stopped at the architecture boundary. The lane
+  cross-compiles with the in-tree cross file:
+
+  ```bash
+  meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+      -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+  # Codegen outputs must exist on disk before clang-tidy parses the TUs that
+  # include or are them — exactly why the cpu lane builds before it measures.
+  # A full `ninja -C build-arm64` does it; these are the only two groups needed:
+  ninja -C build-arm64 include/vcs_version.h
+  ninja -C build-arm64 $(ninja -C build-arm64 -t targets all \
+      | sed -n 's/^\(src\/[^:]*\.c\): CUSTOM_COMMAND.*/\1/p')
+  make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+  ```
+
+  Skipping the codegen step is not a quiet inaccuracy: `vcs_version.h` alone
+  takes three translation units to `clang-diagnostic-error` and the ratchet
+  fails closed with exit 4 (a *failed* measurement, never a clean one).
+
+  Prerequisites are an aarch64 cross gcc and a glibc sysroot —
+  `aarch64-linux-gnu-gcc` plus `aarch64-linux-gnu-glibc` on Arch,
+  `gcc-aarch64-linux-gnu` plus `libc6-dev-arm64-cross` on Debian/Ubuntu — and
+  clang-tidy. `make` forwards `--target=$(AARCH64_TARGET)` and
+  `--sysroot=$(AARCH64_SYSROOT)` to clang-tidy so it parses the
+  `aarch64-linux-gnu-gcc` compile commands as AArch64; without the target it
+  reads `<arm_neon.h>` against the host's x86 headers and reports every NEON
+  translation unit as a compile failure (exit 4). Both default to the cross
+  package's own paths and are overridable on the `make` command line. Like the
+  GPU lanes this one is measured and committed but is not a PR-required
+  context; promoting it re-records the baseline from the gating toolchain's own
+  measurement, because the counts depend on the C compiler's system headers
+  (ADR-1230).
 - The changed-files job `Tidy Changed` stays as fast
   feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
   file ends the PR at zero" is unchanged. The ratchet adds the bound on
@@ -358,6 +434,42 @@ Its own regression test is
 python3 scripts/dev/test-resolve-state-md-conflict.py
 ```
 
+### The other way a closed bug reads as open
+
+A duplicate is not the only shape. A row filed under `## Open bugs` whose own
+rightmost cell already says `closed` or `fixed` reads as an open bug forever
+without any duplicate being involved — the PR appended its row to the section
+it happened to be reading instead of moving it, or a rebase dropped the move
+hunk and kept the status edit. 24 of the 62 rows under `## Open bugs` were in
+that state on 2026-09-21.
+
+`scripts/ci/check-state-md-rows.sh` now reads the section heading each row sits
+under together with the status token in its status cell and requires them to
+agree:
+
+- `closed` / `fixed` / `resolved` / `done` only under `## Recently closed`
+- `open` only under `## Open bugs`
+- the status cell is the column a table header calls `Status`, or the last
+  non-empty cell when no header names one
+- the token read is the word that *opens* that cell, so `fixed (PR #1425)` is
+  judged exactly like `fixed`
+- rows that lead with no status token — a verification date, a branch name,
+  prose — make no status claim and are not judged
+
+The fix is always to **move the row**, never to rewrite its status to match
+where it landed.
+
+The check is a floor on this class of drift, not a proof of its absence. It
+reads one cell per row, so a status it does not recognise — buried mid-cell, in
+a column that is neither the last nor headed `Status`, or spelled outside the
+vocabulary above — is passed over in silence and the file still reports clean.
+Of the two ways the check can be silently disabled it fails closed on one: if
+any row claims a status that belongs to a section and that section's heading is
+missing, the gate errors instead of passing over rows that have quietly become
+ungated. The other — an unrecognised status cell — is uncovered, and is the
+likelier of the two, since it takes a single row edit rather than a heading
+rename.
+
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
 Per [CLAUDE.md §12 rule 13](../../CLAUDE.md) and
@@ -453,6 +565,8 @@ Before pushing, run the local subset of CI to catch the common
 formatter / lint / fast-test failures:
 
 ```bash
+make verify-all     # HISS/context/evidence plus duplicate implementations
+make dedupe-check   # fast standalone AST clone scan
 make format-check   # clang-format + black + ruff, no writes
 make lint           # configured native + Python, shell, Markdown, Go and docs checks
 meson test -C build --suite=fast
@@ -463,6 +577,12 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check + pre-commit pair catches roughly the same surface as
 `lint-and-format.yml`'s `pre-commit` job in seconds, vs. a 10-minute
 CI round-trip.
+
+The duplicate scan is intentionally separate from `standardsctl audit`: the
+audit baseline does not include AST clones. `make verify-all`, pre-commit,
+pre-push, and the required Standards job therefore invoke
+`standardsctl dedupe scan .` explicitly. A finding is a hard failure; there is
+no origin, generated-code, or historical-debt exemption.
 
 ### Local lint build profile and receipts
 
@@ -486,10 +606,24 @@ meson setup core/build-cpu core --buildtype=release \
 make lint BUILD_DIR=core/build-cpu LINT_JOBS=4
 ```
 
-`make lint-c` reads Meson's regenerated `compile_commands.json`. Regeneration
-repairs databases previously overwritten by unfiltered Ninja export, including
-phony entries with empty commands, while retaining the configured build
-options. It selects every tracked native source with a configured command,
+`make lint-c` explicitly exports `compile_commands.json` after Meson regenerates
+the Ninja manifest and builds generated prerequisites. This is required because
+Meson 1.12 no longer materialises the database itself. The exporter requests
+only Ninja's `c_COMPILER` and `cpp_COMPILER` rules, validates every entry, and
+atomically replaces the last valid database; missing rules, invalid JSON, an
+empty result, or a failed Ninja command stops the gate without destroying the
+previous file. Never substitute unfiltered `ninja -t compdb`: that includes
+link, custom and phony entries which are not native compile commands.
+
+The Make entrypoints prepend the project virtual environment to `PATH` as an
+absolute path. Meson records the Ninja path it resolves and later invokes it
+with the build directory as its working directory; a relative `.venv/bin`
+prefix therefore becomes an invalid `core/build/.venv/bin/ninja` lookup during
+reconfiguration. Keep the absolute-path assertion in
+`test_lint_configured.py` when changing the build recipes.
+
+The configured lint driver then selects every tracked native source with a
+configured command,
 including top-level engine files, C++ CLI tools, tests and tracked vendored
 sources. It keeps all command variants for a source, including different test
 defines and include paths. Unconfigured backends are listed as outside the
@@ -505,9 +639,13 @@ copy; per-source clang-tidy logs, `cppcheck.log` and `result.json` retain
 results. The helper leaves Meson's resulting native database and build options
 unchanged. Positive numeric GCC `-flto=N` becomes clang-compatible `-flto`
 only in that copy; other spellings, including invalid options, remain visible
-to the analyzer. Missing source files, missing/invalid/empty databases and
-missing tools fail the gate. Both analyzers run when clang-tidy reports source
-diagnostics; either failure fails `lint-c`.
+to the analyzer. Every clang-tidy invocation includes
+`--warnings-as-errors=*`; without it clang-tidy prints ordinary diagnostics but
+normally exits zero. Consequently, any configured-source diagnostic fails
+`lint-c`, regardless of whether the source originated in Netflix, a vendor, or
+the fork. Missing source files, missing/invalid/empty databases and missing
+tools also fail the gate. Cppcheck still runs after clang-tidy reports source
+diagnostics so one analyzer cannot hide the other's report.
 
 Local and CI cppcheck load the official `posix` library model shipped with the
 installed tool. It describes the pthread types and functions used by the fork,

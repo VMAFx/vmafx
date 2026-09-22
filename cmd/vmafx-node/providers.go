@@ -148,7 +148,13 @@ func provideFeedbackClient(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger
 	// for compatibility with the Python sidecar's own env contract; main resolves
 	// the config value and exports it so both observe the same socket.
 	if socket := cfg.Get("sidecar.socket"); socket != "" {
-		_ = os.Setenv(feedbackSocketEnv, socket)
+		if err := os.Setenv(feedbackSocketEnv, socket); err != nil {
+			// Not fatal: NewFeedbackClient falls back to the default socket path, so the
+			// drainer still starts. Reporting it keeps the mismatch between the configured
+			// socket and the one actually used from being silent.
+			log.Warn("exporting the configured sidecar socket failed",
+				"env", feedbackSocketEnv, "socket", socket, "err", err)
+		}
 	}
 	fc := NewFeedbackClient(log)
 	lc.Append(fx.Hook{

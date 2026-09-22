@@ -139,10 +139,10 @@ impl VmafContext {
         mut dist_pic: VmafPicture,
         index: u32,
     ) -> Result<(), VmafxError> {
-        // SAFETY: both structs are fully-initialised owners of allocated planes;
-        // `&raw mut` yields valid out-pointers for the duration of the call.
-        let rc =
-            unsafe { vmaf_read_pictures(self.inner, &raw mut ref_pic, &raw mut dist_pic, index) };
+        let rc = {
+            // SAFETY: the initialized picture owners and raw pointers remain valid for this call.
+            unsafe { vmaf_read_pictures(self.inner, &raw mut ref_pic, &raw mut dist_pic, index) }
+        };
         // Do NOT manually unref on the error path. The libvmaf public contract
         // (libvmaf.h: "VmafContext will take ownership of both VmafPictures")
         // transfers ownership to the C library for the duration of the call. On

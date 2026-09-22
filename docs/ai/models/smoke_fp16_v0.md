@@ -22,7 +22,7 @@ through unchanged.
 | Input | fp16 tensor (cast from float32 by the DNN loader) |
 | Output | fp16 tensor (cast back to float32 by the DNN loader) |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `smoke_fp16_v0` in `model/tiny/registry.json` (`"smoke": true`) |
 | SHA-256 | `6cbf16be5d2cfb858f1eb60bfdcc9e674c15f17b3ff365afa475bbe9be76258b` |
 

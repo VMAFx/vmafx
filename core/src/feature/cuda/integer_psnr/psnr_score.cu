@@ -7,7 +7,7 @@
  *  Per-pixel squared-error reduction with int64 accumulation on the
  *  device. Mirrors the Vulkan psnr.comp shipped in PR #125 (ADR-0182).
  *
- *  Algorithm (mirrors libvmaf/src/feature/integer_psnr.c::sse_line_{8,16}):
+ *  Algorithm (mirrors core/src/feature/integer_psnr.c::sse_line_{8,16}):
  *      diff = (int64)ref - (int64)dis;
  *      sse  += diff * diff;             // per-pixel
  *

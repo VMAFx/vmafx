@@ -1,8 +1,8 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
-# Included from libvmaf/src/meson.build via `subdir('metal')`. Paths
-# below are relative to libvmaf/src/metal/.
+# Included from core/src/meson.build via `subdir('metal')`. Paths
+# below are relative to core/src/metal/.
 #
 # T8-1b runtime (ADR-0420): three Objective-C++ TUs drive
 # Metal.framework directly. The per-feature consumer scaffolds under
@@ -45,12 +45,12 @@ metal_objcpp_args = [
 #
 # The base include directory is the project root (libvmaf/src) so
 # `#include "../../metal/common.h"` from the feature/metal TUs and
-# `#include "dict.h"` (in libvmaf/src/) both resolve.
+# `#include "dict.h"` (in core/src/) both resolve.
 # Note: `vmaf_include` (which covers feature/ + feature/common) is
 # declared after subdir('metal') in the parent meson.build, so we
 # build the include set locally from the same paths.
 metal_objcpp_includes = include_directories(
-    '.', '..',                 # libvmaf/src/metal/, libvmaf/src/
+    '.', '..',                 # core/src/metal/, core/src/
     '../feature', '../feature/common',
     '../../include',           # libvmaf/include
 )

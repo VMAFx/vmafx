@@ -271,26 +271,15 @@ func Run(
 	params Params,
 ) (Result, error) {
 	params.applyDefaults(enc)
-
-	if params.TargetVMAF <= 0 || params.TargetVMAF > 100 {
-		return Result{}, fmt.Errorf("target VMAF %f out of range (0, 100]", params.TargetVMAF)
-	}
-	if params.CRFLo > params.CRFHi {
-		return Result{}, fmt.Errorf("CRFLo %d > CRFHi %d", params.CRFLo, params.CRFHi)
+	if err := params.validate(); err != nil {
+		return Result{}, err
 	}
 
 	lo := params.CRFLo
 	hi := params.CRFHi
-
-	var (
-		bestCRF          = -1
-		bestBitrate      float64
-		bestVMAF         float64
-		bestEncodeTimeMS float64
-		bestVersion      string
-		samples          []Sample
-		iterations       int
-	)
+	best := probeResult{crf: -1}
+	var samples []Sample
+	iterations := 0
 
 	for lo <= hi && iterations < params.MaxIter {
 		// Round the midpoint toward hi (lower quality / higher CRF) so we
@@ -298,50 +287,16 @@ func Run(
 		mid := (lo + hi + 1) / 2
 		iterations++
 
-		ep := encoder.EncodeParams{
-			CRF:       mid,
-			FFmpegBin: params.FFmpegBin,
-			OutputDir: params.WorkDir,
+		probe, probeErr := runProbe(src, enc, scoreFunc, params, mid)
+		if probeErr != nil {
+			return Result{}, probeErr
 		}
-		encResult, encErr := enc.Encode(src, ep)
-		if encErr != nil {
-			return Result{}, fmt.Errorf("encode at CRF %d: %w", mid, encErr)
-		}
-		encodedPath := encResult.OutputPath
+		samples = append(samples, probe.sample)
 
-		vmafScore, scoreErr := scoreFunc(src, encodedPath)
-		// Always clean up the encoded file regardless of scoring outcome.
-		// If both score and remove fail, surface both via errors.Join so the
-		// caller can see the disk-leak alongside the scoring failure.
-		removeErr := os.Remove(encodedPath)
-		if scoreErr != nil || removeErr != nil {
-			var joinErrs []error
-			if scoreErr != nil {
-				joinErrs = append(joinErrs, fmt.Errorf("score at CRF %d: %w", mid, scoreErr))
-			}
-			if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				joinErrs = append(joinErrs, fmt.Errorf("remove encoded temp %q at CRF %d: %w", encodedPath, mid, removeErr))
-			}
-			if len(joinErrs) > 0 {
-				return Result{}, errors.Join(joinErrs...)
-			}
-		}
-
-		samples = append(samples, Sample{
-			CRF:          mid,
-			BitratekBps:  encResult.BitratekBps,
-			VMAFScore:    vmafScore,
-			EncodeTimeMS: encResult.EncodeTimeMS,
-		})
-
-		if vmafScore >= params.TargetVMAF {
+		if probe.sample.VMAFScore >= params.TargetVMAF {
 			// This CRF meets the target. Record as best so far and try a
 			// higher CRF (more compression).
-			bestCRF = mid
-			bestBitrate = encResult.BitratekBps
-			bestVMAF = vmafScore
-			bestEncodeTimeMS = encResult.EncodeTimeMS
-			bestVersion = encResult.EncoderVersion
+			best = probe
 			lo = mid + 1
 		} else {
 			// This CRF does not meet the target. Need lower CRF (more
@@ -351,14 +306,93 @@ func Run(
 	}
 
 	return Result{
-		BestCRF:          bestCRF,
-		BestBitratekBps:  bestBitrate,
-		BestVMAFScore:    bestVMAF,
-		BestEncodeTimeMS: bestEncodeTimeMS,
-		EncoderVersion:   bestVersion,
+		BestCRF:          best.crf,
+		BestBitratekBps:  best.sample.BitratekBps,
+		BestVMAFScore:    best.sample.VMAFScore,
+		BestEncodeTimeMS: best.sample.EncodeTimeMS,
+		EncoderVersion:   best.version,
 		Samples:          samples,
 		Iterations:       iterations,
 	}, nil
+}
+
+// validate rejects the parameter combinations the bisect cannot act on.
+func (p Params) validate() error {
+	if p.TargetVMAF <= 0 || p.TargetVMAF > 100 {
+		return fmt.Errorf("target VMAF %f out of range (0, 100]", p.TargetVMAF)
+	}
+	if p.CRFLo > p.CRFHi {
+		return fmt.Errorf("CRFLo %d > CRFHi %d", p.CRFLo, p.CRFHi)
+	}
+	return nil
+}
+
+// probeResult is one measured CRF: the sample the caller records plus the
+// encoder banner that produced it. The zero value with crf == -1 is the
+// "nothing cleared the target" state Result reports.
+type probeResult struct {
+	crf     int
+	version string
+	sample  Sample
+}
+
+// runProbe encodes src at one CRF, scores the encode and removes it again.
+//
+// Cleanup runs regardless of the scoring outcome. If both score and remove
+// fail, both are surfaced via errors.Join so the caller can see the disk leak
+// alongside the scoring failure.
+func runProbe(
+	src string,
+	enc encoder.Encoder,
+	scoreFunc ScoreFunc,
+	params Params,
+	crf int,
+) (probeResult, error) {
+	ep := encoder.EncodeParams{
+		CRF:       crf,
+		FFmpegBin: params.FFmpegBin,
+		OutputDir: params.WorkDir,
+	}
+	encResult, encErr := enc.Encode(src, ep)
+	if encErr != nil {
+		return probeResult{}, fmt.Errorf("encode at CRF %d: %w", crf, encErr)
+	}
+	encodedPath := encResult.OutputPath
+
+	vmafScore, scoreErr := scoreFunc(src, encodedPath)
+	removeErr := os.Remove(encodedPath)
+	if joined := joinProbeErrors(crf, encodedPath, scoreErr, removeErr); joined != nil {
+		return probeResult{}, joined
+	}
+
+	return probeResult{
+		crf:     crf,
+		version: encResult.EncoderVersion,
+		sample: Sample{
+			CRF:          crf,
+			BitratekBps:  encResult.BitratekBps,
+			VMAFScore:    vmafScore,
+			EncodeTimeMS: encResult.EncodeTimeMS,
+		},
+	}, nil
+}
+
+// joinProbeErrors combines the scoring and cleanup failures of one probe. A
+// "file already gone" unlink is not a failure and is dropped; nil means the
+// probe succeeded.
+func joinProbeErrors(crf int, encodedPath string, scoreErr, removeErr error) error {
+	var joinErrs []error
+	if scoreErr != nil {
+		joinErrs = append(joinErrs, fmt.Errorf("score at CRF %d: %w", crf, scoreErr))
+	}
+	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		joinErrs = append(joinErrs,
+			fmt.Errorf("remove encoded temp %q at CRF %d: %w", encodedPath, crf, removeErr))
+	}
+	if len(joinErrs) == 0 {
+		return nil
+	}
+	return errors.Join(joinErrs...)
 }
 
 // IterSamples returns a single-shot iterator over the bisect probes that

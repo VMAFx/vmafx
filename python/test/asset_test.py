@@ -144,6 +144,13 @@ class AssetTest(MyTestCase):
         self.assertEqual(asset.dis_encode_width_height, (720, 480))
 
     def test_dis_encode_bitdepth(self):
+        self._assert_dis_encode_bitdepth_explicit()
+        self._assert_dis_encode_bitdepth_8_bit_yuv()
+        self._assert_dis_encode_bitdepth_10_bit_yuv()
+        self._assert_dis_encode_bitdepth_12_bit_yuv()
+        self._assert_dis_encode_bitdepth_16_bit_yuv_and_override()
+
+    def _assert_dis_encode_bitdepth_explicit(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -165,6 +172,7 @@ class AssetTest(MyTestCase):
         with self.assertRaises(AssertionError):
             print(asset.dis_encode_bitdepth)
 
+    def _assert_dis_encode_bitdepth_8_bit_yuv(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -175,6 +183,7 @@ class AssetTest(MyTestCase):
         )
         self.assertEqual(asset.dis_encode_bitdepth, 8)
 
+    def _assert_dis_encode_bitdepth_10_bit_yuv(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -205,6 +214,7 @@ class AssetTest(MyTestCase):
         )
         self.assertEqual(asset.dis_encode_bitdepth, 10)
 
+    def _assert_dis_encode_bitdepth_12_bit_yuv(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -235,6 +245,7 @@ class AssetTest(MyTestCase):
         )
         self.assertEqual(asset.dis_encode_bitdepth, 12)
 
+    def _assert_dis_encode_bitdepth_16_bit_yuv_and_override(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -506,6 +517,11 @@ class AssetTest(MyTestCase):
         )
 
     def test_str_repr(self):
+        self._assert_str_repr_frames_and_basic_dimensions()
+        self._assert_str_repr_quality_and_yuv_type()
+        self._assert_str_repr_resampling_and_encode_dimensions()
+
+    def _assert_str_repr_frames_and_basic_dimensions(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -543,6 +559,7 @@ class AssetTest(MyTestCase):
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
 
+    def _assert_str_repr_quality_and_yuv_type(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -557,6 +574,7 @@ class AssetTest(MyTestCase):
         recon_asset = Asset.from_repr(expected_repr)
         self.assertEqual(asset, recon_asset)
 
+    def _assert_str_repr_resampling_and_encode_dimensions(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -618,7 +636,11 @@ class AssetTest(MyTestCase):
         self.assertEqual(asset, recon_asset)
 
     def test_str(self):
+        self._assert_str_dimensions_and_resampling()
+        self._assert_str_reference_and_encode_dimensions()
+        self._assert_str_bitdepth_and_workfile_type()
 
+    def _assert_str_dimensions_and_resampling(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -675,6 +697,7 @@ class AssetTest(MyTestCase):
             str(asset), "test_0_1_refvideo_720x480_vs_disvideo_1920x1080_lanczos_q_720x480"
         )
 
+    def _assert_str_reference_and_encode_dimensions(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -724,6 +747,7 @@ class AssetTest(MyTestCase):
             str(asset), "test_0_1_refvideo_720x480_vs_disvideo_720x480_yuv420p10le_q_720x480"
         )
 
+    def _assert_str_bitdepth_and_workfile_type(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -873,6 +897,10 @@ class AssetTest(MyTestCase):
         self.assertEqual(asset.dis_yuv_type, "yuv444p")
 
     def test_resampling_type(self):
+        self._assert_default_and_shared_resampling_types()
+        self._assert_independent_resampling_types()
+
+    def _assert_default_and_shared_resampling_types(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -884,6 +912,7 @@ class AssetTest(MyTestCase):
         self.assertEqual(asset.ref_resampling_type, "bicubic")
         self.assertEqual(asset.dis_resampling_type, "bicubic")
 
+    def _assert_independent_resampling_types(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -1245,6 +1274,10 @@ class AssetTest(MyTestCase):
         )
 
     def test_notyuv(self):
+        self._assert_notyuv_dimension_constraints()
+        self._assert_notyuv_valid_assets()
+
+    def _assert_notyuv_dimension_constraints(self):
         with self.assertRaises(AssertionError):
             asset = Asset(
                 dataset="test",
@@ -1299,6 +1332,7 @@ class AssetTest(MyTestCase):
                 asset_dict={"yuv_type": "notyuv", "workfile_yuv_type": "yuv4444p"},
             )
 
+    def _assert_notyuv_valid_assets(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -1786,6 +1820,10 @@ class AssetTest(MyTestCase):
         )
 
     def test_long_string(self):
+        self._assert_long_asset_strings()
+        self._assert_long_noref_asset_strings()
+
+    def _assert_long_asset_strings(self):
         asset = Asset(
             dataset="test",
             content_id=0,
@@ -1823,6 +1861,7 @@ class AssetTest(MyTestCase):
             "test_0_0_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_720x480_yuv422p_padiw_6_ih_4_3_2_vs_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_720x480_yuv422p_q_720x320",
         )
 
+    def _assert_long_noref_asset_strings(self):
         asset = NorefAsset(
             dataset="test",
             content_id=0,

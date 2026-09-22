@@ -156,6 +156,20 @@ static char *adm_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_ski
     return NULL;
 }
 
+/* Read every kAdmFeatures score of frame 0 out of `vmaf` into `scores`. Split
+ * out of run_extractor() so that body stays inside the 60-line budget. */
+static char *read_adm_scores(VmafContext *vmaf, double scores[NUM_ADM_FEATURES])
+{
+    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
+        const int err = vmaf_feature_score_at_index(vmaf, kAdmFeatures[f], &scores[f], 0u);
+        if (err) {
+            (void)fprintf(stderr, "feature %s missing (err=%d)\n", kAdmFeatures[f], err);
+        }
+        mu_assert("vmaf_feature_score_at_index failed", !err);
+    }
+    return NULL;
+}
+
 /* Run one extractor over the fixture; fill scores[] for kAdmFeatures. */
 static char *run_extractor(const char *feature_name, int use_hip, double scores[NUM_ADM_FEATURES],
                            int *skipped)
@@ -205,13 +219,7 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, kAdmFeatures[f], &scores[f], 0u);
-        if (err) {
-            (void)fprintf(stderr, "feature %s missing (err=%d)\n", kAdmFeatures[f], err);
-        }
-        mu_assert("vmaf_feature_score_at_index failed", !err);
-    }
+    mu_assert_msg(read_adm_scores(vmaf, scores));
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);

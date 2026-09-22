@@ -1,0 +1,1 @@
+| [ADR-1274](1274-hiss-21-replay-gate.md) | Make HISS-21 claims replayable and platform-gated: declare measured scanner behavior with a bidirectional fixture corpus, require it locally and on Linux/macOS/Windows, and align the canonical agent contract and README badge. | Proposed | ci, governance, agents, testing, docs |

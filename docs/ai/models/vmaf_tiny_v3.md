@@ -41,7 +41,7 @@ classic SVM regressor and as v2. Identical interpretation table:
 | Output | `vmaf` — float32 `[N]` |
 | ONNX opset | 17 |
 | Quantisation | fp32 + dynamic-PTQ int8 sidecar (ADR-0275) |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `vmaf_tiny_v3` in `model/tiny/registry.json` |
 | Sidecar | `model/tiny/vmaf_tiny_v3.json` |
 | Exporter | `ai/scripts/export_vmaf_tiny_v3.py` |

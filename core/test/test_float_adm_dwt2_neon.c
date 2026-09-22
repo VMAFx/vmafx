@@ -103,6 +103,190 @@ static float next_sample(uint32_t *seed)
     return (float)(s & 0xFFFFu) * (255.0f / 65535.0f);
 }
 
+/* Geometry of one comparison run: the logical plane size, the half-resolution
+ * output size, and the two independently padded pixel strides. */
+typedef struct {
+    int w;
+    int h;
+    int w_half;
+    int h_half;
+    int src_px_stride;
+    int dst_px_stride;
+} DwtGeom;
+
+/* Every buffer one comparison run owns.  Zeroed before allocation so a partial
+ * allocation failure is still safe to free. */
+typedef struct {
+    float *src;
+    float *bands[8];
+    int *iy[4];
+    int *ix[4];
+} DwtBuffers;
+
+/* Running divergence counts, split by where in the row the divergence sits. */
+typedef struct {
+    int mismatches;
+    int tail_col;
+    int last_col;
+} DwtTally;
+
+static void dwt_buffers_free(DwtBuffers *buf)
+{
+    for (int k = 0; k < 4; ++k) {
+        free(buf->iy[k]);
+        free(buf->ix[k]);
+    }
+    for (int k = 0; k < 8; ++k)
+        free(buf->bands[k]);
+    free(buf->src);
+}
+
+/*
+ * Allocate every buffer and poison the output bands.  Returns a mu_assert
+ * message on failure, leaving whatever did allocate for the caller's
+ * unconditional dwt_buffers_free() -- which is what replaces the former
+ * `goto out` cleanup chain.
+ */
+static char *dwt_buffers_alloc(DwtBuffers *buf, const DwtGeom *g, size_t dst_cells)
+{
+    memset(buf, 0, sizeof(*buf));
+
+    buf->src = malloc(sizeof(float) * (size_t)g->h * (size_t)g->src_px_stride);
+    for (int k = 0; k < 4; ++k) {
+        buf->iy[k] = calloc((size_t)g->h_half + 4, sizeof(int));
+        buf->ix[k] = calloc((size_t)g->w_half + 4, sizeof(int));
+    }
+    for (int k = 0; k < 8; ++k)
+        buf->bands[k] = malloc(sizeof(float) * dst_cells);
+
+    if (!buf->src)
+        return "allocation failed";
+    for (int k = 0; k < 4; ++k) {
+        if (!buf->iy[k] || !buf->ix[k])
+            return "allocation failed";
+    }
+    for (int k = 0; k < 8; ++k) {
+        if (!buf->bands[k])
+            return "allocation failed";
+        fill_poison(buf->bands[k], dst_cells);
+    }
+    return NULL;
+}
+
+/* Fill the stride padding too: a kernel that read past `w` would then be
+ * consuming real data rather than whatever malloc left behind, which keeps
+ * the failure deterministic instead of run-to-run noise. */
+static void fill_source(float *src, const DwtGeom *g, int signed_zero_case)
+{
+    uint32_t seed = 0x5eed0000u ^ (uint32_t)(g->w * 131 + g->h * 7 + 1);
+
+    for (int i = 0; i < g->h; ++i) {
+        for (int j = 0; j < g->src_px_stride; ++j)
+            src[(size_t)i * g->src_px_stride + j] = signed_zero_case ? 0.0f : next_sample(&seed);
+    }
+
+    if (!signed_zero_case)
+        return;
+
+    /* At output (1, 1), the mirror tables select source rows/columns
+     * 1, 2, 3, 4.  For columns 1..3, make every low-pass vertical
+     * product -0; leave column 4 at +0.  A kernel that initializes an
+     * accumulator with tap 0 instead of scalar's +0 therefore produces
+     * vertical signs {-0,-0,-0,+0}, then a low-pass horizontal -0.
+     * The scalar +0 plus four products remains +0 at both stages. */
+    for (int j = 1; j <= 3; ++j) {
+        src[(size_t)1 * g->src_px_stride + j] = -0.0f;
+        src[(size_t)2 * g->src_px_stride + j] = -0.0f;
+        src[(size_t)3 * g->src_px_stride + j] = -0.0f;
+    }
+}
+
+/* Compare one band's valid output region cell by cell, by bit pattern. */
+static void tally_band_values(const float *ref, const float *simd, const DwtGeom *g,
+                              const char *name, int verbose, DwtTally *tally)
+{
+    for (int i = 0; i < g->h_half; ++i) {
+        for (int j = 0; j < g->w_half; ++j) {
+            const size_t idx = (size_t)i * (size_t)g->dst_px_stride + (size_t)j;
+            const uint32_t want = float_bits(ref[idx]);
+            const uint32_t got = float_bits(simd[idx]);
+            if (got == want)
+                continue;
+            ++tally->mismatches;
+            /* Output columns whose horizontal support (2j-1 .. 2j+2)
+             * reaches into the region the vertical scalar tail owns. */
+            if (2 * j + 2 >= (g->w & ~3))
+                ++tally->tail_col;
+            if (j == g->w_half - 1)
+                ++tally->last_col;
+            if (verbose && tally->mismatches <= 8)
+                (void)fprintf(stderr,
+                              "  %dx%d (src_stride %d, dst_stride %d) %s[%d][%d]%s:"
+                              " scalar %.9g (0x%08x) != neon %.9g (0x%08x)\n",
+                              g->w, g->h, g->src_px_stride, g->dst_px_stride, name, i, j,
+                              (j == g->w_half - 1) ? " (last col)" : "", (double)ref[idx], want,
+                              (double)simd[idx], got);
+        }
+    }
+}
+
+/* Nothing may be written outside the valid region: the stride padding must
+ * still hold the poison. */
+static void tally_band_padding(const float *simd, const DwtGeom *g, const char *name, int verbose,
+                               DwtTally *tally)
+{
+    for (int i = 0; i < g->h_half; ++i) {
+        for (int j = g->w_half; j < g->dst_px_stride; ++j) {
+            const size_t idx = (size_t)i * (size_t)g->dst_px_stride + (size_t)j;
+            if (float_bits(simd[idx]) == POISON_BITS)
+                continue;
+            ++tally->mismatches;
+            if (verbose)
+                (void)fprintf(stderr,
+                              "  %dx%d %s: neon wrote past the last valid column (%d)"
+                              " into the stride padding at row %d, col %d\n",
+                              g->w, g->h, name, g->w_half - 1, i, j);
+        }
+    }
+}
+
+/* Run both kernels over the allocated buffers and tally every divergence.
+ * Returns a mu_assert message when the scalar reference itself fails. */
+static char *run_and_tally(DwtBuffers *buf, const DwtGeom *g, int signed_zero_case, int verbose,
+                           DwtTally *tally)
+{
+    static const char *const names[4] = {"band_a", "band_v", "band_h", "band_d"};
+    adm_dwt_band_t_s ref_band, simd_band;
+
+    ref_band.band_a = buf->bands[0];
+    ref_band.band_v = buf->bands[1];
+    ref_band.band_h = buf->bands[2];
+    ref_band.band_d = buf->bands[3];
+    simd_band.band_a = buf->bands[4];
+    simd_band.band_v = buf->bands[5];
+    simd_band.band_h = buf->bands[6];
+    simd_band.band_d = buf->bands[7];
+
+    fill_source(buf->src, g, signed_zero_case);
+
+    dwt2_src_indices_filt_s(buf->iy, buf->ix, g->w, g->h);
+
+    if (adm_dwt2_s(buf->src, &ref_band, buf->iy, buf->ix, g->w, g->h,
+                   (int)(g->src_px_stride * sizeof(float)),
+                   (int)(g->dst_px_stride * sizeof(float))) != 0)
+        return "adm_dwt2_s failed";
+
+    float_adm_dwt2_neon(buf->src, &simd_band, buf->iy, buf->ix, g->w, g->h,
+                        (int)(g->src_px_stride * sizeof(float)),
+                        (int)(g->dst_px_stride * sizeof(float)));
+
+    for (int b = 0; b < 4; ++b) {
+        tally_band_values(buf->bands[b], buf->bands[b + 4], g, names[b], verbose, tally);
+        tally_band_padding(buf->bands[b + 4], g, names[b], verbose, tally);
+    }
+    return NULL;
+}
+
 /*
  * Run one geometry through both kernels and count divergent cells.
  *
@@ -114,148 +298,35 @@ static float next_sample(uint32_t *seed)
 static char *compare_geometry(int w, int h, int src_pad, int dst_pad, int signed_zero_case,
                               int verbose, int *out_mismatches)
 {
-    const int w_half = (w + 1) / 2, h_half = (h + 1) / 2;
-    const int src_px_stride = w + src_pad;
-    const int dst_px_stride = w_half + dst_pad;
-    const size_t dst_cells = (size_t)h_half * (size_t)dst_px_stride;
-    static const char *const names[4] = {"band_a", "band_v", "band_h", "band_d"};
-
-    float *src = NULL;
-    float *bands[8] = {0};
-    int *iy[4] = {0}, *ix[4] = {0};
-    adm_dwt_band_t_s ref_band, simd_band;
-    uint32_t seed = 0x5eed0000u ^ (uint32_t)(w * 131 + h * 7 + 1);
-    char *msg = NULL;
-    int mismatches = 0, tail_col_mismatches = 0, last_col_mismatches = 0;
+    const DwtGeom g = {
+        .w = w,
+        .h = h,
+        .w_half = (w + 1) / 2,
+        .h_half = (h + 1) / 2,
+        .src_px_stride = w + src_pad,
+        .dst_px_stride = (w + 1) / 2 + dst_pad,
+    };
+    const size_t dst_cells = (size_t)g.h_half * (size_t)g.dst_px_stride;
+    DwtTally tally = {0, 0, 0};
+    DwtBuffers buf;
 
     *out_mismatches = 0;
 
-    src = malloc(sizeof(float) * (size_t)h * (size_t)src_px_stride);
-    for (int k = 0; k < 4; ++k) {
-        iy[k] = calloc((size_t)h_half + 4, sizeof(int));
-        ix[k] = calloc((size_t)w_half + 4, sizeof(int));
-    }
-    for (int k = 0; k < 8; ++k)
-        bands[k] = malloc(sizeof(float) * dst_cells);
+    char *msg = dwt_buffers_alloc(&buf, &g, dst_cells);
+    if (!msg)
+        msg = run_and_tally(&buf, &g, signed_zero_case, verbose, &tally);
+    dwt_buffers_free(&buf);
+    if (msg)
+        return msg;
 
-    if (!src) {
-        msg = "allocation failed";
-        goto out;
-    }
-    for (int k = 0; k < 4; ++k) {
-        if (!iy[k] || !ix[k]) {
-            msg = "allocation failed";
-            goto out;
-        }
-    }
-    for (int k = 0; k < 8; ++k) {
-        if (!bands[k]) {
-            msg = "allocation failed";
-            goto out;
-        }
-        fill_poison(bands[k], dst_cells);
-    }
-
-    ref_band.band_a = bands[0];
-    ref_band.band_v = bands[1];
-    ref_band.band_h = bands[2];
-    ref_band.band_d = bands[3];
-    simd_band.band_a = bands[4];
-    simd_band.band_v = bands[5];
-    simd_band.band_h = bands[6];
-    simd_band.band_d = bands[7];
-
-    /* Fill the stride padding too: a kernel that read past `w` would then be
-     * consuming real data rather than whatever malloc left behind, which keeps
-     * the failure deterministic instead of run-to-run noise. */
-    for (int i = 0; i < h; ++i) {
-        for (int j = 0; j < src_px_stride; ++j)
-            src[(size_t)i * src_px_stride + j] = signed_zero_case ? 0.0f : next_sample(&seed);
-    }
-
-    if (signed_zero_case) {
-        /* At output (1, 1), the mirror tables select source rows/columns
-         * 1, 2, 3, 4.  For columns 1..3, make every low-pass vertical
-         * product -0; leave column 4 at +0.  A kernel that initializes an
-         * accumulator with tap 0 instead of scalar's +0 therefore produces
-         * vertical signs {-0,-0,-0,+0}, then a low-pass horizontal -0.
-         * The scalar +0 plus four products remains +0 at both stages. */
-        for (int j = 1; j <= 3; ++j) {
-            src[(size_t)1 * src_px_stride + j] = -0.0f;
-            src[(size_t)2 * src_px_stride + j] = -0.0f;
-            src[(size_t)3 * src_px_stride + j] = -0.0f;
-        }
-    }
-
-    dwt2_src_indices_filt_s(iy, ix, w, h);
-
-    if (adm_dwt2_s(src, &ref_band, iy, ix, w, h, (int)(src_px_stride * sizeof(float)),
-                   (int)(dst_px_stride * sizeof(float))) != 0) {
-        msg = "adm_dwt2_s failed";
-        goto out;
-    }
-
-    float_adm_dwt2_neon(src, &simd_band, iy, ix, w, h, (int)(src_px_stride * sizeof(float)),
-                        (int)(dst_px_stride * sizeof(float)));
-
-    for (int b = 0; b < 4; ++b) {
-        for (int i = 0; i < h_half; ++i) {
-            for (int j = 0; j < w_half; ++j) {
-                const size_t idx = (size_t)i * (size_t)dst_px_stride + (size_t)j;
-                const uint32_t want = float_bits(bands[b][idx]);
-                const uint32_t got = float_bits(bands[b + 4][idx]);
-                if (got == want)
-                    continue;
-                ++mismatches;
-                /* Output columns whose horizontal support (2j-1 .. 2j+2)
-                 * reaches into the region the vertical scalar tail owns. */
-                if (2 * j + 2 >= (w & ~3))
-                    ++tail_col_mismatches;
-                if (j == w_half - 1)
-                    ++last_col_mismatches;
-                if (verbose && mismatches <= 8)
-                    (void)fprintf(stderr,
-                                  "  %dx%d (src_stride %d, dst_stride %d) %s[%d][%d]%s:"
-                                  " scalar %.9g (0x%08x) != neon %.9g (0x%08x)\n",
-                                  w, h, src_px_stride, dst_px_stride, names[b], i, j,
-                                  (j == w_half - 1) ? " (last col)" : "", (double)bands[b][idx],
-                                  want, (double)bands[b + 4][idx], got);
-            }
-        }
-        /* Nothing may be written outside the valid region: the stride padding
-         * must still hold the poison. */
-        for (int i = 0; i < h_half; ++i) {
-            for (int j = w_half; j < dst_px_stride; ++j) {
-                const size_t idx = (size_t)i * (size_t)dst_px_stride + (size_t)j;
-                if (float_bits(bands[b + 4][idx]) == POISON_BITS)
-                    continue;
-                ++mismatches;
-                if (verbose)
-                    (void)fprintf(stderr,
-                                  "  %dx%d %s: neon wrote past the last valid column (%d)"
-                                  " into the stride padding at row %d, col %d\n",
-                                  w, h, names[b], w_half - 1, i, j);
-            }
-        }
-    }
-
-    if (verbose && mismatches)
+    if (verbose && tally.mismatches)
         (void)fprintf(stderr,
                       "  %dx%d: %d mismatching cells (%d whose support touches the"
                       " vertical scalar tail, %d in the mirrored last column)\n",
-                      w, h, mismatches, tail_col_mismatches, last_col_mismatches);
+                      w, h, tally.mismatches, tally.tail_col, tally.last_col);
 
-    *out_mismatches = mismatches;
-
-out:
-    for (int k = 0; k < 4; ++k) {
-        free(iy[k]);
-        free(ix[k]);
-    }
-    for (int k = 0; k < 8; ++k)
-        free(bands[k]);
-    free(src);
-    return msg;
+    *out_mismatches = tally.mismatches;
+    return NULL;
 }
 #endif /* ARCH_AARCH64 */
 

@@ -109,6 +109,101 @@ static const VmafOption options[] = {
     {0},
 };
 
+/* How far ssim_cuda's init_fex_cuda got before it had to unwind. */
+enum {
+    ISSIM_UNWIND_BUFS = 0,    /* device buffers only */
+    ISSIM_UNWIND_RB_SSIM = 1, /* + rb_ssim readback */
+    ISSIM_UNWIND_RB_WGT = 2,  /* + rb_wgt readback */
+};
+
+/* issim_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: replaces the former free_rb_wgt -> free_rb_ssim -> free_bufs
+ * fall-through cascade. `stage` selects how far the cascade had got, so
+ * every exit path releases exactly the resources its label released, in
+ * the same order, and returns the same `ret`.
+ */
+static int issim_init_unwind(VmafFeatureExtractor *fex, IssimStateCuda *s, int stage, int ret)
+{
+    if (stage >= ISSIM_UNWIND_RB_WGT)
+        (void)vmaf_cuda_kernel_readback_free(&s->rb_wgt, fex->cu_state);
+    if (stage >= ISSIM_UNWIND_RB_SSIM)
+        (void)vmaf_cuda_kernel_readback_free(&s->rb_ssim, fex->cu_state);
+    if (s->d_mux) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_mux);
+        free(s->d_mux);
+    }
+    if (s->d_muy) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_muy);
+        free(s->d_muy);
+    }
+    if (s->d_x2) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_x2);
+        free(s->d_x2);
+    }
+    if (s->d_xy) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_xy);
+        free(s->d_xy);
+    }
+    if (s->d_y2) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_y2);
+        free(s->d_y2);
+    }
+    if (s->d_w) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_w);
+        free(s->d_w);
+    }
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    return ret;
+}
+
+/* issim_alloc_buffers - grid geometry, device planes, readbacks, name dict.
+ *
+ * HISS-04: the allocation tail of init_fex_cuda, moved whole. Grid and byte
+ * sizes are computed by the same integer expressions in the same order, and
+ * every failure still enters issim_init_unwind at the same stage with the same
+ * `ret`, so each exit path frees the same resources.
+ */
+static int issim_alloc_buffers(VmafFeatureExtractor *fex, IssimStateCuda *s, unsigned w, unsigned h,
+                               unsigned bpc)
+{
+    s->width = w;
+    s->height = h;
+    s->bpc = bpc;
+    s->grid_x = (w + ISSIM_CUDA_BLOCK_X - 1u) / ISSIM_CUDA_BLOCK_X;
+    s->grid_y = (h + ISSIM_CUDA_BLOCK_Y - 1u) / ISSIM_CUDA_BLOCK_Y;
+    s->block_count = s->grid_x * s->grid_y;
+
+    const size_t int64_plane_bytes = (size_t)w * h * sizeof(int64_t);
+    const size_t double_partials_bytes = (size_t)s->block_count * sizeof(double);
+    const size_t int64_partials_bytes = (size_t)s->block_count * sizeof(int64_t);
+
+    int ret = 0;
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mux, int64_plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_muy, int64_plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_x2, int64_plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_xy, int64_plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_y2, int64_plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_w, int64_plane_bytes);
+    if (ret)
+        return issim_init_unwind(fex, s, ISSIM_UNWIND_BUFS, ret);
+
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_ssim, fex->cu_state, double_partials_bytes);
+    if (ret)
+        return issim_init_unwind(fex, s, ISSIM_UNWIND_BUFS, ret);
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_wgt, fex->cu_state, int64_partials_bytes);
+    if (ret)
+        return issim_init_unwind(fex, s, ISSIM_UNWIND_RB_SSIM, ret);
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict) {
+        ret = -ENOMEM;
+        return issim_init_unwind(fex, s, ISSIM_UNWIND_RB_WGT, ret);
+    }
+    return 0;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -142,73 +237,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_ctx);
     ctx_pushed = 0;
 
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    s->grid_x = (w + ISSIM_CUDA_BLOCK_X - 1u) / ISSIM_CUDA_BLOCK_X;
-    s->grid_y = (h + ISSIM_CUDA_BLOCK_Y - 1u) / ISSIM_CUDA_BLOCK_Y;
-    s->block_count = s->grid_x * s->grid_y;
-
-    const size_t int64_plane_bytes = (size_t)w * h * sizeof(int64_t);
-    const size_t double_partials_bytes = (size_t)s->block_count * sizeof(double);
-    const size_t int64_partials_bytes = (size_t)s->block_count * sizeof(int64_t);
-
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mux, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_muy, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_x2, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_xy, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_y2, int64_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_w, int64_plane_bytes);
-    if (ret)
-        goto free_bufs;
-
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_ssim, fex->cu_state, double_partials_bytes);
-    if (ret)
-        goto free_bufs;
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb_wgt, fex->cu_state, int64_partials_bytes);
-    if (ret)
-        goto free_rb_ssim;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_rb_wgt;
-    }
-    return 0;
-
-free_rb_wgt:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb_wgt, fex->cu_state);
-free_rb_ssim:
-    (void)vmaf_cuda_kernel_readback_free(&s->rb_ssim, fex->cu_state);
-free_bufs:
-    if (s->d_mux) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_mux);
-        free(s->d_mux);
-    }
-    if (s->d_muy) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_muy);
-        free(s->d_muy);
-    }
-    if (s->d_x2) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_x2);
-        free(s->d_x2);
-    }
-    if (s->d_xy) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_xy);
-        free(s->d_xy);
-    }
-    if (s->d_y2) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_y2);
-        free(s->d_y2);
-    }
-    if (s->d_w) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_w);
-        free(s->d_w);
-    }
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return issim_alloc_buffers(fex, s, w, h, bpc);
 
 fail_ctx:
     if (ctx_pushed)
@@ -216,6 +245,36 @@ fail_ctx:
 fail_lc:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
+}
+
+/* issim_launch_vert - pass 2: vertical accumulation, SSIM, block reduction.
+ *
+ * HISS-04: the pass-2 launch of submit_fex_cuda, moved whole. samplemax is
+ * still the same integer expression and params2 keeps its element order, so
+ * the kernel sees identical arguments. cuLaunchKernel copies the parameter
+ * values before returning, so pointing at this frame's samplemax is safe.
+ */
+static int issim_launch_vert(IssimStateCuda *s, CudaFunctions *cu_f, CUstream stream)
+{
+    /* Pass 2 — vertical accumulation + SSIM formula + block reduction. */
+    int64_t samplemax = (int64_t)((1u << s->bpc) - 1u);
+    void *params2[] = {
+        &s->d_mux->data,
+        &s->d_muy->data,
+        &s->d_x2->data,
+        &s->d_xy->data,
+        &s->d_y2->data,
+        &s->d_w->data,
+        &s->rb_ssim.device->data,
+        &s->rb_wgt.device->data,
+        &s->width,
+        &s->height,
+        &samplemax,
+    };
+    CHECK_CUDA_RETURN(cu_f,
+                      cuLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
+                                     ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params2, NULL));
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -244,44 +303,20 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * For CUdeviceptr intermediate buffers: &buf->data gives the address
      * of the 8-byte CUdeviceptr value the driver writes into the kernel arg.
      * For scalar params (ptrdiff_t, unsigned): pass address of local var. */
-    if (s->bpc == 8u) {
-        void *params[] = {
-            &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
-            &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
-            &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz_8, s->grid_x, s->grid_y, 1u,
-                                               ISSIM_CUDA_BLOCK_X, ISSIM_CUDA_BLOCK_Y, 1u, 0,
-                                               stream, params, NULL));
-    } else {
-        void *params[] = {
-            &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
-            &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
-            &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz_16, s->grid_x, s->grid_y, 1u,
-                                               ISSIM_CUDA_BLOCK_X, ISSIM_CUDA_BLOCK_Y, 1u, 0,
-                                               stream, params, NULL));
-    }
-
-    /* Pass 2 — vertical accumulation + SSIM formula + block reduction. */
-    int64_t samplemax = (int64_t)((1u << s->bpc) - 1u);
-    void *params2[] = {
-        &s->d_mux->data,
-        &s->d_muy->data,
-        &s->d_x2->data,
-        &s->d_xy->data,
-        &s->d_y2->data,
-        &s->d_w->data,
-        &s->rb_ssim.device->data,
-        &s->rb_wgt.device->data,
-        &s->width,
-        &s->height,
-        &samplemax,
+    /* The 8bpc and 16bpc branches built a character-identical params[]; only
+     * the entry point differed, so select the entry point and launch once. */
+    CUfunction func_horiz = (s->bpc == 8u) ? s->func_horiz_8 : s->func_horiz_16;
+    void *params[] = {
+        &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
+        &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
+        &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
     };
-    CHECK_CUDA_RETURN(cu_f,
-                      cuLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
-                                     ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params2, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func_horiz, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
+                                           ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params, NULL));
+
+    const int vert_err = issim_launch_vert(s, cu_f, stream);
+    if (vert_err)
+        return vert_err;
 
     /* Async DtoH for both readback buffers. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
@@ -322,54 +357,37 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                                                    score, index);
 }
 
+/* issim_free_plane - release one int64 device plane, keeping the first error.
+ *
+ * HISS-04: the six identical free blocks of close_fex_cuda, factored into one.
+ * The six calls at the call site keep the original order, and each still frees
+ * the buffer, frees the descriptor, nulls the slot and folds its error into
+ * `rc` only when `rc` is still 0 - exactly as the inline blocks did.
+ */
+static int issim_free_plane(VmafFeatureExtractor *fex, VmafCudaBuffer **buf, int rc)
+{
+    if (*buf) {
+        int e = vmaf_cuda_buffer_free(fex->cu_state, *buf);
+        free(*buf);
+        *buf = NULL;
+        if (rc == 0)
+            rc = e;
+    }
+    return rc;
+}
+
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     IssimStateCuda *s = fex->priv;
 
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
-    if (s->d_mux) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_mux);
-        free(s->d_mux);
-        s->d_mux = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_muy) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_muy);
-        free(s->d_muy);
-        s->d_muy = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_x2) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_x2);
-        free(s->d_x2);
-        s->d_x2 = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_xy) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_xy);
-        free(s->d_xy);
-        s->d_xy = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_y2) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_y2);
-        free(s->d_y2);
-        s->d_y2 = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->d_w) {
-        int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_w);
-        free(s->d_w);
-        s->d_w = NULL;
-        if (rc == 0)
-            rc = e;
-    }
+    rc = issim_free_plane(fex, &s->d_mux, rc);
+    rc = issim_free_plane(fex, &s->d_muy, rc);
+    rc = issim_free_plane(fex, &s->d_x2, rc);
+    rc = issim_free_plane(fex, &s->d_xy, rc);
+    rc = issim_free_plane(fex, &s->d_y2, rc);
+    rc = issim_free_plane(fex, &s->d_w, rc);
 
     int e2 = vmaf_cuda_kernel_readback_free(&s->rb_ssim, fex->cu_state);
     if (rc == 0)

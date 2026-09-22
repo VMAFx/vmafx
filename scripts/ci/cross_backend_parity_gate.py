@@ -622,6 +622,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--height", type=int, required=True)
     ap.add_argument("--pixel-format", default="420")
     ap.add_argument("--bitdepth", type=int, default=8)
+    _add_matrix_arguments(ap)
+    _add_runtime_arguments(ap)
+    return ap.parse_args()
+
+
+def _add_matrix_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--features",
         nargs="+",
@@ -645,6 +651,9 @@ def parse_args() -> argparse.Namespace:
             f"({DEFAULT_FP16_TOLERANCE:.1e}) instead of their FP32 default"
         ),
     )
+
+
+def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--cuda-device",
         type=int,
@@ -690,7 +699,46 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_CALIBRATION_PATH,
         help=(f"path to the ADR-0234 calibration YAML (default: {DEFAULT_CALIBRATION_PATH})"),
     )
-    return ap.parse_args()
+
+
+def _run_matrix(
+    args: argparse.Namespace,
+    cells: list[Cell],
+    devices: dict[str, int],
+    calibration: CalibrationTable | None,
+) -> list[CellResult]:
+    results: list[CellResult] = []
+    for cell in cells:
+        tolerance, tolerance_source = resolve_cell_tolerance(
+            cell.feature,
+            fp16_features=args.fp16_features,
+            calibration=calibration,
+            gpu_id=args.gpu_id,
+        )
+        result = run_cell(
+            cell,
+            binary=args.vmaf_binary,
+            ref=args.reference,
+            dist=args.distorted,
+            width=args.width,
+            height=args.height,
+            pix_fmt=args.pixel_format,
+            bitdepth=args.bitdepth,
+            workdir=args.workdir,
+            devices=devices,
+            tolerance=tolerance,
+            tolerance_source=tolerance_source,
+        )
+        results.append(result)
+        max_diff = max(result.per_metric_max.values()) if result.per_metric_max else 0.0
+        print(
+            f"{result.feature:<14} "
+            f"{result.backend_a:<6} ↔ {result.backend_b:<6}  "
+            f"tol={result.tolerance:.1e} ({result.tolerance_source})  "
+            f"max_abs_diff={max_diff:.3e}  "
+            f"{result.status}" + (f"  ({result.note})" if result.note else "")
+        )
+    return results
 
 
 def main() -> int:
@@ -736,37 +784,7 @@ def main() -> int:
                     f"({entry.label}, status={entry.status})"
                 )
 
-    results: list[CellResult] = []
-    for cell in cells:
-        tolerance, tolerance_source = resolve_cell_tolerance(
-            cell.feature,
-            fp16_features=args.fp16_features,
-            calibration=calibration,
-            gpu_id=args.gpu_id,
-        )
-        result = run_cell(
-            cell,
-            binary=args.vmaf_binary,
-            ref=args.reference,
-            dist=args.distorted,
-            width=args.width,
-            height=args.height,
-            pix_fmt=args.pixel_format,
-            bitdepth=args.bitdepth,
-            workdir=args.workdir,
-            devices=devices,
-            tolerance=tolerance,
-            tolerance_source=tolerance_source,
-        )
-        results.append(result)
-        max_diff = max(result.per_metric_max.values()) if result.per_metric_max else 0.0
-        print(
-            f"{result.feature:<14} "
-            f"{result.backend_a:<6} ↔ {result.backend_b:<6}  "
-            f"tol={result.tolerance:.1e} ({result.tolerance_source})  "
-            f"max_abs_diff={max_diff:.3e}  "
-            f"{result.status}" + (f"  ({result.note})" if result.note else "")
-        )
+    results = _run_matrix(args, cells, devices, calibration)
 
     if args.json_out is not None:
         emit_json(results, args.json_out)

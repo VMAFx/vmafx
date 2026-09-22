@@ -121,24 +121,40 @@ class FRRegressor(L.LightningModule):
         x, y = batch  # type: ignore[misc]
         return x, y, None
 
-    def _step(self, batch: object, tag: str) -> torch.Tensor:
+    def _loss(self, batch: object) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Loss for one batch, plus the companion MSE in variance mode.
+
+        Split out of :meth:`_step` so the numerics can be exercised on their
+        own. ``self.log`` is Trainer-scoped: outside a fit / validate / test
+        loop there is nowhere for it to write, so Lightning drops the value and
+        warns ("the `self.trainer` reference is not registered on the model
+        yet"). Lightning supports that call deliberately -- see the comment
+        next to the warning in ``pytorch_lightning/core/module.py``, "not an
+        error to support testing the `*_step` methods without a `Trainer`
+        reference" -- but the warning it emits is not something a caller can
+        act on, and under ``filterwarnings = ["error"]`` it is fatal. Keeping
+        the logging in :meth:`_step` and the arithmetic here means a caller
+        that only wants the loss never reaches for the Trainer-scoped API.
+        """
         x, y, codec = self._unpack_batch(batch)
         out = self(x, codec)
         if self._hp["emit_variance"]:
             pred = out[..., 0]
             logvar = out[..., 1]
             loss = gaussian_nll(pred, y, logvar).mean()
-            self.log(f"{tag}/nll", loss, prog_bar=True, on_epoch=True)
-            # Log the plain MSE too so runs with/without variance stay comparable.
             with torch.no_grad():
-                self.log(
-                    f"{tag}/mse",
-                    nn.functional.mse_loss(pred, y),
-                    on_epoch=True,
-                )
+                mse = nn.functional.mse_loss(pred, y)
+            return loss, mse
+        return nn.functional.mse_loss(out, y), None
+
+    def _step(self, batch: object, tag: str) -> torch.Tensor:
+        loss, mse = self._loss(batch)
+        if mse is None:
+            self.log(f"{tag}/mse", loss, prog_bar=True, on_epoch=True)
             return loss
-        loss = nn.functional.mse_loss(out, y)
-        self.log(f"{tag}/mse", loss, prog_bar=True, on_epoch=True)
+        self.log(f"{tag}/nll", loss, prog_bar=True, on_epoch=True)
+        # Log the plain MSE too so runs with/without variance stay comparable.
+        self.log(f"{tag}/mse", mse, on_epoch=True)
         return loss
 
     def training_step(self, batch: object, _idx: int) -> torch.Tensor:

@@ -4,6 +4,7 @@ SHELL := /bin/bash
 # Path and environment setup
 VENV := .venv
 VIRTUAL_ENV_PATH := $(VENV)/bin
+VIRTUAL_ENV_ABS := $(abspath $(VIRTUAL_ENV_PATH))
 
 # Build tools configured in the virtual environment
 PYTHON_INTERPRETER := python3
@@ -17,7 +18,7 @@ NINJA := $(VIRTUAL_ENV_PATH)/ninja
 # PATH. Without this, `make lint-py` / `make format-check` silently found no
 # ruff / black and reported success, so the local gate could pass while
 # CI's identical checks failed.
-export PATH := $(CURDIR)/$(VIRTUAL_ENV_PATH):$(PATH)
+export PATH := $(VIRTUAL_ENV_ABS):$(PATH)
 
 # require-tool,<binary>,<install hint>
 # A gate that cannot run is a gate that cannot fail. Every lint / format tool is
@@ -52,25 +53,25 @@ default: build
 all: build debug install test cythonize
 
 $(BUILD_DIR): $(MESON) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) $(BUILD_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_RELEASE) $(ENABLE_FLOAT) $(ENABLE_CUDA)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(BUILD_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_RELEASE) $(ENABLE_FLOAT) $(ENABLE_CUDA)
 
 $(DEBUG_DIR): $(MESON) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
 
 cythonize: cythonize-deps
 	pushd python && ../$(VENV_PYTHON) setup.py build_ext --build-lib . && popd || exit 1
 
 build: $(BUILD_DIR) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(BUILD_DIR)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR)
 
 test: build $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(BUILD_DIR) test
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) test
 
 debug: $(DEBUG_DIR) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(DEBUG_DIR)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(DEBUG_DIR)
 
 install: $(BUILD_DIR) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(NINJA) -vC $(BUILD_DIR) install
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) install
 
 clean:
 	rm -rf $(BUILD_DIR) $(DEBUG_DIR)
@@ -109,19 +110,24 @@ lint-tools: $(VENV_PIP)
 	@command -v shellcheck >/dev/null || \
 	   echo "note: shellcheck not found — install it via your package manager."
 
+# setuptools>=77.0.1 matches the floor python/pyproject.toml declares: the
+# PEP 639 SPDX license expression there is unreadable to older setuptools,
+# and `cythonize` below runs setup.py against this venv directly, with no
+# PEP 517 isolation to fetch a newer backend on its own.
 cythonize-deps: $(VENV_PIP)
-	$(VENV_PIP) install setuptools cython numpy || { echo "Failed to install dependencies"; exit 1; }
+	$(VENV_PIP) install 'setuptools>=77.0.1' 'packaging>=24.2' cython numpy || { echo "Failed to install dependencies"; exit 1; }
 
 # ============================================================================
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
-	base-images-sync python-deps-sync \
+	base-images-sync cuda-pin-sync python-deps-sync \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
-        coverage coverage-html coverage-check assertion-density pr-check
+        coverage coverage-html coverage-check assertion-density pr-check \
+        silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
 lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
@@ -158,18 +164,54 @@ docs-fragments-write:
 LINT_JOBS ?= 4
 LINT_CONFIGURED_ARGS ?=
 lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
-	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) --reconfigure "$(BUILD_DIR)" "$(LIBVMAF_DIR)"
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) --reconfigure "$(BUILD_DIR)" "$(LIBVMAF_DIR)"
 	$(MAKE) build
+	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
+	    --build-dir "$(BUILD_DIR)" --ninja "$(NINJA)"
 	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
 	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
-# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip
+# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip|arm64
 # (default cpu). The build dir must be configured for the lane
 # (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)); the GPU lanes pass the
 # extra clang-tidy arguments the 2026-09-02 measurement used and the SYCL
 # lane goes through scripts/ci/clang-tidy-sycl.sh. `tidy-ratchet-write`
 # regenerates scripts/ci/tidy-baseline-$(LANE).json after a cleanup —
 # commit it in the same PR; never hand-edit a baseline.
+#
+# Configure TIDY_RATCHET_BUILD_DIR with -Db_lto=false and put it OUTSIDE the
+# repository, e.g.
+#   meson setup /tmp/tidy-hip core -Db_lto=false -Denable_hip=true \
+#       -Denable_hipcc=false -Denable_cuda=false -Denable_sycl=false
+#   make tidy-ratchet LANE=hip TIDY_RATCHET_BUILD_DIR=/tmp/tidy-hip
+# Two reasons, both of which otherwise make the measurement unusable:
+#   * the project default carries b_lto_threads=4 (ADR-1172), which meson
+#     renders as GCC's -flto=4. clang-tidy parses these compile commands with
+#     clang, which rejects it ("unsupported argument '4' to option '-flto='"),
+#     so every translation unit is reported as a compile failure. The CPU CI
+#     lane already configures its throwaway build with -Db_lto=false for this.
+#   * an in-repo build dir puts the generated *_hsaco.c / *.json.c translation
+#     units inside the measured source set, which the committed baselines do
+#     not contain.
+# Open: T-TIDY-RATCHET-GPU-LANES-UNREPRODUCIBLE-2026-09-22 in docs/state.md
+# tracks the residual per-file drift between this configuration and the numbers
+# the committed GPU baselines were recorded with.
+# The arm64 lane is the only cross lane: nothing on an x86 host compiles
+# core/src/feature/arm64/ or the ARCH_AARCH64 bodies in core/test/, so the
+# cpu lane's compile database has no entry for them and they were unmeasured
+# (ADR-1283). Configure its build dir with the in-tree cross file —
+#
+#   meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+#       -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+#   make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+# — which gives aarch64-linux-gnu-gcc compile commands. clang-tidy needs the
+# same target and sysroot to parse them: without --target it reads the NEON
+# and SVE2 intrinsics against the host's x86 headers, and without --sysroot
+# it resolves libc against the host's. Both are the cross package's defaults
+# (Arch `aarch64-linux-gnu-glibc`, Debian/Ubuntu `libc6-dev-arm64-cross`);
+# override AARCH64_SYSROOT for a sysroot installed anywhere else.
+AARCH64_TARGET ?= aarch64-linux-gnu
+AARCH64_SYSROOT ?= /usr/aarch64-linux-gnu
 LANE ?= cpu
 TIDY_RATCHET_BUILD_DIR ?= $(BUILD_DIR)
 TIDY_RATCHET_EXTRA_cpu :=
@@ -177,13 +219,36 @@ TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
 TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
 TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
-tidy-ratchet:
+TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
+	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
+
+# nvcc, hipcc and icpx compile through meson custom targets, which leaves their
+# translation units out of compile_commands.json: write-compile-commands.py
+# exports only the native c/cpp_COMPILER rules, so without this second pass the
+# cuda and hip lanes measure the host files only and the sycl lane measures zero
+# SYCL feature TUs, recording an empty backend in its baseline.
+TIDY_RATCHET_COMPDB_cpu :=
+TIDY_RATCHET_COMPDB_cuda := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
+TIDY_RATCHET_COMPDB_hip := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
+TIDY_RATCHET_COMPDB_sycl := $(PYTHON_INTERPRETER) scripts/ci/gen-sycl-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
+TIDY_RATCHET_COMPDB_arm64 :=
+
+tidy-ratchet: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
+	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
+	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
+	$(TIDY_RATCHET_COMPDB_$(LANE))
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
-tidy-ratchet-write:
+tidy-ratchet-write: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
+	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
+	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
+	$(TIDY_RATCHET_COMPDB_$(LANE))
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) --write \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
@@ -192,6 +257,14 @@ tidy-ratchet-write:
 base-images-sync:
 	scripts/ci/check-base-image-single-source.sh --write
 	scripts/ci/check-base-image-single-source.sh
+
+# Rewrite the derived CUDA spellings ($cudaMajorMinor, cuda-toolkit-NN-N, the OCI
+# description label) from build-config.env's CUDA_VERSION. Renovate owns the rest
+# of the coordinated pin; edit CUDA_VERSION and the image pins, run this, commit
+# all of it together (ADR-1285).
+cuda-pin-sync:
+	python3 scripts/ci/check-cuda-pin-lockstep.py --write
+	python3 scripts/ci/check-cuda-pin-lockstep.py
 
 # Rewrite python/requirements.txt from python/pyproject.toml [project].dependencies.
 python-deps-sync:
@@ -230,6 +303,7 @@ lint-sh:
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh
 	@scripts/ci/check-base-image-single-source.sh
+	@python3 scripts/ci/check-cuda-pin-lockstep.py
 	@python3 scripts/githooks/tests/test_install.py
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
@@ -268,8 +342,7 @@ format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	                   | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	                   | grep -v '^core/src/interop/pelorus_' \
-	                   | grep -v '^core/include/libvmaf/pelorus/') || true
+	                   | python3 scripts/ci/pelorus_mirror.py filter) || true
 	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
 	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
@@ -280,8 +353,7 @@ format-check:
 	clang-format --dry-run --Werror \
 	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	      | grep -v '^core/src/interop/pelorus_' \
-	      | grep -v '^core/include/libvmaf/pelorus/')
+	      | python3 scripts/ci/pelorus_mirror.py filter)
 	$(call require-tool,black,pip install black==$(BLACK_VERSION))
 	black --check python/ ai/ scripts/
 	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
@@ -332,7 +404,7 @@ test-sanitizers:
 	meson test -C build-san --print-errorlogs
 
 test-fast: build
-	PATH="$(VENV)/bin:$$PATH" meson test -C $(BUILD_DIR) --suite=fast
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" meson test -C $(BUILD_DIR) --suite=fast
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
@@ -433,6 +505,24 @@ pr-check:
 	    exit 2; \
 	fi
 
+# silent-revert-check — local equivalent of the rule-enforcement.yml
+# Silent-Revert Guard (ADR-1284). Reports work the merge of this branch would
+# remove from the target that the branch never set out to touch: a file reset
+# to an older blob, a target commit undone hunk-for-hunk, or lines dropped or
+# resurrected by a conflict resolution.
+#
+# BASE_REF defaults to the live origin/master tip, not the PR's recorded base,
+# for the same reason CI does: the defect is master moving after the branch was
+# cut.
+#
+# Usage:
+#   make silent-revert-check
+#   make silent-revert-check BASE_REF=origin/master HEAD_REF=my-branch
+BASE_REF ?= origin/master
+HEAD_REF ?= HEAD
+silent-revert-check:
+	@python3 scripts/ci/check-silent-revert.py --base "$(BASE_REF)" --head "$(HEAD_REF)"
+
 # ── Go workspace (ADR-0702) ─────────────────────────────────────────────────
 #
 # go-build: compile all Go packages in the workspace (no output binary in the
@@ -517,6 +607,7 @@ help:
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"
 	@echo "  make sbom             — SPDX + CycloneDX SBOMs via syft"
 	@echo "  make pr-check         — ADR-0108 deliverables gate (PR=<num> or BODY=<file>)"
+	@echo "  make silent-revert-check — ADR-1284: work this merge would remove from BASE"
 	@echo "  make test-netflix-golden — D24 gate: 3 Netflix CPU test pairs"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
@@ -526,6 +617,8 @@ help:
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
 	@echo "  make lint-tools       — install ruff/black/mypy into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
+	@echo "  make hiss-coverage    — replay declared HISS evidence fixtures"
+	@echo "  make dedupe-check     — reject duplicate implementation families"
 	@echo "                          (set VMAFX_NATIVE_HOOKS=1 for native bash; ADR-0924)"
 	@echo "  make hooks-install    — legacy alias for install-hooks"
 	@echo ""
@@ -539,13 +632,20 @@ help:
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"
 
 # cordanaLLM/praetor Governance Targets
-.PHONY: verify-all compile-context audit
+.PHONY: verify-all compile-context audit hiss-coverage dedupe-check
 
 verify-all:
-	@standardsctl audit && standardsctl compile-context --verify
+	@standardsctl audit && standardsctl compile-context --verify && standardsctl hiss coverage --verify
+	@$(MAKE) --no-print-directory dedupe-check
 
 compile-context:
 	@standardsctl compile-context
 
 audit:
 	@standardsctl audit
+
+hiss-coverage:
+	@standardsctl hiss coverage --verify
+
+dedupe-check:
+	@standardsctl dedupe scan .

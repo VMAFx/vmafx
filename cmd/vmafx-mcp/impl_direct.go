@@ -92,6 +92,17 @@ func runVmafScoreDirect(ctx context.Context, ref, dis string, width, height int,
 		return nil, fmt.Errorf("ScoreDirect: %w", err)
 	}
 
+	return directScorePayload(res, backend, modelArg, width, height), nil
+}
+
+// directScorePayload shapes a direct-path result into the same response body the
+// subprocess path produces. "backend_used" carries the "(direct cgo)" marker so an
+// operator can tell from a single call which path actually ran.
+func directScorePayload(
+	res *libvmaf.ScoreDirectResult,
+	backend, modelArg string,
+	width, height int,
+) map[string]any {
 	payload := map[string]any{
 		"pooled_metrics": map[string]any{
 			"vmaf": map[string]any{
@@ -106,7 +117,7 @@ func runVmafScoreDirect(ctx context.Context, ref, dis string, width, height int,
 	if w := resolutionMismatchWarning(modelArg, width, height); w != "" {
 		payload["mismatched_model_warning"] = w
 	}
-	return payload, nil
+	return payload
 }
 
 // resolveModelArgToPath converts the MCP-level model argument into an

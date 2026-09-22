@@ -5,7 +5,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue for the integer ADM feature extractor.
- *  Mirrors libvmaf/src/feature/cuda/integer_adm_cuda.h call-graph-for-call-graph.
+ *  Mirrors core/src/feature/cuda/integer_adm_cuda.h call-graph-for-call-graph.
  *  The four HSACO blobs (adm_dwt2, adm_csf, adm_csf_den, adm_cm) are declared
  *  here when HAVE_HIPCC is defined; in scaffold builds the header guards the
  *  symbols away so host-only translation units compile without ROCm headers.

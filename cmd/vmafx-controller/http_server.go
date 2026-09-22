@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -100,31 +101,12 @@ func (h *httpServer) routes(mux *http.ServeMux) {
 
 // handleHealthz is the liveness probe — always returns 200 OK.
 func (h *httpServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	h.metrics.HealthRequests.Inc()
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	scoringservice.HandleHealthz(h.metrics, h.log, w, r)
 }
 
 // handleReadyz is the readiness probe — returns 503 until the scorer is usable.
 func (h *httpServer) handleReadyz(w http.ResponseWriter, r *http.Request) {
-	h.metrics.ReadyRequests.Inc()
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if h.scorer == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"status":"not ready","reason":"scorer not initialised"}`))
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ready"}`))
+	scoringservice.HandleReadyz(h.metrics, h.log, h.scorer != nil, w, r)
 }
 
 // handleScore handles POST /v1/score.
@@ -148,18 +130,20 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		h.metrics.ScoreErrors.Inc()
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{
+			scoringservice.WriteJSON(h.log, w, http.StatusRequestEntityTooLarge, errorResponse{
 				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
 			})
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
+		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
+			errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
 		return
 	}
 
 	if req.Reference == "" || req.Distorted == "" {
 		h.metrics.ScoreErrors.Inc()
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "reference and distorted are required"})
+		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
+			errorResponse{Error: "reference and distorted are required"})
 		return
 	}
 
@@ -174,7 +158,8 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()
 		h.log.Error("http Score failed", "error", err, "duration_s", elapsed)
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		scoringservice.WriteJSON(h.log, w, http.StatusInternalServerError,
+			errorResponse{Error: err.Error()})
 		return
 	}
 
@@ -182,16 +167,8 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		"score", fmt.Sprintf("%.4f", score),
 		"duration_s", elapsed,
 	)
-	writeJSON(w, http.StatusOK, scoreResponse{Score: score, Features: features})
-}
-
-// writeJSON serialises v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
+	scoringservice.WriteJSON(h.log, w, http.StatusOK,
+		scoreResponse{Score: score, Features: features})
 }
 
 // Serving note (ADR-1119): the controller no longer hand-rolls an *http.Server.

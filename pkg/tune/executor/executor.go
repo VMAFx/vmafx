@@ -296,13 +296,7 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin string) []string {
 	if vmafBin == "" {
 		vmafBin = "vmaf"
 	}
-	model := req.Model
-	if model == "" {
-		model = vmafmodel.DefaultVersion
-	}
-	if !strings.Contains(model, "=") {
-		model = "version=" + model
-	}
+	model := vmafmodel.CLIArgumentOrDefault(req.Model)
 	cmd := []string{
 		vmafBin,
 		"--reference", req.Reference,
@@ -572,40 +566,11 @@ func RunPlan(ctx context.Context, plan auto.Plan, src string, params Params) ([]
 
 	results := make([]ExecuteResult, 0, len(plan.Cells))
 	for _, cell := range plan.Cells {
-		selected, _ := cell["selected"].(bool)
+		selected := boolField(cell, "selected")
 		if !params.ExecuteAll && !selected {
 			continue
 		}
-		req := cellToEncodeRequest(cell, src, params, width, height)
-
-		var enc *EncodeResult
-		var score *ScoreResult
-
-		encoded := RunEncode(ctx, req, params.FFmpegBin, params.EncodeRunner)
-		enc = &encoded
-		if encoded.ExitStatus != 0 {
-			log.Warn("executor: encode failed",
-				"cell_index", cell["cell_index"], "exit_status", encoded.ExitStatus)
-		} else {
-			workDir, tmpErr := os.MkdirTemp("", "vmafx-tune-score-")
-			if tmpErr != nil {
-				log.Warn("executor: score temp dir", "error", tmpErr)
-			} else {
-				scored := RunScore(ctx, ScoreRequest{
-					Reference: src,
-					Distorted: req.Output,
-					Width:     width,
-					Height:    height,
-					PixFmt:    params.PixFmt,
-					Model:     params.VMAFModel,
-				}, params.VMAFBin, workDir, params.ScoreRunner)
-				score = &scored
-				if rmErr := os.RemoveAll(workDir); rmErr != nil {
-					log.Warn("executor: remove score temp dir", "error", rmErr)
-				}
-			}
-		}
-
+		enc, score := executePlanCell(ctx, cell, src, params, width, height, log)
 		row := makeRow(cell, enc, score)
 		line, marshalErr := pyjson.MarshalStrict(row, 0)
 		if marshalErr != nil {
@@ -617,6 +582,44 @@ func RunPlan(ctx context.Context, plan auto.Plan, src string, params Params) ([]
 		results = append(results, ExecuteResult{Cell: cell, Encode: enc, Score: score, Row: row})
 	}
 	return results, nil
+}
+
+func executePlanCell(
+	ctx context.Context,
+	cell map[string]any,
+	src string,
+	params Params,
+	width, height int,
+	log *slog.Logger,
+) (*EncodeResult, *ScoreResult) {
+	req := cellToEncodeRequest(cell, src, params, width, height)
+	encoded := RunEncode(ctx, req, params.FFmpegBin, params.EncodeRunner)
+	if encoded.ExitStatus != 0 {
+		log.Warn("executor: encode failed",
+			"cell_index", cell["cell_index"], "exit_status", encoded.ExitStatus)
+		return &encoded, nil
+	}
+
+	workDir, err := os.MkdirTemp("", "vmafx-tune-score-")
+	if err != nil {
+		log.Warn("executor: score temp dir", "error", err)
+		return &encoded, nil
+	}
+	defer func() {
+		if err := os.RemoveAll(workDir); err != nil {
+			log.Warn("executor: remove score temp dir", "error", err, "path", workDir)
+		}
+	}()
+
+	scored := RunScore(ctx, ScoreRequest{
+		Reference: src,
+		Distorted: req.Output,
+		Width:     width,
+		Height:    height,
+		PixFmt:    params.PixFmt,
+		Model:     params.VMAFModel,
+	}, params.VMAFBin, workDir, params.ScoreRunner)
+	return &encoded, &scored
 }
 
 // effectiveGeometry pulls the frame geometry from the plan's source_meta
@@ -737,8 +740,8 @@ func intField(cell map[string]any, key string, fallback int) int {
 }
 
 func boolField(cell map[string]any, key string) bool {
-	v, _ := cell[key].(bool)
-	return v
+	v, ok := cell[key].(bool)
+	return ok && v
 }
 
 func tail(text string, n int) string {

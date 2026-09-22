@@ -171,6 +171,23 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
     return err;
 }
 
+/* Single unwind path for feature_vector_init(). The struct is zeroed straight
+ * after allocation, so a member belonging to a stage that was never reached is
+ * NULL and free() on it is a no-op. The release order (name, then the struct)
+ * is exactly the order the former `free_name:` -> `free_fv:` label chain used,
+ * and every error exit runs the same chain from its own entry point. */
+static int feature_vector_init_unwind(FeatureVector **const feature_vector, FeatureVector *fv)
+{
+    if (fv) {
+        free(fv->name);
+        free(fv);
+    }
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *feature_vector = NULL;
+    return -ENOMEM;
+}
+
 static int feature_vector_init(FeatureVector **const feature_vector, const char *name)
 {
     if (!feature_vector)
@@ -180,29 +197,19 @@ static int feature_vector_init(FeatureVector **const feature_vector, const char 
 
     FeatureVector *const fv = *feature_vector = malloc(sizeof(*fv));
     if (!fv)
-        goto fail;
+        return feature_vector_init_unwind(feature_vector, fv);
     memset(fv, 0, sizeof(*fv));
     const size_t name_sz = strlen(name);
     fv->name = malloc(name_sz + 1);
     if (!fv->name)
-        goto free_fv;
+        return feature_vector_init_unwind(feature_vector, fv);
     memcpy(fv->name, name, name_sz + 1);
     fv->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
     fv->score = malloc(sizeof(fv->score[0]) * fv->capacity);
     if (!fv->score)
-        goto free_name;
+        return feature_vector_init_unwind(feature_vector, fv);
     memset(fv->score, 0, sizeof(fv->score[0]) * fv->capacity);
     return 0;
-
-free_name:
-    free(fv->name);
-free_fv:
-    free(fv);
-fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *feature_vector = NULL;
-    return -ENOMEM;
 }
 
 static void feature_vector_destroy(FeatureVector *feature_vector)
@@ -272,6 +279,37 @@ static int feature_vector_read(const FeatureVector *feature_vector, unsigned ind
     return 0;
 }
 
+/* Construction stages of vmaf_feature_collector_init(), in acquisition order.
+ * The unwind helper below releases every stage at or below the one named,
+ * highest first, which reproduces the former
+ * `free_mutex:` -> `free_aggregate_vector:` -> `free_feature_vector:` ->
+ * `free_fc:` -> `fail:` label chain one release at a time and in the same
+ * order, whichever entry point an error takes. */
+typedef enum {
+    FC_STAGE_NOTHING = 0,
+    FC_STAGE_STRUCT = 1,
+    FC_STAGE_FEATURE_VECTOR = 2,
+    FC_STAGE_AGGREGATE_VECTOR = 3,
+    FC_STAGE_MUTEX = 4,
+} FeatureCollectorStage;
+
+static int feature_collector_init_unwind(VmafFeatureCollector **const feature_collector,
+                                         VmafFeatureCollector *fc, FeatureCollectorStage stage)
+{
+    if (stage >= FC_STAGE_MUTEX)
+        (void)pthread_mutex_destroy(&(fc->lock));
+    if (stage >= FC_STAGE_AGGREGATE_VECTOR)
+        aggregate_vector_destroy(&(fc->aggregate_vector));
+    if (stage >= FC_STAGE_FEATURE_VECTOR)
+        free((void *)fc->feature_vector);
+    if (stage >= FC_STAGE_STRUCT)
+        free(fc);
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *feature_collector = NULL;
+    return -ENOMEM;
+}
+
 int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
 {
     if (!feature_collector)
@@ -280,38 +318,24 @@ int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
 
     VmafFeatureCollector *const fc = *feature_collector = malloc(sizeof(*fc));
     if (!fc)
-        goto fail;
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_NOTHING);
     memset(fc, 0, sizeof(*fc));
     fc->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
     const size_t fv_sz = sizeof(FeatureVector *) * fc->capacity;
     fc->feature_vector = (FeatureVector **)malloc(fv_sz);
     if (!fc->feature_vector)
-        goto free_fc;
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_STRUCT);
     memset((void *)fc->feature_vector, 0, fv_sz);
     err = aggregate_vector_init(&fc->aggregate_vector);
     if (err)
-        goto free_feature_vector;
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_FEATURE_VECTOR);
     err = pthread_mutex_init(&(fc->lock), NULL);
     if (err)
-        goto free_aggregate_vector;
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_AGGREGATE_VECTOR);
     err = vmaf_metadata_init(&(fc->metadata));
     if (err)
-        goto free_mutex;
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_MUTEX);
     return 0;
-
-free_mutex:
-    pthread_mutex_destroy(&(fc->lock));
-free_aggregate_vector:
-    aggregate_vector_destroy(&(fc->aggregate_vector));
-free_feature_vector:
-    free((void *)fc->feature_vector);
-free_fc:
-    free(fc);
-fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *feature_collector = NULL;
-    return -ENOMEM;
 }
 
 /* Round-5 race fix (findings #2 and #5): mount_model, unmount_model, and the
