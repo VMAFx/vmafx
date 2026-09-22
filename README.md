@@ -172,5 +172,5 @@ Praetor manages this repository's declared governance policy. This managed block
 | **Verification** | `make verify-all` | Runs the repository's configured verification cascade |
 | **HISS Audit** | `praetorctl audit` | Enforces policy, generated-surface integrity, and the debt ratchet |
 | **Context Sync** | `praetorctl compile-context --verify` | Verifies every generated agent context against `AGENTS.md` |
-| **Debt Baseline** | `.standards-baseline.json` | 959 recorded infractions; audit forbids growth |
+| **Debt Baseline** | `.standards-baseline.json` | 286 recorded infractions; audit forbids growth |
 <!-- praetor:readme-governance:end -->
