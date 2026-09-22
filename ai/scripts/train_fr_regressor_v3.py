@@ -502,18 +502,27 @@ def export_onnx(model, onnx_path: Path) -> None:  # type: ignore[no-untyped-def]
     dummy_feat = torch.zeros(1, 6, dtype=torch.float32)
     dummy_codec = torch.zeros(1, CODEC_BLOCK_DIM, dtype=torch.float32)
 
-    dynamic_axes = {
-        "features": {0: "batch"},
-        "codec_block": {0: "batch"},
-        "vmaf": {0: "batch"},
-    }
+    # dynamic_shapes, not dynamic_axes: torch.onnx.export has defaulted to the
+    # dynamo exporter since 2.9, and the dynamo path warns on dynamic_axes
+    # ("# 'dynamic_axes' is not recommended when dynamo=True") before running
+    # the deprecated from_dynamic_axes_to_dynamic_shapes shim. dynamic_shapes
+    # is positional -- one entry per forward argument, outputs are not named --
+    # and a plain string axis name still becomes a torch.export.Dim. Verified
+    # on torch 2.14.0: the graph this produces is byte-identical to the one the
+    # dynamic_axes spelling produced, with no warning.
+    # Both inputs share one batch dimension, so torch.export gives them a
+    # single symbol. Naming it twice makes the exporter warn that the second
+    # name "shares the same shape constraints with another axis"; naming it
+    # once and marking the second input's axis Dim.DYNAMIC leaves both ONNX
+    # inputs with dim_param="batch", byte-identically.
+    dynamic_shapes = ({0: "batch"}, {0: torch.export.Dim.DYNAMIC})
     torch.onnx.export(
         model,
         (dummy_feat, dummy_codec),
         str(onnx_path),
         input_names=["features", "codec_block"],
         output_names=["vmaf"],
-        dynamic_axes=dynamic_axes,
+        dynamic_shapes=dynamic_shapes,
         opset_version=17,
     )
 

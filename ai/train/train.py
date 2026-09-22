@@ -156,13 +156,21 @@ def export_onnx(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     dummy = torch.zeros((1, feature_dim), dtype=torch.float32)
     module.eval()
+    # dynamic_shapes, not dynamic_axes: torch.onnx.export has defaulted to the
+    # dynamo exporter since 2.9, and the dynamo path warns on dynamic_axes
+    # ("# 'dynamic_axes' is not recommended when dynamo=True") before running
+    # the deprecated from_dynamic_axes_to_dynamic_shapes shim. dynamic_shapes
+    # is positional -- one entry per forward argument, outputs are not named --
+    # and a plain string axis name still becomes a torch.export.Dim. Verified
+    # on torch 2.14.0: the graph this produces is byte-identical to the one the
+    # dynamic_axes spelling produced, with no warning.
     torch.onnx.export(
         module,
         (dummy,),
         str(out_path),
         input_names=["input"],
         output_names=["score"],
-        dynamic_axes={"input": {0: "batch"}, "score": {0: "batch"}},
+        dynamic_shapes=({0: "batch"},),
         opset_version=opset,
     )
     return out_path
