@@ -64,17 +64,25 @@
  * previous shot. Guards against detector flicker on flashes / fades. */
 #define VMAF_PER_SHOT_MIN_LEN 4U
 
-/* Upper bound on the frames one scan may consume.
+/* Exclusive upper bound on the frame index one scan may reach.
  *
  * per_shot_record_frame() stores the frame index in a uint32_t, so a stream
- * longer than this would wrap the numbering and silently corrupt the shot
+ * that ran past this would wrap the numbering and silently corrupt the shot
  * table; the scan reports -EFBIG instead. The bound doubles as the scan's
  * static termination guarantee (Power of 10 rule 2) on an input that never
  * reports EOF (a FIFO kept open by a writer, /dev/zero), which the former
  * `for (;;)` had no defence against. It is not a hang timeout: reaching it
  * still means reading UINT32_MAX frames, so such an input still has to be
  * interrupted by the operator. See ADR-1287 and docs/state.md
- * (T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21). */
+ * (T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21).
+ *
+ * The ceiling is tested after the loop rather than before the next read, so
+ * the scan is conservative by exactly one frame: an input of UINT32_MAX
+ * frames is rejected although every one of them was numbered without
+ * wrapping, and the largest input the scan accepts is UINT32_MAX - 1
+ * frames. At 576x324 that boundary is on the order of a petabyte of input,
+ * so it is documented rather than worked around; do not relax the guard
+ * past the counter width to recover the last frame. */
 #define VMAF_PER_SHOT_MAX_FRAMES UINT32_MAX
 
 /* Output format selector. */

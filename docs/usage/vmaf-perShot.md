@@ -168,11 +168,23 @@ content, matching the fork's raw-YUV CLI convention.
   break expected).
 - Shot table capped at 4096 entries (covers ≈3-hour content at
   one cut every 2 s); overflow surfaces as `ENOSPC`.
-- Scan stops after `UINT32_MAX` frames and reports
+- Scan stops when the frame counter reaches `UINT32_MAX` and reports
   `vmaf-perShot: input exceeds the 4294967295-frame scan limit`
-  (`EFBIG`). The limit is the width of the frame counter, so it only
-  ever fires on an input stream that never reaches end of file — a FIFO
-  held open by a writer, or `/dev/zero`.
+  (`EFBIG`). The bound is the width of the `uint32_t` frame index the
+  shot records store, so the numbering can never wrap. Precisely: the
+  scan succeeds for an input of up to 4294967294 frames and reports
+  `EFBIG` for one of 4294967295 frames or more — one frame short of the
+  counter's range, because the ceiling is tested after the last frame it
+  would have numbered rather than before the next read. That
+  conservatism is unreachable in practice: 4.29e9 frames at 576x324 is
+  on the order of a petabyte of input. It is **not** a hang timeout: an
+  input stream that never reaches end of file — a FIFO held open by a
+  writer, or `/dev/zero` — still reads about 4.29e9 frames before the
+  diagnostic appears, so the run still has to be interrupted by the
+  operator. Tracked as
+  `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in
+  [state.md](../state.md); the choice of bound is
+  [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md).
 
 ## Related
 

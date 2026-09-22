@@ -384,12 +384,17 @@ static int vpl_publish_surface(VplDecoder *dec, mfxSyncPoint sync, mfxFrameSurfa
  *
  * The attempt counter bounds the retry loop. Every attempt either returns a
  * frame, reports end of stream, refills the bitstream from the input file, or
- * sleeps VPL_DECODE_RETRY_US before asking the device again. Sleeping retries
- * dominate the worst case, so the bound is sized to the same wall-clock
- * ceiling the SyncOperation above is given: VPL_SYNC_TIMEOUT_MS milliseconds
- * at VPL_DECODE_RETRY_US per retry. A decoder that has produced neither a
- * frame nor an end-of-stream marker by then is wedged — previously the
- * `for (;;)` spun on it forever; now the tool reports it and gives up.
+ * sleeps VPL_DECODE_RETRY_US before asking the device again. The device-busy
+ * retries are the case the bound exists for, so it is sized to the same
+ * wall-clock ceiling the SyncOperation above is given: VPL_SYNC_TIMEOUT_MS
+ * milliseconds at VPL_DECODE_RETRY_US per retry. The refill attempts do not
+ * sleep and are charged against the same budget, so the guarantee is a bound
+ * on attempts (Power of 10 rule 2), not exactly on wall clock; a stream would
+ * have to need more than VPL_DECODE_MAX_ATTEMPTS refills for one frame to
+ * notice the difference. A decoder that has produced neither a frame nor an
+ * end-of-stream marker by then is wedged — previously the `for (;;)` spun on
+ * it forever; now the tool reports it and gives up. Not yet exercised on real
+ * Intel hardware: see ADR-1287 and docs/state.md.
  */
 static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
                             mfxFrameSurface1 **out_held_surf)

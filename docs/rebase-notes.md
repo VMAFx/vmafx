@@ -3,12 +3,14 @@
 
 ## chore/hiss21-core-tools — governance surfaces a rebase must not undo (2026-09-21)
 
-1. **`.standards-baseline.json` was re-recorded downward, 1411 → 965**, with
-   `praetorctl baseline -record` from a clean tracked-file snapshot, after the branch's
-   HISS-21 burn-down cleared the debt and after the three remaining touched-file HISS-04
-   functions were split. The file is append-only downward (see the rule further down this
-   page): resolve a rebase conflict here by re-recording on the merged tree, never by
-   taking whichever side has the larger count.
+1. **`.standards-baseline.json` was re-recorded downward, 1411 → 965 → 938**, with
+   `praetorctl baseline -record` from a clean clone of this branch, after the branch's
+   HISS-21 burn-down cleared the debt. The 965 step was recorded against the praetorctl
+   build pinned on 2026-09-21 (`7c0f803d40ee`); 938 is the same tree re-recorded against
+   `7ec6f6ca5e28`, which fixes that build's signature-relative function-length regression.
+   The file is append-only downward (see the rule further down this page): resolve a
+   rebase conflict here by re-recording on the merged tree, never by taking whichever side
+   has the larger count, and never with `-allow-increase`.
 2. **`README.md` carries a managed `<!-- praetor:readme-governance:start -->` block.**
    The audit engine validates its content, not just the markers, so the block is not free
    prose: a rebase that reflows it, renames the commands back to `standardsctl`, or lets
@@ -16,13 +18,24 @@
    `praetorctl audit` with `managed README governance block is stale`. Keep the row in step
    with the baseline whenever the baseline is re-recorded.
 3. **`.config/hiss/testdata/HISS-04/c/negative/loc-at-cap-60.c` is length-critical.**
-   `exactly_sixty` must span exactly 60 lines from its signature through its closing brace,
-   which is what the brace-tracked Praetor matcher counts. Adding or removing one line
-   there turns the negative fixture into a false positive or stops it pinning the boundary,
-   and `praetorctl hiss coverage --verify` fails either way. Note the counters differ:
-   clang-tidy's `readability-function-size` with `LineThreshold: 60` only reports at span
-   63, so a function this fixture calls clean is not necessarily clean by the stricter
-   Praetor rule.
+   `exactly_sixty` must span exactly 60 lines from its **opening** brace through its
+   closing brace, which is what the brace-tracked Praetor matcher counts; the signature
+   lines above the brace are not counted. Adding or removing one line inside the function
+   turns the negative fixture into a false positive or stops it pinning the boundary, and
+   `praetorctl hiss coverage --verify` fails either way. Measured against praetorctl
+   `7ec6f6ca5e28`: a brace-to-brace span of 60 is clean, 61 is reported. Note the two
+   enforcers differ by exactly one line — clang-tidy's `readability-function-size`
+   (`LineThreshold: 60`) counts closing-brace line minus opening-brace line, so it is clean
+   at a span of 61 and reports at 62 (clang-tidy 22.1.8, this repository's `.clang-tidy`).
+   A function Praetor rejects can still be clean under clang-tidy; Praetor is the stricter
+   of the two and is what gates.
+
+   Historical note for anyone re-reading an older commit message on this branch: the
+   praetorctl build pinned on 2026-09-21 (`7c0f803d40ee`) measured the span from the
+   *signature* line instead of the opening brace, which inflated every wrapped-signature
+   function by one or more lines. Commit messages and notes written against that build
+   quote signature-relative spans; the numbers above are the corrected, brace-relative
+   ones. Re-measure rather than trusting a quoted span.
 
 ## chore/hiss21-core-tools — `yuv_input_open` cleanup path is fork-shaped (2026-09-21)
 
