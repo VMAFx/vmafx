@@ -13131,6 +13131,13 @@ values in divergent-branch kernels. The 25 `.cu` files with nested `if`-divergen
 all candidates for silent score corruption under the 13.2 toolchain.
 
 
+- **The CUDA integer ADM extractor allocates about 50 MB less device memory
+  at 1080p.** Two scratch buffers sized to the frame (`tmp_accum`,
+  3 x w x h x 8 bytes, and `tmp_accum_h`) were allocated at init and passed to
+  kernels that never read them, a leftover from an earlier reduction scheme.
+  They are gone; scores are unchanged.
+
+
 - **chore(deps): Bump pinned CUDA version from 13.2.0 to 13.3.0** across Dockerfile, `dev/Containerfile`, and CI workflow files (`build.yml`, `libvmaf-build-matrix.yml`).
 
 
@@ -19626,10 +19633,31 @@ integer reformulation of it. CPU scores are unchanged (the compiled
   Supersedes ADR-0539 with ADR-1167. Added regression parity tests `test_cuda_adm_small_border` and `test_cuda_adm_wide_rounding` (and HIP twins).
 
 
+- **The AVX2 and AVX-512 integer ADM paths now match the scalar path on
+  high-contrast content.** Part of scale 0's masking threshold is computed in
+  16 bits and wraps on very large values in the scalar path, as it does in
+  upstream Netflix/vmaf's C code; the SIMD paths kept 32 bits there. Content
+  that reaches those values, such as full-range noise or sharp synthetic
+  ramps, scored up to 7e-4 differently on AVX2/AVX-512 than on the scalar
+  path. The SIMD paths now wrap the same way. Scalar scores do not change,
+  and neither do SIMD scores on the Netflix reference clips, which never reach
+  the wrap.
+
+
 **fix(adm):** Remove stale dead-code block and replace the `adm_p_norm` TODO
 comment in `integer_adm.c` with a brief explanatory note. The exponent is fixed
 at 3.0f per the Netflix training-data contract; no runtime parameterisation is
 planned until a model retrain occurs.
+
+
+- **Integer ADM no longer overflows a 32-bit sum on bright 16-bit input.**
+  Scale 0's vertical wavelet pass added up four weighted 16-bit samples in a
+  signed 32-bit integer, which is undefined behaviour once three neighbouring
+  samples reach about 42,000, as in bright HDR or synthetic content. The
+  scalar, AVX2 and AVX-512 paths now form that sum in 64 bits. Scores do not
+  change: the overflow happened to cancel out on the hardware we test, which
+  is also why only a sanitizer build could see it. Upstream Netflix/vmaf has
+  the same code.
 
 
 - `adm_dwt2_8_neon` now matches the scalar `adm_dwt2_8` bit-for-bit. Two
@@ -23536,6 +23564,24 @@ is addressed.
   the correct key.
 
 
+- **The CUDA, HIP and Metal integer ADM twins no longer overflow a 32-bit sum
+  on bright 16-bit input.** Their scale-0 vertical wavelet pass added up four
+  weighted 16-bit samples in a signed 32-bit integer, as the CPU path did
+  until it was fixed. That sum is now formed in 64 bits on every twin; the
+  SYCL twin already did. Scores do not change, and neither does throughput.
+
+
+- **The CUDA and HIP `integer_adm` twins now score frames 17 to 32 pixels wide
+  correctly, and every GPU twin refuses frames below 17x17.** At those widths
+  one of scale 0's right shifts is by zero bits. The CUDA and HIP host code
+  set its rounding term to 2^31 instead of 0, and their scale-0 kernels read
+  one column and one row past the band at the right and bottom edges. Scale 0
+  came out up to 0.2 away from the CPU, and 32x32 frames scored NaN. The CUDA,
+  HIP and SYCL twins also accepted frames smaller than 17x17, which the CPU
+  and Metal extractors refuse; they now fail with `-EINVAL` and an error that
+  names the extractor. Scores for frames wider than 32 pixels do not change.
+
+
 - **CUDA and SYCL CAMBI scores drifted from the CPU reference on real
   content.** Both GPU twins mis-mirrored two host-side stages of
   `cambi.c`. (1) The spatial-mask kernel clamped (replicated) out-of-image
@@ -23623,6 +23669,13 @@ is addressed.
   valid image reference, so none of them could ever build; nothing referenced
   them but a line in `docs/rebase-notes.md`. The publishing workflow already
   uses `-f docker/Dockerfile.node --target <stage>` directly.
+
+
+- **Editing a header now rebuilds the CUDA and HIP kernels that include it.**
+  The nvcc and hipcc build steps did not record header dependencies, so an
+  incremental build after a header change could link host code against
+  kernels compiled for an older struct layout, which crashed or, worse,
+  computed wrong results. Clean builds were never affected.
 
 
 - **The GPU build lanes are warning-free again, and four CI test helpers no longer
@@ -23738,6 +23791,14 @@ See ADR-0792.
   `VMAFX_VMAF_BINARY` / `VMAFX_MODEL_DIR` env vars from the deleted
   template have been folded into `node.yaml` so the ADR-0719 rclone
   integration remains intact.
+
+
+- **The HIP integer ADM kernels read their buffer description through a
+  pointer again (ADR-0759).** The change listed as "HIP ADM: AdmBufferHip
+  passed by pointer" had been undone by a later merge, so four kernels were
+  still copying the 328-byte struct into their arguments on every launch. It
+  is back: each launch now passes one device pointer. Scores are
+  byte-identical and 1080p throughput is unchanged within run-to-run noise.
 
 
 - **The three HIP integer ADM tests are no longer registered `should_fail`,
@@ -24197,6 +24258,11 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
   as the CUDA/SYCL/Vulkan backends: scale-0 emits `0.0`, is excluded from the
   combined `score_num`/`score_den` accumulation, and debug fields
   `integer_vif_num_scale0`/`integer_vif_den_scale0` emit `0.0` when set.
+
+
+- Reuse integer VIF AVX2 and AVX-512 stage-test fixtures per geometry and build
+  their shared logarithm table once, keeping all 3,456 scalar/SIMD comparisons
+  within the Coverage Gate's per-test timeout.
 
 
 - Fixed `integer_vif_sycl`: register `vif_skip_scale0` option and enforce
@@ -25775,6 +25841,15 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   overrides before allocation. Preserve parser behavior
   through dedicated Unicode, streaming, malformed-input and allocator tests,
   and remove the vendored parser's blanket lint suppression.
+
+
+- **Pelorus v0.2.2 interop blobs no longer trigger undefined behavior when the
+  caller's byte buffer has a misaligned base.** The vendored parser now moves
+  wire headers and directory entries through aligned locals with `memcpy` and
+  rejects a `header_size` that would misalign the section directory. ABI 1.3 is
+  unchanged. The shared fixture is again exact Pelorus source (16 vectors), and
+  a required fail-closed drift check plus VMAFx-side lint exclusions prevent
+  local fixture edits from diverging again.
 
 
 `vmaf-tune` per-shot report: Bitrate column now shows real kbps values (was "—" for
@@ -27462,6 +27537,19 @@ backtick code spans.
   ADR-1066).
 
 
+- **The SYCL `integer_adm` twin now scores full-range content like the CPU.**
+  The CPU keeps its scale-0 intermediate values in 16 bits, so very large
+  values wrap around there, and the SYCL twin kept them in 32 or 64 bits.
+  On noisy content, such as two frames of independent random noise,
+  `integer_adm_scale0` came out 2.1e-4 away from the CPU, over the 1e-4
+  cross-backend tolerance, and up to 4.4e-3 away with larger CSF weights.
+  The SYCL twin now wraps at the same points. It also rounds two scale 1-3
+  terms the way the CPU, CUDA and HIP do (the long-standing Netflix#955
+  quirk). That moves SYCL's scale 1-3 and `integer_adm2` scores on ordinary
+  content by less than 1e-6, toward the CPU. The remaining differences are
+  below 3e-7.
+
+
 
 - **The SYCL integer-ADM bit-scan proves its own shift bound.** Both
   `get_best15_from32` equivalents in `core/src/feature/sycl/integer_adm_sycl.cpp`
@@ -28027,6 +28115,17 @@ ADR-0513.
   baselined — the two ssimulacra2 SIMD files by extracting the per-pixel
   edge-diff accumulation both their vector body and their scalar tail carried,
   which also removes the duplication ADR-1208 exists to prevent.
+
+
+- **`make tidy-ratchet LANE=cuda`, `LANE=hip` and `LANE=sycl` run again, and
+  measure the CUDA and HIP kernel files.** `tidy-ratchet.py` handed the lanes'
+  compiler flags to clang-tidy as clang-tidy options, and resolved the build
+  directory and the SYCL wrapper relative to each translation unit's
+  directory, so every GPU lane failed before measuring anything. The `.cu` and
+  `.hip` files were also missing from `compile_commands.json`, because meson
+  builds them through custom targets; the new
+  `scripts/ci/gen-gpu-compile-commands.py` adds them, and the make target runs
+  it first. The Tidy Ratchet job now tests this tooling on every pull request.
 
 
 - CI: the required `Tidy Changed` and `Tidy Ratchet` gates failed on every C/C++

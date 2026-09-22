@@ -330,10 +330,13 @@ if is_hipcc_enabled and is_hip_enabled
     }
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])
+        # hipcc ignores -MD/-MF under --genco; the device frontend writes the
+        # depfile when asked directly, so header edits rebuild the HSACO.
         hsaco_target = custom_target('hip_hsaco_' + name,
             build_by_default: true,
             output: name + '.hsaco',
             input: src,
+            depfile: name + '.hsaco.d',
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
                      hip_include_flags + per_kernel_flags +
                      ['-I', meson.current_source_dir(),
@@ -341,6 +344,8 @@ if is_hipcc_enabled and is_hip_enabled
                       '-I', meson.current_source_dir() + '/feature/hip',
                       '-I', meson.current_source_dir() + '/hip',
                       '-I', meson.current_build_dir(),
+                      '-Xclang', '-dependency-file', '-Xclang', '@DEPFILE@',
+                      '-Xclang', '-MT', '-Xclang', '@OUTPUT@',
                       '@INPUT@', '-o', '@OUTPUT@'],
         )
         hsaco_c_target = custom_target('hip_hsaco_c_' + name,
@@ -1390,6 +1395,13 @@ if is_cuda_enabled
         '-I', meson.current_source_dir() / 'feature',
         '-I', meson.current_source_dir() / cuda_dir,
     ]
+    # nvcc writes the headers each kernel includes to a depfile, so editing
+    # one (a struct passed to a kernel by value, say) rebuilds the fatbin
+    # instead of leaving a stale kernel that no longer matches the host. Not
+    # on Windows, where nvcc preprocesses through cl.exe; that lane builds
+    # from clean.
+    nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
+        '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
     ptx_files = {}
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
@@ -1397,6 +1409,7 @@ if is_cuda_enabled
             build_by_default: true,
             output : ['@0@.fatbin'.format(name)],
             input : _cu,
+            depfile : '@0@.fatbin.d'.format(name),
             command : [nvcc_exe,
                 gencode,
                 '@INPUT@',
@@ -1405,6 +1418,7 @@ if is_cuda_enabled
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
             ] + nvcc_thread_flags + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
+              + nvcc_dep_flags
         )
         ptx_files += {name : [t]}
     endforeach
@@ -2154,7 +2168,8 @@ libvmaf_sources = [
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
     # denoise param contracts, x265 CSV QP-report reader, version/result-string
     # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
-    # VMAFx/pelorus@818d844 (ABI 1.3) — DO NOT EDIT; re-sync via
+    # VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 (ABI 1.3).
+    # DO NOT EDIT; re-sync via
     # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',
     src_dir + 'interop/pelorus_deband_params.c',

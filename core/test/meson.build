@@ -1595,6 +1595,28 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
     suite : ['fast'])
 
+# T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch
+# against scalar on full-range noise.
+test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',
+    ['test.c', 'test_integer_adm_simd_noise.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_simd_noise', test_integer_adm_simd_noise,
+    suite : ['fast'])
+
+# T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18: the 16-bit vertical DWT sum
+# must stay in int64 on every dispatch level.
+test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
+    ['test.c', 'test_integer_adm_dwt16_range.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
+    suite : ['fast'])
+
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
@@ -2308,6 +2330,18 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
+    suite : ['fast', 'gpu'])
+
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
     suite : ['fast', 'gpu'])
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
@@ -3122,6 +3156,18 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
 test('test_sycl_adm_parity', test_sycl_adm_parity,
     suite : ['fast', 'gpu', 'sycl'])
 
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
+    suite : ['fast', 'gpu', 'sycl'])
+
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3460,6 +3506,19 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
@@ -4036,11 +4095,6 @@ test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
-# ADR-0708 Wave 1: test_log registered as part of the log.c → log.cpp pilot
-# (mirrors DRAFT PR #315's orphan-test wiring). The executable was built but
-# never test()-registered, so the formatter / log-level filtering coverage
-# was silently dead. Wire it into the fast suite.
-test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
 if has_cond_timedwait

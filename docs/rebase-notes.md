@@ -1,6 +1,37 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/pelorus-interop-sync-v022 — exact v0.2.2 parser safety mirror (2026-09-20)
+
+No Netflix-upstream file is involved. The cross-repo conflict surface is the
+fork-local Pelorus mirror, its sync/lint tooling, and the existing required
+Pre-Commit workflow. ADR-1276 records the re-pin and fail-closed maintenance
+contract while preserving ADR-1113's base mirror decision.
+
+- `PELORUS_VENDOR_SHA` is the full released v0.2.2 commit
+  `93bef1206d68d9e09024c08a12732fb8e77b9b16`. ABI stays 1.3. A future rebase
+  must not infer that an unchanged ABI minor makes a parser fix optional:
+  reviewed correctness/security releases are re-pin triggers too.
+- `pelorus_interop.c` copies the wire header and directory entries into aligned
+  locals before access. Do not restore pointer casts from byte addresses; a
+  valid caller buffer may have any base alignment. Keep the rejection of a
+  `header_size` that is not 8-byte aligned.
+- From its first vendored include onward, `test_pelorus_interop.c` is exact
+  Pelorus source except for the include rewrite. Do not reapply PR #1351's
+  VMAFx-only `NOLINT` band or `(void)` casts. Formatting/tidy exclusions belong
+  in VMAFx tooling. The drift guard renders the VMAFx prefix canonically from
+  the source pin and ABI version, then compares the complete fixture exactly.
+- Native-lint exemption uses an explicit manifest-owned path set. The sync
+  guard rejects extra or missing tracked files in the Pelorus header/source
+  namespaces; do not restore prefix-wide exemption without that fail-closed
+  manifest check.
+- The guard must keep reading the pinned Git object and failing closed for a
+  plain directory or a checkout that lacks it. The existing required
+  `Pre-Commit` job checks out that exact object and runs the default guard.
+- The fixture's `fopen(path, "w")` remains an upstream-owned CodeQL finding,
+  tracked separately in `docs/state.md`. Fix it in Pelorus and re-vendor; do not
+  patch only the VMAFx mirror.
+
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
 Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels
@@ -233,6 +264,88 @@ Touched files:
 `docs/metrics/features.md`, `docs/state.md`,
 `changelog.d/fixed/hip-integer-ssim-int64-kernel.md`, `CHANGELOG.md`,
 `scripts/ci/tidy-baseline-hip.json` (scoped tightening).
+## perf/hip-adm-buffer-by-pointer — HIP integer ADM buffer by pointer, re-applied (2026-09-18)
+
+ADR-0759 (the four HIP ADM kernels that read `AdmBufferHip` take it by
+pointer) landed in #101 and was silently reverted by the next merge, #102,
+whose branch predated it (T-HIP-ADM-ADR0759-REVERTED-2026-09-18). The HIP
+twin is fork-only, so an upstream sync cannot conflict with it; the risk is
+another fork branch cut before this change. When merging or rebasing anything
+that touches these files, keep:
+
+- `core/src/feature/hip/integer_adm/adm_csf.hip` and `adm_cm.hip`:
+  `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4`, `i4_adm_cm_line_kernel` and
+  `adm_cm_line_kernel_8` take `const AdmBufferHip *__restrict__ buf_ptr`.
+  `adm_csf.hip` also carries its lint restructure (helpers in an anonymous
+  namespace, `csf_band_sample()`); kernel names and launch layouts are
+  unchanged.
+- `core/src/feature/hip/integer_adm_hip.c`: `AdmStateHip::buf_dev`, uploaded
+  by `adm_hip_upload_buf()` at the end of `adm_hip_init_device()` and freed by
+  `adm_hip_free_buf_dev()` in `close_fex_hip()` and the init failure paths;
+  the four launches pass `(void *)&s->buf_dev`.
+
+Check after any merge that touches them:
+`grep -n 'AdmBufferHip buf' core/src/feature/hip/integer_adm/*.hip` must print
+nothing. Kernel and host must change together: a by-value kernel launched
+with `&s->buf_dev` gets 328 bytes copied from that address as the struct and
+dereferences whatever follows `buf_dev` in `AdmStateHip`.
+
+## fix/gpu-adm-dwt2-16bit-overflow — GPU integer ADM 16-bit vertical DWT sum (2026-09-18)
+
+Upstream Netflix/vmaf's CUDA integer ADM sums the scale-0 vertical DWT response
+of 16-bit samples in `int32_t`, which overflows once three samples reach 42456
+(T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18). When a sync touches these
+files, keep the fork form:
+
+- `core/src/feature/cuda/integer_adm/adm_dwt2.cu` and its HIP twin
+  `adm_dwt2.hip`: the fused scale-0 kernel accumulates in
+  `DwtVertAccum<T>::type`, which is int64 for `uint16_t` input. The kernel is
+  also split into `adm_dwt2_load_column()`, `adm_dwt2_vert_tile()` and
+  `adm_dwt2_hori_tile()`, and the device helpers sit in an anonymous
+  namespace; re-apply upstream's arithmetic intent onto that structure rather
+  than taking its file.
+- `core/src/feature/metal/integer_adm.metal`: the raw vertical DWT kernel sums
+  in `long`.
+
+## fix/gpu-adm-tiny-frames — GPU integer ADM on frames 17 to 32 pixels wide (2026-09-18)
+
+Upstream Netflix/vmaf ships the CUDA integer ADM this fork mirrors, and it
+carries both defects fixed here (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18). When a
+sync touches these files, keep the fork form:
+
+- `core/src/feature/cuda/integer_adm_cuda.c`: the scale-0 cube and inner-accum
+  rounding constants are `adm_half_shift(x)` from
+  `core/src/feature/adm_csf_fixed_point.h`, where upstream writes
+  `1 << (x - 1)`; `init_fex_cuda()` starts with `adm_frame_size_check()`.
+- `core/src/feature/cuda/integer_adm/adm_cm.cu`, both scale-0 kernels: the
+  neighbour clamps are `pos_x[2] = min(pos_x[2], w - 1)` and
+  `pos_y = min(pos_y, h - 1)`. Upstream's `pos - max(0, 2 * (x - w) + 1)` uses
+  the base index and reads one column and one row past the band.
+  `test_cuda_adm_tiny_frames` fails on either upstream form.
+- `integer_adm_cuda.c`, 10/16-bit path: `curr_ref_stride` comes from
+  `ref_pic` and `curr_dis_stride` from `dis_pic`; upstream swaps them. Keep the
+  fork form.
+- Both files were restructured to zero clang-tidy findings (ADR-1142):
+  helpers in anonymous namespaces, unused kernel parameters unnamed, the host
+  glue split into single-purpose functions. Kernel names and parameter layouts
+  are unchanged. A sync that touches them ports upstream's intent into the
+  fork structure rather than taking upstream's text.
+
+The HIP (`integer_adm_hip.c`, `integer_adm/adm_cm.hip`) and SYCL
+(`integer_adm_sycl.cpp`) twins are fork-only; the same rules apply to them.
+`integer_adm_sycl.cpp`'s internals now sit in an anonymous namespace rather
+than behind C-style `static`.
+
+SYCL now reproduces the CPU's integer semantics exactly where it used to
+widen (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18): scale-0 intermediates wrap to
+16 bits through `adm_i16()`, the diagonal `csf_a` rounds with 65535, and the
+scale 1-3 filter terms round with `I4_FLT_ROUND`, the wrapped `-2^31` of the
+Netflix#955 quirk that ADR-0155 keeps for the golden values (entry 0048
+below covers the CPU and CUDA/HIP forms; this is the SYCL one). If an
+upstream change to `integer_adm.c` alters any of those narrowings or rounding
+terms, change the SYCL twin with it; `test_sycl_adm_tiny_frames` (noise
+geometries) catches a mismatch.
+
 ## port/upstream-2026-09 — Netflix/vmaf `03b5562c5`..`86da14d03` (2026-09-18)
 
 Reconciles upstream through `86da14d03` (previous mark `f85a85369`, PR #1456).
@@ -260,6 +373,14 @@ Ported:
 
 Fork-only fix upstream still needs:
 
+- `integer_adm.c` `adm_dwt2_vpass_16()` and the scalar vertical loops of
+  `adm_dwt2_16_avx2()` / `adm_dwt2_16_avx512()`: the 16-bit vertical DWT
+  response is formed by `adm_dwt2_vpass16_tap4()` in `integer_adm.h`, in
+  int64. Upstream sums `filter[k] * s[k]` in `int32_t`, which overflows once
+  three consecutive 16-bit samples reach 42456
+  (T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18). When a sync touches these
+  loops, keep the helper; `test_integer_adm_dwt16_range` aborts on the
+  sanitizer lane with the upstream form. Scores are identical either way.
 - `integer_adm.c` `dwt2_src_indices_1d()`: the mirrored tail starts at
   `(n_half > 2u) ? n_half - 2u : 1u` and the first loop is bounded with
   `i + 2 < n_half`. Upstream's `n_half - 2` restarts the tail at 0 when
@@ -276,6 +397,13 @@ Fork-only fix upstream still needs:
   fails at 17x70 with the upstream form on an AVX-512 host, and the UBSan
   lane flags it on any x86 host. `adm_half_shift()` moved there from
   `integer_adm.c`, whose frame-size check is now `adm_frame_size_check()`.
+- `x86/adm_avx2.c` and `x86/adm_avx512.c`, `ADM_CM_THRESH_S_I_J_avx256` /
+  `_avx512`: after each centre tap's `srai(..., 12)` the fork sign-extends the
+  low 16 bits (`srai(slli(x, 16), 16)`), reproducing the scalar reference's
+  `(int16_t)` conversion. Upstream's vector macros keep 32 bits and differ
+  from its own scalar on full-range content
+  (T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18). Keep the fork form;
+  `test_integer_adm_simd_noise` fails without it.
 
 Retired (ADR-1257): `adm_dwt2_8_neon_apple_legacy()` and the
 `#if defined(__APPLE__)` NEON dispatch branch in `integer_adm.c`. Apple

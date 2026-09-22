@@ -35,6 +35,26 @@ jobs:
           # against files no hook actually touched.
           lfs: true
           persist-credentials: false
+      - name: Resolve exact Pelorus vendor pin
+        id: pelorus-vendor
+        shell: bash
+        run: |
+          pin="$(sed -nE 's/^PELORUS_VENDOR_SHA="([0-9a-f]{40})"$/\1/p' \
+            scripts/sync-pelorus-interop.sh)"
+          if [[ ! "${pin}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::scripts/sync-pelorus-interop.sh must declare one full Git SHA" >&2
+            exit 1
+          fi
+          echo "sha=${pin}" >> "${GITHUB_OUTPUT}"
+      - name: Check out exact Pelorus source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: VMAFx/pelorus
+          ref: ${{ steps.pelorus-vendor.outputs.sha }}
+          path: .ci/pelorus
+          persist-credentials: false
+      - name: Verify Pelorus mirror and shared conformance fixture
+        run: scripts/sync-pelorus-interop.sh "${GITHUB_WORKSPACE}/.ci/pelorus"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.7"
@@ -215,14 +235,12 @@ jobs:
           #     C++: libbpf's `SEC()` macro identifiers, and programs and maps
           #     that must keep external linkage for the loader to find them.
           #     Same posture as the CUDA/SYCL/HIP families above.
-          #   - core/src/interop/pelorus_*.c +
-          #     core/include/libvmaf/pelorus/ +
-          #     core/test/test_pelorus_interop.c — vendored verbatim mirror of
-          #     the Pelorus interop ABI (ADR-1113), byte-identical to its
-          #     single source of truth; cannot absorb fork-local lint fixes
-          #     without breaking scripts/sync-pelorus-interop.sh. Same posture
-          #     as core/src/svm.cpp (vendored, excluded). Fix upstream in
-          #     pelorus and re-sync.
+          #   - Paths in scripts/ci/pelorus-mirror-paths.txt — vendored
+          #     verbatim mirror of the Pelorus interop ABI (ADR-1113),
+          #     byte-identical to its single source of truth; cannot absorb
+          #     fork-local lint fixes without breaking the sync guard. The
+          #     shared filter is exact-path based, so an unmanifested
+          #     pelorus_*.cpp remains lint-owned. Fix upstream and re-sync.
           #   - core/test/test_adm_small_border.c +
           #     core/test/test_adm_wide_rounding.c — backend-neutral source
           #     names, but meson builds them only as test_cuda_adm_* and
@@ -253,10 +271,8 @@ jobs:
               -e '^core/test/test_hip' \
               -e '^core/test/fuzz/' \
               -e '^core/src/compat/win32/' \
-              -e '^core/src/interop/pelorus_' \
-              -e '^core/include/libvmaf/pelorus/' \
-              -e '^core/test/test_pelorus_interop\.c$' \
-              -e '^cmd/vmafx-node/bpf/'
+              -e '^cmd/vmafx-node/bpf/' |
+              python3 scripts/ci/pelorus_mirror.py filter
           }
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
@@ -323,6 +339,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Self-test the ratchet tooling
+        # Runs on every PR, not only C ones: the tooling itself lives under
+        # scripts/ci/, and the GPU lanes run it only on workstations.
+        run: |
+          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_ratchet.py'
+          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_gen_gpu_compile_commands.py'
       - name: Plan CI impact (ADR-1140)
         id: impact
         env:

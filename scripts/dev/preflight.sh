@@ -197,6 +197,22 @@ if want msvcism; then
   # __attribute__ needs its double parens; a single pair is a clang error.
   check_pattern '__attribute__\([a-z_]' '__attribute__ with single parens — clang rejects'
 
+  # nvcc's MSVC host frontend rejects C++20 designated initializers in device
+  # code -- "error: expected an expression" at the first `.field =` -- while its
+  # GCC frontend accepts them, so the construct passes every Linux build and
+  # only the Windows CUDA lane sees it (2026-09-20, adm_cm.cu, bug ledger L-84).
+  # Device code uses positional aggregate initialization with the field name in
+  # a trailing comment instead.
+  cu_designated=$(changed_sources | grep -E '\.(cu|cuh)$' | while read -r f; do
+    grep -nE '(\{|,)[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=|^[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*(,|\{)[[:space:]]*$' "$f" 2>/dev/null |
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
+  done | head -5)
+  if [ -n "$cu_designated" ]; then
+    printf '     %s\n' 'designated initializer in CUDA device code — nvcc/MSVC "expected an expression"'
+    printf '%s\n' "$cu_designated" | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
   # ADR-1138: C translation units keep `NULL`. MSVC's documented /std:clatest
   # C23 feature set does not implement the `nullptr` keyword, and the Windows
   # lane compiles core/ with cl.exe. gcc accepts it and clang accepts it under
@@ -328,7 +344,7 @@ if want tidy; then
           core/src/sycl/* | core/src/feature/sycl/* | core/src/hip/* | \
           core/src/feature/hip/* | core/test/test_cuda_* | core/test/test_sycl* | \
           core/test/test_hip* | core/test/fuzz/* | core/src/mcp/* | \
-          core/src/compat/win32/* | core/src/interop/pelorus_*) continue ;;
+          core/src/compat/win32/*) continue ;;
       esac
       n=$(clang-tidy -p build --quiet "$f" 2>/dev/null |
         grep -E 'warning:' | grep -vc 'clang-diagnostic')
@@ -336,7 +352,7 @@ if want tidy; then
         printf '     %-52s %s warning(s)\n' "$f" "$n"
         tidy_fail=1
       fi
-    done < <(changed_sources)
+    done < <(changed_sources | python3 scripts/ci/pelorus_mirror.py filter)
     if [ "$tidy_fail" -eq 0 ]; then
       ok tidy
     else

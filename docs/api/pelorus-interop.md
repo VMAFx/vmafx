@@ -11,11 +11,14 @@ round-trips a filtergraph and never collides with codec side data.
 This ABI is **single-sourced in Pelorus** (Pelorus ADR-0103). vmafx carries a
 **verbatim, pinned, read-only mirror** of it so the two repos can build, test,
 and evolve independently without a submodule or a shared package. The vendoring
-decision and its guard rails are recorded in
-[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md).
+decision is recorded in
+[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md); the current safety
+re-pin and exact-mirror guard rails are recorded in
+[ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md).
 
 > **The mirror is read-only.** Do not edit the vendored files. They are
-> byte-identical to their Pelorus origin (pinned at `VMAFx/pelorus@818d844`)
+> byte-identical to their Pelorus origin (pinned at
+> `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`)
 > except for a `VENDORED FROM … DO NOT EDIT` banner and the include-path
 > rewrite described below. Fix any defect upstream in Pelorus, then re-sync.
 
@@ -45,15 +48,20 @@ Pelorus's. (`qp_report_csv.c` is required to link: the ABI-1.3 fixture exercises
 
 ### The only local edits
 
-1. A `VENDORED FROM VMAFx/pelorus@818d844 — DO NOT EDIT` banner inserted after
-   the (unchanged) Pelorus license header.
+1. A `VENDORED FROM
+   VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 — DO NOT EDIT`
+   banner inserted after the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under
    `core/include/`. Nothing else changes.
 
 The conformance test additionally carries a vmafx-authored
-(`Copyright 2026 Lusoris`) header instead of cloning Pelorus's, and is run
-through the fork's `clang-format`; its body is otherwise the same vectors.
+(`Copyright 2026 Lusoris`) header instead of cloning Pelorus's. From its first
+vendored `#include` onward, its body is exact Pelorus source apart from the same
+include rewrite. The sync script renders that prefix canonically from the pin
+and ABI version, then appends the transformed body. VMAFx format and tidy
+scopes exclude only the manifest-owned fixture path; lint-policy changes belong
+in VMAFx tooling, never in the fixture.
 
 ## The blob, in brief
 
@@ -90,6 +98,15 @@ accidental layout change is a **build failure**, not a silent corruption.
 | `pel_blob_is_present(blob, len)` | Cheap pre-check: is this a valid Pelorus blob (UUID + magic + ABI major)? |
 | `pel_blob_find_section(blob, len, sec, known_size, &ptr, &size)` | Locate a section; returns a pointer into the blob plus `min(producer, consumer)` readable bytes. |
 
+Pelorus v0.2.2 accepts a blob at **any caller-buffer base alignment**. The
+parser and packer move wire headers and directory entries through aligned local
+objects with `memcpy`; they never cast an untrusted byte address to a structured
+pointer. Framing still requires `header_size` and each directory offset to be
+8-byte aligned relative to the blob, and malformed values return `PEL_ERR_ABI`.
+Because a valid section pointer is relative to the caller's possibly unaligned
+base, consumers must `memcpy` a returned section into a suitably aligned local
+object before typed access whenever the caller buffer is not suitably aligned.
+
 vmafx is a **reader only** — it never mutates a blob (single-writer invariant:
 Pelorus is the sole writer). The reader side (perceptual weighting) is a
 separate workstream and is not part of this vendor PR.
@@ -115,16 +132,18 @@ The ABI is normative; both repos depend on these rules (verbatim from
   forbid for additive evolution) — in practice it never bumps.
   `PELORUS_ABI_MINOR` bumps when a new section bit or appended field lands.
 
-The current ABI is **1.3** (`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=3`).
+The current library release is **0.2.2** and the ABI remains **1.3**
+(`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=3`).
 Minor 1.1 added `PEL_SEC_QPREPORT`, 1.2 added `PEL_SEC_MOTION_CONF`, 1.3 added
 `PEL_SEC_COMPLEXITY` — all append-only, so the major stayed at 1 and the mirror
-re-pin (ADR-1120) was non-breaking.
+re-pin (ADR-1120) was non-breaking. The 0.2.2 re-pin changes parser safety
+semantics only; it does not add or alter an ABI field or section.
 
 ## Conformance fixture — the byte-compat proof
 
 `core/test/test_pelorus_interop.c` is the **same fixture both repos run**. It
 exercises the following vectors against the vendored parser (the ABI-1.3 fixture
-grew the original seven to fourteen):
+grew the original seven to sixteen):
 
 1. `roundtrip` — pack three sections, parse them back, verify scalars + the
    8-byte-aligned 64-bit `seed` survives.
@@ -138,15 +157,20 @@ grew the original seven to fourteen):
 6. `truncation` — a short buffer is detected, never read out of bounds.
 7. `misaligned_offset` — a section whose `dir.offset` is not 8-aligned is
    rejected (R5) rather than handed out for an unaligned cast.
-8. `pack_size_overflow` — a section size that would overflow the framing is
+8. `misaligned_blob_base` — a valid blob re-homed at every base skew from one
+   through seven bytes parses without undefined behavior; the section payload
+   is read safely through `memcpy`.
+9. `unaligned_header_size` — a header size that would place the directory on a
+   non-8-byte boundary is rejected as corrupt framing.
+10. `pack_size_overflow` — a section size that would overflow the framing is
    rejected, not wrapped.
-9. `qp_report_roundtrip` — pack/parse the `PEL_SEC_QPREPORT` section (ABI 1.1).
-10. `motion_conf_roundtrip` — pack/parse the `PEL_SEC_MOTION_CONF` section (1.2).
-11. `complexity_roundtrip` — pack/parse the `PEL_SEC_COMPLEXITY` section (1.3).
-12. `qp_report_fold` — fold parsed frames into a bit-weighted QP report.
-13. `x265_csv_reader` — `pel_x265_csv_parse` reads a real x265 `--csv` table,
+11. `qp_report_roundtrip` — pack/parse the `PEL_SEC_QPREPORT` section (ABI 1.1).
+12. `motion_conf_roundtrip` — pack/parse the `PEL_SEC_MOTION_CONF` section (1.2).
+13. `complexity_roundtrip` — pack/parse the `PEL_SEC_COMPLEXITY` section (1.3).
+14. `qp_report_fold` — fold parsed frames into a bit-weighted QP report.
+15. `x265_csv_reader` — `pel_x265_csv_parse` reads a real x265 `--csv` table,
     drops the aggregate row, and computes `honored_fraction`.
-14. `deband_params` — the deband contract: defaults validate, out-of-range is
+16. `deband_params` — the deband contract: defaults validate, out-of-range is
     rejected with the offending field name.
 
 A green run here proves vmafx's vendored parser is byte-identical to Pelorus's
@@ -164,33 +188,44 @@ meson test -C core/build-cpu test_pelorus_interop   # all vectors, must pass
 The pin and the drift guard live in
 [`scripts/sync-pelorus-interop.sh`](../../scripts/sync-pelorus-interop.sh). It
 reads the vendored sources from the **pinned commit's git tree object**
-(`git show 818d844:libpelorus/…`), so it stays accurate even when the local
-Pelorus checkout's `HEAD` has moved past the pin.
+(`git show 93bef1206d68d9e09024c08a12732fb8e77b9b16:libpelorus/…`), so it
+stays accurate even when the local Pelorus checkout's `HEAD` has moved past the
+pin. A directory that is not a Git checkout, or a checkout that lacks the exact
+object, fails closed.
 
 ```bash
 # Drift check (CI gate). Path defaults to $PELORUS_DIR or ../pelorus.
 scripts/sync-pelorus-interop.sh /path/to/pelorus
-#   OK   — mirror matches pelorus@818d844
+#   OK   — mirror matches pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16
 #   FAIL — mirror has drifted (prints a diff), exit 1
 
-# Re-vendor after a DELIBERATE pelorus ABI-minor bump:
+# Re-vendor after a reviewed Pelorus ABI addition or released parser
+# correctness/security fix (an ABI-minor bump is not required):
 #   1. bump PELORUS_VENDOR_SHA in the script + this doc + ADR (the banners are
 #      rewritten automatically by --update)
-#   2. add any new pelorus source/header to the script's `manifest` (and to
-#      core/src/meson.build + the test target if it needs to compile/link)
+#   2. add any new Pelorus source/header to the script's render manifest and
+#      scripts/ci/pelorus-mirror-paths.txt (plus core/src/meson.build + the
+#      test target if it needs to compile/link); the guard requires both path
+#      sets to match exactly
 #   3. re-vendor and confirm clean:
 scripts/sync-pelorus-interop.sh --update /path/to/pelorus
 scripts/sync-pelorus-interop.sh /path/to/pelorus
 #   4. rebuild + run the conformance fixture (must stay green).
 ```
 
-`--update` re-vendors both the manifest files **and** the conformance-fixture
-body (the Lusoris-authored header before the first vendored `#include` is
-preserved; only the body from that include onward is replaced and the
-`pelorus/` → `libvmaf/pelorus/` include rewrite re-applied). The drift check
-compares the fixture body whitespace-insensitively, and the pelorus repo formats
-its C with the same `.clang-format`, so the vendored body is already format-clean.
+`--update` re-vendors both the manifest files **and the complete conformance
+fixture**. It regenerates the canonical Lusoris-authored prefix with the pinned
+commit and ABI version, then appends the Pelorus body with the `pelorus/` →
+`libvmaf/pelorus/` include rewrite. The drift check compares every complete
+rendered file byte-for-byte through EOF, so a prefix mutation, stale fixture
+pin, or missing/extra final newline is drift. It also rejects any added or
+missing tracked file in the exact-mirror lint namespaces unless the manifest
+owns that path. Local formatting or tidy edits therefore fail the guard instead
+of becoming a second implementation or silently gaining a lint exemption.
 
 A re-sync that changes the ABI is an ADR-worthy event (a new section bit or an
 appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-pin
-as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md).
+as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md). A
+released parser-only correctness/security fix keeps the ABI number intact and
+is recorded in a new follow-up decision plus research evidence; ADR-1276
+records the v0.2.2 safety re-pin while preserving ADR-1113's immutable body.
