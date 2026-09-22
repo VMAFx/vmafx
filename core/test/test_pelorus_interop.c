@@ -67,6 +67,40 @@ static void fill_meta(PelorusSideData *m)
     m->producer_id = PEL_FOURCC('P', 'L', 'R', 'S');
 }
 
+/* Populate the three payload structs the round-trip packs and point the
+ * section descriptors at them. */
+static void fill_sections(PelorusBandingSection *band, PelorusVarianceSection *var,
+                          PelorusFilmGrainSection *grain, PelorusPackSection secs[3])
+{
+    memset(band, 0, sizeof(*band));
+    band->global_banding_risk = 0.42f;
+    band->flat_area_fraction = 0.61f;
+    band->contour_strength_mean = 0.03f;
+    band->dominant_band_luma = 0.18f;
+
+    memset(var, 0, sizeof(*var));
+    var->global_variance = 0.25f;
+    var->edge_density = 0.10f;
+    var->texture_energy = 0.33f;
+
+    memset(grain, 0, sizeof(*grain));
+    grain->apply = 1;
+    grain->seed = 0xDEADBEEFCAFEULL; /* exercises 8-byte alignment of u64 */
+    grain->num_y_points = 3;
+    grain->scaling_shift = 8;
+    grain->ar_coeff_lag = 2;
+
+    secs[0].id = PEL_SEC_BANDING;
+    secs[0].data = band;
+    secs[0].size = (uint32_t)sizeof(*band);
+    secs[1].id = PEL_SEC_VARIANCE;
+    secs[1].data = var;
+    secs[1].size = (uint32_t)sizeof(*var);
+    secs[2].id = PEL_SEC_FILMGRAIN;
+    secs[2].data = grain;
+    secs[2].size = (uint32_t)sizeof(*grain);
+}
+
 /* Round-trip: pack three sections, parse them back, verify scalars + framing. */
 static void test_roundtrip(void)
 {
@@ -82,33 +116,7 @@ static void test_roundtrip(void)
 
     fill_meta(&meta);
 
-    memset(&band, 0, sizeof(band));
-    band.global_banding_risk = 0.42f;
-    band.flat_area_fraction = 0.61f;
-    band.contour_strength_mean = 0.03f;
-    band.dominant_band_luma = 0.18f;
-
-    memset(&var, 0, sizeof(var));
-    var.global_variance = 0.25f;
-    var.edge_density = 0.10f;
-    var.texture_energy = 0.33f;
-
-    memset(&grain, 0, sizeof(grain));
-    grain.apply = 1;
-    grain.seed = 0xDEADBEEFCAFEULL; /* exercises 8-byte alignment of u64 */
-    grain.num_y_points = 3;
-    grain.scaling_shift = 8;
-    grain.ar_coeff_lag = 2;
-
-    secs[0].id = PEL_SEC_BANDING;
-    secs[0].data = &band;
-    secs[0].size = (uint32_t)sizeof(band);
-    secs[1].id = PEL_SEC_VARIANCE;
-    secs[1].data = &var;
-    secs[1].size = (uint32_t)sizeof(var);
-    secs[2].id = PEL_SEC_FILMGRAIN;
-    secs[2].data = &grain;
-    secs[2].size = (uint32_t)sizeof(grain);
+    fill_sections(&band, &var, &grain, secs);
 
     CHECK(pel_blob_pack(&meta, secs, 3, &blob, &len) == PEL_OK);
     CHECK(blob != NULL);
@@ -323,6 +331,44 @@ static void test_pack_size_overflow(void)
 
 /* PEL_SEC_QPREPORT (f): pack the encoder-honored QP readback with a per-cell
  * QP map appended after the blob, parse it back, verify scalars + the map. */
+/* The QP-report scalars the round-trip writes; `cells` matches fill_meta's
+ * 16x9 grid, one int8 per cell. */
+static void fill_qp_report(PelorusQpReportSection *qp, uint16_t cells)
+{
+    memset(qp, 0, sizeof(*qp));
+    qp->avg_qp = 27.5f;
+    qp->psnr_y = 41.2f;
+    qp->total_bits = 1234567ULL; /* exercises the 64-bit field alignment */
+    qp->num_intra_blocks = 40;
+    qp->num_inter_blocks = 200;
+    qp->num_skipped_blocks = 16;
+    qp->honored_fraction = 0.75f;
+    qp->report_source = PEL_QPSRC_QSV;
+    qp->block_size_log2 = 4; /* 16x16 */
+    qp->qp_valid = 1;
+    qp->qp_cell_size = cells; /* int8 per cell */
+}
+
+/* Every scalar fill_qp_report() wrote has to survive the pack/parse pair, and
+ * the fields it left alone have to stay zero. */
+static void check_qp_report(const void *parsed, uint16_t cells)
+{
+    const PelorusQpReportSection *r = parsed;
+    CHECK(r->avg_qp == 27.5f);
+    CHECK(r->psnr_y == 41.2f);
+    CHECK(r->total_bits == 1234567ULL);
+    CHECK(r->num_inter_blocks == 200);
+    CHECK(r->honored_fraction == 0.75f);
+    CHECK(r->report_source == PEL_QPSRC_QSV);
+    CHECK(r->block_size_log2 == 4);
+    CHECK(r->qp_valid == 1);
+    CHECK(r->qp_cell_size == cells);
+    CHECK(r->num_intra_blocks == 40);
+    CHECK(r->num_skipped_blocks == 16);
+    CHECK(r->psnr_u == 0.0f);
+    CHECK(r->psnr_v == 0.0f);
+}
+
 static void test_qp_report_roundtrip(void)
 {
     PelorusSideData meta;
@@ -338,18 +384,7 @@ static void test_qp_report_roundtrip(void)
 
     fill_meta(&meta);
 
-    memset(&qp, 0, sizeof(qp));
-    qp.avg_qp = 27.5f;
-    qp.psnr_y = 41.2f;
-    qp.total_bits = 1234567ULL; /* exercises the 64-bit field alignment */
-    qp.num_intra_blocks = 40;
-    qp.num_inter_blocks = 200;
-    qp.num_skipped_blocks = 16;
-    qp.honored_fraction = 0.75f;
-    qp.report_source = PEL_QPSRC_QSV;
-    qp.block_size_log2 = 4; /* 16x16 */
-    qp.qp_valid = 1;
-    qp.qp_cell_size = cells; /* int8 per cell */
+    fill_qp_report(&qp, cells);
     /* qp_cell_offset is set below once we know the section's blob offset. */
 
     for (i = 0; i < (int)cells; i++) {
@@ -373,28 +408,41 @@ static void test_qp_report_roundtrip(void)
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, sizeof(PelorusQpReportSection), &p,
                                 &got) == PEL_OK);
     CHECK(got == sizeof(PelorusQpReportSection));
-    {
-        const PelorusQpReportSection *r = p;
-        CHECK(r->avg_qp == 27.5f);
-        CHECK(r->psnr_y == 41.2f);
-        CHECK(r->total_bits == 1234567ULL);
-        CHECK(r->num_inter_blocks == 200);
-        CHECK(r->honored_fraction == 0.75f);
-        CHECK(r->report_source == PEL_QPSRC_QSV);
-        CHECK(r->block_size_log2 == 4);
-        CHECK(r->qp_valid == 1);
-        CHECK(r->qp_cell_size == cells);
-        CHECK(r->num_intra_blocks == 40);
-        CHECK(r->num_skipped_blocks == 16);
-        CHECK(r->psnr_u == 0.0f);
-        CHECK(r->psnr_v == 0.0f);
-    }
+    check_qp_report(p, cells);
 
     /* An older consumer (knows only the first two floats) still parses (R4). */
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, 8, &p, &got) == PEL_OK);
     CHECK(got == 8);
 
     pel_blob_free(blob);
+}
+
+/* Production usage: vf_pelorus_mc writes MOTION and MOTION_CONF together —
+ * both must round-trip from one blob regardless of dir[] ordering. */
+static void check_motion_with_conf(const PelorusSideData *meta,
+                                   const PelorusMotionConfSection *conf)
+{
+    PelorusMotionSection mo;
+    PelorusPackSection both[2];
+    uint8_t *b2 = NULL;
+    size_t l2 = 0;
+    const void *p = NULL;
+    size_t got = 0;
+
+    memset(&mo, 0, sizeof(mo));
+    both[0].id = PEL_SEC_MOTION;
+    both[0].data = &mo;
+    both[0].size = (uint32_t)sizeof(mo);
+    both[1].id = PEL_SEC_MOTION_CONF;
+    both[1].data = conf;
+    both[1].size = (uint32_t)sizeof(*conf);
+    CHECK(pel_blob_pack(meta, both, 2, &b2, &l2) == PEL_OK);
+    CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p, &got) ==
+          PEL_OK);
+    CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection), &p,
+                                &got) == PEL_OK);
+    CHECK(got == sizeof(PelorusMotionConfSection));
+    pel_blob_free(b2);
 }
 
 /* PEL_SEC_MOTION_CONF (g): pack the per-block MV confidence section, parse it
@@ -444,29 +492,7 @@ static void test_motion_conf_roundtrip(void)
 
     pel_blob_free(blob);
 
-    /* Production usage: vf_pelorus_mc writes MOTION and MOTION_CONF together —
-     * both must round-trip from one blob regardless of dir[] ordering. */
-    {
-        PelorusMotionSection mo;
-        PelorusPackSection both[2];
-        uint8_t *b2 = NULL;
-        size_t l2 = 0;
-
-        memset(&mo, 0, sizeof(mo));
-        both[0].id = PEL_SEC_MOTION;
-        both[0].data = &mo;
-        both[0].size = (uint32_t)sizeof(mo);
-        both[1].id = PEL_SEC_MOTION_CONF;
-        both[1].data = &conf;
-        both[1].size = (uint32_t)sizeof(conf);
-        CHECK(pel_blob_pack(&meta, both, 2, &b2, &l2) == PEL_OK);
-        CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
-                                    &got) == PEL_OK);
-        CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection),
-                                    &p, &got) == PEL_OK);
-        CHECK(got == sizeof(PelorusMotionConfSection));
-        pel_blob_free(b2);
-    }
+    check_motion_with_conf(&meta, &conf);
 }
 
 /* PEL_SEC_COMPLEXITY (h): pack the per-frame complexity scalar, round-trip the
@@ -559,6 +585,56 @@ static void test_qp_report_fold(void)
     CHECK(pel_qp_report_from_blocks(&in, 0, 2, &out, cells, sizeof(cells)) == PEL_ERR_INVALID);
 }
 
+/* Write the x265-shaped CSV fixture. Returns 0 on success, -1 when the file
+ * could not be opened (already reported through CHECK). */
+static int write_csv_fixture(const char *path, const char *csv)
+{
+    FILE *fp = fopen(path, "w");
+    CHECK(fp != NULL);
+    if (fp == NULL) {
+        return -1;
+    }
+    CHECK(fputs(csv, fp) >= 0);
+    CHECK(fclose(fp) == 0);
+    return 0;
+}
+
+/* Three coded frames survive the parse; the trailing aggregate row does not. */
+static void check_parsed_frames(const PelorusX265Frame *frames, size_t count)
+{
+    CHECK(count == 3);
+    CHECK(frames[0].slice_type == 'I');
+    CHECK(frames[0].qp == 26.0f);
+    CHECK(frames[0].bits == 24000ULL);
+    CHECK(frames[1].slice_type == 'P');
+    CHECK(frames[2].qp == 34.0f);
+    CHECK(frames[2].psnr_v == 35.5f);
+}
+
+/*
+ * honored_fraction: a downstream pass requested a FLAT QP 28 on every frame;
+ * the encoder spread it (26/30/34). Frame 0 moved DOWN, frames 1+2 moved UP
+ * from the achieved mean (30). A flat request has zero per-frame delta, so
+ * every frame's requested delta is "flat" while the achieved deltas are not ->
+ * agreement only where the achieved delta is also flat. Achieved mean = 30:
+ * frame1 (30) is flat -> agrees with flat request; frames 0,2 moved ->
+ * disagree. Expect 1/3.
+ *
+ * A request that mirrors the achieved shape instead (low for the I frame, high
+ * for the B frame) should score 1.0, because every sign agrees.
+ */
+static void check_honored_fraction(const PelorusX265Frame *frames, size_t count,
+                                   PelorusQpReportSection *qp)
+{
+    const float requested_flat[3] = {28.0f, 28.0f, 28.0f};
+    CHECK(pel_qp_report_from_x265_frames(frames, count, requested_flat, qp) == PEL_OK);
+    CHECK(qp->honored_fraction > 0.33f && qp->honored_fraction < 0.34f);
+
+    const float requested_shaped[3] = {24.0f, 30.0f, 36.0f};
+    CHECK(pel_qp_report_from_x265_frames(frames, count, requested_shaped, qp) == PEL_OK);
+    CHECK(qp->honored_fraction == 1.0f);
+}
+
 /* The x265 CSV reader (ADR-0122): write a minimal x265-shaped CSV to a temp
  * file, parse it, fold it into a PEL_SEC_QPREPORT, and verify the aggregated
  * scalars + the requested-vs-honored honored_fraction. This is the runnable
@@ -578,25 +654,14 @@ static void test_x265_csv_reader(void)
     size_t count = 0;
     PelorusQpReportSection qp;
     const char *path = "pelorus_x265_csv_test.csv";
-    FILE *fp;
 
-    fp = fopen(path, "w");
-    CHECK(fp != NULL);
-    if (fp == NULL) {
+    if (write_csv_fixture(path, csv) != 0) {
         return;
     }
-    CHECK(fputs(csv, fp) >= 0);
-    CHECK(fclose(fp) == 0);
 
     /* Parse: 3 coded frames, the "Total frames" aggregate row dropped. */
     CHECK(pel_x265_csv_parse(path, frames, 8, &count) == PEL_OK);
-    CHECK(count == 3);
-    CHECK(frames[0].slice_type == 'I');
-    CHECK(frames[0].qp == 26.0f);
-    CHECK(frames[0].bits == 24000ULL);
-    CHECK(frames[1].slice_type == 'P');
-    CHECK(frames[2].qp == 34.0f);
-    CHECK(frames[2].psnr_v == 35.5f);
+    check_parsed_frames(frames, count);
 
     /* Fold, no requested map: bit-weighted mean QP, summed bits, qp_valid 0. */
     CHECK(pel_qp_report_from_x265_frames(frames, count, NULL, &qp) == PEL_OK);
@@ -608,26 +673,8 @@ static void test_x265_csv_reader(void)
     CHECK(qp.psnr_y > 41.0f && qp.psnr_y < 43.2f); /* I-frame-dominated */
     CHECK(qp.honored_fraction == 0.0f);            /* no request to compare */
 
-    /* honored_fraction: a downstream pass requested a FLAT QP 28 on every
-     * frame; the encoder spread it (26/30/34). Frame 0 moved DOWN, frames 1+2
-     * moved UP from the achieved mean (30). A flat request has zero per-frame
-     * delta, so every frame's requested delta is "flat" while the achieved
-     * deltas are not -> agreement only where the achieved delta is also flat.
-     * Achieved mean = 30: frame1 (30) is flat -> agrees with flat request;
-     * frames 0,2 moved -> disagree. Expect 1/3. */
-    {
-        const float requested_flat[3] = {28.0f, 28.0f, 28.0f};
-        CHECK(pel_qp_report_from_x265_frames(frames, count, requested_flat, &qp) == PEL_OK);
-        CHECK(qp.honored_fraction > 0.33f && qp.honored_fraction < 0.34f);
-    }
-
-    /* honored_fraction: a request that mirrors the achieved shape (low for the
-     * I frame, high for the B frame) should score 1.0 (every sign agrees). */
-    {
-        const float requested_shaped[3] = {24.0f, 30.0f, 36.0f};
-        CHECK(pel_qp_report_from_x265_frames(frames, count, requested_shaped, &qp) == PEL_OK);
-        CHECK(qp.honored_fraction == 1.0f);
-    }
+    /* honored_fraction against a flat request and against a shaped one. */
+    check_honored_fraction(frames, count, &qp);
 
     /* A capacity smaller than the row count truncates and reports RANGE. */
     CHECK(pel_x265_csv_parse(path, frames, 2, &count) == PEL_ERR_RANGE);

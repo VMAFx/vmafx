@@ -308,7 +308,24 @@ static char *run_cpu_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, d
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test harness setup and per-frame loop */
+/* Feed CHK_FRAMES checkerboard frame pairs through the SYCL run. Split out of
+ * run_sycl_checkerboard() so that body stays inside the 60-line budget. */
+static char *feed_sycl_checkerboard_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < CHK_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_checkerboard_fixture(&ref, i);
+        mu_assert("SYCL: fill_checkerboard_fixture(ref) failed", !err);
+        err = fill_checkerboard_fixture(&dist, i);
+        mu_assert("SYCL: fill_checkerboard_fixture(dist) failed", !err);
+
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("SYCL: vmaf_read_pictures failed", !err);
+    }
+    return NULL;
+}
+
 static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, double *m3_f2)
 {
     *m2_f1 = NAN;
@@ -342,17 +359,7 @@ static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, 
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
 
-    for (unsigned i = 0; i < CHK_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = fill_checkerboard_fixture(&ref, i);
-        mu_assert("SYCL: fill_checkerboard_fixture(ref) failed", !err);
-        err = fill_checkerboard_fixture(&dist, i);
-        mu_assert("SYCL: fill_checkerboard_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("SYCL: vmaf_read_pictures failed", !err);
-    }
+    mu_assert_msg(feed_sycl_checkerboard_frames(vmaf));
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);

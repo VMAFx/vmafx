@@ -57,7 +57,10 @@ CheckOptions:
   - key: cert-msc32-c.DisallowedSeedTypes
     value: 'time_t,std::time_t'
   # Power-of-10 rule 4 — a printed page. The threshold applies to the whole
-  # tree; violations are refactored instead of hidden with source suppressions.
+  # tree and a violation is refactored by default. A suppression is legitimate
+  # only where the refactor would break an invariant the fork does not control,
+  # and only when it cites that invariant inline (ADR-0141 §2, ADR-0278,
+  # ADR-1286).
   - key: readability-function-size.LineThreshold
     value: '60'
   - key: readability-function-size.StatementThreshold

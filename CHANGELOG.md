@@ -23155,6 +23155,22 @@ in the score aggregation. The suppression logic now matches `float_vif_cuda`.
   (ADR-1092, `core/src/framesync.c`)
 
 
+- The frame-synchronisation test exercises its synchronisation again. The
+  pass that made `core/test/test_framesync.c` propagate teardown failures
+  also dropped the one-second hold each worker takes after submitting its
+  buffer, and that delay is the load the test exists to create: it is what
+  keeps frame N's worker running while frame N+1's worker is already inside
+  `vmaf_framesync_retrieve_filled_data()` waiting on frame N. Without it the
+  workers ran to completion before either had to wait and the test passed in
+  milliseconds having never entered the wait/signal path. The hold is
+  restored (as `nanosleep()`, which POSIX specifies per-thread, rather than
+  the `sleep()` it replaced — this runs on a thread-pool worker), and the
+  test is back to its ~5 s runtime. The same pass had collapsed the eight
+  per-step failure messages into one; each step now names itself again
+  through a first-failure outcome that still lets teardown run
+  unconditionally.
+
+
 **fix: functional-matrix failures — 17 tool/backend behaviors**
 
 Fixed a set of real behavioral regressions identified by the full-matrix
@@ -24169,6 +24185,40 @@ to pass cleanly on CPU-only CI runners.
 
 
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
+
+
+- C unit tests under `core/test/` now satisfy the repository's own
+  HISS-21 invariants: 51 findings cleared without a baseline edit, a
+  suppression, or a weakened assertion. Two unbounded read loops
+  (`test_vmaf_tiny_v2.py`, `test_vmaf_use_tiny_model.c`) gained a
+  scalar bound derived from the file size, with bound exhaustion
+  reported as an error; four `goto` cleanup jumps in
+  `test_float_adm_dwt2_neon.c` became one unconditional buffer-release
+  path; and 45 over-long bodies were split into cohesive helpers. Every
+  assertion string, expected value and test registration is unchanged,
+  and the three CUDA picture-preallocation cases plus twelve HIP parity
+  scaffold-skip sites now share one implementation each
+  (`run_preallocation_method()`, `core/test/hip_parity_skip.h`).
+  Two bodies are deliberately left intact, each behind the cited
+  suppression that already protects it: `ref_calc_psnrhvs()` in
+  `test_psnr_hvs_simd.c`, whose structure is the ADR-0138 bit-exactness
+  contract, and `test_barten_csf()` in `test_barten_csf.c`, whose case
+  list is carried verbatim from Netflix upstream so later syncs of that
+  file stay a diff-and-merge. The clang-tidy ratchet records no
+  regression on any touched file, and the four files that came out below
+  their allowance (`test_dict.cpp` 33 -> 31,
+  `test_pic_preallocation.c` 16 -> 10, `framesync.c` 7 -> 0,
+  `test_framesync.c` 8 -> 0) tighten
+  `scripts/ci/tidy-baseline-cpu.json` through the scoped writer rather
+  than by hand. Two header allowances the branch also earned
+  (`core/src/log.h` 1 -> 0 and `core/src/framesync.h` 2 -> 1, from the
+  `__VMAF_*_H__` include-guard renames) are not written here: the scoped
+  writer addresses translation units only, and the full writer would
+  replace every entry with a measurement from a gcc-16 host the baseline
+  was not recorded on. They come from the CI lane's own
+  `tidy-ratchet-cpu.json`, which is measured with `gcc-15` and
+  `clang-tidy-22`. See
+  `docs/research/core-test-hiss21-burndown-2026-09-21.md`.
 
 
 - **`vmaf-perShot` and the VPL decode tool can no longer spin forever on an

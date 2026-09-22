@@ -51929,3 +51929,9 @@ invariants #19 and the `buildServer` seam carry the same rule.
 ## Upstream MATLAB MEX helpers are extracted, not re-inlined (T-HISS-PY-COMPAT-2026-09-21)
 
 On conflict in `compat/python-vmaf/matlab/`, reapply the `static` band/parse helpers (`reduce_*` / `expand_*` / `wrap_*` sections, the `Extend()` reduce/expand halves, the `corrDn` / `upConv` / `histo` / `pointOp` argument parsers, and the STMAD block-statistics helpers) instead of restoring the inline `INPROD` macros — every index expression and accumulation order is unchanged, which a stubbed-MEX differential harness confirmed bit-identical over ~16k recorded outputs, and the `reflect1` default now uses a bounded copy because HISS-08 bans `strcpy()`.
+
+## chore/hiss21-core-test — C test bodies split into helpers (2026-09-21)
+
+Upstream-mirrored tests under `core/test/` (`test.h`, `test_dict.cpp`, `test_predict.c`, `test_model.c`, `test_feature.cpp`, `test_cuda_pic_preallocation.c`) keep every assertion string, expected value and registered test name; on conflict reapply the helper split rather than restoring the single bodies, and keep the added `mu_assert_msg` in `test.h`, the short reopened anonymous-namespace blocks in the C++ tests, and the shared `core/test/hip_parity_skip.h`.
+
+`core/test/test_barten_csf.c` is the explicit exception and is **not** split. Its body is the upstream `mu_assert(almost_equal(...))` sequence carried verbatim from Netflix `c70debb1`, and upstream keeps appending cases to it (`c2155d6cd` added the 2160p CSF rows). Any reshaping of that sequence turns every later upstream sync of this file into a hand-merge, which is the load-bearing invariant its cited `// NOLINTNEXTLINE(readability-function-size)` protects (ADR-0141 §2, ADR-0278). On conflict, take upstream's case list verbatim and keep the suppression.

@@ -11,6 +11,11 @@
 #include <cerrno>
 #include <memory>
 
+/* The translation-unit-local fixtures and cases below sit in short anonymous
+ * namespaces rather than one file-wide block: that is what gives them C++
+ * internal linkage without any one brace scope outgrowing the 60-line budget
+ * the repository applies to the whole tree (ADR-1142), the same shape the
+ * SYCL extractors use. */
 namespace
 {
 
@@ -41,6 +46,11 @@ int motion_options(VmafFeatureDictionary **options)
     return err;
 }
 
+} // namespace
+
+namespace
+{
+
 mu_message_t test_explicit_partial_copy()
 {
     VmafContext *ctx = nullptr;
@@ -59,6 +69,11 @@ mu_message_t test_explicit_partial_copy()
     mu_assert("registration retry failed", vmaf_use_feature(ctx, "motion", options) == 0);
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_model_partial_copy()
 {

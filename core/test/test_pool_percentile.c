@@ -75,15 +75,6 @@ static int import_scores(VmafContext *vmaf, const char *name, const double *scor
 /* Element count of a PoolCase table literal. */
 #define POOL_CASE_CNT(t) ((unsigned)(sizeof(t) / sizeof((t)[0])))
 
-/* Propagate a helper's failure message. Mirrors mu_assert for helpers that
- * already return "NULL on success, or the message to fail with". */
-#define mu_assert_msg(expr)                                                                        \
-    do {                                                                                           \
-        char *mu_helper_msg = (expr);                                                              \
-        if (mu_helper_msg)                                                                         \
-            return mu_helper_msg;                                                                  \
-    } while (0)
-
 /* One pooled-score expectation: pool `name` over [0, last] with `method` and
  * compare against `expect` within `tol`. Returns NULL on success or `msg`,
  * so callers can drive a table of cases through a single mu_assert instead of

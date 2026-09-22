@@ -37,6 +37,20 @@
 #include "gpu_picture_pool.h"
 #include "thread_pool.h"
 
+/* Fetch one picture from the ring buffer and assert the single-plane
+ * VMAF_PIX_FMT_YUV400P allocation contract every fetch has to satisfy. Split
+ * out of test_ring_buffer() so that body stays inside the 60-line budget. */
+static char *fetch_and_check(VmafGpuPicturePool *pool, VmafPicture *pic)
+{
+    const int err = vmaf_gpu_picture_pool_fetch(pool, pic);
+    mu_assert("problem during vmaf_picture_pool_request_picture", !err);
+    mu_assert("data[0] should have been allocated", pic->data[0]);
+    mu_assert("data[1] should not have been allocated", !pic->data[1]);
+    mu_assert("data[2] should not have been allocated", !pic->data[2]);
+    mu_assert("pix_fmt should be VMAF_PIX_FMT_YUV400P", pic->pix_fmt == VMAF_PIX_FMT_YUV400P);
+    return NULL;
+}
+
 static char *test_ring_buffer()
 {
     VmafCudaCookie my_cookie = {
@@ -67,44 +81,19 @@ static char *test_ring_buffer()
     mu_assert("problem during vmaf_picture_pool_init", !err);
 
     VmafPicture pic_1;
-    err = vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_1);
-    mu_assert("problem during vmaf_picture_pool_request_picture", !err);
-    mu_assert("data[0] should have been allocated", pic_1.data[0]);
-    mu_assert("data[1] should not have been allocated", !pic_1.data[1]);
-    mu_assert("data[2] should not have been allocated", !pic_1.data[2]);
-    mu_assert("pix_fmt should be VMAF_PIX_FMT_YUV400P", pic_1.pix_fmt == VMAF_PIX_FMT_YUV400P);
+    mu_assert_msg(fetch_and_check(ring_buffer, &pic_1));
 
     VmafPicture pic_2;
-    err = vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_2);
-    mu_assert("problem during vmaf_picture_pool_request_picture", !err);
-    mu_assert("data[0] should have been allocated", pic_2.data[0]);
-    mu_assert("data[1] should not have been allocated", !pic_2.data[1]);
-    mu_assert("data[2] should not have been allocated", !pic_2.data[2]);
-    mu_assert("pix_fmt should be VMAF_PIX_FMT_YUV400P", pic_2.pix_fmt == VMAF_PIX_FMT_YUV400P);
+    mu_assert_msg(fetch_and_check(ring_buffer, &pic_2));
 
     VmafPicture pic_3;
-    err = vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_3);
-    mu_assert("problem during vmaf_picture_pool_request_picture", !err);
-    mu_assert("data[0] should have been allocated", pic_3.data[0]);
-    mu_assert("data[1] should not have been allocated", !pic_3.data[1]);
-    mu_assert("data[2] should not have been allocated", !pic_3.data[2]);
-    mu_assert("pix_fmt should be VMAF_PIX_FMT_YUV400P", pic_3.pix_fmt == VMAF_PIX_FMT_YUV400P);
+    mu_assert_msg(fetch_and_check(ring_buffer, &pic_3));
 
     VmafPicture pic_4;
-    err = vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_4);
-    mu_assert("problem during vmaf_picture_pool_request_picture", !err);
-    mu_assert("data[0] should have been allocated", pic_4.data[0]);
-    mu_assert("data[1] should not have been allocated", !pic_4.data[1]);
-    mu_assert("data[2] should not have been allocated", !pic_4.data[2]);
-    mu_assert("pix_fmt should be VMAF_PIX_FMT_YUV400P", pic_4.pix_fmt == VMAF_PIX_FMT_YUV400P);
+    mu_assert_msg(fetch_and_check(ring_buffer, &pic_4));
 
     VmafPicture pic_5;
-    err = vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_5);
-    mu_assert("problem during vmaf_picture_pool_request_picture", !err);
-    mu_assert("data[0] should have been allocated", pic_5.data[0]);
-    mu_assert("data[1] should not have been allocated", !pic_5.data[1]);
-    mu_assert("data[2] should not have been allocated", !pic_5.data[2]);
-    mu_assert("pix_fmt should be VMAF_PIX_FMT_YUV400P", pic_5.pix_fmt == VMAF_PIX_FMT_YUV400P);
+    mu_assert_msg(fetch_and_check(ring_buffer, &pic_5));
 
     mu_assert("pic_5 should use the same data buffer as pic_1 did.",
               pic_1.data[0] == pic_5.data[0]);
